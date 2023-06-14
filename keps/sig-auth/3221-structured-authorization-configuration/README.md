@@ -88,8 +88,8 @@ is unreachable.
 - Define a configuration file format for configuring Kubernetes API Server
 Authorization chain.
 - Allow ordered definition of authorization modes.
-- Allow definition of multiple webhooks in the authorization chain while all 
-other types of authorizers should only be specified once. 
+- Allow definition of multiple webhooks in the authorization chain while all
+other types of authorizers should only be specified once.
 - Allow resource/user based pre-filtering of webhooks using CEL to prevent unnecessary
 invocations.
 - Enable user to define the policy when a webhook can't be reached due to
@@ -354,7 +354,7 @@ authorizers:
       #   - NoOpinion: continue to subsequent authorizers to see if one of
       #     them allows the request
       #   - Deny: reject the request without consulting subsequent authorizers
-      # Default: NoOpinion
+      # Required, with no default.
       failurePolicy: Deny
       connectionInfo:
         # Controls how the webhook should communicate with the server.
@@ -446,8 +446,8 @@ Labels {along with possible values}:
 
 **Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
 If there is only one webhook and no name specified, there would be no `_<name>` suffix.
-If the webhook has a named specified, even if there is only one webhook, then the name
-should be in the metrics and exposed via the metrics endpoint.
+If the webhook has a name specified, even if there is only one webhook, then the name
+would be in the metrics and exposed via the metrics endpoint.
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
@@ -755,6 +755,10 @@ number of log entries written to the disk. During the Alpha implementation,
 the small impact will be measured and rationalized to keep the addition
 minimal. The addition would be well within the scalability limits and
 thresholds.
+
+For use-cases where the CEL filters would pre-filter requests even before the need to
+be dispatched to a webhook, there would be a performance improvement due to lower
+number of network calls.
 
 ### Troubleshooting
 
