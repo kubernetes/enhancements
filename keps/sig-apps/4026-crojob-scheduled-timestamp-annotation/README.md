@@ -172,7 +172,7 @@ The CronJob controller will begin adding the scheduled timestamp as an annotatio
 
 ###### Are there any tests for feature enablement/disablement?
 
-We plan to add unit tests.
+Given the feature results in adding an annotation only to newly created objects, those tests won't really be different from the actual feature tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -212,10 +212,10 @@ Randomly checking the CronJobs annotation `batch.kubernetes.io/cronjob-scheduled
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name:
-  - `cronjob_job_creation_skew`.
-  - `cronjob_controller_rate_limiter_use`.
-  - `job_creation_skew_duration_seconds`.
+  - Metric name: cronjob_job_creation_skew
+  - Components exposing the metric: kube-controller-manager
+  - Metric name: job_creation_skew_duration_seconds
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -243,7 +243,8 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes,a new job annotation of size 25B plus value of size N, where N is the number of jobs.
+Yes, each job created by a cronjob-controller will have an additional annotation containing `RFC3339` timestamp, which together with annotation name results in ~70B per job object.
+
 ** Worst case for N would be the max number of jobs per node * max number of nodes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -258,13 +259,9 @@ No.
 
 No.
 
-### Troubleshooting
-
-N/A
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A
+No change comparing to existing failure modes.
 
 ###### What are other known failure modes?
 
