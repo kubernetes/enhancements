@@ -92,6 +92,7 @@ data transfer was reached would provide the low-level building blocks to improve
 
 - Extend CRI to provide image pulling progress API that can be utilized by client
 tools (crictl pull), or machinery (kubelet pulling the image)
+- Extend existing PullImage api to support a duration timeout with no progress feature
 - Implement PoC / draft for CRI PullImageWithProgress call to runtime in Kubelet, hidden behind
 FeatureGate, disable by default
 
