@@ -1439,7 +1439,7 @@ type PodFailurePolicyRule struct {
 }
 
 // podFailurePolicy describes how failed pods are accounted. In particular, 
-how they influence the backoffLimit.
+// how they influence the backoffLimit.
 // When using podFailurePolicy, terminating Pods (have a `deletionTimestamp`)
 // are not immediately replaced and don't count as failed until they reach
 // a terminal phase (`Failed` or `Succeeded`).
