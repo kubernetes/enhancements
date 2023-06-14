@@ -131,7 +131,9 @@ A few additional examples:
 
 `periodSeconds: 2` and `periodMilliseconds: -500` would be 1.5s / 1500ms.
 
-`periodSeconds: 1` and `periodMilliseconds: -500` would be 0.5s / 500ms. (*** To reduce un-necessary resource usage, because periodMilliseconds is used to reduce the period to less than a second the offset is only used until success is reached then no longer becoming 1second after success.)
+`periodSeconds: 1` and `periodMilliseconds: -500` would be 0.5s / 500ms. (*** To reduce un-necessary resource usage, because periodMilliseconds is used to reduce the period to less than a second the offset is only used until success is reached then no longer becoming 1second after success.***)
+
+*** We can reconsider the only go faster until first success policy after alpha (eg. kubelet and/or probe policy for onlyTheFirstTime, always, alwaysWhenWaitingForSucess) ***
 
 More generally, the effective period value would be = `periodSeconds` + `periodMilliseconds`.
 
@@ -314,7 +316,7 @@ In pkg/apis/core/types.go
 type Probe struct {
     ...
     ...
-    // How often (in milliseconds) to offset PeriodSeconds when performing the probe.
+    // The offset in milliseconds to PeriodSeconds to change how often to perform the probe before it succeeded.
 	// +optional
 	PeriodMilliseconds *int32
 	// Length of time (in milliseconds) to offset IntialDelaySeconds before health checking is activated.
