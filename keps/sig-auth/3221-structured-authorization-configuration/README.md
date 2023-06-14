@@ -293,6 +293,16 @@ configuring an authorization webhook using the `--authorization-webhook-*`
 command line flags will not be allowed. If the user does that,
 there will be an error and API Server would exit right away.
 
+For HA Clusters, the cluster administrator needs to be careful about the
+migrating from using the old flags to the config file format. Here is a
+proposed way:
+1. Translate existing CLI flags to the structured config in each servers. Ensure
+that it is exactly the same across servers.
+2. Change the flags on kube-apiserver to use the config.
+3. Restart on kube-apiserver at a time.
+4. Parellely, update the config files to the final desired config. The automatic
+reloader would pick up the changes. There would be a minutes order of delay.
+
 The configuration would be validated at startup and the API server will fail to
 start if the configuration is invalid.
 
