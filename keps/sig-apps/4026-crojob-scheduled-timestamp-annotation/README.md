@@ -194,7 +194,6 @@ No.
 
 ## Monitoring Requirements
 
-N/A
 
 ###### How can an operator determine if the feature is in use by workloads?
 
