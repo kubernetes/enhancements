@@ -89,7 +89,7 @@ is unreachable.
 Authorization chain.
 - Allow ordered definition of authorization modes.
 - Allow definition of multiple webhooks in the authorization chain while all
-other types of authorizers should only be specified once.
+other types of authorizers should at most be specified once.
 - Allow resource/user based pre-filtering of webhooks using CEL to prevent unnecessary
 invocations.
 - Enable user to define the policy when a webhook can't be reached due to
@@ -425,7 +425,7 @@ to a `request` variable containing a `SubjectAccessReview` object in the version
 by `subjectAccessReviewVersion`.
 
 When no matchConditions are satisfied for a request, the webhook would be skipped. In such
-situations, the decision is logged in the audit log with the `webhookskipped.k8s.io` annotation.
+situations, the decision is logged in the audit log with the `authorization.k8s.io/webhook-skipped` annotation.
 Benefit of this is that resource and user info will also be logged.
 
 The code path for enabling the above will only be triggered if the feature flag is enabled
