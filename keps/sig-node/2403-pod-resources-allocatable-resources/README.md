@@ -257,7 +257,7 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, through feature gates.
+Yes, through feature gate. Once GA, the feature can't be disabled and is always enabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -304,7 +304,9 @@ No (Not applicable)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Not Applicable
+100% in normal operation. The proposed API exposes in read only mode kubelet internal data, critical for functioning of the kubelet.
+This data has to be available 100% of the time for the proper functioning of the kubelet, thus is expected to be available 100% of time.
+The only possible error source is the API calls being throttled by the rate-limiting introduced with the GA graduation of the parent KEP 606.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -316,9 +318,9 @@ Not Applicable
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-As part of this feature enhancement, per-API-endpoint resources metrics are being added; to observe this feature the `pod_resources_endpoint_requests_get_allocatable` metric should be used. We will also add error counting metrics to improve the observability of the API.
-
-TBD
+As part of this feature enhancement, per-API-endpoint resources metrics are being added; to observe this feature the `pod_resources_endpoint_requests_get_allocatable` metric should be used.
+We added the `pod_resources_endpoint_errors_get_allocatable` metric to report errors. Because the nature of the API (exposing data already used by the kubelet with minimal processing)
+the error counter is expected to be stable zero.
 
 ### Dependencies
 
@@ -371,7 +373,8 @@ Consumers of the API should treat unexpected errors as bugs of this API.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Not available.
+Check the error code to learn if the consumer of the API is being throttle by rate limiting introduced in the parent KEP 606.
+Check the kubelet logs to learn about resource allocation errors.
 
 ## Implementation History
 
