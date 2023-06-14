@@ -249,8 +249,6 @@ No.
 
 Yes, each job created by a cronjob-controller will have an additional annotation containing `RFC3339` timestamp, which together with annotation name results in ~70B per job object.
 
-** Worst case for N would be the max number of jobs per node * max number of nodes.
-
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No.
