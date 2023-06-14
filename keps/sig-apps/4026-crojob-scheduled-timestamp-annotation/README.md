@@ -192,7 +192,7 @@ The feature will be tested manually prior to beta launch.
 
 No.
 
-## Monitoring Requirements
+### Monitoring Requirements
 
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -259,6 +259,8 @@ No.
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 No.
+
+### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
