@@ -277,11 +277,16 @@ The previous PreStop behavior will not be broken. Users can continue to use thei
 To use this enhancement, users need to enable the feature gate, and add sleep action in their prestop hook.
 
 #### Downgrade
-Kube-apiserver will ignore sleep in prestop hook.
+It will silently drop the sleep prestop hook if someone wants to add that to the object (or create object with it). However, existing objects that have it set will not be cleared.
 
 ### Version Skew Strategy
 
-N/A
+Both kubelet and kube-apiserver will need enable the feature gate for the full featureset
+to be present. If both components disable the feature gate, this feature will be cleanly unavailable.
+
+If only the kube-apiserver enable this feature, kubelet won't understand the new field and may either ignore it or raise an error.
+
+If only the kubelet enable this feature, when creating/updating a resource with the sleepAction, the API server will reject the request with an error indicating that the field is unknown or unsupported.
 
 ## Production Readiness Review Questionnaire
 
@@ -312,11 +317,11 @@ In this case, the created pods's sleepAction will not take effect, and the new p
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 New pods with sleep action in prestop hook can be created.
-Created pods will execute the sleep hook before terminating.
+Previously created pod with sleep hook set will execute it before terminating.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No
+Yes. Some unit tests will be designed to test the verification process of the "sleep" field under different scenarios, such as when the feature is enabled, disabled, or switched. These tests will be included in the alpha version.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -327,11 +332,7 @@ But problems with the updated validation logic may cause errors occur during upd
 
 ###### What specific metrics should inform a rollback?
 
-N/A
-
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-
-Test manually
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -382,7 +383,8 @@ No
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No
+LifecycleHandler objects have one new fields per version they define, increasing their size slightly.
+See `Implementation` part
 
 ###### Will enabling / using this feature result in introducing new API types?
 
