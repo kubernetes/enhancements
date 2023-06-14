@@ -25,6 +25,7 @@
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+- [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
 - [Implementation History](#implementation-history)
@@ -190,6 +191,10 @@ The feature will be tested manually prior to beta launch.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No.
+
+## Monitoring Requirements
+
+N/A
 
 ###### How can an operator determine if the feature is in use by workloads?
 
