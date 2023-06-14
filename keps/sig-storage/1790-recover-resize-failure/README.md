@@ -9,7 +9,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Making resizeStatus more general in v1.27](#making-resizestatus-more-general-in-v127)
+  - [Making resizeStatus more general in v1.28](#making-resizestatus-more-general-in-v128)
   - [Implementation](#implementation)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
@@ -108,7 +108,7 @@ As part of this proposal, we are mainly proposing three changes:
    - NodeExpansionFailed // state set when expansion has failed in kubelet with a terminal error. Transient errors don't set NodeExpansionFailed.
 3. Update quota code to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` when evaluating usage for PVC.
 
-### Making resizeStatus more general in v1.27
+### Making resizeStatus more general in v1.28
 
 After some discussion with sig-storage folks and to accommodate changes coming from https://github.com/kubernetes/enhancements/issues/3751 we are proposing that we rename `pvc.Status.ResizeStatus` to `pvc.Status.AllocatedResourceStatus` and make it a map.
 
@@ -268,9 +268,8 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
  
 ## Graduation Criteria
 
-* *Alpha* in 1.23 behind `RecoverExpansionFailure` feature gate with set to a default of `false`.
-* *Beta* in 1.24: Since this feature is part of general `ExpandPersistentVolumes` feature which is in beta, we are going to move this to beta with enhanced e2e and more stability improvements.
-* *GA* in 1.26 along with `ExpandPersistentvolumes` feature. The list of issues for volume expansion going GA can be found at - https://github.com/orgs/kubernetes-csi/projects/12.
+* *Alpha* in 1.23 behind `RecoverVolumeExpansionFailure` feature gate with set to a default of `false`.
+* *Beta* in 1.29: We are going to move this to beta with enhanced e2e and more stability improvements.
 
 ### Test Plan
 
@@ -288,7 +287,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `RecoverExpansionFailure`
+    - Feature gate name: `RecoverVolumeExpansionFailure`
     - Components depending on the feature gate: kube-apiserver, kube-controller-manager, csi-external-resizer, kubelet
   - [ ] Other
     - Describe the mechanism:
@@ -390,7 +389,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
   For CSI volumes this feature requires users to run with latest version of `external-resizer`
-  sidecar which also should have `RecoverExpansionFailure` feature enabled. 
+  sidecar which also should have `RecoverVolumeExpansionFailure` feature enabled. 
   
 ### Scalability
 
