@@ -307,9 +307,12 @@ No
 
 The feature can be disabled in Alpha and Beta versions by restarting kube-apiserver with the feature-gate off. In terms of Stable versions, users can choose to opt-out by not setting the sleep field.
 
+In this case, the created pods's sleepAction will not take effect, and the new pod with sleepAction is not allowed to create.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 New pods with sleep action in prestop hook can be created.
+Created pods will execute the sleep hook before terminating.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -319,7 +322,8 @@ No
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The change is opt-in, it doesn't impact already running workloads. But problems with the updated validation logic may cause crashes in the apiserver.
+The change is opt-in, it doesn't impact already running workloads. 
+But problems with the updated validation logic may cause errors occur during update/crash process.
 
 ###### What specific metrics should inform a rollback?
 
