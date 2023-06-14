@@ -880,11 +880,16 @@ not added to the pod for a long enough time (for example 2 minutes).
 
 #### Marking pods as Failed
 
-When matching a failed pod against Job pod failure policy it is important that
+When matching a failed pod against Job pod failure policy, it is important that
 the pod is actually in the terminal phase (`Failed`), to ensure their state is
 not modified while Job controller matches them against the pod failure policy.
 
-However, there are scenarios in which a pod gets stuck in a non-terminal phase,
+Additionally, it is necessary to avoid the creation of a replacement Pod if the
+previously created Pod becomes terminating (has a `deletionTimestamp` but is
+not `Failed` nor `Succeeded` yet), or we might create replacement Pods that
+wouldn't be created if the pod failure policy was applied against the terminated Pod.
+
+There are scenarios in which a pod gets stuck in a non-terminal phase,
 but is doomed to be failed, as it is terminating (has `deletionTimestamp` set, also
 known as the `DELETING` state, see:
 [The API Object Lifecycle](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/object-lifecycle.md)).
@@ -1433,7 +1438,11 @@ type PodFailurePolicyRule struct {
 	OnPodConditions []PodFailurePolicyOnPodConditionsPattern
 }
 
-// PodFailurePolicy describes how failed pods influence the backoffLimit.
+// podFailurePolicy describes how failed pods are accounted. In particular, 
+// how they influence the backoffLimit.
+// When using podFailurePolicy, terminating Pods (have a `deletionTimestamp`)
+// are not immediately replaced and don't count as failed until they reach
+// a terminal phase (`Failed` or `Succeeded`).
 type PodFailurePolicy struct {
 	// A list of pod failure policy rules. The rules are evaluated in order.
 	// Once a rule matches a Pod failure, the remaining of the rules are ignored.
@@ -1507,9 +1516,18 @@ spec:
 ### Evaluation
 
 We use the `syncJob` function of the Job controller to evaluate the specified
-`podFailurePolicy` rules against the failed pods. It is only the first rule with
-matching requirements which is applied as the rules are evaluated in order. If
-the pod failure does not match any of the specified rules, then default
+`podFailurePolicy` rules against the failed pods.
+
+Since terminating Pods (have `deletionTimestamp` and are not `Failed` or
+`Succeeded`) don't have an exit code yet and might actually succeed, the 
+controller will not evaluate them against the `podFailurePolicy`.
+The job controller will also not create a replacement Pod until they reach the
+`Failed` phase. This behavior is the same as
+[`podReplacementPolicy: Failed`](../3939-allow-replacement-when-fully-terminated/).
+
+When evaluating Failed Pods against the `podFailurePolicy`, it is only the first
+rule with matching requirements which is applied as the rules are evaluated in order.
+If the pod failure does not match any of the specified rules, then default
 handling of failed pods applies.
 
 If we limit this feature to use `onExitCodes` only when `restartPolicy=Never`
@@ -1708,7 +1726,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
   [SSA](https://kubernetes.io/docs/reference/using-api/server-side-apply/) client.
 - The feature flag enabled by default
 
-Second iteration:
+Second iteration (1.27):
  - Extend Kubelet to mark as failed pending terminating pods (see: [Marking pods as Failed](#marking-pods-as-failed)).
  - Extend the feature documentation to explain transitioning of pending and
    terminating pods into `Failed` phase.
@@ -1716,6 +1734,9 @@ Second iteration:
 Third iteration (1.28):
 - Add `DisruptionTarget` condition for pods which are preempted by Kubelet to make room for critical pods.
   Also, backport this fix to 1.26 and 1.27 release branches, and update the user-facing documentation to reflect this change.
+- Avoid creation of replacement Pods for terminating Pods until they reach
+  the terminal phase. Update user-facing documentation.
+  Might be considered for backport to 1.27.
 
 #### GA
 
