@@ -1,0 +1,19 @@
+name: generic-controlplane
+title: Add generic control plane staging repository(ies)
+kep-number: "4080"
+authors:
+  - "@sttts"
+  - "@MikeSpreitzer"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-api-machinery
+  - sig-architecture
+reviewers:
+  - "@dims" # wg-code-organization
+approvers:
+  - "@deads2k"
+  - "@jpbetz"
+creation-date: "2023-06-01"
+last-updated: v1.27
+status: provisional
+stage: alpha
