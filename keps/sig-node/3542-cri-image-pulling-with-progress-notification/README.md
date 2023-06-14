@@ -102,21 +102,21 @@ FeatureGate, disable by default
 
 ## Proposal
 
-We propose introducing new (additional, not replacing old one) API for requesting image pull,
+We propose:
+
+- extending existing ImagePull call with optional parameter:
+  - no-progress timeout: number of seconds during which if completely no data transfer was ongoing, failure should be reported
+- introducing new (additional, not replacing old one) API for requesting image pull,
 that will return stream with periodic updates sent through it to the client until completion or
-a timeout without download progress is reached.
-
-The image pull request parameters will contain:
-
-- the type of granularty based on which the client wants to receive updates about the progress:
-  - time-based
-  - size-based
-  - none
-- frequency of the updates (if any) respectively to the granularity type:
-  - every N seconds
-  - every N Kibibytes of the total image size being downloaded
-- no-progress timeout
-  - number of seconds during which if completely no data transfer was ongoing, failure should be reported
+a timeout without download progress is reached. The image pull with progress request parameters will contain:
+  - image pull request data structure, including new optional no-progress timeout field
+  - the type of granularty based on which the client wants to receive updates about the progress:
+    - time-based
+    - size-based
+    - none
+  - frequency of the updates (if any) respectively to the granularity type:
+    - every N seconds
+    - every N amount of data downloaded of the total image size, e.g. 1Gi
 
 
 If / when it is possible to reliably determine percentage of the progress in the runtime,
@@ -157,13 +157,14 @@ Suggested new Kubelet config fields are these:
        //   - 1Gi for "size" ImagePullProgressType
        // Default: 30
        // +optional
-       ImagePullProgressInterval string `json:"ImagePullProgressType,omitempty"`
+       ImagePullProgressInterval string `json:"ImagePullProgressInterval,omitempty"`
        // NoProgressTimeout is a number of seconds after which stalled image download should be reported
        // as an error.
        // Supported values are:
        // - 0 for infinity, effectively no timeout
        // - positive number up to 4294967295 (uint32 max number, approx. 136 years)
        // Default: 10
+       // +optional
        NoProgressTimeout int32 `json:"NoProgressTimeout,omitempty"`
 
 
