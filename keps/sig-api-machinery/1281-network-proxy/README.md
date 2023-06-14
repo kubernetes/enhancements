@@ -40,16 +40,16 @@ default behavior is insufficient.
 
 ## Motivation
 
-Kubernetes has outgrown the [SSH tunnels](https://github.com/kubernetes/kubernetes/issues/54076).
-They complicate KAS code and only one cloud provider implemented them.
-After a year of deprecation time, they will be removed in an upcoming release.
+Historically, Kubernetes used [SSH tunnels](https://github.com/kubernetes/kubernetes/issues/54076), but they only
+functioned on GCE; they were deprecated in 1.9 and [removed in
+1.22](https://github.com/kubernetes/kubernetes/pull/102297).
 
 In retrospect, having an explicit level of indirection that separates user-initiated network traffic from API
 server-initiated traffic is a useful concept.
 Cloud providers want to control how API server to pod, node and service network traffic is implemented.
 Cloud providers may choose to run their API server (control network) and the cluster nodes (cluster network)
 on isolated networks. The control and cluster networks may have overlapping IP addresses.
-There for they require a non IP routing layer (SSH tunnel are an example).
+Therefore they require a non-IP routing proxy layer (SSH tunnel are an example).
 Adding this layer enables metadata audit logging. It allows validation of outgoing API server connections.
 Structuring the API server in this way is a forcing function for keeping architectural layering violations out of apiserver.
 In combination with a firewall, this separation of networks protects against security concerns such as
@@ -58,15 +58,15 @@ In combination with a firewall, this separation of networks protects against sec
 ### Goals
 
 Delete the SSH Tunnel/Node Dialer code from Kube APIServer.
-Enable admins to fix https://groups.google.com/d/msg/kubernetes-security-announce/tyd-MVR-tY4/tyREP9-qAwAJ.
+Enable admins to mitigate https://groups.google.com/d/msg/kubernetes-security-announce/tyd-MVR-tY4/tyREP9-qAwAJ.
 Allow isolation of the Control network from the Cluster network.
 
 ### Non-Goals
 
 Build a general purpose Proxy which does everything. (Users should build their own
-custom proxies with the desired behavior, based on the provided proxy)
+custom proxies with the desired behavior, based on the provided proxy.)
 Handle requests from the Cluster to the Control Plane. (The proxy can be extended to
-do this. However that is left to the User if they want that behavior)
+do this. However that is left to the User if they want that behavior.)
 
 ## Definitions
 
@@ -83,7 +83,7 @@ Later version may relax the all node requirement to some.
 The dialer provided depends on NetworkContext information.
 - **Konnectivity Server** The proxy server which runs in the control plane network.
 It has a secure channel established to the cluster network.
-It could work on either a HTTP Connect mechanism or gRPC.
+It could work on either a gRPC or HTTP Connect mechanism.
 If the former it would exposes a gRPC interface to KAS to provide connectivity service.
 If the latter it would use standard HTTP Connect.
 Formerly known the the Network Proxy Server.
@@ -103,7 +103,7 @@ For scalability we will be looking at the number of required open connections.
 Increasing usage of webhooks means we need better than 1 request per connection (multiplexing).
 We also need the tunnel to be tolerant of errors in the requests it is transporting.
 HTTP-Connect only supports HTTP requests and not things like DNS requests.
-We assume that for HTTP URL request,s it will be the proxy which does the DNS lookup.
+We assume that for HTTP URL requests, it will be the proxy which does the DNS lookup.
 However this means that we cannot have the KAS perform a DNS request to then do a follow on request.
 If no issues are found with HTTP Connect in these areas we will proceed with it.
 If an issue is found then we will update the KEP and switch the client to the gRPC solution.
@@ -112,7 +112,7 @@ This should be as simple as switching the connection mode of the client code.
 It may be desirable to allow out of band data (metadata) to be transmitted from the KAS to the Proxy Server.
 We expect to handle metadata in the HTTP Connect case using http 'X' headers on the Connect request.
 This means that the metadata can only be sent when establishing a KAS to Proxy tunnel.
-For the GRPC case we just update the interface to the KAS.
+For the gRPC case we just update the interface to the KAS.
 In this case the metadata can be sent even during tunnel usage.
 
 Each connectivity proxy allows secure connections to one or more cluster networks.
@@ -174,12 +174,12 @@ type NetworkContext struct {
 EgressSelectionName specifies the network to route traffic to.
 The KAS starts with a list of registered konnectivity service names. These
 correspond to networks we route traffic to. So the KAS knows where to
-proxy the traffic to, otherwise it return an “Unknown network” error.
+proxy the traffic to, otherwise it returns an “Unknown network” error.
 
 The KAS starts with a proxy configuration like the below example.
 The example specifies 4 networks. "direct" specifies the KAS talking directly
 on the local network (no proxy). "controlplane" specifies the KAS talks to a proxy
-listening at 1.2.3.4:5678. "cluster" specifies the KAS talk to a proxy
+listening at 1.2.3.4:5678. "cluster" specifies the KAS talks to a proxy
 listening at 1.2.3.5:5679. While these are represented as resources
 they are not intended to be loaded dynamically. The names are not case
 sensitive. The KAS loads this resource list as a configuration at start time.
@@ -246,10 +246,11 @@ It should run on the same machine and must run in the same flat network as the K
 It listens on a port for gRPC connections from the KAS.
 This port would be for forwarding traffic to the appropriate cluster.
 It should have an administrative port speaking https.
-The administrative port serves the liveness probe and metrics.
+The administrative port serves metrics and (optional) debug/pprof handlers.
+It should have a health check port, serving liveness and readiness probes.
 The liveness probe prevents a partially broken cluster
-where the KAS cannot connect to the cluster. This port also serves
-pprof debug commands and monitoring data for the proxy.
+where the KAS cannot connect to the cluster.
+The readiness probe indicates that at least one Konnectivity Agent is connected.
 
 ### Direct Connection
 
@@ -289,9 +290,8 @@ Admission webhooks can be destined for a service or a URL.
 If destined for a service then the service rules apply (send to 'cluster').
 If destined for a URL then we will use the ‘controlplane’ NetworkContext.
 - **Aggregated API Server (and OpenAPI requests for aggregated resources)**
-Aggregated API Servers can be destined for a service or a URL.
+Aggregated API Servers can be destined for a service.
 If destined for a service then the service rules apply.
-If destined for a URL then we will use the ‘controlplane’ NetworkContext.
 - **Authentication, Authorization and Audit Webhooks**
 These Webhooks use a kube config file to determine destination.
 Given that we use a ‘controlplane’ NetworkContext.
@@ -408,6 +408,8 @@ Beta:
 - Feature went Alpha in 1.16 with limited functionality. It will cover the log
   sub resource and communication to the etcd server.
 
+- Feature went Beta in 1.18.
+
 ## Alternatives [optional]
 
 - Leave SSH Tunnels (deprecated) in the KAS. Prevents us from making the KAS cloud provider agnostic. Blocks out of tree effort.
@@ -416,5 +418,5 @@ Beta:
 
 ## Infrastructure Needed [optional]
 
-Any one wishing to use this feature will need to create network proxy images/pods on the control plane and set up the ConnectivityServiceConfiguration.
+Any one wishing to use this feature will need to create network proxy images/pods on the control plane and set up the EgressSelectorConfiguration.
 The network proxy provided is meant as a reference implementation. Users as expected to extend it for their needs.
