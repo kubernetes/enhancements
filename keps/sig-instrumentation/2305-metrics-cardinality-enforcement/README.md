@@ -11,7 +11,12 @@
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -266,14 +271,47 @@ This would then be interpreted by our machinery as this:
 ```
 
 ## Design Details
+
 ### Test Plan
-For `Alpha`, unit test to verify that the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values.
-### Graduation Criteria
-For `Alpha`, the allowlist of metrics can be configured via the exposed flag and the unit test is passed.
-For `Beta`, the allowlist can be configured from a input file(e.g. yaml file).
-### Upgrade / Downgrade strategy
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
 N/A
+
+##### Unit tests
+
+For `Alpha`, unit test to .
+
+- `staging/src/k8s.io/component-base/metrics/counter_test.go`: `3/3/2021` - `verify that the metric label will be set to "unexpected" for counters if the metric encounters label values outside our explicit allowlist of values`
+- `staging/src/k8s.io/component-base/metrics/gauge_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for gauges if the metric encounters label values outside our explicit allowlist of values`
+- `staging/src/k8s.io/component-base/metrics/histogram_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for histograms if the metric encounters label values outside our explicit allowlist of values`
+- `staging/src/k8s.io/component-base/metrics/summary_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for summaries if the metric encounters label values outside our explicit allowlist of values`
+
+### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- The allowlist of metrics can be configured via the exposed flag and the unit test is passed.
+
+#### Beta
+
+- The allowlist can be configured from a manifest.
+
+#### GA
+
+- Allow pattern-matching for labels in the allowlist.
+
+### Upgrade / Downgrade strategy
+
+N/A
+
 ### Version Skew Strategy
+
 N/A
 
 ## Production Readiness Review Questionnaire
@@ -284,7 +322,16 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: MetricCardinalityEnforcement
-    - Components depending on the feature gate: All components that emit metrics
+    - Components depending on the feature gate: All components that emit metrics, i.e. (at the time of writing),
+      - cmd/kube-apiserver
+      - cmd/kube-controller-manager
+      - cmd/kubelet
+      - pkg/kubelet/metrics
+      - pkg/kubelet/prober
+      - pkg/kubelet/server
+      - pkg/proxy/metrics
+      - cmd/kube-scheduler
+      - pkg/volume/util
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
@@ -298,8 +345,8 @@ _This section must be completed when targeting alpha to a release._
   feature, can it break the existing applications?).
   Yes, disabling the feature gate can revert it back to existing behavior
   
-* **What happens if we reenable the feature if it was previously rolled back?**
-  The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value.
+* **What happens if we re-enable the feature if it was previously rolled back?**
+  The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value. Note that metrics are a memory-only construct and do not persist, but re-generated across restarts.
   
 * **Are there any tests for feature enablement/disablement?**
   Using unit tests to cover the combination cases w/wo feature and w/wo allowlist.
@@ -322,6 +369,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
   A component metric flag for ingesting allowlist to be added.
+
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
@@ -337,7 +385,7 @@ the health of the service?**
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  None.
+  - `cardinality_enforcement_unexpected_categorizations_total`: Increments whenever any metric falls into the "unexpected" case (i.e., goes out of the defined bounds).
 
 ### Dependencies
 
@@ -345,7 +393,6 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
   No.
-
 
 ### Scalability
 
@@ -377,6 +424,10 @@ operations covered by [existing SLIs/SLOs]?**
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No.
+
+* **Can enabling / using this feature result in resource exhaustion of some 
+node resources (PIDs, sockets, inodes, etc.)?**
   No.
 
 ### Troubleshooting

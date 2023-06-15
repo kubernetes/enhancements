@@ -4,6 +4,7 @@ authors:
   - "@logicalhan"
   - "@lilic"
   - "@yoyinzyc"
+  - "@rexagod"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
@@ -15,9 +16,10 @@ reviewers:
 approvers:
   - "@ehashman"
 creation-date: 2020-04-15
-last-updated: 2021-02-08
-stage: alpha
+last-updated: 2023-05-28
+stage: beta
 status: implementable
-latest-milestone: "v1.21"
+latest-milestone: "v1.28"
 milestone:
-  alpha: "v1.21"
+  beta: "v1.28"
+disable-supported: true
