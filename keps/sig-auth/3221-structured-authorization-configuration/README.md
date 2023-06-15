@@ -114,7 +114,8 @@ Add a configuration format having specific precedence order and defined failure 
 apiVersion: apiserver.config.k8s.io/v1alpha1
 kind: AuthorizationConfiguration
 authorizers:
-  - type: Webhook
+  - name: system-webhook
+    type: Webhook
     webhook:
       unauthorizedTTL: 30s
       timeout: 3s
@@ -132,7 +133,8 @@ authorizers:
       - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
   - type: RBAC
-  - type: Webhook
+  - name: internal
+    type: Webhook
     webhook:
       authorizedTTL: 5m
       unauthorizedTTL: 30s
@@ -212,7 +214,8 @@ The below example is only for demonstration purposes.
 apiVersion: apiserver.config.k8s.io/v1alpha1
 kind: AuthorizationConfiguration
 authorizers:
-  - type: Webhook
+  - name: system-webhook
+    type: Webhook
     webhook:
       unauthorizedTTL: 30s
       timeout: 3s
@@ -230,7 +233,8 @@ authorizers:
       - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
   - type: RBAC
-  - type: Webhook
+  - name: opa
+    type: Webhook
     webhook:
       unauthorizedTTL: 30s
       timeout: 3s
@@ -332,10 +336,8 @@ authorizers:
       # Name used to describe the webhook
       # This is explicitly used in monitoring machinery for metrics
       # Note:
-      #   - If not specified, the default would be set to ""
-      #   - If there are multiple webhooks in the authorizer chain,
-      #     this field is required
       #   - Validation for this field is similar to how K8s labels are validated today.
+      # Required, with no default
       name: super-important-kube-system-authorizer
       # The duration to cache 'authorized' responses from the webhook
       # authorizer.
@@ -454,10 +456,7 @@ Labels {along with possible values}:
 - `mode` {<authorizer_name>} # when authorizer is a webhook, prepend `webhook_`
 - `decision` {Allow, Deny}
 
-**Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook{,_<name>}`.
-If there is only one webhook and no name specified, there would be no `_<name>` suffix.
-If the webhook has a name specified, even if there is only one webhook, then the name
-would be in the metrics and exposed via the metrics endpoint.
+**Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook_<name>`.
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
