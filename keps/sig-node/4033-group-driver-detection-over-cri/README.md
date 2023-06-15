@@ -584,7 +584,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-TBD.
+Unit tests for the feature gate will be written.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -617,7 +617,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-N/A.
+Nodes being in NotReady state with kubelet logs indicating an error in the
+RuntimeConfig CRI request, making kubelet fail to start.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -627,7 +628,8 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-N/A.
+Not planned as there is no persistent state associated with the feature. Manual
+testing of the feature gate (in addition to the unit tests) is performed.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
