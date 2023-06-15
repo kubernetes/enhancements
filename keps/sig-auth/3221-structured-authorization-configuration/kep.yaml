@@ -1,0 +1,27 @@
+title: Structured Authorization Configuration
+kep-number: 3221
+authors:
+  - "@100mik"
+  - "@palnabarun"
+owning-sig: sig-auth
+status: implementable
+creation-date: 2022-06-21
+reviewers:
+  - "@deads2k"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+  - "@liggitt"
+see-also:
+  - https://github.com/kubernetes/kubernetes/issues/101762
+stage: alpha
+latest-milestone: "v1.28"
+milestone:
+  alpha: "v1.28"
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: StructuredAuthorizationConfig
+    components:
+      - kube-apiserver
+disable-supported: true
