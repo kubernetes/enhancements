@@ -821,6 +821,10 @@ No.
 This section must be completed when targeting beta to a release.
 -->
 
+###### How can someone using this feature know that it is working for their instance?
+
+1. Kubelet stats API will be extended to show swap usage details.
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -915,6 +919,10 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
