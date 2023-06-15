@@ -81,6 +81,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Vendor-specific QoS](#vendor-specific-qos)
     - [Defaults and limits](#defaults-and-limits)
     - [Possible future scenarios](#possible-future-scenarios)
+      - [Pass on Pod QoS class to the runtime](#pass-on-pod-qos-class-to-the-runtime)
       - [Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources)
       - [Container-level memory QoS](#container-level-memory-qos)
       - [Runtime classes](#runtime-classes)
@@ -100,7 +101,6 @@ SIG Architecture for cross-cutting KEPs).
     - [PodStatus](#podstatus)
     - [NodeStatus](#nodestatus)
     - [Consts](#consts)
-  - [Pod QoS class](#pod-qos-class)
   - [Kubelet](#kubelet)
   - [API server](#api-server)
   - [Scheduler](#scheduler)
@@ -415,12 +415,12 @@ of QoS-class resources on the nodes.
 QoS-class resources available on a node are dynamic in the sense that they may
 change over the lifetime of the node. E.g. re-configuration of the container
 runtime may make new types of QoS-class resources available, properties of
-existing resources may changes (e.g. the set of available classes) or some
-resources might be removed completely. It might be desirable that kubelet could
-evicts running pod that request QoS-class resources that are no more available
-on the node. This should be relatively straightforward to implement as kubelet
-knows what QoS-class resources are available on the node and also monitors all
-running pods.
+existing resources may changes (e.g. the set of available classes or their
+capacity) or some resources might be removed completely. It might be desirable
+that kubelet could evict a running pod that request QoS-class resources that
+are no more available on the node. This should be relatively straightforward to
+implement as kubelet knows what QoS-class resources are available on the node
+and also monitors all running pods.
 
 #### Default and limits
 
@@ -639,6 +639,35 @@ spec:
 This section speculates on possible future uses of the QoS-class resources
 mechanism.
 
+##### Pass on Pod QoS class to the runtime
+
+The [Pod QoS class][pod-qos-class] could be communicated to the container
+runtime as a special Kubernetes-specific QoS-class resource.
+
+Information about Pod QoS class is currently internal to kubelet and not
+visible to the container runtime. However, container runtimes (CRI-O, at least)
+are already depending on this information and currently determining it
+indirectly by evaluating other CRI parameters.
+
+This change would make the information about Pod QoS explicit and would allow
+elimination of unreliable code paths in runtimes, for example.
+
+Pod QoS class would not be advertised as one of the available QoS-class
+resources in NodeStatus. Also, users would not be allowed to request it in the
+PodSpec which would be enforced by admission checks in the api-server and
+kubelet. In other words, this would be purely informational, aimed for the
+container runtime.
+
+```diff
++ // Kubernetes-managed QoS resources. These are only informational to the runtime
++ // and no CRI requests should fail because of these.
++const (
++       // QOSResourcePodQOS is the Kubernetes Pod Quality of Service Class.
++       // Possible values are "Guaranteed", "Burstable" and "BestEffort".
++       QOSResourcePodQOS = "pod-qos"
++)
+```
+
 ##### Kubernetes-managed QoS-class resources
 
 It would be possible to have QoS-class resources that would be managed by
@@ -750,7 +779,7 @@ hogging all available high-priority QoS.
   QoS-class resources the Pod will stay in pending state, with Pod status
   indicating that no nodes are available with a message describing the detailed
   reason of unavailable container-level QoS-class resource type.
-- User mistakenly specifies a scontainer-level QoS-class resources as a
+- User mistakenly specifies a container-level QoS-class resources as a
   pod-level request. This is not regarded as an error or misconfiguration
   but the request is regarded as a pod-wide default for all containers.
   However, an unintended consequence may be that some containers are run
@@ -1271,37 +1300,6 @@ reject requests for unknown QoS-class resources in the "official" namespace.
 Also, kubelet will reject the registration of unknown QoS-class resources in
 the "official" namespace. Custom/vendor-specific QoS-class resources will still
 be allowed outside the "official" namespace.
-
-### Pod QoS class
-
-`<<[UNRESOLVED]>>`
-
-The [Pod QoS class][pod-qos-class] will be communicated to the container
-runtime as a special Kubernetes-specific QoS-class resource.
-
-Information about Pod QoS class is currently internal to kubelet and not
-visible to the container runtime. However, container runtimes (CRI-O, at least)
-are already depending on this information and currently determining it
-indirectly by evaluating other CRI parameters.
-
-This change makes the information about Pod QoS explicit and allows elimination
-of unreliable code paths in runtimes, for example.
-
-Pod QoS class will not advertised as one of the available QoS-class resources
-in NodeStatus. Also, users are not allowed to request it in the PodSpec which
-will be enforced by admission checks in the api-server and kubelet.
-
-```diff
-+ // Kubernetes-managed QoS resources. These are only informational to the runtime
-+ // and no CRI requests should fail because of these.
-+const (
-+       // QOSResourcePodQOS is the Kubernetes Pod Quality of Service Class.
-+       // Possible values are "Guaranteed", "Burstable" and "BestEffort".
-+       QOSResourcePodQOS = "pod-qos"
-+)
-```
-
-`<<[/UNRESOLVED]>>`
 
 ### Kubelet
 
