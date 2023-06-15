@@ -305,6 +305,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
+No prerequisites have been identified.
+
 ##### Unit tests
 
 <!--
@@ -326,7 +328,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2023-05-25` - `66.5%`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2023-06-15` - `66.1%`
 
 ##### Integration tests
 
@@ -345,7 +347,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+No new integration tests for kubelet are planned.
 
 ##### e2e tests
 
@@ -359,7 +361,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+No new e2e tests for kubelet are planned.
 
 ### Graduation Criteria
 
