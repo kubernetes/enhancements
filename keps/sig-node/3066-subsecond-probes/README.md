@@ -29,7 +29,13 @@ Probe timeouts are limited to seconds and that does NOT work well for clients lo
     - [ProbeSeconds](#probeseconds)
   - [Summary](#summary-1)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -60,13 +66,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -403,21 +417,114 @@ Liveness probes and more granular timeouts may be investigated in a followup KEP
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
 
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
 Existing unit tests of prober `k8s.io/kubernetes/pkg/kubelet/prober/prober_manager_test.go`.
 
-Existing node-e2e test `k8s.io/kubernetes/test/e2e/common/container_probe.go`
+- `<package>`: `<date>` - `<test coverage>` TBD
+
+##### Integration tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage> TBD, will focus on unit and e2e
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage> TBD
+
+- Existing node-e2e test: `k8s.io/kubernetes/test/e2e/common/container_probe.go`
 
 Enhanced with additional test cases, see the buckets added in [the draft implementation](https://github.com/kubernetes/kubernetes/pull/107958/commits)
 
+
+
 ### Graduation Criteria
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys regarding success and scalability
+- Complete a performance analysis/review and adjust
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- Collect examples of real-world usage
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
 
 ### Upgrade / Downgrade Strategy
 
+Design will be tested to be hardened against upgrade/downgrade issues.
+
 ### Version Skew Strategy
 
+Design consideration has been made for and will be tested to ensure forward and backward version skew compatibility.
+
 ## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
 
 ### Feature Enablement and Rollback
 
@@ -428,32 +535,20 @@ _This section must be completed when targeting alpha to a release._
     - Feature gate name: SubSecondProbes
     - Components depending on the feature gate:
 		kube-apiserver and kubelet
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
 
   No
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
   Yes, see the [drop test](https://github.com/psschwei/kubernetes/blob/1ca40771e26b96d6121c49b19c2cbe6466694c7a/pkg/api/pod/util_test.go#L1029)
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
 
   No breaking changes
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
 
   Yes, see the [drop test](https://github.com/psschwei/kubernetes/blob/1ca40771e26b96d6121c49b19c2cbe6466694c7a/pkg/api/pod/util_test.go#L1029)
 
@@ -461,44 +556,143 @@ _This section must be completed when targeting alpha to a release._
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* **What specific metrics should inform a rollback?**
+TBD, no failures identified as possible at this time
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+###### What specific metrics should inform a rollback?
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+TBD
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+TBD, has been tested on a prior version of PR, and changes have been requested, will repeat and seek assistance.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
 
 ### Monitoring Requirements
 
 This section will be completed when targeting beta graduation to a release.
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
+
+TBD
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+TBD
+
+- [ ] Events
+  - Event Reason:
+- [ ] API .status
+  - Condition name:
+  - Other field:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+TBD
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
 ### Dependencies
 
 This section will be completed when targeting beta graduation to a release.
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
 ### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
 
 Enabling / using this feature will not result in any new API calls.
 See earlier KEP text regarding limits and scaling (to zero the millisecond offsets)
 
+###### Will enabling / using this feature result in introducing new API types?
+
 No new scalability API types.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 No new calls to the cloud provider will be provided.
 
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Enabling this feature will not necessarily result in increasing size or count of
 the existing API objects. (3 optional omit if nil *int32 fields for each probe)
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 Enabling / using this feature will result in changing the time taken (and thus charging) by certain
 operations covered by [existing SLIs/SLOs]. Whether Negatively/Positively will be determined by
 customers and testing in Beta. Thus, this KEP provides for mitigation in the form of larger
 minimums and scaling of the millisecond offsets to zero.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 Enabling / using this feature will result in changes to resource usage
 (CPU, RAM, disk, IO, ...) in kubelet and runtime coponents. This KEP provides for
@@ -515,10 +709,31 @@ architecual changes.
 
 This section will be completed when targeting beta graduation to a release.
 
-## Implementation History
+###### How does this feature react if the API server and/or etcd is unavailable?
 
+TBD
+
+###### What are other known failure modes?
+
+TBD
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+TBD
+## Implementation History
+<!--
+Major milestones in the lifecycle of a KEP should be tracked in this section.
+Major milestones might include:
+- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- the `Proposal` section being merged, signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+-->
 ## Drawbacks
 
+No reasons have been articulated to not provide this feature.
 
 ## Alternatives
 

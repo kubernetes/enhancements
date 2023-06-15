@@ -6,9 +6,8 @@ authors:
   - "@MHBauer"
 owning-sig: sig-node
 participating-sigs:
-  - sig-node
   - sig-network
-status: provisional
+status: implementable
 creation-date: 2021-11-30
 reviewers:
   - "@mrunalp"
@@ -18,6 +17,10 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
+see-also:
+  - TBD taking suggestions to many to list and be useful?
+replaces:
+  - TBD net add
 stage: alpha
 latest-milestone: "v1.28"
 milestone:
@@ -31,3 +34,4 @@ feature-gates:
       - kube-apiserver
 disable-supported: true
 metrics:
+  - "N/A"
