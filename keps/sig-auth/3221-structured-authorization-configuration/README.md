@@ -392,8 +392,10 @@ authorizers:
         #      - If failurePolicy=NoOpinion, then the error is ignored and the webhook is skipped
       matchConditions:
       # expression represents the expression which will be evaluated by CEL. Must evaluate to bool.
-      # CEL expressions have access to the contents of the SubjectAccessReview
-      # in the version specified by subjectAccessReviewVersion in the request variable.
+      # CEL expressions have access to the contents of the SubjectAccessReview in v1 version.
+      # If version specified by subjectAccessReviewVersion in the request variable is v1beta1,
+      # the contents would be converted to the v1 version before evaluating the CEL expression.
+      #
       # Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
       #
       # only send resource requests to the webhook
@@ -433,12 +435,13 @@ the version supported by a webhook has to be mentioned using a required field
 
 The user can define a CEL expression to determine whether a request needs to dispatched
 to the authz webhook for which the expression has been defined. The user would have access
-to a `request` variable containing a `SubjectAccessReview` object in the version specified
-by `subjectAccessReviewVersion`.
+to a `request` variable containing a `SubjectAccessReview` object in the `v1` version. If
+the version specified by `subjectAccessReviewVersion` in the request variable is `v1beta1`,
+the contents would be converted to the `v1` version before evaluating the CEL expression.
 
 When no matchConditions are satisfied for a request, the webhook would be skipped. In such
-situations, the decision is logged in the audit log with the `authorization.k8s.io/webhook-skipped` annotation.
-Benefit of this is that resource and user info will also be logged.
+situations, the decision is logged in the audit log with the `authorization.k8s.io/webhook-skipped`
+annotation. Benefit of this is that resource and user info will also be logged.
 
 The code path for enabling the above will only be triggered if the feature flag is enabled
 while the feature is in alpha and beta.
