@@ -40,7 +40,8 @@ feature-gates:
     components:
       - kube-controller-manager
       - kube-apiserver
+disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - rolling-update-duration
+  - rolling-update-duration-seconds

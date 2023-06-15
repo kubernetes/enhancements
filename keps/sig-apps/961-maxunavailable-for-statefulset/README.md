@@ -32,6 +32,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Implementation Details](#implementation-details)
     - [API Changes](#api-changes)
     - [Implementation](#implementation)
+    - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -79,16 +80,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -235,6 +236,7 @@ bogged down.
 -->
 
 #### Story 1
+
 As a User of Kubernetes, I should be able to update my StatefulSet, more than one Pod at a time, in a
 RollingUpdate manner, if my Stateful app can tolerate more than one pod being down, thus allowing my
 update to finish much faster.
@@ -248,7 +250,9 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-No.
+With `maxUnavailable` feature enabled, we'll bring down more than one pod at a time, if your application can't tolerate
+this behavior, you should absolutely disable this feature or leave the field unconfigured, which will behave as the default
+behavior.
 
 ### Risks and Mitigations
 
@@ -425,6 +429,53 @@ https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset
 ...
 ```
 
+#### Metrics
+
+We'll add a new metric named `rolling-update-duration-seconds`, it tracks how long a statefulset takes to finish a rolling-update,
+the general logic is:
+
+when [performing update](https://github.com/kubernetes/kubernetes/blob/c984d53b31655924b87a57bfd4d8ff90aaeab9f8/pkg/controller/statefulset/stateful_set_control.go#L97-L138),
+if the `currentRevision` != `updateRevision`, then we take it as starting to rolling update, but because rolling update can not
+finish in one reconciling loop, then we may have to track it, we have two approaches:
+
+- One is add a new field in the `defaultStatefulSetControl`, like below:
+
+  ```golang
+  type defaultStatefulSetControl struct {
+    podControl        *StatefulPodControl
+    statusUpdater     StatefulSetStatusUpdaterInterface
+    controllerHistory history.Interface
+    recorder          record.EventRecorder
+
+    // <Newly Added>
+    // rollingUpdateStartTimes records when each statefulset starts to perform rolling update.
+    // key is the statefulset name, value is the start time.
+    rollingUpdateStartTimes map[string]time.Time
+  }
+  ```
+
+  Then when `currentRevision` != `updateRevision`, we'll check whether the statefulset name
+  exists in the `rollingUpdateStartTimes`, if exists, skip, if not, write the
+  start time.
+
+  If we found rolling update completed in [updateStatefulSetStatus](https://github.com/kubernetes/kubernetes/blob/c984d53b31655924b87a57bfd4d8ff90aaeab9f8/pkg/controller/statefulset/stateful_set_control.go#L682-L701),
+  then we'll report the metrics here and clear the statefulset from the `rollingUpdateStartTimes`.
+
+- Another approach is add a new field to `StatefulSetStatus` as below:
+
+  ```golang
+  type StatefulSetStatus struct {
+
+    // rollingUpdateStartTime will record when the statefulSet starts to rolling update.
+    rollingUpdateStartTime *time.Time
+  }
+  ```
+
+  The logic general looks the same, we'll update the time together with status update, so there's no
+  extra api calls.
+
+  Prefer Opt-2 as we already record the rolling update messages in the status.
+
 ### Test Plan
 
 <!--
@@ -482,6 +533,11 @@ Testcases:
 - maxUnavailable greater than 1 with partition and staged pods greater than maxUnavailable
 - maxUnavailable greater than 1 with partition and maxUnavailable greater than replicas
 
+New testcases being added:
+
+- New metric `rolling-update-duration-seconds` should calculate time correctly.
+- Feature enablement/disablement test
+
 Coverage:
 
 - `pkg/apis/apps/v1`:               `2023-05-26` - `71.7%`
@@ -500,9 +556,9 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-We have controller tests in `pkg/controller/statefulset` cover all cases. What's more,
-rolling update is hard to simulate in integration tests because we want to verify the pod
-status but actually they're faked. But we'll have e2e tests instead.
+Controller tests in `pkg/controller/statefulset` cover all cases. Since pod statuses
+are faked in integration tests, simulating rolling update is difficult. We're opting
+for e2e tests instead.
 
 ##### e2e tests
 
@@ -590,6 +646,8 @@ in back-to-back releases.
 #### Beta
 
 - Enabled by default with default value of 1 with upgrade downgrade tested at least manually.
+- Additional e2e tests listed in the test plan should be added.
+- No critical bugs reported and no bad feedbacks collected.
 
 ### Upgrade / Downgrade Strategy
 
@@ -609,19 +667,19 @@ enhancement:
 
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to maintain previous behavior?
-  - Nothing special, it's backward compatibility
+  - This is a new field, it will only be enabled after an upgrade. To maintain the
+    previous behavior, you can disable the feature gate manually in Beta or leave
+    the field unconfigured.
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
-  - This feature is enabled by default in beta so you can configure the maxUnavailable to meet your requirements
+  - This feature is enabled by default in Beta so you can configure the maxUnavailable
+    to meet your requirements
 
 #### Downgrade
 
-when downgrade from a release `maxUnavailable` enabled to a release it's disabled:
-
-- If we downgrade to a release even doesn't have this field, then there's no way to discover it.
-- Else, if we create statefulset with maxUnavailable configured, it will be dropped to nil automatically.
-
-Anyway, we'll back to that time rolling update with a single unavailable pod.
+- If we try to set this field, it will be silently dropped.
+- If the object with this field already exists, we maintain is as it is, but the controller
+  will just ignore this field.
 
 ### Version Skew Strategy
 
@@ -638,10 +696,13 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-- If both api-server and kube-controller-manager enabled this feature, then everything works as expected
-- If only api-server enabled this feature, then we can configure the `maxUnavailable` field but it will not work.
-- If only kube-controller-manager enabled this feature, then for newly created statefulSet, the `maxUnavailable` will default to 1.
-- If both api-server and kube-controller-manager disabled this feature, then everything works as expected.
+- If both api-server and kube-controller-manager enabled this feature, then `maxUnavailable` will take effect.
+- If only api-server enabled this feature, because statefulset controller is unaware of this feature, then we'll
+  fall into the default rolling-update behavior, one pod at a time.
+- If only kube-controller-manager enabled this feature, then this field is invisible to users, we'll keep the default
+  rolling-update behavior, one pod at a time.
+- If both api-server and kube-controller-manager disabled this feature, then only one Pod will be updated
+  at a time as the default behavior.
 
 ## Production Readiness Review Questionnaire
 
@@ -659,13 +720,12 @@ No, the default behavior remains the same.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes this feature can be disabled. Once disabled, all existing  StatefulSet will
-revert to the old behavior where rolling update will proceed one pod at a time.
+Yes, you can disable the feature-gate manually once it's in Beta.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-We will restore the desired behavior for StatefulSets for which the maxUnavailable field wasn't deleted after
-the feature gate was disabled.
+If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again,
+that's say we'll restart to respect the value of `maxUnavailable` when rolling update.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -682,8 +742,10 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, there are unit tests which make sure the field is correctly dropped
+There are unit tests which make sure the field is correctly dropped
 on feature enable and disabled, see [strategy tests](https://github.com/kubernetes/kubernetes/blob/23698d3e9f4f3b9738ba5a6fcefd17894a00624f/pkg/registry/apps/statefulset/strategy_test.go#L391-L417).
+
+Feature enablement/disablement test will also be added when graduating to Beta as [TestStatefulSetStartOrdinalEnablement](https://github.com/kubernetes/kubernetes/blob/23698d3e9f4f3b9738ba5a6fcefd17894a00624f/pkg/registry/apps/statefulset/strategy_test.go#L473)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -699,11 +761,15 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-This could happen when we downgrade the kube-controller-manager from maxUnavailable-enabled release to a disabled one,
-but it will not impact running workloads, because `maxUnavailable` only works in rolling update.
+It depends, like
 
-But if a statefulset has a plenty of replicas, when rolling update, it will take more time comparing to
-`maxUnavailable` enabled with a number greater than 1.
+- In a HA cluster, if part of the API servers enabled with this feature gate but the others not, then
+  for already running workloads, they will not be impacted in rolling update because the process is controlled
+  by the statefulset controller.  But for newly created statefulset, their `maxUnavailable` field will
+  be dropped if requested a feature-gate disabled api-server.
+
+- With this feature enabled and a statefulset running into the rolling-update, then we disabled the feature-gate,
+  then this statefulset will be impacted as it will fall into the default behavior, updating a pod at one time.
 
 ###### What specific metrics should inform a rollback?
 
@@ -712,19 +778,26 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-When `maxUnavailable` enabled, and we're rolling update a statefulset, the number of pods brought down should
+- As a normal user, with `maxUnavailable` enabled, and we're rolling update a statefulset, the number of pods brought down should
 equal to the `maxUnavailable`, if not, we should rollback.
+
+- As a administrator(as well for normal user), I can check the new metric `rolling-update-duration-seconds`, if we enabled the feature with
+greater than 1 `maxUnavailable` set for statefulsets, but didn't see the duration fall down, then we may have some problems here.
+This is not precise because rolling-update duration can be impacted by several factors, e.g. pulling down a big, new image, but
+can be some indicators refer to.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 No, but it will be tested manually before merging the PR.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
 No
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
+
 If their StatefulSet rollingUpdate section has the field maxUnavailable specified with
 a value different than 1.
 The below command should show maxUnavailable value:
@@ -732,13 +805,14 @@ The below command should show maxUnavailable value:
 kubectl get statefulsets -o yaml | grep maxUnavailable
 ```
 
-Or refer to the new metric `rolling-update-duration`, it should exist.
+Or refer to the new metric `rolling-update-duration-seconds`, it should exist.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 With feature enabled, set the `maxUnavailable` great than 1, and pay attention to the rolling update pods at a time,
 it should equal to the `maxUnavailable`.
-Or when setting the `maxUnavailable` great than 1, the `rolling-update-duration` should decrease.
+Or refer to the `rolling-update-duration-seconds`, it can give some indicators generally. Like when setting the `maxUnavailable`
+greater than 1, then the duration should descend.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -757,7 +831,9 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-I think it has little relevance with SLOs, but rolling update at a very low speed which impacts the running services.
+Rolling update duration is impacted by a lot of factors, like the container hooks, image size, network, container logics,
+so what we can roughly know here is for each individual statefulset. So generally, if we set the `maxUnavailable` to X, then
+the rolling update duration should reduce X times. Keep in mind that, this is not precise.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -766,11 +842,8 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Component exposing the metric: kube-controller-manager
-    - Metric name: `rolling-update-duration{plugin="PodTopologySpread"}`
-    - Metric name: `schedule_attempts_total{result="error|unschedulable"}`
-
-None.
+  - Metric name: rolling-update-duration-seconds
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -797,11 +870,14 @@ No
 A struct gets added to every StatefulSet object which has three fields, one 32 bit integer and two fields of type string.
 The struct in question is IntOrString.
 
+If we introduce the new metric with Opt-2, then we'll have a new field `rollingUpdateStartTime` with `*Time` type
+in the `StatefulSetStatus`.
+
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
-The controller-manager will see very negligible and almost un-notoceable increase in cpu usage.
+The controller-manager will see very negligible and almost un-noticeable increase in cpu usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -828,14 +904,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-In a multi-master setup, when the cluster has skewed kube-controller-manager, the behaviors may differ.
+Disable the feature-gate when performing rolling-update.
 
 - [Failure mode brief description]
-  - Detection: the `rolling-update-duration` didn't decrease when setting the `maxUnavailable` great than 1 or increased abnormally.
-  - Mitigations: Disable the feature.
+  - Detection: The `maxUnavailabel` is not respected.
+  - Mitigations: If rolling update in parallel is tolerated for application, set the `podManagementPolicy=Parallel`.
   - Diagnostics: Set the logger level great than 4.
-  - Testing: No testing, because the rolling update duration is hard to measure, it can be impact by a lot of things,
-  like the master performance.
+  - Testing: We have e2e tests to cover the right behaviors.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
