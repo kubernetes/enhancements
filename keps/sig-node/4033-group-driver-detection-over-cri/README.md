@@ -276,7 +276,10 @@ cgroupDriver option has been deprecated and will be dropped in a future release.
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeConfig is queried before initializing the
 kubelet internal container-manager which is responsible for kubelet-side cgroup
-management.
+management. If supported by the runtime, RuntimeConfig query is expected to
+succeed, an error (error response or timeout) is regarded as a failed
+initialization of the runtime service and kubelet will exit with an error
+message and an error code.
 
 ### Test Plan
 
