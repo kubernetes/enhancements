@@ -114,7 +114,7 @@ spec:
 ```
 
 - Restart/Update this deployment
-- A delete pod event is sended to notifies the kubelet and the Endpoint Controller (which manages the Service endpoints) simultaneously.
+- A delete pod event is sent to notify the kubelet and the Endpoint Controller (which manages the Service endpoints) simultaneously.
 - PreStop hook starts, which will delay the shutdown sequence by 5 seconds. During this time, the Endpoint Controller will remove the terminating pod, and the traffic will be sent to other running pods.
 - When the timeout of 5 seconds ended, the old pod is killed, and new pods will be created. There is no traffic sent to the terminating pod during the update.
 
@@ -146,7 +146,7 @@ We propose adding a new sleep action for the PreStop hook, which will pause the 
 ### User Stories (Optional)
 
 #### Story 1
-As a Kubernetes user, I want to configure my container to sleep for a specific duration during terminating with grace.And I want to do it without needing a sleep binary in my image.
+As a Kubernetes user, I want to configure my container to sleep for a specific duration during graceful termination and I want to do it without needing a sleep binary in my image.
 
 #### Story 2
 As a Kubernetes user, I want to configure my nginx service to be able to run with zero downtime.Previously,I use `command: ["/bin/sh","-c","sleep 20"]` in prestop hook with exec command to delay the shutdown,and let the Endpoint Controller remove the pod first. But this requires me to have a sleep binary in my image, and I want to do this more conveniently.
@@ -312,7 +312,7 @@ No
 
 The feature can be disabled in Alpha and Beta versions by restarting kube-apiserver with the feature-gate off. In terms of Stable versions, users can choose to opt-out by not setting the sleep field.
 
-In this case, the created pods's sleepAction will not take effect, and the new pod with sleepAction is not allowed to create.
+In this case, the created pods's sleepAction will take effect, and the new pod with sleepAction is not allowed to create.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -328,7 +328,6 @@ Yes. Some unit tests will be designed to test the verification process of the "s
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 The change is opt-in, it doesn't impact already running workloads. 
-But problems with the updated validation logic may cause errors occur during update/crash process.
 
 ###### What specific metrics should inform a rollback?
 
