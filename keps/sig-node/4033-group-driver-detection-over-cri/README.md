@@ -97,6 +97,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -223,20 +225,22 @@ adoption.
 
 ### CRI API
 
-Extend the CRI protocol to inform the kubelet which cgroup driver should be
-used.
+Extend the CRI runtime API to inform the kubelet which cgroup driver should be
+used. A new RuntimeConfig rpc is added to query the information.
 
 ```diff
- message RuntimeStatus {
-     // List of current observed runtime conditions.
-     repeated RuntimeCondition conditions = 1;
-+    // Configuration settings of the runtime. This field contains global
-+    // runtime configuration options that are not specific to runtime handlers.
-+    RuntimeConfiguration configuration = 2;
+ // Runtime service defines the public APIs for remote container runtimes
+ service RuntimeService {
+ ...
++    // RuntimeConfig returns configuration information of the runtime.
++    rpc RuntimeConfig(RuntimeConfigRequest) returns (RuntimeConfigResponse) {}
  }
  
-+message RuntimeConfiguration {
-+    // Configuration information for Linux-based runtimes
++message RuntimeConfigRequestRequest {}
+ 
++message RuntimeConfigResponse {
++    // Configuration information for Linux-based runtimes. This field contains global
++    // runtime configuration options that are not specific to runtime handlers.
 +    LinuxRuntimeConfiguration linux = 1;
 +}
  
@@ -244,17 +248,12 @@ used.
 +    // Cgroup driver to use
 +    CgroupDriver cgroup_driver = 1;
 +}
-+
+ 
 +enum CgroupDriver {
 +    CGGROUPFS = 0;
 +    SYSTEMD = 1;
 +}
 ```
-
-The existing RuntimeStatus message (of the existing Status API endpoint) is
-used as this is being frequently queried by the kubelet, and is a place where
-the runtime tells the Kubelet about its state. The runtime will decide which
-CgroupDriver to choose based on existing methods: its own configuration.
 
 ### Kubelet
 
@@ -265,10 +264,17 @@ will take precedence over cgroupDriver setting from the kubelet config (or
 `--cgroup-driver` command line flag). If the runtime does not provide
 information about the cgroup driver, then kubelet will fall back to using its
 own configuration (`cgroupDriver` from kubeletConfig or the `--cgroup-driver`
-flag).
+flag). Further, the kubeletConfig field and `--cgroup-driver` flag will be
+marked as deprecated, to be dropped when support for the feature is adopted by
+CRI-O and containerd. Usage of the deprecated setting will produce a log
+message, e.g.:
+
+```
+cgroupDriver option has been deprecated and will be dropped in a future release. Please upgrade to a CRI implementation that supports cgroup-driver detection.
+```
 
 Kubelet startup is modified so that connection to the CRI server (container
-runtime) is established and RuntimeStatus is queried before initializing the
+runtime) is established and RuntimeConfig is queried before initializing the
 kubelet internal container-manager which is responsible for kubelet-side cgroup
 management.
 
@@ -416,8 +422,17 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-All CRI implementations support the new cgroupDriver field, and the Kubelet
-drops support for its own CgroupManager field/flag.
+The feature is targeting directly to beta, with the feature gate enabled by
+default.
+
+#### Beta
+
+- [ ] Feature implemented, with the feature gate enabled by default.
+
+#### GA
+
+- [ ] released versions of CRI-O and containerd runtime implementations support the feature
+- [ ] No bugs reported in the previous cycle.
 
 ### Upgrade / Downgrade Strategy
 
@@ -453,7 +468,7 @@ the new field in the CRI API, they just resort to the existing behavior of
 respecting their individual cgroup-driver setting. That is, if the node has a
 container runtime that does not support this field the kubelet will use its
 cgroupDriver setting from kubeletConfig (or `--cgroup-driver` commandline
-flag).  This is also the case if the kubelet does not support the new field:
+flag). This is also the case if the kubelet does not support the new field:
 the information about cgroup driver advertised by the runtime will be just
 ignored by kubelet and it will resort to its own configuration settings. Note:
 this does present a configuration skew risk, but that risk is the same as
@@ -501,8 +516,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-No feature gate required–the fields are all SIG Node internal and have simple
-fallbacks.
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: KubeletCgroupDriverFromCRI
+  - Components depending on the feature gate: kubelet
 
 ###### Does enabling the feature change any default behavior?
 
@@ -513,7 +529,10 @@ automations, so be extremely careful here.
 
 Yes. If/when the runtime is updated to a version that supports this, kubelet
 will ignore the cgroupDriver config option/flag. However, this change in
-behavior should be largely invisible/irrelevant to the user.
+behavior should not cause any breakages (on the contrary, it should fix
+scenarios where the kubelet `--cgorup-driver` setting is incorrectly
+configured). With old versions of the container runtimes (that don't support
+the new field in the CRI API) the default behavior is not changed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -528,11 +547,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-No, though the scope is so small roll back should not be required.
+Yes, through the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A.
+Kubelet starts to use the cgroup driver instructed by the runtime. Potentially
+fixing a broken/misbehaving node if the kubelet cgroupDriver option (or
+`--cgroup-driver` flag) was incorrectly set.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -549,7 +570,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-N/A.
+TBD.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -637,7 +658,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-No metrics likely will expose this.
+No metrics likely will expose this. Examining kubelet logs whould inform the
+that the cgroup driver setting instructed by the runtime is being used.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
