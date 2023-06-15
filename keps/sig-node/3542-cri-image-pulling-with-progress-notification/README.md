@@ -114,10 +114,12 @@ a timeout without download progress is reached. The image pull with progress req
     - time-based
     - size-based
     - none
-  - frequency of the updates (if any) respectively to the granularity type:
-    - every N seconds
-    - every N amount of data downloaded of the total image size, e.g. 1Gi
-
+  - interval of the updates (if any) respectively to the granularity type:
+    - N seconds
+    - N amount of data downloaded of the total image size, e.g. 1Gi
+  - verbosity
+    - summarized - single value, total current download progress against total estimated download size
+    - verbose - summarized plus additionally per layer information of download progress against layer size
 
 If / when it is possible to reliably determine percentage of the progress in the runtime,
 percentage-based granularity type can be introduced then.
@@ -125,13 +127,109 @@ percentage-based granularity type can be introduced then.
 If the client did not specify the preferred notification granularity, default values should be used,
 for instance every Gibibyte downloaded or every 60 seconds of time spent downloading an image.
 
-For kubelet we propose the default granularity to be time-based with 30 seconds interval, so
-Pod object will get an event with image pulling progress every 30 seconds, and setting minimum 
-frequency limits:
-- 10 seconds for the time-baesd frequency
-- 1 Gibibyte for size-based frequency
+Kubelet would publish received progress information as events to Pod object, for instance:
+```shell
+kubectl describe pod example-1
+...
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Normal   Scheduled         5s    default-scheduler  Successfully assigned default/example to node1
+  Normal   Pulled            51s   kubelet            Pulling Container image "registry.k8s.io/e2e-test-images/busybox:1.29-2"
+  Normal   Pulled            21s   kubelet            Pulling Container image "registry.k8s.io/e2e-test-images/busybox:1.29-2" 1Gi of 1.4Gi
+  Normal   Created           11s   kubelet            Created container container1
+  Normal   Started           11s   kubelet            Started container container1
 
-The default no-progress timeout for kubelet is suggested to be 10 seconds.
+```
+
+Command line tools would visualize it as typical progress rendering in shell terminal, for instance:
+```shell
+6e494387c901caf429c1bf77bd92fb82b33a68c0e19f6d1aa6a3ac8d27a7049d:  done    |++++++++++++++++++++++++++++++++++++++|
+1b0a26bd07a3d17473d8d8468bea84015e27f87124b283b91d781bce13f61370:  done    |+++++++++++++++++++++++++++-----------|
+71d064a1ac7d46bdcac82ea768aba4ebbe2a05ccbd3a4a82174c18cf51b67ab7:  done    |+++++++++++++++++++++++++++++++++++---|
+b539af69bc01c6c1c1eae5474a94b0abaab36b93c165c0cf30b7a0ab294135a3:  done    |+++++++++++++++++++++++++++++++++++++-|
+```
+
+### Defaults
+
+#### Kubelet
+
+For kubelet we propose:
+- default granularity type to be time-based
+- default interval to be 30 seconds
+- verbosity to be summarized
+- default no-progress timeout to be 10 seconds
+- in kubelet-config enforcing minimum interval limits:
+  - 10 seconds for the time-baesd granularity
+  - 1 Gibibyte for size-based granularity
+
+
+Example Kubelet image pull with progress request:
+```
+{
+    request: {...},
+    granularity_type: "time",
+    interval: 30,
+    no_progress_timeout: 10,
+    verbosity: false,
+}
+```
+
+Example image pull with progress response to Kubelet:
+```
+{
+  image_ref: "registryA.com/repo/imageB:tagC",
+  offset: 1073741824,
+  total: 4294967296,
+}
+```
+
+Example Pod event test published by Kubelet when progress report received:
+```
+Pulling Container image registryA.com/repo/imageB:tagC: 1Gi of 4Gi
+```
+
+#### Command line tools
+
+For command line tools we propose:
+- default granularity type to be time-based
+- default interval to be 1 second
+- verbosity to be verbose
+- default no-progress timeout to be 0 (disabled)
+
+Example command line tool image pull with progress request:
+```
+{
+    request: {...},
+    granularity_type: "time",
+    interval: 1,
+    no_progress_timeout: 0,
+    verbosity: true,
+}
+```
+
+Example image pull with progress response to command line tool:
+```
+{
+  image_ref: "registryA.com/repo/imageB:tagC",
+  offset: 2147483648,
+  total: 8589934592,
+  details: [
+    { layer: "e023e0e48e6e29e90e519f4dd356d058ff2bffbd16e28b802f3b8f93aa4ccb17",
+      offset: 1073741824,
+      total: 4294967296,
+      stage: "downloading",
+    },
+    { layer: "6fbdf253bbc2490dcfede5bdb58ca0db63ee8aff565f6ea9f918f3bce9e2d5aa",
+      offset: 1073741824,
+      total: 4294967296,
+      stage: "downloading",
+    },
+  ]
+}
+```
+
+### Kubelet config
 
 The granularity type, interval, and no-progress timeout should be configurable through kubelet-config.
 
@@ -168,10 +266,7 @@ Suggested new Kubelet config fields are these:
        NoProgressTimeout int32 `json:"NoProgressTimeout,omitempty"`
 
 
-This will be easy to use in CRI-compliant command-line-tools as well as kubelet to monitor the
-progress and publish events to the Pod object
-
-See design detail below.
+For exactl API objects structure, see [API design Details](#design-details) below
 
 ### User Stories (Optional)
 
@@ -205,18 +300,26 @@ be shortened to a no-progress timeout set in ImagePullWithProgress call.
 
 ### Notes/Constraints/Caveats (Optional)
 
-There should be a guidance on how the runtime should report the progress, for instance
-unpacking phase should be considered (see below).
+It is fairly impossible to get progress about unpacking the image layers, therefore for
+- kubelet:  this operation can be silent without progress reports
+- command line tools - stage of unpacking can be reported with verbose option in request
 
-Pulling an image consists of two actions - downloading particular layer of the image
-and unpacking it. This repeats for every layer in the image.
-
-There is a technology that allows starting the container while it's not yet fully downloaded.
-This should not conflict with the notifications about the image downloading progress, in such case
-the Pod object will have events with pulling progress following the event of container starting
-until the image downloading completes fully, if at all.
-
-The size-granularity reporting shold preferably be in apimachinery quantity value, e.g. 970Mi.
+In case of lazy pulling, which allows starting the container while its image not yet fully downloaded,
+the minimum amount of data the runtime needs to pull (as opposed to total / complete image size)
+in order to start the container should be considered the total amount of download being in progress.
+For instance, if the complete container image consists of 10 layers, 1 GiB per layer, and runtime
+can start the container with only 4 layers pulled, then 4GiB should be considered the total download
+amount and the progress message to Kubelet at hypothetical 1GiB progres point would look like:
+```
+{
+  image_ref: "registryA.com/repo/imageB:tagC",
+  offset: 1073741824,
+  total: 4294967296,
+}
+```
+When downloading the minimum needed layers to start the container is done, the progress reports
+stream can be closed and pull operation can proceed silently in the runtime without notifications
+sent to Kubelet for the rest of the image being lazily pulled as needed.
 
 If ImagePullProgress is enabled for kubelet but runtime does not support it, the fallback should
 use regular silent ImagePull API call.
@@ -263,6 +366,8 @@ or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be 
         // For size based granularity, this is the number of bytes received between reports. If set to 0, then runtime default report interval is used.
         UInt64Value interval = 3;
         UInt32Value no_progress_timeout = 4;
+        // Summarized (false) or detailed (true) progress reports
+        bool verbosity = 5;
     }
 
 If the connection succeeds, the PullImageWithProgress() will return a gRPC stream to the caller and let it
@@ -277,6 +382,8 @@ much image has been downloaded so far.
         UInt64Value offset = 2;
         // Total size of the image.
         UInt64Value total = 3;
+        // Detailed per-layer download progress information, format to be defined later
+        string details = 3;
     }
 
 
