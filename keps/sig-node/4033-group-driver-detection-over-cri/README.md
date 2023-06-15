@@ -97,6 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -436,17 +437,23 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-The feature is targeting directly to beta, with the feature gate enabled by
-default.
+#### Alpha
+
+- [ ] Feature implemented behind a feature flag, fallback to old behavior if flag is enabled but runtime support not present.
+- [ ] Initial unit tests completed and enabled
+
 
 #### Beta
 
 - [ ] Feature implemented, with the feature gate enabled by default.
+- [ ] Released versions of CRI-O and containerd runtime implementations support the feature
+- [ ] Drop fallback to old behavior. CRI implementations expected to have support.
 
 #### GA
 
-- [ ] released versions of CRI-O and containerd runtime implementations support the feature
 - [ ] No bugs reported in the previous cycle.
+- [ ] Remove fallback behavior
+- [ ] Remove feature gate
 
 ### Upgrade / Downgrade Strategy
 
@@ -461,6 +468,11 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+The fallback behavior specified in alpha will prevent the majority of regressions, as Kubelet will choose a cgroup driver,
+same as it used to before this KEP, even when the feature gate is on.
+
+The feature gate is another layer of protection, requiring admins to specifically opt-into this behavior.
 
 ### Version Skew Strategy
 
@@ -544,7 +556,7 @@ automations, so be extremely careful here.
 Yes. If/when the runtime is updated to a version that supports this, kubelet
 will ignore the cgroupDriver config option/flag. However, this change in
 behavior should not cause any breakages (on the contrary, it should fix
-scenarios where the kubelet `--cgorup-driver` setting is incorrectly
+scenarios where the kubelet `--cgroup-driver` setting is incorrectly
 configured). With old versions of the container runtimes (that don't support
 the new field in the CRI API) the default behavior is not changed.
 
