@@ -7,6 +7,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Defaults](#defaults)
+    - [Kubelet](#kubelet)
+    - [Command line tools](#command-line-tools)
+  - [Kubelet config](#kubelet-config)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -455,7 +459,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
-- CRI extended with the new call
+- CRI extended with the new call and parameter for old call
 - PoC feature implemented in kubelet behind a feature flag
 - PoC feature is implemented for either cri-o or containerd runtime, does not have to be released
 - Initial e2e tests completed and enabled
