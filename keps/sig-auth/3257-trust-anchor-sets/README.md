@@ -510,8 +510,8 @@ point to it.
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
@@ -532,9 +532,39 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-(I'm not yet sure precisely which packages will need to be adjusted.)
-
-- `<package>`: `<date>` - `<test coverage>`
+| Package | Date | Coverage |
+| ------- | ---- | -------- |
+| k8s.io/api/                                                            | 2023-06-15 | (not listed) |
+| k8s.io/api/certificates/v1alpha1                                       | 2023-06-15 | (not listed) |
+| k8s.io/api/core/v1                                                     | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/cmd/kube-apiserver/app                               | 2023-06-15 | 32% |
+| k8s.io/kubernetes/pkg/api/pod                                          | 2023-06-15 | 78%|
+| k8s.io/kubernetes/pkg/apis/certificates/install                        | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/apis/certificates                                | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/apis/certificates/v1alpha1                       | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/apis/certificates/validation                     | 2023-06-15 | 97% |
+| k8s.io/kubernetes/pkg/apis/core                                        | 2023-06-15 | 80% |
+| k8s.io/kubernetes/pkg/apis/core/validation                             | 2023-06-15 | 84% |
+| k8s.io/kubernetes/pkg/controller/volume/attachdetach                   | 2023-06-15 | 65% |
+| k8s.io/kubernetes/pkg/controller/volume/expand                         | 2023-06-15 | 30% |
+| k8s.io/kubernetes/pkg/controller/volume/persistentvolume               | 2023-06-15 | 80% |
+| k8s.io/kubernetes/pkg/controlplane/                                    | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/features                                         | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/kubeapiserver                                    | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/kubeapiserver/options                            | 2023-06-15 | 79% |
+| k8s.io/kubernetes/pkg/kubelet                                          | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/kubelet/clustertrustbundle                       | 2023-06-15 | (newly added) |
+| k8s.io/kubernetes/pkg/printers/internalversion                         | 2023-06-15 | 71% |
+| k8s.io/kubernetes/pkg/registry/certificates/clustertrustbundle/storage | 2023-06-15 | (newly added) |
+| k8s.io/kubernetes/pkg/registry/certificates/clustertrustbundle         | 2023-06-15 | (newly added) |
+| k8s.io/kubernetes/pkg/registry/certificates/rest                       | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/registry/registrytest                            | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/pkg/volume                                           | 2023-06-15 | 46% |
+| k8s.io/kubernetes/pkg/volume/projected                                 | 2023-06-15 | 69% |
+| k8s.io/kubernetes/pkg/volume/testing                                   | 2023-06-15 | (not listed) |
+| k8s.io/kubernetes/plugin/pkg/admission/certificates/ctbattest          | 2023-06-15 | (newly added) |
+| k8s.io/kubernetes/plugin/pkg/admission/serviceaccount                  | 2023-06-15 | 89% |
+| k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/     | 2023-06-15 | (not listed) |
 
 ##### Integration tests
 
