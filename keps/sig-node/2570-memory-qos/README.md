@@ -8,6 +8,7 @@
 - [Proposal](#proposal)
     - [Alpha v1.22](#alpha-v122)
     - [Alpha v1.27](#alpha-v127)
+    - [Beta v1.28](#beta-v128)
   - [User Stories (Optional)](#user-stories-optional)
     - [Memory Sensitive Workload](#memory-sensitive-workload)
     - [Node Availability](#node-availability)
@@ -214,7 +215,7 @@ Some more examples to compare memory.high using Alpha v1.22 and Alpha v1.27 are 
 
 ###### Quality of Service for Pods
 
-In addition to the change in formula for memory.high, we are also adding the support for memory.high to be set as per `Quality of Service(QoS) for Pod` classes. Based on user feedback in Alpha v1.22, some users would like to opt-out of MemoryQoS on a per pod basis to ensure there is no early memory throttling. By making user's pods guaranteed, they will be able to do so. Guaranteed pod ,by definition, are not overcommitted, so memory.high does not provide significant value. 
+In addition to the change in formula for memory.high, we are also adding the support for memory.high to be set as per `Quality of Service(QoS) for Pod` classes. Based on user feedback in Alpha v1.22, some users would like to opt-out of MemoryQoS on a per pod basis to ensure there is no early memory throttling. By making user's pods guaranteed, they will be able to do so. Guaranteed pod, by definition, are not overcommitted, so memory.high does not provide significant value.
 
 Following are the different cases for setting memory.high as per QOS classes:
 1. Guaranteed
@@ -270,6 +271,10 @@ Alternative solutions that were discussed (but not preferred) before finalizing 
   * Memory QOS complies with QOS which is a wider known concept. 
   * It is simple to understand as it requires setting only 1 kubelet configuration for setting memory throttling factor.
   * It doesn't involve API changes, and doesn't expose low-level detail to customers.
+
+#### Beta v1.28
+The feature is graduated to Beta in v1.28. Its implementation in Beta is same as Alpha
+v1.27.
 
 ### User Stories (Optional)
 #### Memory Sensitive Workload
@@ -485,6 +490,9 @@ The test will be reside in `test/e2e_node`.
 - Metrics and graphs to show the amount of reclaim done on a cgroup as it moves from below-request to above-request to throttling
 - Memory QoS is covered by unit and e2e-node tests
 - Memory QoS supports containerd, cri-o and dockershim
+- Expose memory events e.g. memory.high field of memory.events which can inform
+  how many times memory.high was breached and the cgroup was throttled.
+  https://docs.kernel.org/admin-guide/cgroup-v2.html
 
 #### GA Graduation
 - [cgroup_v2](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2) is in `GA`
@@ -538,7 +546,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes, the kubelet will set `memory.min` for Guaranteed and Burstable pod/container level cgroup. It also will set `memory.high` for burstable container, which may cause memory allocation throttle. `memory.min` for qos or node level cgroup will be set when `--cgroups-per-qos` or `--enforce-node-allocatable` is satisfied.
+Yes, the kubelet will set `memory.min` for Guaranteed and Burstable pod/container level cgroup. It also will set `memory.high` for burstable and best effort containers, which may cause memory allocation to be slowed down is the memory usage level in the containers reaches `memory.high` level. `memory.min` for qos or node level cgroup will be set when `--cgroups-per-qos` or `--enforce-node-allocatable` is satisfied.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -568,6 +576,11 @@ Yes, some unit tests are exercised with the feature both enabled and disabled to
 <!--
 This section must be completed when targeting beta to a release.
 -->
+N/A
+There's no API change involved. MemoryQos is a kubelet level flag, that will be enabled by default in Beta.
+It doesn't require any special opt-in by the user in their PodSpec.
+
+The kubelet will reconcile `memory.min/memory.high` with related cgroups depending on whether the feature gate is enabled or not separately for each node.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -580,6 +593,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+Already running workloads will not have `memory.min/memory.high` set at Pod level. Only `memory.min` will be
+set at Node level cgroup when the kubelet restarts. The existing workloads will be impacted only when kernel
+isn't able to maintain at least `memory.min` level of memory for the non-guaranteed workloads within the
+Node level cgroup.
 
 ###### What specific metrics should inform a rollback?
 
@@ -601,6 +618,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No
 
 ### Monitoring Requirements
 
@@ -619,6 +637,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+An operator could run ls `/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod<SOME_ID>.slice` on a node with cgroupv2 enabled to confirm the presence of `memory.min` file which tells us that the feature is in use by the workloads.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -630,13 +650,15 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
+- [] Events
   - Event Reason: 
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: Kernel memory events will be available in kubelet logs via cadvisor.
+  These events will inform about the number of times `memory.min` and `memory.high` 
+  levels were breached.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -654,6 +676,7 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+N/A. Same as when running without this feature.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -665,8 +688,8 @@ Pick one more of these and delete the rest.
   - Metric name:
   - [Optional] Aggregation method:
   - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: Not a service
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -674,6 +697,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No
 
 ### Dependencies
 
@@ -697,6 +721,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+The container runtime must also support cgroup v2
 
 ### Scalability
 
@@ -835,7 +860,8 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 - 2020/03/14: initial proposal
 - 2020/05/05: target Alpha to v1.22
-
+- 2023/03/03: target Alpha v2 to v1.27
+- 2023/06/14: target Beta to v1.28
 ## Drawbacks
 
 <!--
