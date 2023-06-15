@@ -330,6 +330,15 @@ extending the production code to implement this enhancement.
 
 - `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2023-06-15` - `66.1%`
 
+Kubelet unit tests that use the
+[fake_runtime](https://github.com/kubernetes/cri-api/blob/master/pkg/apis/testing/fake_runtime_service.go)
+will be updated to verify the Kubelet is correctly inheriting the cgroup
+driver:
+
+- If CRI returns "Not Implemented", Kubelet falls back to its own internal cgroup driver
+- If CRI returns an error, Kubelet fails to run
+- If CRI returns the cgroup driver, Kubelet overrides its cgroup driver to use the one returned by CRI.
+
 ##### Integration tests
 
 <!--
