@@ -158,10 +158,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -1447,6 +1447,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
+No prerequisites have been identified.
+
 ##### Unit tests
 
 <!--
@@ -1468,9 +1470,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2022-06-13` - `66.8%`
-- `k8s.io/kubernetes/pkg/apis/core/validation/validation.go`: `2022-06-13` - `82.1%`
-- `k8s.io/kubernetes/pkg/scheduler`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2023-06-16` - `66.§%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2023-06-16` - `83.5%`
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2023-06-16` - `77.9%`
 
 ##### Integration tests
 
@@ -1709,7 +1711,7 @@ well as the [existing list] of feature gates.
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2054,6 +2056,27 @@ This through this both in small and large cases, again with respect to the
 -->
 
 No, this is not expected.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+Not on Kubernetes side. That should not happen as the feature is about API
+changes and related changes in the Kubernetes components, requiring no new
+resources (except for a tiny amount of cpu and memory becauxe of the added
+code).
+
+However, a severely buggy implementation on the CRI runtime side might cause
+resource exhaustion (of basically any kind). In this case the only plausible
+mitigation on Kubernetes side is to disable the feature.
 
 ### Troubleshooting
 
