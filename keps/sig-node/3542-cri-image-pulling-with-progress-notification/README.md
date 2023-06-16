@@ -340,6 +340,9 @@ Intention of this KEP's CRI extension is to provide not-so-frequent updates for 
 a minute), while having a possibility to have more-frequent updates for cli tools (e.g. once a
 second).
 
+Documentation should be updated to reflect new FeatureGates, Kubelet config options, and performance
+overhead for reporting progress from image pulls.
+
 Runtime can be such that does not support image pull progress reporting. In this case fallback to
 regular image pulling call should happen on client side (kubelet, cli tool, other entities
 requesting image to be pulled from runtime).
@@ -873,8 +876,24 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Should not.
+Using the no-progress timeout will shorten the time to fail when the target image cannot be downloaded and no
+explicit network error is in place (when actual network error is in place, there's hardly any delay until failure).
 
+By default, for K8s 1.27 Kubelet pulls images sequentially, in this default configuration the
+amount of gRPC messages between runtime and Kubelet will increase by up to `1 per second`.
+
+The same amount of API calls from Kubelet to API-server to deliver the Pod event will increase, but
+per Node, meaning total API-server load will increase by `(1 x number of worker nodes) per second`.
+
+Starting from [1.27 feature of `serializeImagePulls` is available](https://kubernetes.io/docs/concepts/containers/images/#maximum-parallel-image-pulls)
+
+> if `serializeImagePulls is set to False, the Kubelet defaults to no limit on the maximum number of images being pulled at the same time...
+
+If `maxParallelImagePulls` is not set to a positive number, the Kubelet will not limit the number
+of parallel images pulled at one time, so the maximum number images pulled will become equal to
+the maximum number of containers per cluster, [which is 300 000](https://kubernetes.io/docs/setup/best-practices/cluster-large/)?
+
+More realistic figures and simulation can be done later.
 <!--
 Look at the [existing SLIs/SLOs].
 
