@@ -43,7 +43,7 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -51,8 +51,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -284,9 +284,9 @@ It will silently drop the sleep prestop hook if someone wants to add that to the
 Both kubelet and kube-apiserver will need enable the feature gate for the full featureset
 to be present. If both components disable the feature gate, this feature will be cleanly unavailable.
 
-If only the kube-apiserver enable this feature, kubelet won't understand the new field and may either ignore it or raise an error.
+If only the kube-apiserver enable this feature, validation will pass, but kubelet won't understand the new field and will ignore it when pod is terminating.
 
-If only the kubelet enable this feature, when creating/updating a resource with the sleepAction, the API server will reject the request with an error indicating that the field is unknown or unsupported.
+If only the kubelet enable this feature, when creating/updating a resource with the sleepAction, this field will be silently dropped.
 
 ## Production Readiness Review Questionnaire
 
@@ -382,8 +382,7 @@ No
 
 ###### Will enabling / using this feature result in any new API calls?
 
-LifecycleHandler objects have one new fields per version they define, increasing their size slightly.
-See `Implementation` part
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -395,7 +394,8 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No
+LifecycleHandler objects have one new fields per version they define, increasing their size slightly.
+See `Implementation` part
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
