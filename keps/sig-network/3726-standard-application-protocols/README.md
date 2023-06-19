@@ -146,6 +146,7 @@ Those common protocols will be well defined strings prefixed with ‘kubernetes.
 - 'kubernetes.io/h2c'
 - 'kubernetes.io/ws'
 - 'kubernetes.io/wss'
+- 'kubernetes.io/raw'
 
 ### Risks and Mitigations
 
@@ -180,6 +181,7 @@ type ServicePort struct {
   //   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
   //   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
   //   * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
+  //   * 'kubernetes.io/raw' - Traffic to this port is the protocol value defined by this port's `protocol` field. (ie. TCP/UDP/SCTP)
   //
   // * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
@@ -210,9 +212,6 @@ The proposed followup work might address this problem also when we turn the fiel
 - To support implementations interoperability with different domain prefixed protocols (or a mix domain prefixed and non prefixed protocol) for the same port we need to turn `AppProtocol` to a list.
 
 It is likely to be an API change but design details TBD.
-
-- Some implementations are trying to guess the application protocol in absence of `appProtocol`. We should consider adding a new protocol like `kubernetes.io/raw` to the collection that would instructs implementations to process requests as raw.
-We need to look at combination of `appProtocol: kubernetes.io/raw` and the different supported port protocols (TCP, UDP, SCTP).  
 
 ### Documentation change
 
