@@ -47,13 +47,13 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -430,7 +430,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet>`: `2023-06-19` - `66.6`
 
 ##### Integration tests
 
@@ -441,8 +441,6 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
-
-- <test>: <link to test coverage>
 
 ##### e2e tests
 
@@ -456,7 +454,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- with fake runtime, image service to make sure failover to regular ImagePull happens
+if runtime has ImagePullWithProgress not implemented
+- with fake runtime, image service to ensure no-progress timeout error is handled
+
 
 ### Graduation Criteria
 

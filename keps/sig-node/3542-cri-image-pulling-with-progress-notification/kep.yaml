@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2022-09-23
 reviewers:
   - "@kubernetes/sig-node-api-reviews"
