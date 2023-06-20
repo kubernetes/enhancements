@@ -678,7 +678,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: UserNamespacesSupport
+  - Feature gate name: UserNamespacesStatelessPodsSupport
   - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
