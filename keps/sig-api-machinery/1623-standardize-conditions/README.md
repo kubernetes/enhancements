@@ -53,7 +53,7 @@ checklist items _must_ be updated for the enhancement to be released.
 
 ## Summary
 
-While many Kuberentes APIs have `.status.conditions`, the schema of `condition` varies a lot between them.
+While many Kubernetes APIs have `.status.conditions`, the schema of `condition` varies a lot between them.
 There is very little commonality at the level of serialization, proto-encoding, and required vs optional.
 Conditions are central enough to the API to make a common golang type with a fixed schema.
 The schema can be a strong recommendation to all API authors.
