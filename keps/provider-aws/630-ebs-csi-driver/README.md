@@ -101,6 +101,6 @@ To downgrade the driver, perform following steps:
 ## Implementation History
 * 2018-11-26 Initial proposal to SIG
 * 2018-11-26 Initial KEP draft
-* 2018-12-03 Alpha release with kuberentes 1.13
+* 2018-12-03 Alpha release with kubernetes 1.13
 * 2018-03-25 Beta release with kubernetes 1.14
 
