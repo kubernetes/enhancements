@@ -129,7 +129,7 @@ Require addition of E2E tests using the clone feature of the CSI host provisione
 
 Currently the only feature gate related to DataSources is the VolumeSnapshotDataSource gate.  This KEP would require an additional Data Source related feature gate `VolumeDataSource`.  Going forward we may continue to add additional feature gates for new DataSource types.  This KEP proposes that feature for Alpha, then following through the standard process for graduation based on feedback and stability during it's alpha release cycle.
 
-Given that the only implementation changes in Kuberenetes is to enable the feature in the API (all of the actual Clone implementation is handled by the CSI Plugin and back end device) the main criteria for completion will be successful implementation and agreement from the CSI community regarding the Kubernetes API.
+Given that the only implementation changes in Kubernetes is to enable the feature in the API (all of the actual Clone implementation is handled by the CSI Plugin and back end device) the main criteria for completion will be successful implementation and agreement from the CSI community regarding the Kubernetes API.
 
 ## Implementation History
 
