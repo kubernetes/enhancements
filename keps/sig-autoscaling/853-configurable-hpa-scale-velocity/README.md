@@ -358,7 +358,7 @@ The __“Stabilization Window"__ as a result becomes an alias for the `behavior.
 
 For smooth transition it makes sense to set the following default values:
 
-- `behavior.scaleDown.stabilizationWindowSeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
+- `behavior.scaleDown.stabilizationWindowSeconds = 300`, wait 5 min for the smallest recommendation and then scale down to that value.
 - `behavior.scaleUp.stabilizationWindowSeconds = 0`, do not gather recommendations, instantly scale up to the calculated number of replicas
 - `behavior.scaleUp.policies` has the following policies
    - Percentage policy
