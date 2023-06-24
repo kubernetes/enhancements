@@ -77,4 +77,4 @@ We should verify the automatic creation of quota and see if it causes any proble
 ## Implementation History
 
 - ResourceQuotaScopeSelectors was introduced as alpha in kubernetes 1.11
-- In Kuberenetes 1.12 this feature was promoted to Beta
+- In Kubernetes 1.12 this feature was promoted to Beta
