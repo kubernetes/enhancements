@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3314: CSI Changed Block Tracking 
+# KEP-3314: CSI Changed Block Tracking
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -83,12 +83,21 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [User Stories)](#user-stories)
+    - [Full snapshot backup](#full-snapshot-backup)
+    - [Incremental snapshot backup](#incremental-snapshot-backup)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [The SnapshotMetadata Service API](#the-snapshotmetadata-service-api)
+  - [Kubernetes Components](#kubernetes-components)
+  - [Custom Resources](#custom-resources)
+    - [CSISnapshotSessionAccess](#csisnapshotsessionaccess)
+    - [CSISnapshotSessionService](#csisnapshotsessionservice)
+    - [CSISnapshotSessionData](#csisnapshotsessiondata)
+  - [The Snapshot Session Manager](#the-snapshot-session-manager)
+  - [The External Snapshot Session Sidecar](#the-external-snapshot-session-sidecar)
+  - [The SP Snapshot Session Service](#the-sp-snapshot-session-service)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -133,10 +142,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -174,9 +183,15 @@ updates.
 -->
 
 This KEP proposes new CSI API that can be used to identify the list of changed
-blocks between pairs of CSI volume snapshots. CSI drivers can implement this API 
+blocks between pairs of CSI volume snapshots. CSI drivers can implement this API
 to expose their changed block tracking (CBT) services to enable efficient and
 reliable differential backup of data stored in CSI volumes.
+
+Kubernetes backup applications directly use this API to stream changed
+block information, bypassing and posing no additional load on the Kubernetes
+API server.
+The mechanism that enables this direct access utilizes a proxy service sidecar
+to shield the CSI drivers from managing the individual Kubernetes clients.
 
 ## Motivation
 
@@ -189,15 +204,15 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Changed block tracking (CBT) techniques have been used by commercial backup 
-systems to efficiently back up large amount of data in block volumes. They 
-identify block-level changes between two arbitrary pair of snapshots of the 
-same block volume, and selectively back up what has changed between the two 
-checkpoints. This type of differential backup approach is a lot more efficient 
-than backing up the entire volume. 
+Changed block tracking (CBT) techniques have been used by commercial backup
+systems to efficiently back up large amount of data in block volumes. They
+identify block-level changes between two arbitrary pair of snapshots of the
+same block volume, and selectively back up what has changed between the two
+checkpoints. This type of differential backup approach is a lot more efficient
+than backing up the entire volume.
 
-This KEP proposes a design to extend the Kubernetes CSI framework to utilize 
-these CBT features to bring efficient, cloud-native data protection to 
+This KEP proposes a design to extend the Kubernetes CSI framework to utilize
+these CBT features to bring efficient, cloud-native data protection to
 Kubernetes users.
 
 ### Goals
@@ -207,13 +222,11 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Provide a secure, idiomatic CSI API to efficiently identify changes between 
+* Provide a secure, idiomatic CSI API to efficiently identify changes between
 two arbitrary pairs of CSI volume snapshots of the same block volume.
-* Relay large amount of CBT data from the storage provider back to the user 
-without exhausting cluster resources, nor introducing flaky resource spikes.
+* Relay large amount of snapshot metadata from the storage provider without
+loading the Kubernetes API server.
 * This API is an optional component of the CSI framework.
-* Provide CBT support for both block as well as file system mode (backed by block
-volume) persistent volumes.
 
 ### Non-Goals
 
@@ -222,10 +235,20 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-* Retrieval of the actual changed data blocks is outside the scope of this KEP.
-The proposed API only returns the metadata that helps to identify the actual data
-blocks
-* Support of file changed list tracking for network file shares is out-of-scope.
+* Specify how data is written to the block volume in the first place.
+  > The volume could be attached to a pod with either **Block** or **Filesystem**
+    [volume modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-mode).
+* Provide an API to retrieve the data blocks of a snapshot.
+  > The "snapshot access session" mechanism proposed here could conceivably
+    support a future companion **snapshot data retrieval service**, but
+    that is not in the scope of this KEP.
+    It is assumed that a snapshot's data blocks can be retrieved by creating a
+    **PersistentVolume** for the snapshot, launching a pod with this volume
+    attached in **Block** volume mode, and then reading the individual
+    blocks from the raw block device.
+
+* Support of file changed list tracking for network file shares is not
+addressed by this proposal.
 
 ## Proposal
 
@@ -238,7 +261,64 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+The proposal involves a new CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+[gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition)
+to retrieve metadata on the allocated blocks of a single snapshot
+or the changed blocks between a pair of snapshots of the same volume.
+
+A Kubernetes backup application
+creates a [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess),
+specifying a set of
+[VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/)
+objects.
+Typically, these VolumeSnapshot objects belong some other application that is
+being backed up, and the backup application has been authorized
+(via a [ServiceAccount](https://kubernetes.io/docs/concepts/security/service-accounts/))
+to access these objects.
+When the state of this CR becomes **Ready**, it will return the TCP endpoint
+and CA certificate of a
+[SnapshotMetadata Service](#the-snapshotmetadata-service-api), and an opaque
+"snapshot session token".
+
+The backup application will establish trust with the specified CA, and
+then use the CSI
+[SnapshotMetadata Service](#the-snapshotmetadata-service-api) to make a TLS gRPC call,
+providing the opaque session token and the Kubernetes names of the
+[VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/)
+objects as parameters.
+The gRPC call will return a gRPC stream through which the metadata can be recovered.
+
+The gRPC call does not involve the Kubernetes API service, but instead
+is directed to a proxy service in the community provided
+[external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+that communicates with the SP provided service over a UNIX domain socket.
+The sidecar is responsible for validating the opaque snapshot session
+token and the parameters used in each RPC call.
+After this it will translates the Kubernetes object names into SP object names
+and then forward the RPC call to the SP service.
+
+The [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess) is animated
+by a
+[Snapshot Session Manager](#the-snapshot-session-manager)
+which provides a validating webhook
+for authorization and a controller to set up the snapshot session
+and manage the lifecycle of the CR, including deleting it when it expires.
+Additional simple CRs are used to advertise the existence of a proxy
+sidecar to the manager ([CSISnapshotSessionService CR](#csisnapshotsessionservice)),
+and to track the opaque snapshot session token and the snapshot objects
+authorized for use in the session ([CSISnapshotSessionData CR](#csisnapshotsessiondata)).
+
+[Kubernetes Role-Based Access Control](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+is used to secure access to all these CRs, restricting visibility to authorized
+backup applications only,
+and even providing the ability to isolate multiple CSI
+drivers from each other with appropriately created role bindings.
+This is accomplished by providing
+[ClusterRoles](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole)
+for a backup application ([])
+
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -247,11 +327,16 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
 
-#### Story 2
+#### Full snapshot backup
 
-### Notes/Constraints/Caveats (Optional)
+@TODO Prasad
+
+#### Incremental snapshot backup
+
+@TODO Prasad
+
+### Notes/Constraints/Caveats
 
 <!--
 What are the caveats to the proposal?
@@ -259,6 +344,23 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+This proposal requires a backup application to directly use a CSI
+gRPC API.
+This was necessary to not place a load on the Kubernetes API server
+that would be proportional to the number of allocated blocks in a volume
+snapshot.
+
+[The SP Snapshot Session Service](#the-sp-snapshot-session-service)
+must be capable of serving metadata on a
+[VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/)
+concurrently with read access to a
+[Persistent Volume](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+created for the same VolumeSnapshot.
+This is because a backup application has to mount the PersistentVolume
+in Block mode to read the raw snapshot data blocks in order to archive them,
+and it is highly likely that this read/archive loop will be
+driven by the stream of snapshot block metadata.
 
 ### Risks and Mitigations
 
@@ -273,6 +375,106 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+The main vulnerabilities of this proposal are:
+- That the snapshot session inadvertently provides an entity with the
+  authority to create a
+  [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess)
+  indirect access to otherwise inaccessible volume snapshots by simply naming
+  them in the CR.
+- That the opaque snapshot session token returned by a
+  [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess)
+  be spoofed by a malicious actor.
+  The purpose of this token and the steps taken to protect it are
+  described in detail below.
+
+This proposal relies on the following Kubernetes security mechanisms to mitigate
+the issues above:
+- A validating webhook is used during the creation of the
+  [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess) to
+  ensure that the invoker has access rights to the
+  [VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/)
+  objects specified in the payload.
+
+- [Role-Based Access Controls](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+  to restrict access to the
+  [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess) and the
+  [CSISnapshotSessionData CR](#csisnapshotsessiondata).
+
+The backup application obtains a
+[SnapshotMetadata Service](#the-snapshotmetadata-service-api)
+server's CA certificate and endpoint address from the
+[CSISnapshotSessionAccess CR](#csisnapshotsessionaccess).
+The CA certificate and the end point were sourced from the
+[CSISnapshotSessionService CR](#csisnapshotsessionservice)
+created by the CSI driver, and contain
+public information and not particularly vulnerable.
+
+The direct gRPC call made by the backup application client will encrypt
+all data exchanged with server.
+
+The gRPC client is required to establish trust with the server's CA.
+Mutual authentication, however, is not performed, as to do so would require the
+server to trust the certificate authorities used by its clients and no
+obvious mechanism exists for this purpose.
+
+Instead, the backup application passes the opaque snapshot session token
+returned in the [CSISnapshotSessionAccess CR](#csisnapshotsessionaccess).
+This token is the name of a
+[CSISnapshotSessionData CR](#csisnapshotsessiondata) created by the
+[Snapshot Session Manager](#the-snapshot-session-manager)
+in the namespace of the CSI driver, and only accessible to
+the manager and the server.
+The server in this case is the
+[external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar),
+and it will validate the caller's use of the RPC by fetching the
+CR in its namespace with the name of the token.
+
+To mitigate the possibility that the token is spoofed:
+- The session token is composed of a long random string (of valid
+  Kubernetes object name characters).
+- The visibility of [CSISnapshotSessionData CRs](#csisnapshotsessiondata)
+  are restricted to the [Snapshot Session Manager](#the-snapshot-session-manager)
+  and the server in the CSI driver namespace.
+  A CSI driver installed in a private namespace would only be able to
+  view [CSISnapshotSessionData CRs](#csisnapshotsessiondata) in
+  its own namespace.
+- A [CSISnapshotSessionData CR](#csisnapshotsessiondata) has a finite
+  lifespan and will be rejected (and eventually deleted) when its
+  expiry time has passed.
+  This is enforced by the
+  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  and the [Snapshot Session Manager](#the-snapshot-session-manager).
+
+The proposal defines the following
+[ClusterRoles](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole) to implement the necessary security as
+illustrated in the following figure:
+
+<!-- Need to update the figure to show non-namespaced CSISnapshotSessionService CR -->
+![CSI Snapshot Session Roles](./cbt-kep-multi-csi-roles.drawio.svg)
+
+- The **CSISnapshotSessionClientClusterRole** should be used in a
+  [ClusterRoleBinding](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#rolebinding-and-clusterrolebinding)
+  to grant a backup application's
+  [ServiceAccount](https://kubernetes.io/docs/concepts/security/service-accounts/)
+  global access to CREATE, GET, DELETE or LIST
+  [CSISnapshotSessionAccess CRs](#csisnapshotsessionaccess)
+  in any namespace and to GET
+  [VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/)
+  objects in any namespace.
+- The **CSISnapshotSessionServiceClusterRole** should be used in a
+  [RoleBinding](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#rolebinding-and-clusterrolebinding)
+  to grant the
+  [ServiceAccount](https://kubernetes.io/docs/concepts/security/service-accounts/)
+  used by the
+  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  of the CSI driver all access in the CSI driver namespace only.
+- The **CSISnapshotSessionManagerClusterRole** is used in a
+  [ClusterRoleBinding](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#rolebinding-and-clusterrolebinding)
+  to grant the [Snapshot Session Manager](#the-snapshot-session-manager)
+  the permissions it needs to access all the [custom resources](#custom-resources)
+  defined by this proposal.
+
+It is recommended that the security design be reviewed by SIG Security.
 
 ## Design Details
 
@@ -282,6 +484,118 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+
+### The SnapshotMetadata Service API
+
+The CSI specification will be extended with the addition of a
+new **SnapshotMetadata** [gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition).
+This service is used to retrieve metadata on the allocated blocks of
+a single snapshot or the changed blocks between a pair of snapshots of
+the same volume.
+
+The gRPC service is defined as follows:
+```
+service SnapshotMetadata {
+  rpc GetAllocated(GetAllocatedRequest)
+    returns (stream GetAllocatedResponse) {}
+  rpc GetDelta(GetDeltaRequest)
+    returns (stream GetDeltaResponse) {}
+}
+
+enum BlockMetadataType {
+  FIXED_LENGTH=0;
+  VARIABLE_LENGTH=1;
+}
+
+
+message BlockMetadata {
+  uint64 byte_offset = 1;
+  uint64 size_bytes = 2;
+}
+
+message GetAllocatedRequest {
+  string session_token = 1;
+  string volume_id = 2;
+  string snapshot = 3;
+  uint64 starting_offset = 4;
+  uint32 max_results = 5;
+}
+
+
+message GetAllocatedResponse {
+  BlockMetadataType block_metadata_type = 1;
+  uint64 volume_size_bytes = 2;
+  repeated BlockMetadata block_metadata = 3;
+}
+
+message GetDeltaRequest {
+  string session_token = 1;
+  string volume_id = 2;
+  string base_snapshot = 3;
+  string target_snapshot = 4;
+  uint64 starting_byte_offset = 5;
+  uint32 max_results = 6;
+}
+
+message GetDeltaResponse {
+  BlockMetadataType block_metadata_type = 1;
+  uint64 volume_size_bytes = 2;
+  repeated BlockMetadata block_metadata = 3;
+}
+```
+
+@TODO EXPLANATION OF THE RPC CALLS
+
+The gRPC service is optional and support is indicated by the presence of the following
+capability flag:
+
+@TODO DEFINE CAP FLAGS
+
+### Kubernetes Components
+The following Kubernetes components are involved at runtime:
+
+- A community provided
+  [Snapshot Session Manager](#the-snapshot-session-manager)
+  that uses a Kubernetes
+  [Custom Resource](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
+  (CR) based mechanism to establish a "snapshot access session" that provides a backup
+  application with an endpoint for secure TLS gRPC to a
+  [SnapshotMetadata service](#the-snapshotmetadata-service-api).
+  The manager is independently deployed and serves all
+  CSI drivers that provide a
+  [SnapshotMetadata service](#the-snapshotmetadata-service-api).
+- A CSI driver provided implementation of the
+  [SnapshotMetadata service](#the-snapshotmetadata-service-api)
+  that is accessible over a UNIX domain transport.
+- A [community provided sidecar](#the-external-snapshot-session-sidecar)
+  that implements the service side of the snapshot access session protocol
+  and **proxies** TCP TLS gRPC requests from authorized client applications to the
+  CSI driver's service over the UNIX domain transport.
+
+### Custom Resources
+
+@TODO Prasad to provide description and definitions of the CRs
+#### CSISnapshotSessionAccess
+
+#### CSISnapshotSessionService
+
+@TODO NOT NAMESPACED
+
+#### CSISnapshotSessionData
+
+@TODO NEED TO DECIDE WHETHER TO EMBED SP IDs OR NOT
+
+### The Snapshot Session Manager
+
+@TODO CARL
+
+### The External Snapshot Session Sidecar
+
+@TODO CARL
+### The SP Snapshot Session Service
+
+@TODO ?
 
 ### Test Plan
 
@@ -328,7 +642,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-All unit tests will be included in the out-of-tree CSI repositories, with no 
+All unit tests will be included in the out-of-tree CSI repositories, with no
 impact on the test coverage of the core packages.
 
 ##### Integration tests
@@ -367,13 +681,13 @@ Test setup:
 * A sample client to initiate the CBT session and the subsequent CBT GRPC
 requests.
 * A mock backend snapshot service generates mock responses with CBT payloads to
-be returned to the client. 
+be returned to the client.
 
 Test scenarios:
 
 * Verify the CBT request/response flow from the client to the CSI driver.
 * Verify that the CBT controller can discover the CBT-enabled CSI driver.
-* Verify the mutating webhook's ability to ensure authorized access to the 
+* Verify the mutating webhook's ability to ensure authorized access to the
 volume snapshots.
 * Token management: TBD
 
@@ -513,7 +827,7 @@ well as the [existing list] of feature gates.
 - [x] Other
   - Describe the mechanism: The new components will be implemented as part of the
 out-of-tree CSI framework. Storage providers can embed the CBT sidecar component
-in their CSI drivers, if they choose to support this feature. Users will also 
+in their CSI drivers, if they choose to support this feature. Users will also
 need to install the CBT controller and mutating webhook.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
@@ -547,7 +861,7 @@ cluster and remove the CBT sidecar from the CSI driver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No effects as all custom resources would have been removed when the CBT 
+No effects as all custom resources would have been removed when the CBT
 controller was previously uninstalled.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -635,10 +949,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -850,18 +1164,18 @@ information to express the idea and why it was not acceptable.
 -->
 
 The aggregated API server solution described in [#3367][0] was deemed unsuitable
-because of the potentially large amount of CBT payloads that will be proxied 
+because of the potentially large amount of CBT payloads that will be proxied
 through the K8s API server. Further discussion can be found in this [thread][1].
 
-An approach based on using volume populator to store the CBT payloads on-disk, 
-instead of sending them over the network was also considered. But the amount of 
-pod creation/deletion churns and latency incurred made this solution 
+An approach based on using volume populator to store the CBT payloads on-disk,
+instead of sending them over the network was also considered. But the amount of
+pod creation/deletion churns and latency incurred made this solution
 inappropriate.
 
-The previous design which involved generating and returning a RESTful callback 
-endpoint to the caller, to serve CBT payloads was superceded by the aggregation 
-extension mechanism as described in [#3367][0], due to the requirement for more 
-structured request and response payloads. 
+The previous design which involved generating and returning a RESTful callback
+endpoint to the caller, to serve CBT payloads was superceded by the aggregation
+extension mechanism as described in [#3367][0], due to the requirement for more
+structured request and response payloads.
 
 ## Infrastructure Needed (Optional)
 
