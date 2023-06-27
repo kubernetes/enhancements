@@ -268,31 +268,32 @@ that is used
 to retrieve metadata on the allocated blocks of a single snapshot,
 or the changed blocks between a pair of snapshots of the same volume.
 A number of custom resources are proposed to enable a Kubernetes backup application
-to create a **snapshot session** with which to *directly connect* to such a service.
+to create a **snapshot session** with which to ***directly connect***
+to such a service.
 This direct connection results in a minimal load on the Kubernetes API server,
 one that is definitely not proportional to the amount of metadata transferred
 or the sizes of the volumes and snapshots involved.
 
-A Kubernetes backup application obtains a snapshot session by
+A Kubernetes backup application establishes a snapshot session by
 creating an instance of a [CSISnapshotSessionAccess](#csisnapshotsessionaccess)
 custom resource, specifying a set of VolumeSnapshot objects in some Namespace.
-The application will poll the CR until it reaches a
-terminal state (`Ready` or `Failed`).
+The application must poll the CR until it reaches a terminal state of
+`Ready` or `Failed`.
 
 The [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR
 will validate its creator's authority to create the CR and to access the set
 of VolumeSnapshots. It will then
-search for the [SnapshotMetadata](#the-snapshotmetadata-service-api) service
-of the CSI driver for these VolumeSnapshots.
-On success, the TCP endpoint and CA certificate of a
+search for a [SnapshotMetadata](#the-snapshotmetadata-service-api) service
+in the CSI driver for these VolumeSnapshots.
+On success, the TCP endpoint and CA certificate of the
 [SnapshotMetadata](#the-snapshotmetadata-service-api)
 service and an opaque **snapshot session token** is set in its result.
 
 The backup application will establish trust with the specified CA, and
 then use the specified TCP endpoint to directly make TLS gRPC calls to the CSI
 [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
-The service RPC calls all require the the snapshot session token and the
-names of the Kubernetes VolumeSnapshot objects involved
+All RPC calls in the service require that the snapshot session token and the
+names of the Kubernetes VolumeSnapshot objects involved be specified,
 along with other optional parameters.
 The RPC calls each return a gRPC stream through which the metadata can be recovered.
 
@@ -316,11 +317,11 @@ by a
 which provides a validating webhook
 for authorization and a controller to set up the snapshot session
 and manage the lifecycle of the CR, including deleting it when it expires.
-Additional simple CRs are used to advertise the existence of a proxy
-sidecar to the manager ([CSISnapshotSessionService](#csisnapshotsessionservice) CR),
-and to track the opaque snapshot session token and the snapshot objects
-authorized for use in the snapshot session
-([CSISnapshotSessionData](#csisnapshotsessiondata) CR).
+Additional simple CRs that do not involve a controller are also used:
+the [CSISnapshotSessionService](#csisnapshotsessionservice) CR is used to advertise the
+existence of a [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar),
+and the [CSISnapshotSessionData](#csisnapshotsessiondata) CR is created for each
+active snapshot session and is used for validation.
 
 [Kubernetes Role-Based Access Control](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 is used to secure access to the custom resources, restricting visibility to authorized
@@ -357,14 +358,27 @@ This might be a good place to talk about core concepts and how they relate.
 
 - This proposal requires a backup application to directly use the CSI
 [SnapshotMetadata](#the-snapshotmetadata-service-api)
-gRPC service.
+service.
 This was necessary to not place a load on the Kubernetes API server
 that would be proportional to the number of allocated blocks in a volume
 snapshot.
 
+- The CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+service RPC calls allow an application to ***continue*** an interrupted
+stream by reissuing the RPC call with starting byte offset.
+
+- The CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+service permits metadata to be returned in either an ***extent-based***
+format or a ***block*** based format, at the discretion of the CSI driver.
+A portable backup application is expected to handle both such formats.
+
 - All the volumes in a given snapshot session must have the same CSI provisioner.
   The backup application must create separate snapshot sessions for volumes
   from different CSI provisioners.
+
+- A snapshot session has a finite lifetime and will expire eventually.
 
 - The CSI driver's [Snapshot Session Service](#the-sp-snapshot-session-service)
 must be capable of serving metadata on a VolumeSnapshot
