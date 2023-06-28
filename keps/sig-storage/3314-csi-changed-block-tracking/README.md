@@ -473,11 +473,9 @@ To mitigate the possibility that the token is spoofed:
 The proposal defines the following ClusterRoles
 to implement the necessary security as illustrated in the following figure:
 
->@TODO Update the figure
-> - Use a white instead of transparent background
-> - Change the names of these CRs and Roles
+>@TODO
 > - Decide on namespaced v/s global SnapshotSessionConfiguration. Global will
->   require a new role
+>   require a new role.
 
 
 ![CSI Snapshot Session Roles](./cbt-kep-multi-csi-roles.drawio.svg)
