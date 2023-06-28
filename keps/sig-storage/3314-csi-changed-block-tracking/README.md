@@ -83,7 +83,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories)](#user-stories)
+  - [User Stories](#user-stories)
     - [Full snapshot backup](#full-snapshot-backup)
     - [Incremental snapshot backup](#incremental-snapshot-backup)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
@@ -92,9 +92,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [The SnapshotMetadata Service API](#the-snapshotmetadata-service-api)
   - [Kubernetes Components](#kubernetes-components)
   - [Custom Resources](#custom-resources)
-    - [CSISnapshotSessionAccess](#csisnapshotsessionaccess)
-    - [CSISnapshotSessionService](#csisnapshotsessionservice)
-    - [CSISnapshotSessionData](#csisnapshotsessiondata)
+    - [SnapshotSessionRequest](#snapshotsessionrequest)
+    - [SnapshotServiceConfiguration](#snapshotserviceconfiguration)
+    - [SnapshotSessionData](#snapshotsessiondata)
   - [The Snapshot Session Manager](#the-snapshot-session-manager)
   - [The External Snapshot Session Sidecar](#the-external-snapshot-session-sidecar)
   - [The SP Snapshot Session Service](#the-sp-snapshot-session-service)
@@ -239,7 +239,7 @@ and make progress.
   > The volume could be attached to a pod with either `Block` or `Filesystem`
     [volume modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-mode).
 * Provide an API to retrieve the data blocks of a snapshot.
-  > The **snapshot access session** mechanism proposed here could conceivably
+  > The **snapshot session** mechanism proposed here could conceivably
     support a future companion **snapshot data retrieval service**, but
     that is not in the scope of this KEP.
     It is assumed that a snapshot's data blocks can be retrieved by creating a
@@ -268,42 +268,42 @@ that is used
 to retrieve metadata on the allocated blocks of a single snapshot,
 or the changed blocks between a pair of snapshots of the same volume.
 A number of custom resources are proposed to enable a Kubernetes backup application
-to create a **snapshot access session** with which to ***directly connect***
+to create a **snapshot session** with which to ***directly connect***
 to such a service.
 This direct connection results in a minimal load on the Kubernetes API server,
 one that is definitely not proportional to the amount of metadata transferred
 or the sizes of the volumes and snapshots involved.
 
-A Kubernetes backup application establishes a snapshot access session by
-creating an instance of a [CSISnapshotSessionAccess](#csisnapshotsessionaccess)
+A Kubernetes backup application establishes a snapshot session by
+creating an instance of a [SnapshotSessionRequest](#snapshotsessionrequest)
 custom resource, specifying a set of VolumeSnapshot objects in some Namespace.
 The application must poll the CR until it reaches a terminal state of
 `Ready` or `Failed`.
 
-The [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR
+The [SnapshotSessionRequest](#snapshotsessionrequest) CR
 will validate its creator's authority to create the CR and to access the set
 of VolumeSnapshots. It will then
 search for a [SnapshotMetadata](#the-snapshotmetadata-service-api) service
 in the CSI driver for these VolumeSnapshots.
 On success, the TCP endpoint and CA certificate of the
 [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service and an opaque **snapshot access session token** is set in its result.
+service and an opaque **snapshot session token** is set in its result.
 
 The backup application will establish trust with the specified CA, and
 then use the specified TCP endpoint to directly make TLS gRPC calls to the CSI
 [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
-All RPC calls in the service require that the snapshot access session token and the
+All RPC calls in the service require that the snapshot session token and the
 names of the Kubernetes VolumeSnapshot objects involved be specified,
 along with other optional parameters.
 The RPC calls each return a gRPC stream through which the metadata can be recovered.
 
-The CSI driver is not involved in the setup or management of the snapshot access session.
-The TCP endpoint returned is actually directed to a community provided
+The CSI driver is not involved in the setup or management of the snapshot session.
+The TCP endpoint returned is actually directed to the
 [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
 that communicates over a private UNIX domain socket with the CSI driver's
 implementation of the [SnapshotMetadata](#the-snapshotmetadata-service-api)
 service.
-The sidecar is responsible for validating the opaque snapshot access session token
+The sidecar is responsible for validating the opaque snapshot session token
 and the parameters of the RPC calls.
 It forwards the RPC call to the CSI driver service,
 translating the Kubernetes object names into SP object names in the process,
@@ -311,17 +311,17 @@ and then re-streams the results back to its client.
 The CSI driver provided service only focuses on the generation of the metadata
 requested.
 
-The [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR is animated
+The [SnapshotSessionRequest](#snapshotsessionrequest) CR is animated
 by a
 [Snapshot Session Manager](#the-snapshot-session-manager),
 which provides a validating webhook
-for authorization and a controller to set up the snapshot access session
+for authorization and a controller to set up the snapshot session
 and manage the lifecycle of the CR, including deleting it when it expires.
 Additional simple CRs that do not involve a controller are also used:
-the [CSISnapshotSessionService](#csisnapshotsessionservice) CR is used to advertise the
+the [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CR is used to advertise the
 existence of a [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar),
-and the [CSISnapshotSessionData](#csisnapshotsessiondata) CR is created for each
-active snapshot access session and is used for validation.
+and the [SnapshotSessionData](#snapshotsessiondata) CR is created for each
+active snapshot session and is used for validation.
 
 [Kubernetes Role-Based Access Control](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 is used to secure access to the custom resources, restricting visibility to authorized
@@ -374,18 +374,18 @@ service permits metadata to be returned in either an ***extent-based***
 format or a ***block*** based format, at the discretion of the CSI driver.
 A portable backup application is expected to handle both such formats.
 
-- All the volumes in a given snapshot access session must have the same CSI provisioner.
-  The backup application must create separate snapshot access sessions for volumes
+- All the volumes in a given snapshot session must have the same CSI provisioner.
+  The backup application must create separate snapshot sessions for volumes
   from different CSI provisioners.
 
-- A snapshot access session has a finite lifetime and will expire eventually.
+- A snapshot session has a finite lifetime and will expire eventually.
 
 - The CSI driver's [Snapshot Session Service](#the-sp-snapshot-session-service)
 must be capable of serving metadata on a VolumeSnapshot
 concurrently with the backup application's use of a PersistentVolume
 created on that same VolumeSnapshot.
-This is because the backup application has to mount the PersistentVolume
-in Block mode in a Pod in order to read and archive the raw snapshot data blocks,
+This is because a backup application would likely mount the PersistentVolume
+in `Block` mode in a Pod in order to read and archive the raw snapshot data blocks,
 and this read/archive loop will be driven by the stream of snapshot block metadata.
 
 ### Risks and Mitigations
@@ -402,13 +402,13 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 The main vulnerabilities of this proposal are:
-- That the snapshot access session inadvertently provides an entity with the
+- That the snapshot session inadvertently provides an entity with the
   authority to create a
-  [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR
+  [SnapshotSessionRequest](#snapshotsessionrequest) CR
   indirect access to otherwise inaccessible volume snapshots by simply naming
   them in the CR.
-- That the opaque snapshot access session token returned by a
-  [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR
+- That the opaque snapshot session token returned by a
+  [SnapshotSessionRequest](#snapshotsessionrequest) CR
   be spoofed by a malicious actor.
   The purpose of this token and the steps taken to protect it are
   described in detail below.
@@ -416,21 +416,21 @@ The main vulnerabilities of this proposal are:
 This proposal relies on the following Kubernetes security mechanisms to mitigate
 the issues above:
 - A validating webhook is used during the creation of the
-  [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR to
+  [SnapshotSessionRequest](#snapshotsessionrequest) CR to
   ensure that the invoker has access rights to the VolumeSnapshot
-  objects specified in the payload.
+  objects in the Namespace.
 
 - [Role-Based Access Controls](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
   to restrict access to the
-  [CSISnapshotSessionAccess](#csisnapshotsessionaccess) and the
-  [CSISnapshotSessionData](#csisnapshotsessiondata) CRs
+  [SnapshotSessionRequest](#snapshotsessionrequest) and the
+  [SnapshotSessionData](#snapshotsessiondata) CRs
 
 The backup application obtains a
 [SnapshotMetadata](#the-snapshotmetadata-service-api) service
 server's CA certificate and endpoint address from the
-[CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR.
+[SnapshotSessionRequest](#snapshotsessionrequest) CR.
 The CA certificate and the end point were sourced from the
-[CSISnapshotSessionService](#csisnapshotsessionservice) CR
+[SnapshotServiceConfiguration](#snapshotserviceconfiguration) CR
 created by the CSI driver, and contain
 public information and not particularly vulnerable.
 
@@ -440,12 +440,12 @@ all data exchanged with server.
 The gRPC client is required to establish trust with the server's CA.
 Mutual authentication, however, is not performed, as to do so would require the
 server to trust the certificate authorities used by its clients and no
-obvious mechanism exists for this purpose.
+standardized mechanism exists for this purpose.
 
-Instead, the backup application passes the opaque snapshot access session token
-returned in the [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CR.
+Instead, the backup application passes the opaque snapshot session token
+returned in the [SnapshotSessionRequest](#snapshotsessionrequest) CR.
 This token is the name of a
-[CSISnapshotSessionData](#csisnapshotsessiondata) CR created by the
+[SnapshotSessionData](#snapshotsessiondata) CR created by the
 [Snapshot Session Manager](#the-snapshot-session-manager)
 in the namespace of the CSI driver, and only accessible to
 the manager and the server.
@@ -457,13 +457,13 @@ CR in its namespace with the name of the token.
 To mitigate the possibility that the token is spoofed:
 - The session token is composed of a long random string (of valid
   Kubernetes object name characters).
-- The visibility of [CSISnapshotSessionData](#csisnapshotsessiondata) CRs
+- The visibility of [SnapshotSessionData](#snapshotsessiondata) CRs
   are restricted to the [Snapshot Session Manager](#the-snapshot-session-manager)
   and the server in the CSI driver namespace.
   A CSI driver installed in a private namespace would only be able to
-  view [CSISnapshotSessionData](#csisnapshotsessiondata) CRs in
+  view [SnapshotSessionData](#snapshotsessiondata) CRs in
   its own namespace.
-- A [CSISnapshotSessionData](#csisnapshotsessiondata) CR has a finite
+- A [SnapshotSessionData](#snapshotsessiondata) CR has a finite
   lifespan and will be rejected (and eventually deleted) when its
   expiry time has passed.
   This is enforced by the
@@ -473,20 +473,26 @@ To mitigate the possibility that the token is spoofed:
 The proposal defines the following ClusterRoles
 to implement the necessary security as illustrated in the following figure:
 
-<!-- Need to update the figure to show non-namespaced CSISnapshotSessionService CR -->
+>@TODO Update the figure
+> - Use a white instead of transparent background
+> - Change the names of these CRs and Roles
+> - Decide on namespaced v/s global SnapshotSessionConfiguration. Global will
+>   require a new role
+
+
 ![CSI Snapshot Session Roles](./cbt-kep-multi-csi-roles.drawio.svg)
 
-- The **CSISnapshotSessionClientClusterRole** should be used in a
+- The **SnapshotSessionClientClusterRole** should be used in a
   ClusterRoleBinding to grant a backup application's ServiceAccount
   global access to CREATE, GET, DELETE or LIST
-  [CSISnapshotSessionAccess](#csisnapshotsessionaccess) CRs
+  [SnapshotSessionRequest](#snapshotsessionrequest) CRs
   in any namespace and to GET VolumeSnapshot
   objects in any namespace.
-- The **CSISnapshotSessionServiceClusterRole** should be used in a
+- The **SnapshotServiceConfigurationClusterRole** should be used in a
   RoleBinding to grant the ServiceAccount used by the
   [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
   of the CSI driver all access in the CSI driver namespace only.
-- The **CSISnapshotSessionManagerClusterRole** is used in a
+- The **SnapshotSessionManagerClusterRole** is used in a
   ClusterRoleBinding to grant the
   [Snapshot Session Manager](#the-snapshot-session-manager)
   the permissions it needs to access all the
@@ -576,7 +582,7 @@ The following Kubernetes components are involved at runtime:
 - A community provided
   [Snapshot Session Manager](#the-snapshot-session-manager)
   that uses a Kubernetes CustomResource (CR) based mechanism to
-  establish a **snapshot access session** that provides a backup
+  establish a **snapshot session** that provides a backup
   application with an endpoint for secure TLS gRPC to a
   [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
   The manager is independently deployed and serves all
@@ -586,20 +592,20 @@ The following Kubernetes components are involved at runtime:
   [SnapshotMetadata](#the-snapshotmetadata-service-api) service
   that is accessible over a UNIX domain transport.
 - A [community provided sidecar](#the-external-snapshot-session-sidecar)
-  that implements the service side of the snapshot access session protocol
+  that implements the service side of the snapshot session protocol
   and **proxies** TCP TLS gRPC requests from authorized client applications to the
   CSI driver's service over the UNIX domain transport.
 
 ### Custom Resources
 
 @TODO Prasad to provide description and definitions of the CRs
-#### CSISnapshotSessionAccess
+#### SnapshotSessionRequest
 
-#### CSISnapshotSessionService
+#### SnapshotServiceConfiguration
 
 @TODO NOT NAMESPACED
 
-#### CSISnapshotSessionData
+#### SnapshotSessionData
 
 @TODO NEED TO DECIDE WHETHER TO EMBED SP IDs OR NOT
 
