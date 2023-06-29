@@ -965,10 +965,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Yes, we will need a new metric `pod_scheduling_excluding_preenqueue_duration_seconds` to explicitly differentiate whether the time spent during `PreEnqueue` is included or excluded.
-
-This new metric is needed as users may get confused when using the `pod_scheduling_duration_seconds` metrics while scheduling gated condition exists. As the period of time when a Pod fails `PreEnqueue` (i.e.; gated) shouldn't be accounted in the `pod_scheduling_duration_seconds`.
-However, PreEnqueue does not always mean `SchedulingGates`, but only one case. Which means users may still want to include the time spent in `PreEnqueue`.
+Yes, a new metric `pod_scheduling_sli_duration_seconds` to explicitly revealing the SLI-related metric, it excludes the time spent during `PreEnqueue`.
 
 ### Dependencies
 
