@@ -268,24 +268,18 @@ The proposal extends the CSI specification with a new
 gRPC service that is used
 to retrieve metadata on the allocated blocks of a single snapshot,
 or the changed blocks between a pair of snapshots of the same block volume.
-A number of custom resources are proposed to enable a Kubernetes backup application
+A number of Custom Resources (CRs) are proposed to enable a Kubernetes backup application
 to create a **snapshot session** with which to ***directly connect***
 to such a service.
 This direct connection results in a minimal load on the Kubernetes API server,
 unrelated to the amount of metadata transferred
 or the sizes of the volumes and snapshots involved.
 
-
-
 A Kubernetes backup application establishes a snapshot session by
 creating an instance of a [SnapshotSessionRequest](#snapshotsessionrequest)
-custom resource, specifying a set of VolumeSnapshot objects in some Namespace.
+namespaced CR, identifying a set of VolumeSnapshot objects in that Namespace.
 The application must poll the CR until it reaches a terminal state of
 `Ready` or `Failed`.
-
-The creation and use of the snapshot session is illustrated by the following figure:
-
-![Snapshot Session](./session.drawio.svg)
 
 The [SnapshotSessionRequest](#snapshotsessionrequest) CR
 will validate its creator's authority to create the CR and to access the set
@@ -323,26 +317,32 @@ The [SnapshotSessionRequest](#snapshotsessionrequest) CR is animated by a
 which provides a validating webhook
 for authorization and a controller to set up the snapshot session
 and manage the lifecycle of the CR, including deleting it when it expires.
-The manager will handle snapshot sessions involving snapshots from all CSI drivers.
+The manager will handle snapshot sessions involving snapshots from all
+participating CSI drivers installed.
 
 Additional simple CRs that do not involve a controller are also used:
-the [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CR is used to advertise the
+the [SnapshotServiceConfiguration](#snapshotserviceconfiguration) global CR is used to advertise the
 existence of a [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
 in a CSI driver,
-and the [SnapshotSessionData](#snapshotsessiondata) CR is created for each
+and the [SnapshotSessionData](#snapshotsessiondata) namespaced CR is created for each
 active snapshot session and used for validation.
 
-[Kubernetes Role-Based Access Control](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+[Kubernetes Role-Based Access Control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 is used to secure access to the custom resources.
-It restricts a backup application's visibility to
+This is used to restrict a backup application's visibility to
 [SnapshotSessionRequest](#snapshotsessionrequest) CR
-objects to the Namespace containing VolumeSnapshots that the application
+objects to the Namespaces containing VolumeSnapshots that the backup application
 is authorized to access.
-It also provides the ability to isolate CSI
+RBAC also provides the ability to isolate CSI
 drivers from each other by limiting the visibility of
-[SnapshotServiceConfiguration](#snapshotserviceconfiguration) and
 [SnapshotSessionData](#snapshotsessiondata) CRs to the
 individual driver Namespace.
+
+The creation and use of a snapshot session is illustrated in the figure below,
+with additional information available in the [Design Details](#design-details) section.
+
+![Snapshot Session](./session.drawio.svg)
+
 
 ### User Stories
 
@@ -445,9 +445,10 @@ The backup application obtains a
 server's CA certificate and endpoint address from the
 [SnapshotSessionRequest](#snapshotsessionrequest) CR.
 The CA certificate and the end point were sourced from the
+global
 [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CR
-created by the CSI driver, and contain
-public information and not particularly vulnerable.
+created by the CSI driver; it contains
+public information and is not particularly vulnerable.
 
 The direct gRPC call made by the backup application client will encrypt
 all data exchanged with server.
@@ -485,12 +486,12 @@ To mitigate the possibility that the token is spoofed:
   expiry time has passed.
 
 The proposal defines the following ClusterRoles
-to implement the necessary security as illustrated in the following figure:
+to implement the necessary RBAC policy as illustrated in the following figure:
 
->@TODO
-> - Decide on namespaced v/s global SnapshotSessionConfiguration. Global will
->   require a new role.
-
+> @TODO Is it really possible that the **SnapshotSessionService** ClusterRole can be used both
+> in a RoleBinding and in a ClusterRoleBinding?
+> I think the ClusterRoleBinding would result in the SA getting access to
+> SnapshotSessionData in other CSI driver namespaces.
 
 ![CSI Snapshot Session Roles](./roles.drawio.svg)
 
@@ -503,7 +504,13 @@ to implement the necessary security as illustrated in the following figure:
 - The **SnapshotSessionService** ClusterRole should be used in a
   RoleBinding to grant the ServiceAccount used by the
   [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
-  of the CSI driver all access in the CSI driver Namespace only.
+  of the CSI driver all access to the
+  [SnapshotSessionData](#snapshotsessiondata) CRs
+  in the CSI driver Namespace only.
+  It should also be used in a ClusterRoleBinding to grant the ServiceAccount used by the
+  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  of the CSI driver GET access to VolumeSnapshot and VolumeSnapshotContent
+  objects in any namespace.
 - The **SnapshotSessionManager** ClusterRole is used in a
   ClusterRoleBinding to grant the
   [Snapshot Session Manager](#the-snapshot-session-manager)
