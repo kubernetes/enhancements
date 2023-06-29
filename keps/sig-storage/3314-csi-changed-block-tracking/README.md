@@ -275,11 +275,17 @@ This direct connection results in a minimal load on the Kubernetes API server,
 unrelated to the amount of metadata transferred
 or the sizes of the volumes and snapshots involved.
 
+
+
 A Kubernetes backup application establishes a snapshot session by
 creating an instance of a [SnapshotSessionRequest](#snapshotsessionrequest)
 custom resource, specifying a set of VolumeSnapshot objects in some Namespace.
 The application must poll the CR until it reaches a terminal state of
 `Ready` or `Failed`.
+
+The creation and use of the snapshot session is illustrated by the following figure:
+
+![Snapshot Session](./session.drawio.svg)
 
 The [SnapshotSessionRequest](#snapshotsessionrequest) CR
 will validate its creator's authority to create the CR and to access the set
@@ -380,8 +386,8 @@ by reissuing the RPC call with a starting byte offset.
 
 - The CSI
 [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service permits metadata to be returned in either an ***extent-based***
-format or a ***block*** based format, at the discretion of the CSI driver.
+service permits metadata to be returned in either an ***extent***
+or a ***block*** based format, at the discretion of the CSI driver.
 A portable backup application is expected to handle both such formats.
 
 - All the volumes in a given snapshot session must have the same CSI provisioner.
@@ -486,7 +492,7 @@ to implement the necessary security as illustrated in the following figure:
 >   require a new role.
 
 
-![CSI Snapshot Session Roles](./cbt-kep-multi-csi-roles.drawio.svg)
+![CSI Snapshot Session Roles](./roles.drawio.svg)
 
 - The **SnapshotSessionClient** ClusterRole should be used in a
   ClusterRoleBinding to grant a backup application's ServiceAccount
