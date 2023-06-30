@@ -965,8 +965,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-
-N/A.
+Yes, a new metric `pod_scheduling_sli_duration_seconds` to explicitly revealing the SLI-related metric, it excludes the time spent during `PreEnqueue`.
 
 ### Dependencies
 
