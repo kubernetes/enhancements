@@ -341,6 +341,7 @@ individual driver Namespace.
 The creation and use of a snapshot session is illustrated in the figure below,
 with additional information available in the [Design Details](#design-details) section.
 
+> @TODO Eventually use a PNG - SVG does not render text spaces properly.
 ![Snapshot Session](./session.drawio.svg)
 
 
@@ -492,7 +493,10 @@ to implement the necessary RBAC policy as illustrated in the following figure:
 > in a RoleBinding and in a ClusterRoleBinding?
 > I think the ClusterRoleBinding would result in the SA getting access to
 > SnapshotSessionData in other CSI driver namespaces.
+> I propose a **SnapshotSessionData** ClusterRole that the sidecar's SA can
+> use with a RoleBinding to get access to the SnapshotSessionData CR.
 
+> @TODO Eventually use a PNGs - SVG does not render text spaces properly.
 ![CSI Snapshot Session Roles](./roles.drawio.svg)
 
 - The **SnapshotSessionClient** ClusterRole should be used in a
