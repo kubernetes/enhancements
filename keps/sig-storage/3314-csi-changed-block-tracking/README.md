@@ -90,6 +90,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [The SnapshotMetadata Service API](#the-snapshotmetadata-service-api)
+    - [Metadata Format](#metadata-format)
+    - [GetAllocated RPC](#getallocated-rpc)
+    - [GetDelta RPC](#getdelta-rpc)
+    - [Capability Flags](#capability-flags)
   - [Kubernetes Components](#kubernetes-components)
   - [Custom Resources](#custom-resources)
     - [SnapshotSessionRequest](#snapshotsessionrequest)
@@ -524,13 +528,13 @@ proposal will be implemented, this is the place to discuss them.
 
 ### The SnapshotMetadata Service API
 
-The CSI specification will be extended with the addition of a
-new **SnapshotMetadata** [gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition).
-This service is used to retrieve metadata on the allocated blocks of
-a single snapshot or the changed blocks between a pair of snapshots of
-the same volume.
+The CSI specification will be extended with the addition of the following new, optional
+**SnapshotMetadata** [gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition).
+The [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
+and the [SP snapshot-session-service](#the-sp-snapshot-session-service) plugins
+must both implement this service.
 
-The gRPC service is defined as follows:
+The service is defined as follows, and will be described in the sub-sections below:
 ```
 service SnapshotMetadata {
   rpc GetAllocated(GetAllocatedRequest)
@@ -543,7 +547,6 @@ enum BlockMetadataType {
   FIXED_LENGTH=0;
   VARIABLE_LENGTH=1;
 }
-
 
 message BlockMetadata {
   uint64 byte_offset = 1;
@@ -581,12 +584,164 @@ message GetDeltaResponse {
 }
 ```
 
-@TODO EXPLANATION OF THE RPC CALLS
+#### Metadata Format
+Block volume data ranges are specified by a sequence of `(ByteOffset, Length)` tuples,
+with the tuples in ascending order of `ByteOffset` and no overlap between adjacent tuples.
+There are two prevalent styles, *extent-based* or *block-based*,
+which describe if the `Length` field of the tuples in a sequence can
+**vary** or are **fixed** across all the tuples in the sequence.
+The **SnapshotMetadata** service permits either style at the discretion of the plugin,
+and it is required that a client of this service be able to handle both styles.
 
-The gRPC service is optional and support is indicated by the presence of the following
-capability flag:
+The `BlockMetadataType` enumeration specifies the style used: `FIXED_LENGTH` or `VARIABLE_LENGTH`.
+When the *block-based* style (`FIXED_LENGTH`) is used it is up to the SP plugin to define the
+block size.
 
-@TODO DEFINE CAP FLAGS
+An individual tuple is identified by the `BlockMetadata` message, and the sequence is
+defined collectively across the tuple lists returned in the RPC
+[message stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc).
+Note that the plugin must ensure that the style is not change mid-stream in any given RPC invocation.
+
+#### GetAllocated RPC
+The `GetAllocated` RPC returns metadata on the ***allocated blocks*** of a snapshot -
+i.e. this identifies the data ranges that have valid data as they were the target of
+some previous write operation.
+Backup applications typically make an initial **full** backup of a volume followed
+by a series of **incremental** backups, and the size of the initial full backup can
+be reduced considerably if only the allocated blocks are saved.
+
+The RPC's input arguments are specified by the `GetAllocatedRequest` message,
+and it returns a
+[stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
+of `GetAllocatedResponse` messages.
+The fields of the `GetAllocatedRequest` message are defined as follows:
+- `session_token`<br>
+  This is an opaque string that has identifies a snapshot session.
+  It is obtained through a mechanism defined by the CO system.
+
+ - `volume_id`<br>
+ The identifier of the volume in the nomenclature of the plugin.
+
+ - `snapshot`<br>
+ The identifier of a snapshot of the specified volume, in the nomenclature of the plugin.
+
+  - `starting_offset`<br>
+ This specifies the 0 based starting byte position in the volume snapshot from which the result should be computed.
+ It is intended to be used to continue a previously interrupted call.
+ The server may round down this offset to the nearest alignment boundary based on the `BlockMetadataType`
+ it will use.
+
+ - `max_results`<br>
+ This is an optional field. If non-zero it specifies the maximum length of the `block_metadata` list
+ that the client wants to process in a given `GetAllocateResponse` element.
+ The server will determine an appropriate value if 0, and is always free to send less than the requested
+ maximum.
+
+The fields of the `GetAllocatedResponse` message are defined as follows:
+- `block_metadata_type`<br>
+  This specifies the metadata format as described in the [Metadata Format](#metadata-format) section above.
+
+- `volume_size_bytes`<br>
+  The size of the underlying volume, in bytes.
+
+- `block_metadata`<br>
+  This is a list of `BlockMetadata` tuples as described in the
+  [Metadata Format](#metadata-format) section above.
+  The caller may request a maximum length of this list in the `max_results` field
+  of the `GetAllocatedRequest` message, otherwise the length is determined by the server.
+
+Note that while the `block_metadata_type` and `volume_size_bytes` fields are
+repeated in each `GetAllocatedResponse` message by the nature of the syntax of the
+specification language, their values in a given RPC invocation must be constant.
+i.e. a plugin is not free to modify these value mid-stream.
+
+##### GetAllocated Errors
+If the plugin is unable to complete the `GetAllocated` call successfully it
+must return a non-OK gRPC code in the gRPC status.
+
+The following conditions are well defined:
+
+| Condition | gRPC Code | Description | Recovery Behavior |
+|-----------|-----------|-------------|-------------------|
+| Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
+| Invalid `volume_id` or `snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshot specified were not found. | The caller should re-check that these objects exist. |
+| Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
+| Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
+
+#### GetDelta RPC
+The `GetDelta` RPC returns the metadata on the blocks that have changed between
+a pair of snapshots from the same volume.
+
+The RPC's input arguments are specified by the `GetDeltaRequest` message,
+and it returns a
+[stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
+of `GetDeltaResponse` messages.
+The fields of the `GetDeltaRequest` message are defined as follows:
+- `session_token`<br>
+  This is an opaque string that has identifies a snapshot session.
+  It is obtained through a mechanism defined by the CO system.
+
+ - `volume_id`<br>
+ The identifier of the volume in the nomenclature of the plugin.
+
+ - `base_snapshot`<br>
+ The identifier of a snapshot of the specified volume, in the nomenclature of the plugin.
+
+ - `target_snapshot`<br>
+ The identifier of a second snapshot of the specified volume, in the nomenclature of the plugin.
+ This snapshot should have been created after the `base_snapshot`, and the RPC will return the changes
+ made since the `base_snapshot` was created.
+
+  - `starting_offset`<br>
+ This specifies the 0 based starting byte position in the `target_snapshot` from which the result should be computed.
+ It is intended to be used to continue a previously interrupted call.
+ The server may round down this offset to the nearest alignment boundary based on the `BlockMetadataType`
+ it will use.
+
+ - `max_results`<br>
+ This is an optional field. If non-zero it specifies the maximum length of the `block_metadata` list
+ that the client wants to process in a given `GetDeltaResponse` element.
+ The server will determine an appropriate value if 0, and is always free to send less than the requested
+ maximum.
+
+The fields of the `GetDeltaResponse` message are defined as follows:
+- `block_metadata_type`<br>
+  This specifies the metadata format as described in the [Metadata Format](#metadata-format) section above.
+
+- `volume_size_bytes`<br>
+  The size of the underlying volume, in bytes.
+
+- `block_metadata`<br>
+  This is a list of `BlockMetadata` tuples as described in the
+  [Metadata Format](#metadata-format) section above.
+  The caller may request a maximum length of this list in the `max_results` field
+  of the `GetDeltaRequest` message, otherwise the length is determined by the server.
+
+Note that while the `block_metadata_type` and `volume_size_bytes` fields are
+repeated in each `GetDeltaResponse` message by the nature of the syntax of the
+specification language, their values in a given RPC invocation must be constant.
+i.e. a plugin is not free to modify these value mid-stream.
+
+##### GetDelta Errors
+If the plugin is unable to complete the `GetDelta` call successfully it
+must return a non-OK gRPC code in the gRPC status.
+
+The following conditions are well defined:
+
+| Condition | gRPC Code | Description | Recovery Behavior |
+|-----------|-----------|-------------|-------------------|
+| Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
+| Invalid `volume_id`, `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshots specified were not found. | The caller should re-check that these objects exist. |
+| Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
+| Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
+
+#### Capability Flags
+
+The gRPC service is optional and its availability is indicated by ...
+> @TODO How should the availability of this service be advertised through CSI interfaces?
+> Is this mandatory?
+> It is pretty obviously sensed in K8s by looking for SnapshotSessionConfiguration objects.
+
 
 ### Kubernetes Components
 The following Kubernetes components are involved at runtime:
