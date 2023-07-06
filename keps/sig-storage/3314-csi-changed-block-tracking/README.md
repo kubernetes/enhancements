@@ -405,6 +405,10 @@ This is because a backup application would likely mount the PersistentVolume
 in `Block` mode in a Pod in order to read and archive the raw snapshot data blocks,
 and this read/archive loop will be driven by the stream of snapshot block metadata.
 
+- The proposal does not specify how its security model is to be implemented.
+  It is expected that the RBAC policies used by backup applications
+  and the existing CSI drivers will be extended for this purpose.
+
 ### Risks and Mitigations
 
 <!--
@@ -486,42 +490,55 @@ To mitigate the possibility that the token is spoofed:
   and eventually deleted by the manager, when its
   expiry time has passed.
 
-The proposal defines the following ClusterRoles
-to implement the necessary RBAC policy as illustrated in the following figure:
+The proposal requires the existence of RBAC policy to establish
+the needed access rights on the objects below,
+but does not mandate how such policy is to be configured:
 
-> @TODO Is it really possible that the **SnapshotSessionService** ClusterRole can be used both
-> in a RoleBinding and in a ClusterRoleBinding?
-> I think the ClusterRoleBinding would result in the SA getting access to
-> SnapshotSessionData in other CSI driver namespaces.
-> I propose a **SnapshotSessionData** ClusterRole that the sidecar's SA can
-> use with a RoleBinding to get access to the SnapshotSessionData CR.
+- The namespaced [SnapshotSessionRequest](#snapshotsessionrequest) CRs
+  - The ServiceAccount used by the [Snapshot Session Manager](#the-snapshot-session-manager)
+    requires all permissions on this object in every namespace.
+  - The ServiceAccount used by a backup application should be granted
+    CREATE, GET, DELETE or LIST permissions
+    in every snapshot application namespace to be backed up.
 
-> @TODO Eventually use a PNGs - SVG does not render text spaces properly.
-![CSI Snapshot Session Roles](./roles.drawio.svg)
-
-- The **SnapshotSessionClient** ClusterRole should be used in a
-  ClusterRoleBinding to grant a backup application's ServiceAccount
-  global access to CREATE, GET, DELETE or LIST
-  [SnapshotSessionRequest](#snapshotsessionrequest) CRs
-  in any namespace and to GET VolumeSnapshot
-  objects in any namespace.
-- The **SnapshotSessionService** ClusterRole should be used in a
-  RoleBinding to grant the ServiceAccount used by the
+- The non-namespaced [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CRs
+  - The ServiceAccount used by the [Snapshot Session Manager](#the-snapshot-session-manager)
+  requires GET and LIST permissions on this object to search for a CSI driver that
+  can satisfy a request to create a snapshot session.
+  - The ServiceAccounts of CSI drivers deploying a
   [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
-  of the CSI driver all access to the
-  [SnapshotSessionData](#snapshotsessiondata) CRs
-  in the CSI driver Namespace only.
-  It should also be used in a ClusterRoleBinding to grant the ServiceAccount used by the
-  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
-  of the CSI driver GET access to VolumeSnapshot and VolumeSnapshotContent
-  objects in any namespace.
-- The **SnapshotSessionManager** ClusterRole is used in a
-  ClusterRoleBinding to grant the
-  [Snapshot Session Manager](#the-snapshot-session-manager)
-  the permissions it needs to access all the
-  [custom resources defined by this proposal](#custom-resources).
+  need all permissions on this object.
+  - The ServiceAccount used by a backup application should be granted
+  GET and LIST permissions on this object so that it can determine which
+  drivers implement the interface proposed.
 
-It is recommended that the security design be reviewed by SIG Security.
+- The namespaced [SnapshotSessionData](#snapshotsessiondata) CRs
+  - The ServiceAccount used by the [Snapshot Session Manager](#the-snapshot-session-manager)
+  requires all permissions on this object in every namespace.
+  - The ServiceAccounts of CSI drivers deploying a
+  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  need GET, LIST and DELETE permissions on this object in their namespace (only).
+  It is recommended that CSI drivers not be granted global access to these objects.
+  - It is recommended that no other principals, other than the system administrators, be granted access to these CRs.
+
+- The namespaced VolumeSnapshot objects and
+  the non-namespaced VolumeSnapshotContent objects.
+  - The ServiceAccount used by the [Snapshot Session Manager](#the-snapshot-session-manager)
+  requires GET and LIST permissions on these objects.
+  - The ServiceAccounts of CSI drivers should already have sufficient permissions
+  on these objects. This is needed for the
+  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  which attempts to load these objects.
+  - The ServiceAccount used by a backup application should be granted at least GET
+  permissions on VolumeSnapshot objects.
+  If the backup application was the entity that triggered the snapshot in the
+  first place then this permission likely already exists.
+
+The permissions required are illustrated in the following figure:
+
+![Permissions needed](./perms.drawio.svg)
+
+***It is recommended that the security design be reviewed by SIG Security.***
 
 ## Design Details
 
