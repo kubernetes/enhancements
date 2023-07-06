@@ -62,10 +62,10 @@
       - [CSI API](#csi-api-1)
       - [Pros:](#pros)
       - [Cons:](#cons)
-    - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
-      - [Pros:](#pros-1)
-      - [Cons:](#cons-1)
-    - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
+  - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
+    - [Pros:](#pros-1)
+    - [Cons:](#cons-1)
+  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
     - [CreateVolume](#createvolume)
     - [ModifyVolume](#modifyvolume)
       - [Pros:](#pros-2)
@@ -126,30 +126,31 @@ Currently after CreateVolume with provider specific parameters pass in storage c
 ## Proposal
 
 ### Kubernetes API
-We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#bookmark=id.wtvwymf8202g).
+We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#design-details).
 
 The reason why we cannot use StorageClass.parameters is because StorageClass is immutable today. The design is to introduce a VolumeAttributesClass with parameters. Although these parameters are still immutable within a VolumeAttributesClass, the name of VolumeAttributesClass in a PVC can be modified. This allows the parameters representing volume attributes to be updated after a volume is created.
 
 If there is conflict between StorageClass.parameters and VolumeAttributesClass.parameters, the driver should return an error.
 
 ```
+// VolumeAttributesClass represents a class of volume attributes. It holds the mutable
+// attributes of volumes for the provisioner that should create and update volumes.
+//
+// VolumeAttributesClasses are non-namespaced; the name of the volume attributes class
+// according to etcd is in ObjectMeta.Name.
 type VolumeAttributesClass struct {
-  metav1.TypeMeta
-  // +optional
-  metav1.ObjectMeta
+  metav1.TypeMeta `json:",inline"`
 
-  // Spec defines the behavior of a VolumeAttributesClass.
+  // Standard object's metadata.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
   // +optional
-  Spec VolumeAttributesClassSpec
-}
+  metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-type VolumeAttributesClassSpec struct {
-  // Name of the driver
-  DriverName string
-  // This field is OPTIONAL.This allows the CO to specify the
-  // volume attributes class parameters to apply. 
-  // These parameters are immutable 
-  Parameters map[string]string
+  // parameters holds the mutable attributes of volumes for the provisioner that should
+  // create and update volumes of this volume attributes class. And these parameters are
+  // immutable.
+  // +optional
+  Parameters map[string]string `json:"parameters,omitempty" protobuf:"bytes,3,rep,name=parameters"`
 }
 
 type PersistentVolumeSpec struct {
@@ -1084,7 +1085,7 @@ For ResourceQuota, we will verify that sum of spec.resources[iops] and spec.reso
 *   Not all the storage providers support independently configurable iops/throughput
 
 
-#### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
+### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
 
 The users will set the volume performance parameters directly in the PVC:
 
@@ -1123,19 +1124,19 @@ message ModifyVolumeRequest {
 
 
 
-##### Pros:
+#### Pros:
 
 *   Flexible to fit into all the cloud providers
 *   More flexibility to end users and no cluster administrator needs to be involved(also a con)
 
 
-##### Cons:
+#### Cons:
 
 *   More unpredictable behaviors because it is an opaque map. Compared to the recommended approach that the cluster administrator actually has the control over the values.
 * Not portable across different cloud providers.
 
 
-#### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
+### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
 
 ![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
 
@@ -1191,7 +1192,6 @@ volumeBindingMode: WaitForFirstConsumer
 ```
 apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
-driverName: pd.csi.storage.gke.io
 metadata:
   name: silver
 parameters:
