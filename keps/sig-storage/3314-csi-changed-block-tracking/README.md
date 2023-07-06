@@ -360,11 +360,32 @@ bogged down.
 
 #### Full snapshot backup
 
-@TODO Prasad
+Backup application needs to perform full backup on volumes of a specific
+Kubernetes application.
+1. Backup application creates a VolumeSnapshot of the PVC that needs to be
+backed up.
+2. Backup application queries changed block tracking (CBT) service to identify
+all the allocated data blocks in the snapshot. The CBT service returns the list
+of allocated blocks.
+3. Using the VolumeSnapshot as the source, the backup application creates a new
+PVC.
+4. Backup application uses the CBT metadata to identify the data that needs to
+be backed up and reads these blocks from the mounted PVC.
 
 #### Incremental snapshot backup
 
-@TODO Prasad
+Backup application needs to perform incremental backup on volumes of a specific
+Kubernetes application. The backup application knows the identifier of the
+VolumeSnapshot it had backed up last.
+1. Backup application creates a VolumeSnapshot of the PVC that needs to be
+backed up.
+2. Backup application queries changed block tracking service to identify the
+changes between the latest snapshot and the one it had last backed up.
+The CBT service returns the list of changed blocks.
+3. Using the VolumeSnapshot as the source, the backup application creates a new
+PVC.
+4. Backup application uses the CBT metadata to find the only changed data to
+backup and reads these blocks from the mounted PVC.
 
 ### Notes/Constraints/Caveats
 
