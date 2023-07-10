@@ -40,10 +40,10 @@ feature-gates:
       - kube-controller-manager
       - kube-scheduler
       - kubelet
-  - name: PodResourcesDynamicResource
+  - name: KubeletPodResourcesDynamicResource
     components:
       - kubelet
-  - name: PodResourcesGet
+  - name: KubeletPodResourcesGet
     components:
       - kubelet
 disable-supported: true
