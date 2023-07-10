@@ -785,9 +785,27 @@ The following conditions are well defined:
 #### Capability Flags
 
 The gRPC service is optional and its availability is indicated by ...
-> @TODO How should the availability of this service be advertised through CSI interfaces?
-> Is this mandatory?
-> It is pretty obviously sensed in K8s by looking for SnapshotSessionConfiguration objects.
+```
+<<[UNRESOLVED How should the availability of this service be advertised through CSI interfaces?]>>
+Is it mandatory to provide such a mechanism via the CSI interfaces?
+It makes no sense to add a capability flag to the `GetPluginCapabilities` RPC of the
+`Identity` service, because a backup application cannot access this service.
+
+It is pretty easy  for a backup application to look for the SnapshotSessionConfiguration object
+of the CSI driver of the volume snapshots.
+A session would eventually expire if a SnapshotServiceConfiguration for the CSI driver were not found.
+Should the manager fail such sessions immediately?
+This would probably be more convenient from the backup application perspective,
+especially if there is a well defined error message returned.
+
+Thinking ahead to the possibility of a companion data service, then a Capability RPC
+in the SnapshotMetadata service makes sense, because it can be used later to advertise
+the existence of this data service.
+It is also possible that if block v/s extent is fixed for a given driver then that
+could be returned here, though I'm not sure about block size - it may could vary
+by volume.
+<<[/UNRESOLVED]>>
+```
 
 
 ### Kubernetes Components
@@ -858,7 +876,8 @@ individually transition each such CR to a terminal state as follows:
 from their associated VolumeSnapshotContent objects.
 If a VolumeSnapshot or associated VolumeSnapshotContent cannot be found, or
 if more than one CSI driver is involved then the manager will
-change the state of the CR to `Failed`.
+change the state of the CR to `Failed`
+and provide an appropriate error message in the `error` field.
 - The manager searches for the
 [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
 created by the CSI driver. When it finds this object it will create a
@@ -876,10 +895,24 @@ the
 [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
 to the `Failed` state.
 
-Periodically, the manager will scan all
+Periodically, the manager will scan for all
 [SnapshotSessionConfiguration CRs](#snapshotserviceconfiguration)
+and all [SnapshotSessionData CRs](#snapshotsessiondata)
 and delete those that have passed their expiry time.
 
+```
+<<[UNRESOLVED Is there a guaranteed minimum time for a session?]>>
+How is a session expiry time to be computed?
+
+- Is it fixed, say by a ConfigMap the manager could reference?
+  (One size-fits-all-CSI-drivers)
+- Does it depend on the number of snapshots specified in the session?
+- Does it depend on the size of the underlying volumes?
+
+The ConfigMap would be the easiest to implement. The other variants
+would require interaction with the SP.
+<<[/UNRESOLVED]>>
+```
 
 ### The External Snapshot Session Sidecar
 
@@ -909,6 +942,26 @@ in this proposal, including
 - Validating individual RPC arguments.
 - Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
 
+The sidecar will attempt to load the
+[SnapshotSessionData CR](#snapshotsessiondata) in its namespace with the name
+provided by the value of the `session_token` input argument of an RPC call.
+If the object is not found or is found to have expired, or that the
+VolumeSnapshots specified in the RPC call
+are not mentioned in the [SnapshotSessionData CR](#snapshotsessiondata),
+then the RPC call will be failed.
+
+The sidecar will attempt to load the VolumeSnapshots specified in an RPC call,
+along with their associated VolumeSnapshotContent objects, to ensure that they still
+exist and to obtain the SP identifiers for the snapshots.
+Additional checks may be performed depending on the RPC.
+(For example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
+that all the snapshots come from the same volume and that the
+snapshot order is correct.)
+If all checks are successful, the RPC call is proxied to the
+[SP Snapshot Session Service](#the-sp-snapshot-session-service)
+over the UNIX domain socket, with its input parameters appropriately
+translated. The metadata result stream is proxied back to the calling client
+without any transformation.
 
 ### The SP Snapshot Session Service
 
@@ -917,6 +970,16 @@ This container must be configured to communicate with the community provided
 [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
 over a UNIX domain socket.
 
+The SP service decides whether the metadata is returned in *block-based* format
+(`block_metadata_type` is `FIXED_LENGTH`)
+or *extent-based* format (`block_metadata_type` is `VARIABLE_LENGTH`).
+In any given RPC call, the `block_metadata_type` and `volume_size_bytes` return
+properties should be constant;
+likewise the `size_bytes` of all `BlockMetadata` entries if the `block_metadata_type`
+value returned is `FIXED_LENGTH`.
+
+The SP service should ignore the `session-token` input argument in the RPC calls,
+though it may include the value in log records for correlation with the sidecar logs.
 
 ### Test Plan
 
