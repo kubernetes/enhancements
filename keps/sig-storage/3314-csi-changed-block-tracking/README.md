@@ -346,7 +346,6 @@ individual driver Namespace.
 The creation and use of a snapshot session is illustrated in the figure below,
 with additional information available in the [Design Details](#design-details) section.
 
-> @TODO Eventually use a PNG - SVG does not render text spaces properly.
 ![Snapshot Session](./session.drawio.svg)
 
 
@@ -449,7 +448,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 The main vulnerabilities of this proposal are:
-- That the snapshot session indirectly provides a principle with the
+- That the snapshot session indirectly provides a principal with the
   authority to create a
   [SnapshotSessionRequest](#snapshotsessionrequest) CR,
   access to data in otherwise inaccessible VolumeSnapshots by simply naming
