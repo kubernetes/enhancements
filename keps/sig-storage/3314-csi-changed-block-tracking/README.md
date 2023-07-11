@@ -93,7 +93,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Metadata Format](#metadata-format)
     - [GetAllocated RPC](#getallocated-rpc)
     - [GetDelta RPC](#getdelta-rpc)
-    - [Capability Flags](#capability-flags)
   - [Kubernetes Components](#kubernetes-components)
   - [Custom Resources](#custom-resources)
     - [SnapshotSessionRequest](#snapshotsessionrequest)
@@ -782,32 +781,6 @@ The following conditions are well defined:
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 | Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
 
-#### Capability Flags
-
-The gRPC service is optional and its availability is indicated by ...
-```
-<<[UNRESOLVED How should the availability of this service be advertised through CSI interfaces?]>>
-Is it mandatory to provide such a mechanism via the CSI interfaces?
-It makes no sense to add a capability flag to the `GetPluginCapabilities` RPC of the
-`Identity` service, because a backup application cannot access this service.
-
-It is pretty easy  for a backup application to look for the SnapshotSessionConfiguration object
-of the CSI driver of the volume snapshots.
-A session would eventually expire if a SnapshotServiceConfiguration for the CSI driver were not found.
-Should the manager fail such sessions immediately?
-This would probably be more convenient from the backup application perspective,
-especially if there is a well defined error message returned.
-
-Thinking ahead to the possibility of a companion data service, then a Capability RPC
-in the SnapshotMetadata service makes sense, because it can be used later to advertise
-the existence of this data service.
-It is also possible that if block v/s extent is fixed for a given driver then that
-could be returned here, though I'm not sure about block size - it may could vary
-by volume.
-<<[/UNRESOLVED]>>
-```
-
-
 ### Kubernetes Components
 The following Kubernetes components are involved at runtime:
 
@@ -844,14 +817,13 @@ The following Kubernetes components are involved at runtime:
 ### The Snapshot Session Manager
 
 The Snapshot Session Manager is a community provided container that
-manages snapshot sessions for all CSI drivers in the system.
-It should be configured as a Deployment workload with a replica count of 1,
-or equivalent.
+manages snapshot sessions for all CSI drivers in the system;
+it should be deployed in a pod with a replica count of 1.
 The manager pod should run under the authority of a ServiceAccount
 that is different from that of any CSI driver,
-and authorized as described in [Risks and Mitigations](#risks-and-mitigations).
+and is authorized as described in [Risks and Mitigations](#risks-and-mitigations).
 
-It is composed of the following sub-components:
+The manager is composed of the following sub-components:
 - A validating webhook for the
   [SnapshotSessionRequest CR](#snapshotsessionrequest),
   registered when the manager is deployed.
@@ -872,47 +844,45 @@ The manager periodically scans for all
 [SnapshotSessionConfiguration CRs](#snapshotserviceconfiguration)
 in the `Pending` state and attempts to
 individually transition each such CR to a terminal state as follows:
+
 - It determines the CSI driver of the referenced VolumeSnapshots
-from their associated VolumeSnapshotContent objects.
-If a VolumeSnapshot or associated VolumeSnapshotContent cannot be found, or
-if more than one CSI driver is involved then the manager will
-change the state of the CR to `Failed`
-and provide an appropriate error message in the `error` field.
-- The manager searches for the
-[SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-created by the CSI driver. When it finds this object it will create a
-[SnapshotSessionData CR](#snapshotsessiondata) in the namespace
-of the CSI driver, using a long randomized string for its name;
-the string will also be used as the `session_token`.
-- The manager will then copy the CA certificate and
-endpoint address from the [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-to the [SnapshotSessionRequest CR](#snapshotsessionrequest),
-set the `session_token` value and change its state to `Ready`.
-- If the manager fails to find the CSI driver's
-[SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-by the time the expiry time is reached, it will transition
-the
-[SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-to the `Failed` state.
+  from their associated VolumeSnapshotContent objects.
+  If a VolumeSnapshot or associated VolumeSnapshotContent cannot be found, or
+  if more than one CSI driver is involved then it will
+  change the state of the CR to `Failed`
+  and provide an appropriate message in the `error` field.
 
-Periodically, the manager will scan for all
-[SnapshotSessionConfiguration CRs](#snapshotserviceconfiguration)
-and all [SnapshotSessionData CRs](#snapshotsessiondata)
-and delete those that have passed their expiry time.
+- It uses a label based search for the
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  created by the CSI driver, with the label query
+  `cbt.storage.k8s.io/driver:`*`CSI Driver`*
 
-```
-<<[UNRESOLVED Is there a guaranteed minimum time for a session?]>>
-How is a session expiry time to be computed?
+- If it finds the CSI driver's
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  it will create a
+  [SnapshotSessionData CR](#snapshotsessiondata)
+  containing details of the session in the namespace
+  of the CSI driver;
+  the name of this CR will be a long randomized string of valid
+  Kubernetes name characters, and will also be returned as the `session_token`.
 
-- Is it fixed, say by a ConfigMap the manager could reference?
-  (One size-fits-all-CSI-drivers)
-- Does it depend on the number of snapshots specified in the session?
-- Does it depend on the size of the underlying volumes?
+  It will then copy the CA certificate and
+  endpoint address from the [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  to the [SnapshotSessionRequest CR](#snapshotsessionrequest),
+  set the `session_token` value and change its state to `Ready`.
 
-The ConfigMap would be the easiest to implement. The other variants
-would require interaction with the SP.
-<<[/UNRESOLVED]>>
-```
+- If it fails to find the CSI driver's
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  it will change the state of the
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  to `Failed` and provide an appropriate message in the `error` field.
+
+The manager periodically scans for all
+[SnapshotSessionConfiguration](#snapshotserviceconfiguration)
+and [SnapshotSessionData](#snapshotsessiondata) CRs
+and deletes those that have passed their expiry time.
+A mechanism will be provided to configure the expiry time,
+for example, via a ConfigMap in the manager pod's namespace.
 
 ### The External Snapshot Session Sidecar
 
@@ -924,15 +894,21 @@ which must be authorized as described in [Risks and Mitigations](#risks-and-miti
 
 A Service object must be created for the sidecar and the DNS address of the
 service be provided as invocation arguments to the sidecar.
-The SP also must create a [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+
+The SP must create a [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
 that contains the CA certificate and Service endpoint address of the sidecar.
+The presence of this CR advertises the existence of a CSI driver's
+implementation of the optional
+[SnapshotSessionMetadata API](#the-snapshotmetadata-service-api) to Kubernetes
+backup applications and to the [SnapshotSessionManager](#the-snapshot-session-manager).
 
 The sidecar must be deployed in the same pod as the
 [SP Snapshot Session Service](#the-sp-snapshot-session-service)
 and must be configured to communicate with it through a UNIX domain socket.
-Additional invocation arguments include the server certificate to be used,
-and the name of the
+Additional invocation arguments to the sidecar container
+include the server certificate to be used, and the name of the
 [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration).
+Only a single replica of this pod must be configured.
 
 The sidecar acts as a proxy for the
 [SP Snapshot Session Service](#the-sp-snapshot-session-service),
@@ -966,9 +942,10 @@ without any transformation.
 ### The SP Snapshot Session Service
 
 The SP must provide a container that implements the [SnapshotMetadata Service](#the-snapshotmetadata-service-api).
-This container must be configured to communicate with the community provided
+This container must be deployed in a pod alongside the community provided
 [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
-over a UNIX domain socket.
+and configured to communicate with it over a UNIX domain socket.
+Only a single replica of this pod must be configured.
 
 The SP service decides whether the metadata is returned in *block-based* format
 (`block_metadata_type` is `FIXED_LENGTH`)
