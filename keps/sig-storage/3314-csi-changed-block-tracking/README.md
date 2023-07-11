@@ -348,7 +348,6 @@ with additional information available in the [Design Details](#design-details) s
 
 ![Snapshot Session](./session.drawio.svg)
 
-
 ### User Stories
 
 <!--
@@ -361,32 +360,36 @@ bogged down.
 
 #### Full snapshot backup
 
-Backup application needs to perform full backup on volumes of a specific
+A backup application needs to perform a full backup on volumes of a specific
 Kubernetes application.
-1. Backup application creates a VolumeSnapshot of the PVC that needs to be
+
+For each volume in the application:
+1. The backup application creates a VolumeSnapshot of a PVC that needs to be
 backed up.
-2. Backup application queries changed block tracking (CBT) service to identify
+2. The backup application queries the changed block tracking (CBT) service to identify
 all the allocated data blocks in the snapshot. The CBT service returns the list
 of allocated blocks.
 3. Using the VolumeSnapshot as the source, the backup application creates a new
-PVC.
-4. Backup application uses the CBT metadata to identify the data that needs to
-be backed up and reads these blocks from the mounted PVC.
+PVC and mounts it with `Block` VolumeMode in a pod.
+4. The backup application uses the CBT metadata to identify the data that needs to
+be backed up and reads these blocks from the mounted PVC in the pod.
 
 #### Incremental snapshot backup
 
-Backup application needs to perform incremental backup on volumes of a specific
-Kubernetes application. The backup application knows the identifier of the
-VolumeSnapshot it had backed up last.
-1. Backup application creates a VolumeSnapshot of the PVC that needs to be
-backed up.
-2. Backup application queries changed block tracking service to identify the
-changes between the latest snapshot and the one it had last backed up.
-The CBT service returns the list of changed blocks.
-3. Using the VolumeSnapshot as the source, the backup application creates a new
-PVC.
-4. Backup application uses the CBT metadata to find the only changed data to
-backup and reads these blocks from the mounted PVC.
+A backup application needs to perform an incremental backup on volumes of a specific
+Kubernetes application. The backup application knows the identifiers of the
+VolumeSnapshots it had backed up previously.
+
+For each volume in the application:
+1. The backup application creates a VolumeSnapshot of a PVC that needs to be
+backed up incrementally.
+2. The backup application queries the changed block tracking (CBT) service to identify the
+changes between the latest snapshot and the one it had previously backed up.
+The CBT service returns the list of blocks changed between the snapshots.
+3. Using the latest VolumeSnapshot as the source, the backup application creates a new
+PVC and mounts it with `Block` VolumeMode in a pod.
+4. The backup application uses the CBT metadata to find the only changed data to
+backup and reads these blocks from the mounted PVC in the pod.
 
 ### Notes/Constraints/Caveats
 
@@ -426,8 +429,8 @@ A portable backup application is expected to handle both such formats.
 must be capable of serving metadata on a VolumeSnapshot
 concurrently with the backup application's use of a PersistentVolume
 created on that same VolumeSnapshot.
-This is because a backup application would likely mount the PersistentVolume
-in `Block` mode in a Pod in order to read and archive the raw snapshot data blocks,
+This is because a backup application would likely mount the PersistentVolume with
+`Block` VolumeMode in a Pod in order to read and archive the raw snapshot data blocks,
 and this read/archive loop will be driven by the stream of snapshot block metadata.
 
 - The proposal does not specify how its security model is to be implemented.
@@ -865,12 +868,12 @@ individually transition each such CR to a terminal state as follows:
   containing details of the session in the namespace
   of the CSI driver;
   the name of this CR will be a long randomized string of valid
-  Kubernetes name characters, and will also be returned as the `session_token`.
+  Kubernetes name characters, and will also be returned as the `sessionToken`.
 
   It will then copy the CA certificate and
   endpoint address from the [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
   to the [SnapshotSessionRequest CR](#snapshotsessionrequest),
-  set the `session_token` value and change its state to `Ready`.
+  set the `sessionToken` value and change its state to `Ready`.
 
 - If it fails to find the CSI driver's
   [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
