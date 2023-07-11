@@ -93,7 +93,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Metadata Format](#metadata-format)
     - [GetAllocated RPC](#getallocated-rpc)
     - [GetDelta RPC](#getdelta-rpc)
-    - [Capability Flags](#capability-flags)
   - [Kubernetes Components](#kubernetes-components)
   - [Custom Resources](#custom-resources)
     - [SnapshotSessionRequest](#snapshotsessionrequest)
@@ -470,34 +469,32 @@ the issues above:
   [SnapshotSessionData](#snapshotsessiondata) and the
   [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CRs.
 
-The backup application obtains a
+The direct gRPC call made by the backup application client will encrypt
+all data exchanged with server, but
+the gRPC client is required to first establish trust with the server's CA.
+The backup application obtains the targeted
 [SnapshotMetadata](#the-snapshotmetadata-service-api) service
 server's CA certificate and endpoint address from the
 [SnapshotSessionRequest](#snapshotsessionrequest) CR.
-The CA certificate and the end point were sourced from the
-global
+These data were obtained from the global
 [SnapshotServiceConfiguration](#snapshotserviceconfiguration) CR
-created by the CSI driver; it contains
-public information and is not particularly vulnerable.
+created by the CSI driver, and as this object only contains
+public information it is not considered particularly vulnerable.
 
-The direct gRPC call made by the backup application client will encrypt
-all data exchanged with server.
-
-The gRPC client is required to establish trust with the server's CA.
-Mutual authentication, however, is not performed, as to do so would require the
+The direct gRPC call does not perform mutual authentication,
+as this would require the
 server to trust the certificate authorities used by its clients and no
-standardized mechanism exists for this purpose.
-
+standardized Kubernetes mechanism exists for this purpose.
 Instead, the backup application passes the opaque snapshot session token
 returned in the [SnapshotSessionRequest](#snapshotsessionrequest) CR
 as a parameter in each RPC.
-This token is acually the name of a
+This token is actually the name of a
 [SnapshotSessionData](#snapshotsessiondata) CR created by the
 [Snapshot Session Manager](#the-snapshot-session-manager)
 in the Namespace of the CSI driver, and only accessible to
 the manager and the server.
 The server in this case is is the
-[external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar),
+[external-snapshot-session sidecar](#the-external-snapshot-session-sidecar),
 and it will validate the caller's use of the RPC by retrieving the
 CR with the name of the token.
 
@@ -531,7 +528,7 @@ but does not mandate how such policy is to be configured:
   requires GET and LIST permissions on this object to search for a CSI driver that
   can satisfy a request to create a snapshot session.
   - The ServiceAccounts of CSI drivers deploying a
-  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
   need all permissions on this object.
   - The ServiceAccount used by a backup application should be granted
   GET and LIST permissions on this object so that it can determine which
@@ -541,7 +538,7 @@ but does not mandate how such policy is to be configured:
   - The ServiceAccount used by the [Snapshot Session Manager](#the-snapshot-session-manager)
   requires all permissions on this object in every namespace.
   - The ServiceAccounts of CSI drivers deploying a
-  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
   need GET, LIST and DELETE permissions on this object in their namespace (only).
   It is recommended that CSI drivers not be granted global access to these objects.
   - It is recommended that no other principals, other than the system administrators, be granted access to these CRs.
@@ -552,7 +549,7 @@ but does not mandate how such policy is to be configured:
   requires GET and LIST permissions on these objects.
   - The ServiceAccounts of CSI drivers should already have sufficient permissions
   on these objects. This is needed for the
-  [external-snapshot-session-sidecar](#the-external-snapshot-session-sidecar)
+  [external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
   which attempts to load these objects.
   - The ServiceAccount used by a backup application should be granted at least GET
   permissions on VolumeSnapshot objects.
@@ -784,14 +781,6 @@ The following conditions are well defined:
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 | Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
 
-#### Capability Flags
-
-The gRPC service is optional and its availability is indicated by ...
-> @TODO How should the availability of this service be advertised through CSI interfaces?
-> Is this mandatory?
-> It is pretty obviously sensed in K8s by looking for SnapshotSessionConfiguration objects.
-
-
 ### Kubernetes Components
 The following Kubernetes components are involved at runtime:
 
@@ -827,14 +816,147 @@ The following Kubernetes components are involved at runtime:
 
 ### The Snapshot Session Manager
 
-@TODO CARL
+The Snapshot Session Manager is a community provided container that
+manages snapshot sessions for all CSI drivers in the system;
+it should be deployed in a pod with a replica count of 1.
+The manager pod should run under the authority of a ServiceAccount
+that is different from that of any CSI driver,
+and is authorized as described in [Risks and Mitigations](#risks-and-mitigations).
+
+The manager is composed of the following sub-components:
+- A validating webhook for the
+  [SnapshotSessionRequest CR](#snapshotsessionrequest),
+  registered when the manager is deployed.
+  The validating webhook ensures that the creator of the CR
+  also has permission to access VolumeSnapshot objects in the same
+  namespace.
+
+- A controller for the [SnapshotSessionRequest CR](#snapshotsessionrequest)
+  that manages its lifecycle.
+  The CR is created in a `Pending` state, and the manager will
+  attempt to transition it to the `Ready` state, and if unsuccessful
+  will transition it to the `Failed` state.
+  The manager will also delete expired CR's.
+
+On CR creation, the manager establishes the initial expiration time for
+the CR and sets its state to `Pending`.
+The manager periodically scans for all
+[SnapshotSessionConfiguration CRs](#snapshotserviceconfiguration)
+in the `Pending` state and attempts to
+individually transition each such CR to a terminal state as follows:
+
+- It determines the CSI driver of the referenced VolumeSnapshots
+  from their associated VolumeSnapshotContent objects.
+  If a VolumeSnapshot or associated VolumeSnapshotContent cannot be found, or
+  if more than one CSI driver is involved then it will
+  change the state of the CR to `Failed`
+  and provide an appropriate message in the `error` field.
+
+- It uses a label based search for the
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  created by the CSI driver, with the label query
+  `cbt.storage.k8s.io/driver:`*`CSI Driver`*
+
+- If it finds the CSI driver's
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  it will create a
+  [SnapshotSessionData CR](#snapshotsessiondata)
+  containing details of the session in the namespace
+  of the CSI driver;
+  the name of this CR will be a long randomized string of valid
+  Kubernetes name characters, and will also be returned as the `session_token`.
+
+  It will then copy the CA certificate and
+  endpoint address from the [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  to the [SnapshotSessionRequest CR](#snapshotsessionrequest),
+  set the `session_token` value and change its state to `Ready`.
+
+- If it fails to find the CSI driver's
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  it will change the state of the
+  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+  to `Failed` and provide an appropriate message in the `error` field.
+
+The manager periodically scans for all
+[SnapshotSessionConfiguration](#snapshotserviceconfiguration)
+and [SnapshotSessionData](#snapshotsessiondata) CRs
+and deletes those that have passed their expiry time.
+A mechanism will be provided to configure the expiry time,
+for example, via a ConfigMap in the manager pod's namespace.
 
 ### The External Snapshot Session Sidecar
 
-@TODO CARL
+The `external-snapshot-session` sidecar is a community provided container
+that handles all aspects of Kubernetes snapshot session management for
+the SP.
+The sidecar should be configured to run under the authority of the CSI driver ServiceAccount,
+which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
+
+A Service object must be created for the sidecar and the DNS address of the
+service be provided as invocation arguments to the sidecar.
+
+The SP must create a [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
+that contains the CA certificate and Service endpoint address of the sidecar.
+The presence of this CR advertises the existence of a CSI driver's
+implementation of the optional
+[SnapshotSessionMetadata API](#the-snapshotmetadata-service-api) to Kubernetes
+backup applications and to the [SnapshotSessionManager](#the-snapshot-session-manager).
+
+The sidecar must be deployed in the same pod as the
+[SP Snapshot Session Service](#the-sp-snapshot-session-service)
+and must be configured to communicate with it through a UNIX domain socket.
+Additional invocation arguments to the sidecar container
+include the server certificate to be used, and the name of the
+[SnapshotSessionConfiguration CR](#snapshotserviceconfiguration).
+Only a single replica of this pod must be configured.
+
+The sidecar acts as a proxy for the
+[SP Snapshot Session Service](#the-sp-snapshot-session-service),
+handling all aspects of the Kubernetes snapshot session protocol defined
+in this proposal, including
+- Validating a client's authority to a snapshot session.
+- Validating individual RPC arguments.
+- Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
+
+The sidecar will attempt to load the
+[SnapshotSessionData CR](#snapshotsessiondata) in its namespace with the name
+provided by the value of the `session_token` input argument of an RPC call.
+If the object is not found or is found to have expired, or that the
+VolumeSnapshots specified in the RPC call
+are not mentioned in the [SnapshotSessionData CR](#snapshotsessiondata),
+then the RPC call will be failed.
+
+The sidecar will attempt to load the VolumeSnapshots specified in an RPC call,
+along with their associated VolumeSnapshotContent objects, to ensure that they still
+exist and to obtain the SP identifiers for the snapshots.
+Additional checks may be performed depending on the RPC.
+(For example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
+that all the snapshots come from the same volume and that the
+snapshot order is correct.)
+If all checks are successful, the RPC call is proxied to the
+[SP Snapshot Session Service](#the-sp-snapshot-session-service)
+over the UNIX domain socket, with its input parameters appropriately
+translated. The metadata result stream is proxied back to the calling client
+without any transformation.
+
 ### The SP Snapshot Session Service
 
-@TODO ?
+The SP must provide a container that implements the [SnapshotMetadata Service](#the-snapshotmetadata-service-api).
+This container must be deployed in a pod alongside the community provided
+[external-snapshot-session sidecar](#the-external-snapshot-session-sidecar)
+and configured to communicate with it over a UNIX domain socket.
+Only a single replica of this pod must be configured.
+
+The SP service decides whether the metadata is returned in *block-based* format
+(`block_metadata_type` is `FIXED_LENGTH`)
+or *extent-based* format (`block_metadata_type` is `VARIABLE_LENGTH`).
+In any given RPC call, the `block_metadata_type` and `volume_size_bytes` return
+properties should be constant;
+likewise the `size_bytes` of all `BlockMetadata` entries if the `block_metadata_type`
+value returned is `FIXED_LENGTH`.
+
+The SP service should ignore the `session-token` input argument in the RPC calls,
+though it may include the value in log records for correlation with the sidecar logs.
 
 ### Test Plan
 
