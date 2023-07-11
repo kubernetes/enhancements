@@ -338,35 +338,45 @@ When kubelet starts, VolumeManager starts DSWP and reconciler
 
 However, the first thing that the reconciler does before reconciling DSW and ASW
 is that it scans `/var/lib/kubelet/pods/*` and reconstructs **all** found
-volumes and adds them to ASW as *uncertain*. Only information that is available
-[in the Pod directory on the disk are reconstructed into ASW at this point.
-* Since the volume reconstruction can be imperfect and can miss `devicePath`,
-]()  VolumeManager adds all reconstructed volumes to `volumesNeedDevicePath`
-  array, to finish their reconstruction from `node.status.volumesAttached`
-  later.
-* All volumes that failed reconstruction are added to
-  `volumesFailedReconstruction` list.
+volumes and adds them to ASW as *uncertainly mounted* and *uncertainly attached*.
+Only information that is available in the Pod directory on the disk are
+reconstructed into ASW, because kubelet may not have connection to the API
+server at this point.
+
+The volume reconstruction can be imperfect:
+* It can miss `devicePath`, which may not be possible to reconstruct from the OS.
+* For CSI volumes, it cannot decide if a volume is attach-able to
+  [put it into](https://github.com/kubernetes/kubernetes/blob/89bfdf02762727506c9801d38b202873793d1106/pkg/kubelet/volumemanager/volume_manager.go#L368),
+  or to [remove it from](https://github.com/kubernetes/kubernetes/blob/5134520a3bc3604d14a10900c7e07481f62d5912/pkg/kubelet/volumemanager/reconciler/reconciler_common.go#L298)
+  `node.status.volumesInUse`, because it cannot read CSIDriver from the API
+  server yet.
+
+Kubelet puts the volumes to ASW as *uncertainly attached* and with possibly
+wrong `devicePath` it got from the volume plugin. Kubelet stores list of the
+reconstructed volumes in `volumesNeedUpdateFromNodeStatus` to fix both
+`devicePath` and attach-ability from `node.status.volumesAttached` once it
+establishes connection to the API server.
 
 After **ASW** is populated, reconciler starts its
-[reconciliation loop](https://github.com/kubernetes/kubernetes/blob/cca3d557e6ff7f265eca8517d7c4fa719077c8d1/pkg/kubelet/volumemanager/reconciler/reconciler_new.go#L33-L69):
+[reconciliation loop](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/reconciler/reconciler_new.go#L33-L75):
 1. `mountOrAttachVolumes()` - mounts (and attaches, if necessary) volumes that
    are in DSW, but not in ASW. This can happen even before DSW is fully
    populated.
 
-2. `updateReconstructedDevicePaths()` - once kubelet gets connection to the API
-   server and reads its own `Node.status`, volumes in `volumesNeedDevicePath`
-   (i.e. all reconstructed volumes) are updated from
-   `node.status.attachedVolumes`, overwriting any previous `devicePath` in
-   *uncertain* mounts (i.e. potentially overwriting the reconstructed
-   `devicePath` or even `devicePath` from `MountDevice` / `SetUp` that ended
-   as *uncertain* (e.g. timed out). This happens only once,
-   `volumesNeedDevicePath` is cleared afterwards.
+2. `updateReconstructedFromNodeStatus()` - once kubelet gets connection to the
+   API server and reads its own `node.status`, volumes in
+   `volumesNeedUpdateFromNodeStatus` (i.e. all reconstructed volumes) are
+   updated from `node.status.volumesAttached`, overwriting any previous
+   *uncertain attach-ability* and `devicePath` of *uncertain mounts* (i.e.
+   potentially overwriting the reconstructed `devicePath` or even `devicePath`
+   from `MountDevice` / `SetUp` that ended as *uncertain*). This
+   happens only once, `volumesNeedUpdateFromNodeStatus` is cleared afterwards.
 
 3. (Only once): Add all reconstructed volumes to `node.status.volumesInUse`.
 
 4. Only after DSW was fully populated (i.e. VolumeManager can tell if a volume
-   is really needed or not), **and** `devicePaths` were populated from
-   `node.status`, VolumeManager can start unmounting volumes and calls:
+   is really needed or not), **and** DSW was fixed from `node.status`,
+   VolumeManager can start unmounting volumes and calls:
    1. `unmountVolumes()` - unmounts pod local volume mounts (`TearDown`) that
       are in ASW and are not in DSW.
    2. `unmountDetachDevices()` - unmounts global volume mounts (`UnmountDevice`)
@@ -389,9 +399,9 @@ for volumes that are still *uncertain*, not to overwrite the *certain* ones.
 ### Old VolumeManager startup
 
 When kubelet starts, VolumeManager starts DSWP and the reconciler
-[in parallel](https://github.com/kubernetes/kubernetes/blob/575616cc72dbfdd070ead81ec29c0d4f00226487/pkg/kubelet/volumemanager/volume_manager.go#L288-L292).
+[in parallel](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/volume_manager.go#L288-L292).
 
-[The reconciler](https://github.com/kubernetes/kubernetes/blob/44b72d034852eb6da8916c82ce722af604b196c5/pkg/kubelet/volumemanager/reconciler/reconciler.go#L33-L45)
+[The reconciler](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/reconciler/reconciler.go#L33-L45)
 then periodically does:
 1. `unmountVolumes()` - unmounts (`TearDown`) pod local volumes that are in
    ASW and are not in DSW. Since the ASW is initially empty, this call
