@@ -181,7 +181,7 @@ type ServicePort struct {
   //   * 'kubernetes.io/h2c' - HTTP/2 over cleartext as described in https://www.rfc-editor.org/rfc/rfc7540
   //   * 'kubernetes.io/ws'  - WebSocket over cleartext as described in https://www.rfc-editor.org/rfc/rfc6455
   //   * 'kubernetes.io/wss' - WebSocket over TLS as described in https://www.rfc-editor.org/rfc/rfc6455
-  //   * 'kubernetes.io/raw' - Traffic to this port is the protocol value defined by this port's `protocol` field. (ie. TCP/UDP/SCTP)
+  //   * 'kubernetes.io/raw' - Opaque application traffic; implementations should not apply special processing
   //
   // * Other protocols should use implementation-defined prefixed names such as
   // mycompany.com/my-custom-protocol.
