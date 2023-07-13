@@ -406,20 +406,18 @@ type JobSpec struct {
   // failures per index is kept in the pod's
   // batch.kubernetes.io/job-index-failure-count annotation. It can only
   // be set when Job's completionMode=Indexed, and the Pod's restart
-  // policy is Never.
-  // When specified, then the backoffLimit field is defaulted to the max int32
-  // value. Also, once specified it cannot be set to nil.
+  // policy is Never. The field is immutable.
   // +optional
   BackoffLimitPerIndex *int32
 
   // Specifies the maximal number of failed indexes before marking the Job as
   // failed, when backoffLimitPerIndex is set. Once the number of failed
   // indexes exceeds this number the entire Job is marked as Failed and its
-  // execution is terminated. When left as nil the job continues execution of
+  // execution is terminated. When left as null the job continues execution of
   // all of its indexes and is marked with the `Complete` Job condition.
   // It can only be specified when backoffLimitPerIndex is set.
-  // The value is might be up to 10^5 when completions is <= 10^5, or 10^4 when
-  // completions > 10^5.
+  // It can be null or up to completions. It is required and must be
+  // less than or equal to 10^4 when is completions greater than 10^5.
   // +optional
   MaxFailedIndexes *int32
   ...
@@ -515,9 +513,6 @@ all indexes are succeeded. The Job is marked as failed (the `Failed` Job conditi
 when at least one index is failed. The `Failed` condition is added once
 all indexes completed their execution (either failed or succeeded), or when
 the number of failed indexes exceeds the specified `.spec.maxFailedIndexes`.
-The `reason` field for the failed Job is `FailedIndexes` and the `message` field
-will list up to 3 of the failed indexes (in case there are more indexes the
-message will indicate that, for example with `...`).
 
 ### FailIndex action
 
@@ -730,6 +725,12 @@ in back-to-back releases.
 - Address reviews and bug reports from Alpha users
 - Propose and implement metrics
 - E2e tests are in Testgrid and linked in KEP
+- Evaluate performance of Job controller for jobs using backoff limit per index
+  with benchmarks at the integration or e2e level (discussion pointers from Alpha
+  review: [thread1](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1261694406) and [thread2](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263862076))
+- Reevaluate ideas of not using `.status.uncountedTerminatedPods` for keeping track
+  in the `.status.Failed` field. The idea is to prevent `backoffLimit` for setting.
+  Discussion [link](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263879848).
 - The feature flag enabled by default
 
 #### GA
@@ -1214,6 +1215,10 @@ Major milestones might include:
 - 2023-01-23: Initial version of the KEP PR [Backoff Limit Per Job #3774](https://github.com/kubernetes/enhancements/pull/3774)
 - 2023-04-26: The KEP PR [Backoff limit per Job Index #3967](https://github.com/kubernetes/enhancements/pull/3967) takes over from [#3774](https://github.com/kubernetes/enhancements/pull/3774)
 - 2023-05-08: The KEP PR ready for review
+- 2023-06-07: The KEP PR merged
+- 2023-07-13: The implementation PR [Support BackoffLimitPerIndex in Jobs #118009](https://github.com/kubernetes/kubernetes/pull/118009) under review
+- 2023-07-18: Merge the API PR [Extend the Job API for BackoffLimitPerIndex](https://github.com/kubernetes/kubernetes/pull/119294)
+- 2023-07-18: Merge the Job Controller PR [Support BackoffLimitPerIndex in Jobs](https://github.com/kubernetes/kubernetes/pull/118009)
 
 ## Drawbacks
 
