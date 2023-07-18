@@ -284,6 +284,8 @@ contain unmodified resource requests from the PodSpec.
  
 +message ContainerResourceConfig {
 +    // Name of the container
++    // Note: name is redundant for container-specific requests (UpdateContainerResourcesRequest)
++    // but needed for pod-specific requests (PodSandboxConfig).
 +    string name= 1;
 +    // Requests and limits hold corresponding container resources data.
 +    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 2;
