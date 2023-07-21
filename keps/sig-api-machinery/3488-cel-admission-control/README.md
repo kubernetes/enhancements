@@ -2394,11 +2394,13 @@ in back-to-back releases.
   If multiple admission policies require the same conversion, convert only once. 
   From @liggitt: "webhook code loops up one level, first accumulates all the validation webhooks we'll run, then converts to the versions needed by those webhooks then evaluates in parallel"
 - authz check to the specific resource referenced in the policy's paramKind. ([comment](https://github.com/kubernetes/kubernetes/pull/113314#discussion_r1013135860))
-- complete feature of access to namespace metadata 
-- complete type check for CRD
+- complete feature of access to namespace metadata
 - add controlled rollout strategy to support future CEL library/function/variable changes
 - [Quantity](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/api/resource/quantity.go#L100) support from CEL expression and tested properly
 - support the list of features mentioned under phrase 2
+
+## GA
+- complete type check for CRD and aggregated types
 
 ### Upgrade / Downgrade Strategy
 
