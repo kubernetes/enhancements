@@ -346,7 +346,7 @@ individual driver Namespace.
 The creation and use of a snapshot session is illustrated in the figure below,
 with additional information available in the [Design Details](#design-details) section.
 
-![Snapshot Session](./session.drawio.svg)
+![Metadata access flow](./flow.drawio.svg)
 
 ### User Stories
 
@@ -984,7 +984,7 @@ spec:
     storage: true
 ```
 
-#### SnapshotSessionData 
+#### SnapshotSessionData
 
 `SnapshotSessionData` CR is a namespaced resource created within the namespace
 of the CSI driver. The name of the resource represents session token itself.
