@@ -235,6 +235,10 @@ Ongoing work to support pagination in watch cache: https://github.com/kubernetes
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 ##### Prerequisite testing updates
 
 scalability tests verifying that introducing etcd progress notify events
