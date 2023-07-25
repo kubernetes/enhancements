@@ -87,3 +87,10 @@ Major milestones for vSphere in-tree plugin CSI migration:
 
 - 1.26
   - vSphere CSI migration to Stable
+
+- 1.27
+  - vSphere CSI migration locked on
+
+- 1.30
+  - vSphere in-tree support eligible for removal
+    (oldest supported n-3 nodes are 1.27 and have vSphere CSI migration enabled)

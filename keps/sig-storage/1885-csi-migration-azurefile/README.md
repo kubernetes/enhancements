@@ -95,3 +95,10 @@ Major milestones for Azure File in-tree plugin CSI migration:
 
 - 1.26
   - AzureFile CSI migration to GA, on by default
+
+- 1.27
+  - AzureFile CSI migration locked on
+
+- 1.30
+  - AzureFile in-tree support eligible for removal
+    (oldest supported n-3 nodes are 1.27 and have AzureFile CSI migration enabled)
