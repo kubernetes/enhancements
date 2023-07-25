@@ -171,7 +171,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 It is very likely that users experience configuration errors when submitting pods to Kubernetes.  
 We would like to propose a new condition so that users can determine if a pod has an error in startup.  
-A new condition will provide a quick way to verify if a pod detected a unrecoverable configuration error.  
+A new condition will provide a quick way to verify if a pod has detected an unrecoverable configuration error.  
 Many of these configuration errors are fixable via user interactions (ie creating a secret, changing the image name) but without any modifications the pods will stay stuck in the pending state.  
 
 ## Motivation
@@ -228,6 +228,15 @@ As an end-user, if I create a pod with an ImagePullPolicy of Never but image doe
 #### Story 3
 
 As an end-user, if I create a pod with a missing config map, I would expect to see a condition that states that the pod failed to start due to a configuration error.
+
+#### Story 4
+
+As a Kubernetes operator, I want to avoid filling my cluster with pods that will go into pending forever.  
+Operators would want a stable condition to determine configuration errors without having to dig into the container status or view the events.
+
+#### Story 5
+
+As a provider of a batch service, we want to selectively delete pods that are stuck due to configuration issues.  This condition could allow an external controller to delete pods that have this condition.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -414,25 +423,6 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 -->
 
 ##### Unit tests
-
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
 
 - `kubectl/kubelet_pods.go`: `Jan 31st 2023` - `71.1`
 - `kubectl/status/generate.go`: `Jan 31st 2023` - `95.8`
