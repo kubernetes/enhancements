@@ -180,7 +180,19 @@ Users may not have deep knowledge of Kubernetes.  It is common occurrence to fin
 
 It would be ideal to have a standard condition for these common configuration errors.  These errors can be fixed via human interaction but they can sometimes be difficult to programatically fix.  A goal of having a standard condition for these configuration errors would be for third-party controllers and/or Kubernetes controllers to start using a single way of detecting fixable configuration errors.  For example, in the Armada project, we utilize container statuses and events to deduce these type of configuration errors.  Events are best-effort so they can easily be missed.
 
+It is common to have third-party controllers that monitor conditions to verify the stability of your workloads.  Currently, to deduce configuration errors, you have to either monitor events, view container statuses, or sometimes view conditions based on when your pod got stuck.  A stable condition for configuration errors will enhance the experience for third-party developers as they can programatically determine a failure with a stable condition.  
+
 ### Goals
+
+<<[UNRESOLVED @kannon92 ]>>
+Condition Name is up to debate:
+
+a) ConfigIssue
+b) FailingToStart
+c) PodUnhealthy
+
+Reviewers, please put some other options here.
+<<[/UNRESOLVED]>>
 
 - Add a new condition FailingToStart to detect failures in configuration.
 
@@ -188,8 +200,10 @@ For future cases that we want to add to to this condition, the suggestion would 
 
 ### Non-Goals
 
-- Configuration errors that happen during Sandbox creation (Mounting volumes) will not be included as part of this condition
+- Configuration errors that happen during Sandbox creation (Mounting volumes, Network creation) will not be included as part of this condition
   - PodReadyToStartContainers condition actually covers these cases so there is no need to cover them in this KEP.
+- Configuration errors that happen during Init containers.
+  - These errors are already captured by the Initialized condition as when an init container stage is passed, the Intialized condition would be set to true.
 
 ## Proposal
 
@@ -199,23 +213,7 @@ For future cases that we want to add to to this condition, the suggestion would 
   - Image not found locally when ImagePullPolicy is set to never.
   - Existing config map but invalid key reference
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-
 ### User Stories
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
 
 #### Story 1
 
@@ -232,13 +230,16 @@ As an end-user, if I create a pod with a missing config map, I would expect to s
 #### Story 4
 
 As a Kubernetes operator, I want to avoid filling my cluster with pods that will go into pending forever.  
+I have a controller that sets up alerts if too many pods are unable to get past pending.
 Operators would want a stable condition to determine configuration errors without having to dig into the container status or view the events.
 
 #### Story 5
 
-As a provider of a batch service, we want to selectively delete pods that are stuck due to configuration issues.  This condition could allow an external controller to delete pods that have this condition.
+As a provider of a batch service, we want to selectively delete pods that are stuck due to configuration issues.  This condition could allow an external controller to delete pods that have this condition.  With [PodFailurePolicy](https://kubernetes.io/docs/tasks/job/pod-failure-policy/#using-pod-failure-policy-to-avoid-unnecessary-pod-retries-based-on-custom-pod-conditions) it would be possible to use the Job controller to enforce this.
 
 ### Notes/Constraints/Caveats (Optional)
+
+This feature is very close to [KEP-3085](../3085-pod-conditions-for-starting-completition-of-sandbox-creation).  KEP 3085 adds a condition called PodReadyToStartContainers when the sandbox creation of containers is successful.  The KEP goes into more detail on all the cases that this can include.  
 
 #### Pending Pod State Review
 
@@ -461,7 +462,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
+- Feature implemented behind a feature flag
+- Condition is added as a kubelet constant
+- Unit tests added for cases.
+
 #### Beta
+
+- Condition is moved to staging as a permanent API field for pod conditions.
+- Feature turned on by default.
 
 #### GA
 
@@ -530,32 +538,17 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+The new condition will be managed by the Kubelet. When upgrading a node to a
+version of the Kubelet that can set the new condition, new pods launched on
+that node will surface the new condition. If Kubelet on the node is later
+downgraded, there may remain evicted pods that are not deleted. For such pods, a
+node with a version of the Kubelet that does not support the new condition will
+continue to report pods associated with it with the new conditions.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+The new condition will be managed by the Kubelet. Since the control plane
+components are not involved, handling of version skew is not applicable.
 
 ## Production Readiness Review Questionnaire
 
@@ -601,17 +594,14 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodFailingToStartCondition
+  - Components depending on feature gate: Kubelet
 
 - Turning on this feature gate means that we add FailingToStart as a condition in pods.
 - If a pod has a configuration error then we would set FailingToStart to be true.
 
 ##### Does enabling the feature change any default behavior?
 
-Enabling the feature gate will just add a new condition to pods.  
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No changes to any default behavior should result from enabling the feature.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -776,7 +766,7 @@ previous answers based on experience in the field.
 
 Yes, the new pod condition will result in the Kubelet Status Manager making additional PATCH calls on the pod status fields.
 
-The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH es in a batch.
+The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH in a batch.
 
 ##### Will enabling / using this feature result in introducing new API types?
 
@@ -860,22 +850,27 @@ details). For now, we leave it here.
 
 #### How does this feature react if the API server and/or etcd is unavailable?
 
+If etcd/API server is unavailable, pod status cannot be updated. So the
+`PodReadyToStartContainers` condition associated with pod status cannot be
+updated either. The pod status manager already retries the API server requests
+later (based on data cached in the Kubelet) and that should help.
+
+If the Kubelet is ready to start containers in a pod (right after pod sandbox
+creation completes) on a node but API server becomes unavailable (before the
+condition to indicate readiness to start containers can be patched) and Kubelet
+crashes or restarts (shortly after API server becoming and staying unavailable),
+the `lastTransitionTime` field may be inaccurate. This is described in the
+section
+[above](#unavailability-of-api-server-or-etcd-along-with-kubelet-restart).
+
 #### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+None so far.
 
 #### What steps should be taken if SLOs are not being met to determine the problem?
+
+SLOs are not applicable to pod status fields. Overall Kubernetes node level SLOs
+may leverage this feature.
 
 ## Implementation History
 
