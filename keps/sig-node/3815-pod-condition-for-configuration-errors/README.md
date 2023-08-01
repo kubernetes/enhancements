@@ -171,8 +171,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 It is very likely that users experience configuration errors when submitting pods to Kubernetes.  
 We would like to propose a new condition so that users can determine if a pod has an error in startup.  
-A new condition will provide a quick way to verify if a pod has detected an unrecoverable configuration error.  
-Many of these configuration errors are fixable via user interactions (ie creating a secret, changing the image name) but without any modifications the pods will stay stuck in the pending state.  
+A new condition will provide a quick way to verify if a pod has detected an unrecoverable configuration error.
 
 ## Motivation
 
@@ -187,16 +186,16 @@ It is common to have third-party controllers that monitor conditions to verify t
 <<[UNRESOLVED @kannon92 ]>>
 Condition Name is up to debate:
 
-a) ConfigIssue
-b) FailingToStart
-c) PodUnhealthy
+a) PodFailed
+b) PodFailedToStart
+c) PodHasConfigurationIssue
 
 Reviewers, please put some other options here.
 <<[/UNRESOLVED]>>
 
 - Add a new condition FailingToStart to detect failures in configuration.
 
-For future cases that we want to add to to this condition, the suggestion would be to consider cases where pods are forever stuck in the pending state.  We want to avoid transient pods that will eventually resolve themselves so we decided to avoid targeting events that are related to ImagePullBackOff because these can eventually be fixed without any interaction.  The general rule could be that pods that require manually intervention to fix could be added as cases for this condition.  
+For future cases that we want to add to to this condition, the suggestion would be to consider cases where pods are forever stuck in the pending state.  We want to avoid transient pods that will eventually resolve themselves.  The general rule could be that pods that require manually intervention to fix could be added as cases for this condition.  
 
 ### Non-Goals
 
@@ -207,11 +206,12 @@ For future cases that we want to add to to this condition, the suggestion would 
 
 ## Proposal
 
-- Add a FailingToStart Condition for the following cases:
+- Add a PodFailedToStart Condition for the following cases:
 
   - Invalid Image Name
   - Image not found locally when ImagePullPolicy is set to never.
   - Existing config map but invalid key reference
+  - Container lifecycle hook failures
 
 ### User Stories
 
@@ -229,17 +229,20 @@ As an end-user, if I create a pod with a missing config map, I would expect to s
 
 #### Story 4
 
-As a Kubernetes operator, I want to avoid filling my cluster with pods that will go into pending forever.  
-I have a controller that sets up alerts if too many pods are unable to get past pending.
+As a Kubernetes operator, I have a controller that sets up alerts if too many pods are unable to get past pending.
 Operators would want a stable condition to determine configuration errors without having to dig into the container status or view the events.
 
 #### Story 5
 
 As a provider of a batch service, we want to selectively delete pods that are stuck due to configuration issues.  This condition could allow an external controller to delete pods that have this condition.  With [PodFailurePolicy](https://kubernetes.io/docs/tasks/job/pod-failure-policy/#using-pod-failure-policy-to-avoid-unnecessary-pod-retries-based-on-custom-pod-conditions) it would be possible to use the Job controller to enforce this.
 
+Third party operators could also utilize this condition to delete pods.  
+
 ### Notes/Constraints/Caveats (Optional)
 
-This feature is very close to [KEP-3085](../3085-pod-conditions-for-starting-completition-of-sandbox-creation).  KEP 3085 adds a condition called PodReadyToStartContainers when the sandbox creation of containers is successful.  The KEP goes into more detail on all the cases that this can include.  
+This feature goal has an overlap to [KEP-3085](../3085-pod-conditions-for-starting-completition-of-sandbox-creation).  KEP 3085 adds a `PodReadyToStartContainers` condition to notify a user when the sandbox creation of containers is successful.  The KEP goes into more detail on all the cases that this can include.  
+
+A distinction between this KEP and PodReadyToStartContainers is that this KEP will include failure cases after sandbox creation is set.  All the cases in [Pending Pod State Review](pending-pod-state-review) have PodReadyToStartContainers as true.  These states would need a new condition to reflect an issue with startup.  
 
 #### Pending Pod State Review
 
@@ -293,6 +296,30 @@ This feature is very close to [KEP-3085](../3085-pod-conditions-for-starting-com
     - PodScheduled=True
     - PodReadyToStartContainers=True
 
+##### ErrImageNeverPull - Pulling images with invalid image secrets
+
+This is a case where a Pod will say `ErrImagePull` for a short timeperiod and then will go into `ImagePullBackOff`.  
+Adding a condition would be useful here to reflect that we hit an `ErrImagePull` and we are "stuck".  
+
+- Reproduction: container that tries to pull from private repository with invalid imagePullSecrets.
+- Pod status:
+  - status: Pending
+- ContainerStatus:
+  - state=Waiting
+  - reason=ErrImagePull
+  - message=failed to pull and unpack image "*":
+          failed to resolve reference "**": pulling
+          from host * failed with status code [manifests latest]: 401
+          Unauthorized
+        reason: ErrImagePull
+- Conditions:
+  - Type=Status
+  - Initialized=True
+  - Ready=False
+  - ContainersReady=False
+  - PodScheduled=True
+  - PodReadyToStartContainers=True
+
 ##### CreateContainerConfigError - Missing Key Reference
 
 - Reproduction: Container with existing config map but invalid key reference
@@ -310,12 +337,30 @@ This feature is very close to [KEP-3085](../3085-pod-conditions-for-starting-com
   - PodScheduled=True
   - PodReadyToStartContainers=True
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+##### PostStartHookError - Error on PostStart Hook container lifecycle
+
+This is an interesting case because for a short while this condtion will show the information that the lifecycle hook failed.  After a short while, the pod goes into a `CrashLoopBackOff` state and you lose the information that the post start hook failed
+
+- Reproduction: Container post start hook that fails
+- Pod status:
+  - status: Pending
+- ContainerStatus:
+  - state=Waiting
+    - message: 'Exec lifecycle hook ([do not exist]) for Container "lifecycle-demo-container"
+        in Pod "lifecycle-demo_default(64b7db25-81f2-485a-86ed-760b0b08aff5)"
+        failed - error: rpc error: code = Unknown desc = failed to exec in container:
+        failed to start exec "263ff3844570ef12846e7d09b38e0d20608b3d5b07dfc8871868298d58b3a400":
+        OCI runtime exec failed: exec failed: unable to start container process:
+        exec: "do not exist": executable file not found in $PATH: unknown, message:
+        ""'
+        reason: PostStartHookError
+- Conditions:
+  - Type=Status
+  - Initialized=True
+  - Ready=False
+  - ContainersReady=False
+  - PodScheduled=True
+  - PodReadyToStartContainers=True
 
 ### Risks and Mitigations
 
