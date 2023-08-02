@@ -49,19 +49,19 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -360,11 +360,28 @@ specify the parts of the namespace / name keyspace they wish to range over (pagi
 
 ### Test Plan
 
-- unit tests for the pagination logic in etcd3 client
-- integration tests checking valid and invalid combinations of limit and continue both
-  with watchcache enabled and disabled
-- e2e tests verifying that clients opting in for chunking can retrieve consistent
-  paginated results
+[X] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+n/a
+
+##### Unit tests
+
+- staging/src/k8s.io/apiserver/pkg/storage/etcd3: 2023-07-21 - 74%
+
+##### Integration tests
+
+- `TestListOptions`: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestListOptions
+- `TestListResourceVersion0`: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestListResourceVersion0
+- `TestAPIListChunking`: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIListChunking
+- `TestAPIListChunkingWithLabelSelector`: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIListChunkingWithLabelSelector
+
+##### e2e tests
+
+- `Servers with support for API chunking`: https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=Servers%20with%20support%20for%20API%20chunking
 
 ### Graduation Criteria
 
@@ -394,51 +411,13 @@ N/A
 
 ## Production Readiness Review Questionnaire
 
-TODO: Fill this in
-
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIListChunking
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -448,283 +427,129 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No - clients have to explicitly opt-in for pagination.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes - by disabing the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Clients will be able to request paginated LIST requests.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+No - pagination is implemented purely in-memory.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Rollout can't impact already running workloads.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Clients that opt-in for pagination may be unable to list large collections when
+using pagination due to limited time when continuation is available (especially
+when server is throttling requests) - one of the requests is failing with `410 (Gone)`
+status code. Fallback to non-paginated request is recommended
+in that situation.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Increased number of errors on LIST requests: `apiserver_requests_total` metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+The feature is enabled by default since release 1.9 so it got battle tested across many
+providers and environments over last 5 years.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+This isn't a workload feature.
+In general, the following two kube-apiserve metrics should reflect the healtiness
+of the API:
+  - apiserver_request_duration_seconds
+  - apiserver_requests_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+n/a - this isn't a workload feature
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+[API call latency SLO]
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+[API call latency SLO]: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+[API call latency SLI]
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+[API call latency SLI]: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+no
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No new dependencies
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+A single LIST API call may now result in few paginated calls to get the same result.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+No - thanks to pagination we should actually reduce API call latencies.
 -->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+In should reduce RAM usage on etcd ane kube-apiserver.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+API calls can't be served, so pagintion also doesn't work.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Fail to list the whole collection:
+  - Detection: Clients are not able to LIST the whole collection with one of the
+      consecutive requests failing with `410 (Gone)` status code
+  - Mitagation: Fallback to non-paginated API call (or eventually migrate to
+      watch-list functionality once it reaches Stable).
+  - Diagnostics: `apiserver_requests_total` metric with `410` status code
+  - Testing: Covered by integration tests
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Adjusting max-requests-inflights/max-mutating-requests-inflight to reduce load on kube-apiserver/etcd.
 
 ## Implementation History
 
@@ -742,3 +567,80 @@ the peak CPU and memory used inside the client, apiserver, or etcd processes.
 
 Various optimizations exist that can and should be applied to minimizing the amount of data that is transferred from
 etcd to the client or number of allocations made in each location, but do not change how response size scales with number of entries.
+
+## Potential future extensions
+
+Not all LIST requests are served from etcd. Our API allows clients to opt-in for the LIST result to be
+served from kube-apiserver cache (called watchcache), being propagated via watch from etcd.
+However, as of 1.28 release, watchcache still doesn't support pagination. This makes the logic that
+we use extremely non-intuitive, as it effectively works as following:
+
+- if the `continuation` is set - always pass the request to etcd (and honor the LIMIT)
+- if resourveVersion='0' - ignore the LIMIT parameter and return result from watchcache
+- if resourceVersion=<some concrete RV> and LIMIT is set - pass the request to etcd (and honor the LIMIT)
+- if resourceVersion=<some concrete RV> and LIMIT is not set - serve the request from watchcache
+   - which effectively results in different semantics about data freshness depending on LIMIT being set or not
+
+We propose to add support for pagination in watchcache as following:
+
+1. As of now, watchcache (in addition to transaction log which is not relevant for this proposal) contains
+  the current (consistent at a given RV) state of all objects of a given type. This is currently stored
+  in client-go `Indexer`, which internally stores that in hash-map.
+  We propose to replace the usage of `Indexer` with an implementation that will be build on top of
+  BTree that supports copy-on-write semantic. We are planning to use the implementation from
+  [https://github.com/google/btree] (although it may require adding more extensive test coverage).
+1. When a request with LIMIT set reaches watchcache, we clone (create a copy-onwrite copy) of the current
+  state and serve the request from that copy. (The additional advantage is that after cloned, which is
+  very fast operation, we no longer block any other operations as lock is no longer needed).
+1. When the request is processed, we additionally cache a root to the cloned copy in the watchcache.
+  It is necessary to later serve the continuation of that request from the exact same resourceVersion.
+  We will keep the cloned copy in the cache as long as the resourceVersion at which it was grabbed
+  is cleared up from the watchcache transaction log (so we don't need any additional hooks).
+
+There are three problems that still need to be solved in the above solution.
+
+1. The `Indexer` in which the current state is stored also supports a set of predefined indexes.
+  As of 04/2022, there is exactly one index defined for exactly one resource type - for Pods we
+  support index by `spec.nodeName`.
+  There are two main things we can do here:
+  - instead of storing an index in map {value}->{list of keys of objects whose index matches value}
+    switch to also use a BTree for the index. This would be the most complete implementation although
+    the drawback is that with the copy-on-write semantics, the update of the list means effectively
+    a need to copy the list and inserting the modified one. This can become expensive if those lists
+    become longer.
+  - drop support indexing for continuations. The index is just an optimization so we don't need it
+    for correctness (on the cost of less efficient processing). However, given that we only support
+    indexing by `spec.nodeName` and the default LIMIT is set to 500, in huge majority of cases
+    (in particular Kubelet listing its pods before watching) the whole response will get returned
+    in the single call. As a result, we may consider not cloning the index itself and in case
+    continuation request will be needed, just go over all objects without the index.
+
+  Given that the index is just an optimization and the need for it is not clear for now, we will
+  just start with the second option above (dropping support for indexes for continuations) and
+  will reconsider adding that once we observe the need for it.
+
+2. The HA kube-apiserver. The fact that the original request was processed by kube-apiserver A
+  doesn't mean that the continuation request will not be send to kube-apiserver B. In the following
+  sketch of the algorithm, kube-apiaserver B will not have the cloned state from the given RV
+  though.
+  Again we have two main approaches here:
+  - for every transaction processed by watchcache, we will be making a copy-on-write copy of the
+    current state. That means that transaction will not only contain the data about what was
+    changed, but also a point to the state from that point (copy-on-write BTree).
+  - ignore that usecase for now, and just delegate the continuation request to etcd if the
+    copy-on-write state for a resource version specified by continuation doesn't exist in memory
+
+  Similarly as above, processing continuation in watchcache is just an optimization and we don't
+  strictly need it. However, the first option is simple to implement to we will implement it
+  and use it unless a significant cpu/memory overhead will be shown by the benchmarks.
+
+3. The length of `out-of-history` window. Currently in watchcache we're storing transactions from
+  the last ~75 seconds (we're clearing transactions older than that when a new transaction is
+  being processed). This means that continuation will be served from watchcache only for ~75
+  seconds. However, in etcd have 2.5 to 5 minutes of history. As a result, we may consider
+  extending the length of the transaction log to match the minimum 2.5 minutes from above.
+
+The API chunking feature is heavily used so we decided to finally graduate it to GA without
+implementing the above proposal. However, we should consider implementing it at some point.
+
+[https://github.com/google/btree]: https://github.com/google/btree
