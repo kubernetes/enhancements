@@ -346,28 +346,26 @@ Were v1.27 control plane changes as compatible with v1.24 nodes as n-2 nodes?
 
 Are planned v1.28 control plane changes as compatible with v1.25 nodes as n-2 nodes?
 * Feature enablement in control plane components that will wait for node support
-  * ...
+  * ✅ None
 * Removal of deprecated behavior in control plane components
   * ✅ sig-storage: planned removal of in-tree volume plugins for `CSIMigrationGCE` feature, which is guaranteed on in v1.25 nodes ([#111301](https://github.com/kubernetes/kubernetes/pull/111301).
-  * ...
 * Removal of deprecated REST APIs used by node components ([source](https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-28))
   * ✅ None
 
 Are planned v1.29 control plane changes as compatible with v1.26 nodes as n-2 nodes?
 * Feature enablement in control plane components that will wait for node support
-  * ...
+  * ✅ None
 * Removal of deprecated behavior in control plane components
   * ⚠️ sig-storage: planned removal of in-tree volume plugins for `CSIMigrationvSphere` and `CSIMigrationAzureFile` features, which are guaranteed on in v1.27 nodes ([#116610](https://github.com/kubernetes/kubernetes/pull/116610) and [#114953](https://github.com/kubernetes/kubernetes/pull/114953)).
     * Supporting n-3 nodes would delay removal of the in-tree volume plugins to v1.30.
-  * ...
 * Removal of deprecated REST APIs used by node components ([source](https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-29))
   * ✅ None
 
 Are planned v1.30 control plane changes as compatible with v1.27 nodes as n-2 nodes?
 * Feature enablement in control plane components that will wait for node support
-  * ...
+  * ✅ None
 * Removal of deprecated behavior in control plane components
-  * ...
+  * ✅ None
 * Removal of deprecated REST APIs used by node components ([source](https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-30))
   * ✅ None
 
@@ -551,3 +549,4 @@ several inconsistencies or gaps were found. Links tracking improving those areas
 ## Implementation History
 
 - 2023-04-03: Provisional KEP created
+- 2023-08-01: Marked as implemented

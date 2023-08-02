@@ -8,7 +8,7 @@ participating-sigs:
   - sig-cluster-lifecycle
   - sig-network
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2023-04-03
 reviewers:
   - "@soltysh" # sig-apps
