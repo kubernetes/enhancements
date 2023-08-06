@@ -81,6 +81,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
