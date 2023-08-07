@@ -21,7 +21,7 @@ milestone:
   alpha: "v1.25"
 
 feature-gates:
-  - name: UserNamespacesStatelessPodsSupport
+  - name: UserNamespacesSupport
     components:
       - kubelet
       - kube-apiserver
