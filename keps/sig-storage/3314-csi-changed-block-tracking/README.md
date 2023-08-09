@@ -96,13 +96,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [GetDelta RPC](#getdelta-rpc)
       - [GetDelta Errors](#getdelta-errors)
   - [Kubernetes Components](#kubernetes-components)
-  - [Custom Resources](#custom-resources)
-    - [SnapshotSessionRequest](#snapshotsessionrequest)
-    - [SnapshotServiceConfiguration](#snapshotserviceconfiguration)
-    - [SnapshotSessionData](#snapshotsessiondata)
-  - [The Snapshot Session Manager](#the-snapshot-session-manager)
-  - [The External Snapshot Session Sidecar](#the-external-snapshot-metadata-sidecar)
-  - [The SP Snapshot Session Service](#the-sp-snapshot-session-service)
+    - [Snapshot Metadata Service Custom Resource](#snapshot-metadata-service-custom-resource)
+    - [The SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+    - [The External Snapshot Metadata Sidecar](#the-external-snapshot-metadata-sidecar)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -278,7 +274,7 @@ or the sizes of the volumes and snapshots involved.
 
 A CSI provisioner advertises the existence of its
 [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
-by creating a [SnapshotMetadataService CR](#snapshot-metadata-service)
+by creating a [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
 that contains the service's TCP endpoint address, CA certificate and
 an audience string needed for token authentication.
 The CSI driver name is specified in a metadata label in this
@@ -314,7 +310,7 @@ and re-streams the results back to its client.
 
 [Kubernetes Role-Based Access Control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 is used to authorize a backup application's access to
-[SnapshotMetadataService CRs](#snapshot-metadata-service),
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) objects,
 its use of the
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
 and its access to VolumeSnapshot objects in specific namespaces.
@@ -427,32 +423,41 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+> *A review by SIG-Auth (July 19, 2023) recommended the use of the
+> [TokenRequest](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/) and
+> [TokenReview](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
+> APIs to make authentication and authorization checks possible between
+> authorized Kubernetes principals.*
+
 The following risks are identified:
 
 - Exposure of snapshot metadata by the use of the
 [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC API.
-- Uncontrolled access to the service could lead to denial-of-service attacks.
-- That a principal with the
-authority to use the [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service indirectly gains access to the metadata of
-otherwise inaccessible VolumeSnapshots.
+- Uncontrolled access to the [SnapshotMetadata](#the-snapshotmetadata-service-api)
+service could lead to denial-of-service attacks.
+- A principal with the authority to use the
+[SnapshotMetadata](#the-snapshotmetadata-service-api) service indirectly gains
+access to the metadata of otherwise inaccessible VolumeSnapshots.
 
 The risks are mitigated as follows:
 
 - The possible exposure of snapshot metadata because of the use of a network API
-is addressed by using **encryption** and **mutual authentication** for the
-direct gRPC call made by the backup application client.
-The gRPC client is required to first establish trust with the service's CA,
-and while the direct gRPC call itself does not perform mutual authentication,
-the audience-scoped authentication token passed as a parameter in each RPC
-call effectively provides the mechanism for the service to authorize the client.
+  is addressed by using **encryption** and **mutual authentication** for the
+  direct gRPC call made by the backup application client.
+  The gRPC client is required to first establish trust with the service's CA,
+  and, while the direct gRPC call itself does not perform mutual authentication,
+  an **audience-scoped authentication token** must be passed as a parameter in each RPC
+  call, which effectively provides the mechanism for the service to both authenticate
+  and authorize the client.
 
-  > *A review by SIG-Auth (July 19, 2023) proposed the use of audience-scoped authentication
-  > tokens and the
-  > [TokenRequest](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
-  > and the
-  > [TokenReview](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
-  > APIs.*
+  The audience-scoped authentication token is obtained from the Kubernetes
+  [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/) and is validated with the Kubernetes
+  [TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/).
+  Its scope is narrowed to the just the target service (the "***audience***") by specifying
+  an audience string defined by and unique to the service, during token creation.
+  An authentication token has an expiry time so will not last forever;
+  additionally, it can be bound to the Pod used by the backup application to access the
+  service, to further constrain its effective lifetime.
 
 - Access to a [SnapshotMetadata](#the-snapshotmetadata-service-api)
 service and to the VolumeSnapshots referenced by through the service
@@ -467,12 +472,12 @@ illustrated in the following figure:
 
 The proposal requires that Kubernetes security policy authorize access to:
 
-- The [SnapshotMetadataService](#snapshot-metadata-service) CR objects
+- The [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) objects
 that advertise the existence of the
 CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) services available
 in the cluster.
-These objects do not contain secret information so limiting access controls
-who knows these service end points.
+These objects do not contain secret information so limiting access just controls
+the principals who obtain the service contact information.
 At the least, backup applications should be permitted to read these objects.
 
 - Backup applications must be granted permission to use the Kubernetes
@@ -480,7 +485,8 @@ At the least, backup applications should be permitted to read these objects.
 passed in each CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service
 RPC call.
 
-- Backup applications must be granted access to view VolumeSnapshot objects.
+- Backup applications must be granted access to view VolumeSnapshot objects in the
+target namespaces.
 Presumably they already have such permission if they were the ones initiating the
 creation of the VolumeSnapshot objects.
 
@@ -512,10 +518,15 @@ proposal will be implemented, this is the place to discuss them.
 
 ### The SnapshotMetadata Service API
 
+> In this section we use the notation of the CSI gRPC specification where the
+> word *service* is assumed to be a *gRPC service* and not a Kubernetes service,
+> while the word *plugin* is
+> used to refer to the software component that implements the gRPC service.
+
 The CSI specification will be extended with the addition of the following new, optional
 **SnapshotMetadata** [gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition).
 The [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
-and the [SP snapshot-session-service](#the-sp-snapshot-session-service) plugins
+and the [SP Snapshot Metadata](#the-sp-snapshot-metadata-service) plugins
 must both implement this service.
 
 The service is defined as follows, and will be described in the sub-sections below:
@@ -538,11 +549,12 @@ message BlockMetadata {
 }
 
 message GetAllocatedRequest {
-  string session_token = 1;
-  string volume_id = 2;
-  string snapshot = 3;
-  uint64 starting_offset = 4;
-  uint32 max_results = 5;
+  string security_token = 1;
+  string namespace = 2;
+  string volume_id = 3;
+  string snapshot = 4;
+  uint64 starting_offset = 5;
+  uint32 max_results = 6;
 }
 
 
@@ -553,12 +565,13 @@ message GetAllocatedResponse {
 }
 
 message GetDeltaRequest {
-  string session_token = 1;
-  string volume_id = 2;
-  string base_snapshot = 3;
-  string target_snapshot = 4;
-  uint64 starting_byte_offset = 5;
-  uint32 max_results = 6;
+  string security_token = 1;
+  string namespace = 2;
+  string volume = 3;
+  string base_snapshot = 4;
+  string target_snapshot = 5;
+  uint64 starting_byte_offset = 6;
+  uint32 max_results = 7;
 }
 
 message GetDeltaResponse {
@@ -599,26 +612,32 @@ and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
 of `GetAllocatedResponse` messages.
 The fields of the `GetAllocatedRequest` message are defined as follows:
-- `session_token`<br>
-  This is an opaque string that has identifies a snapshot session.
+- `security_token`<br>
+  This is an authentication bearer token that grants the invoker the
+  right to use the plugins.
   It is obtained through a mechanism defined by the CO system.
+  The SP plugins implementation shall ignore this value.
+
+- `namespace`<br>
+  This is the object namespace in the CO system.
+  The SP plugins implementation shall ignore this value.
 
  - `volume_id`<br>
- The identifier of the volume in the nomenclature of the plugin.
+ The identifier of the volume in the nomenclature of the plugins.
 
  - `snapshot`<br>
- The identifier of a snapshot of the specified volume, in the nomenclature of the plugin.
+ The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
   - `starting_offset`<br>
  This specifies the 0 based starting byte position in the volume snapshot from which the result should be computed.
  It is intended to be used to continue a previously interrupted call.
- The server may round down this offset to the nearest alignment boundary based on the `BlockMetadataType`
- it will use.
+ The plugins may round down this offset to the nearest alignment boundary based on the
+ `BlockMetadataType` it will use.
 
  - `max_results`<br>
  This is an optional field. If non-zero it specifies the maximum length of the `block_metadata` list
  that the client wants to process in a given `GetAllocateResponse` element.
- The server will determine an appropriate value if 0, and is always free to send less than the requested
+ The plugins will determine an appropriate value if 0, and is always free to send less than the requested
  maximum.
 
 The fields of the `GetAllocatedResponse` message are defined as follows:
@@ -632,7 +651,7 @@ The fields of the `GetAllocatedResponse` message are defined as follows:
   This is a list of `BlockMetadata` tuples as described in the
   [Metadata Format](#metadata-format) section above.
   The caller may request a maximum length of this list in the `max_results` field
-  of the `GetAllocatedRequest` message, otherwise the length is determined by the server.
+  of the `GetAllocatedRequest` message, otherwise the length is determined by the plugins.
 
 Note that while the `block_metadata_type` and `volume_size_bytes` fields are
 repeated in each `GetAllocatedResponse` message by the nature of the syntax of the
@@ -650,7 +669,7 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `volume_id` or `snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshot specified were not found. | The caller should re-check that these objects exist. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
+| Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
 
 #### GetDelta RPC
 The `GetDelta` RPC returns the metadata on the blocks that have changed between
@@ -661,31 +680,37 @@ and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
 of `GetDeltaResponse` messages.
 The fields of the `GetDeltaRequest` message are defined as follows:
-- `session_token`<br>
-  This is an opaque string that has identifies a snapshot session.
+- `security_token`<br>
+  This is an authentication bearer token that grants the invoker the
+  right to use the plugins.
   It is obtained through a mechanism defined by the CO system.
+  The SP plugins implementation shall ignore this value.
+
+- `namespace`<br>
+  This is the object namespace in the CO system.
+  The SP plugins implementation shall ignore this value.
 
  - `volume_id`<br>
- The identifier of the volume in the nomenclature of the plugin.
+ The identifier of the volume in the nomenclature of the plugins.
 
  - `base_snapshot`<br>
- The identifier of a snapshot of the specified volume, in the nomenclature of the plugin.
+ The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
  - `target_snapshot`<br>
- The identifier of a second snapshot of the specified volume, in the nomenclature of the plugin.
+ The identifier of a second snapshot of the specified volume, in the nomenclature of the plugins.
  This snapshot should have been created after the `base_snapshot`, and the RPC will return the changes
  made since the `base_snapshot` was created.
 
   - `starting_offset`<br>
  This specifies the 0 based starting byte position in the `target_snapshot` from which the result should be computed.
  It is intended to be used to continue a previously interrupted call.
- The server may round down this offset to the nearest alignment boundary based on the `BlockMetadataType`
- it will use.
+ The plugins may round down this offset to the nearest alignment boundary based on the
+ `BlockMetadataType` it will use.
 
  - `max_results`<br>
  This is an optional field. If non-zero it specifies the maximum length of the `block_metadata` list
  that the client wants to process in a given `GetDeltaResponse` element.
- The server will determine an appropriate value if 0, and is always free to send less than the requested
+ The plugins will determine an appropriate value if 0, and is always free to send less than the requested
  maximum.
 
 The fields of the `GetDeltaResponse` message are defined as follows:
@@ -699,7 +724,7 @@ The fields of the `GetDeltaResponse` message are defined as follows:
   This is a list of `BlockMetadata` tuples as described in the
   [Metadata Format](#metadata-format) section above.
   The caller may request a maximum length of this list in the `max_results` field
-  of the `GetDeltaRequest` message, otherwise the length is determined by the server.
+  of the `GetDeltaRequest` message, otherwise the length is determined by the plugins.
 
 Note that while the `block_metadata_type` and `volume_size_bytes` fields are
 repeated in each `GetDeltaResponse` message by the nature of the syntax of the
@@ -717,173 +742,84 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `volume_id`, `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshots specified were not found. | The caller should re-check that these objects exist. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid `session_token` | 16 UNAUTHENTICATED | The specified session token is invalid or has expired. | The caller should create a new snapshot session. |
+| Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
 
 ### Kubernetes Components
-The following Kubernetes components are involved at runtime:
+The following Kubernetes resources and components are involved at runtime:
 
-- A community provided
-  [Snapshot Session Manager](#the-snapshot-session-manager)
-  that uses a Kubernetes CustomResource (CR) based mechanism to
-  establish a **snapshot session** that provides a backup
-  application with an endpoint for secure TLS gRPC to a
-  [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
-  The manager is independently deployed and serves all
-  CSI drivers that provide a
-  [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
-- A CSI driver provided implementation of the
-  [SnapshotMetadata](#the-snapshotmetadata-service-api) service
-  that is accessible over a UNIX domain transport.
-- A [community provided sidecar](#the-external-snapshot-metadata-sidecar)
-  that implements the service side of the snapshot session protocol
-  and **proxies** TCP TLS gRPC requests from authorized client applications to the
-  CSI driver's service over the UNIX domain transport.
+- A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) that advertises
+  the existence of the CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
 
-### Custom Resources
+- [The SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service).
 
-The following Kubernetes Custom Resources are introduced
+- An optional, community provided
+  [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+  that interacts with Kubernetes clients
+  and **proxies** TCP TLS gRPC requests from Kubernetes client applications to the
+  SP service over a UNIX domain transport.
 
-#### SnapshotSessionRequest
+  If the CSI driver does not deploy the community provided
+  [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+  then it must be prepared to interact with the Kubernetes clients in the manner
+  specified by this proposal.
 
-`SnapshotSessionRequest` is a namespace scoped Custom Resource (CR) used to
-request a session for a specific list of snapshots. Once the session is
-created, the session parameters are set in the `status` field of the CR.
-These session parameters are used to establish secure connection to the
-snapshot session service.
+#### Snapshot Metadata Service Custom Resource
 
-The CR `spec` contains the following field:
+`SnapshotMetadataService` is a cluster-scoped Custom Resource that
+contains information needed to connect to the
+[SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
+deployed by a CSI driver.
 
-- `snapshots`: Represents the list of VolumeSnapshot names for which the
-  session is requested.
+> *Typically, a CSI driver is expected to deploy a
+> [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+> to handle Kubernetes clients in which case the CR would contain
+> the sidecar's endpoint information.*
 
-The CR `status` contains the following fields:
-
-- `caCert`: Specifies (Certificate Authority) certificate used to enable
-  TLS (Transport Layer Security) security for gRPC calls made to the snapshot
-  session service.
-- `error`: Details of the errors if encountered while creating session.
-- `expiryTime`: Specifies the duration of validity for the session. It
-  represents the date and time when the session will expire.
-- `sessionState`: Represents state of the SnapshotSessionRequest. State is
-  defined with one of the "Ready", "Pending" and "Failed".
-- `sessionToken`: An opaque session token used for authentication in gRPC calls
-  made to the snapshot session service.
-- `sessionURL`: Specifies the location of the snapshot session service for
-  making gRPC calls in the format host:port, without the scheme (e.g., http or
-  https).
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: snapshotsessionrequests.cbt.storage.k8s.io
-spec:
-  group: cbt.storage.k8s.io
-  names:
-    kind: SnapshotSessionRequest
-    listKind: SnapshotSessionRequestList
-    plural: snapshotsessionrequests
-    singular: snapshotsessionrequest
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: SnapshotSessionRequest is the Schema for the snapshotsessionrequests
-          API
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: SnapshotSessionRequestSpec defines the desired state of
-              SnapshotSessionRequest
-            properties:
-              snapshots:
-                description: The list of VolumeSnapshots that can be used in the session
-                items:
-                  type: string
-                type: array
-            type: object
-            required:
-            - snapshots
-          status:
-            description: SnapshotSessionRequestStatus defines the observed state
-              of SnapshotSessionRequest
-            properties:
-              caCert:
-                description: CACert contains a PEM-encoded CA (Certificate Authority) bundle. This CA bundle is used to enable TLS (Transport Layer Security) security for gRPC calls made to the snapshot session service.
-                format: byte
-                type: string
-              error:
-                description: Captures any error encountered
-                type: string
-              expiryTime:
-                description: ExpiryTime specifies the time for which the session is valid
-                format: date-time
-                type: string
-              sessionState:
-                description: State of the SnapshotSessionRequest. One of the "Ready",
-                  "Pending", "Failed"
-                type: string
-              sessionToken:
-                description: Opaque session token used for authentication in gRPC calls made to the snapshot session service.
-                format: byte
-                type: string
-              sessionURL:
-                description: Specifies the IP address or DNS name of the snapshot session service for making TLS gRPC calls. It should be provided in the format host:port, without specifying the scheme (e.g., http or https). The SessionURL is used in conjunction with the SessionToken to query Changed Block metadata by making TLS gRPC calls to the service
-                type: string
-            required:
-            - sessionState
-            type: object
-        type: object
-    served: true
-    storage: true
+The CR must have the following label value set:
 ```
-
-#### SnapshotServiceConfiguration
-
-`SnapshotServiceConfiguration` is a cluster-scoped Custom Resource contains
-parameters used to create a session for a specific CSI driver. To associate
-the SnapshotServiceConfiguration with a specific CSI driver,
-`cbt.storage.k8s.io/driver: NAME_OF_THE_CSI_DRIVER` label is used.
+cbt.storage.k8s.io/driver: NAME_OF_THE_CSI_DRIVER
+```
+The presence of this label allows a backup application to efficiently locate
+the CR for the CSI driver.
 
 The CR `spec` contains the following fields:
 
-- `address`: Specifies the IP address or DNS name of the snapshot session
-  service for making gRPC calls. It should be provided in the format host:port,
-  without specifying the scheme (e.g., http or https). The SessionURL is used
-  to query Changed Block metadata by making gRPC calls to the service.
-- `caCert`: Specifies the CA certificate is used to enable TLS (Transport Layer
-  Security) security for gRPC calls made to the snapshot session service.
+- `address`<br>
+  Specifies the IP address or DNS name of the gRPC service.
+  It should be provided in the format host:port,
+  without specifying the scheme (e.g., http or https).
+- `caCert`<br>
+  Specifies the CA certificate used to enable TLS (Transport Layer
+  Security) security for gRPC calls made to the service.
+- `audience`<br>
+  Specifies the audience string value expected in an audience-scoped authentication token
+  presented to the [sidecar](#the-external-snapshot-metadata-sidecar) by a Kubernetes client.
+  The value should be unique to the service if possible; for example, it could be the DNS name of the service.
+
+The full Custom Resource Definition is shown below:
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: snapshotservicesconfigurations.cbt.storage.k8s.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+    api-approved.kubernetes.io: unapproved
+  creationTimestamp: null
+  name: snapshotmetadataservices.cbt.storage.k8s.io
 spec:
   group: cbt.storage.k8s.io
   names:
-    kind: SnapshotServicesConfiguration
-    listKind: SnapshotServicesConfigurationList
-    plural: snapshotservicesconfigurations
-    singular: snapshotsessionservice
+    kind: SnapshotMetadataService
+    listKind: SnapshotMetadataServiceList
+    plural: snapshotmetadataservices
+    singular: snapshotmetadataservice
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SnapshotServicesConfiguration is the Schema for the snapshotservicesconfigurations
+        description: SnapshotMetadataService is the Schema for the csisnapshotsessionservices
           API
         properties:
           apiVersion:
@@ -899,230 +835,38 @@ spec:
           metadata:
             type: object
           spec:
-            description: SnapshotServicesConfigurationSpec defines the desired state of
-              SnapshotServicesConfiguration
+            description: SnapshotMetadataServiceSpec defines the desired state of
+              SnapshotMetadataService
             properties:
               address:
-                description: Specifies the IP address or DNS name of the snapshot session service for making TLS gRPC calls. It should be provided in the format host:port, without specifying the scheme (e.g., http or https). The SessionURL is used to query Changed Block metadata by making TLS gRPC calls to the service
                 type: string
+                description: The TCP endpoint address of the service
+              audience:
+                type: string
+                description: The audience string value expected in an authentication token for the service
               caCert:
-                description: CACert contains a PEM-encoded CA (Certificate Authority) bundle. This CA bundle is used to enable TLS (Transport Layer Security) security for gRPC calls made to the snapshot session service.
+                description: CABundle client side CA used for service validation
                 format: byte
                 type: string
             type: object
-            required:
-              - address
-              - caCert
         type: object
     served: true
     storage: true
 ```
 
-#### SnapshotSessionData
+#### The SP Snapshot Metadata Service
 
-`SnapshotSessionData` CR is a namespaced resource created within the namespace
-of the CSI driver. The name of the resource represents session token itself.
-The CR provides a structured way to manage session tokens and their
-associations with specific VolumeSnapshots.
-
-The CR `spec` contains the following fields:
-
-- `expiryTime`: Specifies the duration of validity for the session token. It
-  represents the date and time when the session token will expire.
-- `snapshotNamespace`: Indicates the namespace of the VolumeSnapshots
-  associated with the session token.
-- `snapshots`: Represents a list of VolumeSnapshot names for which the session
-  token is valid.
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: snapshotsessiondata.cbt.storage.k8s.io
-spec:
-  group: cbt.storage.k8s.io
-  names:
-    kind: SnapshotSessionData
-    listKind: SnapshotSessionDataList
-    plural: snapshotsessiondata
-    singular: snapshotsessiondata
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: SnapshotSessionData is the Schema for the snapshotsessiondata
-          API
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: SnapshotSessionDataSpec defines the desired state of SnapshotSessionData
-            properties:
-              expiryTime:
-                description: ExpiryTime specifies the time for which the session is valid
-                format: date-time
-                type: string
-              snapshotNamespace:
-                description: Namespace of the VolumeSnapshot for which the session is created
-                type: string
-              snapshots:
-                description: The list of VolumeSnapshot names for which the session is created
-                items:
-                  type: string
-                type: array
-            required:
-            - expiryTime
-            - snapshotNamespace
-            - snapshots
-            type: object
-        type: object
-    served: true
-    storage: true
-```
-
-### The Snapshot Session Manager
-
-The Snapshot Session Manager is a community provided container that
-manages snapshot sessions for all CSI drivers in the system;
-it should be deployed in a pod with a replica count of 1.
-The manager pod should run under the authority of a ServiceAccount
-that is different from that of any CSI driver,
-and is authorized as described in [Risks and Mitigations](#risks-and-mitigations).
-
-The manager is composed of the following sub-components:
-- A validating webhook for the
-  [SnapshotSessionRequest CR](#snapshotsessionrequest),
-  registered when the manager is deployed.
-  The validating webhook ensures that the creator of the CR
-  also has permission to access VolumeSnapshot objects in the same
-  namespace.
-
-- A controller for the [SnapshotSessionRequest CR](#snapshotsessionrequest)
-  that manages its lifecycle.
-  The CR is created in a `Pending` state, and the manager will
-  attempt to transition it to the `Ready` state, and if unsuccessful
-  will transition it to the `Failed` state.
-  The manager will also delete expired CR's.
-
-On CR creation, the manager establishes the initial expiration time for
-the CR and sets its state to `Pending`.
-The manager periodically scans for all
-[SnapshotSessionConfiguration CRs](#snapshotserviceconfiguration)
-in the `Pending` state and attempts to
-individually transition each such CR to a terminal state as follows:
-
-- It determines the CSI driver of the referenced VolumeSnapshots
-  from their associated VolumeSnapshotContent objects.
-  If a VolumeSnapshot or associated VolumeSnapshotContent cannot be found, or
-  if more than one CSI driver is involved then it will
-  change the state of the CR to `Failed`
-  and provide an appropriate message in the `error` field.
-
-- It uses a label based search for the
-  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-  created by the CSI driver, with the label query
-  `cbt.storage.k8s.io/driver:`*`CSI Driver`*
-
-- If it finds the CSI driver's
-  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-  it will create a
-  [SnapshotSessionData CR](#snapshotsessiondata)
-  containing details of the session in the namespace
-  of the CSI driver;
-  the name of this CR will be a long randomized string of valid
-  Kubernetes name characters, and will also be returned as the `sessionToken`.
-
-  It will then copy the CA certificate and
-  endpoint address from the [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-  to the [SnapshotSessionRequest CR](#snapshotsessionrequest),
-  set the `sessionToken` value and change its state to `Ready`.
-
-- If it fails to find the CSI driver's
-  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-  it will change the state of the
-  [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-  to `Failed` and provide an appropriate message in the `error` field.
-
-The manager periodically scans for all
-[SnapshotSessionConfiguration](#snapshotserviceconfiguration)
-and [SnapshotSessionData](#snapshotsessiondata) CRs
-and deletes those that have passed their expiry time.
-A mechanism will be provided to configure the expiry time,
-for example, via a ConfigMap in the manager pod's namespace.
-
-### The External Snapshot Session Sidecar
-
-The `external-snapshot-metadata` sidecar is a community provided container
-that handles all aspects of Kubernetes snapshot session management for
-the SP.
-The sidecar should be configured to run under the authority of the CSI driver ServiceAccount,
+The SP must provide a container that implements the [SnapshotMetadata Service](#the-snapshotmetadata-service-api)
+to obtain the snapshot metadata requested by a Kubernetes client.
+The service runs under the authority of the CSI driver ServiceAccount,
 which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
 
-A Service object must be created for the sidecar and the DNS address of the
-service be provided as invocation arguments to the sidecar.
-
-The SP must create a [SnapshotSessionConfiguration CR](#snapshotserviceconfiguration)
-that contains the CA certificate and Service endpoint address of the sidecar.
-The presence of this CR advertises the existence of a CSI driver's
-implementation of the optional
-[SnapshotSessionMetadata API](#the-snapshotmetadata-service-api) to Kubernetes
-backup applications and to the [SnapshotSessionManager](#the-snapshot-session-manager).
-
-The sidecar must be deployed in the same pod as the
-[SP Snapshot Session Service](#the-sp-snapshot-session-service)
-and must be configured to communicate with it through a UNIX domain socket.
-Additional invocation arguments to the sidecar container
-include the server certificate to be used, and the name of the
-[SnapshotSessionConfiguration CR](#snapshotserviceconfiguration).
-Only a single replica of this pod must be configured.
-
-The sidecar acts as a proxy for the
-[SP Snapshot Session Service](#the-sp-snapshot-session-service),
-handling all aspects of the Kubernetes snapshot session protocol defined
-in this proposal, including
-- Validating a client's authority to a snapshot session.
-- Validating individual RPC arguments.
-- Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
-
-The sidecar will attempt to load the
-[SnapshotSessionData CR](#snapshotsessiondata) in its namespace with the name
-provided by the value of the `session_token` input argument of an RPC call.
-If the object is not found or is found to have expired, or that the
-VolumeSnapshots specified in the RPC call
-are not mentioned in the [SnapshotSessionData CR](#snapshotsessiondata),
-then the RPC call will be failed.
-
-The sidecar will attempt to load the VolumeSnapshots specified in an RPC call,
-along with their associated VolumeSnapshotContent objects, to ensure that they still
-exist and to obtain the SP identifiers for the snapshots.
-Additional checks may be performed depending on the RPC.
-(For example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
-that all the snapshots come from the same volume and that the
-snapshot order is correct.)
-If all checks are successful, the RPC call is proxied to the
-[SP Snapshot Session Service](#the-sp-snapshot-session-service)
-over the UNIX domain socket, with its input parameters appropriately
-translated. The metadata result stream is proxied back to the calling client
-without any transformation.
-
-### The SP Snapshot Session Service
-
-The SP must provide a container that implements the [SnapshotMetadata Service](#the-snapshotmetadata-service-api).
-This container must be deployed in a pod alongside the community provided
-[external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+The CSI driver can delegate all Kubernetes client interaction to
+the community provided [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+which must be deployed in a pod alongside its service container,
 and configured to communicate with it over a UNIX domain socket.
-Only a single replica of this pod must be configured.
+The sidecar will translate all Kubernetes object identifiers used by the Kubernetes
+client to SP identifiers; the `security_token` and `namespace` parameters should be ignored.
 
 The SP service decides whether the metadata is returned in *block-based* format
 (`block_metadata_type` is `FIXED_LENGTH`)
@@ -1132,8 +876,72 @@ properties should be constant;
 likewise the `size_bytes` of all `BlockMetadata` entries if the `block_metadata_type`
 value returned is `FIXED_LENGTH`.
 
-The SP service should ignore the `session-token` input argument in the RPC calls,
-though it may include the value in log records for correlation with the sidecar logs.
+A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
+must be created to advertise the existence of this service.
+If the sidecar is used, then the
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
+created should advertise the service within the sidecar.
+
+
+#### The External Snapshot Metadata Sidecar
+
+The `external-snapshot-metadata` sidecar is a community provided container
+that handles all aspects of Kubernetes snapshot session management for
+a [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service).
+The sidecar should be configured to run under the authority of the CSI driver ServiceAccount,
+which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
+
+A Service object must be created for the sidecar and the DNS address of the
+service be provided as invocation arguments to the sidecar.
+
+The [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
+created for the CSI driver service should advertise the service within the sidecar.
+The CR contains the CA certificate and Service endpoint address of the sidecar and
+the audience string needed for the client's authentication token.
+
+The sidecar must be deployed in the same pod as the
+[SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+and must be configured to communicate with it through a UNIX domain socket.
+Additional invocation arguments to the sidecar container
+include the server certificate to be used, and the name of the
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource).
+The latter object provides the audience string expected in client authentication
+tokens.
+
+The sidecar acts as a proxy for the
+[SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service),
+handling all aspects of the Kubernetes client interaction described
+in this proposal, including
+- Authenticating the client.
+- Authorizing the client.
+- Validating individual RPC arguments.
+- Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
+
+A Kubernetes client provides an audience scoped authentication token in each remote
+procedure call made to the service.
+The sidecar will use the
+[TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
+to validate this authentication token, using the audience string specified in the
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource).
+
+If authenticated, it will then use the returned **UserInfo** in the
+[SubjectAccessReview API](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/)
+to verify that the client has access to VolumeSnapshot objects in the `namespace`
+specified in the remote procedure call.
+
+The sidecar will then attempt to load the VolumeSnapshots specified in an RPC call,
+along with their associated VolumeSnapshotContent objects, to ensure that they still
+exist and belong to the CSI driver, and to obtain their SP identifiers.
+Additional checks may be performed depending on the RPC;
+for example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
+that all the snapshots come from the same volume and that the
+snapshot order is correct.
+
+If all checks are successful, the RPC call is proxied to the
+[SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+over the UNIX domain socket, with its input parameters appropriately
+translated. The metadata result stream is proxied back to the calling client
+without any transformation.
 
 ### Test Plan
 
