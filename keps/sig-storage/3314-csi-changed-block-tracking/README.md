@@ -239,13 +239,13 @@ and make progress.
 -->
 
 * Specify how data is written to the block volume in the first place.
-  > The volume could be attached to a pod with either `Block` or `Filesystem`
-    [volume modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-mode).
+  > *The volume could be attached to a pod with either `Block` or `Filesystem`
+    [volume modes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-mode).*
 * Provide an API to retrieve the data blocks of a snapshot.
-  > It is assumed that a snapshot's data blocks can be retrieved by creating a
+  > *It is assumed that a snapshot's data blocks can be retrieved by creating a
     PersistentVolume for the snapshot, launching a pod with this volume
     attached in `Block` volume mode, and then reading the individual
-    blocks from the raw block device.
+    blocks from the raw block device.*
 
 * Support of file changed list tracking for network file shares is not
 addressed by this proposal.
@@ -282,45 +282,34 @@ CR, so that a backup application can efficiently search for
 the [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
 of the provisioner of the VolumeSnapshots to be backed up.
 
-A backup application must first obtain an authentication token using the Kubernetes
+Before using the [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC API,
+a backup application must first obtain an authentication token using the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
-with the specified audience string.
-It should then establish trust with the specified CA for use in gRPC calls.
-Then it connects to the TCP endpoint to directly make TLS gRPC calls to the
-advertised CSI
-[SnapshotMetadata](#the-snapshotmetadata-service-api) service.
+with the service's audience string.
+It should establish trust with the specified CA for use in gRPC calls and
+then directly make TLS gRPC calls to the
+[SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service's
+TCP endpoint.
 The audience-scoped authentication token must be passed as a parameter in each
-RPC call to authorize the backup application's use of the service.
-The RPC calls each return a gRPC stream through which the metadata can be recovered.
+RPC to authorize the backup application's use of the service.
+Every RPC returns a gRPC stream through which the metadata can be recovered.
 
-The advertised service's TCP endpoint need not actually be hosted by
-CSI driver vendor supplied logic,
+The advertised [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service's
+TCP endpoint need not actually be hosted by CSI driver vendor supplied logic,
 but could be from a new community provided
 [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
 that communicates over a private UNIX domain socket with the CSI driver's
 implementation of the [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service.
+gRPC service.
 Such a CSI driver service need only focus on the generation of the metadata
 requested;
-the sidecar is responsible for validating the authentication token
-and the parameters of the RPC calls.
+the sidecar is responsible for validating the authentication token,
+authorizing the backup application and validating the parameters of the RPC calls.
 The sidecar forwards the RPC call to the CSI driver service over the UNIX domain socket,
 after translating Kubernetes object names into SP object names,
 and re-streams the results back to its client.
 
-[Kubernetes Role-Based Access Control (RBAC)](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
-is used to authorize a backup application's access to
-[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) objects,
-its use of the
-[TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
-and its access to VolumeSnapshot objects in specific namespaces.
-RBAC is also used to authorize a CSI driver's use of the
-[TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
-and access to VolumeSnapshot and VolumeSnapshotContent objects;
-the [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar),
-if used, runs with the authority of the CSI driver.
-
-The process is illustrated in the figure below.
+The process of accessing snapshot metadata via the sidecar is illustrated in the figure below.
 Additional information is available in the [Design Details](#design-details) section.
 
 ![metadata retrieval flow](./flow.drawio.svg)
@@ -379,25 +368,37 @@ This might be a good place to talk about core concepts and how they relate.
 
 - This proposal requires a backup application to directly connect to a CSI
 [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service.
+gRPC service.
 This was necessary to not place a load on the Kubernetes API server
 that would be proportional to the number of allocated blocks in a volume
 snapshot.
 
+- Each CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
+only operates on volume snapshots provisioned by that CSI driver.
+A backup application is responsible for locating the CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+gRPC service for this CSI driver by searching for its
+[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource).
+This search can fail as this service is optional.
+
+- A backup application must obtain a Kubernetes audience-scoped authentication
+token in order to use a CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+gRPC service.
+This requires that the backup application be authorized to use the Kubernetes
+[TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
+
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service RPC calls allow an application to ***restart*** an interrupted
+gRPC service RPC calls allow an application to ***restart*** an interrupted
 stream from where it previously failed
 by reissuing the RPC call with a starting byte offset.
 
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service permits metadata to be returned in either an ***extent***
+gRPC service permits metadata to be returned in either an ***extent***
 or a ***block*** based format, at the discretion of the CSI driver.
 A portable backup application is expected to handle both such formats.
 
-- Each CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service
-only operates on volume snapshots provisioned by that CSI driver.
-
-- The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service
+- The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
 must be capable of serving metadata on a VolumeSnapshot
 concurrently with the backup application's use of a PersistentVolume
 created on that same VolumeSnapshot.
@@ -431,27 +432,28 @@ Consider including folks who also work outside the SIG or subproject.
 
 The following risks are identified:
 
-- Exposure of snapshot metadata by the use of the
+- Exposure of snapshot metadata by the use of the networked
 [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC API.
 - Uncontrolled access to the [SnapshotMetadata](#the-snapshotmetadata-service-api)
 service could lead to denial-of-service attacks.
-- A principal with the authority to use the
-[SnapshotMetadata](#the-snapshotmetadata-service-api) service indirectly gains
+- A principal with the authority to use a CSI
+[SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service indirectly gains
 access to the metadata of otherwise inaccessible VolumeSnapshots.
 
 The risks are mitigated as follows:
 
-- The possible exposure of snapshot metadata because of the use of a network API
+- The possible exposure of snapshot metadata by use of a network API
   is addressed by using **encryption** and **mutual authentication** for the
   direct gRPC call made by the backup application client.
   The gRPC client is required to first establish trust with the service's CA,
-  and, while the direct gRPC call itself does not perform mutual authentication,
+  and, while the direct TLS gRPC call itself does not perform mutual authentication,
   an **audience-scoped authentication token** must be passed as a parameter in each RPC
   call, which effectively provides the mechanism for the service to both authenticate
   and authorize the client.
 
   The audience-scoped authentication token is obtained from the Kubernetes
-  [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/) and is validated with the Kubernetes
+  [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
+  and is validated with the Kubernetes
   [TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/).
   Its scope is narrowed to the just the target service (the "***audience***") by specifying
   an audience string defined by and unique to the service, during token creation.
@@ -460,8 +462,12 @@ The risks are mitigated as follows:
   service, to further constrain its effective lifetime.
 
 - Access to a [SnapshotMetadata](#the-snapshotmetadata-service-api)
-service and to the VolumeSnapshots referenced by through the service
-are controlled by Kubernetes security policy.
+gRPC service, to the VolumeSnapshots referenced by through the service,
+and the ability to use the
+[TokenRequest](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/),
+[TokenReview](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/) and
+[SubjectAccessReview](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/)
+APIs are controlled by Kubernetes security policy.
 
 The proposal requires the existence of security policy
 to establish the access rights described below, and
@@ -474,7 +480,7 @@ The proposal requires that Kubernetes security policy authorize access to:
 
 - The [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) objects
 that advertise the existence of the
-CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) services available
+CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC services available
 in the cluster.
 These objects do not contain secret information so limiting access just controls
 the principals who obtain the service contact information.
@@ -482,7 +488,7 @@ At the least, backup applications should be permitted to read these objects.
 
 - Backup applications must be granted permission to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/) in order to obtain the audience-scoped authentication tokens that are
-passed in each CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service
+passed in each CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
 RPC call.
 
 - Backup applications must be granted access to view VolumeSnapshot objects in the
@@ -492,19 +498,19 @@ creation of the VolumeSnapshot objects.
 
 - The CSI driver service account must be granted permission to use the Kubernetes
 [TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
-in order for its [SnapshotMetadata](#the-snapshotmetadata-service-api) service to
+in order for its [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service to
 validate the authentication token.
 
 - The CSI driver must be granted permission to use the Kubernetes
 [SubjectAccessReview API](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/)
-in order for its [SnapshotMetadata](#the-snapshotmetadata-service-api) service to
+in order for its [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service to
 validate that a security token authorizes access to VolumeSnapshot objects in a namespace.
 
 - The CSI driver presumably already has access rights to the VolumeSnapshot and
 VolumeSnapshot content objects as they are within its purview.
-This is needed for its [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
+This is needed for its [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service.
 
-The proposal does not mandate *how* such policy is to be configured.
+The proposal does not specify how such a security policy is to be configured.
 
 ## Design Details
 
@@ -518,7 +524,7 @@ proposal will be implemented, this is the place to discuss them.
 
 ### The SnapshotMetadata Service API
 
-> In this section we use the notation of the CSI gRPC specification where the
+> In this section we use the terminology of the gRPC specification where the
 > word *service* is assumed to be a *gRPC service* and not a Kubernetes service,
 > while the word *plugin* is
 > used to refer to the software component that implements the gRPC service.
@@ -527,7 +533,7 @@ The CSI specification will be extended with the addition of the following new, o
 **SnapshotMetadata** [gRPC service](https://grpc.io/docs/what-is-grpc/core-concepts/#service-definition).
 The [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
 and the [SP Snapshot Metadata](#the-sp-snapshot-metadata-service) plugins
-must both implement this service.
+both implement this service.
 
 The service is defined as follows, and will be described in the sub-sections below:
 ```
@@ -748,15 +754,20 @@ The following conditions are well defined:
 The following Kubernetes resources and components are involved at runtime:
 
 - A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource) that advertises
-  the existence of the CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) service.
+  the existence of the CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service.
 
-- [The SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service).
+- A CSI driver vendor provided [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+  that actually sources the snapshot metadata required through a
+  CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
 
 - An optional, community provided
   [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
-  that interacts with Kubernetes clients
-  and **proxies** TCP TLS gRPC requests from Kubernetes client applications to the
-  SP service over a UNIX domain transport.
+  that provides a
+  CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
+  that interacts with Kubernetes clients and **proxies** TCP TLS gRPC requests
+  from Kubernetes client applications to the
+  [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+  over a UNIX domain transport.
 
   If the CSI driver does not deploy the community provided
   [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
@@ -766,7 +777,8 @@ The following Kubernetes resources and components are involved at runtime:
 #### Snapshot Metadata Service Custom Resource
 
 `SnapshotMetadataService` is a cluster-scoped Custom Resource that
-contains information needed to connect to the
+defines the existence of, and
+contains information needed to connect to, the
 [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
 deployed by a CSI driver.
 
@@ -819,8 +831,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SnapshotMetadataService is the Schema for the csisnapshotsessionservices
-          API
+        description: SnapshotMetadataService defines the existence of a CSI driver's SnapshotMetadata gRPC service
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -856,8 +867,8 @@ spec:
 
 #### The SP Snapshot Metadata Service
 
-The SP must provide a container that implements the [SnapshotMetadata Service](#the-snapshotmetadata-service-api)
-to obtain the snapshot metadata requested by a Kubernetes client.
+The SP must provide a container that implements the [SnapshotMetadata](#the-snapshotmetadata-service-api)
+gRPC service that sources the snapshot metadata requested by a Kubernetes client.
 The service runs under the authority of the CSI driver ServiceAccount,
 which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
 
@@ -866,7 +877,8 @@ the community provided [external-snapshot-metadata sidecar](#the-external-snapsh
 which must be deployed in a pod alongside its service container,
 and configured to communicate with it over a UNIX domain socket.
 The sidecar will translate all Kubernetes object identifiers used by the Kubernetes
-client to SP identifiers; the `security_token` and `namespace` parameters should be ignored.
+client to SP identifiers before forwarding the remote procedure calls;
+the `security_token` and `namespace` parameters should be ignored in the forwarded RPCs.
 
 The SP service decides whether the metadata is returned in *block-based* format
 (`block_metadata_type` is `FIXED_LENGTH`)
@@ -880,33 +892,29 @@ A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
 must be created to advertise the existence of this service.
 If the sidecar is used, then the
 [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
-created should advertise the service within the sidecar.
+created should advertise the gRPC service within the sidecar.
 
 
 #### The External Snapshot Metadata Sidecar
 
 The `external-snapshot-metadata` sidecar is a community provided container
-that handles all aspects of Kubernetes snapshot session management for
+that handles all aspects of Kubernetes client interaction for
 a [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service).
 The sidecar should be configured to run under the authority of the CSI driver ServiceAccount,
 which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
 
-A Service object must be created for the sidecar and the DNS address of the
-service be provided as invocation arguments to the sidecar.
-
-The [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
-created for the CSI driver service should advertise the service within the sidecar.
+A Service object must be created for the TCP based
+[SnapshotMetadata](#the-snapshotmetadata-service-api)
+gRPC service implemented by the sidecar.
+A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
+must be created for the gRPC service within the sidecar.
 The CR contains the CA certificate and Service endpoint address of the sidecar and
 the audience string needed for the client's authentication token.
+The sidecar must be configured with the name of this CR object.
 
 The sidecar must be deployed in the same pod as the
 [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
 and must be configured to communicate with it through a UNIX domain socket.
-Additional invocation arguments to the sidecar container
-include the server certificate to be used, and the name of the
-[SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource).
-The latter object provides the audience string expected in client authentication
-tokens.
 
 The sidecar acts as a proxy for the
 [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service),
@@ -924,24 +932,25 @@ The sidecar will use the
 to validate this authentication token, using the audience string specified in the
 [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource).
 
-If authenticated, it will then use the returned **UserInfo** in the
+If the client is authenticated, the sidecar will then use the returned **UserInfo** in the
 [SubjectAccessReview API](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/)
 to verify that the client has access to VolumeSnapshot objects in the `namespace`
 specified in the remote procedure call.
 
 The sidecar will then attempt to load the VolumeSnapshots specified in an RPC call,
 along with their associated VolumeSnapshotContent objects, to ensure that they still
-exist and belong to the CSI driver, and to obtain their SP identifiers.
+exist, belong to the CSI driver, and to obtain their SP identifiers.
 Additional checks may be performed depending on the RPC;
 for example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
 that all the snapshots come from the same volume and that the
 snapshot order is correct.
 
-If all checks are successful, the RPC call is proxied to the
-[SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service)
+If all checks are successful, the RPC call is forwarded to the
+[SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service in the
+[SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service) container
 over the UNIX domain socket, with its input parameters appropriately
-translated. The metadata result stream is proxied back to the calling client
-without any transformation.
+translated. The metadata result stream is sent back to the calling
+Kubernetes client without any transformation.
 
 ### Test Plan
 
@@ -1024,8 +1033,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 Test setup:
 
-* A sample client to initiate the CBT session and the subsequent CBT GRPC
-requests.
+* A sample client to perform CBT GRPC requests.
 * A mock backend snapshot service generates mock responses with CBT payloads to
 be returned to the client.
 
