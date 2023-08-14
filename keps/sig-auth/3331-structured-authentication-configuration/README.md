@@ -664,7 +664,7 @@ Note that as of 2023-06-06, the existing OIDC authenticator has no integration o
 
 Unit tests will be expanded to cover the new feature set of this KEP:
 
-- Structured config (including valdation)
+- Structured config (including validation)
 - CEL based expressions
 - Multiple client ID support
 - Discovery URL overrides
