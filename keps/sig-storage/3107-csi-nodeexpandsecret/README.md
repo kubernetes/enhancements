@@ -173,7 +173,7 @@ N/A
   support to mentioned sidecar, the e2e tests will be added and validated using
   example CSI driver [tests](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/drivers/csi-test/driver/driver.go).
 - E2E test PR is available [here](https://github.com/kubernetes/kubernetes/pull/115451)
-  and this test has been enabled in the [testgrid](https://k8s-testgrid.appspot.com/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features)
+  and this test has been enabled in the [testgrid](https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features)
 
 ### Graduation Criteria
 

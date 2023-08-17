@@ -263,7 +263,7 @@ The infrastructure required is expensive and it is not clear what additional tes
 
 #### Alpha
 - [X] Implement the new service API.
-- [X] [Ensure proper e2e node tests are in place](https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=DevicePluginProbe).
+- [X] [Ensure proper e2e node tests are in place](https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=DevicePluginProbe).
 
 #### Alpha to Beta Graduation
 - [X] Demonstrate that the endpoint can be used to replace in-tree GPU device metrics in production environments (NVIDIA, sig-node April 30, 2019).

@@ -540,12 +540,12 @@ are properly reloading tokens by:
 - [x] Any known bugs fixed
 - [x] Tests passing
   - [x] E2E test [ServiceAccounts should mount projected service account
-        token when requested](https://k8s-testgrid.appspot.com/sig-auth-gce#gce)
+        token when requested](https://testgrid.k8s.io/sig-auth-gce#gce)
   - [x] E2E test [ServiceAccounts should set ownership and permission when
         RunAsUser or FsGroup is
-        present](https://k8s-testgrid.appspot.com/sig-auth-gce#gce)
+        present](https://testgrid.k8s.io/sig-auth-gce#gce)
   - [x] E2E test
-        [ServiceAccounts should support InClusterConfig with token rotation](https://k8s-testgrid.appspot.com/sig-auth-gce#gce-slow)
+        [ServiceAccounts should support InClusterConfig with token rotation](https://testgrid.k8s.io/sig-auth-gce#gce-slow)
 
 #### RootCAConfigMap
 
@@ -584,7 +584,7 @@ are properly reloading tokens by:
 * [x] Tests passing
 
   - [x] Upgrade test
-        [sig-auth-serviceaccount-admission-controller-migration](https://k8s-testgrid.appspot.com/sig-auth-gce#upgrade-tests)
+        [sig-auth-serviceaccount-admission-controller-migration](https://testgrid.k8s.io/sig-auth-gce#upgrade-tests)
 
 * [x] TokenRequest/TokenRequestProjection GA
 
@@ -648,7 +648,7 @@ are properly reloading tokens by:
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path
   tested?**
   for upgrade, we have set up e2e test running here:
-  https://k8s-testgrid.appspot.com/sig-auth-gce#upgrade-tests&width=5
+  https://testgrid.k8s.io/sig-auth-gce#upgrade-tests&width=5
 
   for downgrade, we have manually tested where a workload continues to
   authenticate successfully.
@@ -752,7 +752,7 @@ some monitoring details). For now, we leave it here.
     - Mitigations: disable the BoundServiceAccountTokenVolume feature gate in
       the kube-apiserver and recreate pods.
     - Diagnostics: "failed to generate token" in kube-apiserver log.
-    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20mount%20projected%20service%20account%20token)
+    - Testing: [e2e test](https://testgrid.k8s.io/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20mount%20projected%20service%20account%20token)
 
   - failure to create root CA config map
 
@@ -762,7 +762,7 @@ some monitoring details). For now, we leave it here.
       the kube-apiserver and recreate pods.
     - Diagnostics: "syncing [namespace]/[configmap name] failed" in
       kube-controller-manager log.
-    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20guarantee%20kube-root-ca.crt%20exist%20in%20any%20namespace)
+    - Testing: [e2e test](https://testgrid.k8s.io/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20guarantee%20kube-root-ca.crt%20exist%20in%20any%20namespace)
 
   - kubelet fails to renew token
 
@@ -773,7 +773,7 @@ some monitoring details). For now, we leave it here.
       the kube-apiserver and recreate pods.
     - Diagnostics: "token [namespace]/[token name] expired and refresh failed"
       in kubelet log.
-    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce-slow&width=5)
+    - Testing: [e2e test](https://testgrid.k8s.io/sig-auth-gce#gce-slow&width=5)
 
   - workload fails to refresh token from disk
 

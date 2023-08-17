@@ -230,9 +230,9 @@ Per-zone metrics will be available via the metrics/prometheus plugin in CoreDNS.
 ### Test Plan
 
 * We are running all the existing DNS tests with NodeLocal DNSCache enabled:
-  - [kube-dns-performance-nodecache](https://k8s-testgrid.appspot.com/sig-network-gce#gce-kubedns-performance-nodecache)
-  - [coredns-performance-nodecache](https://k8s-testgrid.appspot.com/sig-network-gce#gce-coredns-performance-nodecache)
-  - [kube-dns-nodecache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache)
+  - [kube-dns-performance-nodecache](https://testgrid.k8s.io/sig-network-gce#gce-kubedns-performance-nodecache)
+  - [coredns-performance-nodecache](https://testgrid.k8s.io/sig-network-gce#gce-coredns-performance-nodecache)
+  - [kube-dns-nodecache](https://testgrid.k8s.io/sig-network-gce#gci-gce-kube-dns-nodecache)
 
 
 ## Graduation Criteria
@@ -246,7 +246,7 @@ Per-zone metrics will be available via the metrics/prometheus plugin in CoreDNS.
 
 - Upgrade to a newer CoreDNS version(1.6.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
 - Add a plan for periodic upgrade to newer CoreDNS versions.
-- Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
+- Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://testgrid.k8s.io/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
 - Scalability tests with NodeLocal DNSCache enabled, verifying the HA mode as well as the regular mode.
 - Add tests that clearly demonstrate the benefits of NodeLocal DNSCache and document the steps to run them.
 - Have 10 users running in production with NodeLocal DNSCache enabled.

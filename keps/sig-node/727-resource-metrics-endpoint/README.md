@@ -231,7 +231,7 @@ to implement this enhancement.
 ##### e2e tests
 
 Test the new endpoint with a node-e2e test similar to the current summary API test.
-Testgrid: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-features-master&include-filter-by-regex=ResourceMetricsAPI
+Testgrid: https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-features-master&include-filter-by-regex=ResourceMetricsAPI
 
 ### Graduation Criteria
 

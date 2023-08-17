@@ -214,7 +214,7 @@ dashboards:
     test_group_name: cloud-provider-demo-e2e-conformance-release-v1.10
 ```
 
-Once you've made the following changes, open a PR against the test-infra repo adding the sig testing label (`/sig testing`) and cc'ing @kubernetes/sig-testing-pr-reviews. Once your PR merges you should be able to view your results on https://k8s-testgrid.appspot.com/ which should be ready to be consumed by the necessary stakeholders (sig-release, sig-testing, etc).
+Once you've made the following changes, open a PR against the test-infra repo adding the sig testing label (`/sig testing`) and cc'ing @kubernetes/sig-testing-pr-reviews. Once your PR merges you should be able to view your results on https://testgrid.k8s.io/ which should be ready to be consumed by the necessary stakeholders (sig-release, sig-testing, etc).
 
 #### Lifecycle of Test Results
 

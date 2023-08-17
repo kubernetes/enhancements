@@ -371,7 +371,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
-[kubeadm-kinder-learner-mode-latest](https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm#kubeadm-kinder-learner-mode-latest) was added as part of the [kubeadm dashboard](https://k8s-testgrid.appspot.com/sig-cluster-lifecycle-kubeadm) since v1.27. All tests in this dashboard use the [kinder](https://github.com/kubernetes/kubeadm/tree/main/kinder) tool.
+[kubeadm-kinder-learner-mode-latest](https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm#kubeadm-kinder-learner-mode-latest) was added as part of the [kubeadm dashboard](https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm) since v1.27. All tests in this dashboard use the [kinder](https://github.com/kubernetes/kubeadm/tree/main/kinder) tool.
 
 - During Alpha (disabled by default): add a new e2e test that enables the feature gate EtcdLearnerMode
 - During Beta (enabled by default): modify the e2e test to test the feature gate EtcdLearnerMode as disabled
