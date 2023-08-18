@@ -557,10 +557,9 @@ message BlockMetadata {
 message GetAllocatedRequest {
   string security_token = 1;
   string namespace = 2;
-  string volume_id = 3;
-  string snapshot = 4;
-  uint64 starting_offset = 5;
-  uint32 max_results = 6;
+  string snapshot_id = 3;
+  uint64 starting_offset = 4;
+  uint32 max_results = 5;
 }
 
 
@@ -573,11 +572,10 @@ message GetAllocatedResponse {
 message GetDeltaRequest {
   string security_token = 1;
   string namespace = 2;
-  string volume = 3;
-  string base_snapshot = 4;
-  string target_snapshot = 5;
-  uint64 starting_byte_offset = 6;
-  uint32 max_results = 7;
+  string base_snapshot_id = 3;
+  string target_snapshot_id = 4;
+  uint64 starting_byte_offset = 5;
+  uint32 max_results = 6;
 }
 
 message GetDeltaResponse {
@@ -628,10 +626,7 @@ The fields of the `GetAllocatedRequest` message are defined as follows:
   This is the object namespace in the CO system.
   The SP plugins implementation shall ignore this value.
 
- - `volume_id`<br>
- The identifier of the volume in the nomenclature of the plugins.
-
- - `snapshot`<br>
+ - `snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
   - `starting_offset`<br>
@@ -673,7 +668,7 @@ The following conditions are well defined:
 | Condition | gRPC Code | Description | Recovery Behavior |
 |-----------|-----------|-------------|-------------------|
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
-| Invalid `volume_id` or `snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshot specified were not found. | The caller should re-check that these objects exist. |
+| Invalid `snapshot` | 5 NOT_FOUND | Indicates that the snapshot specified was not found. | The caller should re-check that this object exists. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 | Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
 
@@ -696,16 +691,13 @@ The fields of the `GetDeltaRequest` message are defined as follows:
   This is the object namespace in the CO system.
   The SP plugins implementation shall ignore this value.
 
- - `volume_id`<br>
- The identifier of the volume in the nomenclature of the plugins.
-
- - `base_snapshot`<br>
+ - `base_snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
- - `target_snapshot`<br>
+ - `target_snapshot_id`<br>
  The identifier of a second snapshot of the specified volume, in the nomenclature of the plugins.
- This snapshot should have been created after the `base_snapshot`, and the RPC will return the changes
- made since the `base_snapshot` was created.
+ This snapshot should have been created after the base snapshot, and the RPC will return the changes
+ made since the base snapshot was created.
 
   - `starting_offset`<br>
  This specifies the 0 based starting byte position in the `target_snapshot` from which the result should be computed.
@@ -746,7 +738,7 @@ The following conditions are well defined:
 | Condition | gRPC Code | Description | Recovery Behavior |
 |-----------|-----------|-------------|-------------------|
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
-| Invalid `volume_id`, `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the volume or snapshots specified were not found. | The caller should re-check that these objects exist. |
+| Invalid `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the snapshots specified were not found. | The caller should re-check that these objects exist. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 | Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
 
