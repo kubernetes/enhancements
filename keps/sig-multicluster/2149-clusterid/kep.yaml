@@ -24,7 +24,7 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.27"
+latest-milestone: "v1.28"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -32,7 +32,7 @@ milestone:
 # at which this maturity level is first available, but simply informational as
 # to the k/k release cycle in which the maturity level was changed.
    alpha: "v1.26"
-   beta: "v1.27"
+   beta: "v1.28"
 #   stable: "v1.22"
 
 # The following PRR answers are required at alpha release

@@ -253,7 +253,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 * Define any characteristics of the system that tracks cluster ids within a
-  cluster (i.e. a cluster registry)
+  ClusterSet (i.e. a cluster registry)
 * Solve any problems without specific, tangible use cases (though we will leave
   room for extension).
 * In particular, this KEP explicitly does not consider 
@@ -274,9 +274,9 @@ nitty-gritty.
 -->
 
 ### Overview
-Each cluster in a ClusterSet will be assigned a unique identifier, that lives at
+Each cluster in a ClusterSet must be assigned a unique identifier, that lives at
 least as long as that cluster is a member of the given ClusterSet, and is
-immutable for that same lifetime. This identifier will be stored in a new
+must not be changed for that same lifetime. This identifier will be stored in a new
 cluster-scoped `ClusterProperty` CR with the well known name
 `cluster.clusterset.k8s.io` that may be referenced by workloads within the
 cluster. The identifier must either:
@@ -285,9 +285,9 @@ cluster. The identifier must either:
 DNS labels separated with a dot. The identifier may be created by an
 implementation dependent mechanism.
 
-While a member of a ClusterSet, a cluster will also have an additional
+While it is a member of a ClusterSet, a cluster must also have an additional
 `clusterset.k8s.io ClusterProperty` which describes its current membership. This
-property must be present exactly as long as the cluster's membership in a
+property must be present as long as the cluster's membership in a
 ClusterSet lasts, and removed when the cluster is no longer a member.
 
 More detail and examples of the uniqueness, lifespan, immutability, and content
@@ -359,9 +359,9 @@ the namespace should be synced.
 
 ### `ClusterProperty` CRD
 
-The `ClusterProperty` Kind provides a way to store identification related,
-cluster scoped information for multi-cluster tools while creating flexibility
-for implementations. A cluster may have multiple `ClusterProperty`s, each
+The `ClusterProperty` Kind provides a way to store
+cluster scoped information while creating flexibility
+for implementations. The initial use case is to support multi-cluster tooling, but a `ClusterProperty` may be used to store any cluster-scoped data. A cluster may have multiple `ClusterProperty`s, each
 holding a different identification related value. Each property contains the
 following information:
 
@@ -398,8 +398,6 @@ Contains a unique identifier for the containing cluster.
 
 *   The identifier **must** be unique within the ClusterSet to which its cluster
     belongs for the duration of the cluster’s membership.
-*   The identifier **should** be unique beyond the ClusterSet within the scope
-    of expected use.
 *   The identifier **may** be globally unique beyond the scope of its
     ClusterSet.
 *   The identifier **may** be unique beyond the span of its cluster’s membership
@@ -408,27 +406,25 @@ Contains a unique identifier for the containing cluster.
 
 ##### Lifespan
 
-*   The identifier **must** exist and be immutable for the duration of a
+*   The identifier **must** exist and not be changed for the duration of a
     cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io`
     property referring to that cluster in that ClusterSet exists.
-*   The identifier **must** exist for the lifespan of a cluster.
-*   The identifier **should** be immutable for the lifespan of a cluster.
 
 
 ##### Contents
 
-*   The identifier **must** either:
-    *   be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label,
-    *   or be composed of two valid
-        [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS labels separated
-        with a dot.
+*   The identifier **must** be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123)
+    DNS subdomain and should be less than 128 characters in total. This may be
+    used to compose larger DNS names (e.g. in the case of multi-cluster
+    services), so care should be take to ensure that the final names fit into the
+    limit of 253 characters.
 *   The identifier **may** be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
 
 
 ##### Consumers
 
-*   **Must** be able to rely on the identifier existing, unmodified for the
+*   **May** rely on the identifier existing, unmodified for the
     entire duration of its membership in a ClusterSet.
 *   **Should** watch the `cluster.clusterset.k8s.io` property to handle
     potential changes if they live beyond the ClusterSet membership.
@@ -437,11 +433,6 @@ Contains a unique identifier for the containing cluster.
 
 
 ##### Notable scenarios
-
-**Renaming a cluster**: Since a `cluster.clusterset.k8s.io ClusterProperty` must
-be immutable for the duration of its *membership* in a given ClusterSet, the
-property contents can be "changed" by unregistering the cluster from the
-ClusterSet and reregistering it with the new name.
 
 **Reusing cluster names**: Since an `cluster.clusterset.k8s.io ClusterProperty`
 has no restrictions on whether or not a ClusterProperty can be repeatable, if a
@@ -480,13 +471,11 @@ which it belongs.
 ##### Contents
 
 *   The identifier **must** associate the cluster with a ClusterSet.
-*   The identifier **may** be either unique or shared by members of a
-    ClusterSet.
 
 
 ##### Consumers
 
-*   **Must** be able to rely on the identifier existing, unmodified for the
+*   **May** rely on the identifier existing, unmodified for the
     entire duration of its membership in a ClusterSet.
 *   **Should** watch the clusterset property to detect the span of a cluster’s
     membership in a ClusterSet.
@@ -499,8 +488,9 @@ they do not conflict with the well known properties _and_ utilize a suffix. The
 following suffixes are reserved for Kubernetes and related projects: `.k8s.io`,
 `.kubernetes.io`. For example, an implementation may utilize the `Kind`
 `ClusterProperty` to store objects with the name
-`fingerprint.coolmcsimplementation.com` but not `fingerprint.k8s.io` and not
-simply `fingerprint`.
+`fingerprint.example.com` but not `fingerprint.k8s.io`. Cluster operators are
+free to use non-namespaced properties (e.g. `fingerprint`) as they see fit, but
+any shared tooling should use appropriately namespaced names.
 
 
 ### Notes/Constraints/Caveats
@@ -680,7 +670,8 @@ spec:
 
 A cluster in a ClusterSet is expected to be authoritatively associated with that
 ClusterSet by an external process and storage mechanism with a purview above the
-cluster local boundary, whether that is some form of a cluster registry or just
+cluster local boundary, whether that is some form of a cluster registry, some
+peer-to-peer distributed consensus and membership tracking, or just
 a human running kubectl. (The details of any specific mechanism is out of scope
 for the MCS API and this KEP -- see the Non-Goals section.) Mirroring this
 information in the cluster-local `ClusterProperty` CRD will necessarily need to
