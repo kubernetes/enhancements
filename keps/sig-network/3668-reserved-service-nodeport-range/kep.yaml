@@ -6,7 +6,7 @@ owning-sig: sig-network
 participating-sigs:
 status: implementable
 creation-date: 2022-11-30
-last-updated: 2023-05-05
+last-updated: 2023-08-22
 reviewers:
 approvers:
   - "@thockin"
@@ -16,18 +16,18 @@ see-also:
   - "/keps/sig-network/3070-reserved-service-ip-range"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: "stable"
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.28"
+latest-milestone: "v1.29"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.27"
   beta: "v1.28"
-  stable: "v1.30"
+  stable: "v1.29"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -39,3 +39,7 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - kube_apiserver_nodeport_allocator_allocated_ports
+  - kube_apiserver_nodeport_allocator_available_ports
+  - kube_apiserver_nodeport_allocator_allocation_total
+  - kube_apiserver_nodeport_allocator_allocation_errors_total
