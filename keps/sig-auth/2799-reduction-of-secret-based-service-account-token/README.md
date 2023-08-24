@@ -122,6 +122,11 @@ tokens which are [less secure than the bound token](https://github.com/kubernete
   2. Emit warnings when using auto-generated token secrets.
   3. Add pointers of TokenRequest API and manually created tokens in the validation
      result.
+  4. Marked the auto-generated tokens as invalid if they are not used for more
+     than the duration configured by `--legacy-service-account-token-clean-up-period`
+     (one year by default). And allow the users to re-activate the invalid
+     auto-generated tokens within the duration of `--legacy-service-account-token-clean-up-period`
+     before the tokens are finally deleted.
 
 ## Design Details
 
@@ -154,7 +159,7 @@ indicates if tracking is enabled in the cluster. It is similar to the existing
 Token Controller starts to remove unused auto-generated secrets (secrets
 bi-directionally referenced by the service account) and not mounted by pods.
 
-When this feature is Beta and enabled by default, delete secrets iff it is over
+When this feature is Beta and enabled by default, mark the secrets as invalid iff it is over
 a sufficient period of time (one year by default) since last used. The period
 can be configured by cluster admins.
 
@@ -164,6 +169,18 @@ Determine the date that a given secret was last used:
 2. defaults to `since`
 
 If `kube-apiserver-legacy-service-account-token-tracking` is unavailable, no secret would be removed.
+
+Mark the secrets as invalid and recover:
+
+1. The secrets will be added a label `kubernetes.io/legacy-token-invalid-since`, with the date as value.
+2. If the users use the invalid tokens, in the Validate() function of
+   "kubernetes/pkg/serviceaccount/legacy.go", it will detect the usage of
+   invalid tokens and return the error information, telling the users to
+   re-activate the token by updating the label value or use the tokenrequest. At
+   the same time, the tokens will be updated with the new `kubernetes.io/legacy-token-last-used` date.
+3. If the users don't use the invalid tokens, after the duration configured
+   through `--legacy-service-account-token-clean-up-period` (one year by default)
+   since the tokens are marked as invalid, the tokens will be finally deleted.
 
 ### Test Plan
 
