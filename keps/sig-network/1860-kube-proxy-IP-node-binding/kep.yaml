@@ -14,18 +14,19 @@ approvers:
   - "@thockin"
   - "@andrewsykim"
 
-# latest-milestone: "v1.21"
+stage: "alpha"
+
+latest-milestone: "v1.29"
 
 milestone:
-  alpha: "v1.21"
-  beta: "v1.22"
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.31"
 
 feature-gates:
   - name: LoadBalancerIPMode
     components:
       - kube-apiserver
       - kube-proxy
+      - cloud-controller-manager
 disable-supported: true
-
-latest-milestone: "0.0"
-stage: "alpha"
