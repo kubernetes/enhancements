@@ -23,6 +23,11 @@ the SIG Architecture page [here][prod-readiness].
 
 ## How do I find a PRR reviewer for my KEP?
 
+The KEP template production readiness questionnaire should be filled out by the KEP authors, and this will be reviewed by the SIG leads. Once the leads are satisfied with both the overall KEP (i.e., it is ready to move to `implementable` state) and the PRR answers, the authors may request PRR approval.
+Make sure the `kep.yaml` and README are ready for review and have the correct sections filled out. See the [KEP template](https://github.com/kubernetes/enhancements/tree/master/keps/NNNN-kep-template). 
+
 1. Make sure the Enhancement KEP is labeled `lead-opted-in` before PRR Freeze. This is required so that the Enhancements release team and PRR team are aware the KEP is targeting the release.
-2. Create a PRR yaml file under the correct SIG under [enhancements/kep/prod-readiness](https://github.com/kubernetes/enhancements/tree/master/keps/prod-readiness).
-3. The PRR team will assign a reviewer to your KEP. You can see the list of reviewers under [prod-readiness-approvers](https://github.com/kubernetes/enhancements/blob/master/OWNERS_ALIASES#L199) for the current release. You can ping the PRR reviewers at `@kubernetes/prod-readiness-reviewers` if you have questions about this process. See the [prod-readiness guide]([prod-readiness]: https://git.k8s.io/community/sig-architecture/production-readiness.md) for more information on the PRR process.
+2. Assign a PRR approver from the prod-readiness-approvers list in the [OWNERS_ALIASES](https://github.com/kubernetes/enhancements/blob/master/OWNERS_ALIASES#L199) file. This may be done earlier as well, to get early feedback or just to let the approver know. Reach out on the #prod-readiness Slack channel or just pick someone from the list. The team may rebalance the assignees if necessary.
+3. Create a `prod-readiness/<sig>/<KEP number>.yaml` file, with the PRR approver's GitHub handle for the specific stage file under the correct SIG under [enhancements/kep/prod-readiness](https://github.com/kubernetes/enhancements/tree/master/keps/prod-readiness). (See this [example PRR approval request PR](https://github.com/kubernetes/enhancements/pull/2179/files).)
+
+See [submitting a KEP for production readiness approval](https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md#submitting-a-kep-for-production-readiness-approval) for more information on the PRR process.
