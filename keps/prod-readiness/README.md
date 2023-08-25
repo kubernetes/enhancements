@@ -20,3 +20,9 @@ Full documentation on the production readiness review process can be found on
 the SIG Architecture page [here][prod-readiness].
 
 [prod-readiness]: https://git.k8s.io/community/sig-architecture/production-readiness.md
+
+## How do I find a PRR reviewer for my KEP?
+
+1. Make sure the Enhancement KEP is labeled `lead-opted-in` before PRR Freeze. This is required so that the Enhancements release team and PRR team are aware the KEP is targeting the release.
+2. Create a PRR yaml file under the correct SIG under [enhancements/kep/prod-readiness](https://github.com/kubernetes/enhancements/tree/master/keps/prod-readiness).
+3. The PRR team will assign a reviewer to your KEP. You can see the list of reviewers under [prod-readiness-approvers](https://github.com/kubernetes/enhancements/blob/master/OWNERS_ALIASES#L199) for the current release. You can ping the PRR reviewers at `@kubernetes/prod-readiness-reviewers` if you have questions about this process. See the [prod-readiness guide]([prod-readiness]: https://git.k8s.io/community/sig-architecture/production-readiness.md) for more information on the PRR process.
