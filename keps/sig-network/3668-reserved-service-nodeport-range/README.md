@@ -305,8 +305,9 @@ This feature doesn't modify the cluster behavior, only the order on which dynami
 
 #### GA
 
-- No issues reported during two releases.
-
+- No issues reported during one release. This is because the feature is built on the top of 
+  [ServiceIPStaticSubrange](https://kep.k8s.io/3070), which has been GA since v1.26. 
+  Consequently, there is no need for any additional probation period.
 
 ### Upgrade / Downgrade Strategy
 
@@ -368,6 +369,10 @@ There is currently no metric available for the NodePort allocation. so 4 metric 
   - kube_apiserver_nodeport_allocator_available_ports
   - kube_apiserver_nodeport_allocator_allocation_total
   - kube_apiserver_nodeport_allocator_allocation_errors_total
+
+The increase of the errors metrics or the trend of the allocated_ports and available_ports doesn't change when NodePort are created or deleted. 
+
+All metrics mentioned above have been added since v1.27.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -463,9 +468,10 @@ N/A
 
 ## Implementation History
 
-## Drawbacks
-
 - v1.27 - Initial implementation https://github.com/kubernetes/kubernetes/pull/114418
 - v1.28 - Beta
+- v1.29 - GA
+
+## Drawbacks
 
 ## Alternatives
