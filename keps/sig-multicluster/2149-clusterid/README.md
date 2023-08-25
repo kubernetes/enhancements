@@ -274,16 +274,18 @@ nitty-gritty.
 -->
 
 ### Overview
+This proposal defines a new cluster-scoped`ClusterProperty` resource for storing
+cluster-level metadata. The primary justification is to enable identification of
+a cluster and its relevant properties within a cluster set, but there is no
+intention to limit general use of `ClusterProperty` to multi-cluster scenarios.
+
 Each cluster in a ClusterSet must be assigned a unique identifier, that lives at
-least as long as that cluster is a member of the given ClusterSet, and is
-must not be changed for that same lifetime. This identifier will be stored in a new
-cluster-scoped `ClusterProperty` CR with the well known name
-`cluster.clusterset.k8s.io` that may be referenced by workloads within the
-cluster. The identifier must either:
-- be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label,
-- or be composed of two valid [RFC-1123](https://tools.ietf.org/html/rfc1123)
-DNS labels separated with a dot. The identifier may be created by an
-implementation dependent mechanism.
+least as long as that cluster is a member of the given ClusterSet, and must not
+be changed for that same lifetime. This identifier will be stored in a
+`ClusterProperty` CR with the well known name `cluster.clusterset.k8s.io` that
+may be referenced by workloads within the cluster. The identifier must be a valid
+[RFC-1123](https://tools.ietf.org/html/rfc1123) DNS subdomain, and should be less
+than 128 characters in total.
 
 While it is a member of a ClusterSet, a cluster must also have an additional
 `clusterset.k8s.io ClusterProperty` which describes its current membership. This
@@ -445,14 +447,6 @@ ClusterSet at the same time. Finally, two or more clusters may have the same
 `cluster.clusterset.k8s.io ClusterProperty` concurrently (though they **should**
 not; see "Uniqueness" above) *as long as* they both do not have membership in
 the same ClusterSet.
-
-**Cluster identifier composed of two DNS labels**: If a clusterset includes
-clusters registered with multiple cluster registries, the value of
-`cluster.clusterset.k8s.io ClusterProperty` may not uniquely identify a cluster
-within the clusterset. In such case the value of `cluster.clusterset.k8s.io
-ClusterProperty` may be composed of two DNS labels separated with a dot. The
-additional DNS label is implementation-dependent and allows the implementation
-to uniquely identify the cluster registry with which a cluster is registered.
 
 #### Property: `clusterset.k8s.io`
 
