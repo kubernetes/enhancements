@@ -23,7 +23,7 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (1.28)](#alpha-128)
+    - [Alpha (1.29)](#alpha-129)
     - [Future Alpha versions](#future-alpha-versions)
     - [Beta](#beta)
     - [GA](#ga)
@@ -543,7 +543,7 @@ the scenarios.
 
 ### Graduation Criteria
 
-#### Alpha (1.28)
+#### Alpha (1.29)
 
 - Add file based authorizer chain configuration
 - Add feature flag for gating usage
