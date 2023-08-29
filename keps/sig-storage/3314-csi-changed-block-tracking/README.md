@@ -290,8 +290,9 @@ It should establish trust with the specified CA for use in gRPC calls and
 then directly make TLS gRPC calls to the
 [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service's
 TCP endpoint.
-The audience-scoped authentication token must be passed as a parameter in each
-RPC to authorize the backup application's use of the service.
+The audience-scoped authentication token must be passed in the metadata
+of each RPC as the value of the ``authorization`` metadata key;
+it will be used to authorize the backup application's use of the service.
 Every RPC returns a gRPC stream through which the metadata can be recovered.
 
 The advertised [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service's
@@ -387,6 +388,19 @@ token in order to use a CSI
 gRPC service.
 This requires that the backup application be authorized to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
+
+- The Kubernetes audience-scoped authentication token must be provided as the
+  ``authorization`` metadata value in each gRPC call, for example with the
+  [WithPerRPCCredentials](https://pkg.go.dev/google.golang.org/grpc#WithPerRPCCredentials)
+  function.
+
+- The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
+  uses a single string parameter to identify each snapshot.
+  A backup application must specify the namespaced Kubernetes VolumeSnapshot
+  objects with strings of the form
+  ```
+    VolumeSnapshot.Namespace + "/" + VolumeSnapshot.Name
+  ```
 
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api)
 gRPC service RPC calls allow an application to ***restart*** an interrupted
@@ -555,11 +569,9 @@ message BlockMetadata {
 }
 
 message GetAllocatedRequest {
-  string security_token = 1;
-  string namespace = 2;
-  string snapshot_id = 3;
-  uint64 starting_offset = 4;
-  uint32 max_results = 5;
+  string snapshot_id = 1;
+  uint64 starting_offset = 2;
+  uint32 max_results = 3;
 }
 
 
@@ -570,12 +582,10 @@ message GetAllocatedResponse {
 }
 
 message GetDeltaRequest {
-  string security_token = 1;
-  string namespace = 2;
-  string base_snapshot_id = 3;
-  string target_snapshot_id = 4;
-  uint64 starting_byte_offset = 5;
-  uint32 max_results = 6;
+  string base_snapshot_id = 1;
+  string target_snapshot_id = 2;
+  uint64 starting_byte_offset = 3;
+  uint32 max_results = 4;
 }
 
 message GetDeltaResponse {
@@ -616,16 +626,6 @@ and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
 of `GetAllocatedResponse` messages.
 The fields of the `GetAllocatedRequest` message are defined as follows:
-- `security_token`<br>
-  This is an authentication bearer token that grants the invoker the
-  right to use the plugins.
-  It is obtained through a mechanism defined by the CO system.
-  The SP plugins implementation shall ignore this value.
-
-- `namespace`<br>
-  This is the object namespace in the CO system.
-  The SP plugins implementation shall ignore this value.
-
  - `snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
@@ -670,7 +670,7 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `snapshot` | 5 NOT_FOUND | Indicates that the snapshot specified was not found. | The caller should re-check that this object exists. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
+| Invalid authorization | 16 UNAUTHENTICATED | The caller is not authorized. | The caller should obtain the correct authorization. |
 
 #### GetDelta RPC
 The `GetDelta` RPC returns the metadata on the blocks that have changed between
@@ -681,15 +681,6 @@ and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
 of `GetDeltaResponse` messages.
 The fields of the `GetDeltaRequest` message are defined as follows:
-- `security_token`<br>
-  This is an authentication bearer token that grants the invoker the
-  right to use the plugins.
-  It is obtained through a mechanism defined by the CO system.
-  The SP plugins implementation shall ignore this value.
-
-- `namespace`<br>
-  This is the object namespace in the CO system.
-  The SP plugins implementation shall ignore this value.
 
  - `base_snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
@@ -740,7 +731,7 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the snapshots specified were not found. | The caller should re-check that these objects exist. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid `security_token` | 16 UNAUTHENTICATED | The specified authentication token is invalid or has expired. | The caller should obtain a new security token. |
+| Invalid authorization | 16 UNAUTHENTICATED | The caller is not authorized. | The caller should obtain the correct authorization. |
 
 ### Kubernetes Components
 The following Kubernetes resources and components are involved at runtime:
@@ -869,8 +860,7 @@ the community provided [external-snapshot-metadata sidecar](#the-external-snapsh
 which must be deployed in a pod alongside its service container,
 and configured to communicate with it over a UNIX domain socket.
 The sidecar will translate all Kubernetes object identifiers used by the Kubernetes
-client to SP identifiers before forwarding the remote procedure calls;
-the `security_token` and `namespace` parameters should be ignored in the forwarded RPCs.
+client to SP identifiers before forwarding the remote procedure calls.
 
 The SP service decides whether the metadata is returned in *block-based* format
 (`block_metadata_type` is `FIXED_LENGTH`)
@@ -917,8 +907,8 @@ in this proposal, including
 - Validating individual RPC arguments.
 - Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
 
-A Kubernetes client provides an audience scoped authentication token in each remote
-procedure call made to the service.
+A Kubernetes client must provide an audience scoped authentication token in the
+``authorization`` metadata value of each remote procedure call made to the service.
 The sidecar will use the
 [TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
 to validate this authentication token, using the audience string specified in the
@@ -929,7 +919,12 @@ If the client is authenticated, the sidecar will then use the returned **UserInf
 to verify that the client has access to VolumeSnapshot objects in the `namespace`
 specified in the remote procedure call.
 
-The sidecar will then attempt to load the VolumeSnapshots specified in an RPC call,
+A snapshot is identified in an RPC by a string of the form:
+```
+  VolumeSnapshot.Namespace + "/" + VolumeSnapshot.Name
+```
+The sidecar will parse these identifiers and
+then attempt to load the VolumeSnapshots specified
 along with their associated VolumeSnapshotContent objects, to ensure that they still
 exist, belong to the CSI driver, and to obtain their SP identifiers.
 Additional checks may be performed depending on the RPC;
