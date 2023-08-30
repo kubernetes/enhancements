@@ -410,7 +410,7 @@ CRDs.  In the future, this E2E could serve as part of a conformance test.
 
 - Feature implemented behind a feature flag
 - Initial unit and integration tests completed and enabled
-- Storage version support for Kuberentes API server and aggregated API servers
+- Storage version support for Kubernetes API server and aggregated API servers
 
 #### Beta
 

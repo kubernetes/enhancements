@@ -65,5 +65,5 @@ Developers from different teams create Ingress resources in different namespaces
 ## Implementation History
 - [community#2841](https://github.com/kubernetes/community/pull/2841) Design proposal
 - [aws-alb-ingress-controller#738](https://github.com/kubernetes-sigs/aws-alb-ingress-controller/pull/738) First stable release: v1.0.0
-- 2018-12-03 Alpha release with kuberentes 1.13
+- 2018-12-03 Alpha release with kubernetes 1.13
 - 2018-03-25 Beta release with kubernetes 1.14 (scheduled)

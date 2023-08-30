@@ -27,14 +27,14 @@
 AWS EBS CSI Driver implements [Container Storage Interface](https://github.com/container-storage-interface/spec/tree/master) which is the standard of storage interface for container. It provides the same in-tree AWS EBS plugin features including volume creation, volume attachment, volume mounting and volume scheduling. It is also configurable on what is the EBS volume type to create, what is the file system file should be formatted, which KMS key to use to create encrypted volume, etc.
 
 ## Motivation
-Similar to CNI plugins, AWS EBS CSI driver will be a stand alone plugin that lives out-of-tree of kuberenetes. Being out-of-tree, it will be benefit from being modularized, maintained and optimized without affecting kubernetes core code base. Aside from those benefits, it could also be consumed by other container orchestrators such as ECS.
+Similar to CNI plugins, AWS EBS CSI driver will be a stand alone plugin that lives out-of-tree of kubernetes. Being out-of-tree, it will be benefit from being modularized, maintained and optimized without affecting kubernetes core code base. Aside from those benefits, it could also be consumed by other container orchestrators such as ECS.
 
 ### Goals
 AWS EBS CSI driver will provide similar user experience as in-tree EBS plugin:
 * An application developer will not notice any difference in the operation of EBS CSI driver versus the in-tree volume plugin. His/Her workflow will stay the same as before.
 * An infrastructure operator needs to deploy/upgrade the driver and create/update storageclass to let the driver to manage underlying storage backend. The storageclass need not be updated if the name of the csi-driver referenced does not change.
 
-Since EBS CSI Driver is out-of-tree implementation that comes outside of kuberenetes distrubtion, documentations will be provided on how to install, use and upgrade the driver.
+Since EBS CSI Driver is out-of-tree implementation that comes outside of kubernetes distrubtion, documentations will be provided on how to install, use and upgrade the driver.
 
 List of driver features include volume creation/deletion, volume attach/detach, volume mount/unmount, volume scheduling, create volume configurations, volume snapshotting, mount options, raw block volume, etc.
 
@@ -67,7 +67,7 @@ Operator enables the allowVolumeExpansion feature in storageclass. When there is
 
 ### Risks and Mitigations
 * *Information disclosure* - AWS EBS CSI driver requires permission to perform AWS operations on behalf of the user. The CSI driver will not log any of the user credentials. We will also provide the user with policies that limit the access of the driver to required AWS services.
-* *Escalation of Privileges* - Since EBS CSI driver is formatting and mounting volumes, it requires root privilege to permform the operations. So that driver will have higher privilege than other containers in the cluster. The driver will not execute random commands provided by untrusted user. All of its interfaces are only provided for kuberenetes system components to interact with. The driver will also validate requests to make sure it aligns with its assumption.
+* *Escalation of Privileges* - Since EBS CSI driver is formatting and mounting volumes, it requires root privilege to permform the operations. So that driver will have higher privilege than other containers in the cluster. The driver will not execute random commands provided by untrusted user. All of its interfaces are only provided for kubernetes system components to interact with. The driver will also validate requests to make sure it aligns with its assumption.
 
 ## Graduation Criteria
 * Static provisioning is implemented.
@@ -101,6 +101,6 @@ To downgrade the driver, perform following steps:
 ## Implementation History
 * 2018-11-26 Initial proposal to SIG
 * 2018-11-26 Initial KEP draft
-* 2018-12-03 Alpha release with kuberentes 1.13
+* 2018-12-03 Alpha release with kubernetes 1.13
 * 2018-03-25 Beta release with kubernetes 1.14
 

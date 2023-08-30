@@ -105,7 +105,7 @@ Given the above context, the main motivations for this KEP are:
 
 In this KEP, we propose a set of enhancements in pre-existing components to support CSI Node Plugins on Windows nodes.
 
-The following enhancements are necessary in existing Kuberentes community managed code:
+The following enhancements are necessary in existing Kubernetes community managed code:
 1. Ability to handle Windows file paths in the Kubelet plugin watcher for domain sockets on Windows nodes.
 2. Refactor code in the CSI Node Driver Registrar so that it can be compiled for Windows.
 3. Build official CSI Node Driver Registrar container images based on Windows base images and publish them in official CSI community container registry.
@@ -1171,7 +1171,7 @@ We could enable prometheus for volume operations metrics in the future
 <!--
 This section must be completed when targeting beta to a release.
 -->
-No. All the Windows OS versions supported by Kuberentes can support CSI-proxy.
+No. All the Windows OS versions supported by Kubernetes can support CSI-proxy.
 
 ###### Does this feature depend on any specific services running in the cluster?
 

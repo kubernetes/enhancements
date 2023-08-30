@@ -407,7 +407,7 @@ In order to enforce authorization of service accounts in a cluster before they c
 
 Today, if PSP or RBAC mode is not configured in a cluster, nothing stops pods with special capabilities from being scheduled. To align with this, we should allow GMSA configurations on pods to be enabled without requiring GMSAAuthorizer to be running and RBAC mode to be enabled.
 
-Further, decoupling basic GMSA functionality in the Kubelet and CRI layers from authorization keeps the core Kuberenetes code non-opinionated around enforcement of authorization of service accounts for GMSA usage. Kubernetes cluster setup tools as well as Kubernetes distribution vendors can ensure that RBAC mode is enabled and GMSAAuthorizer is configured and installed when Windows nodes joined to a domain are deployed in a cluster.
+Further, decoupling basic GMSA functionality in the Kubelet and CRI layers from authorization keeps the core Kubernetes code non-opinionated around enforcement of authorization of service accounts for GMSA usage. Kubernetes cluster setup tools as well as Kubernetes distribution vendors can ensure that RBAC mode is enabled and GMSAAuthorizer is configured and installed when Windows nodes joined to a domain are deployed in a cluster.
 
 
 <!-- end matter --> 

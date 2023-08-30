@@ -32,7 +32,7 @@ This KEP outlines a plan for testing scalability and performance of K8s storage 
 ## Motivation
 
 Adding storage scale and performance tests will help:
-* Understand the current scale limits of the Kuberentes storage system.
+* Understand the current scale limits of the Kubernetes storage system.
 * Set expectations (SLOs) for consumers of the Volume API.
 * Determine bottlenecks and influence which need addressing.
 

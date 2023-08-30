@@ -183,7 +183,7 @@ The Hierarchical Namespace Controller is currently being developed within the
 Multi-Tenancy WG. This poses a problem because working groups are not meant to
 own code. As Sig-Auth is the sponsor for the Multi-Tenancy WG, it is fitting for
 it to move into a Sig-Auth subproject. All current code has been completed in a
-kuberenetes-sig repository and has followed it's governance. Moving Hierarchical
+kubernetes-sig repository and has followed it's governance. Moving Hierarchical
 Namespace Controller to a different foundation or non-CNCF owner seems unfitting.
 
 ### Abandon Hierarchical Namespace Controller

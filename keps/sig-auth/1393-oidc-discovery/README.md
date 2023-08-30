@@ -73,7 +73,7 @@ mechanism that, given an issuer URL, allows a client to discover the rest of the
 issuer metadata, including the key set. Providing an OIDC-compatible discovery
 document would allow flexibility in how relying parties authenticate KSA tokens;
 they can use existing OIDC authenticators in their language/framework of choice,
-without Kuberentes-specific or provider-specific logic.
+without Kubernetes-specific or provider-specific logic.
 
 ## Motivation
 
