@@ -390,9 +390,7 @@ This requires that the backup application be authorized to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
 
 - The Kubernetes audience-scoped authentication token must be provided as the
-  ``authorization`` metadata value in each gRPC call, for example with the
-  [WithPerRPCCredentials](https://pkg.go.dev/google.golang.org/grpc#WithPerRPCCredentials)
-  function.
+  ``authorization`` metadata value in each gRPC call.
 
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
   uses a single string parameter to identify each snapshot.
@@ -814,32 +812,38 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SnapshotMetadataService defines the existence of a CSI driver's SnapshotMetadata gRPC service
+        description: 'The presence of a SnapshotMetadataService CR advertises the existence of a CSI
+          driver's SnapshotMetadata gRPC service.
+          An audience scoped Kubernetes authentication bearer token must be passed in the
+          "authorization" metadata of each gRPC call.
+          Snapshots must be identified in gRPC calls by a string in the form "Namespace/Name".'
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
               of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              internal value, and may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
             description: 'Kind is a string value representing the REST resource this
               object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              submits requests to. Cannot be updated. In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
           spec:
-            description: SnapshotMetadataServiceSpec defines the desired state of
-              SnapshotMetadataService
+            description: SnapshotMetadataServiceSpec contains data needed to connect to the SnapshotMetadata gRPC service.
             properties:
               address:
                 type: string
-                description: The TCP endpoint address of the service
+                description: The TCP endpoint address of the gRPC service.
               audience:
                 type: string
-                description: The audience string value expected in an authentication token for the service
+                description: The audience string value expected in a client's authentication token passed in the
+                  "authorization" metadata of each gRPC call.
               caCert:
-                description: CABundle client side CA used for service validation
+                description: Certificate authority bundle needed by the client to validate the service.
                 format: byte
                 type: string
             type: object
