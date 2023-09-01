@@ -261,7 +261,7 @@ N/A
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+It changes default behavior of k8s itself by automatically propagating HostIPs field.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -273,7 +273,7 @@ The feature should continue to work just fine.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, these will be introduced in the Alpha phase.
+There are tests for feature enablement/disablement in [util_test.go](https://github.com/kubernetes/kubernetes/blob/83f2d89dc987e152f27b31bf630c58ce855d954d/pkg/api/pod/util_test.go#L1168-L1264) and [validation_test.go](https://github.com/kubernetes/kubernetes/blob/83f2d89dc987e152f27b31bf630c58ce855d954d/pkg/apis/core/validation/validation_test.go#L23068-L23113).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -284,11 +284,107 @@ The field is only informative, it doesn't affect running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-The `status.hostIPs` field in Pod is empty, or frequently updated, or cause any other to crash.
+It will immediately update all running Pods on the node where this feature is enabled.
+
+If any of these phenomena imply that the feature is abnormal and needs to be rolled back, the `status.hostIPs` field in the pod is empty, or it is updated frequently, or it causes other Pods to crash.
+
+So if the `apiserver_requests_total` for pods increases significantly, this may indicate a problem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD.
+It will test upgrade and rollback in e2e tests if it can be done in e2e.
+
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Build and run the latest version using Kind
+
+``` console
+$ kind build node-image
+$ kind create cluster --image kindest/node:latest
+...
+$ kubectl get node
+NAME                 STATUS   ROLES           AGE     VERSION
+kind-control-plane   Ready    control-plane   6m40s   v1.28.0-alpha.2.1529+c649dadff44981
+```
+
+Deploy a webserver
+``` yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agnhost-server
+  labels:
+    app: agnhost-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agnhost-server
+  template:
+    metadata:
+      labels:
+        app: agnhost-server
+    spec:
+      containers:
+      - name: agnhost
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        args:
+        - serve-hostname
+        - --port=80
+        ports:
+        - containerPort: 80
+```
+
+Waiting pod be ready
+``` console
+$ kubectl get pod
+NAME                                         READY   STATUS    RESTARTS   AGE
+agnhost-server-76fb5c696c-2rqnh              1/1     Running   0          6s
+```
+
+Check pod hostIPs
+``` console
+$ kubectl get pod agnhost-server-76fb5c696c-2rqnh -o jsonpath='{.status.hostIPs}'
+[{"ip":"172.18.0.2"}]
+```
+
+To disable the feature
+``` console
+$ docker exec -it kind-control-plane bash
+
+$ cat <<EOF >>/var/lib/kubelet/config.yaml
+featureGates:
+  PodHostIPs: false
+EOF
+
+$ systemctl restart kubelet
+```
+
+Add more pod
+``` console
+$ kubectl scale --replicas=2 kubectl deploy/agnhost-server
+```
+
+Check that both Pods do not have HostIPs
+
+``` console
+$ kubectl get pod -o jsonpath='{.items[*].status.hostIPs}'
+```
+
+To enable the feature
+``` console
+$ docker exec -it kind-control-plane bash
+
+$ sed -i 's/PodHostIPs: false/PodHostIPs: true/g' /var/lib/kubelet/config.yaml
+
+$ systemctl restart kubelet
+```
+
+Check that both Pods have HostIPs
+``` console
+$ kubectl get pod -o jsonpath='{.items[*].status.hostIPs}'
+[{"ip":"172.18.0.2"}] [{"ip":"172.18.0.2"}]
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -315,7 +411,7 @@ Pod has a `status.hostIPs` field and use it in downwardAPI to expose it.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- TBD
+No, having a metric for this feature is overkill.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -357,13 +453,28 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+N/A -- since the feature is part of kube-apiserver.
+
+###### What are other known failure modes?
+
+N/A
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
 N/A
 
 ## Implementation History
 
 - 2021-05-06: Initial KEP
+- 2023-08-15: Alpha release with kuberentes 1.28
 
 ## Drawbacks
 
