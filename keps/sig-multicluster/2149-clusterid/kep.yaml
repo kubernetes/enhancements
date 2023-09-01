@@ -19,17 +19,20 @@ see-also:
 #  - "/keps/sig-ccc/3456-replaced-kep"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.24"
+latest-milestone: "v1.28"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
-# milestone:
-#   alpha: "v1.19"
-#   beta: "v1.20"
+milestone:
+# NOTE: As this is out of tree and opt-in, these are not actually k8s versions 
+# at which this maturity level is first available, but simply informational as
+# to the k/k release cycle in which the maturity level was changed.
+   alpha: "v1.26"
+   beta: "v1.28"
 #   stable: "v1.22"
 
 # The following PRR answers are required at alpha release
