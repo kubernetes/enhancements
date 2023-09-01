@@ -105,6 +105,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -987,6 +988,15 @@ extending the production code to implement this enhancement.
 All unit tests will be included in the out-of-tree CSI repositories, with no
 impact on the test coverage of the core packages.
 
+These include:
+
+* Unit tests to cover the logic around retrieving the audience-scoped token and
+volume snapshot name and namespace from the gGRPC request metadata.
+* Unit tests to cover the logic around getting the snapshot, snapshot content,
+snapshot class, volume handle, and metadata service resources.
+* Unit tests to cover the logic around creating token review and subject access
+review resources.
+
 ##### Integration tests
 
 <!--
@@ -1004,7 +1014,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-None.
+No integration tests are required. This feature is better tested with e2e tests.
 
 ##### e2e tests
 
@@ -1018,19 +1028,22 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-Test setup:
+The prototype project of this KEP contains a [sample gRPC client][2] that can be
+used to simulate gRPC requests to the `SnapshotMetadata` service.
 
-* A sample client to perform CBT GRPC requests.
-* A mock backend snapshot service generates mock responses with CBT payloads to
-be returned to the client.
+The e2e tests will test the `SnapshotMetadata` service ability to:
 
-Test scenarios:
-
-* Verify the CBT request/response flow from the client to the CSI driver.
-* Verify that the CBT controller can discover the CBT-enabled CSI driver.
-* Verify the mutating webhook's ability to ensure authorized access to the
-volume snapshots.
-* Token management: TBD
+* Handle and authenticate gRPC requests from the sample client to:
+  * Get allocated blocks of a PVC
+  * Get changed blocks between a pair of snapshots
+* Get the following kinds of API resources, based on the gRPC requests and CSI
+provisioner:
+  * `SnapshotMetadataService`
+  * `TokenReview`
+  * `SubjectAccessReview`
+  * `VolumeSnapshot`
+  * `VolumeSnapshotContent`
+* Marshal and stream responses from the mock SP service to the sample client
 
 ### Graduation Criteria
 
@@ -1060,16 +1073,17 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+-->
 
 #### Alpha
 
-* Specification of the proposed CRDs and GRPC services and messages are approved
-.
-* CBT controller works with multiple CBT-enabled CSI drivers.
-* CBT-enabled CSI driver can return CBT payloads to client over the proposed CSI
-CBT API.
+* Approval of the proposed CRDs and GRPC specification.
+* The `SnapshotMetadata` service can handle gRPC requests to get allocated and
+changed blocks, and stream responses back to client, without imposing load on
+the K8s API server.
 * Initial e2e tests completed and enabled.
 
+<!--
 #### Beta
 
 #### GA
@@ -1166,14 +1180,16 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: The new components will be implemented as part of the
-out-of-tree CSI framework. Storage providers can embed the CBT sidecar component
-in their CSI drivers, if they choose to support this feature. Users will also
-need to install the CBT controller and mutating webhook.
+  - Describe the mechanism:
+The new components will be implemented as part of the out-of-tree CSI framework.
+Storage providers can embed the sidecar component in their CSI drivers, if they
+choose to support this feature.
   - Will enabling / disabling the feature require downtime of the control
-    plane? No.
+    plane?
+No.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? No.
+    of a node?
+No.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1197,13 +1213,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the CBT feature can be disabled by uninstalling the CBT controller from the
-cluster and remove the CBT sidecar from the CSI driver.
+The feature can be disabled by removing the sidecar from the CSI driver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No effects as all custom resources would have been removed when the CBT
-controller was previously uninstalled.
+No effects.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1508,10 +1522,10 @@ The aggregated API server solution described in [#3367][0] was deemed unsuitable
 because of the potentially large amount of CBT payloads that will be proxied
 through the K8s API server. Further discussion can be found in this [thread][1].
 
-An approach based on using volume populator to store the CBT payloads on-disk,
-instead of sending them over the network was also considered. But the amount of
-pod creation/deletion churns and latency incurred made this solution
-inappropriate.
+An approach based on using volume populator to store the CBT payloads on
+intermediary storage, instead of sending them over the network was also
+considered. But the amount of pod creation/deletion churns and latency incurred
+made this solution inappropriate.
 
 The previous design which involved generating and returning a RESTful callback
 endpoint to the caller, to serve CBT payloads was superceded by the aggregation
@@ -1528,3 +1542,4 @@ SIG to get the process for these resources started right away.
 
 [0]: https://github.com/kubernetes/enhancements/pull/3367
 [1]: https://github.com/kubernetes/enhancements/pull/3367#pullrequestreview-1133441329
+[2]: https://github.com/PrasadG193/external-snapshot-metadata/blob/c8da6e4ed6a206bcc68c55a1592c8f321f21cae4/cmd/client/main.go
