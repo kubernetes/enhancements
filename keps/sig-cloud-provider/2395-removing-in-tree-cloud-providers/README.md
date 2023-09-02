@@ -123,7 +123,7 @@ For alpha, the feature gates will be used for testing purposes. When enabled, te
 disabled by default.
 
 For beta, the feature gates will be on by default, meaning core components will disallow use of in-tree cloud providers. This will act as a warning for users to migrate to external components. Users may
-choose to continue using the in-tree provider by explicitly disabling the feature gates. Beta is targeted for v1.26 with the caveat that a majority of our CI signal jobs across providers should have converted to use CCM by then.
+choose to continue using the in-tree provider by explicitly disabling the feature gates. Beta is targeted for v1.29 with the caveat that a majority of our CI signal jobs across providers should have converted to use CCM by then.
 
 For GA, the feature gate will be enabled by default and locked. Users at this point MUST migrate to external components and use of the in-tree cloud providers will be disallowed. GA is targeted for v1.27. One release after GA, the in-tree cloud providers can be safely removed. 
 
