@@ -252,7 +252,7 @@ multiple apiservers, see https://github.com/kubernetes/kubernetes/issues/114743.
 
 The new allocation mode requires:
 
-- 2 new API objects ServiceCIDR and IPAddress in networking.k8s.io/v1alpha1, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
+- 2 new API objects ServiceCIDR and IPAddress in the group `networking.k8s.io``, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
 - 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new ServiceCIDRs objects to allocate IPs for Services.
 - 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses: repair
 Services, garbage collecting orphan IPAddresses and handle the upgrade from the old allocators.
