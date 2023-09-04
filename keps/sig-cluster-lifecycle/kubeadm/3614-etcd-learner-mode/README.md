@@ -371,7 +371,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
-A new e2e test must be added as part of the [kubeadm dashboard](https://k8s-testgrid.appspot.com/sig-cluster-lifecycle-kubeadm). All tests in this dashboard use the [kinder](https://github.com/kubernetes/kubeadm/tree/main/kinder) tool.
+[kubeadm-kinder-learner-mode-latest](https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm#kubeadm-kinder-learner-mode-latest) was added as part of the [kubeadm dashboard](https://k8s-testgrid.appspot.com/sig-cluster-lifecycle-kubeadm) since v1.27. All tests in this dashboard use the [kinder](https://github.com/kubernetes/kubeadm/tree/main/kinder) tool.
 
 - During Alpha (disabled by default): add a new e2e test that enables the feature gate EtcdLearnerMode
 - During Beta (enabled by default): modify the e2e test to test the feature gate EtcdLearnerMode as disabled
@@ -519,6 +519,8 @@ Major milestones might include:
 - 2022-05-10: KEP draft created
 - 2022-12-17(v1.27): add the experimental (alpha) feature gate EtcdLearnerMode and initial implementation <https://github.com/kubernetes/kubernetes/pull/113318>
 - 2023-01-28(v1.27): add e2e test for etcd learner mode <https://github.com/kubernetes/kubeadm/pull/2807>
+- 2023-02-06(v1.27): fix a bug during etcd learner join <https://github.com/kubernetes/kubernetes/pull/115038>
+- 2023-08-29(v1.29): promote EtcdLearnerMode to beta <https://github.com/kubernetes/kubernetes/pull/120228>
 
 ## Drawbacks
 
