@@ -1,0 +1,46 @@
+title: New kubelet gRPC API with endpoint returning local pods information
+kep-number: 4188
+authors:
+  - "@kl52752"
+  - "@robscott"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: 2023-09-05
+reviewers:
+  - "@ffromani"
+  - "@SergeyKanzhelev"
+approvers:
+  - "@dchen1107"
+  - "@mrunalp"
+see-also:
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.29"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.31"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodInfoAPI
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - pod_status_endpoint_requests_total
+  - pod_status_endpoint_requests_list
+  - pod_status_endpoint_requests_get
+  - pod_status_endpoint_errors_get
