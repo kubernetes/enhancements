@@ -205,10 +205,18 @@ CIDRs (more details on this are discussed below).
 
 ### Risks and Mitigations
 
--   Racing kube-controller-managers. If multiples of the controller are running
+- Racing kube-controller-managers. If multiples of the controller are running
     (as in a HA control plane), how do they coordinate?
     -   The controllers will coordinate using the existing
         kube-controller-manager leader election.
+
+- API bad usage or misinterpretation. This KEPs introduces an API object to configure
+  the NodeIPAM controller that configures the node.Spec.PodCIDRs, so is absolutely
+  necessary for components that want to use this API object to configure the kcm with
+  --cidr-allocator-type=MultiCIDRRangeAllocator and not make any assumptions about the
+  IP ranges specified in the NodeIPAMConfig objects.
+    - Release notes will hightlight this problem and a blog post will be created to explain
+    the technical details and remove any possible ambiguity.
 
 ## Design Details
 
