@@ -2039,21 +2039,32 @@ new "ResourcePlugin" type will be used in the Type field of the
 [PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
 response to distinguish the plugin from device and CSI plugins.
 
-Under the advertised Unix Domain socket the kubelet plugin provides the following
-gRPC interface. It was inspired by
+Under the advertised Unix Domain socket the kubelet plugin provides one of the
+following supported gRPC interface versions. It was inspired by
 [CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
 with “volume” replaced by “resource” and volume specific parts removed.
+
+Key difference between interface versions:
+
+- [v1alpha2](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha2/api.proto)
+interface provides resource claim information to a kubelet plugin one at a
+time. **Note: v1alpha2 will be deprecared, switch to v1alpha3**
+- [v1alpha3](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha3/api.proto)
+interface provides information about all resource claims of a pod that belong
+to a particular driver in a single call. This way the kubelet plugin of this driver can consider all
+resources that need to be prepared or unprepared for the pod simultaneously.
+
 
 ##### `NodePrepareResource`
 
 This RPC is called by the kubelet when a Pod that wants to use the specified
 resource is scheduled on a node. The Plugin SHALL assume that this RPC will be
 executed on the node where the resource will be used.
-ResourceClaim.meta.Namespace, ResourceClaim.meta.UID, ResourceClaim.Name,
-ResourceClaim.meta.Namespace and one of the ResourceHandles from the
-ResourceClaimStatus.AllocationResult with a matching DriverName should be
-passed to the Plugin as parameters to identify the claim and perform resource
-preparation.
+
+ResourceClaim.meta.Namespace, ResourceClaim.meta.UID, ResourceClaim.Name and
+one of the ResourceHandles from the ResourceClaimStatus.AllocationResult with
+a matching DriverName should be passed to the Plugin as parameters to identify
+the claim and perform resource preparation.
 
 ResourceClaim parameters (namespace, UUID, name) are useful for debugging.
 They enable the Plugin to retrieve the full ResourceClaim object, should it
@@ -2080,7 +2091,17 @@ MAY choose to call `NodePrepareResource` again, or choose to call
 
 On a successful call this RPC should return set of fully qualified
 CDI device names, which kubelet MUST pass to the runtime through the CRI
-protocol.
+protocol. For version v1alpha3, the RPC should return multiple sets of
+fully qualified CDI device names, one per claim that was sent in the input parameters.
+
+
+###### v1alpha2
+
+> [!WARNING]
+> v1alpha2 will be deprecated, switch to v1alpha3.
+
+<details>
+<summary>v1alpha2</summary>
 
 ```protobuf
 message NodePrepareResourceRequest {
@@ -2103,6 +2124,52 @@ message NodePrepareResourceResponse {
   // make available via the container runtime. A resource
   // may have zero or more devices.
   repeated string cdi_device = 1;
+}
+```
+
+</details>
+
+###### v1alpha3
+
+```protobuf
+message NodePrepareResourcesRequest {
+     // The list of ResourceClaims that are to be prepared.
+     repeated Claim claims = 1;
+}
+
+message Claim {
+    // The ResourceClaim namespace (ResourceClaim.meta.Namespace).
+    // This field is REQUIRED.
+    string namespace = 1;
+    // The UID of the Resource claim (ResourceClaim.meta.UUID).
+    // This field is REQUIRED.
+    string uid = 2;
+    // The name of the Resource claim (ResourceClaim.meta.Name)
+    // This field is REQUIRED.
+    string name = 3;
+    // Resource handle (AllocationResult.ResourceHandles[*].Data)
+    // This field is REQUIRED.
+    string resource_handle = 4;
+}
+
+message NodePrepareResourcesResponse {
+    // The ResourceClaims for which preparation was done
+    // or attempted, with claim_uid as key.
+    //
+    // It is an error if some claim listed in NodePrepareResourcesRequest
+    // does not get prepared. NodePrepareResources
+    // will be called again for those that are missing.
+    map<string, NodePrepareResourceResponse> claims = 1;
+}
+
+message NodePrepareResourceResponse {
+    // These are the additional devices that kubelet must
+    // make available via the container runtime. A resource
+    // may have zero or more devices.
+    repeated string cdi_devices = 1 [(gogoproto.customname) = "CDIDevices"];
+    // If non-empty, preparing the ResourceClaim failed.
+    // cdi_devices is ignored in that case.
+    string error = 2;
 }
 ```
 
@@ -2162,12 +2229,20 @@ kubelet at least once for each successful `NodePrepareResource`. The
 Plugin SHALL assume that this RPC will be executed on the node where
 the resource is being used.
 
-This RPC is called by kubelet when the Pod using the resource is being
-deleted.
+This RPC is called by the kubelet when the last Pod using the resource is being
+deleted or has reached a final state ("Phase" is "done").
 
 This operation MUST be idempotent. If this RPC failed, or kubelet does
 not know if it failed or not, it can choose to call
 `NodeUnprepareResource` again.
+
+###### v1alpha2
+
+> [!WARNING]
+> v1alpha2 will be deprecated, switch to v1alpha3.
+
+<details>
+<summary>v1alpha2</summary>
 
 ```protobuf
 message NodeUnprepareResourceRequest {
@@ -2187,6 +2262,44 @@ message NodeUnprepareResourceRequest {
 
 message NodeUnprepareResourceResponse {
   // Intentionally empty.
+}
+```
+
+</details>
+
+###### v1alpha3
+
+```protobuf
+message NodeUnprepareResourcesRequest {
+    // The list of ResourceClaims that are to be unprepared.
+    repeated Claim claims = 1;
+}
+
+message NodeUnprepareResourcesResponse {
+    // The ResourceClaims for which preparation was reverted.
+    // The same rules as for NodePrepareResourcesResponse.claims
+    // apply.
+    map<string, NodeUnprepareResourceResponse> claims = 1;
+}
+
+message NodeUnprepareResourceResponse {
+    // If non-empty, unpreparing the ResourceClaim failed.
+    string error = 1;
+}
+
+message Claim {
+    // The ResourceClaim namespace (ResourceClaim.meta.Namespace).
+    // This field is REQUIRED.
+    string namespace = 1;
+    // The UID of the Resource claim (ResourceClaim.meta.UUID).
+    // This field is REQUIRED.
+    string uid = 2;
+    // The name of the Resource claim (ResourceClaim.meta.Name)
+    // This field is REQUIRED.
+    string name = 3;
+    // Resource handle (AllocationResult.ResourceHandles[*].Data)
+    // This field is REQUIRED.
+    string resource_handle = 4;
 }
 ```
 
