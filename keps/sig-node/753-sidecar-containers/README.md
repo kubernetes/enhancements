@@ -843,24 +843,57 @@ examples:
 
 ### Termination of containers
 
-In alpha sidecar containers will be terminated as regular containers. No special
+In Alpha sidecar containers will be terminated as regular containers. No special
 or additional signals will be supported.
 
-We will collect feedback from alpha implementation and plan to improve
-termination in Beta. When Pods with sidecars are terminated:
-
-- Sidecars should not begin termination until all primary containers have
-  terminated.
-  - Implicit in this is that sidecars should continue to be restarted until all
-    primary containers have terminated.
-- Sidecars should terminate serially and in reverse order. I.e. the first
-  sidecar to initialize should be the last sidecar to terminate.
-
-To address these needs, before promoting this enhancement to Beta, we introduce
-additional termination grace period fields to manage termination duration
+In Beta we have thought about introducing additional termination grace period fields
+to manage termination duration
 ([draft proposal](https://docs.google.com/document/d/1B01EdgWJAfkT3l6CIwNwoskQ71eyuwet3mjiQrMQbU8))
 and leverage these fields to add reverse order termination of sidecar containers
 after the primary containers terminate.
+
+However, we decided on an alternative that doesn't require additional fields or hooks while keeping
+the desired behaviors when Pods with sidecars are terminated. While original approach works better
+with truly graceful termination where consistency is more important than time taken, proposed approach
+works for that scenario as well as a more and more popular scenario of limited time to terminate when
+graceful termination is set by external requirement and Pods needs to do best to gracefully terminate
+as much as possible (think of a Spot Instances with 30 seconds notification).
+
+Here is the proposed approach:
+1. Sidecar containers that have a `PreStop` hook will be notified when the Pod has begun terminating
+   by executing the `PreStop` hook. This happens at the same time as regular containers, and begins
+   the Pod's termination grace period countdown.
+2. Sidecar containers enter the `Terminated` state and are no longer restarted if they fail.
+3. Once the last primary container terminates, the last started sidecar container is notified by
+   sending a `SIGTERM` signal.
+4. The next sidecar (in reverse order) is notified by sending a `SIGTERM` signal after the previous
+   sidecar container terminates.
+5. This continues until all sidecar containers have terminated, or the Pod's termination grace period
+   expires. In the latter case, all containers are terminated with minimum grace period and the Pod
+   will be terminated after that.
+
+It is worth noting that, like with regular containers, `PreStop` hook must complete before the `SIGTERM`
+signal to stop the sidecar container can be sent. Therefore, ordering and graceful termination of sidecars
+can only be guaranteed if the `PreStop` hook completes within the Pod's termination grace period.
+
+If we compare this to the initial proposal, the following behaviors are preserved:
+- Sidecars should not begin termination until all primary containers have
+  terminated.
+- Sidecars should terminate serially and in reverse order. I.e. the first
+  sidecar to initialize should be the last sidecar to terminate.
+
+The additional benefits of this approach comparing to initial proposal:
+- If graceful termination period is short, and mostly taken by the main container, the sidecar containers
+  has more time to gracefully terminate, for example, clear up buffers of logging container.
+- There is absolutely no change in behavior of main containers - they start graceful termination at exact
+  same time as before and can utilize as much of the graceful termination period as they need. The Pod graceful
+  termination period semantic also stay unchanged.
+
+However, the following behaviors is not preserved:
+- Sidecars should continue to be restarted until all primary containers have terminated.
+
+We think this is a reasonable tradeoff and consistent with the best effort nature of keeping 
+sidecar containers running during the Pod's lifetime.
 
 ### Other
 
