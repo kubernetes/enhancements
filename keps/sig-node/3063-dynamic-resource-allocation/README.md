@@ -2000,9 +2000,9 @@ Key difference between interface versions:
 interface provides resource claim information to kubelet plugin on one at a
 time basis. **NB! v1alpha2 will be deprecared, switch to v1alpha3**
 - [v1alpha3](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha3/api.proto)
-interface provides information about all resource claims of the pod, that belong
-to particular driver, so the kubelet plugin of this driver can consider all
-resources that need to be prepared or unprepared for the pod in one call.
+interface provides information about all resource claims of a pod that belong
+to a particular driver in a single call. This way the kubelet plugin of this driver can consider all
+resources that need to be prepared or unprepared for the pod simultaneously.
 
 
 ##### `NodePrepareResource`
