@@ -721,8 +721,8 @@ For a resource driver the following components are needed:
 - *Resource kubelet plugin*: a component which cooperates with kubelet to prepare
   the usage of the resource on a node.
 
-An utility library for resource drivers will be developed outside of Kubernetes
-and does not have to be used by drivers, therefore it is not described further
+An [utility library](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation) for resource drivers was developed.
+It does not have to be used by drivers, therefore it is not described further
 in this KEP.
 
 ### State and communication
@@ -961,14 +961,6 @@ arbitrarily. Some combinations are more useful than others:
 ```
 
 ### Coordinating resource allocation through the scheduler
-
-<<[UNRESOLVED pohly]>>
-The entire scheduling section is tentative. Key opens:
-- Support arbitrary combinations of user- vs. Kubernetes-managed ResourceClaims
-  and immediate vs. late allocation?
-  https://github.com/kubernetes/enhancements/pull/3064#discussion_r901948474
-<<[/UNRESOLVED]>>
-
 
 For immediate allocation, scheduling Pods is simple because the
 resource is already allocated and determines the nodes on which the
@@ -1399,16 +1391,6 @@ type AllocationResult struct {
 	// than one consumer at a time.
 	// +optional
 	Shareable bool
-
-	<<[UNRESOLVED pohly]>>
-	We will have to discuss use cases and real resource drivers that
-	support sharing before deciding on a) which limit is useful and
-	b) whether we need a different API that supports an unlimited
-	number of users.
-
-	Any solution that handles reservations differently will have to
-	be very careful about race conditions.
-	<<[/UNRESOLVED]>>
 }
 
 // AllocationResultResourceHandlesMaxSize represents the maximum number of
@@ -2426,13 +2408,23 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-The existing integration tests for kube-scheduler and kubelet will get extended
-to cover scenarios involving dynamic resources. A new integration test will get
-added for the dynamic resource controller.
+The existing [integration tests for kube-scheduler which measure
+performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
+were extended to also [cover
+DRA](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/config/performance-config.yaml#L717-L779)
+and to runs as [correctness
+tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
+as part of the normal Kubernetes "integration" jobs. That also covers [the
+dynamic resource
+controller](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/util.go#L135-L139).
+
+kubelet were extended to cover scenarios involving dynamic resources.
 
 For beta:
 
-- <test>: <link to test coverage>
+- kube-scheduler, kube-controller-manager: http://perf-dash.k8s.io/#/, [`k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf`](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
+- kubelet: ...
+
 
 ##### e2e tests
 
@@ -2447,12 +2439,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 End-to-end testing depends on a working resource driver and a container runtime
-with CDI support. A mock driver will be developed in parallel to developing the
-code in Kubernetes, but as it will depend on the new APIs, we have to get those
-merged first.
+with CDI support. A [test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
+was developed in parallel to developing the
+code in Kubernetes.
 
-Such a mock driver could be as simple as taking parameters from ResourceClass
-and ResourceClaim and turning them into environment variables that then get
+That test driver simply takes parameters from ResourceClass
+and ResourceClaim and turns them into environment variables that then get
 checked inside containers. Tests for different behavior of an driver in various
 scenarios can be simulated by running the control-plane part of it in the E2E
 test itself. For interaction with kubelet, proxying of the gRPC interface can
@@ -2465,14 +2457,11 @@ All tests that don't involve actually running a Pod can become part of
 conformance testing. Those tests that run Pods cannot be because CDI support in
 runtimes is not required.
 
-Once we have end-to-end tests, at least two Prow jobs will be defined:
-- A pre-merge job that will be required and run only for the in-tree code of
-  this KEP (`optional: false`, `run_if_changed` set, `always_run: false`).
-- A periodic job that runs the same tests to determine stability and detect
-  unexpected regressions.
-
 For beta:
-- <test>: <link to test coverage>
+- pre-merge with kind (optional, triggered for code which has an impact on DRA): https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-kind-dra
+- periodic with kind: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra
+- pre-merge with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-node-dra
+- periodic with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-node-e2e-crio-dra
 
 ### Graduation Criteria
 
@@ -2602,7 +2591,7 @@ There will be pods which have a non-empty PodSpec.ResourceClaims field and Resou
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 For kube-controller-manager, metrics similar to the generic ephemeral volume
-controller will be added:
+controller [were added](https://github.com/kubernetes/kubernetes/blob/163553bbe0a6746e7719380e187085cf5441dfde/pkg/controller/resourceclaim/metrics/metrics.go#L32-L47):
 
 - [X] Metrics
   - Metric name: `resource_controller_create_total`
@@ -2729,7 +2718,65 @@ already received all the relevant updates (Pod, ResourceClaim, etc.).
 
 ###### What are other known failure modes?
 
-To be added for beta.
+- DRA driver does not or cannot allocate a resource claim.
+
+  - Detection: The primary mechanism is through vendors-provided monitoring for
+    their driver. That monitor needs to include health of the driver, availability
+    of the underlying resource, etc. The common helper code for DRA drivers
+    posts events for a ResourceClaim when an allocation attempt fails.
+
+    When pods fail to get scheduled, kube-scheduler reports that through events
+    and pod status. For DRA, that includes "waiting for resource driver to
+    provide information" (node not selected yet) and "waiting for resource
+    driver to allocate resource" (node has been selected). The
+    ["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/9fca4ec44afad4775c877971036b436eef1a1759/pkg/scheduler/metrics/metrics.go#L200-L206)
+    metric will have pods counted under the "dynamicresources" plugin label.
+
+    To troubleshoot, "kubectl describe" can be used on (in this order) Pod,
+    ResourceClaim, PodSchedulingContext.
+
+  - Mitigations: This depends on the vendor of the DRA driver.
+
+  - Diagnostics: In kube-scheduler, -v=4 enables simple progress reporting
+    in the "dynamicresources" plugin. -v=5 provides more information about
+    each plugin method. The special status results mentioned above also get
+    logged.
+
+  - Testing: E2E testing covers various scenarios that involve waiting
+    for a DRA driver. This also simulates partial allocation of node-local
+    resources in one driver and then failing to allocate the remaining
+    resources in another driver (the "need to deallocate" fallback).
+
+- A Pod gets scheduled without allocating resources.
+
+  - Detection: The Pod either fails to start (when kubelet has DRA
+    enabled) or gets started without the resources (when kubelet doesn't
+    have DRA enabled), which then will fail in an application specific
+    way.
+
+  - Mitigations: DRA must get enabled properly in kubelet and kube-controller-manager.
+    Then kube-controller-manager will try to allocate and reserve resources for
+    already scheduled pods. To prevent this from happening for new pods, DRA
+    must get enabled in kube-scheduler.
+
+  - Diagnostics: kubelet will log pods without allocated resources as errors
+    and emit events for them.
+
+  - Testing: An E2E test covers the expected behavior of kubelet and
+    kube-controller-manager by creating a pod with `spec.nodeName` already set.
+
+- A DRA driver kubelet plugin fails to prepare resources.
+
+  - Detection: The Pod fails to start after being scheduled.
+
+  - Mitigations: This depends on the specific DRA driver and has to be documented
+    by vendors.
+
+  - Diagnostics: kubelet will log pods with such errors and emit events for them.
+
+  - Testing: An E2E test covers the expected retry mechanism in kubelet when
+    `NodePrepareResources` fails intermittently.
+
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -2746,20 +2793,20 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-To be added for beta.
+Performance depends on a large extend on how individual DRA drivers are
+implemented. Vendors will have to provide their own SLOs and troubleshooting
+instructions.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- Kubernetes 1.25: KEP accepted as "implementable".
+- Kubernetes 1.26: Code merged as "alpha".
+- Kubernetes 1.27: API breaks (batching of NodePrepareResource in kubelet API,
+  AllocationResult in ResourceClaim status can provide results for multiple
+  drivers).
+- Kubernetes 1.28: API break (ResourceClaim names for claims created from
+  a template are generated instead of deterministic), scheduler performance
+  enhancements (no more backoff delays).
 
 ## Drawbacks
 
