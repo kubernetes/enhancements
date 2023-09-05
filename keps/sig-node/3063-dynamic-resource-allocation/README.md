@@ -2179,8 +2179,8 @@ kubelet at least once for each successful `NodePrepareResource`. The
 Plugin SHALL assume that this RPC will be executed on the node where
 the resource is being used.
 
-This RPC is called by kubelet when the last Pod using the resource is being
-deleted or has come to a final state ("Phase" is "done").
+This RPC is called by the kubelet when the last Pod using the resource is being
+deleted or has reached a final state ("Phase" is "done").
 
 This operation MUST be idempotent. If this RPC failed, or kubelet does
 not know if it failed or not, it can choose to call
