@@ -676,12 +676,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+No. The feature is not expected to have any impact on running workloads unless the LastPhaseTransitionTime field is used by some other workloads to make decisions.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -691,11 +695,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+N/A
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -793,6 +801,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+No.
+
 ### Scalability
 
 <!--
@@ -820,6 +830,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -829,6 +841,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -836,6 +850,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -845,6 +861,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+A new field will be added to the existing PV object. The field is timestamp and Almost no effect in terms of size.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -856,6 +874,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -869,6 +889,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -879,6 +901,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -895,6 +919,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+It will become unavailable as well.
+
 ###### What are other known failure modes?
 
 <!--
@@ -910,9 +936,16 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+No.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+N/A
+
 ## Implementation History
+
+- Alpha in 1.28
+- Beta promotion to 1.29
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
