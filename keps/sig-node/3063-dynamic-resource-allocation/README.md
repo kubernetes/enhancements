@@ -2041,8 +2041,8 @@ MAY choose to call `NodePrepareResource` again, or choose to call
 
 On a successful call this RPC should return set of fully qualified
 CDI device names, which kubelet MUST pass to the runtime through the CRI
-protocol. For version v1alpha3 the RPC shold return the respective set of
-fully qualified CDI device names per every claim that was sent in parameters.
+protocol. For version v1alpha3, the RPC should return multiple sets of
+fully qualified CDI device names, one per claim that was sent in the input parameters.
 
 
 ###### v1alpha2
