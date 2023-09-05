@@ -1998,7 +1998,7 @@ Key difference between interface versions:
 
 - [v1alpha2](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha2/api.proto)
 interface provides resource claim information to a kubelet plugin one at a
-time. **NB! v1alpha2 will be deprecared, switch to v1alpha3**
+time. **Note: v1alpha2 will be deprecared, switch to v1alpha3**
 - [v1alpha3](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha3/api.proto)
 interface provides information about all resource claims of a pod that belong
 to a particular driver in a single call. This way the kubelet plugin of this driver can consider all
