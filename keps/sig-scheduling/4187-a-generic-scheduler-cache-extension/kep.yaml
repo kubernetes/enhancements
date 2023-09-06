@@ -1,0 +1,12 @@
+title: A Generic Scheduler Cache Extension for Scheduler Plugins
+kep-number: 4187
+authors:
+  - "@cathyhongzhang"
+  - "@ichbinblau"
+owning-sig: sig-scheduling
+participating-sigs:
+status: 
+creation-date: 2023-09-06
+reviewers:
+approvers:
+
