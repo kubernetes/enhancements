@@ -205,7 +205,7 @@ kind: AuthenticationConfiguration
 jwt:
 - issuer:
     url: https://example.com
-    clientIDs:
+    audiences:
     - my-app
   claimValidationRules:
   - claim: hd
@@ -364,11 +364,11 @@ type JWTAuthenticator struct {
         // +optional
         CertificateAuthority string `json:"certificateAuthority,omitempty"`
 
-        // clientIDs is the set of acceptable audiences the JWT must be issued to.
+        // audiences is the set of acceptable audiences the JWT must be issued to.
         // At least one of the entries must match the "aud" claim in presented JWTs.
         // Same value as the --oidc-client-id flag (though this field supports an array).
         // Required to be non-empty.
-        ClientIDs []string `json:"clientIDs,omitempty"`
+        Audiences []string `json:"audiences,omitempty"`
    }
    ```
 
@@ -433,6 +433,7 @@ type JWTAuthenticator struct {
         //     (2) if userName.prefix = "" and userName.claim != "email", prefix will be "<issuer.url>#"
         //     (3) if userName.expression is set instead, result of expression is used as-is without any implicit prefix
         // (1) and (2) ensure backward compatibility with the --oidc-username-claim and --oidc-username-prefix flags
+        // +required
         Username PrefixedClaimOrExpression `json:"username"`
         // groups represents an option for the groups attribute.
         // Claim must be a string or string array claim.
@@ -733,8 +734,6 @@ providers such as Okta, Azure AD, etc:
 #### Deprecation
 
 kube-apiserver `--oidc-*` flags require deprecation warnings on the stable release of the feature.
-It is possible to react only to the `--oidc-issuer-url` flag because other flags cannot be enabled separately from this one.
-
 
 ### Upgrade / Downgrade Strategy
 
