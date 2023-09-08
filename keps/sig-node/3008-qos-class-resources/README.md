@@ -85,6 +85,8 @@ SIG Architecture for cross-cutting KEPs).
       - [Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources)
       - [Container-level memory QoS](#container-level-memory-qos)
       - [Runtime classes](#runtime-classes)
+      - [Splitting Pod QoS Class](#splitting-pod-qos-class)
+      - [Pod priority class](#pod-priority-class)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -277,6 +279,8 @@ network QoS that cannot support per-container granularity.
 - Specifying available (QoS-class) resource types or their detailed behavior
 - API changes to support updating Pod-level (sandbox-level) QoS-class resource
   assignment of running pods (will be subject to a separate KEP)
+- Per runtime class QoS (needs a separate KEP if this is desired, as it must
+  cover other aspects than just QoS)
 
 ## Implementation phases
 
@@ -700,7 +704,7 @@ E.g. adding a new runtime class on a node by re-configuration of the runtime
 would be immediately reflected in the node status without any additional admin
 tasks (like node labeling or manual creation of RuntimeClass objects).
 
-###### Splitting Pod QoS Class
+##### Splitting Pod QoS Class
 
 Currently the Pod QoS class is an implicit property of a Pod, tied to how the
 resource requests and limits of its containers are specified. QoS-class
@@ -715,7 +719,7 @@ behavior or OOM scoring) into separate properties. For example, in the case of
 OOM scoring make it possible for the user to specify a burstable pod with low
 OOM priority (low chance of being killed).
 
-###### Pod priority class
+##### Pod priority class
 
 One wild idea would be to implement pod priority class mechanism (or part of
 it) as a QoS-class resource. This would be a
@@ -856,8 +860,8 @@ lifetime of the Pod e.g. because of re-configuration of the runtime:
   in PodSandboxStatus/ContainerStatus
 
 An empty value (empty string) denotes "system default" i.e. the runtime did not
-enforce any QoS for this specific type of QoS-class resource. An example can be
-for example Linux cgroup controls where "system default" would mean that the
+enforce any QoS for this specific type of QoS-class resource.
+For example Linux cgroup controls where "system default" would mean that the
 runtime did not enforce any changes so they will be set to the default values
 determined by the system configuration.
 
