@@ -76,9 +76,18 @@ or even if kube-proxy is running.
 
 ### Non-Goals
 
+- Having kube-proxy itself set `status.nodeInfo.kubeProxyVersion`. Components should not
+  be trying to figure out what Service features are available based on the kube-proxy
+  version anyway, since some clusters may run an alternative service proxy implementation.
+  If there is a need for a Service proxy feature discovery feature in the future, then
+  that would need to be designed at that time.
+
+- Changing `v1.Node` validation to *require* that the field be unset.
+
 ## Proposal
 
-The proposal is to deprecate the `kubeProxyVersion` field of `NodeStatus`, and to stop setting it in the future.
+The proposal is to deprecate the `kubeProxyVersion` field of `NodeStatus`, and to have
+kubelet set it to an empty string, rather than the kubelet version, in the future.
 
 This field was used by the GCP cloud provider up until 1.28 for the legacy built-in cloud provider ([kubernetes #117806], and up until 1.29 for the external cloud-provider ([cloud-provider-gcp #533]). It may also be used by other components. Thus, we will use a feature gate to protect it until all components are fixed.
 
@@ -120,9 +129,10 @@ to implement this enhancement.
 
 - Add a test to `TestVersionInfo` in `pkg/kubelet/nodestatus` to see if FeatureGate behaves as expected when it is turned on or off.
 - If DisableNodeKubeProxyVersion FeatureGate is enabled:
-  - `status.nodeInfo.kubeProxyVersion` will be empty.
+  - `status.nodeInfo.kubeProxyVersion` will remain unset if it is initially unset.
+  - `status.nodeInfo.kubeProxyVersion` will be cleared if it is set.
 - Else:
-  - `status.nodeInfo.kubeProxyVersion` will be not empty .
+  - `status.nodeInfo.kubeProxyVersion` will be set to the same value as `status.nodeInfo.kubeletVersion`
 
 ##### Integration tests
 
@@ -177,7 +187,10 @@ The feature should continue to work just fine.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, we don't need to test what happens when the value of the field changes, because our goal is to make sure no one is looking at the value at all, so no components should notice if the value changes.
+In addition to the unit tests, we will manually confirm that restarting kubelet with the
+feature gate toggled has the expected behavior (that it sets `kubeProxyVersion` if the
+feature gate is disabled, even if it doesn't also need to set `kubeletVersion`, and that
+it clears `kubeProxyVersion` if the feature gate is enabled).
 
 ### Rollout, Upgrade and Rollback Planning
 
