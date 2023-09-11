@@ -988,7 +988,7 @@ for mount behavior (if the the feature gate is enabled).
 This section must be completed when targeting beta to a release.
 -->
 
-###### How can a rollout fail? Can it impact already running workloads?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -1086,19 +1086,28 @@ An operator can query for PersistentVolumeClaims and PersistentVolumes in the
 cluster with the ReadWriteOncePod access mode. If any exist then the feature is
 in use.
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+###### How can someone using this feature know that it is working for their instance?
 
 <!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
 Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [X] Metrics
-  - Metric name: `scheduler_unschedulable_pods{plugin="VolumeRestrictions"}`
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-    - kube-scheduler
+- [X] Other
+  - Details:
+    - Create two Pods using the same PersistentVolumeClaim with the ReadWriteOncePod access mode
+    - (If cluster access available) A PersistentVolume should be created with `.status.phase=Bound`
+    - A PersistentVolumeClaim should be created with `.status.phase=Bound` and have ExternalProvisioning, Provisioning, and ProvisioningSucceeded events
+    - (If cluster access available) A VolumeAttachment should be created with `.status.attached=True`
+    - One Pod should have a SuccessfulAttachVolume event and its Ready status condition set to True
+    - The other Pod should have a PodScheduled status condition set to False wth reason "Unschedulable" and FailedScheduling events
+    - The successful Pod should be able to access the volume at the provided mount path
 
-###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 <!--
 At a high level, this usually will be in the form of "high percentile of SLI
@@ -1126,6 +1135,18 @@ kubelet.
 
 You may also see an increase in the `csi_sidecar_operations_seconds_bucket`
 metric exported by CSI sidecars if there are issues performing CSI operations.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+- [X] Metrics
+  - Metric name: `scheduler_unschedulable_pods{plugin="VolumeRestrictions"}`
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+    - kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1262,6 +1283,20 @@ This through this both in small and large cases, again with respect to the
 -->
 
 No, the solution will involve using the same ActualStateOfWorld cache in kubelet.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
 
 ### Troubleshooting
 
