@@ -210,8 +210,6 @@ aliases:
     - craiglpeters
     - feiskyer
     - khenidak
-  provider-gcp:
-    - abgworrall
   provider-ibmcloud:
     - spzala
   provider-openstack:
