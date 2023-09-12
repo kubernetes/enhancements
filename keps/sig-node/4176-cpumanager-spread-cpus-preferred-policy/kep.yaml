@@ -10,7 +10,7 @@ participating-sigs: []
 status: provisional
 creation-date: "2023-09-04"
 reviewers:
-  - TBD
+  - "@ffromani"
 approvers:
   - "@sig-node-tech-leads"
 see-also: []

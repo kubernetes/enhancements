@@ -174,7 +174,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-We propose this KEP to introduce a new CPU Manager Static Policy that spreads hyper threads across physical cores. In this policy, we changed the cpu assignment sorting algorithm to sort by socket and then directly cpus without taking physical cores into ordering. It seems like a noisy neighbour issue, but it's always true. We will explain the reason in the motivation section. This policy is useful for some applications which need to take advantage of CPU Cache.
+We propose this KEP to introduce a new CPU Manager Static Policy Option that spreads hyper threads across physical cores. In this policy, we changed the cpu assignment sorting algorithm to sort by socket and then directly cpus without taking physical cores into ordering. It seems like a noisy neighbour issue, but it's always true. We will explain the reason in the motivation section. This policy is useful for some applications which need to take advantage of CPU Cache.
 
 ## Motivation
 
@@ -431,6 +431,11 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind the existing static policy feature flag
+- Initial e2e tests completed and enabled
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -567,7 +572,6 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 <!--
 This section must be completed when targeting beta to a release.
 -->
-We only target alpha for this release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
