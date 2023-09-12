@@ -110,7 +110,7 @@ As part of this proposal, we are mainly proposing three changes:
 
 ### Making resizeStatus more general in v1.28
 
-After some discussion with sig-storage folks and to accommodate changes coming from https://github.com/kubernetes/enhancements/issues/3751 we are proposing that we rename `pvc.Status.ResizeStatus` to `pvc.Status.AllocatedResourceStatus` and make it a map.
+After [some discussion](https://github.com/kubernetes/kubernetes/pull/116335#issuecomment-1624566731) with sig-storage folks, we are proposing that we rename `pvc.Status.ResizeStatus` to `pvc.Status.AllocatedResourceStatus` and make it a map.
 
 So basically new API will look like:
 
