@@ -273,12 +273,12 @@ in back-to-back releases.
 #### Beta
 
 - Gather feedback from developers and surveys
-- Add integration tests
-- Enable shadowing for all non-existent subcommands
 
 #### GA
 
 - Add e2e test
+- Add integration tests
+- Enable shadowing for all non-existent subcommands
 
 ### Upgrade / Downgrade Strategy
 
