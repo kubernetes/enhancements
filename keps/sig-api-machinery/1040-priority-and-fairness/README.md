@@ -3013,10 +3013,10 @@ GA:
 
 - [x] API annotations properly support strategic merge patch.
 - [x] Design and implement borrowing between priority levels.
-- [ ] Satisfaction with LIST and WATCH support.
-- [ ] Implement borrowing by exempt priority levels.
-- [ ] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that there is another level of concern that APF does not attempt to address, which is mismatch between the throughput that various controllers can sustain.
-- [ ] Satisfaction that the interface is sufficient to support tuning of capacity and resource costs.
+- [x] Satisfaction that LIST and WATCH support are good enough.
+- [x] Implement borrowing by exempt priority levels.
+- [x] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that this falls a bit short of saying that we would actually want to disable client-side rate limiting.  While experiments show that APF can prevent server crashes, they do not show that the SLOs are met in all scenarios.  If the control plane is under-provisioned then the performance will have to suffer in one way or another.
+- [x] Satisfaction that the interface has sufficient tunability to be useful.
 - [ ] Setting `--enable-priority-and-fairness` to `false` disables deeply, including suppressing both the config supplying and config consuming controllers.
 
 ### Upgrade / Downgrade Strategy
