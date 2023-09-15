@@ -27,6 +27,7 @@ feature-gates:
   - name: LegacyServiceAccountTokenCleanUp
     components:
       - kube-controller-manager
+      - kube-apiserver
 disable-supported: true
 metrics:
   - serviceaccount_legacy_tokens_total
