@@ -1,0 +1,19 @@
+title: Separate super-user kubeconfig for kubeadm
+kep-number: 4214
+authors:
+  - "@neolit123"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+status: implementable
+creation-date: 2023-9-18
+last-updated: 2023-10-10
+reviewers:
+  - "@SataQiu"
+  - "@pacoxu"
+  - "@chendave"
+approvers:
+  - "@SataQiu"
+  - "@pacoxu"
+latest-milestone: "0.0"
+stage: "alpha"
