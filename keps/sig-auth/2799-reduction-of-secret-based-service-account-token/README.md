@@ -273,7 +273,7 @@ legacy tokens for security practices.
 #### Alpha -> Beta Graduation
 
 - [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
+- [x] Any known bugs fixed
 - [ ] Tests passing
 
 ### Upgrade / Downgrade Strategy
