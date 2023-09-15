@@ -306,7 +306,8 @@ gRPC service.
 Such a CSI driver service need only focus on the generation of the metadata
 requested;
 the sidecar is responsible for validating the authentication token,
-authorizing the backup application and validating the parameters of the RPC calls.
+authorizing the backup application, validating the parameters of the RPC calls
+and fetching the provisioner secrets needed to complete the request.
 The sidecar forwards the RPC call to the CSI driver service over the UNIX domain socket,
 after translating Kubernetes object names into SP object names,
 and re-streams the results back to its client.
@@ -391,7 +392,8 @@ This requires that the backup application be authorized to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
 
 - The Kubernetes audience-scoped authentication token must be provided as the
-  ``authorization`` metadata value in each gRPC call.
+  ``authorization`` metadata value in each gRPC call made by a backup
+  application.
 
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api) gRPC service
   uses a single string parameter to identify each snapshot.
@@ -400,6 +402,12 @@ This requires that the backup application be authorized to use the Kubernetes
   ```
     VolumeSnapshot.Namespace + "/" + VolumeSnapshot.Name
   ```
+
+- A backup application should not send any value in the `secrets` parameters of
+  [SnapshotMetadata API](#the-snapshotmetadata-service-api)
+  requests; if set, they will be ignored.
+  The service will recover any secrets from the VolumeSnapshotClass of the
+  concerned VolumeSnapshot objects.
 
 - The CSI [SnapshotMetadata](#the-snapshotmetadata-service-api)
 gRPC service RPC calls allow an application to ***restart*** an interrupted
@@ -571,6 +579,7 @@ message GetAllocatedRequest {
   string snapshot_id = 1;
   uint64 starting_offset = 2;
   uint32 max_results = 3;
+  map<string, string> secrets = 4;
 }
 
 
@@ -585,6 +594,7 @@ message GetDeltaRequest {
   string target_snapshot_id = 2;
   uint64 starting_byte_offset = 3;
   uint32 max_results = 4;
+  map<string, string> secrets = 5;
 }
 
 message GetDeltaResponse {
@@ -639,6 +649,14 @@ The fields of the `GetAllocatedRequest` message are defined as follows:
  that the client wants to process in a given `GetAllocateResponse` element.
  The plugins will determine an appropriate value if 0, and is always free to send less than the requested
  maximum.
+
+ - `secrets`<br>
+ This is an optional field. It should contain the provisioner secrets associated with
+ the volume snapshot, if any.
+ In Kubernetes such data is specified with the keys
+ `csi.storage.k8s.io/snapshotter-secret-[name|namespace]`
+in the `VolumeSnapshotClass.Parameters` field.
+This field should not be set by a Kubernetes backup application client.
 
 The fields of the `GetAllocatedResponse` message are defined as follows:
 - `block_metadata_type`<br>
@@ -700,6 +718,14 @@ The fields of the `GetDeltaRequest` message are defined as follows:
  that the client wants to process in a given `GetDeltaResponse` element.
  The plugins will determine an appropriate value if 0, and is always free to send less than the requested
  maximum.
+
+ - `secrets`<br>
+ This is an optional field. It should contain the provisioner secrets associated with
+ the volume snapshot, if any.
+ In Kubernetes such data is specified with the keys
+ `csi.storage.k8s.io/snapshotter-secret-[name|namespace]`
+in the `VolumeSnapshotClass.Parameters` field.
+This field should not be set by a Kubernetes backup application client.
 
 The fields of the `GetDeltaResponse` message are defined as follows:
 - `block_metadata_type`<br>
@@ -816,8 +842,9 @@ spec:
         description: 'The presence of a SnapshotMetadataService CR advertises the existence of a CSI
           driver's SnapshotMetadata gRPC service.
           An audience scoped Kubernetes authentication bearer token must be passed in the
-          "authorization" metadata of each gRPC call.
-          Snapshots must be identified in gRPC calls by a string in the form "Namespace/Name".'
+          "authorization" metadata of each gRPC call made by a Kubernetes backup client.
+          Snapshots must be identified in gRPC calls by a string in the form "Namespace/Name".
+          No secret data should be sent by the Kubernetes backup client.'
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -911,6 +938,7 @@ in this proposal, including
 - Authorizing the client.
 - Validating individual RPC arguments.
 - Translating RPC arguments from the Kubernetes domain to the SP domain at runtime.
+- Fetching the vendor secrets identified by the VolumeSnapshot object, if any.
 
 A Kubernetes client must provide an audience scoped authentication token in the
 ``authorization`` metadata value of each remote procedure call made to the service.
