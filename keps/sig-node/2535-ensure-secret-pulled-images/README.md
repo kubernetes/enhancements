@@ -337,8 +337,6 @@ Yes.
 
 Will go back to working as designed.
 
-enj comment: Admin would need to go back to whatever old way they were using to enforce this image pull auth check. And also, as the feature is rolling out to kubelets (which is slow), they need to retain any API server based checks until rollout has completed.
-
 ###### Are there any tests for feature enablement/disablement?
 
 Yes, tests run both enabled and disabled.
