@@ -86,7 +86,8 @@ This KEP proposes the new v2 `KeyManagementService` service contract to:
 - enable fully automated key rotation for the latest key
 - improve KMS plugin health check reliability
 - improve observability of envelop operations between kube-apiserver, KMS plugins and KMS
-- if this v2 API reaches GA in release N, the existing v1beta1 gRPC API will be deprecated at release N and removed at release N+3 (the existing key rotation dance of using multiple providers will be used to migrate from v1beta1 to v2)
+- if this v2 API reaches beta in release M, the existing v1beta1 gRPC API will be deprecated at release M
+- if this v2 API reaches GA in release N, the existing v1beta1 gRPC API will be disabled by default at N, stop supporting writes at N+3, and removed at release N+6 (the existing key rotation dance of using multiple providers will be used to migrate from v1beta1 to v2)
 
 ### Non-Goals
 - Prevent KMS rate limiting
@@ -111,7 +112,7 @@ Performance, Health Check, Observability and Rotation:
     - When changes are detected, process the `EncryptionConfiguration` resource, and add new transformers and update existing ones atomically.
     - If there is an issue with creating or updating any of the transformers, retain the current configuration in the kube-apiserver and generate an error in logs.
 - Enable partially automated rotation for `latest` key in KMS:
-    > NOTE: Prerequisite: `EncryptionConfiguration` is set up to always use the `latest` key version in KMS and the values can be interpreted dynamically at runtime by the KMS plugin to hot reload the current write key. Rotation process sequence:
+    > NOTE: Prerequisite: `EncryptionConfiguration` is set up to always use the `latest` key version in KMS and the values can be interpreted dynamically at runtime by the KMS plugin to automatically reload the current write key. Rotation process sequence:
     - record initial key ID across all API servers
     - cause key rotation in KMS (user action in the remote KMS)
     - observe the change across the stack using metrics from API server
@@ -124,7 +125,7 @@ Performance, Health Check, Observability and Rotation:
 `EncryptionConfiguration` will be expanded to support the new v2 API:
 
 ```diff
-​​diff --git a/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go b/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
+diff --git a/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go b/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
 index d7d68d2584d..84c1fa6546f 100644
 --- a/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
 +++ b/staging/src/k8s.io/apiserver/pkg/apis/config/v1/types.go
@@ -139,7 +140,7 @@ Add v2 `KeyManagementService` proto service contract in Kubernetes to include `k
 
 In case of KMS v1, a new DEK is generated for every encryption. This means that for every write request, the API server makes a call to the KMS plugin to encrypt the DEK using the remote KEK. The API server also has to cache the DEKs to avoid making a call to the KMS plugin for every read request. When the API server restarts, it has to populate the cache by making a call to the KMS plugin for every DEK in the etcd store based on the cache size. This is a significant overhead for the API server.
 
-With KMS v2, the API server will generate a DEK at startup and caches it. The API server also makes a call to the KMS plugin to encrypt the DEK using the remote KEK. This is a one-time call at startup and on KEK rotation. The API server then uses the cached DEK to encrypt the resources. This reduces the number of calls to the KMS plugin and improves the overall latency of the API server requests.
+With KMS v2, the API server will generate a DEK seed at startup and cache it. The API server also makes a call to the KMS plugin to encrypt the DEK seed using the remote KEK. This is a one-time call at startup and on KEK rotation. The API server then uses the cached DEK seed to generate single use DEKs via a KDF.  Each DEK is used once (and only once) to encrypt a resource. This reduces the number of calls to the KMS plugin and improves the overall latency of the API server requests.
 
 ### key_id and rotation
 
@@ -150,7 +151,7 @@ The key_id is the public, non-secret name of the remote KMS KEK that is currentl
 The API server considers the `key_id` returned from the `Status` procedure call to be authoritative. Thus, a change to this value signals to the API server that the remote KEK has changed, and data encrypted with the old KEK should be marked stale when a no-op write is performed. If an `EncryptRequest` procedure call returns a `key_id` that is different from `Status`, the response is thrown away and the plugin is considered unhealthy.
 **NOTE:** Thus implementations must guarantee that the `key_id` returned from Status will be the same as the one returned by EncryptRequest. Furthermore, plugins must ensure that the `key_id` is stable and does not flip-flop between values (i.e. during a remote KEK rotation).
 
-Plugins must not re-use `key_id`s, even in situations where a previously used remote KEK has been reinstated. For example, if a plugin was using key_id=A, switched to key_id=B, and then went back to `key_id=A` - instead of reporting `key_id=A` the plugin should report some derivative value such as `key_id=A_001` or use a new value such as `key_id=C`.
+Plugins must not re-use `key_id`s, even in situations where a previously used remote KEK has been reinstated. For example, if a plugin was using `key_id=A`, switched to `key_id=B`, and then went back to `key_id=A` - instead of reporting `key_id=A` the plugin should report some derivative value such as `key_id=A_001` or use a new value such as `key_id=C`.
 
 Since the API server polls `Status` about every minute, `key_id` rotation is not immediate. Furthermore, the API server will coast on the last valid state for about three minutes. Thus if a user wants to take a passive approach to storage migration (i.e. by waiting), they must schedule a migration to occur at `3 + N + M` minutes after the remote KEK has been rotated (N is how long it takes the plugin to observe the `key_id` change and M is the desired buffer to allow config changes to be processed - a minimum M of five minutes is recommend). Note that no API server restart is required to perform KEK rotation.
 
@@ -206,14 +207,29 @@ type EncryptedObject struct {
 	EncryptedData []byte `protobuf:"bytes,1,opt,name=encryptedData,proto3" json:"encryptedData,omitempty"`
 	// KeyID is the KMS key ID used for encryption operations.
 	KeyID string `protobuf:"bytes,2,opt,name=keyID,proto3" json:"keyID,omitempty"`
-	// EncryptedDEK is the encrypted DEK.
-	EncryptedDEK []byte `protobuf:"bytes,3,opt,name=encryptedDEK,proto3" json:"encryptedDEK,omitempty"`
+	// EncryptedDEKSource is the ciphertext of the source of the DEK used to encrypt the data stored in encryptedData.
+	// encryptedDEKSourceType defines the process of using the plaintext of this field to determine the aforementioned DEK.
+	EncryptedDEKSource []byte `protobuf:"bytes,3,opt,name=encryptedDEKSource,proto3" json:"encryptedDEKSource,omitempty"`
 	// Annotations is additional metadata that was provided by the KMS plugin.
-	Annotations          map[string][]byte `protobuf:"bytes,4,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	Annotations map[string][]byte `protobuf:"bytes,4,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	// encryptedDEKSourceType defines the process of using the plaintext of encryptedDEKSource to determine the DEK.
+	EncryptedDEKSourceType EncryptedDEKSourceType `protobuf:"varint,5,opt,name=encryptedDEKSourceType,proto3,enum=v2.EncryptedDEKSourceType" json:"encryptedDEKSourceType,omitempty"`
 }
+
+type EncryptedDEKSourceType int32
+
+const (
+	// AES_GCM_KEY means that the plaintext of encryptedDEKSource is the DEK itself, with AES-GCM as the encryption algorithm.
+	EncryptedDEKSourceType_AES_GCM_KEY EncryptedDEKSourceType = 0
+	// HKDF_SHA256_XNONCE_AES_GCM_SEED means that the plaintext of encryptedDEKSource is the pseudo random key
+	// (referred to as the seed throughout the code) that is fed into HKDF expand.  SHA256 is the hash algorithm
+	// and first 32 bytes of encryptedData are the info param.  The first 32 bytes from the HKDF stream are used
+	// as the DEK with AES-GCM as the encryption algorithm.
+	EncryptedDEKSourceType_HKDF_SHA256_XNONCE_AES_GCM_SEED EncryptedDEKSourceType = 1
+)
 ```
 
-This object simply provides a structured format to store the `EncryptResponse` data with the plugin name and encrypted object data. New fields can easily be added to this format.
+This object simply provides a structured format to store the `EncryptResponse` data with the plugin name and encrypted object data. New fields can easily be added to this format.  `EncryptedDEKSourceType` was added to support a KDF based approach with the security properties of single use DEKs with the performance properties of a long lived DEK (`HKDF_SHA256_XNONCE_AES_GCM_SEED`).
 
 ### Status API
 
@@ -232,7 +248,7 @@ message StatusResponse {
 }
 ```
 
-The `key_id` will be funneled into API server metrics and audit annotations. *TODO: define metrics.*
+The `key_id` will be funneled into API server metrics.
 
 ### Observability
 
@@ -242,8 +258,21 @@ This `UID` field is included in the `EncryptRequest` and `DecryptRequest` of the
 
 1. For logging in the kube-apiserver. All envelope operations to the kms-plugin will be logged with the corresponding `UID`.
    1. The `UID` will be logged using a wrapper in the kube-apiserver to ensure that the `UID` is logged in the same format and is always logged.
-   2. In addition to the `UID`, the kube-apiserver will also log non-sensitive metadata such as `name`, `namespace` and `GroupVersionResource` of the object that triggered the envelope operation.
+   2. In addition to the `UID`, the kube-apiserver will also log at log level 6+ non-sensitive metadata such as `name`, `namespace` and `GroupVersionResource` of the object that triggered the envelope operation.
 2. Sent to the kms-plugin as part of the `EncryptRequest` and `DecryptRequest` structs.
+
+#### Metrics
+
+- `apiserver_encryption_config_controller_automatic_reload_last_timestamp_seconds` - Timestamp of the last successful or failed automatic reload of encryption configuration split by apiserver identity.
+- `apiserver_encryption_config_controller_automatic_reload_success_total` - Total number of successful automatic reloads of encryption configuration split by apiserver identity.
+- `apiserver_envelope_encryption_dek_source_cache_size` - Number of records in data encryption key (DEK) source cache. On a restart, this value is an approximation of the number of decrypt RPC calls the server will make to the KMS plugin.
+- `apiserver_envelope_encryption_key_id_hash_last_timestamp_seconds` - The last time in seconds when a keyID was used.
+- `apiserver_envelope_encryption_key_id_hash_status_last_timestamp_seconds` - The last time in seconds when a keyID was returned by the Status RPC call.
+- `apiserver_envelope_encryption_key_id_hash_total` - Number of times a keyID is used split by transformation type, provider, and apiserver identity.
+- `apiserver_envelope_encryption_kms_operations_latency_seconds` - KMS operation duration with gRPC error code status total.
+- `apiserver_storage_envelope_transformation_cache_misses_total` - Total number of cache misses while accessing key decryption key(KEK).
+- `apiserver_storage_transformation_duration_seconds` - Latencies in seconds of value transformation operations.
+- `apiserver_storage_transformation_operations_total` - Total number of transformations. Successful transformation will have a status 'OK' and a varied status string when the transformation fails. This status and transformation_type fields may be used for alerting on encryption/decryption failure using transformation_type from_storage for decryption and to_storage for encryption
 
 ### Sequence Diagram
 
@@ -261,10 +290,11 @@ sequenceDiagram
     participant kube_api_server
     participant kms_plugin
     participant external_kms
-    alt Generate DEK at startup
-        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
+    alt Generate DEK seed at startup
+        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) Seed diagram for details
     end
     user->>kube_api_server: create/update resource that's to be encrypted
+    kube_api_server->>kube_api_server: generate DEK using DEK seed
     kube_api_server->>kube_api_server: encrypt resource with DEK
     kube_api_server->>etcd: store encrypted object
 ```
@@ -287,13 +317,14 @@ sequenceDiagram
     user->>kube_api_server: get/list resource that's encrypted
     kube_api_server->>etcd: get encrypted resource
     etcd->>kube_api_server: encrypted resource
-    alt Encrypted DEK not in cache
+    alt Encrypted DEK seed not in cache
         kube_api_server->>kms_plugin: decrypt request
-        kms_plugin->>external_kms: decrypt DEK with remote KEK
-        external_kms->>kms_plugin: decrypted DEK
-        kms_plugin->>kube_api_server: return decrypted DEK
-        kube_api_server->>kube_api_server: cache decrypted DEK
+        kms_plugin->>external_kms: decrypt DEK seed with remote KEK
+        external_kms->>kms_plugin: decrypted DEK seed
+        kms_plugin->>kube_api_server: return decrypted DEK seed
+        kube_api_server->>kube_api_server: cache decrypted DEK seed
     end
+    kube_api_server->>kube_api_server: generate DEK using DEK seed
     kube_api_server->>kube_api_server: decrypt resource with DEK
     kube_api_server->>user: return decrypted resource
 ```
@@ -311,21 +342,21 @@ sequenceDiagram
     participant kube_api_server
     participant kms_plugin
     participant external_kms
-    alt Generate DEK at startup
-        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
+    alt Generate DEK seed at startup
+        Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) Seed diagram for details
     end
     loop every minute (or every 10s if error or unhealthy)
         kube_api_server->>kms_plugin: status request
         kms_plugin->>external_kms: validate remote KEK
         external_kms->>kms_plugin: KEK status
         kms_plugin->>kube_api_server: return status response <br/> {"healthz": "ok", key_id: "<remote KEK ID>", "version": "v2beta1"}
-        alt KEK rotation detected (key_id changed), rotate DEK
-            Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) diagram for details
+        alt KEK rotation detected (key_id changed), rotate DEK seed
+            Note over kube_api_server,external_kms: Refer to Generate Data Encryption Key (DEK) Seed diagram for details
         end
     end
 ```
 
-#### Generate Data Encryption Key (DEK)
+#### Generate Data Encryption Key (DEK) Seed
 
 ```mermaid
 %%{init:{"sequence": {"mirrorActors":true},
@@ -338,14 +369,24 @@ sequenceDiagram
     participant kube_api_server
     participant kms_plugin
     participant external_kms
-        kube_api_server->>kube_api_server: generate DEK
+        kube_api_server->>kube_api_server: generate DEK seed
         kube_api_server->>kms_plugin: encrypt request
-        kms_plugin->>external_kms: encrypt DEK with remote KEK
-        external_kms->>kms_plugin: encrypted DEK
-        kms_plugin->>kube_api_server: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", "annotations": {}}
+        kms_plugin->>external_kms: encrypt DEK seed with remote KEK
+        external_kms->>kms_plugin: encrypted DEK seed
+        kms_plugin->>kube_api_server: return encrypt response <br/> {"ciphertext": "<encrypted DEK seed>", key_id: "<remote KEK ID>", "annotations": {}}
 ```
 
-#### Cryptography details
+#### Cryptography Details
+
+We propose to extend the limited 12 byte AES-GCM nonce with a 32 byte `info` (randomly generated per write) that is fed into HKDF-Expand (the `secret` is the `DEK seed` and the `hash` is SHA-256).  We read 32 bytes from HKDF-Expand to use as the AES-GCM DEK.
+
+We want the crypto properties of KMS v1 (one DEK per write) without the network overhead.  The `DEK seed` (32 random bytes) is generated on server start up and automatically rotated whenever the remote KEK changes.  Note that the HKDF-Extract step is skipped because we already have a good pseudo random key (thus there is no `salt`, only `info`).
+
+This allows us to use a purely per-write random 12 byte nonce for AES-GCM because each generated DEK+nonce combination is unique (the chance of collision is negligible).  VM state restores are not an issue in this model.
+
+While not strictly necessary, a cache will be used to memoize the HKDF operations as they are fully deterministic based on the inputs.  This significantly reduces the overhead of the key generation both in terms of CPU time and memory allocations.
+
+Note that the `info` must be stored (in the clear) with the ciphertext, meaning we increase the storage overhead by 32 bytes.
 
 ```mermaid
 stateDiagram-v2
@@ -354,7 +395,7 @@ note right of KEK
    accessed via plugin
 end note
 KEK --> DEK_seed: encrypts
-DEK_seed --> etcd: EDEK_seed stored
+DEK_seed --> etcd: Encrypted_DEK_seed stored
 ```
 
 ```mermaid
@@ -366,8 +407,8 @@ note left of etcd_path
 end note
 resource
 note right of resource
-   stored as
-   info|nonce|encrypted_seed|ciphertext
+   stored in EncryptedObject.EncryptedData as
+   info|nonce|ciphertext
 end note
 DEK_seed --> hkdf_expand: pseudo random key
 sha256 --> hkdf_expand: hash
@@ -379,6 +420,25 @@ etcd_path --> aes_gcm: additional_data
 aes_gcm --> resource: encrypts
 ```
 
+### Benchmarks
+
+Extensive [benchmarks](https://gist.github.com/enj/4e819ffaa28b1da1770de449a55b24e3) were performed to compare the impact of having KMS v2 encryption enabled.
+The most relevant run is included below.  It shows that there is no significant increase in the amount of time it takes to perform a REST call, but that the cost of encryption can be as high as 14% in the terms of memory usage.  This is considered an acceptable tradeoff.
+
+```
+             │     rest_none1.txt │       rest_kdf_cache1.txt           │
+             │       sec/op       │   sec/op     vs base                │
+KMSv2REST-10       18.51 ± 41%       20.39 ± 99%  ~ (p=0.353 n=10)
+
+             │     rest_none1.txt │           rest_kdf_cache1.txt       │
+             │        B/op        │     B/op      vs base               │
+KMSv2REST-10      23.95Gi ± 0%       27.25Gi ± 0%  +13.77% (p=0.000 n=10)
+
+             │     rest_none1.txt │          rest_kdf_cache1.txt        │
+             │      allocs/op     │  allocs/op   vs base                │
+KMSv2REST-10       3.119M ± 0%       3.268M ± 1%  +4.78% (p=0.000 n=10)
+```
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
@@ -387,9 +447,9 @@ aes_gcm --> resource: encrypts
 
 ##### Unit tests
 
-- Validate DEK re-use behavior in the API server
-  - DEK is generated at startup and re-used for all encryption operations
-  - DEK is rotated after KEK rotation
+- Validate DEK seed re-use behavior in the API server
+  - DEK seed is generated at startup and re-used for all encryption operations
+  - DEK seed is rotated after KEK rotation
   - KMS plugin is only called when cache is empty
   - Ensure the logs and metrics are generated as expected
   - At least 75% code coverage
@@ -438,19 +498,14 @@ With this e2e test suite, we want to do the following:
 
 - Feature is enabled by default
 - All of the above documented tests are complete
-- Precise documentation outlining how to build components that can do automatic rotation
-  - For example, how to write a controller that scrapes the API server metrics and uses that to trigger rotation with the storage migration controller.
-- Reference implementation is ready
-  - Provide an example implementation using pkcs11
-  - Metrics in the implementation to gauge performance
-  - Documentation of the metrics
 - Metrics in API server to gauge performance impact
 
 #### GA
 
-- Tracing is added to the reference implementation
+- Tracing is added to the API server to assess transformation timings
 - At least 2 KMSv2 plugin implementations are available
   - We will gather feedback from these implementations to determine if API is sufficient
+- Reference implementation using PKCS11
 
 ## Production Readiness Review Questionnaire
 
@@ -501,8 +556,6 @@ More details are available [here](https://kubernetes.io/docs/tasks/administer-cl
 Disabling this gate without first doing a storage migration to use a different encryption at rest mechanism will result in data loss.
 - For secrets that are mounted in pods, if the DEK used to encrypt the secret is not present in the kube-apiserver cache, the pods will fail to start as the secret will not be able to be decrypted.
 
-Once the feature gate is disabled, if the plan is to use a different encryption at rest mechanism instead of KMS, then unset the `--encryption-provider-config` flag on the kube-apiserver.
-
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 After the feature is reenabled, if a v2 KMS provider is still configured in the `EncryptionConfiguration`
@@ -511,7 +564,7 @@ After the feature is reenabled, if a v2 KMS provider is still configured in the 
 
 ###### Are there any tests for feature enablement/disablement?
 
-- We will add integration tests to validate the enablement/disablement flow.
+- We will add unit and integration tests to validate the enablement/disablement flow.
 - When the feature is disabled, data stored in etcd will no longer be encrypted using the external kms provider with v2 API.
 - If the feature is disabled incorrectly (i.e without performing a storage migration), existing data that is encrypted with the external kms provider will be unable to be decrypted. This will cause list and get operations to fail for the resources that were encrypted.
 
@@ -609,7 +662,7 @@ No. One socket is used per KMS plugin and old connections are closed after new c
 - If the `EncryptionConfiguration` file configured in the control plane node is not valid:
   - API server when restarted will fail at startup as it's unable to load the EncryptionConfig. This behavior is consistent with the KMS v1 API. The encryption configuration needs to be fixed to allow the API server to start properly.
 - If the KMS plugin is unavailable:
-  - API server when restarted will fail health check as it's unable to connect to the KMS plugin. The `/livez` and `/readyz` endpoints will show a `failed` health check for the kms provider. This behavior is consistent with the KMS v1 API. Refer to [docs](https://kubernetes.io/docs/reference/using-api/health-checks/) for the health API endpoints and how to exclude individual endpoints from causing the API server to fail health check.
+  - API server when restarted will fail health check as it's unable to connect to the KMS plugin. The `/healthz` and `/readyz` (but not the `/livez` which ignores kms) endpoints will show a `failed` health check for the kms provider. This behavior is consistent with the KMS v1 API. Refer to [docs](https://kubernetes.io/docs/reference/using-api/health-checks/) for the health API endpoints and how to exclude individual endpoints from causing the API server to fail health check.
   - To resolve the issue, the kms plugin must be fixed to be available. The logs in the kms-plugin should be indicative of the issue.
 
 ## Implementation History
@@ -619,6 +672,7 @@ No. One socket is used per KMS plugin and old connections are closed after new c
 - 2023-02-28: re-use DEK while key ID is unchanged https://github.com/kubernetes/kubernetes/pull/116155
   - This was a change in design from alpha to beta. The key hierarchy approach initially suggested in the KEP was dropped in favor of re-using DEKs based on metrics numbers from CI.
 - 2023-03-14: Generate proto API and update feature gate for beta https://github.com/kubernetes/kubernetes/pull/115123
+- 2023-07-21: KDF based nonce extension https://github.com/kubernetes/kubernetes/pull/118828
 
 ## Alternatives
 
