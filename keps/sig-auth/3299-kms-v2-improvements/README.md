@@ -345,6 +345,40 @@ sequenceDiagram
         kms_plugin->>kube_api_server: return encrypt response <br/> {"ciphertext": "<encrypted DEK>", key_id: "<remote KEK ID>", "annotations": {}}
 ```
 
+#### Cryptography details
+
+```mermaid
+stateDiagram-v2
+KEK
+note right of KEK
+   accessed via plugin
+end note
+KEK --> DEK_seed: encrypts
+DEK_seed --> etcd: EDEK_seed stored
+```
+
+```mermaid
+stateDiagram-v2
+etcd_path
+note left of etcd_path
+   unique per object in etcd
+   /PATH_PREFIX/secrets/NAMESPACE/NAME
+end note
+resource
+note right of resource
+   stored as
+   info|nonce|encrypted_seed|ciphertext
+end note
+DEK_seed --> hkdf_expand: pseudo random key
+sha256 --> hkdf_expand: hash
+rand_nonce_32 --> hkdf_expand: info param
+hkdf_expand --> DEK: generates
+DEK --> aes_gcm: key
+rand_nonce_12 --> aes_gcm: nonce
+etcd_path --> aes_gcm: additional_data
+aes_gcm --> resource: encrypts
+```
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
