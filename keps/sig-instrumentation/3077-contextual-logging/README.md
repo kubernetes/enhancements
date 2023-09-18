@@ -37,6 +37,7 @@
       - [Unit testing](#unit-testing)
       - [Injecting common value, logger passed through existing ctx parameter or new parameter](#injecting-common-value-logger-passed-through-existing-ctx-parameter-or-new-parameter)
       - [Resulting output](#resulting-output)
+  - [Integration with log/slog](#integration-with-logslog)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -58,6 +59,7 @@
   - [Propagating a logger to init code](#propagating-a-logger-to-init-code)
   - [Panic when FromContext is called before setting a logger](#panic-when-fromcontext-is-called-before-setting-a-logger)
   - [Clean separation of contextual logging and traditional klog logging](#clean-separation-of-contextual-logging-and-traditional-klog-logging)
+  - [Use log/slog instead of klog+logr](#use-logslog-instead-of-kloglogr)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -507,6 +509,37 @@ The logcheck static code analysis tool will warn about code in Kubernetes which
 calls the underlying functions directly. Once the feature gate is no longer needed,
 a global search/replace can remove the usage of these wrapper functions again.
 
+Because the feature gate is off during alpha, log calls have to repeat
+important key/value pairs even if those also got passed to `WithValues`:
+
+```
+logger := logger.WithValues("pod", klog.KObj(pod))
+...
+logger.Info("Processing", "pod", klog.KObj(pod))
+...
+logger.Info("Done", "pod", klog.KObj(pod))
+```
+
+Starting with beta, the feature gate will be enabled and code can be written
+without such duplication to avoid the need for further changes when reaching
+GA:
+
+```
+logger := logger.WithValues("pod", klog.KObj(pod))
+...
+logger.Info("Processing")
+...
+logger.Info("Done")
+```
+
+Documentation of APIs has to make it clear which values will always be included
+in log entries and thus don't need to be repeated. If in doubt, repeating them
+is okay: the text format will filter out duplicates if log call parameters
+overlap with `WithValues` parameters. For performance reasons it will not do
+that for duplicates between different `WithValues` calls. In JSON, repeating
+keys increases log volume size because there is no de-duplication, but the
+semantic is the same ("most recent wins").
+
 ### Text format
 
 The formatting and verbosity code will be moved into `internal` packages where
@@ -839,6 +872,15 @@ I1026 16:21:00.461886  801139 scheduler.go:464] "Status after running PostFilter
 I1026 16:21:00.461918  801139 factory.go:209] "Unable to schedule pod; no fit; waiting" pod="default/my-csi-app-inline-volume" err="0/1 nodes are available: 1 node(s) did not have enough free storage."
 ```
 
+### Integration with log/slog
+
+[`log/slog`](https://pkg.go.dev/log/slog) got added in Go
+1.21. Interoperability with slog is [provided by
+logr](https://github.com/go-logr/logr/pull/222). Applications which use slog
+can route log output from Kubernetes packages into their `slog.Handler` and
+vice versa, as demonstrated with [`component-base/logs`
+examples](https://github.com/kubernetes/kubernetes/pull/120696).
+
 ### Test Plan
 
 The new code will be covered by unit tests that execute as part of
@@ -870,7 +912,7 @@ logging.
 
 #### Beta
 
-- All of kube-scheduler (in-tree) and CSI external-provisioner (out-of-tree) converted
+- [All of kube-controller-manager](https://github.com/kubernetes/kubernetes/pull/119250) and some [parts of kube-scheduler](https://github.com/kubernetes/kubernetes/pull/115588) converted (in-tree), conversion of out-of-tree components possible, whether they use pflag ([external-provisioner](https://github.com/kubernetes-csi/external-provisioner/pull/639)] or plain Go flags ([node-driver-registrar](https://github.com/kubernetes-csi/node-driver-registrar/pull/259))
 - Gathered feedback from developers and surveys
 - New APIs in `k8s.io/klog/v2` no longer marked as experimental
 
@@ -1037,6 +1079,11 @@ Revert commits that changed log calls.
 
 ## Implementation History
 
+* Kubernetes 1.24: initial alpha
+* Kubernetes 1.27: parts of kube-controller-manager converted
+* Kubernetes 1.28: kube-controller-manager converted completely, relationship
+  with log/slog in Go 1.21 clarified
+
 ## Drawbacks
 
 Supporting contextual logging is a key design decision that has implications
@@ -1098,3 +1145,10 @@ would have removed all legacy code from Kubernetes. However, that transition
 would have been complicated and forced all consumers of Kubernetes code to
 adjust their code. Therefore the scope of the KEP was reduced from "remove
 dependency on klog" to "remove dependency on global logger in klog".
+
+### Use log/slog instead of klog+logr
+
+This isn't viable because `slog` doesn't provide a mechanism to pass a logger
+through a context. Therefore it would not be possible to support contextual
+logging in packages like client-go where adding an explicit logger parameter
+would be a major API break.
