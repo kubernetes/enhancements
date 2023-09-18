@@ -344,7 +344,8 @@ We will target this feature behind a flag `ComponentSLIs`
     + apiserver
     + kubelet
     + scheduler
-    + controller-manager
+    + cloud-controller-manager
+    + kube-controller-manager
     + kube-proxy
 
 ###### Does enabling the feature change any default behavior?
