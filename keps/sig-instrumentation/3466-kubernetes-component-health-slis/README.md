@@ -250,13 +250,15 @@ without any issues.
 
 ##### Integration tests
 
-- [ ] ensure existence of healthcheck endpoint (beta requirement)
+- [ X ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
 ##### e2e tests
 
-- [ ] ensure existence of healthcheck endpoint (beta requirement)
+Given this feature is purely in-memory, no enablement/disablement tests are needed.
+
+- [ X ] ensure existence of healthcheck endpoint (beta requirement)
 
 - <test>: <link to test coverage>
 
@@ -342,12 +344,9 @@ We will target this feature behind a flag `ComponentSLIs`
     + apiserver
     + kubelet
     + scheduler
-    + controller-manager
+    + cloud-controller-manager
+    + kube-controller-manager
     + kube-proxy
-
-###### Are there any tests for feature enablement/disablement?
-
-Given this feature is purely in-memory, no enablement/disablement tests are needed.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -363,7 +362,7 @@ It will expose the metrics endpoint again
 
 ###### Are there any tests for feature enablement/disablement?
 
-We intend to add them with our e2e tests.
+Given this feature is purely in-memory, no enablement/disablement tests are needed.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -396,7 +395,7 @@ They can check their prometheus scrape configs.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-They can curl the apiserver's `metrics/slis` endpoint. 
+They can curl any of the kubernetes components's (except etcd) `metrics/slis` endpoint. 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -466,9 +465,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-If apiserver is unavailable, then you will not be able to ingest the metrics from the apiserver.
-However, the failure of etcd should allow you to scrape the metrics from apiserver, so long as 
-it is otherwise healthy. 
+If component is unavailable, then you will not be able to ingest the metrics from the component.
+However, in the case of the apiserver, the failure of etcd should allow you to scrape the metrics
+from component, so long as it is otherwise healthy. 
 
 ###### What are other known failure modes?
 
