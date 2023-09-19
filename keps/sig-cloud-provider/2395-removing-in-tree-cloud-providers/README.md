@@ -1,8 +1,7 @@
-# Removing In-Tree Cloud Provider Code
-
-## Table of Contents
+# KEP-2395: Removing In-Tree Cloud Provider Code
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Terms](#terms)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -16,6 +15,16 @@
     - [Phase 4 - Disabling In-Tree Providers](#phase-4---disabling-in-tree-providers)
   - [Staging Directory](#staging-directory)
     - [Cloud Provider Instances](#cloud-provider-instances)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -23,6 +32,8 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Staging Alternatives](#staging-alternatives)
     - [Git Filter-Branch](#git-filter-branch)
@@ -195,6 +206,222 @@ import (
 )
 ```
 
+### Risks and Mitigations
+
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+TBD
+
+## Design Details
+
+<!--
+This section should contain enough information that the specifics of your
+change are understandable. This may include API specs (though not always
+required) or even code snippets. If there's any ambiguity about HOW your
+proposal will be implemented, this is the place to discuss them.
+-->
+
+TBD
+
+### Test Plan
+
+<!--
+**Note:** *Not required until targeted at a release.*
+The goal is to ensure that we don't accept enhancements with inadequate testing.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
+
+[ ] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+TBD
+
+#### Prerequisite testing update
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+TBD
+
+#### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<package>`: `<date>` - `<test coverage>`
+
+TBD
+
+#### Integration tests
+
+<!--
+Integration tests are contained in k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+-->
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage>
+
+TBD
+
+#### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage>
+
+TBD
+
+### Graduation Criteria
+
+<!--
+**Note:** *Not required until targeted at a release.*
+
+Define graduation milestones.
+
+These may be defined in terms of API maturity, [feature gate] graduations, or as
+something else. The KEP should keep this high-level with a focus on what
+signals will be looked at to determine graduation.
+
+Consider the following in developing the graduation criteria for this enhancement:
+- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Feature gate][feature gate] lifecycle
+- [Deprecation policy][deprecation-policy]
+
+Clearly define what graduation means by either linking to the [API doc
+definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
+or by redefining what graduation means.
+
+In general we try to use the same stages (alpha, beta, GA), regardless of how the
+functionality is accessed.
+
+[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
+
+Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+#### Deprecation
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+-->
+
+TBD
+
+### Update / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
+
+TBD
+
+### Version Skew Strategy
+
+<!--
+If applicable, how will the component handle version skew with other
+components? What are the guarantees? Make sure this is in the test plan.
+
+Consider the following in developing a version skew strategy for this
+enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
+-->
+
+TBD
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -342,6 +569,28 @@ TBD for beta.
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
+## Implementation History
+
+<!--
+Major milestones in the lifecycle of a KEP should be tracked in this section.
+Major milestones might include:
+- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- the `Proposal` section being merged, signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+-->
+
+TBD
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+
+TBD
 
 ## Alternatives
 
