@@ -1,0 +1,958 @@
+/home/mike/dev/kubernetes-enhancements/hack/test-go.sh
+?   	k8s.io/enhancements/api/apifakes	[no test files]
+?   	k8s.io/enhancements/pkg/kepctl	[no test files]
+?   	k8s.io/enhancements/pkg/kepctl/commands	[no test files]
+?   	k8s.io/enhancements/pkg/output	[no test files]
+?   	k8s.io/enhancements/pkg/proposal	[no test files]
+=== RUN   TestPRRApproval_ApproverForStage
+=== RUN   TestPRRApproval_ApproverForStage/invalid:_incorrect_stage
+=== RUN   TestPRRApproval_ApproverForStage/invalid:_missing_approver
+=== RUN   TestPRRApproval_ApproverForStage/valid:_alpha
+=== RUN   TestPRRApproval_ApproverForStage/valid:_beta
+=== RUN   TestPRRApproval_ApproverForStage/valid:_stable
+--- PASS: TestPRRApproval_ApproverForStage (0.00s)
+    --- PASS: TestPRRApproval_ApproverForStage/invalid:_incorrect_stage (0.00s)
+    --- PASS: TestPRRApproval_ApproverForStage/invalid:_missing_approver (0.00s)
+    --- PASS: TestPRRApproval_ApproverForStage/valid:_alpha (0.00s)
+    --- PASS: TestPRRApproval_ApproverForStage/valid:_beta (0.00s)
+    --- PASS: TestPRRApproval_ApproverForStage/valid:_stable (0.00s)
+PASS
+	k8s.io/enhancements/api	coverage: 10.3% of statements
+ok  	k8s.io/enhancements/api	0.004s	coverage: 10.3% of statements
+testing: warning: no tests to run
+PASS
+	k8s.io/enhancements/pkg/kepval	coverage: 0.0% of statements
+ok  	k8s.io/enhancements/pkg/kepval	0.004s	coverage: 0.0% of statements [no tests to run]
+?   	k8s.io/enhancements/pkg/yaml	[no test files]
+=== RUN   TestValidateQueryOpt
+=== RUN   TestValidateQueryOpt/groups:_valid_SIG
+=== RUN   TestValidateQueryOpt/groups:_invalid_SIG
+=== RUN   TestValidateQueryOpt/output:_unsupported_format
+--- PASS: TestValidateQueryOpt (0.00s)
+    --- PASS: TestValidateQueryOpt/groups:_valid_SIG (0.00s)
+    --- PASS: TestValidateQueryOpt/groups:_invalid_SIG (0.00s)
+    --- PASS: TestValidateQueryOpt/output:_unsupported_format (0.00s)
+=== RUN   TestQuery
+=== RUN   TestQuery/status/results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/status/TODO:_invalid_should_error,_but_instead_returns_nothing
+    query_test.go:299: TODO
+=== RUN   TestQuery/stage/empty-string
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/stage/none
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/stage/alpha
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/stage/beta
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/stage/stable
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/stage/TODO:_invalid_should_error,_but_instead_returns_nothing
+    query_test.go:299: TODO
+=== RUN   TestQuery/author/results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/author/no_results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/author/TODO:_empty-string_should_error_but_instead_returns_nothing
+    query_test.go:299: TODO
+=== RUN   TestQuery/approver/results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/approver/no_results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/approver/TODO:_empty-string_should_error_but_instead_returns_nothing
+    query_test.go:299: TODO
+=== RUN   TestQuery/participating-sig/results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/participating-sig/no_results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/participating-sig/invalid
+[36mINFO[0m Searching for KEPs...                        
+=== RUN   TestQuery/all/defaults
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/all/everything
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/groups/results
+[36mINFO[0m Searching for KEPs...                        
+[33mWARN[0m Missing the latest milestone field:          
+=== RUN   TestQuery/groups/no_results
+[36mINFO[0m Searching for KEPs...                        
+=== RUN   TestQuery/groups/invalid
+[36mINFO[0m Searching for KEPs...                        
+--- PASS: TestQuery (0.01s)
+    --- PASS: TestQuery/status/results (0.00s)
+    --- SKIP: TestQuery/status/TODO:_invalid_should_error,_but_instead_returns_nothing (0.00s)
+    --- PASS: TestQuery/stage/empty-string (0.00s)
+    --- PASS: TestQuery/stage/none (0.00s)
+    --- PASS: TestQuery/stage/alpha (0.00s)
+    --- PASS: TestQuery/stage/beta (0.00s)
+    --- PASS: TestQuery/stage/stable (0.00s)
+    --- SKIP: TestQuery/stage/TODO:_invalid_should_error,_but_instead_returns_nothing (0.00s)
+    --- PASS: TestQuery/author/results (0.00s)
+    --- PASS: TestQuery/author/no_results (0.00s)
+    --- SKIP: TestQuery/author/TODO:_empty-string_should_error_but_instead_returns_nothing (0.00s)
+    --- PASS: TestQuery/approver/results (0.00s)
+    --- PASS: TestQuery/approver/no_results (0.00s)
+    --- SKIP: TestQuery/approver/TODO:_empty-string_should_error_but_instead_returns_nothing (0.00s)
+    --- PASS: TestQuery/participating-sig/results (0.00s)
+    --- PASS: TestQuery/participating-sig/no_results (0.00s)
+    --- PASS: TestQuery/participating-sig/invalid (0.00s)
+    --- PASS: TestQuery/all/defaults (0.00s)
+    --- PASS: TestQuery/all/everything (0.00s)
+    --- PASS: TestQuery/groups/results (0.00s)
+    --- PASS: TestQuery/groups/no_results (0.00s)
+    --- PASS: TestQuery/groups/invalid (0.00s)
+=== RUN   TestProposalValidate
+=== RUN   TestProposalValidate/valid_KEP:_minimum_fields
+=== RUN   TestProposalValidate/valid_KEP:_all_fields
+=== RUN   TestProposalValidate/invalid_KEP:_owning-sig_does_not_exist
+=== RUN   TestProposalValidate/invalid_KEP:_status_does_not_exist
+=== RUN   TestProposalValidate/invalid_KEP:_stage_does_not_exist
+--- PASS: TestProposalValidate (0.00s)
+    --- PASS: TestProposalValidate/valid_KEP:_minimum_fields (0.00s)
+    --- PASS: TestProposalValidate/valid_KEP:_all_fields (0.00s)
+    --- PASS: TestProposalValidate/invalid_KEP:_owning-sig_does_not_exist (0.00s)
+    --- PASS: TestProposalValidate/invalid_KEP:_status_does_not_exist (0.00s)
+    --- PASS: TestProposalValidate/invalid_KEP:_stage_does_not_exist (0.00s)
+=== RUN   TestFindLocalKEPs
+[33mWARN[0m Missing the latest milestone field:          
+--- PASS: TestFindLocalKEPs (0.00s)
+=== RUN   TestRepoValidate
+[36mINFO[0m PRR directory: testdata/repos/valid/keps/prod-readiness 
+[36mINFO[0m parsing testdata/repos/valid/keps/NNNN-kep-template/kep.yaml 
+[36mINFO[0m parsing testdata/repos/valid/keps/sig-architecture/123-newstyle/kep.yaml 
+[33mWARN[0m Missing the latest milestone field: testdata/repos/valid/keps/sig-architecture/123-newstyle/kep.yaml 
+[36mINFO[0m parsing testdata/repos/valid/keps/sig-owns-only/404-question-not-found/kep.yaml 
+[36mINFO[0m parsing testdata/repos/valid/keps/sig-owns-only/42-the-answer/kep.yaml 
+[36mINFO[0m parsing testdata/repos/valid/keps/sig-owns-participates/1-the-bare-minimum/kep.yaml 
+[33mWARN[0m Missing the latest milestone field: testdata/repos/valid/keps/sig-owns-participates/1-the-bare-minimum/kep.yaml 
+[36mINFO[0m parsing testdata/repos/valid/keps/sig-owns-participates/13-keps-as-crds/kep.yaml 
+--- PASS: TestRepoValidate (0.00s)
+=== RUN   TestWriteKep
+=== RUN   TestWriteKep/simple_KEP
+    write_test.go:211: Writing kep.yaml to /tmp/3766029844/enhancements/keps/NNNN-kep-template/kep.yaml
+    write_test.go:211: Writing README.md to /tmp/3766029844/enhancements/keps/NNNN-kep-template/README.md
+[36mINFO[0m creating KEP directory: /tmp/3766029844/enhancements/keps/sig-auth/1010-test 
+[36mINFO[0m writing KEP metadata to /tmp/3766029844/enhancements/keps/sig-auth/1010-test/kep.yaml 
+    write_test.go:142: NNNN-kep-template
+    write_test.go:142: README.md
+    write_test.go:142: prod-readiness
+    write_test.go:142: sig-auth
+    write_test.go:107: cleanup!
+=== RUN   TestWriteKep/missing_KEP_name
+    write_test.go:211: Writing kep.yaml to /tmp/1686373936/enhancements/keps/NNNN-kep-template/kep.yaml
+    write_test.go:211: Writing README.md to /tmp/1686373936/enhancements/keps/NNNN-kep-template/README.md
+    write_test.go:142: NNNN-kep-template
+    write_test.go:142: README.md
+    write_test.go:142: prod-readiness
+    write_test.go:107: cleanup!
+=== RUN   TestWriteKep/missing_owning_SIG
+    write_test.go:211: Writing kep.yaml to /tmp/3867041457/enhancements/keps/NNNN-kep-template/kep.yaml
+    write_test.go:211: Writing README.md to /tmp/3867041457/enhancements/keps/NNNN-kep-template/README.md
+    write_test.go:142: NNNN-kep-template
+    write_test.go:142: README.md
+    write_test.go:142: prod-readiness
+    write_test.go:107: cleanup!
+--- PASS: TestWriteKep (0.00s)
+    --- PASS: TestWriteKep/simple_KEP (0.00s)
+    --- PASS: TestWriteKep/missing_KEP_name (0.00s)
+    --- PASS: TestWriteKep/missing_owning_SIG (0.00s)
+PASS
+	k8s.io/enhancements/pkg/repo	coverage: 57.9% of statements
+ok  	k8s.io/enhancements/pkg/repo	0.017s	coverage: 57.9% of statements
+=== RUN   TestValidation
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR directory: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/NNNN-kep-template/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2313-aws-k8s-tester/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2313-aws-k8s-tester/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2314-custom-endpoints-support-for-aws-cloud-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2314-custom-endpoints-support-for-aws-cloud-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2315-aws-loadbalancer-prefix/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/provider-aws/2315-aws-loadbalancer-prefix/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/423-network-load-balancer/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/629-alb-ingress-controller/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/provider-aws/629-alb-ingress-controller/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/provider-aws/630-ebs-csi-driver/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/provider-aws/630-ebs-csi-driver/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1027-api-unions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1027.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1040-priority-and-fairness/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1040.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1101-immutable-fields/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1101-immutable-fields/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1152-less-object-serializations/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1164-remove-selflink/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1164.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1281-network-proxy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1295-insecure-backend-proxy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1295.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1601-client-go-context/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1623-standardize-conditions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1693-warnings/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1693.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1872-manifest-based-admission-webhooks/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1872-manifest-based-admission-webhooks/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1904-efficient-watch-resumption/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1904.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1929-built-in-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/1965-kube-apiserver-identity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/1965.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2155-clientgo-apply/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2155.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2161-apiserver-default-labels/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2161.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2330-migrating-api-objects-to-latest-storage-version/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2332-pruning-for-custom-resources/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2333-legacyflags-kflag/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2333-legacyflags-kflag/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2334-graduate-server-side-get-and-partial-objects-to-GA/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2335-vanilla-crd-openapi-subset-structural-schemas/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2336-OwnerReference-resource-field/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2337-k8s.io-group-protection/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2338-graduate-API-gzip-compression-support-to-GA/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2339-storageversion-api-for-ha-api-servers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2339.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2340-Consistent-reads-from-cache/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2340.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2341-enabling-clients-to-tell-if-resource-endpoints-serve-the-same-set-of-objects/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2341-enabling-clients-to-tell-if-resource-endpoints-serve-the-same-set-of-objects/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2342-exposing-hashed-storage-versions-via-the-discovery-API/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2342-exposing-hashed-storage-versions-via-the-discovery-API/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2343-automated-storage-version-migration-with-storage-version-hash/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2343-automated-storage-version-migration-with-storage-version-hash/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2523-consistent-resource-versions-semantics/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2558-publish-version-openapi/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2558.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2876-crd-validation-expression-language/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2876.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2885-server-side-unknown-field-validation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2885.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2887-openapi-enum-types/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2887.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/2896-openapi-v3/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/2896.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3037-client-go-alternative-services/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3037-client-go-alternative-services/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3156-http3/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3157-watch-list/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/3157.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3352-aggregated-discovery/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/3352.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3488-cel-admission-control/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/3488.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/365-paginated-lists/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/365.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/3716-admission-webhook-match-conditions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/3716.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/4006-transition-spdy-to-websockets/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/4006.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/4008-crd-ratcheting/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/4008.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/4020-unknown-version-interoperability-proxy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/4020.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/4080-generic-controlplane/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/4080-generic-controlplane/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/492-admission-webhooks/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/555-server-side-apply/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-api-machinery/555.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/575-crd-defaulting/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/576-dry-run/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/598-crd-conversion-webhook/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/692-crd-openapi-schema/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/95-custom-resource-definitions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-api-machinery/956-watch-bookmark/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/1591-daemonset-surge/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/1591.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/1847-autoremove-statefulset-pvcs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/1847.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/19-Graduate-CronJob-to-Stable/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/19.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2185-random-pod-select-on-replicaset-downscale/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2185.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2214-indexed-job/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2214.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2232-suspend-jobs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2232.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2255-pod-cost/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2255.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2307-job-tracking-without-lingering-pods/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2307.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2360-optional-service-environment-variables/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2360-optional-service-environment-variables/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2599-minreadyseconds-for-statefulsets/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2599.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2804-consolidate-workload-controllers-status/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2804.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/2879-ready-pods-job-status/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/2879.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3017-pod-healthy-policy-for-pdb/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3017.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3140-TimeZone-support-in-CronJob/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3140.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3329-retriable-and-non-retriable-failures/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3329.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3335-statefulset-slice/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3335.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3715-elastic-indexed-job/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3715.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3850-backoff-limits-per-index-for-indexed-jobs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3850.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/3939-allow-replacement-when-fully-terminated/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/3939.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/4017-pod-index-label/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/4017.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/4026-crojob-scheduled-timestamp-annotation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/4026.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/592-ttl-after-finish/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/592.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/706-portable-service-definitions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-apps/706-portable-service-definitions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/85-Graduate-PDB-to-Stable/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/85.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/961-maxunavailable-for-statefulset/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-apps/961.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-apps/981-poddisruptionbudget-for-custom-resources/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/0000-kep-process/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1143-node-role-labels/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-architecture/1143.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1194-prod-readiness/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1333-conformance-without-beta/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1618-conformance-profiles/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1618-conformance-profiles/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1635-prevent-permabeta/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/1659-standard-topology-labels/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/2527-clarify-status-observations-vs-rbac/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/3136-beta-apis-off-by-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-architecture/3136.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/3935-oldest-node-newest-control-plane/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-architecture/3935.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/617-improve-kep-implementation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/617-improve-kep-implementation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/917-go-modules/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/960-conformance-behaviors/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-architecture/960-conformance-behaviors/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/1205-bound-service-account-tokens/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/1205.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/1314-node-restriction-pods/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/1393-oidc-discovery/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/1393.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/1513-certificate-signing-request/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/1687-hierarchical-namespaces-subproject/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2579-psp-replacement/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/2579.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/266-kubelet-client-certificate-bootstrap-rotation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2718-20210511-client-exec-proxy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/2718.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2784-csr-duration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/2784.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/279-limit-node-access/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2799-reduction-of-secret-based-service-account-token/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/2799.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2907-secrets-store-csi-driver/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-auth/2907-secrets-store-csi-driver/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/2907.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3130-kms-observability/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3221-structured-authorization-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/3221.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3257-trust-anchor-sets/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/3257.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3299-kms-v2-improvements/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/3299.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3325-self-subject-attributes-review-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/3325.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3331-structured-authentication-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/3331.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/3766-referencegrant/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/541-external-credential-providers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-auth/541.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/600-dynamic-audit-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-auth/600-dynamic-audit-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/740-service-account-external-signing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-auth/789-harden-default-discover-bindings/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-autoscaling/117-hpa-metrics-specificity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-autoscaling/1610-container-resource-autoscaling/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-autoscaling/1610.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-autoscaling/2702-graduate-hpa-api-to-GA/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-autoscaling/2702.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-autoscaling/853-configurable-hpa-scale-velocity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/1020-kubectl-staging/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/1440-kubectl-events/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/1440.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/1441-kubectl-debug/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/1441.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/1802-kustomize-components/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2206-openapi-features-in-kustomize/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/2206.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2227-kubectl-default-container/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/2227.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2229-kubectl-xdg-base-dir/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2229-kubectl-xdg-base-dir/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2257-kui/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2299-kustomize-plugin-composition/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/2299.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2377-Kustomize/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2379-kubectl-plugins/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2380-data-driven-commands-for-kubectl/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2380-data-driven-commands-for-kubectl/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2381-future-of-kubectl-cp/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2381-future-of-kubectl-cp/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2382-kustomize-exec-secret-generator/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2383-extend-kustomize-patches-to-multiple-targets/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2384-kustomize-file-processing-integration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2385-kustomize-secret-generator-plugins/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2386-kustomize-subcommand-integration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2551-return-code-normalization/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/2551.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2590-kubectl-subresource/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/2590.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2906-kustomize-function-catalog/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2953-kustomize-plugin-graduation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/2985-public-krm-functions-registry/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3104-introduce-kuberc/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3104.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3515-kubectl-explain-openapiv3/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3515.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3638-kubectl-plugin-subcommands/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3638.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3659-kubectl-apply-prune/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3659.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3805-ssa-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3805.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/3895-kubectl-delete-interactivity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/3895.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/491-kubectl-diff/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/859-kubectl-headers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cli/859.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cli/993-kustomize-generators-transformers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/1179-building-without-in-tree-providers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/1771-versioning-policy-for-external-cloud-providers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/1959-service-lb-class-field/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cloud-provider/1959.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2025-extend-konnectivity-for-both-directions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cloud-provider/2025.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2133-out-of-tree-credential-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2133-out-of-tree-credential-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2390-reporting-conformance-test-results-to-testgrid/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2392-cloud-controller-manager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2392-cloud-controller-manager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2393-cloud-provider-documentation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2394-support-out-of-tree-AWS-cloud-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2394-support-out-of-tree-AWS-cloud-provider/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cloud-provider/2395.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2436-controller-manager-leader-migration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cloud-provider/2436.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2699-add-webhook-hosting-to-ccm/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cloud-provider/2699.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/668-out-of-tree-gce/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/668-out-of-tree-gce/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/669-out-of-tree-openstack/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/670-out-of-tree-vsphere/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/671-out-of-tree-ibm/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/671-out-of-tree-ibm/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/837-cloud-provider-labels/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/azure/2328-ccm-instance-metadata/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/azure/586-azure-availability-zones/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/azure/604-cross-resource-group-nodes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/azure/667-out-of-tree-azure/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/0000-cloud-provider-template/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/0000-cloud-provider-template/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/2530-alibaba-cloud/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/2530-alibaba-cloud/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/2531-baidu-cloud/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/providers/2532-huawei-cloud/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/addons/2492-Addons-via-Operators/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/addons/2492-Addons-via-Operators/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/addons/2494-Manifest-Bundle/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/addons/2494-Manifest-Bundle/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/clusterapi/2495-Kubernetes-Cluster-Management-API/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/clusterapi/2495-Kubernetes-Cluster-Management-API/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/etcdadm/2496-etcdadm/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/etcdadm/2496-etcdadm/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/generic/1755-communicating-a-local-registry/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/image-builder/2497-Kubernetes-Image-Builder/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/image-builder/2497-Kubernetes-Image-Builder/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/1177-kubeadm-with-kustomize/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/1177-kubeadm-with-kustomize/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/1381-component-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/1739-customization-with-patches/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2067-rename-master-label-taint/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2498-Kubeadm-Config-versioning/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2498-Kubeadm-Config-versioning/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2500-kubeadm-join-control-plane-workflow/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2501-kubeadm-phases-to-beta/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2502-Certificates-copy-for-join-control-plane/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2503-Artifact-Generation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2504-kubeadm-machine-output/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2505-Kubeadm-operator/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2505-Kubeadm-operator/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2506-Remove-ClusterStatus-from-kubeadm-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2568-kubeadm-non-root-control-plane/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-cluster-lifecycle/2568.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/2915-kubeadm-replace-kubelet-config-x.y/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/3614-etcd-learner-mode/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/378-bootstrap-checkpointing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/970-kubeadm-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/kubeadm/995-kubeadm-windows/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/wgs/115-componentconfig/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-cluster-lifecycle/wgs/783-component-base/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-contributor-experience/0000-community-forum/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-contributor-experience/1553-issue-triage/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-contributor-experience/2225-contributor-site/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-docs/1326-third-party-content-in-docs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-docs/1326-third-party-content-in-docs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1013-metrics-watch-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1013-metrics-watch-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1206-metrics-overhaul/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1209-metrics-stability/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/1209.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1602-structured-logging/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/1602.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1748-pod-resource-metrics/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/1748.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/1753-logs-sanitization/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/2305-metrics-cardinality-enforcement/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/2305.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/2831-kubelet-tracing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/2831.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/2845.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/3077-contextual-logging/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/3077.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/3466-kubernetes-component-health-slis/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/3466.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/3498-extending-stability/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/3498.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/383-new-event-api-ga-graduation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-instrumentation/647-apiserver-tracing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-instrumentation/647.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-multicluster/1645-multi-cluster-services-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-multicluster/2149-clusterid/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-multicluster/2149.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/0752-endpointslices/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/752.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1024-nodelocal-cache-dns/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1138-ipv6/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1435-mixed-protocol-lb/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1435.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1453-ingress-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1507-app-protocol/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1507.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1611-network-policy-validation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1669-proxy-terminating-endpoints/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1669.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1672-tracking-terminating-endpoints/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1672.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1860-kube-proxy-IP-node-binding/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1860.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1864-disable-lb-node-ports/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1864.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/1880-multiple-service-cidrs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/1880.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2079-network-policy-port-range/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2079.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2086-service-internal-traffic-policy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2086.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2091-admin-network-policy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2091.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2200-externalips-admission/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2200.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2365-ingressclass-namespaced-params/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2365.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2433-topology-aware-hints/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2433.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2438-dual-stack-apiserver/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2447-Make-kube-proxy-service-abstraction-optional/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2448-Remove-kube-proxy-automatic-clean-up-logic/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2449-move-externalDNS-out-of-kubernetes-incubator/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2450-Remove-knowledge-of-pod-cluster-CIDR-from-iptables-rules/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2593-multiple-cluster-cidrs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2593.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2595-expanded-dns-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2595.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/265-ipvs-based-load-balancing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2681-pod-host-ip/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2681.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2829-gateway-api-to-k8s-io/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-network/2829-gateway-api-to-k8s-io/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/2829.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/2943-networkpolicy-status/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3070-reserved-service-ip-range/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3070.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3178-iptables-cleanup/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3178.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3453-minimize-iptables-restore/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3453.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3458-remove-transient-node-predicates-from-service-controller/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3458.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3668-reserved-service-nodeport-range/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3668.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3685-endpointslice-reconciler-to-staging/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3685.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3705-cloud-node-ips/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3705.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3726-standard-application-protocols/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3726.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/3836-kube-proxy-improved-ingress-connectivity-reliability/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/3836.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/4004-deprecate-kube-proxy-version/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/427-coredns/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-network/427-coredns/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/504-configurable-pod-dns/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/536-topology-aware-routing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the stage field: /home/mike/dev/kubernetes-enhancements/keps/sig-network/536-topology-aware-routing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/563-dual-stack/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-network/563.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/566-coredns-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-network/566-coredns-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/580-pod-readiness-gates/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-network/580-pod-readiness-gates/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/614-SCTP-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/758-ingress-api-group/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/784-kube-proxy-component-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-network/980-load-balancer-finalizers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1029-ephemeral-storage-quotas/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/127-user-namespaces/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/127.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1287-in-place-update-pod-resources/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1287.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/135-seccomp/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1539-hugepages/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1539.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1547-building-kubelet-without-docker/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1558-streaming-proxy-redirects/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1558.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/166-taint-based-eviction/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1769-memory-manager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1769.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1797-configure-fqdn-as-hostname-for-pods/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1797.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1867-disable-accelerator-usage-metrics/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1898-hardened-exec/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1967-size-memory-backed-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1967.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/1972-kubelet-exec-probe-timeouts/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/1972.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2000-graceful-node-shutdown/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2000.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2008-forensic-container-checkpointing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2008.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2033-kubelet-in-userns-aka-rootless/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2033.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2040-kubelet-cri/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2040.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2043-pod-resource-concrete-assigments/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2053-downward-api-hugepages/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2053.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2129-remove-cadvisor-json-metrics/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2129.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/213-run-as-group/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/213.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2133-kubelet-credential-providers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2133.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2221-remove-dockershim/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2221.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2238-liveness-probe-grace-period/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2238.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2254-cgroup-v2/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2254.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2371-cri-pod-container-stats/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2371.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2400-node-swap/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2400.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2403-pod-resources-allocatable-resources/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2403.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2411-cri-container-log-rotation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2411.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2413-seccomp-by-default/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2413.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2535-ensure-secret-pulled-images/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2535.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2570-memory-qos/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2570.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2625-cpumanager-policies-thread-placement/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2625.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2712-pod-priority-based-graceful-node-shutdown/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2712.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2727-grpc-probe/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2727.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/277-ephemeral-containers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/277.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/281-dynamic-kubelet-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/2902.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3063-dynamic-resource-allocation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3063.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3085-pod-conditions-for-starting-completition-of-sandbox-creation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3085.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3288-separate-stdout-from-stderr/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3288.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3327-align-by-socket/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3327.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3386-kubelet-evented-pleg/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3386.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/34-sysctl-fields/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/34.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3545-improved-multi-numa-alignment/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3545.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3570-cpumanager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3570.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3573-device-plugin/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3573.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3619-supplemental-groups-policy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3619.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3673-kubelet-parallel-image-pull-limit/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3673.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3695-pod-resources-for-dra/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3960-pod-lifecycle-sleep-action/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3960.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/3983-drop-in-configuration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/3983.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/4009-add-cdi-devices-to-device-plugin-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/4009.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/4033-group-driver-detection-over-cri/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/4033.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/495-pod-pid-namespace/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/585-runtime-class/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/589-efficient-node-heartbeats/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/606-compute-device-assignment/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/606.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/688-pod-overhead/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/688.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/693-topology-manager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/693.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/727-resource-metrics-endpoint/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/753-sidecar-containers/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-node/753.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/757-pid-limiting/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/793-node-os-arch-labels/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-node/950-liveness-probe-holdoff/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/0000-anago-to-krel-migration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1498-kubernetes-yearly-support-period/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1729-rebase-images-to-distroless/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1731-publishing-packages/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/1731.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1732-artifact-management/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-release/1732-artifact-management/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1733-release-notes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/1734-k8s-image-promoter/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/2572-release-cadence/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/2572.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/2818-reducing-build-maintenance/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/2818.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/2853-k-core-branch-rename/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the stage field: /home/mike/dev/kubernetes-enhancements/keps/sig-release/2853-k-core-branch-rename/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/3000-artifact-distribution/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/3027-slsa-compliance/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the stage field: /home/mike/dev/kubernetes-enhancements/keps/sig-release/3027-slsa-compliance/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/3031-signing-release-artifacts/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/3031.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/3720-freezing-k8s-gcr-io/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/3720.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-release/3744-stay-on-supported-go-versions/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-release/3744.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/1258-default-pod-topology-spread/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/1258.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/1451-multi-scheduling-profiles/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/1819-scheduler-extender/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/1923-prefer-nominated-node/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/1923.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2249-pod-affinity-namespace-selector/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/2249.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2372-node-labels-quota/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2372-node-labels-quota/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2458-node-resource-score-strategy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/2458.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/268-priority-preemption/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2891-simplified-config/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/2891.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/2926-job-mutable-scheduling-directives/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/2926.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3022-min-domains-in-pod-topology-spread/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3022.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3094-pod-topology-spread-considering-taints/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3094.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3243.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3280-guarantee-pdb-when-preemption-happens/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3280.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3521-pod-scheduling-readiness/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3521.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3633-matchlabelkeys-to-podaffinity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3633.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/382-taint-node-by-condition/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3838-pod-mutable-scheduling-directives/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3838.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/3902-decoupled-taint-manager/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/3902.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/548-schedule-daemonset-pods/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/583-coscheduling/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/583-coscheduling/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/624-scheduling-framework/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/785-scheduler-component-config-api/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/785.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/895-pod-topology-spread/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/902-non-preempting-priorityclass/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-scheduling/902.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/964-binpacking-priority/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-scheduling/986-resource-quota-scope-selectors/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-security/1933-secret-logging-static-analysis/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-security/1933.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-security/2763-ambient-capabilities/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-security/3203-auto-refreshing-official-cve-feed/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-security/3203.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/121-local-persistent-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1412-immutable-secrets-and-configmaps/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1412.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1432-volume-health-monitor/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1432.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1472-storage-capacity-tracking/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1472.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1487-csi-migration-aws/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1487.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1488-csi-migration-gce-pd/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1488.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1489-csi-migration-cinder/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1489.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1490-csi-migration-azuredisk/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1490.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1491-csi-migration-vsphere/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1491.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1495-volume-populators/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1495.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1682-csi-driver-skip-permission/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1682.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1698-generic-ephemeral-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1698.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1710-selinux-relabeling/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1710.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/177-volume-snapshot/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1790-recover-resize-failure/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1790.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1845-prioritization-on-volume-capacity/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1855-csi-driver-service-account-token/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1855.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1885-csi-migration-azurefile/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/1885.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1900-volume-snapshot-validation-webhook/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/1979-object-storage-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2261-staging-mount-library/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2263-volume-scale-testing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2264-csi-release-ci-process/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2268-non-graceful-shutdown/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2268.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2317-fsgroup-on-mount/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2317.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2451-service-account-token-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=warning msg="Missing the latest milestone field: /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2451-service-account-token-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2485-read-write-once-pod-pv-access-mode/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2485.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2589-csi-migration-portworx/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2589.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2644-honor-pv-reclaim-policy/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2644.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/284-enable-volume-expansion/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/284.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2923-csi-migration-ceph-rbd/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/2923.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/2924-csi-migration-cephfs/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3107-csi-nodeexpandsecret/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3107.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3141-prevent-volume-mode-conversion/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3141.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3294-provision-volumes-from-cross-namespace-snapshots/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3294.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3333-retroactive-default-storage-class/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3333.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3476-volume-group-snapshot/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3476.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/351-raw-block-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/361-local-ephemeral-storage-isolation/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/361.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3751-volume-attributes-class/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3751.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3756-volume-reconstruction/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3756.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/3762-persistent-volume-last-phase-transition-time/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/3762.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/531-online-pv-resizing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/554-maximum-volume-count/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/556-csi-volume-resizing/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/557-csi-topology/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/559-volume-subpath-expansion/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/565-csi-block-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/596-csi-inline-volumes/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/596.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/603-csi-pod-info/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/625-csi-migration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/625.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/695-skip-permission-change/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-storage/695.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/770-csi-skip-attach/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/962-execution-hook/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-storage/989-extend-datasource/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/2290-new-label-for-trusted-PR-identification/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/2291-presubmit-config-inside-the-tested-repo/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/2420-reducing-kubernetes-build-maintenance/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-testing/2420.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/2464-kubetest2-ci-migration/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-testing/2464.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/2539-continuously-deploy-k8s-prow/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-testing/2539.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/3041-node-conformance-and-features/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-testing/3041.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-testing/714-break-test-tarball/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/1001-windows-cri-containerd/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/1043-windows-security-context/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/1122-windows-csi-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/1122.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/116-windows-node-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/1301-windows-runtime-class/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/1981-windows-privileged-container-support/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/1981.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/2258-node-log-query/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/2258.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/2578-windows-conformance/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/2578.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/2802-identify-windows-pods-apiserver-admission/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/2802.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/3503-host-network-support-for-windows-pods/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="PRR file: /home/mike/dev/kubernetes-enhancements/keps/prod-readiness/sig-windows/3503.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="parsing /home/mike/dev/kubernetes-enhancements/keps/sig-windows/689-windows-gmsa/kep.yaml"
+time="2023-09-19T16:38:49-04:00" level=info msg="the following PRR validation errors occurred in /home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers/kep.yaml:"
+time="2023-09-19T16:38:49-04:00" level=info msg="getting PRR approver for beta stage: the selected PRR milestone stage is not populated"
+    metadata_test.go:39: 
+        	Error Trace:	metadata_test.go:39
+        	Error:      	"map[/home/mike/dev/kubernetes-enhancements/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers/kep.yaml:[getting PRR approver for beta stage: the selected PRR milestone stage is not populated]]" should have 0 item(s), but has 1
+        	Test:       	TestValidation
+--- FAIL: TestValidation (0.20s)
+FAIL
+coverage: [no statements]
+FAIL	k8s.io/enhancements/test	0.204s
+FAIL
