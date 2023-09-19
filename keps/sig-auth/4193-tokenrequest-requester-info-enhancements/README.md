@@ -7,7 +7,8 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Embedding requesting user information in tokens](#embedding-requesting-user-information-in-tokens)
+  - [Embedding requesting node information in tokens](#embedding-requesting-node-information-in-tokens)
+  - [Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects](#extending-tokenreview-to-allow-cross-checking-the-embedded-node-information-with-existing-node-objects)
   - [Including a UUID (<a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7">JTI</a>) on each issued JWT](#including-a-uuid-jti-on-each-issued-jwt)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -77,45 +78,58 @@ This is especially useful in cases where the external software wants to avoid re
 tokens. The external software can cross-reference the identity of the caller to that service with the username embedded
 in the JWT, which allows this verification to be rooted upon the same root of trust that the kubelet/requesting entity uses.
 
-By embedding the identity of the user that created a TokenRequest into the resulting token, we can cross-reference
+By embedding the identity of the node that created a TokenRequest into the resulting token, we can cross-reference
 this information with an identity passed along to the external service, thus removing the ability for a malicious actor
-to 'replay' a projected token from another host.
+to 'replay' a projected token from another node.
+
+As current use-cases (described below) for this information are solely focused on tokens that are requested on behalf
+of pods by the kubelet, this will be implemented as an additional `node` entry in the private claims embedded into
+each JWT returned by the TokenRequest API.
 
 Additionally, to provide a robust means of tracking token usage within the audit log we can embed a unique identifier for
-each token which is can then also be recorded in the audit log.
+each token which is can then also be recorded in future audit entries made by this token.
 
 ## Motivation
 
 ### Goals
 
-* Embedding information about the user that created a TokenRequest into signed JWTs.
-* Enabling software to cross-reference their own callers with the entity that originally requested the token.
-* Removing the need for external software to call back into the apiserver to perform this validation (i.e. can be
-  performed 'offline' once the JWT signing key has been fetched/cached).
-* Make it easier to track the actions a single token has taken, and cross-reference that back to the origin of the token.
+* Embedding information about the node that created a TokenRequest into signed JWTs.
+* Enabling software to cross-reference their own callers with the node that originally requested the token.
+* Make it easier to track the actions a single token has taken, and cross-reference that back to the origin of the token
+  (via audit log inspection).
+* Provide a means of checking whether a pod's token is associated with the same node as it was associated with when the
+  initial TokenRequest was made (via TokenReview).
 
 ### Non-Goals
 
-* Embedding information beyond username into the token. Including the 'groups' of the requester may be useful, however
-  brings about challenges as some users may be a member of many, many groups, which may cause tokens to bloat in size.
-* Embedding a full 'chain' of requesting user all the way up to a 'top level'. This proposal focuses solely on looking
-  on layer up.
+* Embedding requester information beyond just the requesting node. This is discussed further in the alternatives
+  considered section, and a future KEP may revisit this.
+* Embedding information beyond the node name and UID into the token. We aim to mimic what is done with the ref fields
+  for secret, pod and serviceaccount (not introduce any additional properties).
 
 ## Proposal
 
-### Embedding requesting user information in tokens
+### Embedding requesting node information in tokens
 
-The kube-apiserver will be extended/modified to automatically embed the `username` and `uid` of the requesting user into
+The kube-apiserver will be extended/modified to automatically embed the `name` and `uid` of the requesting *Node* into
 generated tokens when a TokenRequest `create` call is is serviced.
 
-This information is already readily available in the JWT construction code, so wouldn't require significant refactoring
-work to allow.
+As the 'pod' is already available in this area of code, which contains the `nodeName`, we will just need to plumb
+through a Getter for Node objects into the TokenRequest storage layer so the node's UID can be fetched, similar to
+what is done for pod & secret objects.
 
-To avoid creating potentially infinitely long lists of user information/chains, we will not persist information beyond
-the user that requested this specific token (e.g. we won't embed information going all the way up to a 'root' user).
+### Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects
 
-To build the full chain, a user will need to utilise the JTI recorded in the audit log to cross-reference apiserver
-requests back to the initial TokenRequest.
+The TokenReview API will also be extended to check whether a JWT's embedded node information is still valid/current,
+and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
+
+This will involve first checking whether the node object with the name given in the JWT still exists, and if it does,
+validating whether the UID of that node is equal to the UID embedded in the token.
+
+This means administrators can **delete node objects to invalidate all JWTs issued that embed that node's info**.
+
+To avoid unexpected breaking changes in behaviour, this behaviour will not only be protected by the feature flag whilst
+the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag which defaults to 'off'.
 
 ### Including a UUID ([JTI](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7)) on each issued JWT
 
@@ -163,17 +177,18 @@ being issued.
 
 ### Risks and Mitigations
 
-* The size of the username field may grow too large. This may already be mitigated by restrictions on the username that
-  an authentication plugin can return. (TODO: verify this).
-* The `username` field **MAY** be considered sensitive by some providers. One discussed mitigation would be to only
-  this information *iff* a `system:` prefixed username is used to create the TokenRequest. This does not solve for the
-  general case, however does allow for things like kubelet identity to be embedded into projected tokens, which solves
-  for user story 1 above.
+* Adding additional cross-referencing validation checks into the TokenReview API may break some user workflows that
+  involve deleting Node objects and restarting kubelet's to allow them to be recreated. As a result, the TokenReview
+  behaviour changes will be gated behind an additional flag in kube-apiserver, which defaults to 'off'.
+  This may be revisited in future once we have a better understanding of user expectations around Node objects and
+  associated JWTs.
 
 ## Design Details
 
 The `pkg/serviceaccount/claims.go` file's `Claims` [function](https://github.com/kubernetes/kubernetes/blob/99190634ab252604a4496882912ac328542d649d/pkg/serviceaccount/claims.go#L61-L97)
-will be modified to accept the requesting `user.Info`. This is available in the call-site for this function (`pkg/registry/core/serviceaccount/storage/token.go`).
+will be modified to accept a `core.Node`. This will be made available in the call-site for this function
+(`pkg/registry/core/serviceaccount/storage/token.go`) by passing through a Getter for Node objects, similar to how
+secret objects are fetched.
 
 The associated `Validator` used to validate and parse service account tokens will also be extended to extract this
 new information from tokens if it is available.
@@ -215,11 +230,11 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 ##### Unit tests
 
 `staging/src/k8s.io/apiserver/pkg/authentication/serviceaccount`:
-* Test ensuring that service account UserInfo (JTI, username, uid) is correctly extracted from a presented JWT.
+* Test ensuring that service account info (JTI, node name and UID) is correctly extracted from a presented JWT.
 * Tests to ensure the information is NOT extracted when the feature gate is disabled.
 
 `pkg/serviceaccount`:
-* Extending tests to requesting user info is embedded into extended claims (name and uid)
+* Extending tests to ensure requesting node info is embedded into extended claims (name and uid)
 * Tests to ensure `ID`/`JTI` field is always set to a random UUID.
 * Tests to ensure the info embedded on a JWT is extracted from the token and into the ServiceAccountInfo when
   a token is validated.
@@ -246,8 +261,8 @@ extending the production code to implement this enhancement.
 
 ##### Integration tests
 
-* Test that calls the TokenRequest API to create a new token, and asserts that the current requesting user's information
-  is correctly embedded into the resulting JWT.
+* Test that calls the TokenRequest API as a node user, to create a new token, and asserts that the current requesting
+  node's information is correctly embedded into the resulting JWT.
 
 <!--
 Integration tests are contained in k8s.io/kubernetes/test/integration.
@@ -268,7 +283,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 ##### e2e tests
 
-* Extend existing TokenRequest e2e tests to check for embedded requester username & UID + generated JTI is present.
+* Extend existing TokenRequest e2e tests to check for embedded requester node name & UID + generated JTI is present.
 
 - <test>: <link to test coverage>
 
@@ -276,12 +291,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 #### Alpha
 
-- Feature implemented behind a feature flag `EmbedServiceAccountRequesterInfo`.
+- JTI feature implemented behind a feature flag `ServiceAccountTokenJTI`.
+- Node name/uid feature implemented behind a feature flag `ServiceAccountTokenNodeInfo`.
+- TokenReview extended validation gated behind `ServiceAccountTokenNodeInfo` feature flag, as well as an extra
+  kube-apiserver flag (name TBD, `--service-account-token-validate-node-info`?).
 - Initial e2e tests completed and enabled
 
 #### Beta
 
-- Gather feedback from developers and surveys around privacy concerns embedding username.
+- TBD
 
 #### GA
 
@@ -334,13 +352,20 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-* `EmbedServiceAccountRequesterInfo` feature flag will toggle this behaviour. This can be safely disabled at any time.
+* `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log.
+* `ServiceAccountTokenNodeInfo` feature flag will toggle including node info in tokens.
+
+Both of these feature flags can be disabled without any unexpected adverse affects or coordination required.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ServiceAccountTokenJTI`
+  - Components depending on the feature gate: kube-apiserver
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `EmbedServiceAccountRequesterInfo`
-  - Components depending on the feature gate: N/A
+  - Components depending on the feature gate: kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
