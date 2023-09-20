@@ -539,6 +539,15 @@ FeatureSpec{
 }
 ```
 
+**GA**
+```go
+FeatureSpec{
+	Default: true,
+	LockToDefault: true,
+	PreRelease: featuregate.GA,
+}
+```
+
 ###### Does enabling the feature change any default behavior?
 
 No. The v2 API is new in the v1.25 release. Furthermore, even with the feature enabled by default, the user needs to explicitly configure a KMSv2 provider to use this.
