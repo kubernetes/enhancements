@@ -613,18 +613,10 @@ TBD for beta.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
-TBD
+- 2019-01-28 - `Summary`, `Motivation`, and `Proposal` sections merged.
+- 2021-02-09 - Add phase 4 to `Proposal` section with addition of `DisableCloudProviders` and `DisableKubeletCloudCredentialProvider` feature gates.
+- 2021-02-09 - Add production readiness review for alpha stage.
+- 2021-08-04 - First Kubernetes release (v1.22) with `DisableCloudProviders` and `DisableKubeletCloudCredentialProviders` feature gates.
 
 ## Drawbacks
 
