@@ -86,7 +86,7 @@ This KEP proposes the new v2 `KeyManagementService` service contract to:
 ### Goals
 - improve readiness times for clusters with a large number of encrypted resources
 - reduce the likelihood of hitting the KMS rate limit
-- enable fully automated key rotation for the latest key
+- enable partially automated key rotation for the latest key without API server restarts
 - improve KMS plugin health check reliability
 - improve observability of envelop operations between kube-apiserver, KMS plugins and KMS
 - if this v2 API reaches beta in release M, the existing v1beta1 gRPC API will be deprecated at release M
@@ -143,7 +143,7 @@ Add v2 `KeyManagementService` proto service contract in Kubernetes to include `k
 
 In case of KMS v1, a new DEK is generated for every encryption. This means that for every write request, the API server makes a call to the KMS plugin to encrypt the DEK using the remote KEK. The API server also has to cache the DEKs to avoid making a call to the KMS plugin for every read request. When the API server restarts, it has to populate the cache by making a call to the KMS plugin for every DEK in the etcd store based on the cache size. This is a significant overhead for the API server.
 
-With KMS v2, the API server will generate a DEK seed at startup and cache it. The API server also makes a call to the KMS plugin to encrypt the DEK seed using the remote KEK. This is a one-time call at startup and on KEK rotation. The API server then uses the cached DEK seed to generate single use DEKs via a KDF.  Each DEK is used once (and only once) to encrypt a resource. This reduces the number of calls to the KMS plugin and improves the overall latency of the API server requests.
+With KMS v2, the API server will generate a DEK seed at startup and cache it. The API server also makes a call to the KMS plugin to encrypt the DEK seed using the remote KEK. This is a one-time call at startup and on KEK rotation. The API server then uses the cached DEK seed to generate single use DEKs via a Key Derivation Function (KDF).  Each DEK is used once (and only once) to encrypt a resource. This reduces the number of calls to the KMS plugin and improves the overall latency of the API server requests.
 
 ### key_id and rotation
 
