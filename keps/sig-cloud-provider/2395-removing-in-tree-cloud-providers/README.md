@@ -122,21 +122,14 @@ In order to remove cloud provider code from `k8s.io/kubernetes`. A 4 phase appro
 2. Begin to build/release the CCM from external repos (`k8s.io/cloud-provider-<provider>`) with the option to import the legacy providers from `k8s.io/legacy-cloud-providers/<provider>`. This allows the cloud-controller-manager to opt into legacy behavior in-tree (for compatibility reasons) or build new implementations of the provider. Development for cloud providers in-tree is still done in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>` during this phase.
 3. Migrate all code in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers` and shift main development to `k8s.io/cloud-provider-<provider>`. External cloud provider repos can optionally still import `k8s.io/legacy-cloud-providers` but it will no longer be imported from core components in `k8s.io/kubernetes`. Changes to `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers` are no longer accepted unless they are critical or security-related.
 4. Disable in-tree providers and set the `DisableCloudProviders` and `DisableKubeletCloudCredentialProvider` feature gates to true by default. This will enable external CCM behavior by default in Kubernetes.
+
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
-TBD
+* Kubernetes users will need to add CCM deployments to their clusters. Previously, users were able to enable the cloud controller loops of the kubernetes-controller-manager through command line flags. With the change to external CCMs users will be responsible for managing their own CCM deployments.
+* Security for the core Kubernetes cloud provider interface will continue to reviewed by the Kuberenetes SIG Security community.
+* Security for the external CCMs will be reviewed by those project communities, with supplemental reviews done by the SIG Security community.
+* UX for the core Kubernetes cloud provider interface will continue to be reviewed by the Kubernetes SIG Cloud Provider, SIG Architecture, ans SIG API Machinery communities.
+* UX for the external CCMs will be reviewed by those project communities.
 
 ## Design Details
 
