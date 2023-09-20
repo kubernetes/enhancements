@@ -80,6 +80,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Mitigating noisy neighbors](#mitigating-noisy-neighbors)
     - [Vendor-specific QoS](#vendor-specific-qos)
     - [Defaults and limits](#defaults-and-limits)
+    - [Set ulimits](#set-ulimits)
     - [Possible future scenarios](#possible-future-scenarios)
       - [Pass on Pod QoS class to the runtime](#pass-on-pod-qos-class-to-the-runtime)
       - [Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources)
@@ -128,6 +129,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Dynamic Resource Allocation (DRA)](#dynamic-resource-allocation-dra)
   - [Pod annotations](#pod-annotations)
     - [Kubelet](#kubelet-1)
     - [API server](#api-server-1)
@@ -637,6 +639,15 @@ spec:
           - name: high-prio
             capacity: 1     # high-prio is allowed but with very limited usage
 ```
+
+#### Set ulimits
+
+As a cluster administrator I want to enable per-application control of
+Linux/UNIX ulimits. However, I don't want to give the users full control of the
+parameters but specify pre-defined classes of limits.
+
+One possible way to implement the this would be using
+[NRI](https://github.com/containerd/nri).
 
 #### Possible future scenarios
 
@@ -2149,6 +2160,27 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+### Dynamic Resource Allocation (DRA)
+
+[DRA][dra-kep] provides an API for requesting and sharing resources between
+pods and containers.
+
+DRA is designed for allocating resources, not expressing QoS. Or put
+differently, designed for quantitative rather than qualitative resources.
+Specifically, it is targeting accelerator devices with potentially complex
+paraemterization and lifecycle state management for both workloads and the
+devices themselves. All of this brings complexity and overhead that is not an
+issue with the intended usage where only a small fraction of workloads request
+devices (via DRA).  However, this becomes significant when scaling to say
+hundreds of nodes with hundreds of pods per node, all of which are potentially
+requesting (e.g. via defaults) multiple classes of multiple types of QoS.
+
+The QoS-class resources mechanism if following the existing conventions and
+design patterns (with high code re-use in the implementation) of existing
+native and extended resources. This includes support for setting defaults and
+usage restrictions via existing LimitRanges and ResourceQuota mechanisms which
+would be non-trivial and costly to implement with DRA on per-QoS-class level.
+
 ### Pod annotations
 
 Instead of updating CRI and Kubernetes API in lock-step, the API changes could
@@ -2271,3 +2303,4 @@ required.
 [kep-2570]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2570-memory-qos
 [oci-runtime-rdt]: https://github.com/opencontainers/runtime-spec/blob/v1.0.2/config-linux.md#IntelRdt
 [pod-qos-class]: https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/
+[dra-kep]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation
