@@ -8,15 +8,14 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Approach](#approach)
-    - [Phase 1 - Moving Cloud Provider Code to Staging](#phase-1---moving-cloud-provider-code-to-staging)
-    - [Phase 2 - Building CCM from Provider Repos](#phase-2---building-ccm-from-provider-repos)
-    - [Phase 3 - Migrating Provider Code to Provider Repos](#phase-3---migrating-provider-code-to-provider-repos)
-    - [Phase 4 - Disabling In-Tree Providers](#phase-4---disabling-in-tree-providers)
-  - [Staging Directory](#staging-directory)
-    - [Cloud Provider Instances](#cloud-provider-instances)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Phase 1 - Moving Cloud Provider Code to Staging](#phase-1---moving-cloud-provider-code-to-staging)
+  - [Phase 2 - Building CCM from Provider Repos](#phase-2---building-ccm-from-provider-repos)
+  - [Phase 3 - Migrating Provider Code to Provider Repos](#phase-3---migrating-provider-code-to-provider-repos)
+  - [Phase 4 - Disabling In-Tree Providers](#phase-4---disabling-in-tree-providers)
+  - [Staging Directory](#staging-directory)
+    - [Cloud Provider Instances](#cloud-provider-instances)
   - [Test Plan](#test-plan)
     - [Prerequisite testing update](#prerequisite-testing-update)
     - [Unit tests](#unit-tests)
@@ -239,31 +238,27 @@ import (
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
+This change will leverage the tests available in the kubernetes/kuberenetes repository
+that exercise cloud controller behavior. The largest change to testing for this KEP is the
+default enablement of external CCMs. Test workflows have been updated to exercise the
+`DisableCloudProviders` and `DisableKubeletCloudCredentialProvider` feature gates while
+also engaging the `--cloud-provider=external`, and related, command line flags to kubelet,
+kube-apiserver, and kube-controller-manager.
 
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
+In all other respects, the expected behavior of the cloud controller managers is not changing,
+and as such the original tests for in-tree cloud controllers continue to be relevant and
+necessary.
 
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-TBD
-
 #### Prerequisite testing update
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-TBD
+No new tests are planned as part of this KEP. SIG Cloud Provider is continuing to work towards
+a generic test suite for CCMs which new providers will be able to use. This parallel testing
+effort by the SIG is not a prerequisite for this KEP as there are tests currently available
+for AWS, Azure, and GCP platforms which provide a sufficient signal for core Kubernetes testing.
 
 #### Unit tests
 
