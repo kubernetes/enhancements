@@ -116,15 +116,31 @@ APIs (and their dependencies). This results in smaller binaries and lowers the c
 
 ## Proposal
 
-### Approach
-
-In order to remove cloud provider code from `k8s.io/kubernetes`. A 3 phase approach will be taken.
+In order to remove cloud provider code from `k8s.io/kubernetes`. A 4 phase approach will be taken.
 
 1. Move all code in `k8s.io/kubernetes/pkg/cloudprovider/providers/<provider>` to `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>/`. This requires removing all internal dependencies in each cloud provider to `k8s.io/kubernetes`.
 2. Begin to build/release the CCM from external repos (`k8s.io/cloud-provider-<provider>`) with the option to import the legacy providers from `k8s.io/legacy-cloud-providers/<provider>`. This allows the cloud-controller-manager to opt into legacy behavior in-tree (for compatibility reasons) or build new implementations of the provider. Development for cloud providers in-tree is still done in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>` during this phase.
-3. Delete all code in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers` and shift main development to `k8s.io/cloud-provider-<provider>`. External cloud provider repos can optionally still import `k8s.io/legacy-cloud-providers` but it will no longer be imported from core components in `k8s.io/kubernetes`.
+3. Migrate all code in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers` and shift main development to `k8s.io/cloud-provider-<provider>`. External cloud provider repos can optionally still import `k8s.io/legacy-cloud-providers` but it will no longer be imported from core components in `k8s.io/kubernetes`. Changes to `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers` are no longer accepted unless they are critical or security-related.
+4. Disable in-tree providers and set the `DisableCloudProviders` and `DisableKubeletCloudCredentialProvider` feature gates to true by default. This will enable external CCM behavior by default in Kubernetes.
+### Risks and Mitigations
 
-#### Phase 1 - Moving Cloud Provider Code to Staging
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+TBD
+
+## Design Details
+
+### Phase 1 - Moving Cloud Provider Code to Staging
 
 In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/providers/<provider>` will be moved to `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>`. Reasons why we "stage" cloud providers as the first phase are:
 * The staged legacy provider repos can be imported from the out-of-tree provider if they choose to opt into the in-tree cloud provider implementation. This allows for a smoother transition between in-tree and out-of-tree providers in cases where there are version incompatibilites between the two.
@@ -132,19 +148,19 @@ In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/prov
 
 The biggest challenge of this phase is to remove dependences to `k8s.io/kubernetes` in all the providers. This is a requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. The full list of internal dependencies that need to be removed can be found in issue [69585](https://github.com/kubernetes/kubernetes/issues/69585).
 
-#### Phase 2 - Building CCM from Provider Repos
+### Phase 2 - Building CCM from Provider Repos
 
 In Phase 2, cloud providers will be expected to build the cloud controller manager from their respective provider repos (`k8s.io/cloud-provider-<provider>`). Providers can choose to vendor in their legacy provider in `k8s.io/legacy-cloud-providers/<provider>`, build implementations from scratch or both. Development in-tree is still done in the staging directories under the `k8s.io/kubernetes` repo.
 
 The kube-controller-manager will still import the cloud provider implementations in staging. The package location of the provider implementations will change because each staged directory will be "vendored" in from their respective staging directory. The only change in core components is how the cloud providers are imported and the behavior of each cloud provider should not change.
 
-#### Phase 3 - Migrating Provider Code to Provider Repos
+### Phase 3 - Migrating Provider Code to Provider Repos
 
 In Phase 3, feature development is no longer accepted in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>` and development of each cloud provider should be done in their respective external repos. Only bug and security fixes are accepted in-tree during this phase. It's important that by this phase, both in-tree and out-of-tree cloud providers are tested and production ready. Ideally most Kubernetes clusters in production should be using the out-of-tree provider before in-tree support is removed. A plan to migrate existing clusters from using the `kube-controller-manager` to the `cloud-controller-manager` is currently being developed. More details soon.
 
 External cloud providers can optionally still import providers from `k8s.io/legacy-cloud-providers` but no core components in `k8s.io/kubernetes` will import the legacy provider and the respective staging directory will be removed along with all its dependencies.
 
-#### Phase 4 - Disabling In-Tree Providers
+### Phase 4 - Disabling In-Tree Providers
 
 In Phase 4, two feature gates will be introduced to gradually disable and remove in-tree cloud providers:
 1. `DisableCloudProviders` - this feature gate will disable any functionality in kube-apiserver, kube-controller-manager and kubelet related to the `--cloud-provider` component flag.
@@ -227,33 +243,6 @@ import (
   _ "k8s.io/legacy-cloud-providers/vsphere"
 )
 ```
-
-### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
-TBD
-
-## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
-
-TBD
 
 ### Test Plan
 
