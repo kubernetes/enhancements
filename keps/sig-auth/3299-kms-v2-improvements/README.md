@@ -89,7 +89,7 @@ This KEP proposes the new v2 `KeyManagementService` service contract to:
 - enable partially automated key rotation for the latest key without API server restarts
 - improve KMS plugin health check reliability
 - improve observability of envelop operations between kube-apiserver, KMS plugins and KMS
-- if this v2 API reaches beta in release M, the existing v1beta1 gRPC API will be deprecated at release M
+- if this v2 API reaches beta in release M, the existing v1beta1 gRPC API will be deprecated at release M (or any later release)
 - if this v2 API reaches GA in release N, the existing v1beta1 gRPC API will be disabled by default at N, stop supporting writes at N+3, and removed at release N+6 (the existing key rotation dance of using multiple providers will be used to migrate from v1beta1 to v2)
 
 ### Non-Goals
