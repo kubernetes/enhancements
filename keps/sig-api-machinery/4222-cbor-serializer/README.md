@@ -604,7 +604,10 @@ Tests for the following behaviors will be added:
   concrete values of type `bool`, `string`, `int64`, `float64`, `[]interface{}`,
   or `map[string]interface{}` (no special treatment of tagged content producing
   time.Time, math/big.Int, etc.)
-- conformance to CBOR specification (adopt existing suite and/or develop as necessary)
+- conformance to CBOR specification (adopt existing suite and/or develop as
+  necessary)
+  - this should be demonstrated to run against implementations in at least some
+    of the non-Go client languages
 
 As well as fuzz tests covering:
 
@@ -613,6 +616,8 @@ As well as fuzz tests covering:
 - the number of bytes allocated per decode is not more than directly
   proportional to the input size
 - roundtrip JSON-to-CBOR-to-JSON and CBOR-to-JSON-to-CBOR
+- roundtrip through implementations in at least some of the non-Go client
+  languages
 
 <<[UNRESOLVED]>>
 - decoding a map into a Go struct produces an error if the map contains a key
