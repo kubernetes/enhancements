@@ -11,15 +11,14 @@ reviewers:
 approvers:
   - "@derekwaynecarr"
 owning-sig: sig-node
-status: implementable
+status: provisional
 editor: "@ndixita"
 creation-date: 2021-03-14
 last-updated: 2023-06-14
-stage: beta
-latest-milestone: "v1.28"
+stage: alpha
+latest-milestone: "v1.27"
 milestone:
   alpha: "v1.27"
-  beta: "v1.28"
 feature-gates:
   - name: MemoryQoS
     components:
