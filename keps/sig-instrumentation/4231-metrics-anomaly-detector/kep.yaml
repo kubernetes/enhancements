@@ -1,0 +1,21 @@
+title: Metrics Anomaly Detector
+kep-number: 4231
+authors:
+  - "@rexagod"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-architecture
+status: implementable
+creation-date: 2023-09-21
+reviewers:
+  - "@logicalhan"
+approvers:
+  - "@logicalhan"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: "alpha"
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "0.0"
