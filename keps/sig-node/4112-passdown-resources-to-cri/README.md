@@ -308,7 +308,7 @@ resource requests from the PodSpec.
      map<string, string> annotations = 4;
 +
 +    // Kubernetes resource spec of the container
-+    KubernetesResources kubernetes_resources = 18;
++    KubernetesResources kubernetes_resources = 5;
  }
 ```
 
