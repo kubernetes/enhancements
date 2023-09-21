@@ -695,6 +695,10 @@ One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
 memory knobs in linux (see
 [KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
 
+Another possible usage could be to allow the user to explicitly specify the
+desired Pod QoS class of the application (instead of implicitly deriving it
+from the resource requests/limits).
+
 ##### Container-level memory QoS
 
 Container runtimes could implement an admin-configurable support for memory
@@ -2175,7 +2179,7 @@ devices (via DRA).  However, this becomes significant when scaling to say
 hundreds of nodes with hundreds of pods per node, all of which are potentially
 requesting (e.g. via defaults) multiple classes of multiple types of QoS.
 
-The QoS-class resources mechanism if following the existing conventions and
+The QoS-class resources mechanism follows the existing conventions and
 design patterns (with high code re-use in the implementation) of existing
 native and extended resources. This includes support for setting defaults and
 usage restrictions via existing LimitRanges and ResourceQuota mechanisms which
