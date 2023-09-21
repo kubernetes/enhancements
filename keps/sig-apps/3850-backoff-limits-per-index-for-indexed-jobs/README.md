@@ -58,6 +58,7 @@
     - [Keep failedIndexes field as a bitmap](#keep-failedindexes-field-as-a-bitmap)
     - [Keep the list of failed indexes in a dedicated API object](#keep-the-list-of-failed-indexes-in-a-dedicated-api-object)
     - [Implicit limit on the number of failed indexes](#implicit-limit-on-the-number-of-failed-indexes)
+  - [Skip uncountedTerminatedPods when backoffLimitPerIndex is used](#skip-uncountedterminatedpods-when-backofflimitperindex-is-used)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -77,7 +78,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -728,9 +729,6 @@ in back-to-back releases.
 - Evaluate performance of Job controller for jobs using backoff limit per index
   with benchmarks at the integration or e2e level (discussion pointers from Alpha
   review: [thread1](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1261694406) and [thread2](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263862076))
-- Reevaluate ideas of not using `.status.uncountedTerminatedPods` for keeping track
-  in the `.status.Failed` field. The idea is to prevent `backoffLimit` for setting.
-  Discussion [link](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263879848).
 - The feature flag enabled by default
 
 #### GA
@@ -992,6 +990,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+This feature does not propose SLOs.
+
 <!--
 This is your opportunity to define what "normal" quality of service looks like
 for a feature.
@@ -1017,6 +1017,8 @@ Pick one more of these and delete the rest.
   - Metric name:
     - `job_sync_duration_seconds` (existing): can be used to see how much the
 feature enablement increases the time spent in the sync job
+    - `job_finished_indexes_total` (new): can be used to determine if the indexes
+are marked failed,
   - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1182,7 +1184,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No change from existing behavior of the Job controller.
+
 ###### What are other known failure modes?
+
+None.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1198,6 +1204,8 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
@@ -1219,6 +1227,8 @@ Major milestones might include:
 - 2023-07-13: The implementation PR [Support BackoffLimitPerIndex in Jobs #118009](https://github.com/kubernetes/kubernetes/pull/118009) under review
 - 2023-07-18: Merge the API PR [Extend the Job API for BackoffLimitPerIndex](https://github.com/kubernetes/kubernetes/pull/119294)
 - 2023-07-18: Merge the Job Controller PR [Support BackoffLimitPerIndex in Jobs](https://github.com/kubernetes/kubernetes/pull/118009)
+- 2023-08-04: Merge user-facing docs PR [Docs update for Job's backoff limit per index (alpha in 1.28)](https://github.com/kubernetes/website/pull/41921)
+- 2023-08-06: Merge KEP update reflecting decisions during the implementation phase [Update for KEP3850 "Backoff Limit Per Index"](https://github.com/kubernetes/enhancements/pull/4123)
 
 ## Drawbacks
 
@@ -1456,6 +1466,26 @@ It may behave unpredictably, impacting the user experience. For example,
 when a user sets `maxFailedIndexes` as 10^6 the Job may complete if the indexes
 and consecutive, but the Job may also fail if the size of the object exceeds the
 limits due to non-consecutive indexes failing.
+
+### Skip uncountedTerminatedPods when backoffLimitPerIndex is used
+
+It's been proposed (see [link](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263879848))
+that when backoffLimitPerIndex is used, then we could skip the interim step of
+recording terminated pods in `.status.uncountedTerminatedPods`.
+
+**Reasons for deferring / rejecting**
+
+First, if we stop using `.status.uncountedTerminatedPods` it means that
+`.status.failed` can no longer track the number of failed pods. Thus, it would
+require a change of semantic to denote just the number of failed indexes. This
+has downsides:
+- two different semantics of the field, depending on the used feature
+- lost information about some failed pods within an index (some users may care
+to investigate succeeded indexes with at least one failed pod)
+
+Second, it would only optimize the unhappy path, where there are failures. Also,
+the saving is only 1 request per 500 failed pods, which does not seem essential.
+
 
 ## Infrastructure Needed (Optional)
 
