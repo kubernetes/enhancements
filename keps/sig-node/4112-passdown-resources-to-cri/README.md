@@ -279,17 +279,13 @@ contain unmodified resource requests from the PodSpec.
      repeated CDIDevice CDI_devices = 17;
 +
 +    // Kubernetes resource spec of the container
-+    repeated ContainerResourceConfig container_resources = 18;
++    KubernetesResources kubernetes_resources = 18;
  }
  
-+message ContainerResourceConfig {
-+    // Name of the container
-+    // Note: name is redundant for container-specific requests (UpdateContainerResourcesRequest)
-+    // but needed for pod-specific requests (PodSandboxConfig).
-+    string name= 1;
-+    // Requests and limits hold corresponding container resources data.
-+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 2;
-+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 3;
++message KubernetesResources {
++    // Requests and limits from the Kubernetes container config.
++    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 1;
++    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 2;
 +}
 ```
 
@@ -312,7 +308,7 @@ resource requests from the PodSpec.
      map<string, string> annotations = 4;
 +
 +    // Kubernetes resource spec of the container
-+    ContainerResourceConfig container_resources = 5;
++    KubernetesResources kubernetes_resources = 18;
  }
 ```
 
@@ -341,6 +337,20 @@ resources of all the containers of the Pod.
 +message PodResourceConfig {
 +    repeated ContainerResourceConfig init_containers = 1;
 +    repeated ContainerResourceConfig containers = 2;
++}
+ 
++message ContainerResourceConfig {
++    // Name of the container
++    string name= 1;
++
++    // Kubernetes resource spec of the container
++    KubernetesResources kubernetes_resources = 2;
++
++    // CDI devices for the container.
++    repeated CDIDevice CDI_devices = 3;
++
++    // Mounts for the container.
++    repeated Mount mounts = 4;
 +}
 ```
 
