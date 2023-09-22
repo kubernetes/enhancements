@@ -1,11 +1,11 @@
 title: CBOR Serializer
-kep-number: NNNN
+kep-number: 4222
 authors:
   - "@benluddy"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
-status: provisional
+status: implementable
 creation-date: 2023-09-19
 reviewers:
   - "@jpbetz"
