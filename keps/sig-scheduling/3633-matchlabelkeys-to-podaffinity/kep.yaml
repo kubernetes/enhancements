@@ -15,12 +15,12 @@ see-also:
 
 stage: alpha
 
-latest-milestone: "v1.28"
+latest-milestone: "v1.29"
 
 milestone:
-  alpha: "v1.28"
-  beta: "v1.29"
-  stable: "v1.31"
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.32"
 
 feature-gates:
   - name: MatchLabelKeysInPodAffinity
