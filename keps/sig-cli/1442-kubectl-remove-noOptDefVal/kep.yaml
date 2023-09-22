@@ -1,0 +1,21 @@
+title: Ensure consistency in usage of flags across `kubectl` commands
+kep-number: 1442
+authors:
+  - "@varshaprasad96"
+owning-sig: sig-cli
+participating-sigs:
+  - 
+reviewers:
+  - "@rpkatz"
+  -
+  -
+approvers:
+  - TBD
+editor: TBD
+creation-date: 2023-09-22
+last-updated: 
+status: 
+see-also:
+  -
+latest-milestone: '0.0'
+stage: stable
