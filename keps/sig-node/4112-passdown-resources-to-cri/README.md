@@ -282,6 +282,8 @@ contain unmodified resource requests from the PodSpec.
 +    KubernetesResources kubernetes_resources = 18;
  }
  
++// KubernetesResources contains the resource requests and limits as specified
++// in the Kubernetes core API ResourceRequirements.
 +message KubernetesResources {
 +    // Requests and limits from the Kubernetes container config.
 +    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 1;
@@ -334,11 +336,15 @@ resources of all the containers of the Pod.
 +    PodResourceConfig pod_resources = 10;
  }
  
++// PodResourceConfig contains information of all resources requirements of
++// the containers of a pod.
 +message PodResourceConfig {
 +    repeated ContainerResourceConfig init_containers = 1;
 +    repeated ContainerResourceConfig containers = 2;
 +}
  
++// ContainerResourceConfig contains information of all resource requirements of
++// one container.
 +message ContainerResourceConfig {
 +    // Name of the container
 +    string name= 1;
@@ -346,11 +352,14 @@ resources of all the containers of the Pod.
 +    // Kubernetes resource spec of the container
 +    KubernetesResources kubernetes_resources = 2;
 +
-+    // CDI devices for the container.
-+    repeated CDIDevice CDI_devices = 3;
-+
 +    // Mounts for the container.
-+    repeated Mount mounts = 4;
++    repeated Mount mounts = 3;
++
++    // Devices for the container.
++    repeated Device devices = 4;
++
++    // CDI devices for the container.
++    repeated CDIDevice CDI_devices = 5;
 +}
 ```
 
