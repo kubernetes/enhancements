@@ -85,6 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Format](#format)
   - [Negotiation](#negotiation)
+  - [Client Enablement](#client-enablement)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -105,6 +106,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -296,10 +299,52 @@ Strategic Merge Patches, or Server-Side Apply configurations.
 
 Clients can send CBOR-encoded request bodies with the appropriate Content-Type
 to API servers that support CBOR. API servers that don’t support CBOR will
-return status 415. Rather than implementing a mechanism up-front to negotiate
-CBOR-encoded requests from clients (for example: optimistic CBOR with fallback
-to JSON on 415, or advertising supported media types and checking them in
-advance), dynamic clients will continue to default to JSON for writes.
+return status 415 (Unsupported Media Type). In client-go, for alpha, when a
+RESTClient configured to encode requests with CBOR receives a 415, it will
+permanently (for the life of the RESTClient) fall back to JSON for subsequent
+requests. For GA, this fallback behavior will be changed to operate on a
+per-(method, target resource) basis, and to consider acceptable fallback
+content-types based on the value of the Accept header in a 415 response, [as
+described in RFC 9110](https://httpwg.org/specs/rfc9110.html#status.415).
+
+### Client Enablement
+
+Clients can be explicitly configured to prefer CBOR as a request encoding as
+they can today be configured to prefer Protobuf or JSON. In client-go, this
+involves setting the `ContentType` field of `rest.ClientContentConfig`. The
+default request content-type will remain JSON for a period of time post-GA; a
+minimum of two minor versions, so that the oldest kube-apiserver within the
+supported kubectl version skew will have CBOR support. The supported version
+skew for aggregated API servers is much wider (infinite?). Encoding and decoding
+resources from aggregated API servers that don't support CBOR will rely on the
+content-type negotation mechanisms described above.
+
+CBOR enablement will be feature-gated in API servers. Client-go will provide a
+runtime gating mechanism for CBOR request encoding as follows:
+
+- An environment variable will be read at package initialization time with
+  recognized values:
+  - "default": The default request content-type (if not explicitly configured)
+    becomes application/cbor rather than application/json.
+  - "disabled": Clients configured with request content-type application/cbor
+    behave as if configured to use application/json.
+  - Any other value has no effect.
+- A client-go library consumer can set a global override once during the
+  lifetime of its process. In this case, the environment variable is completely
+  ignored. Attempting to set the global override more than once per process is a
+  programmer error and will panic.
+
+| Client Config    | Environment/Override | Effective Content-Type |
+|------------------|----------------------|------------------------|
+|                  |                      | application/json       |
+|                  | default              | application/cbor       |
+|                  | disabled             | application/json       |
+| application/json |                      | application/json       |
+| application/json | default              | application/json       |
+| application/json | disabled             | application/json       |
+| application/cbor |                      | application/cbor       |
+| application/cbor | default              | application/cbor       |
+| application/cbor | disabled             | application/json       |
 
 ### User Stories (Optional)
 
@@ -667,6 +712,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
+- request and response content-type negotiation with 1.17 sample API server
+
 ### Graduation Criteria
 
 <!--
@@ -737,6 +784,14 @@ in back-to-back releases.
 - Feature gate wired to kube-apiserver.
 - Dynamic client updated to optionally support CBOR.
 - Client generation updated to optionally support CBOR.
+- Runtime gating mechanism added to client-go.
+- Maintenance of CBOR library is understood.
+
+#### Beta
+
+#### GA
+
+- Granular content-type fallback behavior on HTTP 415.
 
 ### Upgrade / Downgrade Strategy
 
