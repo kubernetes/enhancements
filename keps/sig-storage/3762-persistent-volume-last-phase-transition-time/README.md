@@ -131,20 +131,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -230,9 +230,8 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We need to update API server to support the newly proposed field and update PV controller to set a value of the new
-timestamp field when a volume transitions to a different phase. Also, if the feature gate is disabled the value must be
-re-set to `nil` when updating or creating a volume.
+We need to update API server to support the newly proposed field and set a value of the new timestamp field when a volume
+transitions to a different phase. The timestamp field must be set to current time also for newly created volumes.
 
 The value of the field is not intended for use by any other Kubernetes components at this point and should be used only
 as a convenience feature for cluster admins. Cluster admins should be able to list and sort PersistentVolumes based on
@@ -273,10 +272,6 @@ Adding the field to a PV is reasonable only when the PV actually transitions its
 capture meaningful timestamp. Trying to do this at any other step than phase transition would capture a timestamp
 that would semantically incorrect and misleading.
 
-Removing the value can be done more freely, but tradeoffs need to be considered. One alternative approach discussed was
-removing the field values more aggressively, during each PV sync. As this might introduce performance issues and does
-not add much value the removal should be done during PV validation instead.
-
 ### Risks and Mitigations
 
 <!--
@@ -308,15 +303,9 @@ Changes required for this KEP:
     ...
     }
     ```
-
-  * validation should check timestamp format 
-  * validation should allow update from `nil`
-  * validation should allow timestamp update if the previous timestamp is older
-  * validation should not allow updating to a point in time before the current timestamp
-
-* kube-controller-manager / PV controller
-  * update the timestamp whenever PV controller transitions PV to a different phase (`pv.Status.Phase`)
-  * remove the timestamp in `LastPhaseTransitionTime` field during volume status update when feature gate is disabled
+  * update the timestamp whenever PV transitions to a different phase (`pv.Status.Phase`)
+  * allow `LastPhaseTransitionTime` to be updated by users if needed
+  * reset the timestamp in `LastPhaseTransitionTime` to `nil` only when feature gate is disabled and `LastPhaseTransitionTime` is not initialized (time is zero)
 
 <!--
 This section should contain enough information that the specifics of your
@@ -378,7 +367,6 @@ Changes will be implemented in packages with sufficient unit test coverage.
 
 For any new or changed code we will add new unit tests.
 
-- `pkg/controller/volume/persistentvolume`: `2023-01-25` - `79%`
 - `pkg/apis/core/validation/`: `2023-01-25` - `82%`
 
 ##### Integration tests
@@ -407,12 +395,6 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 We plan to add new e2e tests which should not interfere with any other tests, and so they could run in parallel.
-
-While the timestamp of volume phase transition will represent an accurate point in time of when it occurred, the tests
-will have to consider the time difference between user action that leads to a PV phase transition and the actual volume
-phase transition done by the PV controller.
-Based on exploratory testing we will define an appropriate time tolerance which will represent maximum time limit for
-the volume to transition phase.
 
 ### Graduation Criteria
 
@@ -488,8 +470,6 @@ in back-to-back releases.
 #### Beta
 
 - Allowing time for feedback (at least 2 releases between beta and GA).
-- Manually test version skew between the API server and KCM. See the expected
-  behavior below in Version Skew Strategy.
 - Manually test upgrade->downgrade->upgrade path.
 
 #### GA
@@ -512,15 +492,10 @@ enhancement:
 
 No change in cluster upgrade / downgrade process.
 
-When upgrading the new `LastPhaseTransitionTime` field and its value will be added to a PV when it transitions phase.
+When upgrading, the new `LastPhaseTransitionTime` field and its value will be added to PVs when transitioning phase - 
+this means that enabling and disabling feature gate might not have an immediate effect. 
 
-When downgrading from a version that added the new timestamp field PVs we need to make sure that after downgrade the
-values of the disabled field are removed. We intend to use create and update persistent volume REST strategy to remove
-the values. More specifically each time the strategy invokes `PrepareForCreate` or `PrepareForUpdate` method we set the
-value to `nil` if feature gate is disabled.
-
-This means that enabling and disabling feature gate might not have an immediate effect. See "Notes/Constraints/Caveats"
-section for more details.
+See "Notes/Constraints/Caveats" section for more details.
 
 ### Version Skew Strategy
 
@@ -537,12 +512,12 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-| API server | KCM | Behavior                                                                                                                   |
-|------------|-----|----------------------------------------------------------------------------------------------------------------------------|
-| off | off | Existing Kubernetes behavior.                                                                                              |
-| on | off| Existing Kubernetes behavior, only users can set `pvc.Status.LastPhaseTransitionTime`.                        |
-| off | on | PV controller may try to change `pvc.Status.LastPhaseTransitionTime`, which will fail on the API server. |
-| on | on | New behavior.                                                                                                              
+Version skew is not applicable, KCM was not changed in scope of this enhancement.
+
+| API server  | Behavior              |
+|-------------|-----------------------|
+| off | Existing Kubernetes behavior.|
+| on | New behavior.                 |
 
 ## Production Readiness Review Questionnaire
 
@@ -588,7 +563,7 @@ well as the [existing list] of feature gates.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PersistentVolumeLastPhaseTransitionTime
-  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -618,32 +593,33 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. This will result in the timestamp value being eventually set to `nil`. More details in
-"Upgrade / Downgrade Strategy" section.
+Yes, for PVs not updated while feature was enabled. However once the `LastPhaseTransitionTime` value is set, disabling
+feature gate will not remove the value.
+
+More details in "Upgrade / Downgrade Strategy" section.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No issues expected. There are three cases that can occur for a PV:
+No issues expected. There are two cases that can occur for a PV:
 
   1. PV did not transition its phase when feature gate was enabled - the `LastPhaseTransitionTime` field was not added 
      to the PV object so this is the same case as enabling the feature gate for the first time.
-  2. PV did transition its phase but the `LastPhaseTransitionTime` *was not* reset to `nil` because the PV was not 
-     validated when the feature was enabled - the timestamp value will be updated on next phase change as if the feature
-     gate was never disabled.
-  2. PV did transition its phase but the `LastPhaseTransitionTime` *was* reset to `nil` because the PV was validated at
-     least once already while feature was enabled - the timestamp value will be updated on next phase change because
-     updates from `nil` are allowed.
+
+  2. PV did transition its phase when feature gate was enabled - the `LastPhaseTransitionTime` field is already set,
+     and it's timestamp value will be updated on next phase change.
 
 See "Upgrade / Downgrade Strategy" and "Notes/Constraints/Caveats" sections for more details.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests for enabling and disabling feature gate will be added when transitioning to beta. See "Graduation criteria"
-section.
+Unit tests for enabling and disabling feature gate are required for alpha - see "Graduation criteria" section.
 
 The tests should focus on verifying correct handling of the new PV field in relation to feature gate state. Correct
-handling means the values of the newly added field are added or updated when PV transitions its phase and cleared when
-the feature is disabled.
+handling means the values of the newly added field are added or updated when PV transitions its phase while feature gate
+is enabled, and persisted if already set and feature gate is disabled.
+
+Feature enablement tests:
+https://github.com/kubernetes/kubernetes/blob/4eb6b3907a68514e1b2679b31d95d61f4559c181/pkg/registry/core/persistentvolume/strategy_test.go#L45
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -676,12 +652,35 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollout is unlikely to fail, unless API server fails and there should be no need for rollback as this enhancement only
+adds a new field.
+
+Rollback in terms of removal of this new field is not possible, once a PV is updated with the new field it will not be
+removed by disabling this feature.
+
+However, users can set any arbitrary timestamp value by patching PV status subresource:
+
+```
+$ kc patch --subresource=status pv/task-pv-volume -p '{"status":{"lastPhaseTransitionTime":"2023-01-01T00:00:00Z"}}'
+```
+
+Or remove it by setting zero timestamp:
+
+```
+$ kc patch --subresource=status pv/pv-1 -p '{"status":{"lastPhaseTransitionTime":"0001-01-01T00:00:00Z"}}'
+$ kc get pv/pv-1 -o json | jq '.status.lastPhaseTransitionTime'
+null
+```
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+No metrics are required. Not having the new field set after enabling this feature is a sufficient signal to indicate
+that there is a problem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -691,11 +690,253 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Manual upgrade->downgrade->upgrade test was performed to verify correct behavior of the new field. If a downgrade is performed
+there are two scenarios that can occur for each PV:
+
+1) Phase transitioned while feature was enabled - in this case the feature gets disabled and any updates to `LastPhaseTransitionTime` field must not be allowed.
+2) Phase did not transition while feature was enabled - in this case the timestamp value must be persisted in `LastPhaseTransitionTime` field.
+
+After upgrading again the behavior has to match behavior as if the feature was turned on for the first time.
+
+The difference between feature enablement/disablement and downgrade/upgrade is that after downgrading to a version that
+does not support `LastPhaseTransitionTime` field the data can not be accessed. Whereas only disabling the feature will
+still show last the value that was set, if present.
+
+**Upgrade->downgrade->upgrade test results:**
+
+1) Perform pre-upgrade tests (1.27.5)
+
+Create a PVC to provision a volume:
+```
+$ cat /tmp/pvc.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-1
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-hostpath-sc
+```
+
+```
+kc create -f /tmp/pvc.yaml
+```
+
+2) Verify the PV does not have `lastPhaseTransitionTime` set:
+```
+$ kc get pv/$(kc get pvc/pvc-1 -o json | jq '.spec.volumeName' | tr -d "\"")  -o json | jq  '.status.lastPhaseTransitionTime'
+null
+```
+
+**Upgrade cluster (1.27.5 -> 1.28.1)**
+
+1) Check available versions:
+```bash
+$ dnf search kubeadm --showduplicates --quiet | grep 1.28
+kubeadm-1.28.0-0.x86_64 : Command-line utility for administering a Kubernetes cluster.
+kubeadm-1.28.1-0.x86_64 : Command-line utility for administering a Kubernetes cluster.
+```
+
+2) Upgrade kubeadm:
+```bash
+$ sudo dnf install -y kubeadm-1.28.1-0
+```
+
+3) Prepare config file that enables FeatureGate:
+```
+$ cat /tmp/config.yaml
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    feature-gates: PersistentVolumeLastPhaseTransitionTime=true
+controllerManager:
+  extraArgs:
+    cluster-cidr: 10.244.0.0/16
+    feature-gates: PersistentVolumeLastPhaseTransitionTime=true
+```
+
+4) Perform kubeadm upgrade:
+```bash
+$ sudo kubeadm upgrade plan --config /tmp/config.yaml
+$ sudo kubeadm upgrade apply --config /tmp/config.yaml v1.28.1
+```
+
+5) Perform kubelet upgrade:
+```bash
+$ sudo dnf install -y kubelet-1.28.1-0
+$ sudo systemctl daemon-reload 
+$ sudo systemctl restart kubelet
+```
+
+**Perform post-upgrade tests**
+
+1) Create a second PVC to provision a volume:
+```
+$ cat /tmp/pvc2.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-hostpath-sc
+```
+
+```
+kc create -f /tmp/pvc2.yaml
+```
+
+2) Verify it has `lastPhaseTransitionTime` set:
+```
+$ kc get pv/$(kc get pvc/pvc-2 -o json | jq '.spec.volumeName' | tr -d "\"")  -o json | jq  '.status.lastPhaseTransitionTime'
+"2023-09-12T08:53:09Z"
+```
+
+3) Change retain policy on the first PV to `Retain`:
+```
+$ kc get pv/pvc-0c9ea251-b156-4786-ac82-8713b76bb312
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM           STORAGECLASS      REASON   AGE
+pvc-0c9ea251-b156-4786-ac82-8713b76bb312   1Gi        RWO            Retain           Bound    default/pvc-1   csi-hostpath-sc            52m
+```
+
+4) Delete PVC for the first volume to release the PV:
+```
+kc delete pvc/pvc-1
+```
+
+5) Verify the first (pre-upgrade) PVC transitioned phase and transition timestamp is now set:
+```
+$ kc get pv/pvc-f2eee26c-bca3-448b-9198-d4948f54dce3 -o json | jq '.status.phase'
+"Released"
+
+$ kc get pv/pvc-f2eee26c-bca3-448b-9198-d4948f54dce3 -o json | jq '.status.lastPhaseTransitionTime'
+"2023-09-12T08:58:01Z"
+```
+
+**Downgrade cluster (1.28.1 -> 1.27.5)**
+
+```
+$ kc version -o json | jq '.serverVersion.gitVersion'
+"v1.27.5"
+```
+
+**Perform post-rollback tests**
+
+1) Create another PVC and volume:
+```
+$ cat /tmp/pvc3.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-3
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-hostpath-sc
+```
+
+```
+kc create -f /tmp/pvc3.yaml
+```
+
+2) Verify new PV does not have `lastPhaseTransitionTime` set:
+```
+$ kc get pv/$(kc get pvc/pvc-3 -o json | jq '.spec.volumeName' | tr -d "\"")  -o json | jq  '.status.lastPhaseTransitionTime'
+null
+```
+
+3) Verify `lastPhaseTransitionTime` of previous PVs can not be accessed anymore:
+```
+$ kc get pv/$(kc get pvc/pvc-2 -o json | jq '.spec.volumeName' | tr -d "\"")  -o json | jq  '.status.lastPhaseTransitionTime'
+null
+```
+
+4) Verify `lastPhaseTransitionTime` can not be set manually:
+```
+$ kc patch pvc/pvc-3 -p '{"status":{"lastPhaseTransitionTime":"2023-09-11T13:07:09Z"}}'
+Warning: unknown field "status.lastPhaseTransitionTime"
+persistentvolumeclaim/pvc-3 patched (no change)
+```
+
+**Upgrade cluster again (1.27.5 -> 1.28.1)**
+
+1) Install/update kubeadm:
+```bash
+$ sudo dnf install -y kubeadm-1.28.1-0
+```
+
+2) Perform kubeadm upgrade:
+```
+$ sudo kubeadm upgrade plan --config /tmp/config.yaml
+$ sudo kubeadm upgrade apply --config /tmp/config.yaml v1.28.1
+```
+
+**Perform post-upgrade tests again**
+
+1) Verify timestamp is available again and unchanged on old PVs:
+```
+$ kc get pv/$(kc get pvc/pvc-2 -o json | jq '.spec.volumeName' | tr -d "\"")  -o json | jq  '.status.lastPhaseTransitionTime'
+"2023-09-12T08:53:09Z"
+```
+
+```
+$ kc get pv/pvc-f2eee26c-bca3-448b-9198-d4948f54dce3 -o json | jq '.status.lastPhaseTransitionTime'
+"2023-09-12T08:58:01Z"
+```
+
+2) Change reclaim policy on exiting PV, release it and check `lastPhaseTransitionTime` is set correctly:
+```
+$ kc get pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -o json | jq '.spec.persistentVolumeReclaimPolicy'
+"Delete"
+
+$ kc patch pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+persistentvolume/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 patched
+
+$ kc get pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -o json | jq '.spec.persistentVolumeReclaimPolicy'
+"Retain"
+
+$ kc get pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -o json | jq '.status.phase'
+"Bound"
+
+$ kc delete pvc/pvc-2
+persistentvolumeclaim "pvc-2" deleted
+
+$ kc get pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -o json | jq '.status.phase'
+"Released"
+
+$ kc get pv/pvc-2e55f2fd-b0dc-4c95-b8d5-085d16ee6d27 -o json | jq '.status.lastPhaseTransitionTime'
+"2023-09-12T12:05:07Z"
+
+$ date
+Tue Sep 12 12:05:24 PM UTC 2023
+```
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -714,6 +955,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+PV objects can be inspected for `LastPhaseTransitionTime` field.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -725,13 +968,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] API .status
+  - Other field: `pv.Status.LastPhaseTransitionTime`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -750,18 +988,17 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A - no SLI defined
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: To check correct functionality, inspect `LastPhaseTransitionTime` of a PV after binding it to a PVC.
+  Or simply create a PVC and check dynamically provisioned PV if it has a `LastPhaseTransitionTime` set to current time.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -769,6 +1006,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Due to the simple nature if this feature there's no need to add any metric.
 
 ### Dependencies
 
@@ -792,6 +1031,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -820,6 +1061,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No, the feature is implemented directly in API strategy for updating PVs.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -829,6 +1072,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -836,6 +1081,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -845,6 +1092,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Yes, all PV objects will have an entirely new status field to hold a timestamp called `LastPhaseTransitionTime`.
+
+Estimated increase in size: < 50B
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -856,6 +1107,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -869,6 +1122,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -879,6 +1134,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -895,6 +1152,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If API server or etcd is unavailable objects can not be updated. Since this feature relies on PVs being updated to
+set `LastPhaseTransitionTime` field this feature is basically disabled in this case.
+
 ###### What are other known failure modes?
 
 <!--
@@ -910,7 +1170,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None, the feature is dependent only on API server and should not be affected by other failures.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Users should inspect API server logs for errors in case PV objects are not updated properly.
 
 ## Implementation History
 
@@ -931,6 +1195,8 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+No drawbacks discovered, enhancement only adds a new informative field.
+
 ## Alternatives
 
 <!--
@@ -939,6 +1205,10 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+Alternative solution is to update phase transition timestamp in PV controller/KCM. This would increase chances of having
+a time skew between API audit logs and the timestamp. Updating phase transition timestamp in API strategy code is
+therefore a better solution.
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -946,3 +1216,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+None.
