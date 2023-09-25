@@ -1,7 +1,5 @@
 # KEP-2339: StorageVersion API for HA API servers
 
-## Table of Contents
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -56,16 +54,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -84,7 +82,7 @@ server instances are encoding objects using the same storage version, resulting
 in polluted migration.  ([details]).
 
 [storageVersionHash]:https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L979
-[details]:https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/35-storage-version-hash.md#ha-masters
+[details]:https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2343-automated-storage-version-migration-with-storage-version-hash#future-work-ha-clusters
 
 ## Motivation
 
@@ -180,6 +178,10 @@ type ServerStorageVersion struct {
   // The encodingVersion must be included in the decodableVersions.
   // +listType=set
   DecodableVersions []string `json:"decodableVersions,omitempty" protobuf:"bytes,3,opt,name=decodableVersions"`
+  
+  // The API server can serve these versions.
+  // DecodableVersions must include all ServedVersions.
+  ServedVersions []string
 }
 
 type StorageVersionConditionType string
@@ -244,12 +246,15 @@ During bootstrap, for each resource, the API server
 * gets the list of participating API servers,
 * updates the storageVersion locally. Specifically,
   * creates or updates the .status.serverStorageVersions, to express this API
-    server's decodableVersions and encodingVersion.
+    server's 
+      * decodableVersions: list of versions (that an object is encoded in) which an apiserver can decode
+      * encodingVersion: version that apiserver will encode an object in when persisting it in the backend- ex. etcd
+      * servedVersions: list of versions that an apiserver can serve. All servedVersions should be included in decodableVersions.
   * removes .status.serverStorageVersions entries whose server ID is not present
     in the list of participating API servers, such entries are stale.
   * checks if all participating API servers agree on the same storage version.
-    If so, sets the version as the status.agreedEncodingVersion. If not, sets
-    the status.agreedEncodingVersion to empty. The "AllEncodingVersionsEqual"
+    If so, sets the version as the status.commonEncodingVersion. If not, sets
+    the status.commonEncodingVersion to empty. The "AllEncodingVersionsEqual"
     status.condition is updated accordingly as well.
 * updates the storageVersion object, using the rv in the first step
   to avoid conflicting with other API servers.
@@ -354,9 +359,9 @@ not manage its API.
 
 The consumer of the StorageVersion API is the storage migrator. The storage
 migrator
-* starts migration if the storageVersion.status.agreedEncodingVersion differs
+* starts migration if the storageVersion.status.commonEncodingVersion differs
   from the storageState.status.[persistedStorageVersionHashes],
-* aborts ongoing migration if the storageVersion.status.agreedEncodingVersion is
+* aborts ongoing migration if the storageVersion.status.commonEncodingVersion is
   empty.
 
 [persistedStorageVersionHashes]:https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L164
@@ -534,7 +539,7 @@ for serving mutating or read-only API calls.
 
 Reasonable SLOs specific to the StorageVersion API could be:
 - storageVersion.status.serverStorageVersions is accurately updated for an apiserver within 1 minute of start-up.
-- storageVersion.status.agreedEncodingVersion is accurately updated for the cluster within 1 minute of completing an upgrade.
+- storageVersion.status.commonEncodingVersion is accurately updated for the cluster within 1 minute of completing an upgrade.
 
 1 minute seems reasonable since this feature depends on the `APIServerIdentity` feature, that relies on a heart beat from each apiserver
 to create a new Lease object obtaining an ID that will be used in the `storageVersion.status.serverStorageVersions[*].apiServerID` field.
@@ -642,7 +647,10 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-==TODO==
+- Add alpha requirements https://github.com/enj/enhancements/commit/76f27981ace434ce9d4d01805a37bbc111992341
+- Add Storage Version API implementation https://github.com/kubernetes/kubernetes/pull/88607
+- Add ServedVersions info https://github.com/kubernetes/kubernetes/pull/118386 
+- Add beta requirements https://github.com/kubernetes/enhancements/pull/3593
 
 ## Drawbacks
 
