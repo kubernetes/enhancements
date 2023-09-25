@@ -191,6 +191,9 @@ N/A
 
 #### GA
 
+- Kubernetes API and CSI spec changes are stable.
+- CSI client support secretRef as part of nodeExpandVolume operation.
+
 #### Deprecation
 
 ### Upgrade / Downgrade Strategy
@@ -396,6 +399,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 - **Can enabling / using this feature result in resource exhaustion of som
   node resources (PIDs, sockets, inodes, etc.)?** no.
 
+No.
+
 ### Troubleshooting
 
 If the CSI driver does not receive the secrets as part of nodeExpansion
@@ -411,6 +416,8 @@ request, below things have to be checked in a cluster.
 ## Implementation History
 
 - 18/01/2022: Implementation started
+- 23/08/2023: Introduced this feature in Alpha version
+- 11/04/2023: Lifted the version to Beta support  
 
 ## Drawbacks
 
