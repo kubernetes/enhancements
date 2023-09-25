@@ -136,7 +136,7 @@ Implement a new allocation logic for Services IPs that:
   can set this fields to the desired default, so the allocation logic doesn't have to handle it.
 - Removing the apiserver flags that define the service IP CIDRs, though that may be possible in the future.
 - Any admin or cluster wide process related to Services, like automating the default Service CIDR range, though,
-this KEP will implment the behaviours and primitives necessaries to perform those kind of operations automatically.
+this KEP will implement the behaviours and primitives necessaries to perform those kind of operations automatically.
 
 ## Proposal
 
@@ -256,7 +256,7 @@ multiple apiservers, see https://github.com/kubernetes/kubernetes/issues/114743.
 
 The new allocation mode requires:
 
-- 2 new API objects ServiceCIDR and IPAddress in the group `networking.k8s.io``, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
+- 2 new API objects ServiceCIDR and IPAddress in the group `networking.k8s.io`, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
 - 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new ServiceCIDRs objects to allocate IPs for Services.
 - 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses: repair
 Services, garbage collecting orphan IPAddresses and handle the upgrade from the old allocators.
@@ -319,7 +319,7 @@ the ServiceCIDR covering `kubernetes.default` it would be treated the same as be
 to recreate the Service from its configured default Service CIDR flag-defined range.
 
 This well-known an establish behavior can allow administrators to replace the `kubernetes.default` by a
-series of operations:
+series of operations, per example:
 1. Initial state: 2 kube-apiservers with default ServiceCIDR 10.0.0.0/24
 2. Apiservers will create the `kubernetes.default` Service with ClusterIP 10.0.0.1.
 3. Upgrade kube-apiservers and replace the service-cidr flag to 192.168.0.0/24
