@@ -50,10 +50,10 @@
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -126,9 +126,9 @@ In order to remove cloud provider code from `k8s.io/kubernetes`. A 4 phase appro
 
 * Kubernetes users will need to add CCM deployments to their clusters. Previously, users were able to enable the cloud controller loops of the kubernetes-controller-manager through command line flags. With the change to external CCMs users will be responsible for managing their own CCM deployments.
 * Security for the core Kubernetes cloud provider interface will continue to reviewed by the Kuberenetes SIG Security community.
-* Security for the external CCMs will be reviewed by those project communities, with supplemental reviews done by the SIG Security community.
+* Security for the external CCMs will be reviewed by the project communities which own the specific CCM implementation, with supplemental reviews done by the SIG Security community.
 * UX for the core Kubernetes cloud provider interface will continue to be reviewed by the Kubernetes SIG Cloud Provider, SIG Architecture, ans SIG API Machinery communities.
-* UX for the external CCMs will be reviewed by those project communities.
+* UX for the external CCMs will be reviewed by the project communities which own the specific CCM implementation.
 
 ## Design Details
 
@@ -166,7 +166,7 @@ disabled by default.
 For beta, the feature gates will be on by default, meaning core components will disallow use of in-tree cloud providers. This will act as a warning for users to migrate to external components. Users may
 choose to continue using the in-tree provider by explicitly disabling the feature gates. Beta is targeted for v1.29 with the caveat that a majority of our CI signal jobs across providers should have converted to use CCM by then.
 
-For GA, the feature gate will be enabled by default and locked. Users at this point MUST migrate to external components and use of the in-tree cloud providers will be disallowed. GA is targeted for v1.27. One release after GA, the in-tree cloud providers can be safely removed. 
+For GA, the feature gate will be enabled by default and locked. Users at this point MUST migrate to external components and use of the in-tree cloud providers will be disallowed. GA is targeted for v1.27. One release after GA, the in-tree cloud providers can be safely removed.
 
 NOTE: the removal of the code will depend on when we can remove the in-tree storage plugins, so the actual removal may end up in a later release.
 
@@ -255,171 +255,156 @@ to implement this enhancement.
 
 #### Prerequisite testing update
 
-No new tests are planned as part of this KEP. SIG Cloud Provider is continuing to work towards
-a generic test suite for CCMs which new providers will be able to use. This parallel testing
-effort by the SIG is not a prerequisite for this KEP as there are tests currently available
-for AWS, Azure, and GCP platforms which provide a sufficient signal for core Kubernetes testing.
+The behavior of the cloud controllers is not changing with respect to cluster functioning,
+as such the prerequisite for this KEP is that all the current cloud controller related
+tests are passing. When the external CCMs are enabled, these tests should continue to pass.
+
+As described in the [non-goals](#non-goals) section, testing of individual cloud provider CCMs
+is not in scope for this KEP. Each provider is expected to own the tests related to their
+specific cloud platform.
 
 #### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+This KEP describes a process for extracting and migrating current in-tree code
+to external repositories. The notion of unit style testing takes on a different
+meaning in this perspective as the focus for the unit testing will move to those
+external repositories.
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+SIG Cloud Provider maintains a [framework for creating CCMs][ccmframework] which
+contains unit testing for the core controller loops of a CCM implementation. See:
 
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
+- https://github.com/kubernetes/cloud-provider/blob/master/controllers/node/node_controller_test.go
+- https://github.com/kubernetes/cloud-provider/blob/master/controllers/nodelifecycle/node_lifecycle_controller_test.go
+- https://github.com/kubernetes/cloud-provider/blob/master/controllers/route/route_controller_test.go
+- https://github.com/kubernetes/cloud-provider/blob/master/controllers/service/controller_test.go
 
-- `<package>`: `<date>` - `<test coverage>`
-
-TBD
+Cloud providers who create external CCMs will be responsible for providing unit
+testing within their own repositories.
 
 #### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
+Integration testing on this change is complicated by the fact that any testing
+with concrete CCM implementations requires cloud infrastructure from the same
+provider. While it would be possible to create a mock provider for these type
+of scenarios, the SIG considers this testing to be a low value when compared to
+the e2e test which are running on concrete providers.
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
-
-TBD
+For the reasons stated above, this KEP focuses in e2e testing over integration.
 
 #### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+This KEP will leverage the existing e2e test suite for the majority of testing.
+Given that this KEP proposes no behavioral changes to the functioning the of
+the cloud controllers, the existing tests will provide a valuable signal to
+ensure that nothing has been broken during the migration from in-tree to
+external CCM.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+The following pull request is the first in a series (documented in the request)
+which enable external CCMs by default for all GCE/GCP testing from the Kubernetes
+repository:
 
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
+- https://github.com/kubernetes/kubernetes/pull/117503
 
-- <test>: <link to test coverage>
+The following test grids show the e2e tests running with external CCMS on GCP
+and AWS cloud providers respectively:
 
-TBD
+- https://testgrid.k8s.io/provider-gcp-periodics#E2E%20Full%20-%20Cloud%20Provider%20GCP%20-%20with%20latest%20k8s.io/kubernetes
+- https://testgrid.k8s.io/provider-aws-periodics#ci-cloud-provider-aws-e2e-kubetest2
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Feature gates added for `DisableCloudProviders` and `DisableKubeletCloudCredentialProviders`
+- Working out-of-tree ccms for existing in-tree providers
+- Unit and e2e tests to exercise the new out-of-tree CCMs
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Disable in-tree cloud providers, feature gates enabled by default.
+- Most, if not all, testing in Kubernetes is using external CCMs. Exceptions
+  are made for cases where no CCM is required.
+- Multiple providers are being e2e tested against the latest Kubernetes
+  libraries on master. This is to prevent regressions when pinning to known
+  versions of external CCMs.
+- Promotion of the migration progress and process through documentation,
+  announcements on mailing lists, and delivered conference presentations.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+- Two releases have passed at beta status without incident or regression.
 
 #### Deprecation
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
-TBD
+- Removal of all in-tree code no earlier than one release after GA release.
+- Removal of option to set specific cloud providers through --cloud-provider,
+  these options should be removed at in-tree providers are removed.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+The strategy for upgrading a Kubernetes cluster to use external CCMs can be
+briefly described as updating the commnand line flags for the `kubelet`,
+`kube-apiserver`, and `kube-controller-manager`, and then deploying the
+external CCM pods into the cluster. More detailed information about the
+command line flags and CCM operation can be found in the Kubernetes
+documentation for [Cloud Controller Manager Administration][ccmadmin] and
+[Migrate Replicated Control Plane To Use Cloud Controller Manager][ccmmigrate].
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Similarly the strategy for downgrading a Kubernetes cluster to not use external
+CCMs is a reverse of the previous description: change the command line flags
+back to their original values, and then remove the external CCM deployments
+from the cluster.
 
-TBD
+The strategy for upgrading and downgrading the external CCMs is not in scope
+for this KEP as each cloud provider community will be responsible for the
+maintenance of their CCM. Similarly, documenting the strategy for operating
+specific cloud provider CCM implementations will be the responsibility of
+those provider communities.
+
+#### Cloud Provider Specific Guidance
+
+The user is now responsible for running the external CCMs, this should be done
+during cluster installation. Each provider may have different guidance for
+operating their CCM and as such provider-specific documentation should be
+consulted.
+
+Some former in-tree cloud providers have created documentation to guide users
+in operating the external CCMs for those platforms. Please see the following:
+
+* AWS - [Getting Started with the External Cloud Controller Manager][awsccm]
+* Azure - [Deploy Cloud Controller Manager][azureccm]
+* OpenStack - [Get started with external openstack-cloud-controller-manager in Kubernetes][openstackccm]
+* vSphere - [CPI - Cloud Provider Interface][vsphereccm]
+
+An example of deploying an external CCM on GCE can be seen in the
+`start-cloud-controller-manager` script function from the Kubernetes
+repository:
+
+* GCE - [kubernetes/cluster/gce/gci/configure-helper.sh][gce]
+
+#### General Guidance
+
+There are a few general notes to observe when migrating to external CCMs.
+These notes are collected from
+[Kubernetes issue 120411 - Collect tips for external cloud provider migration][issue120411].
+
+* `kube-apiserver`
+  * Ensure that the `DisableCloudProviders` feature gate is true, whether by default or explicitly.
+* `kubelet`
+  * Ensure that the `DisableKubeletCloudCredentialProviders` feature gate is true, whether by default or explicitly.
+  * Set the `--image-credential-provider-config` and `--image-credential-provider-bin-dir` flags as appropriate for the cloud provider, see the [kubelet Synopsis documentation][kubelet] for more information.
+* `kube-controller-manager`
+  * Disable the `node-ipam-controller` using the `--controllers` command line flag, see the [kube-controller-manager Synopsis documentation][kcm] for more information.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+The external CCMs follow the [same version skew policy][skew] as the kube-controller-manager.
+Providers, and communities, that publish their own CCM are responsible for
+updating those CCMs to follow the version and skew policy.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Copied from the [Kubernetes Version Skew Policy documentation][skew]:
 
-TBD
+> kube-controller-manager, kube-scheduler, and cloud-controller-manager must not be newer than the kube-apiserver instances they communicate with. They are expected to match the kube-apiserver minor version, but may be up to one minor version older (to allow live upgrades).
 
 ## Production Readiness Review Questionnaire
 
@@ -583,6 +568,10 @@ Why should this KEP _not_ be implemented?
 
 TBD
 
+from meeting:
+- time and complexity of doing this migration, lots of turbulence for community
+- operational load on users
+
 ## Alternatives
 
 ### Staging Alternatives
@@ -633,3 +622,17 @@ in 1 controller manager. Rather than having the controllers as on or off, contro
 where they should run, KCM, CCM, Nowhere, … If the KCM could handle this as a run-time change nothing would need to
 change. Otherwise it becomes a slight variant of the proposed solution. This is probably the correct long term
 solution. However for the timeline we are currently working with we should use the proposed solution.
+
+
+[ccmadmin]: https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/#cloud-controller-manager
+[ccmmigrate]: https://kubernetes.io/docs/tasks/administer-cluster/controller-manager-leader-migration/
+[awsccm]: https://github.com/kubernetes/cloud-provider-aws/blob/master/docs/getting_started.md
+[azureccm]: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/
+[vsphereccm]: https://cloud-provider-vsphere.sigs.k8s.io/cloud_provider_interface
+[openstackccm]: https://github.com/kubernetes/cloud-provider-openstack/blob/master/docs/openstack-cloud-controller-manager/using-openstack-cloud-controller-manager.md
+[issue120411]: https://github.com/kubernetes/kubernetes/issues/120411
+[ccmframework]: https://github.com/kubernetes/cloud-provider
+[kubelet]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+[kcm]: https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/
+[gce]: https://github.com/kubernetes/kubernetes/blob/release-1.28/cluster/gce/gci/configure-helper.sh#L2259-L2353
+[skew]: https://kubernetes.io/releases/version-skew-policy/#kube-controller-manager-kube-scheduler-and-cloud-controller-manager
