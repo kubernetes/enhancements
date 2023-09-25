@@ -21,6 +21,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -65,7 +66,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Add support for a drop-in configuration directory for the Kubelet. This directory can be specified via a "--config-dir" flag, and configuration files will be processed in alphanumeric order. The flag will be empty by default and if not specified, drop-in support will not be enabled. Establishment of conventions for configuration processing will be done, and further work can be done to add this support for other components.
+Add support for a drop-in configuration directory for the Kubelet. This directory can be specified via a `--config-dir` flag, and configuration files will be processed in alphanumeric order. The flag will be empty by default and if not specified, drop-in support will not be enabled. During the alpha phase, we introduced an environment variable called `KUBELET_CONFIG_DROPIN_DIR_ALPHA` to control the drop-in configuration directory for testing purposes. In the beta phase, we plan to enhance the feature with E2E testing and streamline the configuration process. As part of this optimization, we will remove the `KUBELET_CONFIG_DROPIN_DIR_ALPHA` environment variable, simplifying configuration management. The feature will remain off by default during the beta phase, and we will consider enabling it by default in future releases.
 
 
 ## Motivation
@@ -77,10 +78,10 @@ Components in Kubernetes can similarly be configured by multiple entities and pr
 
 ### Goals
 
-* Add support for a "--config-dir" flag to the kubelet to allow users to specify a drop-in directory, which will override the configuration for the Kubelet located at `/etc/kubernetes/kubelet.conf`
+* Add support for a `--config-dir` flag to the kubelet to allow users to specify a drop-in directory, which will override the configuration for the Kubelet located at `/etc/kubernetes/kubelet.conf`
 * Extend kubelet configuration parsing code to handle files in the drop-in directory.
 * Define Kubernetes best-practices for configuration definitions, similarly to [API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md). This is intended for other maintainers who would wish to setup a configuration object that works well with drop-in directories.
-* As a goal for beta, Add ability to easily view the effective configuration that is being used by kubelet.
+* Add ability to easily view the effective configuration that is being used by kubelet.
 
 ### Non-Goals
 
@@ -89,7 +90,7 @@ Components in Kubernetes can similarly be configured by multiple entities and pr
 
 ## Proposal
 
-This proposal aims to add support for a drop-in configuration directory for the kubelet via specifying a "--config-dir" flag (for example, `/etc/kubernetes/kubelet.conf.d`). Users are able to specify individually configurable kubelet config snippets in files, formatted in the same way as the existing kubelet.conf file. The kubelet will process the configuration provided in the drop-in directory in alphanumeric order:
+This proposal aims to add support for a drop-in configuration directory for the kubelet via specifying a `--config-dir` flag (for example, `/etc/kubernetes/kubelet.conf.d`). Users are able to specify individually configurable kubelet config snippets in files, formatted in the same way as the existing kubelet.conf file. The kubelet will process the configuration provided in the drop-in directory in alphanumeric order:
 
 
 1. If no other configuration for the subfield(s) exist, append to the base configuration
@@ -100,7 +101,7 @@ This proposal aims to add support for a drop-in configuration directory for the 
 
 If there are any issues with the drop-ins (e.g. formatting errors), the error will be reported in the same way as a misconfigured kubelet.conf file. Only files with a `.conf` extension will be parsed. All other files found will be skipped and logged.
 
-This drop-in directory is purely optional and if empty, the base configuration is used and no behavior changes will be introduced. The "--config-dir" flag will be empty by default and if not specified, drop-in support will not be enabled. This aims to align with "--config" flag defaults.
+This drop-in directory is purely optional and if empty, the base configuration is used and no behavior changes will be introduced. The `--config-dir` flag, along with the `KUBELET_CONFIG_DROPIN_DIR_ALPHA` environment variable, allows users to specify a drop-in configuration directory for the Kubelet. This directory is empty by default, ensuring that drop-in support is not enabled unless explicitly configured. This aims to align with `--config` flag defaults.
 
 Example:
 
@@ -167,7 +168,7 @@ As a cluster admin, I would like to have cgroup management and log size manageme
 * Handling of zeroed fields
     * It’s possible the configuration of the Kubelet does not handle not specified fields well. Special testing will need to be done for different types to define and ensure conformance of that behavior.
 * Handling of lists
-    * Contention could be found with how lists should be handled (append or overwrite, also see proposal). Consensus should be found and testing performed. 
+    * During the beta phase, we will conduct additional testing to address risks and refine the feature.
 
 ## Design Details
 
@@ -182,15 +183,15 @@ As a cluster admin, I would like to have cgroup management and log size manageme
 
 ##### Unit tests
 
-* Unit tests will be added, details to be added here
+* cmd/kubelet/app: 07-17-2023  27.6
 
 ##### Integration tests
 
-* :
+* N/A
 
 ##### e2e tests
 
-* :
+* A test should confirm that the kubelet.conf.d directory is correctly processed, and its contents are accurately reported in the configz endpoint.
 
 ### Graduation Criteria
 
@@ -200,7 +201,15 @@ Add ability to support drop-in configuration directory.
 
 #### Beta
 
-Add ability to easily view the effective configuration that is being used by kubelet. Details to be added during beta phase.
+Add ability to augment the feature's capabilities with a focus on robustness and testing, which includes:
+  - Implement the capability to query the kubelet's full effective configuration via API, covering both standard mode and standalone kubelet mode. Thoroughly test this functionality, ensuring accurate reporting of kubelet.conf.d directory and contents in the configz endpoint. 
+  - Remove the environment variable `KUBELET_CONFIG_DROPIN_DIR_ALPHA`, introduced during the Alpha phase, to streamline the user experience by simplifying configuration management.
+  - Keep the feature disabled by default in the Beta phase. Explicit opt-in activation is required to enable the feature.
+  - Provide official guidance on the Kubernetes website for merging lists and structures in the kubelet configuration file, including documentation for the `/configz` endpoint.
+
+#### GA
+
+Collect user feedback and set the `--config-dir` option to specify the default configuration directory, ensuring it is enabled by default and points to an appropriate path.
 
 ### Upgrade / Downgrade Strategy
 
@@ -220,11 +229,12 @@ All behavior change is encapsulated within the Kubelet, so there is no version s
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate
-  - Feature gate name: KubeletDropInConfig
-  - Components depending on the feature gate: Kubelet
+- [] Feature gate
+N/A
 
-Aside from the featuregate, admins will also have to explicitly enable the kubelet flag to enable this.
+In addition to configuring the KUBELET_CONFIG_DROPIN_DIR_ALPHA environment variable, administrators must explicitly set the --config-dir flag in the kubelet's command-line interface (CLI) to enable this feature.. Starting from the beta phase, specifying the --config-dir flag is the only way to enable this feature. The default value for --config-dir is an empty string, which means the feature is disabled by default.
+
+The decision to use an environment variable (KUBELET_CONFIG_DROPIN_DIR_ALPHA) over a feature gate was made to avoid potential conflicts in configuration settings. With the current configuration flow, feature gates could lead to unexpected behavior when CLI settings conflict with the kubelet.conf.d directory. The potential issue arises when the CLI initially sets the feature gate to "off," but the kubelet configuration specifies it as "on." In this scenario, the kubelet would start with the feature gate "off," switch it to "on" during configuration rendering, and then have conflicting settings when reading the kubelet.conf.d directory, leading to unexpected behavior. By using an environment variable during the alpha phase, we provided a simpler and more predictable way to control the drop-in configuration directory for testing. In the beta phase, we are removing this environment variable to streamline configuration management and enhance the user experience.
 
 
 ###### Does enabling the feature change any default behavior?
@@ -234,19 +244,15 @@ No, upgrading to a version of the Kubelet with this feature will not enable the 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Roll back and remove the `--config-dir` flag from the kubelet's CLI, as well as the KubeletDropInConfig featuregate.
-
+Yes. To disable the feature, roll back by removing the --config-dir flag from the kubelet's CLI.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-This feature will be re-enabled via adding back the `--config-dir` flag to the CLI, as well as the KubeletDropInConfig featuregate, as mentioned above.
-
+This feature will be re-enabled via adding back the `--config-dir` flag to the CLI.
 
 ###### Are there any tests for feature enablement/disablement?
 
 A test will be added to assemble a single, functional kubelet configuration object from various individual drop-in config files.
-
-A test will be added to check that if a user attempts to use the `--config-dir` flag without the featuregate, the kubelet will properly error.
 
 
 ### Rollout, Upgrade and Rollback Planning
@@ -277,7 +283,8 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Workloads do not directly consume this feature, it is for cluster admins during kubelet configuration. Administrators can check the kubelet feature flag metric `kubernetes_feature_enabled` to see if this is enabled.
+Workloads do not directly consume this feature, it is for cluster admins during kubelet configuration.
+To check if the feature is enabled, users can query the merged configuration. One way to do this is by hitting the configz endpoint using kubectl or a standalone kubelet mode.
 
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -351,7 +358,7 @@ This feature is enabled in Kubelet alone.
 
 ###### What are other known failure modes?
 
-Invalid configuration, same as exists today with `/etc/kubernetes/kubelet.conf`
+Invalid configuration, including issues like incorrect file permissions or misconfigured settings for the drop-in directory and files, falls under known failure modes, same as exists today with `/etc/kubernetes/kubelet.conf`
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -362,6 +369,8 @@ Fix the invalid configuration, or remove configurations.
 ## Implementation History
 
 - 2023-05-04: KEP initialized.
+- 2023-07-17: Alpha is implemented in 1.28
+- 2023-09-25: KEP targeted to Beta in 1.29
 
 
 ## Drawbacks
