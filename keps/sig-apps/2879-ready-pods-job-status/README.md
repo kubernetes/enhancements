@@ -38,17 +38,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -125,6 +125,7 @@ pods that have the `Ready` condition.
   - Count of ready pods.
   - Feature gate disablement.
 - Verify passing existing E2E and conformance tests for Job.
+- Added e2e test for the count of ready pods.
 
 ### Graduation Criteria
 
@@ -157,14 +158,14 @@ pods that have the `Ready` condition.
 #### GA
 
 - Every bug report is fixed.
-- Explore setting different batch periods for regular pod updates versus
-  finished pod updates, so we can do less pod readiness updates without
-  compromising how fast we can declare a job finished.
-- The job controller ignores the feature gate.
+- E2e test for the count of ready pods.
+- Lock the feature-gate and document deprecation of the feature-gate
 
 #### Deprecation
 
-N/A
+In GA+2 release:
+- Remove the feature gate definition
+- Job controller ignores the feature gate
 
 ### Upgrade / Downgrade Strategy
 
@@ -281,7 +282,7 @@ No.
 
   Estimated throughput: at most one API call for each Job Pod reaching Ready
   condition.
-  
+
   Originating component: job-controller
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -332,6 +333,7 @@ No change from existing behavior of the Job controller.
 
 - 2021-08-19: Proposed KEP starting in alpha status, including full PRR questionnaire.
 - 2022-01-05: Proposed graduation to beta.
+- 2022-03-20: Merged [PR#107476](https://github.com/kubernetes/kubernetes/pull/107476) with beta implementation
 
 ## Drawbacks
 
@@ -346,6 +348,17 @@ Pod created.
   to accept connections. On the other hand, the `Ready` condition is
   configurable through a readiness probe. If the Pod doesn't have a readiness
   probe configured, the `Ready` condition is equivalent to the `Running` phase.
-  
-  In other words, `Job.status.active` provides as the same behavior as
+
+  In other words, `Job.status.ready` provides as the same behavior as
   `Job.status.running` with the advantage of it being configurable.
+
+- We considered exploring different batch periods for regular pod updates versus
+  finished pod updates, so we can do less pod readiness updates without
+  compromising how fast we can declare a job finished.
+
+  However, the feature has been on for a long time already the there were no
+  bugs or requests raised around the choice of batch period. Moreover, the
+  introduced batch period was considered an important element of the Job
+  controller, and is now not guarded by the feature gate since the
+  [PR#118615](https://github.com/kubernetes/kubernetes/pull/118615) which is
+  already released in 1.28.
