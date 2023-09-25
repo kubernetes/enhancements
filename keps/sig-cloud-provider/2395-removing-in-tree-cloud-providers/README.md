@@ -559,18 +559,17 @@ TBD for beta.
 - 2021-02-09 - Add phase 4 to `Proposal` section with addition of `DisableCloudProviders` and `DisableKubeletCloudCredentialProvider` feature gates.
 - 2021-02-09 - Add production readiness review for alpha stage.
 - 2021-08-04 - First Kubernetes release (v1.22) with `DisableCloudProviders` and `DisableKubeletCloudCredentialProviders` feature gates.
+- 2023-09-02 - Enable external CCMs by default for k/k CI.
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
-
-TBD
-
-from meeting:
-- time and complexity of doing this migration, lots of turbulence for community
-- operational load on users
+A drawback of this proposal is the complexity involved with doing this type
+of change in the Kubernetes community. It will necessarily require an
+increased level of turbulence for developers and users as they learn about
+the changes to the `kubelet`, `kube-apiserver`, and `kube-controller-manager`
+processes, and the changes necessary to operate the external CCMs. Users will
+need to adapt their practices and automation to include the changes to
+command line flags and manifests to enable external cloud providers.
 
 ## Alternatives
 
