@@ -7,7 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Embedding requesting node information in tokens](#embedding-requesting-node-information-in-tokens)
+  - [Embedding Pod's bound Node information in tokens](#embedding-pods-bound-node-information-in-tokens)
   - [Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects](#extending-tokenreview-to-allow-cross-checking-the-embedded-node-information-with-existing-node-objects)
   - [Including a UUID (<a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7">JTI</a>) on each issued JWT](#including-a-uuid-jti-on-each-issued-jwt)
   - [User Stories (Optional)](#user-stories-optional)
@@ -66,25 +66,26 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Token projection and alternative audiences on JWTs issued by the apiserver enable an external entity to validate that
-the apiserver considers a requesting user (e.g. a kubelet) sufficiently privileged to request a token on behalf of a
-service account/pod.
+Token projection and alternative audiences on JWTs issued by the apiserver enable an external entity to validate the
+identity and certain properties (e.g. associated ServiceAccount or Pod) of the caller.
 
-To allow for a robust chain of identity verification from the requester all the way through to the projected token,
-it would be beneficial if uniquely identifying information associated with the **requester** were embedded into the
-signed JWT.
+When attempting to verify a token associated with a Pod, it is not possible to verify that the Pod is associated with
+a specific Node without `get`ing the relevant Pod object (embedded as a private claim in the JWT) and cross-referencing
+the named `spec.nodeName`.
+
+To allow for a robust chain of identity verification from the requester all the way through to the projected token, it
+would be beneficial if the Node object reference associated with the requesting Pod were embedded into the signed JWT.
 
 This is especially useful in cases where the external software wants to avoid replay attacks with projected service account
-tokens. The external software can cross-reference the identity of the caller to that service with the username embedded
-in the JWT, which allows this verification to be rooted upon the same root of trust that the kubelet/requesting entity uses.
+tokens. The external software can cross-reference the identity of the caller to that service Node reference embedded in
+the JWT, which allows this verification to be rooted upon the same root of trust that the kubelet/requesting entity uses.
 
-By embedding the identity of the node that created a TokenRequest into the resulting token, we can cross-reference
-this information with an identity passed along to the external service, thus removing the ability for a malicious actor
-to 'replay' a projected token from another node.
+By embedding the identity of the Node the Pod is running on, we can cross-reference this information with an identity
+passed along to the external service, thus removing the ability for a malicious actor to 'replay' a projected token
+from another Node.
 
-As current use-cases (described below) for this information are solely focused on tokens that are requested on behalf
-of pods by the kubelet, this will be implemented as an additional `node` entry in the private claims embedded into
-each JWT returned by the TokenRequest API.
+This will be implemented as an additional `node` entry in the private claims embedded into each JWT returned by the
+TokenRequest API, in a similar manner to how the ServiceAccount, Pod or Secret is referenced.
 
 Additionally, to provide a robust means of tracking token usage within the audit log we can embed a unique identifier for
 each token which is can then also be recorded in future audit entries made by this token.
@@ -93,26 +94,26 @@ each token which is can then also be recorded in future audit entries made by th
 
 ### Goals
 
-* Embedding information about the node that created a TokenRequest into signed JWTs.
-* Enabling software to cross-reference their own callers with the node that originally requested the token.
+* Embedding information about the Node that a pod is running on into signed JWTs.
 * Make it easier to track the actions a single token has taken, and cross-reference that back to the origin of the token
   (via audit log inspection).
-* Provide a means of checking whether a pod's token is associated with the same node as it was associated with when the
+* Provide a means of checking whether a Pod's token is associated with the same Node as it was associated with when the
   initial TokenRequest was made (via TokenReview).
 
 ### Non-Goals
 
 * Embedding requester information beyond just the requesting node. This is discussed further in the alternatives
   considered section, and a future KEP may revisit this.
-* Embedding information beyond the node name and UID into the token. We aim to mimic what is done with the ref fields
+* Embedding information beyond the Node name and UID into the token. We aim to mimic what is done with the ref fields
   for secret, pod and serviceaccount (not introduce any additional properties).
+* Changing default behaviour of the TokenReview API to enforce the referenced Node object still exists.
 
 ## Proposal
 
-### Embedding requesting node information in tokens
+### Embedding Pod's bound Node information in tokens
 
-The kube-apiserver will be extended/modified to automatically embed the `name` and `uid` of the requesting *Node* into
-generated tokens when a TokenRequest `create` call is is serviced.
+The kube-apiserver will be extended to automatically embed the `name` and `uid` of the *Node* a Pod is associated
+with (via `spec.nodeName`) in generated tokens when a TokenRequest `create` call is serviced.
 
 As the 'pod' is already available in this area of code, which contains the `nodeName`, we will just need to plumb
 through a Getter for Node objects into the TokenRequest storage layer so the node's UID can be fetched, similar to
@@ -123,10 +124,10 @@ what is done for pod & secret objects.
 The TokenReview API will also be extended to check whether a JWT's embedded node information is still valid/current,
 and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
 
-This will involve first checking whether the node object with the name given in the JWT still exists, and if it does,
-validating whether the UID of that node is equal to the UID embedded in the token.
+This will involve first checking whether the Node object with the name given in the JWT still exists, and if it does,
+validating whether the UID of that Node is equal to the UID embedded in the token.
 
-This means administrators can **delete node objects to invalidate all JWTs issued that embed that node's info**.
+This means administrators can **delete node objects to invalidate all JWTs issued that embed that Node's info**.
 
 To avoid unexpected breaking changes in behaviour, this behaviour will not only be protected by the feature flag whilst
 the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag which defaults to 'off'.
@@ -162,18 +163,13 @@ Bob would like to understand who initially issued/authorised this token to be is
 of the token making the suspicious requests by looking inside the audit log entries for these suspect requests.
 
 This JTI is then used for a further audit log lookup - namely, looking for the TokenRequest `create` call which contains
-the audit annotation with key `authentication.kubernetes.io/jti` and the value set to that of the suspect token.
+the audit annotation with key `authentication.kubernetes.io/token-identifier` and the value set to that of the suspect token.
 
 This allows Bob to determine precisely who made the original request for this token, and (depending on the 'chain'
 above this token), allows Bob to recursively perform this lookup to find all involved parties that led to this token
 being issued.
 
 ### Notes/Constraints/Caveats (Optional)
-
-* 'group' and 'extra' information is **NOT** embedded into the token here. This is to prevent tokens growing excessively
-  large, which could trip up HTTP servers with request header size limits.
-* there are a few concerns around privacy when embedding the users username into tokens, as these tokens are presented
-  to third party entities as well as persisted into the apiserver's audit log.
 
 ### Risks and Mitigations
 
@@ -234,7 +230,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 * Tests to ensure the information is NOT extracted when the feature gate is disabled.
 
 `pkg/serviceaccount`:
-* Extending tests to ensure requesting node info is embedded into extended claims (name and uid)
+* Extending tests to ensure Node info is embedded into extended claims (name and uid)
 * Tests to ensure `ID`/`JTI` field is always set to a random UUID.
 * Tests to ensure the info embedded on a JWT is extracted from the token and into the ServiceAccountInfo when
   a token is validated.
