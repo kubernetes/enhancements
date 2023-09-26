@@ -554,19 +554,12 @@ with the behavior of encoding/json in the Go standard library. Generated
 Protobuf marshal and unmarshal code neither validates nor coerces strings; the
 byte sequence is directly copied on both encode and decode.
 
-<<[UNRESOLVED]>>
 To avoid accepting invalid CBOR, the decoder will produce an error if a text
-string is not a valid UTF-8 sequence. There are several options for the encode
-behavior:
-
-1. Encode Go strings to CBOR's byte string type, which can store arbitrary byte
-   sequences. There's precedent for doing this with Protobuf and it's the
-   simplest choice.
-1. Implement UTF-8 coercion on encode/decode similar to what is done for JSON.
-1. Validate string contents at encode time. This isn't practical as certain
-   objects that encode successfully using other serializers will fail to encode
-   using CBOR.
-<<[/UNRESOLVED]>>
+string is not a valid UTF-8 sequence. Strings will follow the precedent
+established by Protobuf and be encoded using CBOR's byte string type, except in
+cases where the encoder can be sure that the string is a valid UTF-8
+sequence. This ensures the serializer will not encode an object to a byte
+sequence that it will not successfully decode.
 
 ### Libraries
 
@@ -653,6 +646,8 @@ Tests for the following behaviors will be added:
   necessary)
   - this should be demonstrated to run against implementations in at least some
     of the non-Go client languages
+- Go strings that are not valid UTF-8 sequences can be roundtripped through CBOR
+  without error
 
 As well as fuzz tests covering:
 
@@ -670,8 +665,6 @@ As well as fuzz tests covering:
   (should this be a strict decode error?)
 - roundtripping preserves the distinction between absent, present-but-null, and
   present-and-empty for slices and maps (confirm the JSON serializer does this)
-- Go strings containing an invalid UTF-8 sequence are encoded with appropriate
-  behavior (to be determined)
 <<[/UNRESOLVED]>>
 
 ##### Integration tests
