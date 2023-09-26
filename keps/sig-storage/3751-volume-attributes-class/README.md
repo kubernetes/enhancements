@@ -659,7 +659,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha
 
-- Feature in 1.28 behind the VolumeAttributesClass feature gate which is set to a default of false
+- Feature in 1.29 behind the VolumeAttributesClass feature gate which is set to a default of false
 - Add basic unit tests
 - An issue board will be created to track issues, and resolving them at the same time
 
@@ -668,13 +668,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Beta in 1.29: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc.
+- Beta in 1.30: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc.
 - Involve 3 different CSI drivers to participate in testing
 - Stress test before GA
 
 #### GA
 
-- GA in 1.30, all major issues in the issue board should be fixed before GA.
+- GA in 1.31, all major issues in the issue board should be fixed before GA.
 - No users complaining about the new behavior
 
 ### Upgrade / Downgrade Strategy
