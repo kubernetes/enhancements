@@ -83,6 +83,12 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Nested Value Validations](#nested-value-validations)
+  - [XListType and XMapKeys](#xlisttype-and-xmapkeys)
+  - [Atomic Lists and Maps](#atomic-lists-and-maps)
+  - [CEL Rules](#cel-rules)
+  - [Advanced Ratcheting](#advanced-ratcheting)
+    - [Ratcheting Rules in CEL](#ratcheting-rules-in-cel)
   - [User Stories (Optional)](#user-stories-optional)
     - [CRD Author Tightens a Field](#crd-author-tightens-a-field)
     - [K8s Update Tightens CRD validation](#k8s-update-tightens-crd-validation)
@@ -97,7 +103,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Mitigation: Conservative Ratcheting Rule](#mitigation-conservative-ratcheting-rule)
 - [Design Details](#design-details)
   - [<code>kube-openapi</code> changes](#-changes)
-    - [Nested Value Validations](#nested-value-validations)
   - [Structural-Schema-based validation changes](#structural-schema-based-validation-changes)
     - [Correlation of Old and New](#correlation-of-old-and-new)
   - [Cel-Validator changes](#cel-validator-changes)
@@ -129,6 +134,16 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Robustness of paths returned by OpenAPI Schema Validator](#robustness-of-paths-returned-by-openapi-schema-validator)
       - [Evaluation of JSON Paths](#evaluation-of-json-paths)
       - [Correlating Errors To Fields](#correlating-errors-to-fields)
+  - [Different Ratcheting Rule Per Value Validation](#different-ratcheting-rule-per-value-validation)
+    - [Drawbacks](#drawbacks-2)
+  - [Ratcheting Within Nested Value Validations](#ratcheting-within-nested-value-validations)
+    - [Not](#not)
+    - [OneOf](#oneof)
+  - [Weaker Ratcheting Rule](#weaker-ratcheting-rule)
+    - [Drawbacks](#drawbacks-3)
+      - [Allows Arbitrary Invalid Data](#allows-arbitrary-invalid-data)
+      - [AllOf](#allof)
+      - [AnyOf](#anyof)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -243,6 +258,7 @@ know that this has succeeded?
 6. Performance Goals:
   - Constant/negligible persistent overhead
   - Up to 5% time overhead for resource writes (apiserver_request_duration_seconds)
+7. Correctness, defined as: not allowing invalid values which would fail a known schema.
 
 ### Non-Goals
 
@@ -323,11 +339,171 @@ myOtherField: newly added field
 The feature proposed in this KEP would allow this change, since `myField` was
 unaltered from the original object. If `myField` was changed, the new value would have to pass the new validation rule to be written.
 
+### Nested Value Validations 
+
+OpenAPI-schemas support nested validations with logical operations:
+- not
+- oneOf
+- anyOf
+- allOf
+
+To keep the semantics simple and implementation clear, schemas and validations
+nested within the following will be not ratcheted:
+
+- not
+- oneOf
+- anyOf
+
+These constructs are not supported because its not clear that ratcheting would
+yield correct behavior. CRD authors who use these complicated constructs are
+encouraged to make use of CEL schemas.
+
+For all these constructs, the conservative `DeepEqual` rule still applies 
+to the subobject evaluating the rule, just not its nested fields.
+
+The following will be ratcheted with the conservative ratcheting rule, and
+their children will also be ratcheted.
+
+- allOf
+
+Ratcheting may be allowed for `allOf` because a schema with `allOf[a, b, c]` can 
+be seen as equivalent to a single schema with the contents of `a, b, c` merged
+together. Although allOf schemas may check different forms of the same condition 
+multiple times (i.e. `minLength: 2` and `minLength: 5`, or multiple patterns),
+the correctness of ratcheting unchanged objects still holds.
+
+### XListType and XMapKeys
+
+Errors thrown due to changing a list to a map-list with `x-list-type: map`or 
+changing its `x-kubernetes-map-keys` validations will not be ratched. 
+
+For example:
+```yaml
+- namespace: myNS
+  name: myObj
+- name: myObj
+```
+
+Changing `x-kubernetes-map-keys: [namespace] to `x-kubernetes-map-keys: [name, namespace]`
+would trigger a new `Duplicate key` error not previously seen for this object.
+
+These fields are not ratcheted because changing map keys or list type to a map alters 
+the structure of the schema, and old values cannot be correlated to new. 
+
+Additionally Server-Side-Apply does not tolerate updates that violate the map 
+keys constraint: these properties are unsafe to change without bumping CRD 
+version.
+
+### Atomic Lists and Maps
+
+Following Kubernetes convention that fields annotated `x-kubernetes-list-type`
+or `x-kubernetes-map-type` as `atomic` change as a unit, the ratcheting rules
+do not apply to values nested inside atomic lists and maps. But a DeepEqual 
+comparison on the entire object can still ratchet errors for subfields.
+
+### CEL Rules
+
+Non-transitional CEL Rules (x-kubernetes-validations that do not 
+make use of `oldSelf`) will be ratcheted, if the objects in scope to them 
+can be correlated, and old is equal to new.
+
+### Advanced Ratcheting
+
+In this KEP we propose a conservative catch-all ratcheting rule that should
+ provide a minimum level of ratcheting support for any validation rule in the 
+ schema.
+
+`DeepEqual(OldObject, NewObject)` requirement is very strong. But for some 
+validation rules it is too strict. Consider the `required` error. This
+validation is applied to the object owning the property. Thus, if a new field
+becomes required the object cannot have other fields added onto it or changed
+without also adding the newly required field.
+
+Kubernetes has precedent for using a weaker form of racheting when validation is
+strengthened:
+
+```go
+if !Validation(old) {
+  // Ignore errors caused by !Validation(new)
+}
+```
+
+An example of this is the structural schema requirement added when Kubernetes
+went GA ([source](https://github.com/kubernetes/kubernetes/blob/12dc19d46fb97cbbfeb1e12b8a10ff7ae73d9515/staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation/validation.go#L1583-L1590)): 
+```go
+// requireStructuralSchema returns true if schemas specified must be structural
+func requireStructuralSchema(oldCRDSpec *apiextensions.CustomResourceDefinitionSpec) bool {
+	if oldCRDSpec != nil && specHasNonStructuralSchema(oldCRDSpec) {
+		// don't tighten validation on existing persisted data
+		return false
+	}
+	return true
+}
+```
+
+It is not possible to generically allow this weaker form of ratcheting on all
+types of validations - it may allow data that would have failed a validation
+on an older schema and break controller workflows.
+
+To enable schemas to add validations with more complicated ratcheting logic
+than a DeepEqual check (e.g. to allow a new `minLength` restriction to allow any
+value as long as it is getting closer the new minimum); we turn to CEL.
+
+#### Ratcheting Rules in CEL
+
+CRD Validation Rules currently have two types:
+
+- Normal Rule (Applies to  all values)
+- Transition Rule (Applies only on UPDATE in places where old could be correlated to new)
+
+With only these rule types we are not able to express any logic of the form 
+"old values must obey one schema, and new values another". We propose to add a 
+new change to `ValidationRule` to enable this functionality for ratcheting:
+
+```go
+// ValidationRule describes a validation rule written in the CEL expression language.
+type ValidationRule struct {
+  // ...
+	Rule string `json:"rule" protobuf:"bytes,1,opt,name=rule"`
+	Message string `json:"message,omitempty" protobuf:"bytes,2,opt,name=message"`
+	MessageExpression string `json:"messageExpression,omitempty" protobuf:"bytes,3,opt,name=messageExpression"`
+	Reason *FieldValueErrorReason `json:"reason,omitempty" protobuf:"bytes,4,opt,name=reason"`
+	FieldPath string `json:"fieldPath,omitempty" protobuf:"bytes,5,opt,name=fieldPath"`
+  // ...
+
+  // New
+  // Normally, if `rule` references `oldSelf` then it is skipped on create, and
+  // when an old value could not be found. If this field is true then the rule is 
+  // always evaluated. `oldSelf = nil` on create or when an old value could not 
+  // be correlated.
+  //
+  // Ensure your rule employs a nil check on `oldSelf` before using it in an
+  // expression.
+  AppliesOnCreate bool `json:"requiresOldValue"`
+}
+```
+
+With this feature in place, users are able to express complicating ratcheting
+logic in CEL, to express racheting conditions based on values they know
+their controllers support:
+
+
+```yaml
+x-kubernetes-validations:
+- rule: len(self) >= 5 || (oldSelf != nil && len(oldSelf) < len(self))
+  appliesOnCreate: true
+  message: New objects need names longer or equal to 5.
+```
+
+The above rule will allow strings that do not satisfy the new minimum length
+requirement if they are longer than the old value; but all new objects must be
+created with the new constraint.
+
 ### User Stories (Optional)
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
+Include as much detail as possible so that people can understand the ="how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
@@ -546,20 +722,6 @@ when `RatchetingSchemaValidator.ValidateUpdate` is in its callstack.
 anyOf, allOf, not, allOf sections of logic will remain using the normal 
 `SchemaValidator`.
 
-#### Nested Value Validations 
-
-OpenAPI-schemas support nested validations:
-- not
-- oneOf
-- anyOf
-- allOf
-
-
-To keep the semantics simple and implementation clear, none of these constructs
-nor any of their subschemas will be ratcheted. Our intuition is that in the wild
-CRD authors do not make much use of them, and when they do the logic is 
-complicated and references multiple fields.
-
 ### Structural-Schema-based validation changes
 
 The two structural-schema based validation methods may need to
@@ -701,9 +863,9 @@ which tightens a validation.
 - Additional Testing added as needed
 - CEL Validation Rules Ratcheting Implemented
 - Schema ratcheting rules implemented under flag
-- Metadata ratcheting rules implemented under flag
 - Detailed analysis of supported validation rules, whether/how they are ratcheted, and discussion
 - Implementation of a weaker form of equality for cases where it is possible after investigation
+- CEL expressivity to specify custom ratcheting validation
 
 #### GA
 - Upgrade/Downgrade e2e tests
@@ -923,6 +1085,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+This feature will not impact rollouts or already-running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -930,6 +1093,7 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+If `apiextensions_apiserver_update_ratcheting_time` is taking a long time (order of 100ms)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -938,6 +1102,9 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+No, a Kubernetes upgrade/downgrade operation is not expected to affect this feature.
+For CRDs being upgraded/downgraded, there will be automated tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -963,11 +1130,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-We may consider adding a metric in a future release.
-
-In the absence of a metric, an operator may test if the feature is present by
-creating a CRD, and CR, updating the CRD, and checking if an update to the CR
-ratchets.
+We will have a metric to measure the time performing the ratcheting comparison
+for this feature. Operators can check if the time is non-zero.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1011,10 +1175,10 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: apiextensions_apiserver_update_ratcheting_time (histogram, how long we spend in addition to normal validation to perform ratcheting comparisons)
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1024,6 +1188,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No.
 
 ### Dependencies
 
@@ -1283,6 +1448,132 @@ We will have to look up the map key in the new object to find the element's map 
 The field to which the CEL rule in its `x-kubernetes-validations` list must 
 contain all fields referred by the CEL rule; so the CEL error logic can have to 
 be modified to also include the rule's original location.
+
+### Different Ratcheting Rule Per Value Validation
+
+An alternative to the weaker form ratcheting described in the proposal would be
+to apply the DeepEqual rule to a smaller projection of the object being validated.
+
+i.e. MaxLength would use projection `len(obj)` since it only looks at that value,
+and if `len(oldObj) == len(newObj)`, then we would allow ratcheting.
+
+The following projections were considered:
+
+| Field               | Type     | Projection                   
+|---------------------|----------|------------------------------
+| Format              | string   | Identity                     
+| Maximum             | *float64  | Identity                    
+| ExclusiveMaximum    | bool     | Identity                    
+| Minimum             | *float64  | Identity                    
+| ExclusiveMinimum    | bool     | Identity                    
+| MaxLength           | *int64   | len(obj) -> int             
+| MinLength           | *int64   | len(obj) -> int             
+| Pattern             | string   | Identity                  
+| MultipleOf          | *float64  | Identity                 
+| Enum                | []JSON   | Identity                  
+| Nullable            | bool     | Identity                  
+| MaxItems            | *int64   | len(obj) -> int             
+| MinItems            | *int64   | len(obj) -> int             
+| UniqueItems         | bool     | Identity       
+| MaxProperties       | *int64   | len(obj) -> int             
+| MinProperties       | *int64   | len(obj) -> int             
+| Required            | []string | Keys(obj) -> []string (also can choose to ratchet on per-key presence)       
+
+
+#### Drawbacks
+
+This idea has a surprising UX. It makes no sense for `MaxLength: 3` to ratchet
+an update `hello` -> `fives`  but not `hello` -> `longer string`.
+
+The accepted idea has the advantage of being the precedent in Kubernetes for how
+we treat validations of persisted data. For example, schemas in CRDs are only
+validated to be structural [if the old object was already structural](https://github.com/kubernetes/kubernetes/blob/12dc19d46fb97cbbfeb1e12b8a10ff7ae73d9515/staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation/validation.go#L1583-L1590).
+
+### Ratcheting Within Nested Value Validations
+
+#### Not
+
+Intuitively, ratcheting for `not` would ignore errors only if we fail 
+the same way as the old object. Any failing constraint that depends on a 
+changed value should not be racheted.
+
+We cannot apply the weaker ratcheting rule to the top level `not`: `!Not(old) || Not(new)`.
+The rule would allow changes that did not fail the same way on the old object
+to be ratcheted.
+
+#### OneOf
+
+To ratchet `oneOf`, would require the ability to ratchet `not`. Since that is
+not possible, we do not apply a weakened ratcheting rule to oneOf. We also
+do not ratchet the errors within children schemas.
+
+<!-- OneOf(obj, S1, S2, S3) = AnyOf(
+  AllOf(S1(obj), Not(S2(obj)), Not(S3(obj))), 
+  AllOf(S2(obj), Not(S1(obj)), Not(S3(obj))), 
+  AllOf(S3(obj), Not(S1(obj)), Not(S2(obj))),
+) -->
+
+One way to ratchet OneOf would be to only allow ratcheting within the schema
+that passed for the old value. But this seems like awkward UX and no one has
+asked for it.
+
+### Weaker Ratcheting Rule
+
+The following fields are all the value validations allowed in our schemas:
+
+- Format
+- Maximum
+- ExclusiveMaximum
+- Minimum
+- ExclusiveMinimum
+- MaxLength
+- MinLength
+- Pattern
+- MultipleOf
+- Enum
+- MaxItems
+- MinItems
+- UniqueItems
+- MaxProperties
+- MinProperties
+- Required
+- XValidations (CEL rules, excluding rules using oldSelf)
+
+We will apply a weaker validation rule whenever these are applied: these 
+validations will only apply if they had passed for the old value.
+
+For example:
+```go
+func validateFormat(new, old interface{}, typ, format string) *field.Error {
+  if MatchesFormat(typ, format, old) && !MatchesFormat(typ, format, new) {
+    return field.Invalid(...)
+  }
+  return nil
+}
+```
+#### Drawbacks
+
+##### Allows Arbitrary Invalid Data
+
+This rule would default all schemas into allowing artbirary unknown data (of
+the correct type). This seems dangerous from a security perspective. Controllers
+should at least be able to reasonably expect that all existing objects went 
+through validation of a published schema.
+
+##### AllOf
+
+Applying the weakened ratcheting rule would mean to allow the object to pass if
+`!AllOf(old) || AllOf(new)`. 
+
+This would ratchet if ANY of the nested validations fail for the old value. 
+This is not a viable rule since it is weaker than each nested rule being 
+ratcheted individually: it would allow changes that the nested validations did
+not permit.
+
+##### AnyOf
+
+AnyOf is the non-exclusive OR of several schemas. Like allOf, to weaken the top
+level `anyOf` directive would be weaker than ratcheting its individual children.
 
 ## Infrastructure Needed (Optional)
 
