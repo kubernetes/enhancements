@@ -869,8 +869,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Enabling the feature changes the default storage encoding of custom resources to CBOR, but this
-should be invisible to clients.
+Enabling the feature changes the default storage encoding of custom resources to
+CBOR, but this should be invisible to clients.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -885,13 +885,14 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, with the exception of support for CBOR decoding of custom resources from storage. That cannot
-be disabled because it must remain possible to decode any resource that has already been persisted.
+Yes, with the exception of support for CBOR decoding of custom resources from
+storage. That cannot be disabled because it must remain possible to decode any
+resource that has already been persisted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No additional considerations. Custom resource storage will support recognition and decoding of both
-JSON and CBOR whether the feature is enabled or disabled.
+No additional considerations. Custom resource storage will support recognition
+and decoding of both JSON and CBOR whether the feature is enabled or disabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -908,8 +909,10 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-There will be integration tests that ensure custom resources that have been stored with a mixture of
-CBOR and JSON encodings continue to be accessible with the feature gate disabled.
+There will be integration tests that ensure custom resources that have been
+stored with a mixture of CBOR and JSON encodings continue to be accessible with
+the feature gate disabled, and integration tests for client
+enablement/disablement.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1073,6 +1076,17 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+If a client is configured to encode a request body using CBOR, and that request
+is handled by an API server that does not have CBOR enabled, the API server will
+send response status 415 (Unsupported Media Type) and the client will repeat the
+request using JSON. This is not expected to produce a substantial number of
+additional requests because:
+
+1. the default request encoding for clients will not be modified until CBOR
+   support is widespread (beyond GA and accounting for version skew)
+1. individual clients will limit failed attempts at using CBOR as request
+   content-type for any given verb and target resource
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1082,6 +1096,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1089,6 +1105,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1098,6 +1116,12 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No. Objects counts will not be affected. Storage and most serving of native
+types will continue to use Protobuf and will be unaffected. Traffic from dynamic
+clients, and storage of custom resources, should be modestly more
+compact. Although not a goal of this proposal, pods encoded as part of
+benchmarking were approximately 20% smaller with CBOR than with JSON.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1109,6 +1133,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
