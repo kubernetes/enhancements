@@ -145,40 +145,60 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The kubelet does not provide complete information about the container
-resources specification (requests and limits) to CRI. However, various use
-cases have been identified where detailed knowledge of all the resources can be
-utilized in container runtimes for more optimal resource allocation to improve
-application performance and reduce cross-application interference.
+The CRI runtime lacks visibility to the application resource requirements.
 
-This KEP proposes a CRI API extension for disclosing container resource
-requests and limits to container runtimes.
+First, the resources required by the containers of a pod are not visible at the
+pod sandbox creation time. This can be problematic for example in the case of
+VM-based runtimes where all resources need to be reserved/prepared when the VM
+(i.e. sandbox) is being created.
+
+Second, the kubelet does not provide complete information about the container
+resources specification of native and extended resources (requests and limits)
+to CRI. However, various use cases have been identified where detailed
+knowledge of all the resources can be utilized in container runtimes for more
+optimal resource allocation to improve application performance and reduce
+cross-application interference.
+
+This KEP proposes CRI API extensions for providing complete view of pods
+resources at sandbox creation, and, providing unobfuscated information about
+the resource requests and limits to container runtimes.
 
 ## Motivation
 
-Kubelet manages the native resources (CPU and memory) and communicates
-resource parameters over the CRI API to the runtime. However, the original
-details of the resource spec are lost as they get translated (within kubelet)
-to platform-specific (i.e. Linux or Windows) resource controller parameters
-like cpu shares, memory limits etc. Non-native resources such as extended
-resources and the device plugin resources are not visible to container runtimes
-at all.
+When the pod sandbox is created, the kubelet does not provide the CRI runtime
+any information about the resources (such as native resources, host devices,
+mounts, CDI devices etc) that will be required by the application. The CRI
+runtime only becomes aware of the resources piece by piece when containers of
+the pod are created (one-by-one). This can cause issues with VM-based runtimes
+(e.g. [Kata containers](https://katacontainers.io/)) that need to prepare the
+VM, with all needed resources, at sandbox creation and cannot do any
+modifications (i.e. attach/reserve new resources) after that (i.e. when
+individual containers are created).
 
-However, VM-based runtimes such as
-[Kata containers](https://katacontainers.io/), platform-optimized container
-runtimes,
+Another visibility issue is related to the native and extended resources.
+Kubelet manages the native resources (CPU and memory) and communicates resource
+parameters over the CRI API to the runtime. However, the original details of
+the resource spec are lost as they get translated (within kubelet) to
+platform-specific (i.e. Linux or Windows) resource controller parameters like
+cpu shares, memory limits etc. Non-native resources such as extended resources
+and the device plugin resources completely invisible to the CRI runtime. However,
 [OCI hooks](https://github.com/opencontainers/runtime-spec/blob/master/config.md),
 [runC](https://github.com/opencontainers/runc) wrappers,
 [NRI](https://github.com/containerd/nri) plugins or in some cases even
-applications themselves would benefit on getting full resource information,
-e.g. for reserving all required resources at pod sandbox creation (as it might
-be hard to impossible after that) or doing customized resource optimization.
-Extending the CRI API in to include the resource information would provide a
-comprehensive view of all resource usage of containers, allowing improved
-resource allocation without breaking any existing use cases.
+applications themselves would benefit on seeing the original resource requests
+and limits e.g. for doing customized resource optimization.
+
+Extending the CRI API to communicate all resources already at sandbox creation
+and pass down resource requests and limits (of native and extended resources)
+would provide a comprehensive and early-enough view of the resource usage of
+all containers of the pod, allowing improved resource allocation without
+breaking any existing use cases.
 
 ### Goals
 
+- make the information about all required resources (e.g. native and extended
+  resources, devices, mounts, CDI devices) of a Pod available to the CRI at
+  sandbox creation time
 - make container resource spec transparently visible to CRI (the container
   runtime)
 
@@ -364,6 +384,10 @@ resources of all the containers of the Pod.
 ```
 
 ### kubelet
+
+Kubelet code is refactored/modified so that all container resources are known
+before sandbox creation. This mainly consists of preparing all mounts (of all
+containers) early.
 
 Kubelet will be be extended to pass down the unmodified resource requests and
 limits to the container runtime in all related CRI requests, i.e.
