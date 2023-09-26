@@ -387,28 +387,25 @@ Yes (as noted above in the test plan)
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+Rolling this out will be done by enabling the feature flag on all control plane hosts.
+This should not have any issues/affect during upgrades.
+Rollback is done by removing/disabling the feature gate.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+If somehow the tokens issued during the time where the feature was enabled were to be rejected, these tokens would
+need to be re-requested.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+This isn't so much a failure of the rollback, rather it would be a bug in the actual feature (hence feature gating).
+
+During a skew where hosts have different enablement, users would get tokens with varying content if they made multiple
+requests. These tokens will all be usable against all apiservers though, so there won't be issues due to skew.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+* `authentication_attempts`
+* `authorization_attempts_total`
+* `serviceaccount_valid_tokens_total`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -420,11 +417,11 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
+
+N/A
 
 <!--
 This section must be completed when targeting beta to a release.
@@ -434,6 +431,9 @@ previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
+
+For the node info part, using the TokenRequest API and inspecting the contents of the issued JWTs for a token bound to a Pod.
+For JTIs, using the TokenRequest API and then inspecting the contents of the issued JWT for any ServiceAccount token.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -457,31 +457,16 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: request a token that is bound to a Pod and then submit this token to the SubjectAccessReview API to observe the 'extra' UserInfo embedded in the token.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+N/A
 
 - [ ] Metrics
   - Metric name:
@@ -492,6 +477,8 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+No
+
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
@@ -499,9 +486,7 @@ implementation difficulties, etc.).
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+None
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -509,15 +494,7 @@ No
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
+N/A
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -536,8 +513,8 @@ No
 Additional audit log annotation keys, as well as extending the JWT claims we embed into service account tokens.
 
 The maximum size of a UUID is X bytes.
-The maximum size of a user's UID is Y bytes.
-The maximum size of a user's username is Z bytes.
+The maximum size of a Node object's name is Y bytes.
+The maximum size of a Node object's UID is Z bytes.
 
 This additional data will be recorded into issued JWTs as well as audit log events.
 
