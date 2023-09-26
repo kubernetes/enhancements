@@ -280,8 +280,31 @@ Streaming responses (i.e. watches) will be serialized as CBOR Sequences. A [CBOR
 Sequence](https://www.rfc-editor.org/rfc/rfc8742.html) is a concatenation of
 zero or more CBOR data items, with no additional framing. This is effectively
 equivalent to the existing JSON stream serialization behavior and takes
-advantage of the property that, like JSON objects – and unlike non-object JSON
-documents, e.g. numbers – CBOR data items are self-delimiting.
+advantage of the property that, like JSON objects – and unlike Protobuf messages
+or non-object JSON documents, e.g. numbers – CBOR data items are
+self-delimiting.
+
+At the time of writing, watch events are encoded to a temporary buffer before
+being passed to the frame writer. Frame writers can also assume that the byte
+slice passed to each call of `Write` represents the complete contents of one
+frame. The Protobuf frame writer takes advantage of both in order to determine a
+frame's length prefix "for free". If this proposal were to require encoding
+events using the effectively length-prefixed approach described in [Optimizing
+CBOR Sequences for Skipping
+Elements](https://www.rfc-editor.org/rfc/rfc8742.html#name-optimizing-cbor-sequences-f),
+the CBOR frame writer would similarly need to know each event's encoded size.
+
+One useful property of a self-delimiting encoding is described [in the CBOR
+standard](https://www.rfc-editor.org/rfc/rfc8949.html#section-4.2.1-3.1):
+
+> the self-delimiting nature of the CBOR encoding means that there are no two
+> well-formed CBOR encoded data items where one is a prefix of the other
+
+In other words, CBOR (and the existing JSON framing) can stream directly to and
+from the wire without incurring additional copies on both sides of the
+connection. If an encoding fails or is otherwise not completely received on the
+other end, the fragment that _is_ received will not be well-formed and will
+produce a decode error.
 
 ### Negotiation
 
