@@ -533,6 +533,22 @@ The etcd3 storage implementation of GuaranteedUpdate relies on deterministic
 encoding to skip writes if the stored bytes would not change. The existing JSON
 and Protobuf encoders produce deterministic output.
 
+Other potential use cases for deterministic encoding of response bodies might
+include:
+
+- caching
+  - The existing WithCacheControl filter sets the response header
+    “Cache-Control: no-cache, private” to prevent shared caches from storing
+    responses (since requests are subject to authn/authz), and to prevent
+    responses in non-shared caches from being reused without
+    validation. Deterministic encoding could allow an API server to generate
+    strong ETags by hashing the encoded form of the resource.
+  - Even for the existing data formats, there should be no caching proxies
+    storing API responses.
+- diffing
+  - The human-readable text formats (JSON and YAML) are not changing under this
+    proposal.
+
 Encode benchmarks for the two evaluated Go CBOR libraries show a 2.4x speedup
 and a 1.8x speedup by disabling map key sorting. According to the spec, “the
 CBOR data model for maps does not allow ascribing semantics to the order of the
@@ -546,23 +562,20 @@ mode will be used for storage serialization only. The nondeterministic mode
 should actively randomize the order of map item encoding (as with map iteration
 in Go) to prevent users from making assumptions about the order.
 
-Clients may imagine other use cases for deterministic encoding of response
-bodies:
+To further mitigate the risk that the output of the nondeterministic encoder
+mode will be accidentally used in cases that require determinism (bytewise
+equality, hashing, etc.), and because output determinism is implicitly part of
+the contract of `runtime.Encoder`, the CBOR encoder will also implement a new
+interface:
 
-- caching
-  - The existing WithCacheControl filter sets the response header
-  “Cache-Control: no-cache, private” to prevent shared caches from storing
-  responses (since requests are subject to authn/authz), and to prevent
-  responses in non-shared caches from being reused without
-  validation. Deterministic encoding could allow an API server to generate
-  strong ETags by hashing the encoded form of the resource.
-  - Even for the existing data formats, there should be no caching proxies
-  storing API responses.
-- diffing
-  - The human-readable text formats (JSON and YAML) are not changing under this
-  proposal.
-  - The documentation will explicitly state that this should not be done with
-  CBOR.
+```go
+type NondeterministicEncoder interface {
+  NondeterministicEncode(runtime.Object, io.Writer) error
+}
+```
+
+Callers that don't require output determinism will perform a conditional type
+assertion and invoke `NondeterministicEncode` in place of `Encode`.
 
 ### Unicode
 
