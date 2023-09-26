@@ -642,12 +642,16 @@ spec:
 
 #### Set ulimits
 
-As a cluster administrator I want to enable per-application control of
-Linux/UNIX ulimits. However, I don't want to give the users full control of the
-parameters but specify pre-defined classes of limits.
+As a cluster administrator I want to enable per-application control of system
+resource usage /such as maximum number of processes or open files) exposed as
+ulimits/rlimits in a Linux/UNIX system. However, I don't want to give the users
+full control of the exact numeric parameters but specify pre-defined classes of
+limits for different workload profiles.
 
-One possible way to implement the this would be using
-[NRI](https://github.com/containerd/nri).
+Currently, ulimits can be set via an
+[NRI plugin](https://github.com/containerd/nri/tree/main/plugins/ulimit-adjuster)
+but that relies on Pod annotations. Using QoS-class resources would give better
+user interface and control to the cluster administrator.
 
 #### Possible future scenarios
 
