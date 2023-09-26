@@ -692,6 +692,12 @@ https://storage.googleapis.com/k8s-triage/index.html
   using dynamic and generated clients for all native types
 - mixed CBOR and JSON encodings in storage for a single custom resource can be
   retrieved with feature gate disabled
+- client gating mechanism:
+  - can force clients otherwise configured with a CBOR request encoding to use JSON
+  - can change the default request encoding to CBOR if not explicitly configured
+  - can be disabled programmatically
+- request content-type falls back to JSON and does not try CBOR again for a
+  given (method, target resource) pair
 
 ##### e2e tests
 
