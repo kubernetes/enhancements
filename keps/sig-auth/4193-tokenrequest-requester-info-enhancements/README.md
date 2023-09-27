@@ -98,15 +98,15 @@ each token which is can then also be recorded in future audit entries made by th
 * Make it easier to track the actions a single token has taken, and cross-reference that back to the origin of the token
   (via audit log inspection).
 * Provide a means of checking whether a Pod's token is associated with the same Node as it was associated with when the
-  initial TokenRequest was made (via TokenReview).
+  initial TokenRequest was made (via an extra field that can be observed from the TokenReview API).
 
 ### Non-Goals
 
-* Embedding requester information beyond just the requesting node. This is discussed further in the alternatives
+* Embedding requester information. This is discussed further in the alternatives
   considered section, and a future KEP may revisit this.
-* Embedding information beyond the Node name and UID into the token. We aim to mimic what is done with the ref fields
+* Embedding information beyond the immutable Node name and UID into the token. We aim to mimic what is done with the ref fields
   for secret, pod and serviceaccount (not introduce any additional properties).
-* Changing default behaviour of the TokenReview API to enforce the referenced Node object still exists.
+* Changing default behaviour of the SA authenticator to enforce the referenced Node object still exists.
 
 ## Proposal
 
@@ -121,7 +121,7 @@ what is done for pod & secret objects.
 
 ### Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects
 
-The TokenReview API will also be extended to check whether a JWT's embedded node information is still valid/current,
+The SA authenticator will also be extended to check whether a JWT's embedded node information is still valid/current,
 and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
 
 This will involve first checking whether the Node object with the name given in the JWT still exists, and if it does,
@@ -153,7 +153,7 @@ used to request the token requires validations rooted in the cryptographic root 
 
 This not only allows us to prevent replay attacks, but allows us to issue identity documents that we can 'root' in the
 node's own root of trust, the TPM (as the external service can now clearly validate that the user requesting the identity
-not only has a copy of that token, but also that it was the original entity to request that token).
+not only has a copy of that token, but also that it is the node that the pod is scheduled on).
 
 #### Story 2
 
@@ -279,7 +279,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 ##### e2e tests
 
-* Extend existing TokenRequest e2e tests to check for embedded requester node name & UID + generated JTI is present.
+* Extend existing TokenRequest e2e tests to check for embedded scheduled node name & UID + generated JTI is present.
 
 - <test>: <link to test coverage>
 
@@ -295,7 +295,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 #### Beta
 
-- TBD
+- Decide what the default of the new flag should be
+- Decide if using an audit annotation is the correct approach
+- Docs around the SA JWT schema (this does not exist today)
 
 #### GA
 
@@ -348,7 +350,7 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-* `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log.
+* `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log / the SA user info.
 * `ServiceAccountTokenNodeInfo` feature flag will toggle including node info in tokens.
 
 Both of these feature flags can be disabled without any unexpected adverse affects or coordination required.
