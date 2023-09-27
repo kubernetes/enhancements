@@ -1,4 +1,4 @@
-# KEP-4193: bound service account token improvements (embedding requester information into JWTs)
+# KEP-4193: bound service account token improvements
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -8,6 +8,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Embedding Pod's bound Node information in tokens](#embedding-pods-bound-node-information-in-tokens)
+  - [Allowing ServiceAccount tokens to be bound to a Node object](#allowing-serviceaccount-tokens-to-be-bound-to-a-node-object)
   - [Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects](#extending-tokenreview-to-allow-cross-checking-the-embedded-node-information-with-existing-node-objects)
   - [Including a UUID (<a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7">JTI</a>) on each issued JWT](#including-a-uuid-jti-on-each-issued-jwt)
   - [User Stories (Optional)](#user-stories-optional)
@@ -119,18 +120,31 @@ As the 'pod' is already available in this area of code, which contains the `node
 through a Getter for Node objects into the TokenRequest storage layer so the node's UID can be fetched, similar to
 what is done for pod & secret objects.
 
+### Allowing ServiceAccount tokens to be bound to a Node object
+
+Similar to how a token can be bound to a Pod or Secret object, we will also extend the TokenRequest API to allow
+binding directly to Node objects (without needing to bind to a Pod as well).
+
+This allows users to obtain a token that is tied specifically to the *Node* objects lifecycle, i.e. when the Node
+object is deleted, the token will be invalidated.
+
 ### Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects
 
 The SA authenticator will also be extended to check whether a JWT's embedded node information is still valid/current,
 and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
 
+To avoid unexpected breaking changes in behaviour, this behaviour will not only be protected by the feature flag whilst
+the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag `--service-account-validate-node-info`
+which defaults to 'off'.
+
 This will involve first checking whether the Node object with the name given in the JWT still exists, and if it does,
 validating whether the UID of that Node is equal to the UID embedded in the token.
 
-This means administrators can **delete node objects to invalidate all JWTs issued that embed that Node's info**.
+This behaviour matches that of the existing `pod-garbage-collector-controller`, which will automatically delete Pod
+objects that are bound to Node's that no longer exist after a period of time. With this enabled, tokens will be immediately
+invalidated rather than waiting until [the 40s grace period](https://github.com/kubernetes/kubernetes/blob/fc786dcd1d2efcc241e0e2392086934f2806555d/pkg/controller/podgc/gc_controller.go#L50-L52) passes.
 
-To avoid unexpected breaking changes in behaviour, this behaviour will not only be protected by the feature flag whilst
-the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag which defaults to 'off'.
+This means administrators can **delete node objects to invalidate all JWTs issued that embed that Node's info**.
 
 ### Including a UUID ([JTI](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7)) on each issued JWT
 
@@ -257,8 +271,12 @@ extending the production code to implement this enhancement.
 
 ##### Integration tests
 
-* Test that calls the TokenRequest API as a node user, to create a new token, and asserts that the current requesting
-  node's information is correctly embedded into the resulting JWT.
+* Test that calls the TokenRequest API to obtain a token that is bound to a Pod. It should assert that the token embeds
+  a reference to the Pod object, as well as to the Node object that the Pod is assigned to.
+* Test that calls the TokenRequest API to obtain a token that is bound to a Node. It should assert that the token embeds
+  a reference to the Node object.
+* Test that calls the TokenReview API with a token that is bound to a Node object that no longer exists. It should
+  assert that the token does not validate once the Node has been deleted.
 
 <!--
 Integration tests are contained in k8s.io/kubernetes/test/integration.
@@ -581,9 +599,7 @@ Major milestones might include:
 
 ## Drawbacks
 
-* There are some unknowns around whether embedding the `username` of a user is deemed a privacy concern based on
-  some providers considering usernames as PII. A survey of large k8s providers is expected prior to this feature
-  graduating beyond alpha.
+* TBC
 
 ## Alternatives
 
