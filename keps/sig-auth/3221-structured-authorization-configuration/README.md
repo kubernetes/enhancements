@@ -27,7 +27,6 @@
     - [Future Alpha versions](#future-alpha-versions)
     - [Beta](#beta)
     - [GA](#ga)
-    - [GA + 3 cycles](#ga--3-cycles)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -120,6 +119,7 @@ authorizers:
       unauthorizedTTL: 30s
       timeout: 3s
       subjectAccessReviewVersion: v1
+      matchConditionSubjectAccessReviewVersion: v1
       failurePolicy: Deny
       connectionInfo:
         type: KubeConfig
@@ -180,6 +180,7 @@ authorizers:
       unauthorizedTTL: 30s
       timeout: 3s
       subjectAccessReviewVersion: v1
+      matchConditionSubjectAccessReviewVersion: v1
       failurePolicy: Deny
       connectionInfo:
         type: KubeConfig
@@ -214,12 +215,13 @@ The below example is only for demonstration purposes.
 apiVersion: apiserver.config.k8s.io/v1alpha1
 kind: AuthorizationConfiguration
 authorizers:
-  - name: system-webhook
+  - name: system-crd-protector
     type: Webhook
     webhook:
       unauthorizedTTL: 30s
       timeout: 3s
       subjectAccessReviewVersion: v1
+      matchConditionSubjectAccessReviewVersion: v1
       failurePolicy: Deny
       connectionInfo:
         type: KubeConfig
@@ -239,6 +241,7 @@ authorizers:
       unauthorizedTTL: 30s
       timeout: 3s
       subjectAccessReviewVersion: v1
+      matchConditionSubjectAccessReviewVersion: v1
       failurePolicy: Deny
       connectionInfo:
         type: KubeConfig
@@ -332,13 +335,13 @@ apiVersion: apiserver.config.k8s.io/v1alpha1
 kind: AuthorizationConfiguration
 authorizers:
   - type: Webhook
+    # Name used to describe the authorizer
+    # This is explicitly used in monitoring machinery for metrics
+    # Note:
+    #   - Validation for this field is similar to how K8s labels are validated today.
+    # Required, with no default
+    name: webhook
     webhook:
-      # Name used to describe the webhook
-      # This is explicitly used in monitoring machinery for metrics
-      # Note:
-      #   - Validation for this field is similar to how K8s labels are validated today.
-      # Required, with no default
-      name: super-important-kube-system-authorizer
       # The duration to cache 'authorized' responses from the webhook
       # authorizer.
       # Same as setting `--authorization-webhook-cache-authorized-ttl` flag
@@ -359,6 +362,11 @@ authorizers:
       # Required, with no default
       # Valid values: v1beta1, v1
       subjectAccessReviewVersion: v1
+      # MatchConditionSubjectAccessReviewVersion specifies the SubjectAccessReview
+      # version the CEL expressions are evaluated against
+      # Valid values: v1
+      # Required, no default value
+      matchConditionSubjectAccessReviewVersion: v1
       # Controls the authorization decision when a webhook request fails to
       # complete or returns a malformed response or errors evaluating
       # matchConditions.
@@ -405,10 +413,12 @@ authorizers:
       # don't intercept requests from kube-system service accounts
       - expression: !('system:serviceaccounts:kube-system' in request.user.groups)
   - type: Node
+    name: node
   - type: RBAC
+    name: rbac
   - type: Webhook
+    name: in-cluster-authorizer
     webhook:
-      name: in-cluster-authorizer
       authorizedTTL: 5m
       unauthorizedTTL: 30s
       timeout: 3s
@@ -435,9 +445,11 @@ the version supported by a webhook has to be mentioned using a required field
 
 The user can define a CEL expression to determine whether a request needs to dispatched
 to the authz webhook for which the expression has been defined. The user would have access
-to a `request` variable containing a `SubjectAccessReview` object in the `v1` version. If
-the version specified by `subjectAccessReviewVersion` in the request variable is `v1beta1`,
-the contents would be converted to the `v1` version before evaluating the CEL expression.
+to a `request` variable containing a `SubjectAccessReview` object in the version specified
+by the `matchConditionSubjectAccessReviewVersion` field. If the version specified by
+`subjectAccessReviewVersion` in the request variable is `v1beta1`, the contents would be
+converted to the version specified in `matchConditionSubjectAccessReviewVersion` before
+evaluating the CEL expression.
 
 When no matchConditions are satisfied for a request, the webhook would be skipped. In such
 situations, the decision is logged in the audit log with the `authorization.k8s.io/webhook-skipped`
@@ -561,12 +573,6 @@ the scenarios.
 #### GA
 
 - Feature flag removed
-- Existing command line flags will be marked as deprecated and config file will take
-precedence over the old flags
-
-#### GA + 3 cycles
-
-- Remove the existing command line flags
 
 ### Upgrade / Downgrade Strategy
 
@@ -589,7 +595,7 @@ Not applicable.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate
-  - Feature gate name: `StructuredAuthorizationConfig`
+  - Feature gate name: `StructuredAuthorizationConfiguration`
   - Components depending on the feature gate:
         - kube-apiserver
 
@@ -612,11 +618,10 @@ We will have extensive unit tests during feature implementation. There would be 
 for the Authorizer chain in both the old and new configuration scenarios.
 
 We will add integration tests to validate the enablement/disablement flow.
-  - When the feature is disabled, only the existing command line flag `--authorization-webhook-*`
-based mode is allowed.
-  - When the feature is enable, setting both `--authorization-config` and
-configuring an authorization webhook using the `--authorization-webhook-*`
+  - When `--authorization-config` flags is defined, the feature flag must be turned on (when feature is in Alpha).
+  - Setting `--authorization-config` along `--authorization-modes` and `--authorization-webhook-*`
 command line flags should return an error.
+  - Configuring the authorizer using legacy flags will continue to be allowed
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -643,9 +648,7 @@ TBD.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Existing command line flags will be marked as deprecated and config file will take
-precedence over the old flags once this feature graduates to GA. Then for GA + 3 releases,
-the existing command line flags will be removed.
+No.
 
 ### Monitoring Requirements
 
@@ -814,9 +817,10 @@ For each of them, fill in the following information by copying the below templat
 
 - [x] 2022-06-10 - Provisional KEP introduced
 - [x] 2023-05-08 - Provisional KEP re-introduced
-- [ ] KEP Accepted as implementable
-- [ ] Implementation started
-- [ ] First release (1.YY) when feature available
+- [x] 2023-06-15 - KEP Accepted as implementable
+- [x] 2023-07-05 - Implementation started
+- [x] 2023-09-27 - Update KEP according to actual state
+- [ ] 2023-12-DD First release (1.29) when feature available
 
 ## Drawbacks
 
