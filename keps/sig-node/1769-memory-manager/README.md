@@ -67,13 +67,22 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -106,19 +115,6 @@ The *Memory Manager* is a new component of _kubelet_ ecosystem proposed to enabl
 
 The next subsection introduces to the proposal by outlining its design. 
 
-### Design Overview
-
-![alt text](./mm_tm_diagram.png)
-
-Once *kubelet* requests a guaranteed QoS pod admission, as shown in the figure above, *Topology Manager* queries *Memory Manager* about the preferred NUMA affinity for memory and hugepages, for all containers in a pod. For each container in a pod, *Memory Manager* calculates the affinity using its internal database, namely the `Node Map`. The `Node Map` is an object which is responsible for tracking the utilization of memory (and hugepages) for all containers in Guaranteed QoS class. 
-Once *Memory Manager* completes the computations, it returns the hints to *Topology Manager* so that *Topology Manager* can figure out which NUMA node or a group of NUMA nodes are the best fit for memory pinning, for a container. The overall calculation is performed for all containers in the pod, and if none of containers is rejected, the pod becomes finally admitted and deployed.
-
-Depending on Topology Manager scope (`container` or `pod`), distinct hint generation routines are used:  
-- `GetTopologyHints` for `container` scope
-- `GetPodTopologyHints` for `pod` scope
-
-In the admission phase, the *Memory Manager* uses `Allocate()` and updates its `Node Map` to reflect the amount of memory and hugepages requested by a container. After that, *Memory Manager* uses `AddContainer()` and enforces the consumption of memory and hugepages for the container. The enforcement limits the container's memory consumption to the NUMA node or the group of NUMA nodes indicated by *Topology Manager*. In the final step in figure above, *Memory Manager* updates `cgroups`, namely `cpuset.mems`. The *Memory Manager* will offer guaranteed memory allocation (only) for pods in Guaranteed QoS class, which is clarified in [this](#mechanism-ii-out-of-memory-oom-killer-by-kernelos) section. 
-
 ### User Stories
 
 #### Story 1 : High-performance packet processing with DPDK
@@ -137,6 +133,15 @@ In the admission phase, the *Memory Manager* uses `Allocate()` and updates its `
   - assigning full CPU cores to vCPUs inside the VM to enhance performance
   - using hugepages as memory backing mechanism to avoid double-memory-management via the guest and the host kernel
   - I/O devices passthrough, where it makes sense to run on NUMA nodes nearby the device
+
+### Notes/Constraints/Caveats (Optional)
+
+<!--
+What are the caveats to the proposal?
+What are some important details that didn't come across above?
+Go in to as much detail as necessary here.
+This might be a good place to talk about core concepts and how they relate.
+-->
 
 ### Risks and Mitigations
 
@@ -158,6 +163,19 @@ To increase the UX, the number of new kubelet flags was minimized to a minimum.
 The minimum set of kubelet flags, which is necessary to configure the Memory Manger, is presented in [this](#new-flags-and-configuration-of-the-memory-manager) section.
 
 ## Design Details 
+
+### Overview
+
+![alt text](./mm_tm_diagram.png)
+
+Once *kubelet* requests a guaranteed QoS pod admission, as shown in the figure above, *Topology Manager* queries *Memory Manager* about the preferred NUMA affinity for memory and hugepages, for all containers in a pod. For each container in a pod, *Memory Manager* calculates the affinity using its internal database, namely the `Node Map`. The `Node Map` is an object which is responsible for tracking the utilization of memory (and hugepages) for all containers in Guaranteed QoS class.
+Once *Memory Manager* completes the computations, it returns the hints to *Topology Manager* so that *Topology Manager* can figure out which NUMA node or a group of NUMA nodes are the best fit for memory pinning, for a container. The overall calculation is performed for all containers in the pod, and if none of containers is rejected, the pod becomes finally admitted and deployed.
+
+Depending on Topology Manager scope (`container` or `pod`), distinct hint generation routines are used:
+- `GetTopologyHints` for `container` scope
+- `GetPodTopologyHints` for `pod` scope
+
+In the admission phase, the *Memory Manager* uses `Allocate()` and updates its `Node Map` to reflect the amount of memory and hugepages requested by a container. After that, *Memory Manager* uses `AddContainer()` and enforces the consumption of memory and hugepages for the container. The enforcement limits the container's memory consumption to the NUMA node or the group of NUMA nodes indicated by *Topology Manager*. In the final step in figure above, *Memory Manager* updates `cgroups`, namely `cpuset.mems`. The *Memory Manager* will offer guaranteed memory allocation (only) for pods in Guaranteed QoS class, which is clarified in [this](#mechanism-ii-out-of-memory-oom-killer-by-kernelos) section.
 
 ### How to enable the guaranteed memory allocation over many NUMA nodes?
 
@@ -401,6 +419,9 @@ The Topology Manager will call out the Memory Manager to gather topology hints a
 `InternalContainerLifecycle` will call out the Memory Manager on container lifecycle events (Add/Stop) to allocate and reclaim memory resources.
 
 ### Test Plan
+
+[x] I/we understand the owners of the involved components may require updates to existing tests to make this code solid enough prior to committing the changes necessary to implement this enhancement.
+
 The Memory Manager E2E test will enable the Topology Manager feature gate and set the Memory Manager policy to 'static'.
 
 At the beginning of the test, the code will determine if the system under test has support for single or multi-NUMA nodes.
@@ -414,7 +435,69 @@ Both Single-NUMA and Multi-NUMA tests will:
 The admission of pods will be validated. Tests related to multi-NUMA systems will be skipped. 
 
 #### Multi-NUMA System Tests
-Memory pinning will be validated for Topology Manager `single-numa-node` and `restricted` policies. Once a pod in Guaranteed/QoS class is deployed, the NUMA node affinity for CPU assignment, memory, hugepages, or devices will be validated. Specifically for Topology Manager `restricted` policy, multi-NUMA feature will be tested against memory demands exceeding the capacity of a single NUMA node. 
+Memory pinning will be validated for Topology Manager `single-numa-node` and `restricted` policies. Once a pod in Guaranteed/QoS class is deployed, the NUMA node affinity for CPU assignment, memory, hugepages, or devices will be validated. Specifically for Topology Manager `restricted` policy, multi-NUMA feature will be tested against memory demands exceeding the capacity of a single NUMA node.
+
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `<package>`: `<date>` - `<test coverage>`
+
+##### Integration tests
+
+<!--
+Integration tests are contained in k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+-->
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage>
+
+##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage>
 
 ### Graduation Criteria
 
@@ -435,21 +518,19 @@ Memory pinning will be validated for Topology Manager `single-numa-node` and `re
 
 #### GA (stable)
 
-- User feedback
-- TBD
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
 
-<!--
-#### Removing a deprecated flag
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
 
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
 
 ### Upgrade / Downgrade Strategy
 
@@ -474,9 +555,9 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
@@ -512,50 +593,58 @@ you need any help or guidance.
 
 _This section must be completed when targeting alpha to a release._
 
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
+
   - [ ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: MemoryManager
     - Components depending on the feature gate: kubelet
     - Will enabling / disabling the feature require downtime of the control
       plane? No
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). Yes, it uses a feature gate.
+      of a node? Yes, it uses a feature gate.
 
-* **Does enabling the feature change any default behavior?**
+###### Does enabling the feature change any default behavior?
+
 Yes, the admission flow changes for a pod in Guaranteed QoS class. With the Memory Manager, Topology Manager also takes into account allocatable memory (and hugepages) to either admit a pod to the node or reject it. 
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes, it uses a feature gate.
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes, it uses a feature gate.
 
   <!-- Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?). -->
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
+
 The Memory Manager utilizes the state file to track memory assignments. If State file is not valid, it must be removed and kubelet restarted. E.g., State file might become invalid when kube/system reserved have changed (increased), which may lead to a situation when some containers cannot be started.
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
+
 Yes, there is a number of Unit Tests designated for State file validation.
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can a rollout fail? Can it impact already running workloads?**
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
   It is possible that the state file will have inconsistent data during the rollout, because of the kubelet restart, but
   you can easily to fix it by removing memory manager state file and run kubelet restart. It should not affect any running 
   workloads.
-  
 
-* **What specific metrics should inform a rollback?**
+
+###### What specific metrics should inform a rollback?
+
   The pod may fail with the admission error because the kubelet can not provide all resources aligned from the same NUMA node. 
   You can see the error message under the pod events.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Tested it manually by replacing the kubelet binary on the node with the `Static` memory manager policy, but I failed
   to find correct procedure how to test upgrade from 1.21 to my custom build with updated kubelet binary.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
 fields of API types, flags, etc.?**
   No.
 
@@ -563,12 +652,12 @@ fields of API types, flags, etc.?**
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?
+
   The memory manager data will be available under pod resources API. When it configured with the static policy
   you will see memory related data during call to the pod resources API List method under the container.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+###### How can someone using this feature know that it is working for their instance?
   
   *For cluster admins:*
   
@@ -586,20 +675,34 @@ the health of the service?**
     To understand the reason you will need to check via pod resources API 
     the amount of allocatable memory and memory reserved by containers.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
   This does not seem relevant to this feature.
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+`<TODO>`
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+<!--
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
+-->
   Currently, for the pod author, it is impossible to know containers NUMA pinning without access to the node.
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **Does this feature depend on any specific services running in the cluster?**
+###### Does this feature depend on any specific services running in the cluster?
   No.
 
 
@@ -613,27 +716,39 @@ _For beta, this section is required: reviewers must answer these questions._
 _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls?
+
   No.
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in introducing new API types?
+
   No.
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
   No.
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
   No.
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
   No.
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+  
   No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
 
 ### Troubleshooting
 
@@ -643,15 +758,17 @@ details). For now, we leave it here.
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
   No impact.
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
+
   During the enabling and disabling of the memory manager(changing memory manager policy) you must remove the memory
   manager state file(`/var/lib/kubelet/memory_manager_state`), otherwise the kubelet start will fail.
   You can identify the issue via check of the kubelet log.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
   Not applicable.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
@@ -659,8 +776,10 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-Memory Manager has been developed within this PR: 
+- **2021-02-09** Memory Manager has been developed within this PR: 
 https://github.com/kubernetes/kubernetes/pull/95479
+- **2024-10-01** KEP ported to the most recent template and GA graduation.
+
 
 ## Drawbacks
 
