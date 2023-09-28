@@ -452,20 +452,52 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-  TBD for beta.
+The primary method of rollout failure is due to configuration issues. When
+migrating to use external CCMs there are several changes which must be made
+to ensure proper functioning. When encountering a failure, users should review
+the migration documentation to ensure that all command line flags, RBAC
+requirements, taint tolerations, and manifests are following the best
+practices.
+
+It is possible that a failed rollout could affect running workloads. Normal
+functioning of external CCMs involves activities around labeling new node
+objects, removing node objects, and configuring loadbalancer type services.
+If a rollout of external CCMs failed, users might see failures of workloads
+to schedule, workloads might be evicted, and service-based traffic could be
+interrupted.
 
 * **What specific metrics should inform a rollback?**
 
-   TBD for beta.
+There are a few observable behaviors that inform a rollback. If users start to
+see nodes failing to register, load balancer calls failing or not happening,
+deleted nodes not being removed, or components failing to start due to missing
+taint tolerations, these could all be possible signs that a CCM rollout has
+failed.
+
+In addition there are several metrics exposed by the cloud-provider framework
+that is maintained by SIG Cloud Provider. If the external CCM is using the
+cloud-provider framework, the following metrics could inform about failing
+behavior, users should be observant of these metric values increasing over
+a short period of time, or after upgrade:
+
+* `cloud_provider_taint_removal_delay_seconds`
+* `initial_node_sync_delay_seconds`
+* `nodesync_error_total`
+* `nodesync_latency_seconds`
+* `update_loadbalancer_host_latency_seconds`
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-  TBD for beta.
+  * Yes, tested manually by various providers, notably AWS and GCE.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 
-  TBD for beta.
+  * The provider options (e.g. `aws`, `azure`, etc), with the exception of `external`,
+    for the `--cloud-provider` flag of `kubelet`, `kube-apiserver`, and
+    `kube-controller-manager` are deprecated with the beta release.
+  * The in-tree cloud controller loops for `kubelet`, `kube-apiserver`, and
+    `kube-controller-manager` are deprecated with the beta release.
 
 ### Monitoring Requirements
 
@@ -473,21 +505,39 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  TBD for beta.
+  * In genreal, if pods are being scheduled to the cluster then this feature is
+    working as intended, and is in use by workloads.
+  * Workloads that explicitly use load balancer type services will depend on external CCMs
+    on providers that support the load balancer service controller.
+  * Workloads that depend on well-known zone and region labels on nodes are
+    also considered to be using this feature transitively.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
-  TBD for beta.
+  * Pods scheduling, if the CCM node controller is not working properly the
+    rate of pod scheduling will decrease.
+  * Deleted node removal, if the CCM node lifecycle controller is not working
+    properly then terminated nodes will not be removed from the cluster.
+  * Load balancer services not being created or destroyed, if the CCM service
+    controller is not working properly, load balancer services will not be
+    created or removed.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  TBD for beta.
+  * Nodes being initialized properly, zone and region labels being added.
+  * Pods being scheduled.
+  * Load balancer type services being created and destroyed.
+  * It is difficult to be more proscriptive about the SLOs of individual CCMs
+    as these will be managed by separate project teams and implementations
+    may vary between providers.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-  TBD for beta.
+  * A metric to indicate failed connections with the cloud provider API
+    endpoints could be helpful in determining when a CCM is not able to
+    communicate with the underlying infrastructure.
 
 ### Dependencies
 
@@ -495,8 +545,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
 
-  TBD for beta.
-
+  * CCM must be able to connect to cloud provider services and endpoints, this
+    will depend on the specifics of each provider
 
 ### Scalability
 
@@ -510,7 +560,14 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
 
-  No, if anything it will result in reduced API calls in core components.
+  Possibly. This change focuses on a migration of code from core Kubernetes
+  components into external user-managed components. During the alpha state of
+  this feature, the code from in-tree implementations was migrated into external
+  out-of-tree repositories. At that point in time, the feature code was the
+  same between in-tree and out-of-tree implementations. As the out-of-tree CCMs
+  have now become independent projects, it is out of scope for this KEP to
+  provide continuous updating of those project statuses with respect to API
+  calls.
 
 * **Will enabling / using this feature result in introducing new API types?**
 
@@ -519,7 +576,12 @@ previous answers based on experience in the field._
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
 
-  No, it will actually remove calls to the cloud provider in all core components.
+  Possibly. As this change focuses on a migration of previously in-tree code
+  to externally developed CCMs, it is out of scope to provide predictive
+  guidance about how those project teams will add or remove calls to the cloud
+  provider. In the alpha state of this feature, the in-tree code was migrated
+  into external out-of-tree repositories. At that point in time, no new
+  cloud provider calls were added.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
@@ -546,15 +608,26 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
-TBD for beta.
+  * CCMs will not be able to update node and service objects.
+  * In general, the expectations for the `kube-controller-manager` with respect
+    to an unavailable API server and/or etcd will apply to this feature as
+    well.
 
 * **What are other known failure modes?**
 
-TBD for beta.
+  * As this feature is directly about communication with an external cloud
+    provider API or endpoints, failures related to the cloud provider being
+    unavailable, a user's quota being exceeded, or other provider-specific
+    configuration issues are all potential failure modes.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-TBD for beta.
+  * Checking the CCM logs for failures and errors.
+  * Review the RBAC requirements for the CCMs and related Kubernetes components.
+  * Confirm cloud provider configurations, settings, and quotas.
+  * Review requests and limits for CCMs to ensure proper resourcing.
+  * If bug or other failure, rollback to in-tree providers and open an issue
+    with the appropriate cloud provider.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
