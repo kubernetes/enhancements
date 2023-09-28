@@ -1,0 +1,30 @@
+title: Replace kube-up e2e clusters with kops clusters
+kep-number: '4224'
+authors:
+  - upodroid
+owning-sig: sig-testing
+participating-sigs:
+  - sig-k8s-infra
+  - sig-cluster-lifecycle
+  - sig-cloud-provider
+status: implementable
+creation-date: '2023-09-27'
+reviewers:
+  - justinsb
+  - elmiko
+approvers:
+  - aojea
+  - dims
+
+see-also:
+  - "/keps/sig-testing/2464-kubetest2-ci-migration"
+
+stage: alpha
+
+latest-milestone: "v1.29"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.31"
