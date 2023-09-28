@@ -133,16 +133,20 @@ object is deleted, the token will be invalidated.
 The SA authenticator will also be extended to check whether a JWT's embedded node information is still valid/current,
 and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
 
-To avoid unexpected breaking changes in behaviour, this behaviour will not only be protected by the feature flag whilst
-the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag `--service-account-validate-node-info`
-which defaults to 'off'.
+For tokens bound to Pod objects, to avoid unexpected breaking changes in behaviour, this will not only be protected by
+the feature flag whilst the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag
+`--service-account-validate-node-info` which defaults to 'off'. This avoids changing the previous behaviour for
+validation of tokens issued for pods.
 
-This will involve first checking whether the Node object with the name given in the JWT still exists, and if it does,
-validating whether the UID of that Node is equal to the UID embedded in the token.
+Tokens that are directly bound to Node objects will always validate the name and UID, as binding tokens to Node objects
+is a new option and therefore enforcing this validation check from day 1 is non-breaking.
 
-This behaviour matches that of the existing `pod-garbage-collector-controller`, which will automatically delete Pod
-objects that are bound to Node's that no longer exist after a period of time. With this enabled, tokens will be immediately
-invalidated rather than waiting until [the 40s grace period](https://github.com/kubernetes/kubernetes/blob/fc786dcd1d2efcc241e0e2392086934f2806555d/pkg/controller/podgc/gc_controller.go#L50-L52) passes.
+The validation will involve first checking whether the Node object with the name given in the JWT still exists, and if
+it does, validating whether the UID of that Node is equal to the UID embedded in the token.
+
+For pods, this behaviour matches that of the existing `pod-garbage-collector-controller`, which will automatically
+delete Pod  objects that are bound to Node's that no longer exist after a period of time. With this enabled, tokens will
+be immediately invalidated rather than waiting until [the 40s grace period](https://github.com/kubernetes/kubernetes/blob/fc786dcd1d2efcc241e0e2392086934f2806555d/pkg/controller/podgc/gc_controller.go#L50-L52) passes.
 
 This means administrators can **delete node objects to invalidate all JWTs issued that embed that Node's info**.
 
@@ -427,6 +431,14 @@ requests. These tokens will all be usable against all apiservers though, so ther
 * `authorization_attempts_total`
 * `serviceaccount_valid_tokens_total`
 
+New metrics that can be used to identify if the feature is in use:
+
+* `serviceaccount_authentication_pod_node_ref_verified_total`
+* `serviceaccount_authentication_bound_object_verified_total{bound_object_kind="Node"}`
+* `serviceaccount_bound_tokens_issued_pod_with_node_tokens_total`
+* `serviceaccount_bound_tokens_issued_total{bound_object_kind="Node"}`
+* `serviceaccount_bound_tokens_issued_with_identifier_total`
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -441,19 +453,17 @@ No.
 
 ### Monitoring Requirements
 
-N/A
+New metrics:
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
+* `serviceaccount_authentication_pod_node_ref_verified_total` - new metric that is incremeneted when a token bound to a Pod has its Node reference verified
+* `serviceaccount_authentication_bound_object_verified_total{bound_object_kind="Node"}` - new metric that is incremeneted when a token bound to a Node has its reference verified
+* `serviceaccount_bound_tokens_issued_pod_with_node_tokens_total` - new metric that is incremented when a node ref is embedded into a bound Pod token (aka implicitly added)
+* `serviceaccount_bound_tokens_issued_total{bound_object_kind="Node"}` - new metric that is incremented whenever a bound token is issued that references a Node (explicitly added)
+* `serviceaccount_bound_tokens_issued_with_identifier_total` - new metric that is incremented whenever a token that contains an identifier/JTI is issued
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-For the node info part, using the TokenRequest API and inspecting the contents of the issued JWTs for a token bound to a Pod.
-For JTIs, using the TokenRequest API and then inspecting the contents of the issued JWT for any ServiceAccount token.
+Additionally, the metrics detailed above provide a clear signal as to whether these features are being used.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -463,22 +473,14 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
+For the node info part, using the TokenRequest API and inspecting the contents of the issued JWTs for a token bound to a Pod.
+For JTIs, using the TokenRequest API and then inspecting the contents of the issued JWT for any ServiceAccount token.
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [x] Other (treat as last resort)
-  - Details: request a token that is bound to a Pod and then submit this token to the SubjectAccessReview API to observe the 'extra' UserInfo embedded in the token.
+For the validation/verification, the user can use the SelfSubjectAccessReview API to check whether the token is still valid.
+To do so, they'd need to obtain a token that is bound to a Pod, delete the corresponding Node object that the Pod is scheduled
+on, and observe that the token is no longer valid via the SelfSubjectAccessReview API.
+
+A similar process could be used for tokens bound to Node objects directly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
