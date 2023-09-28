@@ -42,3 +42,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - "memory_manager_pinning_requests_total"
+  - "memory_manager_pinning_errors_total"

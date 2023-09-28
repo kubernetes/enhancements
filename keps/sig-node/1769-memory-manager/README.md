@@ -635,9 +635,9 @@ _This section must be completed when targeting beta graduation to a release._
 
 
 ###### What specific metrics should inform a rollback?
-
   The pod may fail with the admission error because the kubelet can not provide all resources aligned from the same NUMA node. 
   You can see the error message under the pod events.
+  "memory_manager_assignment_errors_total".
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
   Tested it manually by replacing the kubelet binary on the node with the `Static` memory manager policy, but I failed
@@ -650,13 +650,17 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+Monitor the metrics
+- "memory_manager_pinning_requests_total"
+- "memory_manager_assignment_errors_total"
 
 ###### How can an operator determine if the feature is in use by workloads?
   In order for workloads to request exclusive memory allocation, the pod QoS must be "guaranteed".
   The memory manager data will be available under pod resources API.
   When it is configured with the static policy,
   you will see memory related data during call to the pod resources API List method under the container.
+  In addition, in case the workload is guaranteed, the metric named memory_manager_pinning_requests_total should
+  be incremented.
 
 ###### How can someone using this feature know that it is working for their instance?
   
@@ -683,20 +687,23 @@ _This section must be completed when targeting beta graduation to a release._
 <!--
 Pick one more of these and delete the rest.
 -->
-`<TODO>`
-- [ ] Metrics
+
+- [X] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - memory_manager_pinning_requests_total
+    - memory_manager_assignment_errors_total
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 <!--
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
 -->
-  Currently, for the pod author, it is impossible to know containers NUMA pinning without access to the node.
+- "memory_manager_pinning_requests_total"
+- "memory_manager_assignment_errors_total"
+
+The addition of these metrics will be done before moving to GA
+issue - `<TBD>`
+PR - `<TBD>`
 
 ### Dependencies
 
