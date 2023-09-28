@@ -465,7 +465,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `20230928` - `81%`
 
 ##### Integration tests
 
@@ -483,7 +483,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+  Not Applicable.
 
 ##### e2e tests
 
@@ -497,7 +497,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/memory_manager_test.go
 
 ### Graduation Criteria
 
@@ -595,7 +595,7 @@ _This section must be completed when targeting alpha to a release._
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
+  - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: MemoryManager
     - Components depending on the feature gate: kubelet
     - Will enabling / disabling the feature require downtime of the control
@@ -653,8 +653,9 @@ fields of API types, flags, etc.?**
 _This section must be completed when targeting beta graduation to a release._
 
 ###### How can an operator determine if the feature is in use by workloads?
-
-  The memory manager data will be available under pod resources API. When it configured with the static policy
+  In order for workloads to request exclusive memory allocation, the pod QoS must be "guaranteed".
+  The memory manager data will be available under pod resources API.
+  When it is configured with the static policy,
   you will see memory related data during call to the pod resources API List method under the container.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -666,14 +667,13 @@ _This section must be completed when targeting beta graduation to a release._
   
   *For a pod author:*
   
-  * Pod succeeded to start. You have two options to verify if containers pinned to the NUMA node
+  * Pod succeeded to start. You have two options to verify if containers are pinned to the NUMA node
     - Via pod resources API, you will need to connect to grpc socket and get information from it, see [pod resource API doc page](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#monitoring-device-plugin-resources) for more information. 
     - Checking the relevant container CGroup under the node.
 
   * Pod failed to start because of the admission error.
     
-    To understand the reason you will need to check via pod resources API 
-    the amount of allocatable memory and memory reserved by containers.
+    To understand the reason, you will need to check via pod resources API the amount of allocatable memory and memory reserved by containers.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
   This does not seem relevant to this feature.
@@ -749,6 +749,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
