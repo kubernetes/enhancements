@@ -1005,15 +1005,10 @@ kubectl get jobs -ljob-name=job-longrun -oyaml
 Also, notice that `.status.active=2`, because the pod for a failed index is not
 re-created.
 
-2. Simulate downgrade by disabling the feature for api server and control-plane:
+2. Simulate downgrade by disabling the feature for api server and control-plane.
 
-```sh
-docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=true/JobBackoffLimitPerIndex=false/' /etc/kubernetes/manifests/kube-controller-manager.yaml
-docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=true/JobBackoffLimitPerIndex=false/' /etc/kubernetes/manifests/kube-apiserver.yaml
-```
-Await for the control-plane and apiserver pods to be restarted.
-
-Verify that 3 pods are running again, and the `.status.failedIndexes` is gone by
+Then, verify that 3 pods are running again, and the `.status.failedIndexes` is
+gone by:
 ```sh
 kubectl get jobs -ljob-name=job-longrun -oyaml
 ```
@@ -1024,22 +1019,15 @@ this will produce output similar to:
     active: 3
     failed: 2
     ready: 2
-    startTime: "2023-09-29T14:00:28Z"
-    uncountedTerminatedPods: {}
 ```
 
-3. Simulate upgrade by re-enabling the feature for api server and control-plane:
-```sh
-docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=false/JobBackoffLimitPerIndex=true/' /etc/kubernetes/manifests/kube-controller-manager.yaml
-docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=false/JobBackoffLimitPerIndex=true/' /etc/kubernetes/manifests/kube-apiserver.yaml
-```
+3. Simulate upgrade by re-enabling the feature for api server and control-plane.
 
-Await for the pods to be running and delete 1-indexed pod:
+Then, delete 1-indexed pod:
 ```sh
 kubectl delete pods -l job-name=job-longrun -l batch.kubernetes.io/job-completion-index=1 --grace-period=1
 ```
 Await for the replacement pod to be created and repeat the deletion.
-
 Check job status and confirm `.status.failedIndexes="1"`
 
 ```sh
