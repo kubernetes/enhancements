@@ -7,14 +7,15 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Design Overview](#design-overview)
   - [User Stories](#user-stories)
     - [Story 1 : High-performance packet processing with DPDK](#story-1--high-performance-packet-processing-with-dpdk)
     - [Story 2 : Databases](#story-2--databases)
     - [Story 3 : KubeVirt (provided by @rmohr)](#story-3--kubevirt-provided-by-rmohr)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [UX](#ux)
 - [Design Details](#design-details)
+  - [Overview](#overview)
   - [How to enable the guaranteed memory allocation over many NUMA nodes?](#how-to-enable-the-guaranteed-memory-allocation-over-many-numa-nodes)
   - [The Concept of Node Map and Memory Maps](#the-concept-of-node-map-and-memory-maps)
   - [Memory Map](#memory-map)
@@ -35,6 +36,10 @@
   - [Test Plan](#test-plan)
     - [Single-NUMA Systems Tests](#single-numa-systems-tests)
     - [Multi-NUMA System Tests](#multi-numa-system-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Phase 1: Alpha (target v1.21)](#phase-1-alpha-target-v121)
     - [Phase 2: Beta (target v1.22)](#phase-2-beta-target-v122)
@@ -136,26 +141,15 @@ The next subsection introduces to the proposal by outlining its design.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+Allocation of resources happens, like all the other resource managers (CPU manager, device manager), at admission time. This behavior creates a disconnect with the scheduler
+view of the system, which doesn't consider resource alignments or locality, which can contribute to runaway pod creation.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal and how do we mitigate.  Think broadly.
-For example, consider both security and how this will impact the larger
-kubernetes ecosystem.
+Bugs in memorymanager can cause the kubelet to crash, or workloads to start with incorrect pinning. This can be mitigated with comprehensive testing and improving the observability of the system (see metrics).
 
-How will security be reviewed and by whom?
-
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
--->
+The memory manager `None` policy is very simple and pretty safe, being almost a no-operation. The `Static` policy, which enabled memory pinning, has seen barely changes since beta,
+and because of interactions with other features (VPA).
 
 #### UX
 
@@ -325,10 +319,10 @@ Syntax:
 
 #### Memory Manager Policy Flag  
 
-The `static` value of the flag enables the guaranteed memory allocation, whereas `none` disables it. 
+The `Static` value of the flag enables the guaranteed memory allocation, whereas `None` disables it.
 
 Syntax:
-`--memory-manager-policy=static|none`
+`--memory-manager-policy=Static|None`
 
 #### Reserved Memory Flag
 
@@ -439,31 +433,7 @@ Memory pinning will be validated for Topology Manager `single-numa-node` and `re
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
 ##### Unit tests
-
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
 
 - `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `20230928` - `81%`
 
@@ -487,17 +457,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/memory_manager_test.go
+[Memory Manager E2E Tests](https://storage.googleapis.com/k8s-triage/index.html?sig=node&test=Memory%20Manager)
 
 ### Graduation Criteria
 
@@ -518,33 +478,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### GA (stable)
 
-- N examples of real-world usage
-- N installs
+- 2 or more examples of real-world usage
+- 2 or more installs
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
 
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
+**Note about conformance tests**
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+Conformance tests validate API endpoints, but memory manager has no API endpoints.
+We defer the correctness of the behavior (resource allocation) and the observable behavior (e.g. metrics)
+to e2e tests, like the other kubelet resource managers.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade in order to make use of the enhancement?
--->
 Not applicable.
 
 ### Version Skew Strategy
@@ -591,8 +537,6 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
   - [X] Feature gate (also fill in values in `kep.yaml`)
@@ -609,11 +553,21 @@ Yes, the admission flow changes for a pod in Guaranteed QoS class. With the Memo
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, it uses a feature gate.
+Pre-GA: the feature is using `MemoryManager` feature gate and can be disabled.
+Disabling the feature gate requires kubelet restart for changes to take effect.
+In case no workloads are running on the node, or consuming memory, disabling the 
+feature should be seamless.
 
-  <!-- Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?). -->
+GA and later: the code paths will always be hit during execution.
+However, disabling the feature is still possible reconfiguring the kubelet to use
+the `None` memory manager policy, which disables the vast majority of the code paths.
+
+In case there are running workloads which are requested for memory, it's the 
+cluster admin's responsibility to drain the node, prior to the feature disablement.
+
+If the node is not drained and the feature is disabled, the running workloads which
+had memory assignment must be assumed to lose the previous guarantees, as the memory
+manager is no longer enforcing them.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -625,42 +579,41 @@ Yes, there is a number of Unit Tests designated for State file validation.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-  It is possible that the state file will have inconsistent data during the rollout, because of the kubelet restart, but
-  you can easily to fix it by removing memory manager state file and run kubelet restart. It should not affect any running 
-  workloads.
+It is possible that the state file will have inconsistent data during the rollout, because of the kubelet restart, but
+you can easily to fix it by removing memory manager state file and run kubelet restart. It should not affect any running 
+workloads.
 
 
 ###### What specific metrics should inform a rollback?
-  The pod may fail with the admission error because the kubelet can not provide all resources aligned from the same NUMA node. 
-  You can see the error message under the pod events.
-  "memory_manager_assignment_errors_total".
+
+The pod may fail with the admission error because the kubelet can not provide all resources aligned from the same NUMA node. 
+You can see the error message under the pod events.
+Additionally, the value of metric `memory_manager_pinning_errors_total` is expected to be consistently equal to zero
+under normal operating conditions; admission rejects will cause the value of this metric to increase.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-  Tested it manually by replacing the kubelet binary on the node with the `Static` memory manager policy, but I failed
-  to find correct procedure how to test upgrade from 1.21 to my custom build with updated kubelet binary.
+
+Tested it manually by replacing the kubelet binary on the node with the `Static` memory manager policy, but I failed
+to find correct procedure how to test upgrade from 1.21 to my custom build with updated kubelet binary.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-fields of API types, flags, etc.?**
-  No.
+No.
 
 ### Monitoring Requirements
 
 Monitor the metrics
-- "memory_manager_pinning_requests_total"
-- "memory_manager_assignment_errors_total"
+- `memory_manager_pinning_requests_total`
+- `memory_manager_pinning_errors_total`
 
 ###### How can an operator determine if the feature is in use by workloads?
-  In order for workloads to request exclusive memory allocation, the pod QoS must be "guaranteed".
-  The memory manager data will be available under pod resources API.
-  When it is configured with the static policy,
-  you will see memory related data during call to the pod resources API List method under the container.
-  In addition, in case the workload is guaranteed, the metric named memory_manager_pinning_requests_total should
-  be incremented.
+
+The memory manager data will be available under pod resources API.
+When it is configured with the static policy, you will see memory related data during call to the pod resources API List method under the container.
+
+In addition, in case the workload is guaranteed, the metric named `memory_manager_pinning_requests_total` should `be incremented.
 
 ###### How can someone using this feature know that it is working for their instance?
   
@@ -680,72 +633,54 @@ Monitor the metrics
     To understand the reason, you will need to check via pod resources API the amount of allocatable memory and memory reserved by containers.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-  This does not seem relevant to this feature.
+
+This does not seem relevant to this feature.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
 - [X] Metrics
   - Metric name:
-    - memory_manager_pinning_requests_total
-    - memory_manager_assignment_errors_total
+    - `memory_manager_pinning_requests_total`
+    - `memory_manager_pinning_errors_total`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-<!--
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
--->
-- "memory_manager_pinning_requests_total"
-- "memory_manager_assignment_errors_total"
+- `memory_manager_pinning_requests_total`
+- `memory_manager_pinning_errors_total`
 
 The addition of these metrics will be done before moving to GA
-issue - `<TBD>`
-PR - `<TBD>`
+issue - `https://github.com/kubernetes/kubernetes/issues/120986`
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 ###### Does this feature depend on any specific services running in the cluster?
-  No.
+No.
 
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
-
 ###### Will enabling / using this feature result in any new API calls?
 
-  No.
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-  No.
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-  No.
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-  No.
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-  No.
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   
-  No.
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 <!--
@@ -765,20 +700,22 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 
-_This section must be completed when targeting beta graduation to a release._
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
-  No impact.
+No impact.
 
 ###### What are other known failure modes?
 
-  During the enabling and disabling of the memory manager(changing memory manager policy) you must remove the memory
-  manager state file(`/var/lib/kubelet/memory_manager_state`), otherwise the kubelet start will fail.
-  You can identify the issue via check of the kubelet log.
+During the enabling and disabling of the memory manager(changing memory manager policy) you must remove the memory
+manager state file(`/var/lib/kubelet/memory_manager_state`), otherwise the kubelet start will fail.
+You can identify the issue by checking of the kubelet log.
+
+If the node is not drained and the feature is disabled, the running workloads which
+had memory assignment must be assumed to lose the previous guarantees, as the memory
+manager is no longer enforcing them.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-  Not applicable.
+Not applicable.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -792,9 +729,6 @@ https://github.com/kubernetes/kubernetes/pull/95479
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
 No objections exist to implement this KEP.
 
 ## Alternatives
