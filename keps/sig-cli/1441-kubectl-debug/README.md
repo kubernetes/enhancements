@@ -401,11 +401,11 @@ Probes and labels are be stripped from Pod copies.
 
 #### Profile: netadmin
 
-| Journey             | Debug Container Behavior                                                   |
-| ------------------- | -------------------------------------------------------------------------- |
-| Node                | sets `NET_ADMIN` and privileged; uses host namespaces                      |
-| Pod Copy            | sets `NET_ADMIN` on debugging container                                    |
-| Ephemeral Container | sets `NET_ADMIN` on ephemeral container                                    |
+| Journey             | Debug Container Behavior                                                          |
+| ------------------- | --------------------------------------------------------------------------------- |
+| Node                | sets `NET_ADMIN` and `NET_RAW`; uses host namespaces                              |
+| Pod Copy            | sets `NET_ADMIN` and `NET_RAW` on debugging container; sets shareProcessNamespace |
+| Ephemeral Container | sets `NET_ADMIN` and `NET_RAW` on ephemeral container                             |
 
 This profile offers elevated privileges for network debugging.
 
