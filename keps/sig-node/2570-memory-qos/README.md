@@ -1,6 +1,7 @@
 # KEP-2570: Support Memory QoS with cgroups v2
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [Latest Update [Stalled]](#latest-update-stalled)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -64,6 +65,27 @@
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+## Latest Update [Stalled]
+
+Work around Memory QoS has been halted because of the issues uncovered during the beta promotion process 
+in K8s 1.28. This section is added to document the valuable lessons learned from this experience. 
+
+Initial Plan: Use cgroup v2 memory.high knob to set memory throttling limit. As per the initial understanding, 
+setting memory.high would have caused memory allocation to be slowed down once the memory usage level in the containers
+reached `memory.high` level. When memory usage keeps goes beyond memory.max, kernel will trigger OOM Kill.
+
+Actual Finding: According to the the [test results](https://docs.google.com/document/d/1mY0MTT34P-Eyv5G1t_Pqs4OWyIH-cg9caRKWmqYlSbI/edit?usp=sharing), it was observed that for a container process trying to allocate large chunks of memory, once the memory.high level is reached,
+it doesn't progress further and stays stuck indefinitely. Upon investigating further, it was observed that when memory usage 
+within a cgroup reaches the memory.high level, the kernel initiates memory reclaim as expected. However the process gets stuck
+because its memory consumption rate is faster than what the memory reclaim can recover. This creates a livelock situation where
+the process rapidly consumes the memory reclaimed by the kernel causing the memory usage to reach memory.high level again, 
+leading to another round of memory reclaimation by the kernel. By increasingly slowing growth in memory usage, it becomes
+harder and harder for workloads to reach the memory.max intervention point. (Ref: https://lkml.org/lkml/2023/6/1/1300)
+
+Future: memory.high can be used to implement kill policies in for userspace OOMs, together with [Pressure Stall Information](https://docs.kernel.org/accounting/psi.html)
+(PSI). When the workloads are in stuck after their memory usage levels reach memory.high, high PSI can be used by userspace OOM policy to kill such workload(s). 
+
 
 ## Summary
 Support memory qos with cgroups v2.
