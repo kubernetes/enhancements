@@ -1,4 +1,80 @@
+<!--
+**Note:** When your KEP is complete, all of these comment blocks should be removed.
+
+To get started with this template:
+
+- [ ] **Pick a hosting SIG.**
+  Make sure that the problem space is something the SIG is interested in taking
+  up. KEPs should not be checked in without a sponsoring SIG.
+- [ ] **Create an issue in kubernetes/enhancements**
+  When filing an enhancement tracking issue, please make sure to complete all
+  fields in that template. One of the fields asks for a link to the KEP. You
+  can leave that blank until this KEP is filed, and then go back to the
+  enhancement and add the link.
+- [ ] **Make a copy of this template directory.**
+  Copy this template into the owning SIG's directory and name it
+  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
+  leading-zero padding) assigned to your enhancement above.
+- [ ] **Fill out as much of the kep.yaml file as you can.**
+  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
+  "Status", and date-related fields.
+- [ ] **Fill out this file as best you can.**
+  At minimum, you should fill in the "Summary" and "Motivation" sections.
+  These should be easy if you've preflighted the idea of the KEP with the
+  appropriate SIG(s).
+- [ ] **Create a PR for this KEP.**
+  Assign it to people in the SIG who are sponsoring this process.
+- [ ] **Merge early and iterate.**
+  Avoid getting hung up on specific details and instead aim to get the goals of
+  the KEP clarified and merged quickly. The best way to do this is to just
+  start with the high-level sections and fill out details incrementally in
+  subsequent PRs.
+
+Just because a KEP is merged does not mean it is complete or approved. Any KEP
+marked as `provisional` is a working document and subject to change. You can
+denote sections that are under active debate as follows:
+
+```
+<<[UNRESOLVED optional short context or usernames ]>>
+Stuff that is being argued.
+<<[/UNRESOLVED]>>
+```
+
+When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
+focused. If you disagree with what is already in a document, open a new PR
+with suggested changes.
+
+One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
+You do not need a new KEP to move from beta to GA, for example. If
+new details emerge that belong in the KEP, edit the KEP. Once a feature has become
+"implemented", major changes should get new KEPs.
+
+The canonical place for the latest set of instructions (and the likely source
+of this file) is [here](/keps/NNNN-kep-template/README.md).
+
+**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
+it is marked `implementable`, must be approved by each of the KEP approvers.
+If none of those approvers are still appropriate, then changes to that list
+should be approved by the remaining approvers and/or the owning SIG (or
+SIG Architecture for cross-cutting KEPs).
+-->
 # KEP-753: Sidecar containers
+
+<!--
+This is the title of your KEP. Keep it short, simple, and descriptive. A good
+title can help communicate what the KEP is and should be considered as part of
+any review.
+-->
+
+<!--
+A table of contents is helpful for quickly jumping to sections of a KEP and for
+highlighting any additional information provided beyond the standard KEP
+template.
+
+Ensure the TOC is wrapped with
+  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
+tags, and then generate with `hack/update-toc.sh`.
+-->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -83,13 +159,27 @@
 
 ## Release Signoff Checklist
 
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
@@ -111,6 +201,24 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
+<!--
+This section is incredibly important for producing high-quality, user-focused
+documentation such as release notes or a development roadmap. It should be
+possible to collect this information before implementation begins, in order to
+avoid requiring implementors to split their attention between writing release
+notes and implementing the feature itself. KEP editors and SIG Docs
+should help to ensure that the tone and content of the `Summary` section is
+useful for a wide audience.
+
+A good summary is probably at least a paragraph in length.
+
+Both in this section and below, follow the guidelines of the [documentation
+style guide]. In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+-->
 Sidecar containers are a new type of containers that start among the Init
 containers, run through the lifecycle of the Pod and don’t block pod
 termination. Kubelet makes a best effort to keep them alive and running while
@@ -118,6 +226,14 @@ other containers are running.
 
 ## Motivation
 
+<!--
+This section is for explicitly listing the motivation, goals, and non-goals of
+this KEP.  Describe why the change is important and the benefits to users. The
+motivation section can optionally provide links to [experience reports] to
+demonstrate the interest in a KEP within the wider Kubernetes community.
+
+[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
+-->
 The concept of sidecar containers has been around since the early days of
 Kubernetes. A clear example is [this Kubernetes blog post](https://kubernetes.io/blog/2015/06/the-distributed-system-toolkit-patterns/#example-1-sidecar-containers)
 from 2015 mentioning the sidecar pattern.
@@ -213,6 +329,10 @@ cases.
 
 ### Goals
 
+<!--
+List the specific goals of the KEP. What is it trying to achieve? How will we
+know that this has succeeded?
+-->
 This proposal aims to:
 - make containers implementing the sidecar pattern first class citizens inside a
   Pod
@@ -224,6 +344,10 @@ This proposal aims to:
 
 ### Non-Goals
 
+<!--
+What is out of scope for this KEP? Listing non-goals helps to focus discussion
+and make progress.
+-->
 This proposal doesn't aim to:
 - support arbitrary dependencies graphs between containers
 - act as a security control to enforce that pod containers only run while the
@@ -235,6 +359,14 @@ This proposal doesn't aim to:
 
 ## Proposal
 
+<!--
+This is where we get down to the specifics of what the proposal actually is.
+This should have enough detail that reviewers can understand exactly what
+you're proposing, but should not include things like API designs or
+implementation. What is the desired outcome and how do we measure success?.
+The "Design Details" section below is for the real
+nitty-gritty.
+-->
 The proposal is to introduce a `restartPolicy` field to init containers and use
 it to indicate that an init container is a sidecar container. Kubelet will start
 init containers with `restartPolicy=Always` in the order with other init
@@ -376,6 +508,17 @@ feature will be considered.
 
 ### Risks and Mitigations
 
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
 The following is the list of hypothetical scenarios how users may decide to
 abuse the feature or use it in a non-designed way. This is an exercise to
 understand potential side effects from implementing the feature. We are looking
@@ -505,6 +648,12 @@ sidecars.
 
 ## Design Details
 
+<!--
+This section should contain enough information that the specifics of your
+change are understandable. This may include API specs (though not always
+required) or even code snippets. If there's any ambiguity about HOW your
+proposal will be implemented, this is the place to discuss them.
+-->
 ### Backward compatibility
 
 The new field means that any Pod that is not using this field will behave the
@@ -938,9 +1087,36 @@ Update OOM score adjustment:
 
 ##### Integration tests
 
-The feature will be covered with unit tests and e2e tests.
+<!--
+Integration tests are contained in k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+-->
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+-->
+
+- <test>: <link to test coverage> FIXME to fill
 
 ##### e2e tests
+
+<!--
+This question should be filled when targeting a release.
+For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+
+For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
+https://storage.googleapis.com/k8s-triage/index.html
+
+We expect no non-infra related flakes in the last month as a GA graduation criteria.
+-->
+
+- <test>: <link to test coverage> FIXME to fill
 
 ##### Ready state of a sidecar container is properly used to create/delete endpoints
 
@@ -1006,22 +1182,6 @@ to know in early stages of the KEP IMHO.
 
 ### Graduation Criteria
 
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-- E2e testing of the existing scenarios with and without the feature gate turned
-  on
-
-#### Beta
-
-- Implement proper termination ordering.
-- Provide defaults for `restartPolicy` field on init containers, `nil` is not
-  an ideal default long term.
-- Allow to apply security policies on all containers in `initContainers`
-  collection. Example may be disabling `kubectl exec` on containers in
-  `initContainers` collection.
-
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -1049,6 +1209,10 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
 
 #### Beta
 
@@ -1080,7 +1244,37 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+- E2e testing of the existing scenarios with and without the feature gate turned
+  on
+
+#### Beta
+
+- Implement proper termination ordering.
+- Provide defaults for `restartPolicy` field on init containers, `nil` is not
+  an ideal default long term.
+- Allow to apply security policies on all containers in `initContainers`
+  collection. Example may be disabling `kubectl exec` on containers in
+  `initContainers` collection.
+
+
+
 ### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
 
 #### Upgrade strategy
 
@@ -1128,6 +1322,18 @@ kubelet that doesn't know about the sidecar containers.
 
 ### Version Skew Strategy
 
+<!--
+If applicable, how will the component handle version skew with other
+components? What are the guarantees? Make sure this is in the test plan.
+
+Consider the following in developing a version skew strategy for this
+enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
+-->
 Version skew is possible between the control plane and worker nodes as both
 should be aware of the new field used to flag sidecars inside `initContainers`.
 
@@ -1171,7 +1377,21 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
 ###### How can this feature be enabled / disabled in a live cluster?
+
+<!--
+Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
+-->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `SidecarContainers`
@@ -1183,9 +1403,25 @@ you need any help or guidance.
 
 ###### Does enabling the feature change any default behavior?
 
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
+
 No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
 
 Yes. Pods that had sidecars will need to be deleted and recreated without them.
 
@@ -1202,6 +1438,19 @@ If Pods were in Pending State rejected by kubelet due to "unknown" field to be
 scheduled, they may become scheduleable again and will work as expected.
 
 ###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
+-->
 
 See [Upgrade/downgrade testing](#upgradedowngrade-testing).
 
@@ -1416,6 +1665,18 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
 ### Troubleshooting
 
 <!--
@@ -1460,6 +1721,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2018-05-14: First proposal.
+- 2023-06-09: Target 1.28 for Alpha.
+- 2023-07-08: Alpha implementation merged.
+- TODO: PRR completed and graduation to beta proposed.
 
 ## Drawbacks
 
@@ -1514,6 +1780,12 @@ attempt to implement the sidecar containers:
 https://docs.google.com/document/d/1gX_SOZXCNMcIe9d8CkekiT0GU9htH_my8OB7HSm3fM8/edit#heading=h.71o8fcesvgba.
 
 ## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
 
 ### Pod startup completed condition
 
