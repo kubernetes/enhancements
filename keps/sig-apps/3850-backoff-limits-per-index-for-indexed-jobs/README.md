@@ -1139,7 +1139,7 @@ are marked failed,
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-For Beta we will introduce of a new metric `job_finished_indexes_total`
+For Beta we will introduce a new metric `job_finished_indexes_total`
 with labels `status=(failed|succeeded)`, and `backoffLimit=(perIndex|global)`.
 It will count the number of failed and succeeded indexes across jobs using
 `backoffLimitPerIndex`, or regular Indexed Jobs (using only `.spec.backoffLimit`).
