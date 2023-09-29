@@ -100,6 +100,11 @@ release*.
 
 ## Summary
 
+
+IMPORTANT: THIS KEP HAS BEEN WITHDRAWN AND THIS FEATURE WILL BE DEVELOPED OUT OF TREE
+Ref: https://groups.google.com/g/kubernetes-sig-network/c/nts1xEZ--gQ/m/2aTOUNFFAAAJ
+
+
 Today, when Kubernetes' NodeIPAM controller allocates IP ranges for podCIDRs for
 nodes, it uses a single range allocated to the cluster (cluster CIDR). Each node
 gets a range of a fixed size from the overall cluster CIDR. The size is
