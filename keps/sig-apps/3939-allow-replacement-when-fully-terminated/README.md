@@ -173,7 +173,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -501,17 +501,17 @@ Case With `JobPodReplacementPolicy` off
 Case for disable and reenable `JobPodReplacementPolicy`
 
   1. Create Job with `podReplacementPolicy: Failed`
-  1. Job starts pods that takes a while to terminate
-  1. Restart controller and disable `JobPodReplacementPolicy`
-  1. Delete some pods
-  1. Verify that terminating pods count as failed and pods are recreated.
-  1. Restart controller and reenable `JobPodReplacementPolicy`
-  1. Terminate pods with phase Succeeded.
-  1. Verify that pods still count as failed.
-  1. Delete remaining Pods.
-  1. Verify that `terminating` is tracked.
-  1. Verify that pod creation only occurs once pod is fully terminated.
-  1. Verify that pod creation only occurs once deletion happens.
+  2. Job starts pods that takes a while to terminate
+  3. Restart controller and disable `JobPodReplacementPolicy`
+  4. Delete some pods
+  5. Verify that terminating pods count as failed and pods are recreated.
+  6. Restart controller and reenable `JobPodReplacementPolicy`
+  7. Terminate pods with phase Succeeded.
+  8. Verify that pods still count as failed.
+  9. Delete remaining Pods.
+  10. Verify that `terminating` is tracked.
+  11. Verify that pod creation only occurs once pod is fully terminated.
+  12. Verify that pod creation only occurs once deletion happens.
 
 To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.  
 Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.  
@@ -570,6 +570,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Address reviews and bug reports from Alpha users
 - E2e tests are in Testgrid and linked in KEP
 - The feature flag enabled by default
+- `job_pods_creation_total` metric is added.
 
 #### GA
 
@@ -756,7 +757,7 @@ During pod terminations, an operator can see that the terminating field is being
 
 We will use a new metric:
 
-- `job_pod_creation` (new) the `action` label will mention what triggers creation (`new`, `recreateTerminatingOrFailed`, `recreateTerminated`))
+- `job_pods_creation_total` (new) the `action` label will mention what triggers creation (`new`, `recreateTerminatingOrFailed`, `recreateTerminated`))
 This can be used to get the number of pods that are being recreated due to `recreateTerminated`.  Otherwise we would expect to see `new` or `recreateTerminatingOrFailed` as the normal values.  
 
 <!--
@@ -902,7 +903,9 @@ No change from existing behavior of the Job controller.
 
 ## Implementation History
 
-- 2023-05-19: Initial KEP
+- 2023-04-03: Created KEP
+- 2023-05-19: KEP Merged.
+- 2023-07-16: Alpha PRs merged.
 
 ## Drawbacks
 
