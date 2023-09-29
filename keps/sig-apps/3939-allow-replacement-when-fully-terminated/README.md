@@ -108,6 +108,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [GA](#ga)
     - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade](#upgrade)
+    - [Downgrade](#downgrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -164,7 +166,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -594,8 +596,33 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+#### Upgrade
+
+Set `JobPodReplacementPolicy` to true in apiserver and controller manager.
+
+There are no other components required.  
+
+Jobs that want to replace pods once they are fully terminal can use `PodReplacementPolicy`: `Failed`.
+
+If a Job is not using `PodFailurePolicy`, one can change `PodReplacementPolicy` to `terminatingOrFailed`. This will revert Jobs to existing behavior with the feature off.
+
+If one is using `PodFailurePolicy`, one will not be able to set the value to `terminatingOrFailed` as `Failed` is the only allowable solution.
+In this case, the recommendation would be to disable the `PodFailurePolicy` feature also.
+
+#### Downgrade
+
+Set `JobPodReplacementPolicy` to false in apiserver and controller manager.
+
+With downgrading, you will no longer see any side-effects of `PodReplacementPolicy`.
 
 ### Version Skew Strategy
+
+This feature is limited to control plane.
+
+Note that, kube-apiserver can be in the N+1 skew version relative to the
+kube-controller-manager (see [here](https://kubernetes.io/releases/version-skew-policy/#kube-controller-manager-kube-scheduler-and-cloud-controller-manager)).
+In that case, the Job controller operates on the version of the Job object that
+already supports the new Job API.
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -708,6 +735,21 @@ This section must be completed when targeting beta to a release.
 
 #### How can a rollout or rollback fail? Can it impact already running workloads?
 
+A rollout or rollback will not fail as rolling out this feature entails turning on `JobPodReplacementPolicy`.
+Failure rates of the Jobs will not increase or decrease on this feature.  Pods will be marked as failed later (as we wait for the pods to be fully terminal)
+
+This feature is opt-in for functional changes.  We track terminating pods for observability reasons but we only use this data in the case of `Failed`.
+
+If a user has set `PodReplacementPolicy: Failed` or has PodFailurePolicy set, then
+rollbacking this feature would mean that terminating Pods will be recreated once they are deleted.
+
+If a user rollouts this feature with `PodFailurePolicy` or `PodReplacementPolicy` set to `Failed`,
+then pods will only recreate once they are fully terminal.  
+This will not impact failure counts as in both cases, they will get marked as failed eventually.
+
+If a user rollouts this feature without `PodFailurePolicy` or `PodReplacementPolicy` set, then there will be no impact to existing workloads.
+
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -728,6 +770,112 @@ that might indicate a serious problem?
 -->
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+In beta, we are working on adding an [integration test](https://github.com/kubernetes/kubernetes/pull/119912) for these cases.
+
+In terms of a manual test for upgrade and rollback, we can use 1.28.
+
+The Upgrade->downgrade->upgrade testing was done manually using the `alpha`
+version in 1.28 with the following steps:
+
+1. Start the cluster with the `JobPodReplacementPolicy` enabled:
+
+Create a KIND cluster with 1.28 and use the config below to turn this feature on.
+
+using `config.yaml`:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "JobPodReplacementPolicy": true
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Then, create the job using `.spec.podReplacementPolicy=Failed`:
+
+```sh
+kubectl create -f job.yaml
+```
+
+using `job.yaml`:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-prp
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2
+  podReplacementPolicy: Failed
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: sleep
+        image: gcr.io/k8s-staging-perf-tests/sleep
+        args: ["-termination-grace-period", "1m", "60s"]
+
+```
+
+Await for the pods to be running and delete a pod:
+
+```sh
+kubectl delete pods -l job-name=job-prp
+```
+
+With feature on and `PodReplacementPolicy` set to Failed, the replacement pod will be recreated once the pod was fully terminated.
+While the pod is terminating you can also see the status report a terminating pod.
+
+```sh
+kubectl get jobs -ljob-name=job-prp -oyaml
+```
+
+```yaml
+status:
+  terminating: 1
+```
+
+2. Simulate downgrade by creating a new `Kind` cluster with the feature turned off.
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "JobPodReplacementPolicy": false
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Then, deleting the pods of the job.
+
+```sh
+kubectl delete pods -l job-name=job-prp
+```
+
+There should also be no terminating pod status and a pod will be created before the other pod terminates.  If you use the above case, you should see a terminating pod and a new pod created.
+
+3. Simulate upgrade by creating a new `Kind` cluster with the feature turned on.
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "JobPodReplacementPolicy": true
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Deleting the pod will create a replacement pod once the pod is fully terminated.
+The status field will also state that the pod is terminating.
+
+This demonstrates that the feature is working again for the job.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -775,20 +923,7 @@ When feature is turned on, we will also include a `terminating` field in the Job
 
 #### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+We did not propose any SLO/SLI for this feature.
 
 #### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -799,6 +934,8 @@ feature enablement causes the number of syncs to increase.
   - Components exposing the metric: kube-controller-manager
 
 #### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+In beta, we will add a new metric `job_pods_creation_total`.  
 
 ### Dependencies
 
@@ -817,7 +954,9 @@ to create new pods until the existing ones are terminated.
 
 #### Will enabling / using this feature result in any new API calls?
 
-No
+In the job controller, we only update the Job.Status if any field in the `Job.Status` changes.  With this feature on, we will track `terminating` pods in this status.
+It could be possible to see an increase in updating the status field of Jobs if a lot of the pods are being terminated.
+However, if pods are being terminated, we would also expect other fields to be getting updated also (active, failed, etc) so there should not be a large increase of API calls for patching.
 
 #### Will enabling / using this feature result in introducing new API types?
 
@@ -899,13 +1038,21 @@ No change from existing behavior of the Job controller.
 
 #### What are other known failure modes?
 
+There are no other failure modes.
+
 #### What steps should be taken if SLOs are not being met to determine the problem?
+
+One could disable this feature.
+
+Or if one wants to keep the feature on and they could suspend the jobs that are using this feature.
+Setting `Suspend:True` in your JobSpec will halt the execution of all jobs.
 
 ## Implementation History
 
 - 2023-04-03: Created KEP
 - 2023-05-19: KEP Merged.
 - 2023-07-16: Alpha PRs merged.
+- 2023-09-29: KEP marked for beta promotion.
 
 ## Drawbacks
 
