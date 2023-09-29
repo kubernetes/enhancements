@@ -724,8 +724,9 @@ in back-to-back releases.
 #### Beta
 
 - Address reviews and bug reports from Alpha users
-- Propose and implement metrics
+- Implement the `job_finished_indexes_total` metric
 - E2e tests are in Testgrid and linked in KEP
+- Move the [new reason declarations](https://github.com/kubernetes/kubernetes/blob/dc28eeaa3a6e18ef683f4b2379234c2284d5577e/pkg/controller/job/job_controller.go#L82-L89) from Job controller to the API package
 - Evaluate performance of Job controller for jobs using backoff limit per index
   with benchmarks at the integration or e2e level (discussion pointers from Alpha
   review: [thread1](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1261694406) and [thread2](https://github.com/kubernetes/kubernetes/pull/118009#discussion_r1263862076))
@@ -756,6 +757,9 @@ A downgrade to a version which does not support this feature should not require
 any additional configuration changes. Jobs which specified
 `.spec.backoffLimitPerIndex` (to make use of this feature) will be
 handled in a default way, ie. using the `.spec.backoffLimit`.
+However, since the `.spec.backoffLimit` defaults to max int32 value
+(see [here](#job-api)) is might require a manual setting of the `.spec.backoffLimit`
+to ensure failed pods are not retried indefinitely.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -876,7 +880,8 @@ The Job controller starts to handle pod failures according to the specified
 
 ###### Are there any tests for feature enablement/disablement?
 
-No. The tests will be added in Alpha.
+Yes, there is an [integration test](https://github.com/kubernetes/kubernetes/blob/dc28eeaa3a6e18ef683f4b2379234c2284d5577e/test/integration/job/job_test.go#L763)
+which tests the following path: enablement -> disablement -> re-enablement.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -899,7 +904,16 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The change is opt-in, it doesn't impact already running workloads.
+This change does not impact how the rollout or rollback fail.
+
+The change is opt-in, thus a rollout doesn't impact already running pods.
+
+The rollback might affect how pod failures are handled, since they will
+be counted only against `.spec.backoffLimit`, which is defaulted to max int32
+value, when using `.spec.backoffLimitPerIndex` (see [here](#job-api)).
+Thus, similarly as in case of a downgrade (see [here](#downgrade))
+it might be required to manually set `spec.backoffLimit` to ensure failed pods
+are not retried indefinitely.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -932,7 +946,109 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-It will be tested manually prior to beta launch.
+The Upgrade->downgrade->upgrade testing was done manually using the `alpha`
+version in 1.28 with the following steps:
+
+1. Start the cluster with the `JobBackoffLimitPerIndex` enabled:
+```sh
+kind create cluster --name per-index --image kindest/node:v1.28.0 --config config.yaml
+```
+using `config.yaml`:
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "JobBackoffLimitPerIndex": true
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Then, create the job using `.spec.backoffLimitPerIndex=1`:
+
+```sh
+kubectl create -f job.yaml
+```
+using `job.yaml`:
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-longrun
+spec:
+  parallelism: 3
+  completions: 3
+  completionMode: Indexed
+  backoffLimitPerIndex: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: sleep
+        image: busybox:1.36.1
+        command: ["sleep"]
+        args: ["1800"]  # 30min
+        imagePullPolicy: IfNotPresent
+```
+
+Await for the pods to be running and delete 0-indexed pod:
+```sh
+kubectl delete pods -l job-name=job-longrun -l batch.kubernetes.io/job-completion-index=0 --grace-period=1
+```
+Await for the replacement pod to be created and repeat the deletion.
+
+Check job status and confirm `.status.failedIndexes="0"`
+
+```sh
+kubectl get jobs -ljob-name=job-longrun -oyaml
+```
+Also, notice that `.status.active=2`, because the pod for a failed index is not
+re-created.
+
+2. Simulate downgrade by disabling the feature for api server and control-plane:
+
+```sh
+docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=true/JobBackoffLimitPerIndex=false/' /etc/kubernetes/manifests/kube-controller-manager.yaml
+docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=true/JobBackoffLimitPerIndex=false/' /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+Await for the control-plane and apiserver pods to be restarted.
+
+Verify that 3 pods are running again, and the `.status.failedIndexes` is gone by
+```sh
+kubectl get jobs -ljob-name=job-longrun -oyaml
+```
+this will produce output similar to:
+```yaml
+  ...
+  status:
+    active: 3
+    failed: 2
+    ready: 2
+    startTime: "2023-09-29T14:00:28Z"
+    uncountedTerminatedPods: {}
+```
+
+3. Simulate upgrade by re-enabling the feature for api server and control-plane:
+```sh
+docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=false/JobBackoffLimitPerIndex=true/' /etc/kubernetes/manifests/kube-controller-manager.yaml
+docker exec -it per-index-control-plane sed -i 's/JobBackoffLimitPerIndex=false/JobBackoffLimitPerIndex=true/' /etc/kubernetes/manifests/kube-apiserver.yaml
+```
+
+Await for the pods to be running and delete 1-indexed pod:
+```sh
+kubectl delete pods -l job-name=job-longrun -l batch.kubernetes.io/job-completion-index=1 --grace-period=1
+```
+Await for the replacement pod to be created and repeat the deletion.
+
+Check job status and confirm `.status.failedIndexes="1"`
+
+```sh
+kubectl get jobs -ljob-name=job-longrun -oyaml
+```
+Also, notice that `.status.active=2`, because the pod for a failed index is not
+re-created.
+
+This demonstrates that the feature is working again for the job.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -1023,7 +1139,7 @@ are marked failed,
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-For Beta we will consider introduction of a new metric `job_finished_indexes_total`
+For Beta we will introduce of a new metric `job_finished_indexes_total`
 with labels `status=(failed|succeeded)`, and `backoffLimit=(perIndex|global)`.
 It will count the number of failed and succeeded indexes across jobs using
 `backoffLimitPerIndex`, or regular Indexed Jobs (using only `.spec.backoffLimit`).
@@ -1167,6 +1283,20 @@ This through this both in small and large cases, again with respect to the
 [supported limits].
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature does not introduce any resource exhaustive operations.
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
 -->
 
 ### Troubleshooting
