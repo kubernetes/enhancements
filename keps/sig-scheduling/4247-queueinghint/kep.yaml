@@ -1,0 +1,31 @@
+title: Per-plugin callback functions for efficient enqueueing in the scheduling queue
+kep-number: 4247
+authors:
+  - "@sanposhiho"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2023-09-30
+reviewers:
+  - "@alculquicondor"
+approvers:
+  - "@alculquicondor"
+
+see-also:
+  - "/keps/sig-node/3063-dynamic-resource-allocation"
+
+stage: alpha
+
+latest-milestone: "v1.29"
+
+milestone:
+  alpha: "v1.26" # This KEP stems from /keps/sig-node/3063-dynamic-resource-allocation.
+  beta: "v1.28"
+  stable: "v1.30"
+
+feature-gates:
+  - name: SchedulerQueueingHints
+    components:
+      - kube-scheduler
+disable-supported: true
