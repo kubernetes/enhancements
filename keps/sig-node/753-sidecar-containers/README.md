@@ -130,6 +130,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade strategy](#upgrade-strategy)
     - [Downgrade strategy](#downgrade-strategy)
@@ -1102,7 +1103,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage> FIXME to fill
+No integration tests are planned. We'll cover this with e2e_node tests.
 
 ##### e2e tests
 
@@ -1116,7 +1117,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage> FIXME to fill
+- Test failures: https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=SidecarContainers
+- All related tests can be filtered with the SidecarContainers
 
 ##### Ready state of a sidecar container is properly used to create/delete endpoints
 
@@ -1128,16 +1130,20 @@ The sidecar container can expose ports and can be used to handle external traffi
 
 ##### Pod lifecycle scenarios without sidecar containers
 
-TBD: describe test cases that can be affected by introducing sidecar containers.
+- Init containers should start after the previous init container has completed
+- Regular containers should start in parallel after all init containers have completed
+- Restart behavior of the init containers
 
 ##### Pod lifecycle scenarios with sidecar containers
 
-TBD: describe test cases to test with sidecar containers.
+- Init containers should start after the previous restartable init container has started
+- Regular containers should start in parallel after all regular init containers have completed and all restartable init containers have started
+- Restartable init containers should restart always
 
 ##### Kubelet restart test cases
 
-TBD: describe test cases on how Pod with sidecar containers behaves when kubelet
-was restarted
+- It should restart the containers in the right order after the node reboot
+- It should not restart any completed init containers after the kubelet restart
 
 ##### API server is down: failure to update containers status during initialization
 
@@ -1254,13 +1260,15 @@ in back-to-back releases.
 #### Beta
 
 - Implement proper termination ordering.
-- Provide defaults for `restartPolicy` field on init containers, `nil` is not
-  an ideal default long term.
+- Allow sidecar containers to restart during the shutdown of the Pod.
+- Add tests with feature activation and deactivation (see [Feature Enablement and Rollback](#feature-enablement-and-rollback)).
+
+#### GA
+
+- Enable `livenessProbe` during the shutdown of the Pod for sidecar containers that restart.
 - Allow to apply security policies on all containers in `initContainers`
-  collection. Example may be disabling `kubectl exec` on containers in
-  `initContainers` collection.
-
-
+    collection. Example may be disabling `kubectl exec` on containers in
+    `initContainers` collection.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1298,13 +1306,19 @@ Pods that has already been created will stay being scheduled after the downgrade
 not be rejected by control
 plane nor by kubelet. Both will treat the sidecar container as an Init container.
 This may render the Pod unusable as it will stuck in initialization forever -
-sidecar container are never exiting. We will document this behavior for Alpha release.
-Promoting feature to Beta we will revisit the situation. If we will see this as
-a major issue, we will need to wait for 3 releases so kubelet will have the logic
+sidecar container are never exiting.
+This behavior has been documented for Alpha release, but we don't see it as a
+major issue requiring to wait for 3 releases so kubelet will have the logic
 to reject such Pods when the feature gate is disabled to keep Downgrade safe.
 
-**Note**, For the control plane and kubelet we will implement logic to reject Pods
-with sidecar containers when feature gate got turned off.
+**Note**, We have implemented logic for the
+[kubelet](https://github.com/kubernetes/kubernetes/blob/f19b62fc0914b38941922afefd1e34eb55f87ee7/pkg/kubelet/lifecycle/predicate.go#L78-L91)
+to reject Pods with sidecar containers when feature gate is turned off.
+For the control plane -
+[kube-apiserver](https://github.com/kubernetes/kubernetes/blob/f19b62fc0914b38941922afefd1e34eb55f87ee7/pkg/api/pod/util.go#L554-L560)
+is dropping the field (if it wasn't set before) and
+[kube-scheduler](https://github.com/kubernetes/kubernetes/blob/f19b62fc0914b38941922afefd1e34eb55f87ee7/pkg/scheduler/framework/plugins/noderesources/fit.go#L256-L262)
+is keeping pods with the field set unschedulable.
 See [Upgrade/downgrade testing](#upgradedowngrade-testing) section.
 
 Workloads will have to be deleted and recreated with the old way of handling
@@ -1452,7 +1466,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-See [Upgrade/downgrade testing](#upgradedowngrade-testing).
+Not yet, but it is planned/required to add them before graduation to Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1472,12 +1486,44 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollout could fail for multiple reasons:
+
+- webhooks that are not recompiled with the new field will strip it out
+- bug in the resource calculation or CPU reservation logic could render the Pod unschedulable
+- bug in the kubelet affecting the pod lifecycle could cause the Pod to be stuck in initialization
+
+However, we have tried to maintain a high coverage of unit tests to ensure we catch these.
+
+Rollback can fail if a Pod with sidecars is scheduled on a node where the feature
+is disabled.
+In that case the Pod will be rejected by kubelet and will be stuck in Pending state.
+Therefore, we advise to first disable the feature gate on the control plane and then
+proceed with the nodes.
+
+Running workloads are not impacted.
+
+Pods with sidecars might take a long time to exit and exceed the TGPS, a new
+event should be added in beta to help administrators diagnose this issue.
+Rather than rolling back the feature, they should work on the graceful termination
+of their main containers to ensure sidecars have enough time to be notified
+and exit on their own.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- [X] Metrics
+  - Metric name: kubelet_started_containers_errors_total
+    - Type: Counter
+    - Labels:code, container_type (should be `init_container`)
+    - Components exposing the metric: `kubelet-metrics`
+    - Symptoms: high number of errors indicates that the kubelet is unable to start the sidecar containers
+- [X] Events
+  - Event name: TBD
+  - Symptoms: high number of events indicates that the TGPS has been exceeded and sidecars have been terminated not gracefully
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1487,11 +1533,40 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+Kubelet specific:
+1. Deploy k8s 1.29-alpha
+2. Enable the `SidecarContainers` feature gate on the control plane and kubelet
+3. Deploy a Pod with sidecar containers using a Deployment
+4. Disable the `SidecarContainers` feature gate on the kubelet (requires a restart)
+5. Drain the node
+6. Pod is rejected by kubelet
+7. Enable the `SidecarContainers` feature gate on the kubelet (requires a restart)
+8. Pod is scheduled and works as expected
+
+Control plane specific:
+1. Deploy k8s 1.29-alpha
+2. Enable the `SidecarContainers` feature gate on the control plane and kubelet
+3. Deploy a Pod with sidecar containers using a Deployment
+4. Disable the `SidecarContainers` feature gate on the control plane
+5. Delete the Pod
+6. Pod is created without the new field - init containers are not recognized as sidecars and block the Pod in initialization
+7. Modify the Deployment by moving the sidecar containers to the regular containers section
+8. Pod is scheduled and works (without the sidecar support)
+9. Enable the `SidecarContainers` feature gate on the control plane
+10. Delete the Pod
+11. Pod is scheduled and works (without the sidecar support)
+12. Modify the Deployment by moving the sidecar containers to the init containers section
+13. Pod is scheduled and works (with the sidecar support)
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1510,6 +1585,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+By checking if `.spec.initContainers[i].restartPolicy` is set to `OnFailure` or `Always`.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1521,13 +1598,17 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+End users can check components that are using the new feature, such as Istio, if istio-proxy runs as a sidecar container:
+
+```
+$ kubectl get pod -o "custom-columns="\
+"NAME:.metadata.name,"\
+"INIT:.spec.initContainers[*].name,"\
+"CONTAINERS:.spec.containers[*].name"
+
+NAME                     INIT                     CONTAINERS
+sleep-7656cf8794-8fhdk   istio-init,istio-proxy   sleep
+```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1546,18 +1627,33 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- number of running containers should not change by more than 10% throughout the day,
+  as measured by the number of running containers at the beginning and end of the day
+- error rate for containers of type init_container should be less than 1%,
+  as measured by the number of errors divided by the total number of init_container containers
+- number of events indicating that TGPS has been exceeded should be less than 10 per day,
+  as measured by the number of events logged in the kubelet log
+- 99% of jobs with sidecars should complete successfully,
+  as measured by the number of jobs that complete successfully divided by the total number of jobs with sidecars
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: kubelet_running_containers
+    - Type: Gauge 
+    - Labels:container_state
+    - Components exposing the metric: `kubelet-metrics`
+  - Metric name: kubelet_started_containers_errors_total
+    - Type: Counter 
+    - Labels:code, container_type (should be `init_container`)
+    - Components exposing the metric: `kubelet-metrics`
+- [X] Events
+  - Event name: TBD
+  - should not appear, unless TGPS is exceeded and sidecars are terminated
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1565,6 +1661,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -1588,6 +1686,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -1616,6 +1716,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1625,6 +1727,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1632,6 +1736,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1641,6 +1747,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1652,6 +1760,10 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Graceful Pod termination might take longer with sidecars since their exit sequence starts after the
+last main container has stopped.
+The impact should be negligible because the TGPS is enforced in all cases.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1665,6 +1777,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1676,6 +1790,10 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No, since the KEP only enable a new way to run containers as sidecars instead of regular containers.
+Resource consumption can even be lower since various tricks using emptyDir volumes to perform synchronization
+(as with istio-proxy) are no longer needed.
 
 ### Troubleshooting
 
@@ -1692,6 +1810,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Nothing changes compared to the current kubelet behavior.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1707,7 +1827,26 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Main containers don't exit within TGPS, leading to sidecars being terminated
+  - Detection: high number of events indicating TGPS has been exceeded
+  - Mitigations: ensure timely termination of main containers
+  - Diagnostics: Events
+  - Testing: TBD
+- Main container or sidecar use a preStop hook consuming TGPS, leading to remaining sidecars being terminated
+  - Detection: high number of events indicating TGPS has been exceeded
+  - Mitigations: ensure preStop hooks are not delaying termination
+  - Diagnostics: Events
+  - Testing: TBD
+- Sidecar container uses a preStop hook that make the container exit during Pod shutdown, sidecar is restarted, leading
+to a CrashLoopBackOff
+  - Detection: sidecar in CrashLoopBackOff during termination
+  - Mitigations: ensure preStop hooks are not making the container to exit, document best practices
+  - Diagnostics: Events
+  - Testing: TBD
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+None.
 
 ## Implementation History
 
