@@ -57,17 +57,19 @@ previously scheduled Pod's image is finalizing download), every next Pod's image
 few seconds (let's say 2s) longer than the previous one, worst case is around 20s, 1/3rd of
 proposed default notification interval. No events emitted.
 
-012345678901234567890123456789012345678901234567890123456789
-01234567890
-          0123456789012
-                    012345678901234
-                              0123456789012345
-                                        01234567890123456
-                                                  01234567890123456789
-                                                            012345678901234567890
-                                                                      0123456789012345678901
-                                                                                012345678901234567890123
-                                                                                          012345678901234567
+Seconds spent downloading
+```
+Pod 1  01234567890
+Pod 2            0123456789012
+Pod 3                      012345678901234
+Pod 4                                0123456789012345
+Pod 5                                          01234567890123456
+Pod 6                                                    01234567890123456789
+Pod 7                                                              012345678901234567890
+Pod 8                                                                        0123456789012345678901
+Pod 9                                                                                  012345678901234567890123
+Pod 10                                                                                           012345678901234567
+```
 
 2.2. Packing distribution - as many Pods to same node as possible
 
