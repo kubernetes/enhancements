@@ -1,0 +1,16 @@
+title: Add support for multiple metrics APIs
+kep-number: 4261
+authors:
+  - "@dgrisonnet"
+  - "@jorturfer"
+owning-sig: sig-autoscaling
+participating-sigs:
+reviewers: TBD
+approvers: TBD
+editor: TBD
+creation-date: TBD
+last-updated: TBD
+status: implemented
+superseded-by:
+latest-milestone: "0.0"
+stage: TBD
