@@ -14,7 +14,7 @@ approvers:
   - "@smarterclayton"
 replaces:
   - "/keps/sig-auth/3130-kms-observability"
-stage: beta
+stage: stable
 latest-milestone: "v1.29"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
