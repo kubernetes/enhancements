@@ -502,16 +502,13 @@ A map containing duplicate keys is well-formed but invalid according to the CBOR
 specification. Decoding a map containing duplicate keys will produce a decode
 error.
 
-<<[UNRESOLVED]>>
-How should the decoder handle unrecognized fields, that is, encountering a map
-key that does not correspond to the name of a struct field's `json` tag name?
-This may be expected in cases where the client is newer than the server, or
-where an object containing an unrecognized field was transcoded from YAML or
-JSON to CBOR. A strict decode error (as in JSON) may be appropriate in this case.
-
-This is not a concern for the custom resource path, which uses a schema-aware
-decoder wrapper to detect unknown fields.
-<<[/UNRESOLVED]>>
+Decoding a map with unrecognized fields (map keys that do not not correspond to
+the name of a struct field's `json` tag name) is expected in cases where the
+client is newer than the server, or where an object containing an unrecognized
+field was transcoded from YAML or JSON to CBOR. A strict decoding error (as in
+JSON) will be generated in this case. In the custom resource path, where objects
+are decoded into `unstructured.Unstructured`, a schema-aware decoder wrapper is
+responsible for reporting unknown fields as strict decoding errors.
 
 Note that clients (e.g. kubectl) may choose to decode an object from a JSON or
 YAML text representation containing duplicate keys, then encode to CBOR to
@@ -682,6 +679,11 @@ Tests for the following behaviors will be added:
     of the non-Go client languages
 - Go strings that are not valid UTF-8 sequences can be roundtripped through CBOR
   without error
+- decoding a map into a Go struct produces a strict decoding error if the map
+  contains a key that does not correspond to JSON tag name of one of the
+  struct's fields
+- roundtripping preserves the distinction between absent, present-but-null, and
+  present-and-empty for slices and maps
 
 As well as fuzz tests covering:
 
@@ -692,14 +694,6 @@ As well as fuzz tests covering:
 - roundtrip JSON-to-CBOR-to-JSON and CBOR-to-JSON-to-CBOR
 - roundtrip through implementations in at least some of the non-Go client
   languages
-
-<<[UNRESOLVED]>>
-- decoding a map into a Go struct produces an error if the map contains a key
-  that does not correspond to JSON tag name of one of the struct's fields
-  (should this be a strict decode error?)
-- roundtripping preserves the distinction between absent, present-but-null, and
-  present-and-empty for slices and maps (confirm the JSON serializer does this)
-<<[/UNRESOLVED]>>
 
 ##### Integration tests
 
