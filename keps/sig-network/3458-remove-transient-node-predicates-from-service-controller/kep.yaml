@@ -10,10 +10,10 @@ reviewers:
 approvers:
   - "@thockin"
 creation-date: "2022-08-07"
-last-updated: v1.28
+last-updated: v1.29
 status: implementable
-stage: beta
-latest-milestone: "v1.28"
+stage: stable
+latest-milestone: "v1.29"
 milestone:
   beta: "v1.27"
   stable: "v1.29"
