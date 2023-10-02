@@ -211,9 +211,16 @@ The Job controller will start populating the field again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, there are unit tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/pkg/controller/job/job_controller_test.go#L236)).
-There are also integration tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1364) and
-[link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1517)).
+We have unit tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/pkg/controller/job/job_controller_test.go#L236)) for
+the `status.ready` field when the feature is enabled or disabled.
+Similarly, we have integration tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1364)
+and [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1517))
+for the feature being enabled or disabled.
+
+However, due to omission we graduated to Beta without feature gate
+transition (enablement or disablement) tests. With graduation to stable it's too
+late to add these tests so we're sticking with just manual tests
+(see [here](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)).
 
 ### Rollout, Upgrade and Rollback Planning
 
