@@ -1,4 +1,4 @@
-# Add support for multiple metrics APIs
+# Support for multiple metrics APIs
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
