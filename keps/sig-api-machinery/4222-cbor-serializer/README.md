@@ -238,6 +238,7 @@ know that this has succeeded?
   - custom resource serving
   - dynamic clients
   - apply configurations
+  - strategic merge patches
 
 ### Non-Goals
 
@@ -316,17 +317,19 @@ request header. For compatibility with API servers that don’t support CBOR,
 clients should also accept “application/json” (with a lower quality factor) and
 choose the appropriate decoder based on the Content-Type response header.
 
-Similarly, streaming requests should use the MIME type for CBOR Sequences,
+Streaming requests should use the MIME type for CBOR Sequences,
 “application/cbor-seq”.
 
 A new "+cbor" suffix will be accepted for the existing Server-Side Apply media
 type "application/apply-patch" and identifies a CBOR-encoded apply
-configuration. CBOR will not be a supported encoding for JSON Patches, JSON
-Merge Patches, or Strategic Merge Patches. These patch types are JSON documents
-by definition (<<[UNRESOLVED]>>Strategic Merge Patch as an extension of JSON
-Merge Patch?<<[/UNRESOLVED]>>), so supporting them would require either defining
-parallel CBOR versions of each patch type, or sacrificing the efficiency benefit
-of CBOR by transcoding to JSON on the server side.
+configuration. Similarly, "application/strategic-merge-patch+cbor" will be
+accepted as the content type of a CBOR-encoded strategic merge patch.
+
+CBOR will not be a supported encoding for JSON Patches or JSON Merge Patches
+because both types are JSON documents by definition; supporting them would
+require either defining parallel CBOR variants of each patch type, or
+sacrificing the efficiency benefit of CBOR by transcoding to JSON on the server
+side.
 
 Clients can send CBOR-encoded request bodies with the appropriate Content-Type
 to API servers that support CBOR. API servers that don’t support CBOR will
@@ -356,8 +359,10 @@ mechanism with specific details to be agreed by sig-api-machinery:
 1. AllowCBOR: If disabled, clients configured to accept "application/cbor" will
    instead accept "application/json" with the same preference. Clients
    configured to write "application/cbor" will instead write
-   "application/json". Patch requests with type "application/apply-patch+cbor"
-   will instead use type "application/apply-patch+yaml".
+   "application/json". Patch requests with content types
+   "application/apply-patch+cbor" or "application/strategic-merge-patch+cbor"
+   will instead use "application/apply-patch+yaml" and
+   "application/strategic-merge-patch+json", respectively.
 1. PreferCBOR: If enabled _and_ AllowCBOR is enabled, The default request
    content-type (if not explicitly configured) becomes "application/cbor" and
    the dynamic client's request content-type becomes "application/cbor".
