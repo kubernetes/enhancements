@@ -15,6 +15,7 @@ reviewers:
 approvers:
   - aojea
   - dims
+  - BenTheElder
 
 see-also:
   - "/keps/sig-testing/2464-kubetest2-ci-migration"

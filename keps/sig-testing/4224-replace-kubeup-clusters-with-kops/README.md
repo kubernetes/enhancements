@@ -208,6 +208,7 @@ and make progress.
 
 - Stop testing kube-dns
 - Cleanup addon-manager and related tests
+- Migrating node e2e tests. This work is being tracked in kep-2464.
 
 ## Proposal
 
@@ -368,7 +369,7 @@ This KEP depends on the following changes in:
   - images published for both architectures and promoted properly to registry.k8s.io
   - auth-provider-gcp to be published properly and available at artifacts.k8s.io
 - k/kops
-  - squash various bugs with kops
+  - squash various [bugs](https://github.com/kubernetes/kops/issues/15983) with kops 
 
 ## Scalability
 
