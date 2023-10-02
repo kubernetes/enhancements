@@ -232,11 +232,12 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Reduce CPU time and heap churn of encode and decode for cases that can't use
-  Protobuf:
+- Reduce CPU time and heap churn of encode and decode along the request-response
+  path when Protobuf can not be used, especially:
   - custom resource storage
   - custom resource serving
   - dynamic clients
+  - apply configurations
 
 ### Non-Goals
 
@@ -248,6 +249,7 @@ and make progress.
 - Replace existing usage of Protobuf.
 - Substantially reduce the size of encoded objects (a modest size reduction is
   anticipated).
+- Replace all usage of YAML or JSON.
 
 ## Proposal
 
@@ -317,8 +319,14 @@ choose the appropriate decoder based on the Content-Type response header.
 Similarly, streaming requests should use the MIME type for CBOR Sequences,
 “application/cbor-seq”.
 
-CBOR will not be a supported encoding for JSON Patches, JSON Merge Patches,
-Strategic Merge Patches, or Server-Side Apply configurations.
+A new "+cbor" suffix will be accepted for the existing Server-Side Apply media
+type "application/apply-patch" and identifies a CBOR-encoded apply
+configuration. CBOR will not be a supported encoding for JSON Patches, JSON
+Merge Patches, or Strategic Merge Patches. These patch types are JSON documents
+by definition (<<[UNRESOLVED]>>Strategic Merge Patch as an extension of JSON
+Merge Patch?<<[/UNRESOLVED]>>), so supporting them would require either defining
+parallel CBOR versions of each patch type, or sacrificing the efficiency benefit
+of CBOR by transcoding to JSON on the server side.
 
 Clients can send CBOR-encoded request bodies with the appropriate Content-Type
 to API servers that support CBOR. API servers that don’t support CBOR will
@@ -347,7 +355,9 @@ mechanism with specific details to be agreed by sig-api-machinery:
 
 1. AllowCBOR: If disabled, clients configured to accept "application/cbor" will
    instead accept "application/json" with the same preference. Clients
-   configured to write "application/cbor" will instead write "application/json".
+   configured to write "application/cbor" will instead write
+   "application/json". Patch requests with type "application/apply-patch+cbor"
+   will instead use type "application/apply-patch+yaml".
 1. PreferCBOR: If enabled _and_ AllowCBOR is enabled, The default request
    content-type (if not explicitly configured) becomes "application/cbor" and
    the dynamic client's request content-type becomes "application/cbor".
@@ -800,8 +810,8 @@ in back-to-back releases.
 
 - All new tests enumerated in "Test Plan" are implemented.
 - Feature gate wired to kube-apiserver.
-- Dynamic client updated to optionally support CBOR.
-- Client generation updated to optionally support CBOR.
+- Dynamic client updated to support CBOR behind client-side gates.
+- Client generation updated to support CBOR behind client-side gates.
 - Runtime gating mechanism added to client-go.
 - Maintenance of CBOR library is understood.
 
