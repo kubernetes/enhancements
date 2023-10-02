@@ -17,10 +17,10 @@
   - [Staging Directory](#staging-directory)
     - [Cloud Provider Instances](#cloud-provider-instances)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing update](#prerequisite-testing-update)
-    - [Unit tests](#unit-tests)
-    - [Integration tests](#integration-tests)
-    - [e2e tests](#e2e-tests)
+      - [Prerequisite testing update](#prerequisite-testing-update)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -259,7 +259,7 @@ necessary.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-#### Prerequisite testing update
+##### Prerequisite testing update
 
 The behavior of the cloud controllers is not changing with respect to cluster functioning,
 as such the prerequisite for this KEP is that all the current cloud controller related
@@ -269,7 +269,7 @@ As described in the [non-goals](#non-goals) section, testing of individual cloud
 is not in scope for this KEP. Each provider is expected to own the tests related to their
 specific cloud platform.
 
-#### Unit tests
+##### Unit tests
 
 This KEP describes a process for extracting and migrating current in-tree code
 to external repositories. The notion of unit style testing takes on a different
@@ -287,7 +287,7 @@ contains unit testing for the core controller loops of a CCM implementation. See
 Cloud providers who create external CCMs will be responsible for providing unit
 testing within their own repositories.
 
-#### Integration tests
+##### Integration tests
 
 Integration testing on this change is complicated by the fact that any testing
 with concrete CCM implementations requires cloud infrastructure from the same
@@ -297,7 +297,7 @@ the e2e test which are running on concrete providers.
 
 For the reasons stated above, this KEP focuses in e2e testing over integration.
 
-#### e2e tests
+##### e2e tests
 
 This KEP will leverage the existing e2e test suite for the majority of testing.
 Given that this KEP proposes no behavioral changes to the functioning the of
@@ -311,7 +311,7 @@ repository:
 
 - https://github.com/kubernetes/kubernetes/pull/117503
 
-The following test grids show the e2e tests running with external CCMS on GCP
+The following test grids show the e2e tests running with external CCMs on GCP
 and AWS cloud providers respectively:
 
 - https://testgrid.k8s.io/provider-gcp-periodics#E2E%20Full%20-%20Cloud%20Provider%20GCP%20-%20with%20latest%20k8s.io/kubernetes
@@ -416,42 +416,35 @@ Copied from the [Kubernetes Version Skew Policy documentation][skew]:
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+###### How can this feature be enabled / disabled in a live cluster?
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DisableCloudProviders
+  - Components depending on the feature gate: kubelet, kube-apiserver, kube-controller-manager
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DisableKubeletCloudCredentialProvider
+  - Components depending on the feature gate: kubelet
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: DisableCloudProviders
-    - Components depending on the feature gate: kubelet, kube-apiserver, kube-controller-manager
-  - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: DisableKubeletCloudCredentialProvider
-    - Components depending on the feature gate: kubelet
+###### Does enabling the feature change any default behavior?
+Yes, enabling this feature will disable all capabilities enabled when `--cloud-provider` is set in core components.
+Users need to ensure they have migrated to out-of-tree components prior to enabling this feature gate.
+If appropriate extensions (CCM, credential provider, apiserver-network-proxy, etc) are in use, cloud provider capabilities
+should remain the same at the very least.
 
-* **Does enabling the feature change any default behavior?**
-  Yes, enabling this feature will disable all capabilities enabled when `--cloud-provider` is set in core components.
-  Users need to ensure they have migrated to out-of-tree components prior to enabling this feature gate.
-  If appropriate extensions (CCM, credential provider, apiserver-network-proxy, etc) are in use, cloud provider capabilities
-  should remain the same at the very least.
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+Yes, the feature can be disabled once it is enabled. If disabled, users must ensure
+that the CCM is no longer running in the cluster. Credential provider plugins and the
+apiserver network proxy do not have to be stopped on rollback.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Yes, the feature can be disabled once it is enabled. If disabled, users must ensure
-  that the CCM is no longer running in the cluster. Credential provider plugins and the
-  apiserver network proxy do not have to be stopped on rollback.
+###### What happens if we reenable the feature if it was previously rolled back?
+All capabilities from in-tree cloud providers will be re-disabled.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-
-  All capabilities from in-tree cloud providers will be re-disabled.
-
-* **Are there any tests for feature enablement/disablement?**
-  Adequate unit tests, component integration test and e2e tests will be added for this feature before
-  it is goes beta and on by default.
+###### Are there any tests for feature enablement/disablement?
+Adequate unit tests, component integration test and e2e tests will be added for this feature before
+it is goes beta and on by default.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How can a rollout fail? Can it impact already running workloads?**
-
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 The primary method of rollout failure is due to configuration issues. When
 migrating to use external CCMs there are several changes which must be made
 to ensure proper functioning. When encountering a failure, users should review
@@ -466,8 +459,12 @@ If a rollout of external CCMs failed, users might see failures of workloads
 to schedule, workloads might be evicted, and service-based traffic could be
 interrupted.
 
-* **What specific metrics should inform a rollback?**
+For more information about rollouts, upgrades, and planning, please see the
+Kubernetes documentation:
+* [Cloud Controller Manager Administration][ccmadmin]
+* [Migrate Replicated Control Plane To Use Cloud Controller Manager][ccmmigrate]
 
+###### What specific metrics should inform a rollback?
 There are a few observable behaviors that inform a rollback. If users start to
 see nodes failing to register, load balancer calls failing or not happening,
 deleted nodes not being removed, or components failing to start due to missing
@@ -486,148 +483,125 @@ a short period of time, or after upgrade:
 * `nodesync_latency_seconds`
 * `update_loadbalancer_host_latency_seconds`
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+Yes, the upgrade and downgrade paths have been tested manually on AWS and GCE
+by those provider owners. We do not have artifacts of those tests.
 
-  * Yes, tested manually by various providers, notably AWS and GCE.
-
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-
-  * The provider options (e.g. `aws`, `azure`, etc), with the exception of `external`,
-    for the `--cloud-provider` flag of `kubelet`, `kube-apiserver`, and
-    `kube-controller-manager` are deprecated with the beta release.
-  * The in-tree cloud controller loops for `kubelet`, `kube-apiserver`, and
-    `kube-controller-manager` are deprecated with the beta release.
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+* The provider options (e.g. `aws`, `azure`, etc), with the exception of `external`,
+  for the `--cloud-provider` flag of `kubelet`, `kube-apiserver`, and
+  `kube-controller-manager` are deprecated with the beta release.
+* The in-tree cloud controller loops for `kubelet`, `kube-apiserver`, and
+  `kube-controller-manager` are deprecated with the beta release.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
+* In genreal, if pods are being scheduled to the cluster then this feature is
+  working as intended, and is in use by workloads.
+* Workloads that explicitly use load balancer type services will depend on external CCMs
+  on providers that support the load balancer service controller.
+* Workloads that depend on well-known zone and region labels on nodes are
+  also considered to be using this feature transitively.
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can someone using this feature know that it is working for their instance?
+- [x] Other (treat as last resort)
+  - Details: The `Uninitialized` taint should be removed from Node objects.
 
-  * In genreal, if pods are being scheduled to the cluster then this feature is
-    working as intended, and is in use by workloads.
-  * Workloads that explicitly use load balancer type services will depend on external CCMs
-    on providers that support the load balancer service controller.
-  * Workloads that depend on well-known zone and region labels on nodes are
-    also considered to be using this feature transitively.
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+* Nodes being initialized properly, zone and region labels being added.
+* Pods being scheduled.
+* Load balancer type services being created and destroyed.
+* The existing SLOs for functionalities the `kube-controller-manager` should be used,
+  this change is supposed to be no-op from the end-user perspective.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+* Pods scheduling, if the CCM node controller is not working properly the
+  rate of pod scheduling will decrease.
+* Deleted node removal, if the CCM node lifecycle controller is not working
+  properly then terminated nodes will not be removed from the cluster.
+* Load balancer services not being created or destroyed, if the CCM service
+  controller is not working properly, load balancer services will not be
+  created or removed.
 
-  * Pods scheduling, if the CCM node controller is not working properly the
-    rate of pod scheduling will decrease.
-  * Deleted node removal, if the CCM node lifecycle controller is not working
-    properly then terminated nodes will not be removed from the cluster.
-  * Load balancer services not being created or destroyed, if the CCM service
-    controller is not working properly, load balancer services will not be
-    created or removed.
-
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-
-  * Nodes being initialized properly, zone and region labels being added.
-  * Pods being scheduled.
-  * Load balancer type services being created and destroyed.
-  * It is difficult to be more proscriptive about the SLOs of individual CCMs
-    as these will be managed by separate project teams and implementations
-    may vary between providers.
-
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-
-  * A metric to indicate failed connections with the cloud provider API
-    endpoints could be helpful in determining when a CCM is not able to
-    communicate with the underlying infrastructure.
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+A metric to indicate failed connections with the cloud provider API
+endpoints could be helpful in determining when a CCM is not able to
+communicate with the underlying infrastructure.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
-
-  * CCM must be able to connect to cloud provider services and endpoints, this
-    will depend on the specifics of each provider
+###### Does this feature depend on any specific services running in the cluster?
+CCM must be able to connect to cloud provider services and endpoints, this
+will depend on the specifics of each provider
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+###### Will enabling / using this feature result in any new API calls?
+Possibly. This change focuses on a migration of code from core Kubernetes
+components into external user-managed components. During the alpha state of
+this feature, the code from in-tree implementations was migrated into external
+out-of-tree repositories. At that point in time, the feature code was the
+same between in-tree and out-of-tree implementations. As the out-of-tree CCMs
+have now become independent projects, it is out of scope for this KEP to
+provide continuous updating of those project statuses with respect to API
+calls.
 
-_For beta, this section is required: reviewers must answer these questions._
+###### Will enabling / using this feature result in introducing new API types?
+No.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+Possibly. As this change focuses on a migration of previously in-tree code
+to externally developed CCMs, it is out of scope to provide predictive
+guidance about how those project teams will add or remove calls to the cloud
+provider. In the alpha state of this feature, the in-tree code was migrated
+into external out-of-tree repositories. At that point in time, no new
+cloud provider calls were added.
 
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+No.
 
-  Possibly. This change focuses on a migration of code from core Kubernetes
-  components into external user-managed components. During the alpha state of
-  this feature, the code from in-tree implementations was migrated into external
-  out-of-tree repositories. At that point in time, the feature code was the
-  same between in-tree and out-of-tree implementations. As the out-of-tree CCMs
-  have now become independent projects, it is out of scope for this KEP to
-  provide continuous updating of those project statuses with respect to API
-  calls.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+No.
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+No. In fact, it should reduce resource usage.
 
-  No.
-
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
-
-  Possibly. As this change focuses on a migration of previously in-tree code
-  to externally developed CCMs, it is out of scope to provide predictive
-  guidance about how those project teams will add or remove calls to the cloud
-  provider. In the alpha state of this feature, the in-tree code was migrated
-  into external out-of-tree repositories. At that point in time, no new
-  cloud provider calls were added.
-
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-
-  No.
-
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-
-  No.
-
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-
-  No. In fact, it should reduce resource usage.
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+No, it should not. But, as with any change that requires running additional
+pods it is possible that the new CCMs will place load on cluster
+resources. The load from the new CCMs should not be significantly greater than
+the previous in-tree implementations.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
+###### How does this feature react if the API server and/or etcd is unavailable?
+* CCMs will not be able to update node and service objects.
+* In general, the expectations for the `kube-controller-manager` with respect
+  to an unavailable API server and/or etcd will apply to this feature as
+  well.
 
-_This section must be completed when targeting beta graduation to a release._
+###### What are other known failure modes?
+- CCM not communicating with provider infrastructure.
+  - Detection: Nodes not having the `Uninitialized` taint removed
+    autoamtically. The `nodesync_error_total` metric shows an increasing
+    rate.
+  - Mitigation: Check configuration of cloud credentials and CCM to ensure
+    that the proper values, RBAC, and quotas are granted with the provider.
+  - Diagnostics: Logs should be checked for failed calls to the infrastructure
+    provider (these will looks different on each provider). The default log
+    level should be sufficient to show these failures.
+  - Testing: Check cloud credentials manually with provider. Additionally,
+    watch nodes for removal of the `Uninitialized` taint and the application
+    of `Ready` state.
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-
-  * CCMs will not be able to update node and service objects.
-  * In general, the expectations for the `kube-controller-manager` with respect
-    to an unavailable API server and/or etcd will apply to this feature as
-    well.
-
-* **What are other known failure modes?**
-
-  * As this feature is directly about communication with an external cloud
-    provider API or endpoints, failures related to the cloud provider being
-    unavailable, a user's quota being exceeded, or other provider-specific
-    configuration issues are all potential failure modes.
-
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-
-  * Checking the CCM logs for failures and errors.
-  * Review the RBAC requirements for the CCMs and related Kubernetes components.
-  * Confirm cloud provider configurations, settings, and quotas.
-  * Review requests and limits for CCMs to ensure proper resourcing.
-  * If bug or other failure, rollback to in-tree providers and open an issue
-    with the appropriate cloud provider.
+###### What steps should be taken if SLOs are not being met to determine the problem?
+* Checking the CCM logs for failures and errors.
+* Review the RBAC requirements for the CCMs and related Kubernetes components.
+* Confirm cloud provider configurations, settings, and quotas.
+* Review requests and limits for CCMs to ensure proper resourcing.
+* If bug or other failure, rollback to in-tree providers and open an issue
+  with the appropriate cloud provider.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
