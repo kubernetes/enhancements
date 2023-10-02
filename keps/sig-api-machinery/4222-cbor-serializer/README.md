@@ -342,32 +342,15 @@ skew for aggregated API servers is much wider (infinite?). Encoding and decoding
 resources from aggregated API servers that don't support CBOR will rely on the
 content-type negotation mechanisms described above.
 
-CBOR enablement will be feature-gated in API servers. Client-go will provide a
-runtime gating mechanism for CBOR request encoding as follows:
+Two client-side gates will be added as follows, using a common client-go gating
+mechanism with specific details to be agreed by sig-api-machinery:
 
-- An environment variable will be read at package initialization time with
-  recognized values:
-  - "default": The default request content-type (if not explicitly configured)
-    becomes application/cbor rather than application/json.
-  - "disabled": Clients configured with request content-type application/cbor
-    behave as if configured to use application/json.
-  - Any other value has no effect.
-- A client-go library consumer can set a global override once during the
-  lifetime of its process. In this case, the environment variable is completely
-  ignored. Attempting to set the global override more than once per process is a
-  programmer error and will panic.
-
-| Client Config    | Environment/Override | Effective Content-Type |
-|------------------|----------------------|------------------------|
-|                  |                      | application/json       |
-|                  | default              | application/cbor       |
-|                  | disabled             | application/json       |
-| application/json |                      | application/json       |
-| application/json | default              | application/json       |
-| application/json | disabled             | application/json       |
-| application/cbor |                      | application/cbor       |
-| application/cbor | default              | application/cbor       |
-| application/cbor | disabled             | application/json       |
+1. AllowCBOR: If disabled, clients configured to accept "application/cbor" will
+   instead accept "application/json" with the same preference. Clients
+   configured to write "application/cbor" will instead write "application/json".
+1. PreferCBOR: If enabled _and_ AllowCBOR is enabled, The default request
+   content-type (if not explicitly configured) becomes "application/cbor" and
+   the dynamic client's request content-type becomes "application/cbor".
 
 ### User Stories (Optional)
 
