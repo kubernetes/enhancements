@@ -111,6 +111,9 @@ SIG Architecture for cross-cutting KEPs).
     - [Reserve](#reserve)
     - [Unreserve](#unreserve)
   - [Cluster Autoscaler](#cluster-autoscaler)
+    - [Generic plugin enhancements](#generic-plugin-enhancements)
+  - [DRA scheduler plugin extension mechanism](#dra-scheduler-plugin-extension-mechanism)
+    - [Building a custom Cluster Autoscaler binary](#building-a-custom-cluster-autoscaler-binary)
   - [kubelet](#kubelet)
     - [Managing resources](#managing-resources)
     - [Communication between kubelet and resource kubelet plugin](#communication-between-kubelet-and-resource-kubelet-plugin)
@@ -1930,8 +1933,34 @@ Autoscaler](https://github.com/kubernetes/autoscaler/tree/master/cluster-autosca
 encounters a pod that uses a resource claim, the autoscaler needs assistance by
 the resource driver for that claim to make the right decisions. Without that
 assistance, the autoscaler might scale up the wrong node group (resource is
-provided by nodes in another group) or scale up unnecessarily (resource is
-network-attached and adding nodes won't help).
+provided by nodes in another group) or not scale up (pod is pending because of
+a claim that cannot be allocated, but looks like it should be scheduleable
+to the autoscaler).
+
+With the following changes, vendors can provide Go code in a package that can
+be built into a custom autoscaler binary to support correct scale up
+simulations for clusters that use their hardware. Extensions for invoking such
+vendor code through some RPC mechanism, as WASM plugin, or some generic
+code which just needs to be parameterized for specific hardware could be added
+later in separate KEPs.
+
+The in-tree DRA scheduler plugin is still active. It handles the generic checks
+like "can this allocated claim be reserved for this pod" and only calls out to
+vendor code when it comes to decisions that only the vendor can handle, like
+"can this claim be allocated" and "what effect does allocating this claim have
+for the cluster".
+
+The underlying assumption is that vendors can determine the capabilities of
+nodes based on labels. Those labels get set by the autoscaler for simulated
+nodes either by cloning some real node or through configuration during scale up
+from zero. Then when some vendor code encounters a node which doesn't exit
+in the real cluster, it can determine what resource the vendor driver would
+be able to make available if it was created for real.
+
+#### Generic plugin enhancements
+
+The changes in this section are independent of DRA. They could also be used to
+simulate volume provisioning better.
 
 At the start of a scale up or scale down cycle, autoscaler takes a snapshot of
 the current cluster state. Then autoscaler determines whether a real or
@@ -1940,69 +1969,165 @@ of scheduler plugins. If a pod fits a node, the snapshot is updated by calling
 [NodeInfo.AddPod](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/framework/types.go#L620-L623). This
 influences further checks for other pending pods.
 
-To support the custom allocation logic that a vendor uses for its resources,
-the autoscaler needs an extension mechanism similar to the [scheduler
-extender](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/framework/extender.go#L24-L72). The
-existing scheduler extender API has to be extended to include methods that
-would only get called by the autoscaler, like starting a cycle. Instead of
-adding these methods to the scheduler framework, autoscaler can define its own
-interface that inherits from the framework:
+The DRA scheduler plugin gets integrated into this snapshotting and simulated
+pod scheduling through a new scheduler framework interface:
 
 ```
-import "k8s.io/pkg/scheduler/framework"
-
-type Extender interface {
-    framework.Extender
-
-    // NodeSelected gets called when the autoscaler determined that
-    // a pod should run on a node.
-    NodeSelected(pod *v1.Pod, node *v1.Node) error
-
-    // NodeReady gets called by the autoscaler to check whether
-    // a new node is fully initialized.
-    NodeReady(nodeName string) (bool, error)
+// ClusterAutoScalerPlugin is an interface that is used only by the cluster autoscaler.
+// It enables plugins to store state across different scheduling cycles.
+//
+// The usual call sequence of a plugin when used in the scheduler is:
+// - at program startup:
+//   - instantiate plugin
+//   - EventsToRegister
+// - for each new pod:
+//   - PreEnqueue
+// - for each pod that is ready to be scheduled, one pod at a time:
+//   - PreFilter, Filter, etc.
+//
+// Cluster autoscaler works a bit differently. It identifies all pending pods,
+// takes a snapshot of the current cluster state, and then simulates the effect
+// of scheduling those pods with additional nodes added to the cluster. To
+// determine whether a pod fits into one of these simulated nodes, it
+// uses the same PreFilter and Filter plugins as the scheduler. Other extension
+// points (Reserve, Bind) are not used. Plugins which modify the cluster state
+// therefore need a different way of recording the result of scheduling
+// a pod onto a node. This is done through ClusterAutoScalerPlugin.
+//
+// Cluster autoscaler will:
+// - at program startup:
+//   - instantiate plugin, with real informer factory and no Kubernetes client
+//   - start informers
+// - at the start of a simulation:
+//   - call StartSimulation with a clean cycle state
+// - for each pending pod:
+//   - call PreFilter and Filter with the same cycle state that
+//     was passed to StartSimulation
+//   - call SimulateBindPod with the same cycle state that
+//     was passed to StartSimulation (i.e. *not* the one which was modified
+//     by PreFilter or Filter) to indicate that a pod is being scheduled onto a node
+//     as part of the simulation
+//
+// A plugin may:
+// - Take a snapshot of all relevant cluster state as part of StartSimulation
+//   and store it in the cycle state. This signals to the other extension
+//   points that the plugin is being used as part of the cluster autoscaler.
+// . In PreFilter and Filter use the cluster snapshot to make decisions
+//   instead of the normal "live" cluster state.
+// - In SimulateBindPod update the snapshot in the cycle state.
+type ClusterAutoScalerPlugin interface {
+	Plugin
+	// StartSimulation is called when the cluster autoscaler begins
+	// a simulation.
+	StartSimulation(ctx context.Context, state *CycleState) *Status
+	// SimulateBindPod is called when the cluster autoscaler decided to schedule
+	// a pod onto a certain node.
+	SimulateBindPod(ctx context.Context, state *CycleState, pod *v1.Pod, nodeInfo *NodeInfo) *Status
+    // NodeIsReady checks whether some real node has been initialized completely.
+    // Even if it is "ready" as far Kubernetes is concerned, some DaemonSet pod
+    // might still be missing or not done with its startup yet.
+    NodeIsReady(ctx context.Context, node *v1.Node) (bool, error)
 }
 ```
 
-The underlying implementation can either be compiled into a custom autoscaler
-binary by cloud provider who controls the entire cluster or use HTTP similar to
-the [HTTP
-extender](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/extender.go#L41-L53).
-As an initial step, configuring such HTTP webhooks for different resource
-drivers can be added to the configuration file defined by the `--cloud-config`
-configuration file with a common field that gets added in all cloud provider
-configs or a new `--config` parameter can be added. Later, dynamically
-discovering deployed webhooks can be added through an autoscaler CRD.
-
-In contrast to the in-tree HTTP extender implementation, the one for autoscaler
-must be session oriented: when creating the extender for a cycle, a new "start"
-verb needs to be invoked. When this is called in a resource driver controller
-webhook, it needs to take a snapshot of the relevant state and return a session
-ID. This session ID must be included in all following HTTP invocations as a
-"session" header. Ensuring that a "stop" verb gets called reliably would
-complicate the autoscaler. Instead, the webhook should support a small number
-of recent session and garbage-collect older ones.
-
-The existing `extenderv1.ExtenderArgs` and `extenderv1.ExtenderFilterResult`
-API can be used for the "filter" operation. The extender can be added to the
-list of active scheduler plugins because it implements the plugin interface.
-Because filter operations may involve fictional nodes, the full `Node` objects
-instead of just the node names must be passed. For fictional nodes, the
-resource driver must determine based on labels which resources it can provide
-on such a node. New APIs are needed for `NodeSelected` and `NodeReady`.
-
-`NodeReady` is needed to solve one particular problem: when a new node first
+`NodeIsReady` is needed to solve one particular problem: when a new node first
 starts up, it may be ready to run pods, but the pod from a resource driver's
 DaemonSet may still be starting up. If the resource driver controller needs
 information from such a pod, then it will not be able to filter
 correctly. Similar to how extended resources are handled, the autoscaler then
-first needs to wait until the extender also considers the node to be ready.
+first needs to wait until the plugin also considers the node to be ready.
 
-Such extenders completely replace the generic scheduler resource plugin. The
-generic plugin would be able to filter out nodes based on already allocated
-resources. But because it is stateless, it would not handle the use count
-restrictions correctly when multiple pods are pending and reference the same
-resource.
+### DRA scheduler plugin extension mechanism
+
+The in-tree scheduler plugin gets extended by vendors through the following API
+in `k8s.io/dynamic-resource-allocation/simulation`. Vendor code does not depend
+on the k/k/pkg/scheduler package nor on autoscaler packages.
+
+```
+// Registry stores all known plugins which can simulate claim allocation.
+// It is thread-safe.
+var Registry registry
+
+// PluginName is a special type that is used to look up plugins for a claim.
+// For now it must be the same as the driver name in the resource class of a
+// claim.
+type PluginName string
+
+// Add adds or overwrites the plugin for a certain name.
+func (r *registry) Add(name PluginName, plugin Plugin) { ... }
+
+...
+
+// Plugin is used to register a plugin.
+type Plugin interface {
+	// Activate will get called to prepare the plugin for usage.
+	Activate(ctx context.Context, client kubernetes.Interface, informerFactory informers.SharedInformerFactory) (ActivePlugin, error)
+}
+
+// ActivePlugin is a plugin which is ready to start a simulation.
+type ActivePlugin interface {
+	// Start will get called at the start of a simulation. The plugin must
+	// capture the current cluster state.
+	Start(ctx context.Context) (StartedPlugin, error)
+
+    // NodeIsReady checks whether some real node has been initialized completely.
+    NodeIsReady(ctx context.Context, node *v1.Node) (bool, error)
+}
+
+// StartedPlugin is a plugin which encapsulates a certain cluster state and
+// can make changes to it.
+type StartedPlugin interface {
+	// Clone must create a new, independent copy of the current state.
+	// This must be fast and cannot fail. If it has to do some long-running
+	// operation, then it must do that in a new goroutine and check the
+	// result when some method is called in the returned instance.
+	Clone() StartedPlugin
+
+	// NodeIsSuitable checks whether a claim could be allocated for
+	// a pod such that it will be available on the node.
+	NodeIsSuitable(ctx context.Context, pod *v1.Pod, claim *resourcev1alpha2.ResourceClaim, node *v1.Node) (bool, error)
+
+	// Allocate must adapt the cluster state as if the claim
+	// had been allocated for use on the selected node and return
+	// the result for the claim. It must not modify the claim,
+	// that will be done by the caller.
+	Allocate(ctx context.Context, claim *resourcev1alpha2.ResourceClaim, node *v1.Node) (*resourcev1alpha2.AllocationResult, error)
+}
+```
+
+When the DRA scheduler plugin gets initialized, it activates all registered
+vendor plugins. When `StartSimulation` is called, all vendor plugins are
+started. When the scheduler plugin's state data is cloned, the plugin's also
+get cloned. In addition, `StartSimulation` captures the state of all claims.
+
+`NodeIsSuitable` is called during the `Filter` check to determine whether a
+pending claim could be allocated for a node. `Allocate` is called as part of
+the `SimulateBindPod` implementation. The simulated allocation result is stored
+in the claim snapshot and then the claim is reserved for the pod. If the claim
+cannot be shared between pods, that will prevent other pods from using the
+claim while the autoscaler goes through it's binpacking simulation.
+
+Finally, `NodeIsReady` of each vendor plugin is called to implement the
+scheduler plugin's own `NodeIsReady`.
+
+#### Building a custom Cluster Autoscaler binary
+
+Vendors are encouraged to include an "init" package together with their driver
+simulation implementation. That "init" package registers their plugin. Then to
+build a custom autoscaler binary, one additional file alongside `main.go` is
+sufficient:
+
+```
+package main
+
+import (
+        _ "acme.example.com/dra-resource-driver/simulation-plugin/init"
+)
+```
+
+This init package may also register additional command line flags. Care must be
+taken to not cause conflicts between different plugins, so all vendor flags
+should start with a unique prefix.
 
 ### kubelet
 
