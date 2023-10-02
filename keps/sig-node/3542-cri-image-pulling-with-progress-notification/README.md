@@ -820,6 +820,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 Worst case scenario should be simulated to have MAX_NODES worker nodes pulling MAX_PODS_PER_NODE
 multiplied by number of containers on average per pod to see if it will cause any significant overhead.
 
+See crude calculation in [scalability.md](scalability.md)
+
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
 and attempt to answer them.
