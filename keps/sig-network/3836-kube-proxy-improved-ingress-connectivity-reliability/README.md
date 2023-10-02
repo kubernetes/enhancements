@@ -206,8 +206,8 @@ The risk are:
    of a failing kube-proxy on ingress connectivity. Kube-proxy currently has a
    lot of metrics regarding how its health is doing, but no direct red/green
    indicator of what the end result of its health is. A couple of such metric
-   could be `proxy_healthz_200_count` /
-   `proxy_healthz_503_count`/`proxy_livez_200_count` / `proxy_livez_503_count`
+   could be `proxy_healthz_total`/`proxy_livez_total` with labels for the
+   HTTP status codes: 503 / 200.
 
 4. The feature could be disabled for user who is dependent upon such behavior by
    means of flipping the feature flag to off.
@@ -328,16 +328,17 @@ in that case.
 
 ###### What specific metrics should inform a rollback?
 
-The metric: `proxy_healthz_503_count` mentioned in [Monitoring
+The metric: `proxy_healthz_total` (with label: 503) mentioned in [Monitoring
 requirements](#monitoring-requirements) will inform on red `healthz`.
-`proxy_livez_503_count` will inform on red `livez` state. If the `healthz` count
-is increasing but the `livez` does not: then a problem might have occurred with
-the node related reconciliation logic.
+`proxy_livez_total` (with label: 503) will inform on red `livez` state. If the
+`healthz` count is increasing but the `livez` does not: then a problem might
+have occurred with the node related reconciliation logic.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Once the change is implemented: the author will work with Kubernetes vendors to
-test the upgrade/downgrade scenario in a cloud environment.
+Given that the feature is purely in-memory for kube-proxy and determines the way
+it reports /healthz: upgrade-rollback-upgrade doesn't introduce additional value
+on top of regular feature tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -345,10 +346,9 @@ No
 
 ### Monitoring Requirements
 
-Four new metrics
-`proxy_healthz_200_count`/`proxy_healthz_503_count`/`proxy_livez_200_count`/`proxy_livez_503_count`
-which will count the amount of reported successful/unsuccessful health check
-invocations. A drop in this metric can then be correlated to impacted ingress
+Two new metrics `proxy_healthz_total`/`proxy_livez_total` which will count the
+amount of reported successful/unsuccessful health check invocations per `503`
+and `200`. These metrics can then be correlated to impacted ingress
 connectivity, for endpoints running on those nodes.
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -369,10 +369,8 @@ No
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name: `proxy_healthz_200_count`
-  - Metric name: `proxy_healthz_503_count`
-  - Metric name: `proxy_livez_200_count`
-  - Metric name: `proxy_livez_503_count`
+  - Metric name: `proxy_healthz_total`
+  - Metric name: `proxy_livez_total`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -424,7 +422,42 @@ Not any different than today.
 
 ###### What are other known failure modes?
 
+- Vendors of Kubernetes which deploy Kube-proxy and specify a `livenessProbe`
+  targeting `/healthz` are expected to start seeing a CrashLooping Kube-proxy
+  when the Node gets tainted with `ToBeDeletedByClusterAutoscaler`. This is
+  because: if we modify `/healthz` to fail when this taint gets added on the
+  Node, then the `livenessProbe` will fail, causing the Kubelet to restart the
+  Pod until the Node is deleted.
+  - Detection: node is tainted with `ToBeDeletedByClusterAutoscaler` upon which
+    Kube-proxy fails its `/healthz` check and starts Crashlooping. Confirm this
+    by validating that Kube-proxy has a `livenessProbe` defined which targets
+    `/healthz`.
+  - Mitigations:
+    - While in beta: disable the feature gate
+      `KubeProxyDrainingTerminatingNodes`.
+    - While in stable: update the `livenessProbe` to target `/livez`.
+      `ToBeDeletedByClusterAutoscaler` is a taint placed on the Node by the
+      cluster-autoscaler and indicates that the node will be deleted. Kube-proxy
+      is therefore going to terminate soon in any case. If a Crashlooping
+      Kube-proxy is problematic in such a situations (ex: it needs to handle
+      service/endpoint updates until the node is completely gone), then updating
+      the `livenessProbe` to `/livez`, provides a mitigation and resolves the
+      issue once the update has rolled out.
+  - Diagnostics:
+    - The metric `proxy_healthz_total` aggregated over the label `503` is
+      increasing while the metric `proxy_livez_total` aggregated over the label
+      `503` remains unchanged. This indicates and confirms that the `/healthz`
+      endpoint is failing, and that the reason is: the node is being deleted.
+      This is the difference between `/healthz` and `/livez`.
+  - Testing:
+    - Configure Kube-proxy with a `livenessProbe` targeting `/healthz` and
+      delete a Node. Kube-proxy on that Node should start failing its `/healthz`
+      and start Crashlooping. Apply the fixes proposed in `Mitigations` and
+      verify that it resolves the issue.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+There are no SLOs for this KEP, see: "What are the reasonable SLOs (Service Level Objectives) for the enhancement?"
 
 ## Implementation History
 
