@@ -98,6 +98,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Coordinating resource allocation through the scheduler](#coordinating-resource-allocation-through-the-scheduler)
   - [Resource allocation and usage flow](#resource-allocation-and-usage-flow)
   - [Scheduled pods with unallocated or unreserved claims](#scheduled-pods-with-unallocated-or-unreserved-claims)
+  - [Handling non graceful node shutdowns](#handling-non-graceful-node-shutdowns)
   - [API](#api)
     - [resource.k8s.io](#resourcek8sio)
     - [core](#core)
@@ -1161,6 +1162,20 @@ automated in kube-controller-manager:
 Once all of those steps are complete, kubelet will notice that the claims are
 ready and run the pod. Until then it will keep checking periodically, just as
 it does for other reasons that prevent a pod from running.
+
+### Handling non graceful node shutdowns
+
+When a node is shut down unexpectedly and is tainted with an `out-of-service`
+taint with NoExecute effect as explained in the [Non graceful node shutdown KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/2268-non-graceful-shutdown),
+all running pods on the node will be deleted by the GC controller and the
+resources used by the pods will be deallocated. However, they will not be
+un-prepared as the node is down and Kubelet is not running on it.
+
+Resource drivers should be able to handle this situation correctly and
+should not expect `UnprepareNodeResources` to be always called.
+If resources are unprepared when `Deallocate` is called, `Deallocate`
+might need to perform additional actions to correctly deallocate
+resources.
 
 ### API
 
