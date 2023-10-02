@@ -33,4 +33,4 @@ disable-supported: true
 
 metrics:
   - job_sync_duration_seconds
-  - job_sync_total
+  - job_syncs_total
