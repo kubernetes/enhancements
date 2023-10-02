@@ -282,8 +282,17 @@ No.
 
 - API: PUT Job/status
 
-  Estimated throughput: at most one API call for each Job Pod reaching Ready
-  condition.
+  Estimated throughput: at most one additional API call for each Job Pod reaching
+  Ready condition per second. The reason is that the update of the `.status.ready`
+  field triggers another reconciliation of the Job controller.
+
+  In order to control the number of reconciliations, the Job controller
+  batches and deduplicates reconciliation requests within each second.
+
+  The mechanism is based on reconciliation delaying queue, where the requests
+  are added using the `AddAfter` function. If there is another reconciliation
+  request planned within a second, the one triggered by `.status.ready` update
+  is skipped.
 
   Originating component: job-controller
 
