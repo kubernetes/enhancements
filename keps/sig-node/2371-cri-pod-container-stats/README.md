@@ -182,6 +182,7 @@ Below is a table describing which stats come from what source now, as well a pro
 |                              |N/A                   |container_last_seen                             |N/A                             |cAdvisor              |CRI or N/A                 | now.Now().Unix()             | now.Now().Unix()
 |                              |                      |                                                |                                |cAdvisor              |CRI or N/A                 | 
 
+This KEP was previously targeted at beta in Kubernetes 1.28. However, upon further review, the feature is not yet ready for beta graduation. As such, we are moving the target back to alpha in Kubernetes 1.29 to allow more time to mature the implementation.
 
 ## Motivation
 
@@ -651,9 +652,8 @@ Each compliant CRI implementation must:
 
 Below is the proposed strategy for doing so:
 
-1. The Alpha release will add support for both `/stats/summary` endpoint and `/metrics/cadvisor` endpoint.
-2. For the Beta release, add support for CRI implementations to report these metrics
-    - Initial research on the set of metrics required should be done. This will, possibly, allow the community to declare metrics that are not required to be moved to the CRI implementations.
+1. The Alpha release will add support for both `/stats/summary` endpoint and `/metrics/cadvisor` endpoint. The release will focus on finalizing and enabling support for the set of metrics from /metrics/cadvisor that CRI implementations must support.
+2. For the Beta release, we will focus on:
     - Testing on how performant cAdvisor+Kubelet are today should be done, to find a target, acceptable threshold of performance for the CRI implementations
     - Creation of tests verifying the metrics are reported correctly should be created and verified with the existing cAdvisor implementation.
 3. For the GA release, the CRI implementation should be the source of truth for all pod and container level metrics that external parties rely on (no matter how many endpoints the Kubelet advertises).
@@ -800,11 +800,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - This new behavior will be gated by a feature gate to prevent regressions for users that rely on the old behavior.
 - cAdvisor should be able to optionally not report the metrics needed for both summary API and `/metrics/cadvisor`. This behavior will be toggled by the Kubelet feature gate.
 - Kubelet will query the CRI implementation for endpoints to broadcast from its own server.
-	- This will allow the CRI to broadcast `/metrics/cadvisor` through the Kubelet's HTTP server.
+   - This will allow the CRI to broadcast `/metrics/cadvisor` through the Kubelet's HTTP server.
+- Conduct research to find the set of metrics from `/metrics/cadvisor` that compliant CRI implementations must expose.
 
 #### Alpha -> Beta Graduation
 
-- Conduct research to find the set of metrics from `/metrics/cadvisor` that compliant CRI implementations must expose.
 - Conformance tests for the fields in `/metrics/cadvisor` should be created.
 - Validate performance impact of this feature is within allowable margin (or non-existent, ideally).
 	- The CRI stats implementation should perform better than they did with CRI+cAdvisor.
@@ -1070,6 +1070,7 @@ _This section must be completed when targeting beta graduation to a release._
 2022-06-13: Move some Beta criteria to Alpha criteria in 1.25
 2022-12-09: Retarget KEP to alpha in 1.26
 2023-05-19: KEP targeted at Beta in 1.28
+2023-05-19: KEP retargeted to Alpha in 1.29
 
 ## Drawbacks
 
