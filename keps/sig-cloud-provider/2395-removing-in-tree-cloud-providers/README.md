@@ -497,8 +497,8 @@ by those provider owners. We do not have artifacts of those tests.
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
-* In genreal, if pods are being scheduled to the cluster then this feature is
-  working as intended, and is in use by workloads.
+* On cloud providers that utilize an image credential provider, this feature
+  is in use when container images are being pulled using those credentials.
 * Workloads that explicitly use load balancer type services will depend on external CCMs
   on providers that support the load balancer service controller.
 * Workloads that depend on well-known zone and region labels on nodes are
@@ -509,20 +509,27 @@ by those provider owners. We do not have artifacts of those tests.
   - Details: The `Uninitialized` taint should be removed from Node objects.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-* Nodes being initialized properly, zone and region labels being added.
-* Pods being scheduled.
-* Load balancer type services being created and destroyed.
+* 99% of `cloud_provider_taint_removal_delay_seconds` metric counts are less than 60 seconds.
+* 99% of `initial_node_sync_delay_seconds` metric counts are less than 60 seconds.
+* On providers that utilize load balancer type services:
+  * 99% of `update_loadbalancer_host_latency_seconds` metric counts are less than 60 seconds.
+  * 99% of `nodesync_latency_seconds` metric counts are less than 60 seconds.
+  * Rate of increase for `nodesync_error_total` is less than 1 per 15 minutes.
 * The existing SLOs for functionalities the `kube-controller-manager` should be used,
   this change is supposed to be no-op from the end-user perspective.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-* Pods scheduling, if the CCM node controller is not working properly the
-  rate of pod scheduling will decrease.
-* Deleted node removal, if the CCM node lifecycle controller is not working
-  properly then terminated nodes will not be removed from the cluster.
-* Load balancer services not being created or destroyed, if the CCM service
-  controller is not working properly, load balancer services will not be
-  created or removed.
+- [x] Metrics
+  - Metric name: `cloud_provider_taint_removal_delay_seconds`
+    - Components exposing the metric: CCM
+  - Metric name: `initial_node_sync_delay_seconds`
+    - Components exposing the metric: CCM
+  - Metric name: `update_loadbalancer_host_latency_seconds`
+    - Components exposing the metric: CCM
+  - Metric name: `nodesync_error_total`
+    - Components exposing the metric: CCM
+  - Metric name: `nodesync_latency_seconds`
+    - Components exposing the metric: CCM
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 A metric to indicate failed connections with the cloud provider API
