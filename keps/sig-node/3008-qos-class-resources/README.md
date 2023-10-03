@@ -219,7 +219,7 @@ the Kubernetes resource model with a new type of resources, i.e. QoS-class
 resources.
 
 This KEP identifies two technologies that can immediately be enabled with
-QoS-class resources. However, these are just two examples  and the proposed
+QoS-class resources. However, these are just two examples and the proposed
 changes are generic (and not tied to these two QoS-class resource types in any
 way), making it easier to implement new QoS-class resource types.
 
@@ -370,7 +370,7 @@ would implement restrictions based on the namespace.
 +       // Pod contains the allowed QoS resources for pods.
 +       // +optional
 +       Pod []AllowedQOSResource
-+       // Container contains the allowed QoS resources for pods.
++       // Container contains the allowed QoS resources for containers.
 +       // +optional
 +       Container []AllowedQOSResource
 +}
@@ -467,6 +467,12 @@ usage of container-level QoS-class resources.
 +       Capacity int64
  }
 ```
+
+`<<[UNRESOLVED @logicalhan]>>`
+
+Use field name `Ceiling` instead `Capacity` in QOSResourceClassLimit.
+
+`<<[/UNRESOLVED]>>`
 
 Not supporting Max (i.e. only supporting Default) in LimitRanges could simplify
 the API.
@@ -1318,9 +1324,9 @@ application specific QoS implementations.
 +)
 ```
 
-In later implementation phases (GA) admission control (validation) is added to
+In later implementation phases (Beta) admission control (validation) is added to
 reject requests for unknown QoS-class resources in the "official" namespace.
-Also, kubelet will reject the registration of unknown QoS-class resources in
+Also (in Beta), kubelet will reject the registration of unknown QoS-class resources in
 the "official" namespace. Custom/vendor-specific QoS-class resources will still
 be allowed outside the "official" namespace.
 
@@ -1606,6 +1612,10 @@ in back-to-back releases.
   - Extend CRI API to support updating sandbox-level QoS-class resources
   - Permission control (ResourceQuota etc)
 - Well-defined behavior with [In-place pod vertical scaling](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources)
+- Validation of QoS-class resources in the "official" namespace:
+  - enforce admission control on "official" QoS-class resource names
+  - kubelet rejects registration of unknown QoS-class resorce names in the
+    "official" namespace
 - Integration with RuntimeClasses
 - Additional tests are in Testgrid and linked in KEP
 - User documentation is available
@@ -1614,10 +1624,6 @@ in back-to-back releases.
 
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
-- In addition to beta:
-  - enforce admission control on "official" QoS-class resource names
-  - kubelet rejects registration of unknown QoS-class resorce names in the
-    "official" namespace
 
 ### Upgrade / Downgrade Strategy
 
@@ -1794,6 +1800,9 @@ Apiserver unit tests are extended to verify that the new fields in PodSpec are
 preserved over updates of the Pod object, even when the feature gate is
 disabled.
 
+Scheduler unit tests are extended to verify that QoS-class resources are
+correctly taken into account in node fitting.
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -1812,7 +1821,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Implementation Phase 1: Already running workloads ahouls not be affected as the
+Implementation Phase 1: Already running workloads should not be affected as the
 QoS-class resources feature operates on new fields in the PodSpec. Bugs in
 kubelet might cause containers fail to start, either by failing a pod admission
 check that should pass or passing incorrect parameters to the container
@@ -2216,7 +2225,7 @@ translate them into corresponding `QOSResources` data in the CRI
 ContainerConfig message at container creation time (CreateContainerRequest).
 Pod-level QoS-class would not supported at this point (via pod annotations).
 
-A feature gate `TranslateQoSPodMetadata` would enable kubelet to interpretthe
+A feature gate `TranslateQoSPodMetadata` would enable kubelet to interpret the
 specific pod annotations. If the feature gate is disabled the annotations would
 simply be ignored by kubelet.
 
@@ -2235,7 +2244,7 @@ Support for class capacity could be left out of the proposal to simplify the
 concept. It would be possible to implement "class capacity" by leveraging
 extended resources and mutating admission webhooks:
 
-1. An extended resource with the desited capacity is created for each class
+1. An extended resource with the desired capacity is created for each class
    which needs to be controlled. A possible example:
   ```plaintext
   Allocatable:
