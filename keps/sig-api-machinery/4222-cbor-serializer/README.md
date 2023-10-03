@@ -559,8 +559,9 @@ set of key-value pairs regardless of the order they are encoded.
 In order to take advantage of the available speedup, the CBOR encoder will
 support separate deterministic and nondeterministic modes. The deterministic
 mode will be used for storage serialization only. The nondeterministic mode
-should actively randomize the order of map item encoding (as with map iteration
-in Go) to prevent users from making assumptions about the order.
+should introduce randomness into the order of map item encoding (as with map
+iteration in Go) to make it easier to detect invalid assumptions about the
+order, but not in a way that adds significant overhead.
 
 To further mitigate the risk that the output of the nondeterministic encoder
 mode will be accidentally used in cases that require determinism (bytewise
