@@ -15,13 +15,14 @@ approvers:
 see-also:
 replaces:
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.24"
+latest-milestone: "v1.29"
 
 milestone:
   alpha: "v1.23"
   beta: "v1.24"
+  stable: "v1.29"
 
 feature-gates:
   - name: JobReadyPods
@@ -32,4 +33,4 @@ disable-supported: true
 
 metrics:
   - job_sync_duration_seconds
-  - job_sync_total
+  - job_syncs_total

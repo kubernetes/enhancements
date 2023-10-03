@@ -38,17 +38,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -125,6 +125,7 @@ pods that have the `Ready` condition.
   - Count of ready pods.
   - Feature gate disablement.
 - Verify passing existing E2E and conformance tests for Job.
+- Added e2e test for the count of ready pods.
 
 ### Graduation Criteria
 
@@ -157,14 +158,14 @@ pods that have the `Ready` condition.
 #### GA
 
 - Every bug report is fixed.
-- Explore setting different batch periods for regular pod updates versus
-  finished pod updates, so we can do less pod readiness updates without
-  compromising how fast we can declare a job finished.
-- The job controller ignores the feature gate.
+- E2e test for the count of ready pods.
+- Lock the feature-gate and document deprecation of the feature-gate
 
 #### Deprecation
 
-N/A
+In GA+2 release:
+- Remove the feature gate definition
+- Job controller ignores the feature gate
 
 ### Upgrade / Downgrade Strategy
 
@@ -210,7 +211,16 @@ The Job controller will start populating the field again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, there are tests at unit and [integration] level.
+We have unit tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/pkg/controller/job/job_controller_test.go#L236)) for
+the `status.ready` field when the feature is enabled or disabled.
+Similarly, we have integration tests (see [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1364)
+and [link](https://github.com/kubernetes/kubernetes/blob/e8abe1af8dcb36f65ef7aa7135d4664b3db90e89/test/integration/job/job_test.go#L1517))
+for the feature being enabled or disabled.
+
+However, due to omission we graduated to Beta without feature gate
+transition (enablement or disablement) tests. With graduation to stable it's too
+late to add these tests so we're sticking with just manual tests
+(see [here](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -221,20 +231,20 @@ The field is only informative, it doesn't affect running workloads.
 ###### What specific metrics should inform a rollback?
 
 - An increase in `job_sync_duration_seconds`.
-- A reduction in `job_sync_num`.
+- A reduction in `job_syncs_total`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-A manual test will be performed, as follows:
+A manual test on Beta was performed, as follows:
 
-1. Create a cluster in 1.23.
-1. Upgrade to 1.24.
-1. Create long running Job A, ensure that the ready field is populated.
-1. Downgrade to 1.23.
-1. Verify that ready field in Job A is not lost, but also not updated.
-1. Create long running Job B, ensure that ready field is not populated.
-1. Upgrade to 1.24.
-1. Verify that Job A and B ready field is tracked again.
+1. Create a cluster in 1.28 with the `JobReadyPods` disabled (`=false`).
+2. Simulate upgrade by modifying control-plane manifests to enable `JobReadyPods`.
+3. Create long running Job A, ensure that the ready field is populated.
+4. Simulate downgrade by modifying control-plane manifests to disable `JobReadyPods`.
+5. Verify that ready field in Job A is cleaned up shortly after the startup of the Job controller completes.
+6. Create long running Job B, ensure that ready field is not populated.
+7. Simulate upgrade by modifying control-plane manifests to enable `JobReadyPods`.
+8. Verify that Job A and B ready field is tracked again shortly after the startup of the Job controller completes.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -259,7 +269,7 @@ the controller doesn't create new Pods or tracks finishing Pods.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `job_sync_duration_seconds`, `job_sync_total`.
+  - Metric name: `job_sync_duration_seconds`, `job_syncs_total`.
   - Components exposing the metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -279,9 +289,18 @@ No.
 
 - API: PUT Job/status
 
-  Estimated throughput: at most one API call for each Job Pod reaching Ready
-  condition.
-  
+  Estimated throughput: at most one additional API call for each Job Pod reaching
+  Ready condition per second. The reason is that the update of the `.status.ready`
+  field triggers another reconciliation of the Job controller.
+
+  In order to control the number of reconciliations, the Job controller
+  batches and deduplicates reconciliation requests within each second.
+
+  The mechanism is based on reconciliation delaying queue, where the requests
+  are added using the `AddAfter` function. If there is another reconciliation
+  request planned within a second, the one triggered by `.status.ready` update
+  is skipped.
+
   Originating component: job-controller
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -306,6 +325,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -314,8 +337,7 @@ No change from existing behavior of the Job controller.
 
 ###### What are other known failure modes?
 
-- When the cluster has apiservers with skewed versions, the `Job.status.ready`
-  might remain zero.
+No.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -332,6 +354,7 @@ No change from existing behavior of the Job controller.
 
 - 2021-08-19: Proposed KEP starting in alpha status, including full PRR questionnaire.
 - 2022-01-05: Proposed graduation to beta.
+- 2022-03-20: Merged [PR#107476](https://github.com/kubernetes/kubernetes/pull/107476) with beta implementation
 
 ## Drawbacks
 
@@ -346,6 +369,17 @@ Pod created.
   to accept connections. On the other hand, the `Ready` condition is
   configurable through a readiness probe. If the Pod doesn't have a readiness
   probe configured, the `Ready` condition is equivalent to the `Running` phase.
-  
-  In other words, `Job.status.active` provides as the same behavior as
+
+  In other words, `Job.status.ready` provides as the same behavior as
   `Job.status.running` with the advantage of it being configurable.
+
+- We considered exploring different batch periods for regular pod updates versus
+  finished pod updates, so we can do less pod readiness updates without
+  compromising how fast we can declare a job finished.
+
+  However, the feature has been on for a long time already the there were no
+  bugs or requests raised around the choice of batch period. Moreover, the
+  introduced batch period was considered an important element of the Job
+  controller, and is now not guarded by the feature gate since the
+  [PR#118615](https://github.com/kubernetes/kubernetes/pull/118615) which is
+  already released in 1.28.
