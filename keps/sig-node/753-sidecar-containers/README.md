@@ -859,6 +859,15 @@ works for that scenario as well as a more and more popular scenario of limited t
 graceful termination is set by external requirement and Pods needs to do best to gracefully terminate
 as much as possible (think of a Spot Instances with 30 seconds notification).
 
+```mermaid
+flowchart TD
+    A[Start] --> B{Is it?}
+    B -->|Yes| C[OK]
+    C --> D[Rethink]
+    D --> B
+    B ---->|No| E[End]
+```
+
 Here is the proposed approach:
 1. Sidecar containers that have a `PreStop` hook will be notified when the Pod has begun terminating
    by executing the `PreStop` hook. This happens at the same time as regular containers, and begins
