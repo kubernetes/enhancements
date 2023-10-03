@@ -112,7 +112,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Unreserve](#unreserve)
   - [Cluster Autoscaler](#cluster-autoscaler)
     - [Generic plugin enhancements](#generic-plugin-enhancements)
-  - [DRA scheduler plugin extension mechanism](#dra-scheduler-plugin-extension-mechanism)
+    - [DRA scheduler plugin extension mechanism](#dra-scheduler-plugin-extension-mechanism)
     - [Building a custom Cluster Autoscaler binary](#building-a-custom-cluster-autoscaler-binary)
   - [kubelet](#kubelet)
     - [Managing resources](#managing-resources)
@@ -1967,7 +1967,11 @@ the current cluster state. Then autoscaler determines whether a real or
 fictional node fits a pod by calling the pre-filter and filter extension points
 of scheduler plugins. If a pod fits a node, the snapshot is updated by calling
 [NodeInfo.AddPod](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/framework/types.go#L620-L623). This
-influences further checks for other pending pods.
+influences further checks for other pending pods. During scale down, eviction
+is simulated by
+[SimulateNodeRemoval](https://github.com/kubernetes/autoscaler/blob/2f7c61e13bd1cbfc0ba4085fb84bd692a1e9ac6e/cluster-autoscaler/simulator/cluster.go#L149)
+which [pretends that pods running on a node that is to be removed are not
+running](https://github.com/kubernetes/autoscaler/blob/2f7c61e13bd1cbfc0ba4085fb84bd692a1e9ac6e/cluster-autoscaler/simulator/cluster.go#L231-L237).
 
 The DRA scheduler plugin gets integrated into this snapshotting and simulated
 pod scheduling through a new scheduler framework interface:
@@ -2023,6 +2027,10 @@ type ClusterAutoScalerPlugin interface {
 	// SimulateBindPod is called when the cluster autoscaler decided to schedule
 	// a pod onto a certain node.
 	SimulateBindPod(ctx context.Context, state *CycleState, pod *v1.Pod, nodeInfo *NodeInfo) *Status
+	// SimulateEvictPod is called when the cluster autoscaler simulates removal
+	// of a node. All claims used only by this pod should be considered deallocated,
+	// to enable starting the same pod elsewhere.
+	SimulateEvictPod(ctx context.Context, state *CycleState, pod *v1.Pod, nodeName string) *Status
     // NodeIsReady checks whether some real node has been initialized completely.
     // Even if it is "ready" as far Kubernetes is concerned, some DaemonSet pod
     // might still be missing or not done with its startup yet.
@@ -2037,11 +2045,11 @@ information from such a pod, then it will not be able to filter
 correctly. Similar to how extended resources are handled, the autoscaler then
 first needs to wait until the plugin also considers the node to be ready.
 
-### DRA scheduler plugin extension mechanism
+#### DRA scheduler plugin extension mechanism
 
 The in-tree scheduler plugin gets extended by vendors through the following API
-in `k8s.io/dynamic-resource-allocation/simulation`. Vendor code does not depend
-on the k/k/pkg/scheduler package nor on autoscaler packages.
+in `k8s.io/dynamic-resource-allocation/simulation`. Vendor code depends
+neither on the k/k/pkg/scheduler package nor on autoscaler packages.
 
 ```
 // Registry stores all known plugins which can simulate claim allocation.
@@ -2092,12 +2100,17 @@ type StartedPlugin interface {
 	// the result for the claim. It must not modify the claim,
 	// that will be done by the caller.
 	Allocate(ctx context.Context, claim *resourcev1alpha2.ResourceClaim, node *v1.Node) (*resourcev1alpha2.AllocationResult, error)
+
+	// Deallocate must adapt the cluster state as if the claim
+	// had been deallocated. It must not modify the claim,
+	// that will be done by the caller.
+	Deallocate(ctx context.Context, claim *resourcev1alpha2.ResourceClaim) error
 }
 ```
 
 When the DRA scheduler plugin gets initialized, it activates all registered
 vendor plugins. When `StartSimulation` is called, all vendor plugins are
-started. When the scheduler plugin's state data is cloned, the plugin's also
+started. When the scheduler plugin's state data is cloned, the plugins also
 get cloned. In addition, `StartSimulation` captures the state of all claims.
 
 `NodeIsSuitable` is called during the `Filter` check to determine whether a
@@ -2112,7 +2125,7 @@ scheduler plugin's own `NodeIsReady`.
 
 #### Building a custom Cluster Autoscaler binary
 
-Vendors are encouraged to include an "init" package together with their driver
+Vendors are encouraged to include an "init" package in their driver
 simulation implementation. That "init" package registers their plugin. Then to
 build a custom autoscaler binary, one additional file alongside `main.go` is
 sufficient:
