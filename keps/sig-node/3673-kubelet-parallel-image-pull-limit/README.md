@@ -110,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
   - [Alpha](#alpha-1)
+  - [Beta](#beta-1)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -381,8 +382,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-A new node_e2e test with  `serialize-image-pulls==false` will be added test parallel image pull limits. 
-1. When maxParallelImagePulls is reached, all further image pulls will be blocked. 
+A new node_e2e test with  `serialize-image-pulls==false` will be added test parallel image pull limits.
+1. When maxParallelImagePulls is reached, all further image pulls will be blocked.
 2. Verify the behavior when the same image is pulled in parallel, which will happen when image pull policy is `Always`.
 
 - <test>: <link to test coverage>
@@ -905,7 +906,15 @@ Major milestones might include:
 
 ### Alpha
 
-Alpha feature was implemented in 1.27.
+Alpha feature was implemented in 1.27: <https://github.com/kubernetes/kubernetes/pull/115220>
+
+### Beta
+
+Add e2e tests(WIP):
+
+1. A new node_e2e test to confirm image pull will be blocked if maxParallelImagePulls is reached.
+2. Verfiy behavior of image pull in parallel for same image using `imagePullPolicy:Always`.
+3. Check the waiting period of image pull for pods with `MaxParallelImagePulls: 1` and `MaxParallelImagePulls: 5`.
 
 ## Drawbacks
 
