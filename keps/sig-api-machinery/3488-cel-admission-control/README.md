@@ -1407,22 +1407,26 @@ We will support admission control use cases requiring permission checks:
 - Validate that only a controller responsible for a finalizer can remove it from the finalizers
   field.
 
-To depend on an authz decision, validation expressions can use the `authorizer`
-variable, which performs authz checks for the admission request user (the same
-use as identified by `request.userInfo`), and which will be bound at evaluation
-time to an Authorizer object supporting receiver-style function overloads:
+To depend on an authz decision, validation expressions can use the `authorizer` variable, which
+performs authz checks for the admission request user (the same use as identified by
+`request.userInfo`) by default, and which will be bound at evaluation time to an Authorizer object
+supporting receiver-style function overloads:
 
-| Symbol      | Type                                                                    | Description                                                                                     |
-|-------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| path        | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                |
-| check       | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                          |
-| resource    | Authorizer.(kind string, group string, version string) -> ResourceCheck | Defines a check for API resources                                                               |
-| subresource | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies thath the check is for a subresource                                                  |
-| namespace   | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope) |
-| name        | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                        |
-| check       | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the admission request user is authorized for the API verb on the resource             |
-| allowed     | Decision.() -> bool                                                     | Is the admission request user authorized?                                                       |
-| denied      | Decision.() -> bool                                                     | Is the admission request user denied authorization?                                             |
+| Symbol         | Type                                                                    | Description                                                                                         |
+|----------------|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| serviceAccount | Authorizer.(namespace string, name string) -> Authorizer                | Returns an authorizer whose subject is the named serviceaccount (instead of admission request user) |
+| path           | Authorizer.(path string) -> PathCheck                                   | Defines a check for an non-resource request path (e.g. /healthz)                                    |
+| check          | PathCheck.(httpRequestVerb string) -> Decision                          | Checks if the user is authorized for the HTTP request verb on the path                              |
+| group          | Authorizer.(group string) -> GroupCheck                                 | Defines a check for API resources within a group                                                    |
+| resource       | GroupCheck.(resource string) -> ResourceCheck                           | Specifies the resource to be checked within the group                                               |
+| subresource    | ResourceCheck.(subresource string) -> ResourceCheck                     | Specifies that the check is for a subresource                                                       |
+| namespace      | ResourceCheck.(namespace string) -> ResourceCheck                       | Specifies that the check is for a namespace (if not called, the check is for the cluster scope)     |
+| name           | ResourceCheck.(name string) -> ResourceCheck                            | Specifies that the check is for a specific resource name                                            |
+| check          | ResourceCheck.(apiVerb string) -> Decision                              | Checks if the subject is authorized for the API verb on the resource                                |
+| allowed        | Decision.() -> bool                                                     | Is the subject authorized?                                                                          |
+| reason         | Decision.() -> string                                                   | Returns a human-readable explanation of why this decision was made                                  |
+| errored        | Decision.() -> bool                                                     | Returns true if and only if an error occurred while making this decision                            |
+| error          | Decision.() -> string                                                   | Returns the text of the error that occurred. If no error occurred, returns the empty string         |
 
 xref: https://kubernetes.io/docs/reference/access-authn-authz/authorization/#review-your-request-attributes for a details on
 authorization attributes.
@@ -1430,7 +1434,6 @@ authorization attributes.
 Example expressions using `authorizer`:
 
 - `authorizer.resource('signers', 'certificates.k8s.io', '*').name(oldObject.spec.signerName).check('approve').allowed()`
-- `authorizer.path('/metrics').denied('get')`
 
 Note that this API:
 
