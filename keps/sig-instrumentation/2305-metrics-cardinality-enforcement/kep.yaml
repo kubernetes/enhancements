@@ -19,7 +19,7 @@ creation-date: 2020-04-15
 last-updated: 2023-05-28
 stage: beta
 status: implementable
-latest-milestone: "v1.28"
+latest-milestone: "v1.29"
 milestone:
-  beta: "v1.28"
+  beta: "v1.29"
 disable-supported: true
