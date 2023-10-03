@@ -341,6 +341,11 @@ per-(method, target resource) basis, and to consider acceptable fallback
 content-types based on the value of the Accept header in a 415 response, [as
 described in RFC 9110](https://httpwg.org/specs/rfc9110.html#status.415).
 
+The client's mapping of (method, target resource) pairs to acceptable request
+content type can be pre-populated from the request media types in OpenAPI
+documents. This allows clients to bypass the initial request in the content-type
+fallback mechanism, but is not required.
+
 ### Client Enablement
 
 Clients can be explicitly configured to prefer CBOR as a request encoding as
@@ -819,6 +824,7 @@ in back-to-back releases.
 #### GA
 
 - Granular content-type fallback behavior on HTTP 415.
+- Ability to bypass content-type fallback behavior using OpenAPI.
 
 ### Upgrade / Downgrade Strategy
 
