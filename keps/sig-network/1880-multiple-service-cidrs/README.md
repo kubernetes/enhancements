@@ -135,6 +135,8 @@ Implement a new allocation logic for Services IPs that:
   services.spec.IPFamily and services.spec.IPFamilyPolicy, a simple webhook or an admission plugin
   can set this fields to the desired default, so the allocation logic doesn't have to handle it.
 - Removing the apiserver flags that define the service IP CIDRs, though that may be possible in the future.
+- Any admin or cluster wide process related to Services, like automating the default Service CIDR range, though,
+this KEP will implement the behaviours and primitives necessaries to perform those kind of operations automatically.
 
 ## Proposal
 
@@ -161,6 +163,8 @@ different and collide with other APIs, like Gateway APIs, we are adding the foll
  This creates a 1-to-1 relation between Service and IPAddress, and a 1-to-N relation between the ServiceCIDRs defined by the ServiceCIDR and IPAddress. It is important to clarify that overlapping ServiceCIDR are merged in memory, an IPAddress doesn't come from a specific ServiceCIDR object, but "any ServiceCIDR that includes that IP"
 
  The new allocator logic can be used by other APIs, like Gateway API.
+
+The new well defined behaviors and objects implemented will allow future developments to perform admin and cluster wide operations on the Service ranges.
 
 ### User Stories
 
@@ -244,7 +248,7 @@ This default IP family is used in cases where a Service creation doesn't provide
 the Service to Single Stack with an IP chosen from the default IP family defined.
 
 The current implementation doesn't guarantee consistency for Service IP ranges and default IP families across
-multiple apiservers.
+multiple apiservers, see https://github.com/kubernetes/kubernetes/issues/114743.
 
 [![](https://mermaid.ink/img/pako:eNqFU0FuwjAQ_MrKZ_iAD0gpFIlbJKSectnaG1jJsVPbQaKIv9dpEhICtM4tM7OZnXEuQjlNQopAXw1ZRRvGg8eqsJAOqug8ZIAB1p4wEuzJn1hRB9foIyuu0UZ4owPbjvQMLJ2nV2iW7z7QsMbIzj7C--QBD536KWHLlsPx1fQNqaRPM4pemsFytZr6lU-Xsy69cSfy99Sd5cjJ7TfBLoctVmzOUDIZHf7UZcY41X5kbZoQye_yMBia8GDZeRvjkhBisk-H8-P4KSv3lLamrfPTIF6xN97VoDngpyF9sz_YGZmdn7uCJJxmZd3BnWLWmQSKSvd3ykQIjVIU-sDaM-N3Q27NyeSwrXjk36DfLjMJHUQmEJTI5p_J0xsjwVMKKI6SMbQ5zxCGaYPAJZD37d0axFPJzJzVbcTDA5MjFqIiXyHr9CdeWqwQ8UgVFSKphaYSGxMLUdhrojZ1ipreNafVhCwxLb0Q2ES3P1slZPQNDaT-b-5Z1x-6EVE6)](https://mermaid.live/edit#pako:eNqFU0FuwjAQ_MrKZ_iAD0gpFIlbJKSectnaG1jJsVPbQaKIv9dpEhICtM4tM7OZnXEuQjlNQopAXw1ZRRvGg8eqsJAOqug8ZIAB1p4wEuzJn1hRB9foIyuu0UZ4owPbjvQMLJ2nV2iW7z7QsMbIzj7C--QBD536KWHLlsPx1fQNqaRPM4pemsFytZr6lU-Xsy69cSfy99Sd5cjJ7TfBLoctVmzOUDIZHf7UZcY41X5kbZoQye_yMBia8GDZeRvjkhBisk-H8-P4KSv3lLamrfPTIF6xN97VoDngpyF9sz_YGZmdn7uCJJxmZd3BnWLWmQSKSvd3ykQIjVIU-sDaM-N3Q27NyeSwrXjk36DfLjMJHUQmEJTI5p_J0xsjwVMKKI6SMbQ5zxCGaYPAJZD37d0axFPJzJzVbcTDA5MjFqIiXyHr9CdeWqwQ8UgVFSKphaYSGxMLUdhrojZ1ipreNafVhCwxLb0Q2ES3P1slZPQNDaT-b-5Z1x-6EVE6)
 
@@ -252,7 +256,7 @@ multiple apiservers.
 
 The new allocation mode requires:
 
-- 2 new API objects ServiceCIDR and IPAddress in networking.k8s.io/v1alpha1, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
+- 2 new API objects ServiceCIDR and IPAddress in the group `networking.k8s.io`, see <https://groups.google.com/g/kubernetes-sig-api-machinery/c/S0KuN_PJYXY/m/573BLOo4EAAJ>. The ServiceCIDR will be protected with a finalizer, the IPAddress object doesn't need a finalizer because the APIserver always release and delete the IPAddress after the Service has been deleted.
 - 1 new allocator implementing current `allocator.Interface`, that runs in each apiserver, and uses the new ServiceCIDRs objects to allocate IPs for Services.
 - 1 new repair loop that runs in the apiserver that reconciles the Services with the IPAddresses: repair
 Services, garbage collecting orphan IPAddresses and handle the upgrade from the old allocators.
@@ -279,12 +283,7 @@ and Services.
 In order to be completely backwards compatible, the bootstrap process will remain the same, the
 difference is that instead of creating a bitmap based on the flags, it will create a new
 ServiceCIDR object from the flags (flags configuration removal is out of scope of this KEP)
- ...
-
-```
-<<[UNRESOLVED bootstrap>>
-Option 1:
-... with a special well-known name `kubernetes`.
+with a special well-known name `kubernetes`.
 
 The new bootstrap process will be:
 
@@ -309,68 +308,25 @@ All the apiservers will be synchronized on the ServiceCIDR and default Service c
 Changes on the configuration imply manual removal of the ServiceCIDR and default Service, automatically
 the rest of the apiservers will race and the winner will set the configuration of the cluster.
 
-Pros:
-- Simple to implement
-- Align with current behavior of kubernetes.default, though this can be a Con as well, since this
-the existing behavior was unexpected
-Cons:
-- Requires manual intervention
-
-Option 2:
-... with a special label `networking.kubernetes.io/service-cidr-from-flags` set to `"true"`.
-
-It now has to handle the possibility of multiple ServiceCIDR with the special label, and
-also updating the configuration, per example, from single-stack to dual-stack.
-
-The new bootstrap process will be:
-
-```
-at startup:
- read_flags
- if invalid flags
-  exit
- run default-service-ip-range controller
- run kubernetes.default service loop (it uses the first ip from the subnet defined in the flags)
- run service-repair loop (reconcile services, ipaddresses)
- run apiserver
-
-controller:
- watch all ServiceCIDR objects labelled from-flags
-  ignore being-deleted ranges
- wait for first sync
-
-controller on_event:
- if no default range matching exactly my flags
-  log
-  create a ServiceCIDR from my flags
-   generateName: "from-flags-"
-   from-flags label: "true"
- else if multiple
-  log
-  if multiple ranges match exactly my flags (or a single-family subset of)
-    log
-    delete all subsets, leaving the largest set that exactly matches on at least on family
-  endif
- endif
- if kubernetes.default does not exist
-  create it
-```
-
-Pros:
-- Automatically handles conflicts, no admin operation required
-Cons:
-- Complex to implement
-
-<<[/UNRESOLVED]>>
-```
+This behavior align with current behavior of kubernetes.default, that it makes it consistent and easier to think
+about, allowing future developments to use it to implement more complex operations at the admin cluster level.
 
 #### The special "default" ServiceCIDR
 
-The `kubernetes.default` Service is expected to be covered by a valid range. Each apiserver will
-ensure that a ServiceCIDR object exists to cover its own flag-defined ranges, so this should
-be true in normal cases. If someone were to force-delete the ServiceCIDR covering `kubernetes.default` it
-would be treated the same as any Service in the repair loop, which will generate warnings about
-orphaned Service IPs.
+The `kubernetes.default` Service is expected to be covered by a valid range. Each apiserver 
+ensure that a ServiceCIDR object exists to cover its own flag-defined ranges. If someone were to force-delete
+the ServiceCIDR covering `kubernetes.default` it would be treated the same as before, any apiserver will try
+to recreate the Service from its configured default Service CIDR flag-defined range.
+
+This well-known an establish behavior can allow administrators to replace the `kubernetes.default` by a
+series of operations, per example:
+1. Initial state: 2 kube-apiservers with default ServiceCIDR 10.0.0.0/24
+2. Apiservers will create the `kubernetes.default` Service with ClusterIP 10.0.0.1.
+3. Upgrade kube-apiservers and replace the service-cidr flag to 192.168.0.0/24
+4. Delete the ServiceCIDRs objects and the `kubernetes.default` Service.
+5. The kube-apiserver will recreate the `kubernetes.default` with IP 192.168.0.1.
+
+Note this can also be used to switch the IP family of the cluster.
 
 #### Service IP Allocation
 
@@ -481,7 +437,8 @@ deletion can take some time, one allocator can successfully allocate an IP addre
 inside of the old Service CIDR).
 
 There is one controller that will periodically check that the 1-on-1 relation between IPAddresses and Services is
-correct, and will start sending events to warn the user that it has to fix/recreate the corresponding Service.
+correct, and will start sending events to warn the user that it has to fix/recreate the corresponding Service,
+keeping the same behavior that exists today.
 
 #### API
 
