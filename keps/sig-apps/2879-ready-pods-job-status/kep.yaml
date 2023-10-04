@@ -2,9 +2,10 @@ title: Track ready Pods in Job status
 kep-number: 2879
 authors:
   - "@alculquicondor"
+  - "@mimowo"
 owning-sig: sig-apps
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2021-08-19
 reviewers:
   - "@soltysh"
