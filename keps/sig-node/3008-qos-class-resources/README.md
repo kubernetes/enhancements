@@ -1373,6 +1373,13 @@ phase.
 A feature gate QOSResources enables kubelet to update the QoS-class resources
 in NodeStatus and handle QoS-class resource requests in the PodSpec.
 
+`<<[UNRESOLVED @logicalhan]>>`
+
+Use feature gate name `PrioritizedResources` instead of `QOSResources`. If when
+changed, needs to sync with all of the naming in the KEP.
+
+`<<[/UNRESOLVED]>>`
+
 ### API server
 
 Input validation of QoS-class resource names and class names is implemented.
@@ -1841,7 +1848,9 @@ that might indicate a serious problem?
 Implementation Phase 1: Watch for non-ready pods with CreateContainerError
 status. The error message will indicate the if the failure is related to
 QoS-class resources. Generally, pod events would be a good source for
-determining if problems are related to QoS-class resources feature.
+determining if problems are related to QoS-class resources feature. For
+kube-scheduler and kubelet the existing metrics (e.g.
+`kubelet_started_containers_errors_total`) can be used.
 
 Future implementation phases: TBD.
 
@@ -2270,7 +2279,9 @@ solution. Downsides include:
 
 - requires implementation of "side channel" control mechanisms, e.g. admission
   webhook and some solution for capacity management (extended resources)
-- deployment of admission webhooks is cumbersome
+- deployment of admission webhooks is cumbersome (validating admission policies
+  can mitigate this somewhat if/when support for mutating admission is
+  implemented)
 - management of capacity is limited and cumbersome
   - management of extended resources needs a separate mechanism
   - ugly to handle a scenario where *class-A* on *node-1* would be unlimited
@@ -2281,7 +2292,6 @@ solution. Downsides include:
   resource requests (for the extended resource) are not supported in Kubernetes
 - possible confusion for users regarding the double accounting (QoS-class
   resources and extended resources)
-
 
 ### RDT-only
 
