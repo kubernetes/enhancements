@@ -18,7 +18,7 @@ approvers:
 creation-date: 2020-04-15
 last-updated: 2023-05-28
 stage: beta
-status: implementable
+status: implemented
 latest-milestone: "v1.29"
 milestone:
   beta: "v1.29"
