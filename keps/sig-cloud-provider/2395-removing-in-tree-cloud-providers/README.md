@@ -439,8 +439,26 @@ apiserver network proxy do not have to be stopped on rollback.
 All capabilities from in-tree cloud providers will be re-disabled.
 
 ###### Are there any tests for feature enablement/disablement?
-Adequate unit tests, component integration test and e2e tests will be added for this feature before
-it is goes beta and on by default.
+The [external CCM framework][ccmframework] contains unit tests which form the
+base for testing the CCM itself. See:
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/app/webhooks_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/app/controllermanager_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/node/node_controller_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/nodelifecycle/node_lifecycle_controller_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/route/route_controller_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/service/controller_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/node/helpers/address_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/node/helpers/taints_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/options/nodecontroller_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/options/options_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/service/helpers/helper_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/volume/helpers/rounding_test.go
+* https://github.com/kubernetes/cloud-provider/blob/release-1.28/volume/helpers/zones_test.go
+
+End-to-end testing for the enablement of this feature is tested by changing
+the process for creating clusters in the continuous integration suite. Enabled
+by this pull request:
+* https://github.com/kubernetes/kubernetes/pull/117503
 
 ### Rollout, Upgrade and Rollback Planning
 
