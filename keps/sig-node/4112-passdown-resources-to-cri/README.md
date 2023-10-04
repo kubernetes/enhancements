@@ -169,15 +169,58 @@ When the pod sandbox is created, the kubelet does not provide the CRI runtime
 any information about the resources (such as native resources, host devices,
 mounts, CDI devices etc) that will be required by the application. The CRI
 runtime only becomes aware of the resources piece by piece when containers of
-the pod are created (one-by-one). This can cause issues with VM-based runtimes
-(e.g. [Kata containers](https://katacontainers.io/)) that need to prepare the
-VM, with all needed resources, at sandbox creation and cannot do any
-modifications (i.e. attach/reserve new resources) after that (i.e. when
-individual containers are created).
+the pod are created (one-by-one).
+
+This can cause issues with VM-based runtimes
+(e.g. [Kata containers](https://katacontainers.io/) and [Confidential Containers](https://www.cncf.io/projects/confidential-containers/)) that need to prepare the VM before containers are created.
+
+For Kata to handle PCIe devices properly the CRI needs to tell the kata-runtime
+how many PCIe root-ports or PCIe switch-ports the hypervisor needs to create at
+sandbox creation depending on the number of devices allocated by the containers.
+The PCIe root-port is a static configuration and the hypervisor cannot adjust it
+once the sandbox is created. During container creation the PCIe devices are
+hot-plugged to the PCIe root-port or switch-port. If the number of pre-allocated
+pluggable ports is too low, the attachment will fail (container devices >
+pre-allocated hot-pluggable ports).
+
+In the case of Confidential Containers (uses Kata unter the hood with additional
+software components for attestation) the CRI needs to consider the cold-plug aka
+direct attachment use-case. At sandbox creation time the hypervisor needs to
+know the exact number of pass-through devices and its properties
+(VFIO IOMMU group, the actual VFIO device - there can be several devices in a
+IOMMU group, attach to PCIe root-port or PCIe switch-port (PCI-Bridge)).
+In a confidential setting a user does not want to reconfigure the VM
+(creates an attack-vector) on every create container request. The hypervisor
+needs a fully static view of resources needed for VM sizing.
+
+Independent of hot or cold-plug the hypervisor needs to know how the PCI(e)
+topology needs to look like at sandbox creation time.  
+
+Updating resources of a container means also resizing the VM, hence the
+hypervisors needs the complete list of resources available at a update container
+request.
 
 Another visibility issue is related to the native and extended resources.
 Kubelet manages the native resources (CPU and memory) and communicates resource
-parameters over the CRI API to the runtime. However, the original details of
+parameters over the CRI API to the runtime. The following snippet shows the
+currently supported CRI annotations that are provided by the Kubelet to e.g.
+`containerd`:
+
+```sh
+pkg/cri/annotations/annotations.go
+
+  // SandboxCPU annotations are based on the initial CPU configuration for the sandbox. This is calculated as the
+  // sum of container CPU resources, optionally provided by Kubelet (introduced  in 1.23) as part of the PodSandboxConfig
+  SandboxCPUPeriod = "io.kubernetes.cri.sandbox-cpu-period"
+  SandboxCPUQuota  = "io.kubernetes.cri.sandbox-cpu-quota"
+  SandboxCPUShares = "io.kubernetes.cri.sandbox-cpu-shares"
+
+  // SandboxMemory is the initial amount of memory associated with this sandbox. This is calculated as the sum
+  // of container memory, optionally provided by Kubelet (introduced in 1.23) as part of the PodSandboxConfig.
+  SandboxMem = "io.kubernetes.cri.sandbox-memory"
+```
+
+However, the original details of
 the resource spec are lost as they get translated (within kubelet) to
 platform-specific (i.e. Linux or Windows) resource controller parameters like
 cpu shares, memory limits etc. Non-native resources such as extended resources
@@ -214,9 +257,9 @@ breaking any existing use cases.
 #### Story 1
 
 As a VM-based container runtime developer, I want to allocate/expose enough
-RAM, hugepages, GPU memory, protected memory sections and other resources for
-the VM to ensure that all containers in the pod are guaranteed to get the
-resources they require.
+RAM, hugepages, hot- or cold-pluggable PCI(e) ports, protected memory sections
+and other resources for the VM to ensure that all containers in the pod are
+guaranteed to get the resources they require.
 
 #### Story 2
 
