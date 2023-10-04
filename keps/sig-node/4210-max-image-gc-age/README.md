@@ -66,7 +66,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Add an option ImageMaximumGCAge, which allows an admin to specify a time after which unused images will be garbage collected
-by the Kubelet, regardless of disk usage.
+by the Kubelet, regardless of disk usage, as well as an associated feature gate to toggle the behavior.
 
 ## Motivation
 
@@ -81,7 +81,7 @@ through the disk usage condition, they will needlessly occupy disk space before 
 
 ### Goals
 
-- Introduce an option to the Kubelet ImageMaximumGCAge
+- Introduce an option to the Kubelet ImageMaximumGCAge and a feature gate ImageMaximumGCAge
 
 ### Non-Goals
 
@@ -114,6 +114,8 @@ The proposal of this KEP is to add an option to the KubeletConfiguration object 
 ```
 
 To begin, this option will be set to 0, which will be interpreted as "disabled". In the future, a more reasonable default may be chosen.
+
+This option will only be adhered to if the feature gate ImageMaximumGCAge is configured for the Kubelet.
 
 ### User Stories (Optional)
 
@@ -238,18 +240,15 @@ Version skew is not a worry assuming the internal Kubelet changes are synchroniz
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [x] Other
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ImageGCMaximumAge
+  - Components depending on the feature gate: kubelet
+- [ ] Other
   - Describe the mechanism:
-    - Kubelet configuration field
   - Will enabling / disabling the feature require downtime of the control
     plane?
-    - No, it's a kubelet only configuration
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
-    - Potentially, to restart the Kubelet.
 
 ###### Does enabling the feature change any default behavior?
 
