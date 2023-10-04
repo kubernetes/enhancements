@@ -690,6 +690,11 @@ Tests for the following behaviors will be added:
   struct's fields
 - roundtripping preserves the distinction between absent, present-but-null, and
   present-and-empty for slices and maps
+- `runtime.RawExtension`
+  - re-encoding preserves the original raw bytes
+  - encoding a runtime.Object with existing no raw bytes defaults to JSON
+  - decoding JSON-in-CBOR, JSON-in-Protobuf, CBOR-in-JSON, and CBOR-in-Protobuf
+    is supported
 
 As well as fuzz tests covering:
 
