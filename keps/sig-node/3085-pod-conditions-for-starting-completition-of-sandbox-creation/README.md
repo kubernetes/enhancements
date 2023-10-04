@@ -93,6 +93,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Story 3: Pod unable to start due to problems with CSI, CNI or Runtime Handler plugins](#story-3-pod-unable-to-start-due-to-problems-with-csi-cni-or-runtime-handler-plugins)
       - [Story 4: Pod Sandbox restart after a successful initial startup and crash](#story-4-pod-sandbox-restart-after-a-successful-initial-startup-and-crash)
       - [Story 5: Graceful pod sandbox termination](#story-5-graceful-pod-sandbox-termination)
+      - [Story 6: Volume mounting issues](#story-6-volume-mounting-issues)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -732,6 +733,24 @@ status:
     type: PodScheduled
 ```
 
+##### Story 6: Volume mounting issues
+
+These are some areas that are useful to deduce information around volume failures.  
+`PodReadyToStartContainers` gives a useful condition for these cases.  
+
+###### Mounting Volumes from missing Secrets
+
+A pod is configured to mount a volume from a secret.  The corresponding secret is missing so the volume mount fails.
+
+###### Mounting Volumes from missing ConfigMaps
+
+A pod is configured to mount a volume from a ConfigMap.  The corresponding Configmap is missing so the volume mount fails.
+
+In both of these cases, it is possible to deduce a failure but you would have view the events.  Without this condition, the latest status is `ContainerCreating` and no conditions help to distinguish this issue.
+
+Events are best-effort so they are not guaranteed to happen.  In many cases, it is possible that these events are missed and users are left confused
+on why there containers are stuck.  The `PodReadyToStartContainers` adds a condition to reflect a failure in these cases.  Both of these cases fail in the volume initialization phase so `PodReadyToStartContainers` would be set to `False` giving users notification that their pods had an issue.  
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -988,13 +1007,25 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
+Tests List
+
+- [x] [Pod Conditions Test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pod_conditions_test.go)
+  - [testgrid](https://testgrid.k8s.io/sig-node-release-blocking#node-kubelet-serial-containerd&include-filter-by-regex=PodReadyToStartContainers)
+- [] GracefulNodeShutdown test
+  - Add test to check status of pod ready to start condition are set to false after terminating
+- [] Volume Mounting Issues
+  - [x] Add test to verify sandbox condition for missing configmap.
+  - [ ] Add test to verify sandbox condition for missing secret.
+
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
 examining the pod status has the new `PodReadyToStartContainers` condition with
 `status` and `reason` fields populated with expected values:
+
 1. A basic pod that launches successfully without any problems.
 2. A pod with references to a configmap (as a volume) that has not been created causing the pod sandbox creation to not complete until the configmap is created later.
-3. A pod whose node is rebooted leading to the sandbox being recreated.
+3. A pod with references to a secret (as a volume) that has not been created causing the pod sandbox creation to not complete until the secret is created later.
+4. A pod whose node is rebooted leading to the sandbox being recreated.
 
 Tests for pod conditions in the `GracefulNodeShutdown` e2e_node test will be
 enhanced to check the status of the new pod sandbox conditions are `false` after
@@ -1069,14 +1100,17 @@ in back-to-back releases.
 #### Alpha
 
 - Kubelet will report pod sandbox conditions if the feature flag `PodReadyToStartContainersCondition` is enabled.
-- Initial e2e tests completed and enabled.
+- E2E tests added for pod conditions.
+- E2E test for sandbox condition if pod fails to mount volume.
 
 #### Beta
 
+- Condition is moved from a package constant in Kubelet to a [API Defined Condition](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/types.go#L2834)
 - Gather feedback from cluster operators and developers of services or controllers that consume these conditions.
 - Implement suggestions from feedback as feasible.
 - Feature Flag defaults to enabled.
-- Add more test cases and link to this KEP.
+- Add test case for graceful shutdown.
+- Add test case for sandbox condition if pod fails to mount volume from a missing secret.
 
 #### GA
 
@@ -1171,7 +1205,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No changes to any default behavior should result from enabling the feature.
+Yes, there will be a new condition for all pods.  
+In normal cases, the `PodReadyToStartContainers` condition will be set to true.  
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1203,6 +1238,7 @@ used to confirm that the new pod condition introduced is being:
 - evaluated and applied by the Kubelet Status manager when the feature is enabled.
 - not evaluated nor applied when the feature is disabled.
 
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -1230,6 +1266,12 @@ the controller or service that consumes the new pod condition should be disabled
 before the rollback. This helps prevent a controller/service consuming the
 condition getting the data from pods running in a subset of the nodes in the
 middle of a rollout or rollback.
+
+If a controller or service consumes these pod conditions but the cluster has turned off this feature,
+the controller or service will never match on this pod condition as new pods will never set this condition.
+
+If the feature is rolled back and the conditions are set, the controller or service will never see a new condition update.
+Conditions can assume to be locked in place as no future patches will done to this condition.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1262,11 +1304,105 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Upgrade/downgrade of Kubelet incorporating this feature (preceded with draining
-of pods) has been tested successfully.
+In the [node-e2e tests](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pod_conditions_test.go#L46), we test upgrade and rollback via toggling the feature gates on/off.
 
-New pods scheduled on the node after un-cordoning following node
-upgrade/downgrade surface the expected pod conditions.
+The Upgrade->downgrade->upgrade testing was done manually using the `alpha`
+version in 1.28 with the following steps:
+
+1. Start the cluster with the `PodReadyToStartContainersCondition` enabled:
+
+```sh
+kind create cluster --name per-index --image kindest/node:v1.28.0 --config config.yaml
+```
+
+using `config.yaml`:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "PodReadyToStartContainersCondition": true
+nodes:
+- role: control-plane
+- role: worker
+```
+
+Create a pod that has a failed pod sandbox.  Easiest way to do this is to create a pod that fails to mount a volume.  This case fails because the ConfigMap (`clusters-config-file`) does not exist.
+
+using `pod.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: config-map-mount
+spec:
+  containers:
+    - name: test-container
+      image: registry.k8s.io/busybox
+      command: [ "/bin/sh", "-c", "env" ]
+      volumeMounts:
+      - mountPath: /clusters-config
+        name: clusters-config-volume
+  volumes:
+    - configMap:
+        name: clusters-config-file
+      name: clusters-config-volume
+```
+
+```sh
+kubectl create -f pod.yaml
+```
+
+This pod will have a `PodReadyToStartContainers` condition that says `False`.
+
+```yaml
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2023-10-03T22:14:22Z"
+      status: "False"
+      type: PodReadyToStartContainers
+```
+
+2. To test the downgrade, we create a new kind cluster with the feature turned off.
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "PodReadyToStartContainersCondition": false
+nodes:
+- role: control-plane
+- role: worker
+```
+
+When you inspect the conditions, the `PodReadyToStartContainers` condition will be not existent.
+
+3. To test the enable, we create a new kind cluster with the feature turned on.
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "PodReadyToStartContainersCondition": true
+nodes:
+- role: control-plane
+- role: worker
+```
+
+This pod will have a `PodReadyToStartContainers` condition that says `False`.
+
+```yaml
+    conditions:
+    - lastProbeTime: null
+      lastTransitionTime: "2023-10-03T22:14:22Z"
+      status: "False"
+      type: PodReadyToStartContainers
+```
+
+This demonstrates that the feature is working again for the job.
+
+If you take a pod that is able to create a sandbox, then you should see `True` in cases where the condition exists.  
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1332,6 +1468,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+
+There are no SLOs for this feature.  We don't expect any changes to the existing SLOs.  
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1413,7 +1551,7 @@ Focusing mostly on:
 
 Yes, the new pod condition will result in the Kubelet Status Manager making additional PATCH calls on the pod status fields.
 
-The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH es in a batch.
+The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH in a batch.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1474,6 +1612,20 @@ This through this both in small and large cases, again with respect to the
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -1522,6 +1674,11 @@ SLOs are not applicable to pod status fields. Overall Kubernetes node level SLOs
 may leverage this feature.
 
 ## Implementation History
+
+- Alpha in 1.25.
+- PodHasNetwork renamed to PodReadyToStartContainers in 1.28.
+- Beta promotion to 1.29
+  - Moving PodReadyToStartContainers to staging/src/k8s.io/api/core/v1/types.go as a API constant
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
