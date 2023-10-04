@@ -930,6 +930,12 @@ Yes, with the exception of support for CBOR decoding of custom resources from
 storage. That cannot be disabled because it must remain possible to decode any
 resource that has already been persisted.
 
+With CBOR is disabled on the server side, resources that have been persisted
+using the CBOR encoding can be replaced with their JSON encoding by retrieving
+the resource as JSON and writing it back unaltered. This is the same process
+used for storage version migrations and can be automated using the Storage
+Version Migrator.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 No additional considerations. Custom resource storage will support recognition
