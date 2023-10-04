@@ -7,8 +7,8 @@ reviewers: ['@thockin', '@danwinship', "@aojea"]
 approvers: ['@thockin']
 creation-date: "2023-02-03"
 status: implementable
-stage: alpha
-latest-milestone: "v1.28"
+stage: beta
+latest-milestone: "v1.29"
 milestone:
     alpha: "v1.28"
     beta: "v1.29"
