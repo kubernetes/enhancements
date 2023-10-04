@@ -7,9 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Defaults](#defaults)
-    - [Kubelet](#kubelet)
-    - [Command line tools](#command-line-tools)
+  - [Kubelet defaults](#kubelet-defaults)
   - [Kubelet config](#kubelet-config)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -98,7 +96,7 @@ data transfer was reached would provide the low-level building blocks to improve
 tools (crictl pull), or machinery (kubelet pulling the image)
 - Extend existing PullImage api to support a duration timeout with no progress feature
 - Implement PoC / draft for CRI PullImageWithProgress call to runtime in Kubelet, hidden behind
-FeatureGate, disable by default
+FeatureGate, disable by default.
 
 ### Non-Goals
 
@@ -131,105 +129,21 @@ percentage-based granularity type can be introduced then.
 If the client did not specify the preferred notification granularity, default values should be used,
 for instance every Gibibyte downloaded or every 60 seconds of time spent downloading an image.
 
-Kubelet would publish received progress information as events to Pod object, for instance:
-```shell
-kubectl describe pod example-1
-...
-Events:
-  Type     Reason            Age   From               Message
-  ----     ------            ----  ----               -------
-  Normal   Scheduled         5s    default-scheduler  Successfully assigned default/example to node1
-  Normal   Pulled            51s   kubelet            Pulling Container image "registry.k8s.io/e2e-test-images/busybox:1.29-2"
-  Normal   Pulled            21s   kubelet            Pulling Container image "registry.k8s.io/e2e-test-images/busybox:1.29-2" 1Gi of 1.4Gi
-  Normal   Created           11s   kubelet            Created container container1
-  Normal   Started           11s   kubelet            Started container container1
 
-```
+### Kubelet defaults
 
-Command line tools would visualize it as typical progress rendering in shell terminal, for instance:
-```shell
-6e494387c901caf429c1bf77bd92fb82b33a68c0e19f6d1aa6a3ac8d27a7049d:  done    |++++++++++++++++++++++++++++++++++++++|
-1b0a26bd07a3d17473d8d8468bea84015e27f87124b283b91d781bce13f61370:  done    |+++++++++++++++++++++++++++-----------|
-71d064a1ac7d46bdcac82ea768aba4ebbe2a05ccbd3a4a82174c18cf51b67ab7:  done    |+++++++++++++++++++++++++++++++++++---|
-b539af69bc01c6c1c1eae5474a94b0abaab36b93c165c0cf30b7a0ab294135a3:  done    |+++++++++++++++++++++++++++++++++++++-|
-```
-
-### Defaults
-
-#### Kubelet
-
-For kubelet we propose:
-- default granularity type to be time-based
-- default interval to be 30 seconds
-- verbosity to be summarized
+For Kubelet implementation we propose:
+- for alpha: disabling image pulling progress messages in request to Runtime
 - default no-progress timeout to be 10 seconds
-- in kubelet-config enforcing minimum interval limits:
-  - 10 seconds for the time-baesd granularity
-  - 1 Gibibyte for size-based granularity
-
 
 Example Kubelet image pull with progress request:
 ```
 {
     request: {...},
-    granularity_type: "time",
-    interval: 30,
+    granularity_type: "none",
+    interval: 0,
     no_progress_timeout: 10,
     verbosity: false,
-}
-```
-
-Example image pull with progress response to Kubelet:
-```
-{
-  image_ref: "registryA.com/repo/imageB:tagC",
-  offset: 1073741824,
-  total: 4294967296,
-}
-```
-
-Example Pod event test published by Kubelet when progress report received:
-```
-Pulling Container image registryA.com/repo/imageB:tagC: 1Gi of 4Gi
-```
-
-#### Command line tools
-
-For command line tools we propose:
-- default granularity type to be time-based
-- default interval to be 1 second
-- verbosity to be verbose
-- default no-progress timeout to be 0 (disabled)
-
-Example command line tool image pull with progress request:
-```
-{
-    request: {...},
-    granularity_type: "time",
-    interval: 1,
-    no_progress_timeout: 0,
-    verbosity: true,
-}
-```
-
-Example image pull with progress response to command line tool:
-```
-{
-  image_ref: "registryA.com/repo/imageB:tagC",
-  offset: 2147483648,
-  total: 8589934592,
-  details: [
-    { layer: "e023e0e48e6e29e90e519f4dd356d058ff2bffbd16e28b802f3b8f93aa4ccb17",
-      offset: 1073741824,
-      total: 4294967296,
-      stage: "downloading",
-    },
-    { layer: "6fbdf253bbc2490dcfede5bdb58ca0db63ee8aff565f6ea9f918f3bce9e2d5aa",
-      offset: 1073741824,
-      total: 4294967296,
-      stage: "downloading",
-    },
-  ]
 }
 ```
 
@@ -239,27 +153,6 @@ The granularity type, interval, and no-progress timeout should be configurable t
 
 Suggested new Kubelet config fields are these:
 
-       // ImagePullProgressType is the type of ImagePullProgressInterval.
-       // Supported values are
-       // - "time" for tunrime to report progress every ImagePullProgressInterval seconds
-       // - "size" for runtime to report progress every ImagePullProgressInterval <binarySI quantity> (e.g. 1Gi)
-       // - "none" for no progress reporteds
-       // Default: "time"
-       // +optional
-       ImagePullProgressType string `json:"ImagePullProgressType,omitempty"`
-       // ImagePullProgressInterval is a quantity value of how often the runtime should send back to
-       // kubelet image pulling progress reports, that will be published as Pod events.
-       // This option is used together with ImagePullProgressType in ImageService to fill Interval and
-       // GranularityType fields respectively in PullImageWithProgressRequest in CRI PullImageWithProgress.
-       // ImagePullProgressInterval is treated as seconds if ImagePullProgressType is "time".
-       // ImagePullProgressInterval is treated as binarySI quantity if ImagePullProgressType is "size".
-       // call.
-       // Minimum:
-       //   - 10  for "time" ImagePullProgressType
-       //   - 1Gi for "size" ImagePullProgressType
-       // Default: 30
-       // +optional
-       ImagePullProgressInterval string `json:"ImagePullProgressInterval,omitempty"`
        // NoProgressTimeout is a number of seconds after which stalled image download should be reported
        // as an error.
        // Supported values are:
@@ -366,7 +259,7 @@ or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be 
     message PullImageWithProgressRequest {
         // Include original non-progress request structure.
         PullImageRequest request = 1;
-        // Granularity type of the progress reports
+        // Granularity type of the progress reports. Supported values: time, size, none
         PullImageProgressGranularity granularity_type = 2;
         // The interval value of the chosen granularity.
         // For time based granularity, this is the number of seconds between reports. If time interval is 0, then runtime default report interval is used.
@@ -464,13 +357,14 @@ if runtime has ImagePullWithProgress not implemented
 #### Alpha
 
 - CRI extended with the new call and parameter for old call
-- PoC feature implemented in kubelet behind a feature flag
+- PoC feature implemented in kubelet behind a feature flag with only no-progress timeout handling, progress messages should not be requested from runtime
 - PoC feature is implemented for either cri-o or containerd runtime, does not have to be released
 - Initial e2e tests completed and enabled
 
 #### Beta
 
 - Gather feedback from community
+- Full implementation of the suggested new CRI API call in kubelet is merged and released
 - Implementation of the call for the crictl merged and released
 - Implementation of the call for cri-o runtime merged and released
 - Implementation of the call for containerd runtime merged and released
@@ -626,8 +520,7 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-No behaviour is impacted by this feature. Amount of events published to Pod object by Kubelet will
-increase.
+If the container image is or has become impossible to download, pulling operation will fail faster.
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
@@ -651,8 +544,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The events of image pull progress should appear for Pod object. Switching the feature on / off
-should only result in events with image pull progress appearing / disappearing for Pod object.
+Switching the feature on / off should only result in change of how much time it takes for image pull
+operation to fail if there is no progress over defined period of time.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -752,10 +645,15 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Given the default PullImageWithProgressRequest values and the maximum supported amount of Pods needing
-to pull an image simultaneously and in parallel (worst case), kubelet is not under DoS attack by runtime.
+In Alpha:
 
-Same scenario, but kubelet is not causing apiserver load.
+- image pulling operation should fail faster.
+
+In Beta:
+
+- given the default PullImageWithProgressRequest values and the maximum supported amount of Pods needing
+to pull an image simultaneously and in parallel (worst case), kubelet is not under DoS attack by runtime.
+- same scenario, but kubelet is not causing apiserver load.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -817,111 +715,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-Worst case scenario should be simulated to have MAX_NODES worker nodes pulling MAX_PODS_PER_NODE
-multiplied by number of containers on average per pod to see if it will cause any significant overhead.
+No impact for alpha.
 
-Crude calculations:
-
-- Worker node:
-```
-10 Gib/s || 1.2 GiB/s downlink
-110 Pods max
-```
-
-- Cluster size:
-```
-5000 worker nodes, max 150 000 Pods
-```
-
-- Two kinds of deployment:
-```
-Many small-sized Pods : 100    MiB image
-Fewer huge-sized Pods : 10 000 MiB image
-```
-
-- Scheduler:
-```
-Emits 500 Pods to nodes per second
-```
-
-1. Small images
-
-1.1. Even distribution - one Pod per node
-
-1 / 10th of Worker nodes will start downloading single image with 1200 MiB/s speed, it will take
-one or few seconds to download 100 or 1000 MiB big-image to worker node, scheduler won't be fast
-enough to fill rest of 4500 Nodes to schedule second Pod to same node.
-
-Time spent in downloading is 1 / 60th of proposed 1-minute interval. No Pod events published.
-
-1.2. Packing distribution - as many Pods to same node as possible
-
-500 / 110 = 5 nodes. 4 nodes completely filled with 110 Pods plus one Node with 60 Pods
-
-Let's say 3 x containers per Pod, 330 different images:
-```
-Data to pull: 330 x 0.1 GiB = 33GiB
-Time to pull: 33 / 1.2 ~= 30-40 seconds
-```
-Regardless if parallel or sequential pulling, time spent in downloading is half of proposed
-1-minute interval. No Pod events published.
-
-2. Huge images
-
-Presumption is that Huge images require huge resources, for instance PCI-e acceleraters,
-and or plenty of RAM, CPU power. Let's assume there can be 10 such Pods in one Node.
-
-2.1. Even distribution - one Pod per node
-
-1 / 10th of worker nodes will start downloading single image with 1200 MiB /s
-it will take 10 second to download 10 GiB big-image to worker node.
-
-500 Nodes out of 5000 were tasked with one Pod within first second of scheduling,
-remaining 4500 nodes will be tasked with single Pod workload within next 9 seconds.
-After 10th second the first Node will get new Pod to download image for.
-
-Even given an few seconds overlap in downloading (when new image download starts, while
-previously scheduled Pod's image is finalizing download), every next Pod's image is downloaded
-few seconds (let's say 2s) longer than the previous one, worst case is around 20s, 1/3rd of
-proposed default notification interval. No events emitted.
-
-Seconds spent downloading
-```
-Pod 1  01234567890
-Pod 2            0123456789012
-Pod 3                      012345678901234
-Pod 4                                0123456789012345
-Pod 5                                          01234567890123456
-Pod 6                                                    01234567890123456789
-Pod 7                                                              012345678901234567890
-Pod 8                                                                        0123456789012345678901
-Pod 9                                                                                  012345678901234567890123
-Pod 10                                                                                           012345678901234567
-```
-
-2.2. Packing distribution - as many Pods to same node as possible
-
-Scheduler tasks Nodes with 500 Pods per second rate, 10 Pods per Node = 50 Nodes fully tasked
-every second. It will take 100 seconds until 5k-nodes-big cluster can no longer accept / has no
-more resources for such Pods.
-
-100 GiB data to download on each Node, 1.2 GiB per second = 83 seconds, longer than proposed
-default reporting interval.
-
-Parallel pulling: there will be one event for each out of 10 Pods = 10 Events / 10 API calls,
-download will finish until the second interval is reached.
-
-Sequential pulling = first 72 GiB downloaded within 60 seconds with no notifications sent out,
-last 3 Pods still downloading images will get one pull progress notification event.
-
-Workload lifespan is expected to be longer than 83 seconds, so next Pod will start downloading
-image when some workloads come to an end.
-
-Overall, there will be either of:
-* bursts of 10 events every second from next 50 Nodes, 500 API calls total every second coming
-to apiserver for 100 seconds (5000 nodes / 50 nodes)
-* 3 events from each out of 50 nodes every second, approx. 150 events / API calls to apiserver
-for 100 seconds
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
 and attempt to answer them.
@@ -982,21 +777,6 @@ Describe them, providing:
 Using the no-progress timeout will shorten the time to fail when the target image cannot be downloaded and no
 explicit network error is in place (when actual network error is in place, there's hardly any delay until failure).
 
-By default, for K8s 1.27 Kubelet pulls images sequentially, in this default configuration the
-amount of gRPC messages between runtime and Kubelet will increase by up to `1 per second`.
-
-The same amount of API calls from Kubelet to API-server to deliver the Pod event will increase, but
-per Node, meaning total API-server load will increase by `(1 x number of worker nodes) per second`.
-
-Starting from [1.27 feature of `serializeImagePulls` is available](https://kubernetes.io/docs/concepts/containers/images/#maximum-parallel-image-pulls)
-
-> if `serializeImagePulls is set to False, the Kubelet defaults to no limit on the maximum number of images being pulled at the same time...
-
-If `maxParallelImagePulls` is not set to a positive number, the Kubelet will not limit the number
-of parallel images pulled at one time, so the maximum number images pulled will become equal to
-the maximum number of containers per cluster, [which is 300 000](https://kubernetes.io/docs/setup/best-practices/cluster-large/)?
-
-More realistic figures and simulation can be done later.
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -1008,7 +788,9 @@ Think about adding additional work or introducing new steps in between
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Kubelet and apiserver should be seeing insignificant increase in gRPC calls' amount.
+Not in alpha.
+
+In Beta, Kubelet should be seeing insignificant increase in gRPC messages from Runtime.
 
 <!--
 Things to keep in mind include: additional in-memory state, additional
@@ -1035,9 +817,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Kubelet should not fail when during image pulling an event publishing to Pod fails, this should
-be ignored by kubelet and / or retried later if events are queued to be delivered. Queueing such
-events is out of scope of this proposal.
+In alpha: no behavior change.
 
 ###### What are other known failure modes?
 
