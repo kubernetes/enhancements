@@ -9,7 +9,9 @@ status: implementable
 creation-date: 2023-09-19
 reviewers:
   - "@jpbetz"
-approvers: []
+approvers:
+  - "@deads2k"
+  - "@jpbetz"
 
 see-also: []
 replaces: []
