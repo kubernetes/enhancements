@@ -356,7 +356,7 @@ minimum of two minor versions, so that the oldest kube-apiserver within the
 supported kubectl version skew will have CBOR support. The supported version
 skew for aggregated API servers is much wider (infinite?). Encoding and decoding
 resources from aggregated API servers that don't support CBOR will rely on the
-content-type negotation mechanisms described above.
+content-type negotiation mechanisms described above.
 
 Two client-side gates will be added as follows, using a common client-go gating
 mechanism with specific details to be agreed by sig-api-machinery:
