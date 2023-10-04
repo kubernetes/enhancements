@@ -162,14 +162,16 @@ not attempt to "align them".
 - Cloud providers/workloads which do not support the behavior mentioned in
   [Risk](#risk), have the possibility to set the feature flag to false, thus
   default back to the current mechanism.
-- For point 3. we could implement the following change in the service
-  controller; ensure it only enqueues Node UPDATE on changes to
-  `.metadata.labels["node.kubernetes.io/exclude-from-external-load-balancers"]`.
-  When processing the sync: list only Node following the existing predicates
-  defined for `externalTrafficPolicy: Cluster/Local` services (both currently
-  exclude Nodes with the taint `ToBeDeletedByClusterAutoscaler`). This will
-  ensure that whatever Nodes are included in the load balancer set, always have
-  a corresponding VM. Doing this is however reverting on the goal of the KEP.
+- As to address point 3. we kept the taint `ToBeDeletedByClusterAutoscaler` as a
+  predicate for both  `externalTrafficPolicy: Cluster/Local`. Updates to that
+  taint will however not trigger a load balancer re-sync. This will ensure that
+  whatever Nodes are included in the load balancer set, always have a
+  corresponding VM. If the scenario detailed in 3. happens though, this also
+  means we won't connection drain the node which is terminating (since the node
+  will be remvoed from the load balancer set). This means that we will have
+  cases where we have a sub-optimal behavior (i.e: no connection draining), but
+  we avoid errors syncing the state of load balancers. For reference, see:
+  https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L1009-L1014C26
 
 ## Design Details
 
@@ -292,8 +294,10 @@ mentioned in [Monitoring requirements](#monitoring-requirements)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Once the change is implemented: the author will work with Kubernetes vendors to
-test the upgrade/downgrade scenario in a cloud environment.
+The owner of the KEP missed running the manual test when promoting the feature
+to Beta. Since then it was implicitly tested by many users that upgraded their
+clusters to 1.27+ versions without any bug reports, so running additional tests
+now wouldn't provide additional value.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -307,14 +311,16 @@ change triggers a re-sync of all services. This will not change and can be used
 to monitor the implemented change. The implementation will result in less load
 balancer re-syncs.
 
-A new metric `load_balancer_sync_count` will be added for explicitly monitoring
+A new metric `load_balancer_sync_count` has been added for explicitly monitoring
 the amount of load balancer related syncs performed by the service controller.
-This will include load balancer syncs caused by Service and Node changes.
+This will include load balancer syncs caused by Service and Node changes. See:
+https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/metrics.go#L44-L49
 
-A new metric `nodesync_error_rate` will be added for explicitly monitoring the
+A new metric `nodesync_error_rate` has been added for explicitly monitoring the
 amount of errors produced by syncing Node related events for load balancers. The
 goal is have an indicator of if the service controller is impacted by point 3.
-mentioned in (Risk)[#Risk], and at which frequency.
+mentioned in (Risk)[#Risk], and at which frequency. See: 
+https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/metrics.go#L44-L49
 
 ###### How can an operator determine if the feature is in use by workloads?
 
