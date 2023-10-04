@@ -151,6 +151,12 @@ However, these cases will be added in the existing integration tests:
 These cases will be added in the existing `e2e_node` tests:
   - Device Plugin works with CDI devices
 
+Links to tests:
+- TBD: Will fill-in by code freeze
+
+Links to k8s-triage for tests:
+- TBD: Will fill-in by code freeze
+
 ### Graduation Criteria
 
 #### Alpha
@@ -315,11 +321,22 @@ No
 
 ### Troubleshooting
 
+###### How does this feature react if the API server and/or etcd is unavailable?
+
 N/A
 
 ###### What are other known failure modes?
 
-TBD
+The change to Kubernetes to support this feature is very minimal. The CDI
+device list passed from the plugin to the kubelet is opaquely forwarded to the
+underlying container runtime without affecting the overall logic of the kubelet
+in any significant way. As such, the only known failure scenarios result from
+plugins themselves doing something incorrectly (not the kubelet). For example,
+sending back a list of CDI devices that are not included in any CDI spec
+visible to the underlying container runtime. However, such failure scenarios do
+not affect the proper functioning of kubernetes itself, and are therefore out
+of scope for this KEP. We recommend you check the device plugin and container
+runtime logs instead.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -328,6 +345,7 @@ N/A
 ## Implementation History
 
 - 2023-05-15: KEP created
+- 2023-09-25: KEP updated to mark transition to beta
 
 ## Drawbacks
 
