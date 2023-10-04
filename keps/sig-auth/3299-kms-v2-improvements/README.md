@@ -21,6 +21,7 @@
     - [Generate Data Encryption Key (DEK) Seed](#generate-data-encryption-key-dek-seed)
     - [Cryptography Details](#cryptography-details)
   - [Benchmarks](#benchmarks)
+  - [Comparing Metrics](#comparing-metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -441,6 +442,29 @@ KMSv2REST-10      23.95Gi ± 0%       27.25Gi ± 0%  +13.77% (p=0.000 n=10)
              │      allocs/op     │  allocs/op   vs base                │
 KMSv2REST-10       3.119M ± 0%       3.268M ± 1%  +4.78% (p=0.000 n=10)
 ```
+
+### Comparing Metrics
+
+Multiple [runs of e2e tests](https://gist.github.com/ritazh/528e627430621fffce41fd04983024a4) were performed to compare the impact of having KMS v2 encryption of all resources vs no encryption at all. The results are included below. 
+
+It shows that there is no significant increase in the following API server metrics: `apiserver_request_duration_seconds`, `apiserver_request_terminations_total`, `apiserver_request_aborts_total`.
+
+|                         | post*     | get*      | delete*   | list*     |
+|-------------------------|-----------|-----------|-----------|-----------|
+| **run w/o encrypt**     |           |           |           |           |
+| 1                       | 0.0225    | 0.0086    | 0.0103    | 0.0046    |
+| 2                       | 0.0336    | 0.0076    | 0.0119    | 0.0058    |
+| 3                       | 0.0205    | 0.0081    | 0.0117    | 0.0047    |
+| average w/o encrypt     | 0.025533  | 0.0081    | 0.0113    | 0.005033  |
+| **run w/ encrypt**      |           |           |           |           |
+| 4                       | 0.0219    | 0.0071    | 0.0109    | 0.0051    |
+| 5                       | 0.0229    | 0.0062    | 0.01      | 0.0045    |
+| 6                       | 0.0279    | 0.0082    | 0.0119    | 0.005     |
+| average w/ encrypt      | 0.024233  | 0.007167  | 0.010933  | 0.004867  |
+| % diff between averages | -5.09138  | -11.5226  | -3.24484  | -3.31126  |
+
+*average apiserver_request_duration_seconds = apiserver_request_duration_seconds_sum / apiserver_request_duration_seconds_count
+Both `apiserver_request_terminations_total` and `apiserver_request_aborts_total` resulted in no difference.
 
 ### Test Plan
 
