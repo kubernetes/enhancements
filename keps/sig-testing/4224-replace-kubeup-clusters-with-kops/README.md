@@ -278,6 +278,9 @@ This migration will be completed in phases:
       - ci-kubernetes-e2e-gce-scale-performance
       - ci-kubernetes-e2e-gce-scale-correctness
 
+Definition of success:
+- An extended period of time where tests on kops clusters passing without flakes with the exception of a small number of tests have been flagged for removal/rewrites.
+
 arm64 is currently blocked by cloud-provider-gcp not having a published arm64 builds.
 
 - Phase Two: Promote the canary jobs at the beginning of 1.30 release cycle and announce that kube-up clusters are deprecated and will be removed at the start of 1.33. Introduce canary presubmit jobs that use kops.
@@ -407,7 +410,7 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-No reason really.
+None
 
 ## Alternatives
 
@@ -417,7 +420,26 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-We don't have one.
+We do have two first party tools that can provision Kubernetes clusters on GCP.
+- Cluster API for GCP(CAPG).
+- kubespray
+
+None of these tools are viable replacements when compared to kops.
+
+CAPG:
+- CAPI clusters require a bootstrap Kubernetes Cluster to provision the Kubernetes Cluster. This can be achieved by using kind in CI but it is expensive.
+- CAPG isn't well maintained and has zero docs. Also there is no history of CAPG being used CI. kops has been used in CI for a long time.
+- The most popular implementation of CAPI in e2e testing is CAPZ and it doesn't use the core test-infra tooling such as boskos/kubetest2 which is required for testing against GCP.
+- I have extensively [tested](https://github.com/vmware-tanzu/crash-diagnostics/pull/243) CAPG for another project and it does have serious feature gaps.
+
+kubespray:
+- It uses ansible to provision infra on GCP and configure a cluster.
+  - no docs on GCE
+  - you still have to deal with the all the ansible/python headache
+
+kOps has *already* for year provided [reliable](https://testgrid.k8s.io/kops-grid) CI coverage for clusters on AWS/GCP.
+
+Discussion [thread](https://github.com/kubernetes/enhancements/pull/4250#discussion_r1341545724) on the initial KEP PR.
 
 ## Infrastructure Needed (Optional)
 
