@@ -77,6 +77,7 @@ SIG Architecture for cross-cutting KEPs).
   - [User Stories](#user-stories)
     - [Cluster add-on development](#cluster-add-on-development)
     - [Cluster configuration](#cluster-configuration)
+    - [Integration with cluster autoscaling](#integration-with-cluster-autoscaling)
     - [Partial GPU allocation](#partial-gpu-allocation)
     - [Network-attached accelerator](#network-attached-accelerator)
     - [Combined setup of different hardware functions](#combined-setup-of-different-hardware-functions)
@@ -113,6 +114,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Cluster Autoscaler](#cluster-autoscaler)
     - [Generic plugin enhancements](#generic-plugin-enhancements)
     - [DRA scheduler plugin extension mechanism](#dra-scheduler-plugin-extension-mechanism)
+    - [Handling claims without vendor code](#handling-claims-without-vendor-code)
     - [Building a custom Cluster Autoscaler binary](#building-a-custom-cluster-autoscaler-binary)
   - [kubelet](#kubelet)
     - [Managing resources](#managing-resources)
@@ -431,6 +433,15 @@ parametersRef:
   kind: GPUInit
   name: acme-gpu-init
 ```
+
+#### Integration with cluster autoscaling
+
+As a cloud provider, I want to support GPUs as part of a hosted Kubernetes
+environment, including cluster autoscaling. I ensure that the kernel is
+configured as required by the hardware and that the container runtime supports
+CDI. I review the Go code provided by the vendor for simulating cluster scaling
+and build it into a customized cluster autoscaler binary that supports my cloud
+infrastructure.
 
 #### Partial GPU allocation
 
@@ -1930,7 +1941,7 @@ progress.
 
 When [Cluster
 Autoscaler](https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler#cluster-autoscaler)
-encounters a pod that uses a resource claim, the autoscaler needs assistance by
+encounters a pod that uses a resource claim for node-local resources, the autoscaler needs assistance by
 the resource driver for that claim to make the right decisions. Without that
 assistance, the autoscaler might scale up the wrong node group (resource is
 provided by nodes in another group) or not scale up (pod is pending because of
@@ -1943,6 +1954,9 @@ simulations for clusters that use their hardware. Extensions for invoking such
 vendor code through some RPC mechanism, as WASM plugin, or some generic
 code which just needs to be parameterized for specific hardware could be added
 later in separate KEPs.
+
+Such vendor code is *not* needed for network-attached resources. Adding or
+removing nodes does not change availability of such resources.
 
 The in-tree DRA scheduler plugin is still active. It handles the generic checks
 like "can this allocated claim be reserved for this pod" and only calls out to
@@ -2122,6 +2136,26 @@ claim while the autoscaler goes through it's binpacking simulation.
 
 Finally, `NodeIsReady` of each vendor plugin is called to implement the
 scheduler plugin's own `NodeIsReady`.
+
+#### Handling claims without vendor code
+
+When the DRA scheduler plugin does not have specific vendor code for a certain
+resource class, it falls back to the assumption that resources are unlimited,
+i.e. allocation will always work. This is how volume provisioning is currently
+handled during cluster autoscaling.
+
+If a pod is not getting scheduled because a resource claim cannot be allocated
+by the real DRA driver, to the autoscaler it will look like the pod should be
+schedulable and therefore it will not spin up new nodes for it, which is the
+right decision.
+
+If a pod is not getting scheduled because some other resource requirement is
+not satisfied, the autoscaler will simulate scale up and can pick some
+arbitrary node pool because the DRA scheduler plugin will accept all of those
+nodes.
+
+During scale down, moving a running pod to a different node is assumed to work,
+so that scenario also works.
 
 #### Building a custom Cluster Autoscaler binary
 
