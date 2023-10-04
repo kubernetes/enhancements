@@ -270,7 +270,7 @@ Suggested new Kubelet config fields are these:
        NoProgressTimeout int32 `json:"NoProgressTimeout,omitempty"`
 
 
-For exactl API objects structure, see [API design Details](#design-details) below
+For exact API objects structure, see [API design Details](#design-details) below.
 
 ### User Stories (Optional)
 
