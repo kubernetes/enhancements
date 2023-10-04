@@ -827,6 +827,9 @@ in back-to-back releases.
 
 #### Beta
 
+- Review of nondeterministic encoding mode and final decision on whether to keep
+  or remove it.
+
 #### GA
 
 - Granular content-type fallback behavior on HTTP 415.
