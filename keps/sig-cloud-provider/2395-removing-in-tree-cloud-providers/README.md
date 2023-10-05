@@ -439,26 +439,14 @@ apiserver network proxy do not have to be stopped on rollback.
 All capabilities from in-tree cloud providers will be re-disabled.
 
 ###### Are there any tests for feature enablement/disablement?
-The [external CCM framework][ccmframework] contains unit tests which form the
-base for testing the CCM itself. See:
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/app/webhooks_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/app/controllermanager_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/node/node_controller_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/nodelifecycle/node_lifecycle_controller_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/route/route_controller_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/controllers/service/controller_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/node/helpers/address_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/node/helpers/taints_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/options/nodecontroller_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/options/options_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/service/helpers/helper_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/volume/helpers/rounding_test.go
-* https://github.com/kubernetes/cloud-provider/blob/release-1.28/volume/helpers/zones_test.go
+Yes, there are a large number of feature tests including:
+* unit tests under [https://github.com/kubernetes/cloud-provider/blob/release-1.28](https://github.com/kubernetes/cloud-provider/blob/release-1.28)
+* e2e test suites running with in-tree provider disabled:
+  * [https://testgrid.k8s.io/provider-gcp-periodics#disable-cloud-provider](https://testgrid.k8s.io/provider-gcp-periodics#disable-cloud-provider)
+  * [https://testgrid.k8s.io/provider-gcp-periodics#E2E%20Full%20-%20Cloud%20Provider%20GCP%20-%20with%20latest%20k8s.io/kubernetes](https://testgrid.k8s.io/provider-gcp-periodics#E2E%20Full%20-%20Cloud%20Provider%20GCP%20-%20with%20latest%20k8s.io/kubernetes)
 
-End-to-end testing for the enablement of this feature is tested by changing
-the process for creating clusters in the continuous integration suite. Enabled
-by this pull request:
-* https://github.com/kubernetes/kubernetes/pull/117503
+For enablement/disablement tests, we are relying on manual tests that were
+done downstream by at least two large cloud providers: GCP and AWS.
 
 ### Rollout, Upgrade and Rollback Planning
 
