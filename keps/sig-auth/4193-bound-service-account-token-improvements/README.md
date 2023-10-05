@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
   - [Embedding Pod's bound Node information in tokens](#embedding-pods-bound-node-information-in-tokens)
   - [Allowing ServiceAccount tokens to be bound to a Node object](#allowing-serviceaccount-tokens-to-be-bound-to-a-node-object)
-  - [Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects](#extending-tokenreview-to-allow-cross-checking-the-embedded-node-information-with-existing-node-objects)
+  - [Extending TokenReview to verify tokens bound to Node objects](#extending-tokenreview-to-verify-tokens-bound-to-node-objects)
   - [Including a UUID (<a href="https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7">JTI</a>) on each issued JWT](#including-a-uuid-jti-on-each-issued-jwt)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
