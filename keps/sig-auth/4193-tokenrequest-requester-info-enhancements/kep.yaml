@@ -37,9 +37,13 @@ feature-gates:
   - name: ServiceAccountTokenJTI
     components:
       - kube-apiserver
-  - name: ServiceAccountTokenNodeInfo
+  - name: ServiceAccountTokenPodNodeInfo
     components:
       - kube-apiserver
+  - name: ServiceAccountTokenNodeBinding
+    components:
+      - kube-apiserver
+
 disable-supported: true
 
 # The following PRR answers are required at beta release

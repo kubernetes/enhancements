@@ -373,18 +373,23 @@ you need any help or guidance.
 ### Feature Enablement and Rollback
 
 * `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log / the SA user info.
-* `ServiceAccountTokenNodeInfo` feature flag will toggle including node info in tokens.
+* `ServiceAccountTokenPodNodeInfo` feature flag will toggle including node info associated with pods in tokens.
+* `ServiceAccountTokenNodeBinding` feature flag will toggle allowing service account tokens to be bound to Node objects.
 
 Both of these feature flags can be disabled without any unexpected adverse affects or coordination required.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate
   - Feature gate name: `ServiceAccountTokenJTI`
   - Components depending on the feature gate: kube-apiserver
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `EmbedServiceAccountRequesterInfo`
+- [x] Feature gate
+  - Feature gate name: `ServiceAccountTokenPodNodeInfo`
+  - Components depending on the feature gate: kube-apiserver
+
+- [x] Feature gate
+  - Feature gate name: `ServiceAccountTokenNodeBinding`
   - Components depending on the feature gate: kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -417,13 +422,16 @@ Rollback is done by removing/disabling the feature gate.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-If somehow the tokens issued during the time where the feature was enabled were to be rejected, these tokens would
-need to be re-requested.
+During a rollback, there is a concern that tokens that were issued prior to the rollback that are bound directly to a
+Node object (i.e. not bound to a Pod that also embeds node info, which is informational) could be accepted by an older
+apiserver even if the bound Node object no longer exists (as it would not know to verify the new `node` claim).
 
-This isn't so much a failure of the rollback, rather it would be a bug in the actual feature (hence feature gating).
+To help avoid this, the feature will be graduated in two phases:
 
-During a skew where hosts have different enablement, users would get tokens with varying content if they made multiple
-requests. These tokens will all be usable against all apiservers though, so there won't be issues due to skew.
+* First, graduating the acceptance/validation of explicitly node-scoped tokens in one release
+* Secondly, graduating the issuance of explicitly Node bound tokens
+
+This allows for a safe rollback in which the same security expectations are enforced once a token has been issued.
 
 ###### What specific metrics should inform a rollback?
 
@@ -463,7 +471,7 @@ New metrics:
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Additionally, the metrics detailed above provide a clear signal as to whether these features are being used.
+The metrics detailed above provide a clear signal as to whether these features are being used.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
