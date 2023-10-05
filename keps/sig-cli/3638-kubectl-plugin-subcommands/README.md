@@ -274,11 +274,12 @@ in back-to-back releases.
 
 - Gather feedback from developers and surveys
 - Add integration tests
-- Remove `KUBECTL_ENABLE_CMD_SHADOW` environment variable and this feature will be enabled by default.
+- set `KUBECTL_ENABLE_CMD_SHADOW` environment variable to true as default.
 
 #### GA
 
 - Add e2e test
+- Remove `KUBECTL_ENABLE_CMD_SHADOW` environment variable
 - Enable shadowing for all non-existent subcommands
 
 ### Upgrade / Downgrade Strategy
