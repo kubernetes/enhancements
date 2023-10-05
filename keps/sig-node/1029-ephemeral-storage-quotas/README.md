@@ -33,7 +33,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
-  - [Phase 2: Beta](#phase-2-beta)
+  - [Phase 2: Beta (v1.29)](#phase-2-beta-v129)
   - [Phase 3: GA](#phase-3-ga)
 - [Performance Benchmarks](#performance-benchmarks)
   - [Elapsed Time](#elapsed-time)
@@ -50,6 +50,8 @@
   - [Version 1.15](#version-115)
   - [Version 1.24](#version-124)
   - [Version 1.25](#version-125)
+  - [Version 1.27](#version-127)
+  - [Version 1.29](#version-129)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -677,7 +679,7 @@ The following criteria applies to
 - Unit test coverage
 - Node e2e test
 
-### Phase 2: Beta
+### Phase 2: Beta (v1.29)
 
 - User feedback
 - Benchmarks to determine latency and overhead of using quotas
@@ -940,6 +942,18 @@ If the metrics shows some problems, we can check the log and quota dir with belo
 - Promote `LocalStorageCapacityIsolationFSMonitoring` to Beta, but there is a regression and we revert it to alpha.
 
 ConfigMap rendering [issue](https://github.com/kubernetes/kubernetes/issues/112081) was found in the 1.25.0 release. When ConfigMaps get updated within the API, they do not get rendered to the resulting pod's filesystem by the Kubelet. The feature has been [reverted to alpha](https://github.com/kubernetes/kubernetes/pull/112078) in the 1.25.1 release.
+
+### Version 1.27
+
+- Fix the blocking issue that caused the revert to alpha: <https://github.com/kubernetes/kubernetes/pull/112624> and <https://github.com/kubernetes/kubernetes/pull/115314>.
+- Add test in sig-node test grid for this feature <https://testgrid.k8s.io/sig-node-kubelet#kubelet-gce-e2e-fsquota-ubuntu>: <https://github.com/kubernetes/test-infra/pull/28616>
+
+### Version 1.29
+
+Promote `LocalStorageCapacityIsolationFSMonitoring` to Beta
+
+- [x] [E2E tests](#e2e-tests)
+- [x] add VolumeStatCalDuration metrics for fsquato monitoring benchmark [#107201](https://github.com/kubernetes/kubernetes/pull/107201)
 
 ## Drawbacks [optional]
 
