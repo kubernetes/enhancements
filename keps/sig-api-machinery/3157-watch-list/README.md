@@ -99,6 +99,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -660,8 +662,22 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - The Feature is implemented behind `WatchList` feature flag
 - Initial e2e tests completed and enabled
 - Scalability/Performance tests confirm gains of this feature
+- Add support for watchlist to APF
+
+#### Beta
 - Metrics are added to the kube-apiserver (see the [monitoring-requirements](#monitoring-requirements) section for more details)
 - Implement `SendInitialEvents` for `watch` requests in the etcd storage implementation
+- The feature is enabled for kube-apiserver and kube-controller-manager 
+- The generic feature gate mechanism is implemented in client-go. 
+  It will be used to enable a new functionality for reflectors/informers.
+- Implement a consistency check detector that will compare data received through a new watchlist request 
+  with data obtained through a standard list request. The detector will be added to the reflector 
+  and activated when an environment variable is set. The environment variable will be set for all jobs run in the Kube CI. 
+
+#### GA
+- Consider using WatchProgressRequester to request progress notifications directly from etcd.
+  This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
+  and could reduce the overall latency for watchlist requests.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -745,9 +761,9 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
@@ -797,23 +813,33 @@ Pick one of these and delete the rest.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: WatchList
-  - Components depending on the feature gate: the kube-apiserver
+   - Components depending on the feature gate: 
+    - kube-apiserver
+  - Feature gate name: WatchListClient (the actual name might be different because it hasn't been added yet)
+  - Components depending on the feature gate:
+    - kube-controller-manager via client-go library
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? 
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
 ###### Does enabling the feature change any default behavior?
-No.
+No. Because users must enable the feature on the client side (client-go).
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-Yes, in that scenario the kube-apiserver will reject WATCH requests with the new query parameter forcing informers to fall back to the previous mode.
+Yes, by disabling `WatchList` FeatureGate for `kube-apiserver`.
+In this case `kube-apiserver` will reject WATCH requests with the new query parameter forcing informers to fall back to the previous mode.
+
+Yes, by disabling `WatchListClient` FeatureGate for `kube-controller-manager`.
+In this case informers will follow standard LIST/WATCH semantics.
+
+Note that for safety reasons, reflectors/informers will always fallback to a regular LIST operation regardless of the error that occurred.
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
@@ -825,7 +851,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 The expected behavior of the feature will be restored.
 
 ###### Are there any tests for feature enablement/disablement?
-No.
+Yes. There is [an integration test](https://github.com/kubernetes/kubernetes/pull/120971) that verifies the fallback mechanism 
+of the reflector when interacting with servers that has the `WatchList` feature enabled/disabled.
 <!--
 The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
@@ -839,7 +866,13 @@ conversion tests if API types are being modified.
 This section must be completed when targeting beta to a release.
 -->
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
+Feature does not have a direct impact on rollout/rollback.
 
+However, faulty behavior of a feature can result in incorrect functioning 
+of components that rely on that feature. For the Beta version, we plan to enable it exclusively for kube-controller-manager.
+The main issues can arise during the initial informer synchronization, which may result in controller failures.
+
+Furthermore, if data consistency issues arise, such as missing data, the controllers simply do not consider the missing data.
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -852,13 +885,146 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+`apiserver_terminated_watchers_total` - a large number of terminated watchers might indicate synchronization issues.
+For example, we have some client-side error where we're not getting data from the server. Or we have a server-side error, and the buffer is getting cluttered.
+
+`apiserver_request_duration_second_bucket` - in general, a large number of "short" watch requests can indicate synchronization issues.
+
+`apiserver_watch_list_duration_seconds` - the absence of this metric may indicate that the client did not receive a special bookmark.
+The issue here could be that the server never sent it due to an error or didn't even receive it from the database.
+
+`apiserver_watch_list_duration_seconds` - long synchronization times may indicate that the server is lagging behind etcd. 
+Forr example, not receiving progress notifications from the database frequently.
+
+`apiserver_watch_cache_lag` - tells how far behind the server is compared to the database.
+Significant discrepancies affect the times for full data synchronization.
+
+A good metric can also be the number of kube-controller-manager restarts. 
+Which may indicate issues with informers synchronization.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
 
+Build and run Kubernetes from the master branch using Kind.
+```
+kind build node-image --arch "arm64"
+
+kind create cluster --image kindest/node:latest
+
+kubectl get no
+NAME                 STATUS   ROLES           AGE   VERSION
+kind-control-plane   Ready    control-plane   26s   v1.29.0-alpha.1.47+f8571dabf79717
+```
+
+Check if the `kube-apiserver`(aka `kas`) has recorded the watchlist latency metric.
+```
+kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
+# HELP apiserver_watch_list_duration_seconds [ALPHA] Response latency distribution in seconds for watch list requests broken by group, version, resource and scope.
+# TYPE apiserver_watch_list_duration_seconds histogram
+…
+apiserver_watch_list_duration_seconds_bucket{group="",resource="configmaps",scope="cluster",version="v1",le="6"} 1
+```
+
+Disable the `WatchList` feature gate for the `kas` by editing the static pod manifest directly.
+```
+docker exec -ti kind-control-plane bash
+vim /etc/kubernetes/manifests/kube-apiserver.yaml 
+```
+and pass `- --feature-gates=WatchList=false` to the `kas` container.
+
+Check if the `kas` has not recorded the watchlist latency metric.
+```
+kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
+```
+
+Check if `kube-controler-manger`(aka `kcm`) is running.
+```
+kubectl get po -n kube-system
+NAME                                         READY   STATUS    RESTARTS      AGE
+…
+kube-controller-manager-kind-control-plane   1/1     Running   1 (44s ago)   3m28s
+```
+
+Check if informers used by the `kcm` fell back to standard LIST/WATCH semantics.
+```
+kubectl logs -n kube-system kube-controller-manager-kind-control-plane | grep -e "watch-list"
+W1002 09:11:40.656641       1 reflector.go:340] The watch-list feature is not supported by the server, falling back to the previous LIST/WATCH semantics
+…
+```
+
+Disable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+```
+docker exec -ti kind-control-plane bash
+vim /etc/kubernetes/manifests/kube-controller-manager.yaml
+```
+and pass `- --feature-gates=WatchList=false` to the `kcm` container.
+
+Check if `kcm` is running.
+```
+kubectl get po -n kube-system
+NAME                                         READY   STATUS    RESTARTS        AGE
+…
+kube-controller-manager-kind-control-plane   1/1     Running   0               12s
+```
+
+Check if the `kas` has not recorded the watchlist latency metric.
+```
+kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
+```
+
+Check if there are no traces of informers for `kcm` falling back to standard LIST/WATCH semantics.
+```
+kubectl logs -n kube-system kube-controller-manager-kind-control-plane | grep -e "watch-list"
+```
+
+Enable the `WatchList` feature gate for the `kas` by editing the static pod manifest directly.
+```
+docker exec -ti kind-control-plane bash
+vim /etc/kubernetes/manifests/kube-apiserver.yaml 
+```
+and remove `- --feature-gates=WatchList=false` from the `kas` container.
+
+Check if `kcm` is running.
+```
+kubectl get po -n kube-system
+NAME                                         READY   STATUS             RESTARTS      AGE
+…
+kube-controller-manager-kind-control-plane   1/1     Running            1 (22s ago)   86s
+```
+
+Check if the `kas` has not recorded the watchlist latency metric.
+```
+kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
+```
+
+Enable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+```
+docker exec -ti kind-control-plane bash
+vim /etc/kubernetes/manifests/kube-controller-manager.yaml
+```
+and remove `- --feature-gates=WatchList=false` for the `cm` container.
+
+Check if `kcm` is running.
+```
+kubectl get po -n kube-system
+NAME                                         READY   STATUS    RESTARTS      AGE
+…
+kube-controller-manager-kind-control-plane   1/1     Running   0             13s
+```
+
+Check if the `kas` has recorded the watchlist latency metric.
+```
+kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
+# HELP apiserver_watch_list_duration_seconds [ALPHA] Response latency distribution in seconds for watch list requests broken by group, version, resource and scope.
+# TYPE apiserver_watch_list_duration_seconds histogram
+…
+apiserver_watch_list_duration_seconds_bucket{group="",resource="configmaps",scope="cluster",version="v1",le="6"} 1
+```
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -866,7 +1032,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
-
+No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -878,6 +1044,7 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
+If `apiserver_watch_list_duration_seconds` metric has some data then this feature is in use.
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
@@ -887,6 +1054,15 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
+Assuming that historical data is available then comparing the number of LIST and WATCH requests to the server will tell whether the feature was enabled. 
+When this feature is enabled, the number of LIST requests will be smaller. 
+The difference primarily arises from switching informers to a new mode of operation.
+
+Checking whether `WatchListClient` FeatureGate has been set for the given component.
+
+Knowing the `username` for a component, the audit logs could be examined to see whether `sendInitialEvents=true` in the `requestURI` has been set for that user.
+
+Scanning the component's logs for the phrase `Reflector WatchList`. For requests lasting more than 10 seconds, traces will be reported.
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -905,6 +1081,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+None have been defined yet.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -928,16 +1105,15 @@ Pick one more of these and delete the rest.
 -->
 
 - [ ] Metrics
-  - Metric name: apiserver_cache_watcher_buffer_length (histogram, what was the buffer size)
-  - Metric name: apiserver_watch_cache_lag (histogram, for how far the cache is behind the expected RV)
   - Metric name: apiserver_terminated_watchers_total (counter, already defined, needs to be updated (by an attribute) so that we count closed watch requests due to an overfull buffer in the new mode)
+  - Metric name: apiserver_watch_list_duration_seconds (histogram, measures latency of watch-list requests)
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-
+No.
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
@@ -950,7 +1126,7 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
-
+No.
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
@@ -1067,8 +1243,18 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-###### What are other known failure modes?
+When the kube-apiserver is unavailable then this feature will also be unavailable.
 
+When etcd is unavailable, requests attempting to retrieve the most recent state of the cluster will fail.
+
+###### What are other known failure modes?
+- kube-controller-manager is unable to start.
+  - Detection: How can it be detected via metrics? Examine the prometheus `up` time series or examine the pod status or the number of restarts.
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads? Disable the feature. Pass `WatchList=false` to `feature-gates` command line flag.
+  - Diagnostics:  What are the useful log messages and their required logging
+    levels that could help debug the issue? N/A
+  - Testing: Are there any tests for failure mode? If not, describe why. Yes, if kube-controller-manager is unable to start then a lot of existing e2e tests will fail.
 <!--
 For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -1083,6 +1269,7 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+None SLOs have been defined for this feature yet.
 
 ## Implementation History
 The KEP was proposed on 2022-01-14
