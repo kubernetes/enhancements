@@ -472,7 +472,7 @@ in back-to-back releases.
 #### Beta
 
 - Gather feedback from developers and surveys
-- KUBECTL_INTERACTIVE_DELETE environment variable is removed and interactive flag is enabled by default
+- KUBECTL_INTERACTIVE_DELETE environment variable is removed and interactive flag is available by default
 
 #### GA
 
