@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4247: Per-plugin callback functions for efficient enqueueing in the scheduling queue
+# KEP-4247: Per-plugin callback functions for efficient requeueing in the scheduling queue
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -180,8 +180,10 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Introduce callback function named `QueueingHint` to `EventsToRegister` so that each plugin can control when to retry Pods scheduling more finely. 
-Also, we give an ability to skip backoff in an appropriate case, which improve the performance to schedule Pods with some plugins (DRA plugin in in-tree plugins).
+The scheduler gets a new functionality called `QueueingHint` to get suggestion for how to requeue Pods from each plugin.
+It helps reducing useless scheduling retries and thus improving the scheduling throuput.  
+
+Also, by giving an ability to skip backoff in appropriate cases, the time to take to schedule Pods with dynamic resource allocation is improved.
 
 ## Motivation
 
@@ -616,6 +618,7 @@ enhancement:
 **Upgrade**
 
 Nothing needs to be done to opt-in this feature. (The feature gate is enabled by default)
+This is purely in-memory feature for kube-scheduler, so no special actions are required outside the scheduler.
 
 **Downgrade**
 
@@ -636,7 +639,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-n/a
+This is purely in-memory feature for kube-scheduler, so version skew issues don't exist.
 
 ## Production Readiness Review Questionnaire
 
@@ -680,7 +683,7 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `SchedulerQueueingHints`
   - Components depending on the feature gate: kube-scheduler
 - [ ] Other
@@ -735,7 +738,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-The unit tests are added in the scheduling queue so that we can make sure that the scheduling queue works fine in both the feature gate enabled/disabled.
+Given it's purely in-memory feature and enablement/disablement requires restarting the component (to change the value of feature flag), 
+having feature tests is enough.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -755,7 +759,9 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-n/a because the scheduler is only the component to rollout this feature.
+The partly failure in the rollout isn't there because the scheduler is only the component to rollout this feature. 
+But, if upgrading the scheduler itself fails somehow, new Pods won't be scheduled anymore. 
+(while Pods, which are already scheduled, won't be affected in any cases.)
 
 ###### What specific metrics should inform a rollback?
 
@@ -764,7 +770,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-If `scheduler_pending_pods` metric with `queue: unschedulable` label grows and keeps high number, 
+If `scheduler_pending_pods` metric with `queue: unschedulable` label grows and keeps high number abnormally, 
 maybe something goes wrong with QueueingHint and Pods are stuck in the queue.
 
 
@@ -1017,7 +1023,12 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-n/a
+- If a plugin' QueueingHint implementation has bugs and, for example, misses some events that can make Pods schedulable,
+Pods rejected by those plugins may be stuck in the unschedulable Pod pool for a long time.
+  - Detection: Pods get `FailedScheduling` event, but not retried during 5 min even if the cluster should have a state that can accommodate those Pods. 
+  - Mitigations: The scheduling queue priodically flushing Pods in the unschedulable Pod pool. So, even if such bug exists, Pods' scheduling are retried after a certain period, which is 5 min by default. You can shorten the max duration that Pods can stay in the unschedulable Pod pool by using `--pod-max-in-unschedulable-pods-duration`.
+  - Diagnostics: If you increases the log level to more than 5, you can see the logs related to `QueueingHint` in the scheduling queue. Also, the in-tree plugins emits all logs in QueueingHint with log level 5. (If you have a custom plugin, you may want to check the log level in its QueueingHint.)
+  - Testing: There are multiple unit tests to confirm `flushUnschedulablePodsLeftover` is working expectedly.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 

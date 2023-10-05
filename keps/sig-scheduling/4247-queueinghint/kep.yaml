@@ -1,11 +1,11 @@
-title: Per-plugin callback functions for efficient enqueueing in the scheduling queue
+title: Per-plugin callback functions for efficient requeueing in the scheduling queue
 kep-number: 4247
 authors:
   - "@sanposhiho"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-scheduling
-status: provisional
+status: implementable
 creation-date: 2023-09-30
 reviewers:
   - "@alculquicondor"
@@ -15,7 +15,7 @@ approvers:
 see-also:
   - "/keps/sig-node/3063-dynamic-resource-allocation"
 
-stage: alpha
+stage: beta
 
 latest-milestone: "v1.29"
 
