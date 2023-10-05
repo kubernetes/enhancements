@@ -3,6 +3,7 @@ kep-number: 2395
 authors:
   - "@andrewsykim"
   - "@cheftako"
+  - "@elmiko"
 owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-apps
@@ -22,15 +23,21 @@ approvers:
   - "@liggit"
 editor: TBD
 creation-date: 2018-12-18
-last-updated: 2019-04-11
+last-updated: 2023-10-04
 status: implementable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.21"
+latest-milestone: "v1.29"
 
-stage: alpha
+stage: beta
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.21"
+  beta: "v1.29"
+  stable: "TBD"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
