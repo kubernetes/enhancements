@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -332,7 +333,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20231005` - `86.3%`
+
+new added codes would be a cpu allocation policy option. We can follow how other options are tested and add enough unit tests.
 
 ##### Integration tests
 
@@ -351,7 +354,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+No new integration tests for kubelet are planned.
 
 ##### e2e tests
 
@@ -365,76 +368,16 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+No new e2e tests for kubelet are planned.
 
 ### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 #### Alpha
 
 - Feature implemented behind the existing static policy feature flag
-- Initial e2e tests completed and enabled
+- The functionality of new CPU allocation algorithm is implemented
+- Initial unit tests completed and coverage is improved
+- Documents is improved and enough guidance and examples can be given to potential users.
 
 ### Upgrade / Downgrade Strategy
 
@@ -647,8 +590,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Provide logical cpu allocation distribution across physical cores and also the cpu cache metrics from ecosystem.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -831,19 +774,10 @@ details). For now, we leave it here.
 N/A
 
 ###### What are other known failure modes?
-N/A
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+The failure modes is similar to existing options. It changes the way how cpu manager allocate CPUs.
+It's compatible when user switch between options, however, when the pod get rescheduled, it will follow the current static option instead of previous one. 
+
+When user switch to non static mode, then `/var/lib/kubelet/cpu_manager_state` requires deletion. This is a known compatibility issue.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -862,9 +796,13 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+Let's talk about the limitation of current policies.
+
+1. In a cluster with sparse workloads, we try to leverage as much cpu cache as we can. `full-pcpus-only` will always allocate full phsical cores and it introduces cache competition between vcpus.
+
+2. `distribute-cpus-across-num` will evenly distribut CPU across NUMA nodes. In some cases, we want the application to be allocated in single NUMA node if possible, which gives better performance.
+
+Existing solutions can not address all the special needs from high peformance applications, that's why a new option is needed.
 
 ## Alternatives
 
