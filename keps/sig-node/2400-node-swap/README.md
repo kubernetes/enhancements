@@ -609,10 +609,11 @@ Here are specific improvements to be made:
 
 #### Beta 2
 - Publish a Kubernetes doc page encoring user to use encrypted swap if they wish to enable this feature.
-- Handle usage of swap during container restart boundaries for writes to tmpfs
-  (which may require pod cgroup change beyond what container runtime will do at
-  container cgroup boundary).
-
+- Add [swap specific tests](https://github.com/kubernetes/kubernetes/issues/120798) such as, handling the usage of
+  swap during container restart boundaries for writes to tmpfs (which may require pod cgroup change beyond what
+  container runtime will do at (container cgroup boundary).
+- Fix flaking/failing swap node e2e jobs.
+- Address eviction related [issue](https://github.com/kubernetes/kubernetes/issues/120800) in swap implementation.
 
 [via cgroups]: #restrict-swap-usage-at-the-cgroup-level
 
