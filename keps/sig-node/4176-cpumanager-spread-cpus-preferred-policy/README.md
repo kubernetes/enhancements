@@ -335,8 +335,6 @@ extending the production code to implement this enhancement.
 
 - `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20231005` - `86.3%`
 
-new added codes would be a cpu allocation policy option. We can follow how other options are tested and add enough unit tests.
-
 ##### Integration tests
 
 <!--
@@ -368,7 +366,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-No new e2e tests for kubelet are planned.
+These cases will be added in the existing `e2e_node` tests:
+  - CPU Manager works with `spread-physical-cpus-preferred` static policy option
+
+- Basic functionality
+1. Enable `CPUManagerPolicyAlphaOptions` and configure CPUManager policy option to `spread-physical-cpus-preferred`.
+2. Verify the machine has more than one physical cores.
+3. Create a simple pod with a container that requires 2 cpus.
+4. Verify that the container cpu allocation are across physical cores.
+6. Delete the pod.
 
 ### Graduation Criteria
 
@@ -591,7 +597,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name: 
   - Other field: 
 - [x] Other (treat as last resort)
-  - Details: Provide logical cpu allocation distribution across physical cores and also the cpu cache metrics from ecosystem.
+  - Details: Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -774,8 +780,11 @@ details). For now, we leave it here.
 N/A
 
 ###### What are other known failure modes?
+
 The failure modes is similar to existing options. It changes the way how cpu manager allocate CPUs.
 It's compatible when user switch between options, however, when the pod get rescheduled, it will follow the current static option instead of previous one. 
+
+Currently, in alpha version, we will think it's incompatile with other options. User should stick to this option. Compatibility issue would be resolved in future version.
 
 When user switch to non static mode, then `/var/lib/kubelet/cpu_manager_state` requires deletion. This is a known compatibility issue.
 
@@ -796,13 +805,7 @@ Major milestones might include:
 
 ## Drawbacks
 
-Let's talk about the limitation of current policies.
-
-1. In a cluster with sparse workloads, we try to leverage as much cpu cache as we can. `full-pcpus-only` will always allocate full phsical cores and it introduces cache competition between vcpus.
-
-2. `distribute-cpus-across-num` will evenly distribut CPU across NUMA nodes. In some cases, we want the application to be allocated in single NUMA node if possible, which gives better performance.
-
-Existing solutions can not address all the special needs from high peformance applications, that's why a new option is needed.
+This allocation strategy tries to avoid workload taking entire physical core and it is not suitable for all workloads. For example, if the workload is CPU intensive and it's not sensitive to CPU Cache, it's not suitable to use this policy. Otherwise, the application may suffer from performance regression.
 
 ## Alternatives
 
