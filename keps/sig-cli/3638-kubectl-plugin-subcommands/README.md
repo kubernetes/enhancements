@@ -274,11 +274,13 @@ in back-to-back releases.
 
 - Gather feedback from developers and surveys
 - Add integration tests
-- Enable shadowing for all non-existent subcommands
+- set `KUBECTL_ENABLE_CMD_SHADOW` environment variable to true as default.
 
 #### GA
 
 - Add e2e test
+- Remove `KUBECTL_ENABLE_CMD_SHADOW` environment variable
+- Enable shadowing for all non-existent subcommands
 
 ### Upgrade / Downgrade Strategy
 
@@ -668,6 +670,7 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 The KEP was proposed on 2022-10-22
+The KEP was promoted to beta on 2023-10-02
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
