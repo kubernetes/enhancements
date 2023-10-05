@@ -472,6 +472,7 @@ in back-to-back releases.
 #### Beta
 
 - Gather feedback from developers and surveys
+- KUBECTL_INTERACTIVE_DELETE environment variable is removed and interactive flag is available by default
 
 #### GA
 
@@ -865,6 +866,7 @@ N/A
 
 ## Implementation History
 The KEP was proposed on 2023-03-01
+The KEP was promoted to beta on 2023-10-02
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
