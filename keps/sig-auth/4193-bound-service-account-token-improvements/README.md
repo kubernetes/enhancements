@@ -128,27 +128,19 @@ binding directly to Node objects (without needing to bind to a Pod as well).
 This allows users to obtain a token that is tied specifically to the *Node* objects lifecycle, i.e. when the Node
 object is deleted, the token will be invalidated.
 
-### Extending TokenReview to allow cross-checking the embedded Node information with existing Node objects
+### Extending TokenReview to verify tokens bound to Node objects
 
-The SA authenticator will also be extended to check whether a JWT's embedded node information is still valid/current,
-and if not, will reject the review/indicate to the client that the token mismatches with the current state of Nodes.
+The SA authenticator will be extended to check whether a token that is bound to a Node object is still valid, by
+first checking whether the Node object with the name given in the JWT still exists, and if it does, validating whether
+the UID of that Node is equal to the UID embedded in the token.
 
-For tokens bound to Pod objects, to avoid unexpected breaking changes in behaviour, this will not only be protected by
-the feature flag whilst the feature is graduating to GA, but will also be gated behind an additional kube-apiserver flag
-`--service-account-validate-node-info` which defaults to 'off'. This avoids changing the previous behaviour for
-validation of tokens issued for pods.
+Tokens bound to Pod objects will continue to only validate the referenced pod.
+This avoids changing the previous behaviour for validation of tokens issued for pods.
+Deletion of a node triggers deletion of the pods associated with that node after a [period of time](https://github.com/kubernetes/kubernetes/blob/fc786dcd1d2efcc241e0e2392086934f2806555d/pkg/controller/podgc/gc_controller.go#L50-L52),
+which ultimately invalidates those tokens.
 
 Tokens that are directly bound to Node objects will always validate the name and UID, as binding tokens to Node objects
 is a new option and therefore enforcing this validation check from day 1 is non-breaking.
-
-The validation will involve first checking whether the Node object with the name given in the JWT still exists, and if
-it does, validating whether the UID of that Node is equal to the UID embedded in the token.
-
-For pods, this behaviour matches that of the existing `pod-garbage-collector-controller`, which will automatically
-delete Pod  objects that are bound to Node's that no longer exist after a period of time. With this enabled, tokens will
-be immediately invalidated rather than waiting until [the 40s grace period](https://github.com/kubernetes/kubernetes/blob/fc786dcd1d2efcc241e0e2392086934f2806555d/pkg/controller/podgc/gc_controller.go#L50-L52) passes.
-
-This means administrators can **delete node objects to invalidate all JWTs issued that embed that Node's info**.
 
 ### Including a UUID ([JTI](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7)) on each issued JWT
 
@@ -162,16 +154,10 @@ audit log to have it record this information into audit entries.
 
 #### Story 1
 
-Alice is building an identity issuance system that relies on verifying projected service account tokens to ensure that
-a pod exists, and is associated with a particular service account.
+Alice hosts a service that verifies host identity using an out-of-band mechanism and also submits a bound token that
+contains a node assertion.
 
-Alice wants to prevent a malicious actor being able to replay this token from another host, so that she can be certain
-that the user requesting the identity document is also the same user that initially requested the token (as the identity
-used to request the token requires validations rooted in the cryptographic root of trust on the host, e.g. a TPM).
-
-This not only allows us to prevent replay attacks, but allows us to issue identity documents that we can 'root' in the
-node's own root of trust, the TPM (as the external service can now clearly validate that the user requesting the identity
-not only has a copy of that token, but also that it is the node that the pod is scheduled on).
+The node assertion can be checked to ensure the host identity matches the node assertion of the token.
 
 #### Story 2
 
@@ -310,9 +296,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 #### Alpha
 
 - JTI feature implemented behind a feature flag `ServiceAccountTokenJTI`.
-- Node name/uid feature implemented behind a feature flag `ServiceAccountTokenNodeInfo`.
-- TokenReview extended validation gated behind `ServiceAccountTokenNodeInfo` feature flag, as well as an extra
-  kube-apiserver flag (name TBD, `--service-account-token-validate-node-info`?).
+- Embedding Pod's assigned Node name/uid feature implemented behind a feature flag `ServiceAccountTokenPodNodeInfo`.
+- Support verifying JWTs bound to Node objects with feature flag `ServiceAccountTokenNodeBindingValidation`.
+- Allowing tokens bound to Node objects to be issued with feature flag flag `ServiceAccountTokenNodeBinding`.
 - Initial e2e tests completed and enabled
 
 #### Beta
@@ -390,6 +376,10 @@ Both of these feature flags can be disabled without any unexpected adverse affec
 
 - [x] Feature gate
   - Feature gate name: `ServiceAccountTokenNodeBinding`
+  - Components depending on the feature gate: kube-apiserver
+
+- [x] Feature gate
+  - Feature gate name: `ServiceAccountTokenNodeBindingValidation`
   - Components depending on the feature gate: kube-apiserver
 
 ###### Does enabling the feature change any default behavior?

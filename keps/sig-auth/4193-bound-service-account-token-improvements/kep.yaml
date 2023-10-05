@@ -43,6 +43,9 @@ feature-gates:
   - name: ServiceAccountTokenNodeBinding
     components:
       - kube-apiserver
+  - name: ServiceAccountTokenNodeBindingValidation
+    components:
+      - kube-apiserver
 
 disable-supported: true
 
