@@ -647,7 +647,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 In Alpha:
 
-- image pulling operation should fail faster.
+- image pulling operation should fail faster, when no progress in image pulling was observed over no-progress-timeout amount of time.
 
 In Beta:
 
