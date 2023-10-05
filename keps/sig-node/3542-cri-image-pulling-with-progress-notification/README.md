@@ -254,7 +254,7 @@ runtime CRI image service server.
 The PullImageWithProgressRequest contains base information needed to do the image pull (image name, auth config
 and sandbox information), and it will also contain information how often the server should send progress reports.
 The CRI client can restrict the progress reporting to be time-based (e.g. once every n. seconds),
-or based on size (amount of bytes/KiB/MiB downloaded). The size-based should be the default one.
+or based on size (amount of bytes/KiB/MiB downloaded).
 
     message PullImageWithProgressRequest {
         // Include original non-progress request structure.
