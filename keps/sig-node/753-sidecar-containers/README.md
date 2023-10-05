@@ -843,12 +843,104 @@ examples:
 
 ### Termination of containers
 
-In alpha sidecar containers will be terminated as regular containers. No special
+In Alpha sidecar containers will be terminated as regular containers. No special
 or additional signals will be supported.
 
-We will collect feedback from alpha implementation and plan to improve
-termination in Beta. When Pods with sidecars are terminated:
+In Beta we have thought about introducing additional termination grace period fields
+to manage termination duration
+([draft proposal](https://docs.google.com/document/d/1B01EdgWJAfkT3l6CIwNwoskQ71eyuwet3mjiQrMQbU8))
+and leverage these fields to add reverse order termination of sidecar containers
+after the primary containers terminate.
 
+However, we decided on an alternative that doesn't require additional fields or hooks while keeping
+the desired behaviors when Pods with sidecars are terminated. While original approach works better
+with truly graceful termination where consistency is more important than time taken, proposed approach
+works for that scenario as well as a more and more popular scenario of limited time to terminate when
+graceful termination is set by external requirement and Pods needs to do best to gracefully terminate
+as much as possible (think of a Spot Instances with 30 seconds notification).
+
+Here is the proposed approach:
+1. Sidecar containers that have a `PreStop` hook will be notified when the Pod has begun terminating
+   by executing the `PreStop` hook. This happens at the same time as regular containers, and begins
+   the Pod's termination grace period countdown.
+2. Once the last primary container terminates, the last started sidecar container is notified by
+   sending a `SIGTERM` signal.
+3. The next sidecar (in reverse order) is notified by sending a `SIGTERM` signal after the previous
+   sidecar container terminates.
+4. This continues until all sidecar containers have terminated, or the Pod's termination grace period
+   expires.
+5. In the latter case, all remaining containers are notified by a `SIGTERM`, followed by a fixed
+   grace period of 2s and finally terminated.
+6. The Pod will be terminated after that.
+
+Pseudocode for the above:
+
+```
+func terminatePod() {
+  // notify all sidecar containers with preStop hook, asynchronously
+  for sidecar in sidecarContainers {
+    if sidecar has preStop hook {
+      go execute preStop hook // async
+    }
+  }
+  // notify all containers with preStop hook and then SIGTERM, asynchronously
+  for container in containers {
+    if container has preStop hook {
+      go func(container) { // async
+        execute preStop hook
+        send SIGTERM
+      }
+    }
+  }
+  for {
+    switch {
+      case grace period expired:
+        for anyContainer in sidecarContainers + containers {
+          if anyContainer is running {
+            send SIGTERM
+          }
+        }
+        sleep 2s
+        for anyContainer in sidecarContainer + containers {
+          if anyContainer is running {
+            send SIGKILL
+          }
+        }
+        return
+      case all containers are terminated:
+        // sidecars are terminated in reverse order
+        for sidecar in reverse(sidecarContainers) {
+          // sidecar is already terminating, let it finish
+          if sidecar is terminating {
+            break
+          }
+          // next sidecar to terminate
+          else if sidecar is running {
+            send SIGTERM
+            break
+          }
+        }
+        sleep 1s
+      case all sidecarContainers are terminated:
+        return
+      default:
+        sleep 1s
+    }
+  }
+}
+```
+
+It is worth noting that, like with regular containers, `PreStop` hook must complete before the `SIGTERM`
+signal to stop the sidecar container can be sent. Therefore, ordering and graceful termination of sidecars
+can only be guaranteed if the `PreStop` hook completes within the Pod's termination grace period.
+
+Sidecars continue to be restarted until they enter the `Terminated` state which they are notified
+by a `SIGTERM` signal. This is to ensure that sidecars that fail are restarted until the TGPS expires.
+
+We might postpone running the `livenessProbe` for restarted sidecar containers during termination
+until GA, depending on the implementation complexity.
+
+If we compare this to the initial proposal, the following behaviors are preserved:
 - Sidecars should not begin termination until all primary containers have
   terminated.
   - Implicit in this is that sidecars should continue to be restarted until all
@@ -856,11 +948,12 @@ termination in Beta. When Pods with sidecars are terminated:
 - Sidecars should terminate serially and in reverse order. I.e. the first
   sidecar to initialize should be the last sidecar to terminate.
 
-To address these needs, before promoting this enhancement to Beta, we introduce
-additional termination grace period fields to manage termination duration
-([draft proposal](https://docs.google.com/document/d/1B01EdgWJAfkT3l6CIwNwoskQ71eyuwet3mjiQrMQbU8))
-and leverage these fields to add reverse order termination of sidecar containers
-after the primary containers terminate.
+The additional benefits of this approach comparing to initial proposal:
+- If graceful termination period is short, and mostly taken by the main container, the sidecar containers
+  has more time to gracefully terminate, for example, clear up buffers of logging container.
+- There is absolutely no change in behavior of main containers - they start graceful termination at exact
+  same time as before and can utilize as much of the graceful termination period as they need. The Pod graceful
+  termination period semantic also stay unchanged.
 
 ### Other
 
