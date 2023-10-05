@@ -617,24 +617,28 @@ In addition, in case the workload is guaranteed, the metric named `memory_manage
 
 ###### How can someone using this feature know that it is working for their instance?
   
-  *For cluster admins:*
+*For cluster admins:*
   
-  The assumption that the feature should work, once memory manager static policy and reserved memory flags configured under the kubelet 
-  and kubelet succeeded to restart.
+The assumption that the feature should work, once memory manager static policy and reserved memory flags configured under the kubelet
+and kubelet succeeded to restart. Entities (daemonsets or operators) which can access the nodes have two options to verify if
+containers are pinned to the NUMA node:
+  - Via pod resources API, you will need to connect to grpc socket and get information from it, see [pod resource API doc page](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#monitoring-device-plugin-resources) for more information. 
+  - Checking the relevant container CGroup under the node.
   
-  *For a pod author:*
+*For a pod author:*
   
-  * Pod succeeded to start. You have two options to verify if containers are pinned to the NUMA node
-    - Via pod resources API, you will need to connect to grpc socket and get information from it, see [pod resource API doc page](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#monitoring-device-plugin-resources) for more information. 
-    - Checking the relevant container CGroup under the node.
+* Pod succeeded to start. If a pod requiring memory pinning is admitted is implied that resources are allocated correctly and the workload
+must verify the allocation by itself, for example reimplementing the check that the allocated memory areas area all on the same NUMA zones,
+usually through sysfs.
 
-  * Pod failed to start because of the admission error.
+* Pod failed to start because of the admission error.
     
-    To understand the reason, you will need to check via pod resources API the amount of allocatable memory and memory reserved by containers.
+To understand the reason, you will need to check via pod resources API the amount of allocatable memory and memory reserved by containers.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-This does not seem relevant to this feature.
+For each node, the value of the metric `memory_manager_pinning_requests_total` is expected to match the number of admitted pods which require memory pinning.
+For each node, the value of the metric `memory_manager_pinning_errors_total` is expected to be zero.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
