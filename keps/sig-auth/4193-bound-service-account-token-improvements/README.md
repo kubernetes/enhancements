@@ -407,8 +407,16 @@ Yes (as noted above in the test plan)
 ### Rollout, Upgrade and Rollback Planning
 
 Rolling this out will be done by enabling the feature flag on all control plane hosts.
+
+The `ServiceAccountTokenNodeBindingValidation` feature gate should be enabled and complete rollout before the
+`ServiceAccountTokenNodeBinding` gate is enabled, so all active servers will correctly validate tokens issued by
+any server.
+
+The `ServiceAccountTokenNodeBindingValidation` will be defaulted to on one release **before** `ServiceAccountTokenNodeBinding`
+to account for this.
+
 This should not have any issues/affect during upgrades.
-Rollback is done by removing/disabling the feature gate.
+Rollback is done by removing/disabling the feature gate(s).
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -532,9 +540,9 @@ No
 
 Additional audit log annotation keys, as well as extending the JWT claims we embed into service account tokens.
 
-The maximum size of a UUID is X bytes.
-The maximum size of a Node object's name is Y bytes.
-The maximum size of a Node object's UID is Z bytes.
+The maximum size of a UUID is 36 bytes.
+The maximum size of a Node object's name is 253 bytes.
+The maximum size of a Node object's UID is 36 bytes.
 
 This additional data will be recorded into issued JWTs as well as audit log events.
 
