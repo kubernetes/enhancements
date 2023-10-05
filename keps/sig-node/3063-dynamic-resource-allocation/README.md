@@ -1974,6 +1974,16 @@ progress.
 
 ### Cluster Autoscaler
 
+-<<[UNRESOLVED pohly]>>
+The entire autoscaler section is tentative. Key opens:
+- Are DRA driver authors able and willing to provide implementations of
+  the simulation interface if needed for their driver?
+- Is the simulation interface generic enough to work across a variety
+  of autoscaler forks and/or implementations? What about Karpenter?
+- Is the suggested deployment approach (rebuild binary) workable?
+- Can we really not do something else, ideally RPC-based?
+-<<[/UNRESOLVED]>>
+
 When [Cluster
 Autoscaler](https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler#cluster-autoscaler)
 encounters a pod that uses a resource claim for node-local resources, the autoscaler needs assistance by
