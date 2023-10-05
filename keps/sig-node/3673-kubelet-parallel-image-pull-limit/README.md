@@ -850,7 +850,21 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No.
+When the limit of parallel pull is configured improperly, it might cause disk IO or network exhaustion, but it is not a new problem if parallel image pull is enabled. And this KEP is actually allowing to avoid this exhaustion by limiting the maximum image pulls in parallel.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+See question above.
 
 ### Troubleshooting
 
