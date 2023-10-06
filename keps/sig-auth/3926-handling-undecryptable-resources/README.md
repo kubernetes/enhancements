@@ -222,6 +222,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 - implementing system for ignoring different types of storage errors
+- give clients control over skipping other steps of a delete request flow than decoding errors
 
 ## Proposal
 
