@@ -57,7 +57,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 
-Today, container images in container runtimes are identified by the image name/id. Images can either be a manifest or manifest list/index. When an image is specified, platform matching logic in containerd is used to pull the appropriate manifest from the index of that image.
+Today, container images in container runtimes are identified by the image name (aka. image reference) and/or image digest (usually a SHA256 cryptographic hash of the content). The content of the image referenced is either an image manifest or an image index manifest. The image index is typically arranged to contain a list of image manifests by platform (linux, windows,...).  When the reference is to an image index, platform matching logic is used to identify and pull the appropriately matching image manifest from the index for the platform that the container is being asked to run on.
 
 <pre>
 Example of an index image, Python:
@@ -156,18 +156,16 @@ Example of an index image, Python:
 }
 </pre>
 
-For example, in containerd runtime , each platform has its own platform matcher which is used to
-decide which manifest to pull from an image index/manifest list.
-Containerd's client structure has pointer to the default platform matcher based on what OS/platform the node is on (Linux, Windows, Darwin, etc).
+For example, in containerd runtime, each platform has its own default platform matcher which is used to select the image manifest from an image index based on the OS/platform where the node is running (Linux, Windows, Darwin, etc).
 The platform matcher on linux attempts to check for host and guest OS match and optionally for a variant match as well.
-However, the platform matcher on windows checks for exact OS version match between the host and guest (OSVersion field in the oci ImageSpec is primarily used only for windows manifests) and if a manifest with such an exact match is found, it is pulled. Otherwise an error is thrown. <br> This is the desired behavior for process isolated windows containers as its shares the kernel with the host OS. However, it is not ideal for hyperV isolated windows containers. This is because OS version of the host and the UVM image need not be the same.
-For example, Windows Server 2019 container images can run inside a Utility VM (UVM) on a Windows Server 2022 host and because of this the image pulls should be allowed. For the full matrix of accepted behavior, check the link here: https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility?tabs=windows-server-2022%2Cwindows-10#windows-server-host-os-compatibility
+However, the platform matcher on windows checks for exact OS version match between the host and guest (OSVersion field in the oci ImageSpec is primarily used only for windows manifests) and if a manifest with such an exact match is found, it is pulled. Otherwise an error is thrown. <br> This is the desired behavior for process isolated windows containers running on the same version of the kernel that the host is running on. However, it is not ideal for hyperV isolated windows containers. This is because OS version of the host and the UVM image need not be the same.
+For example, Windows Server 2019 container images can run inside a Utility VM (UVM) on a Windows Server 2022 host and because the container will be running in the UVM, the platform matching image pulls for the UVM instances should be allowed. For the full matrix of accepted behavior, check the link here: https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility?tabs=windows-server-2022%2Cwindows-10#windows-server-host-os-compatibility
 
 ` Note: ` UVM is short for utility VM. It is a light weight VM that boots a special version of Windows that is purpose built to do just one thing- run containers. UVMs provide strong isolation boundaries and do not share kernel with the host OS. They are transparent to the user and do not require any management from the user.
 
-This problem can be fixed if container runtimes, CRI, and kubelet refer to images as a tuple of (imageName/ID, runtimeClass) instead of the imageName/ID. With this, we can specify the runtimeClass a particular image is being run for and the pull implementation on container runtimes can be extended to pull the appropriate manifest from the image index.
-An example implementation in the containerd container runtime on how the pull implementation can be extended to support this is as follows:
-On containerd, the windows platform matcher is responsible for pulling an appropriate manifest from an image index on windows platforms. Today, this platform matcher on windows always looks for a manifest with the OSVersion that matches the host and pulls it. This can be changed to pick a manifest with OSVersion that matches the one set for a particular runtime class in containerd.toml instead of the host OSVersion.
+This problem can be fixed if container runtimes, CRI, and kubelet refer to images as a tuple of (imageName/imageDigest, runtimeClass) instead of the imageName/imageDigest. With this, we can specify the runtimeClass a particular image is being run for and the pull implementation on container runtimes can be extended to pull the appropriate manifest from the image index.
+An example of how the pull implementation can be extended to support this is as follows:
+On containerd, the windows platform matcher is responsible for pulling an appropriate image from an image index on windows platforms. Today, this platform matcher on windows always looks for an image manifest with the OSVersion that matches the host and pulls it. This can be changed to pick then image manifest with the platform OSVersion that matches the one set for a particular runtime class in containerd.toml instead of the host OSVersion.
 An example of how the guest platform information can be set in containerd is as follows:
 
 <pre>
