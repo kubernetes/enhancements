@@ -113,7 +113,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Return <code>QueueImmediately</code>, <code>QueueAfterBackoff</code>, and <code>QueueSkip</code> from <code>QueueingHintFn</code> instead of introducing new status <code>SuccessButReject</code>](#return---and--from--instead-of-introducing-new-status-)
+  - [Return <code>QueueImmediately</code>, <code>QueueAfterBackoff</code>, and <code>QueueSkip</code> from <code>QueueingHintFn</code> instead of introducing new status <code>Pending</code>](#return---and--from--instead-of-introducing-new-status-)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -136,7 +136,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -144,8 +144,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -181,7 +181,7 @@ updates.
 -->
 
 The scheduler gets a new functionality called `QueueingHint` to get suggestion for how to requeue Pods from each plugin.
-It helps reducing useless scheduling retries and thus improving the scheduling throuput.  
+It helps reducing useless scheduling retries and thus improving the scheduling throughput.  
 
 Also, by giving an ability to skip backoff in appropriate cases, the time to take to schedule Pods with dynamic resource allocation is improved.
 
@@ -201,7 +201,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 Currently, each plugin can define when to retry Pods, rejected by the plugin, to schedule roughly via `EventsToRegister`.
 
 For example, NodeAffinity retries the Pods scheduling when Node is added or updated ([ref](https://github.com/kubernetes/kubernetes/blob/v1.27.6/pkg/scheduler/framework/plugins/nodeaffinity/node_affinity.go#L86)) because added/updated Node may have the label which matches with the NodeAffinity on the Pod.
-But, actually, a lot of Node update events happens in the cluster, which cannot make the Pod rejected by NodeAffinity schedulable.
+But, actually, a lot of Node update events happens in the cluster, which cannot make the Pod previously rejected by NodeAffinity schedulable.
 By introducing the callback function to filter out events more finely, the scheduler can retry scheduling of Pods which is only likely to be scheduled in the next scheduling cycle.
 
 **Skip the backoff**
@@ -212,7 +212,7 @@ So, it's natural by its design to take several scheduling cycles to finish the s
 But, it takes time to go through backoff rather than waiting for the update from the device driver actually.
 https://github.com/kubernetes/kubernetes/pull/117561
 
-We want to improve the performance there by giving ability to plugins to skip backoff in appropriate cases.
+We want to improve the performance there by giving ability to plugins to skip backoff in selected cases.
 
 ### Goals
 
@@ -221,6 +221,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+Improve scheduling throughput with the following changes:
 - Introduce `QueueingHint` to `EventsToRegister` and the scheduling queue requeues Pods based on the result from `QueueingHint`
 - Improve how the Pods being processed are tracked by the scheduling queue and requeued to an appropriate queue if they are rejected and back ot the queue.
 
@@ -231,8 +232,9 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
+- Add a user-facing API.
 - Remove the backoff mechanism completely in the scheduling queue.
-- Do something related to `PreEnqueue` extension point.
+- Overload the new functionality in the `PreEnqueue` extension point.
   - `QueueingHint` and `PreEnqueue` are both for the scheduling queue, but the responsibilities are completely different from each other.
 
 ## Proposal
@@ -265,6 +267,28 @@ When `NodeAffinity` rejects Pods, those Pods might be schedulable in the followi
 
 In such events, QueueingHint of the NodeAffinity plugin returns `Queue`, otherwise returns `QueueSkip`.
 
+#### Story 2
+
+Supposing developping the `DynamicResourceAllocation` plugin.
+
+After the scheduling cycle calculates the best Node, 
+`DynamicResourceAllocation` needs to reject Pods once in the reserve extension point 
+to wait for the update from the device driver.
+
+So, Pods with dynamic resources need to go through several scheduling cycle by its design.
+
+In this case, we can skip backoff by returning the status of `Pending` in a reserve extension point
+so that the scheduling queue can understand that this Pod should skip the backoff when it's moved to activeQ.
+
+#### Story 3
+
+Supposing developping the `VolumeBinding` plugin.
+
+When PreFilter finds that the Pod refers to PVC, but PVC doesn't exist, 
+this Pod would never be schedulable until PVC is created.
+
+In this case, it can return `Blocked` so that the scheduling queue can understand this Pod will never be schedulable until `VolumeBinding` plugin returns `Queue`.
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -288,6 +312,8 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+#### mistake in the implementation could result in Pods being stuck in the unschedulable Pod pool in a long time unnecessarily.
+
 If a plugin has QueueingHint and it misses some events which can make Pods schedulable, 
 Pods rejected by it may be stuck in the unschedulable Pod pool. 
 
@@ -296,6 +322,14 @@ The scheduling queue flushes the Pods in the unschedulable Pod pool priodically,
 It's on the way of being removed as the following issue described though, 
 we will postpone its removal until all QueueingHint are implemented and we see no bug report for a while.
 https://github.com/kubernetes/kubernetes/issues/87850
+
+#### the increase in the memory usage
+
+The memory usage in kube-scheduler is supposed to increase because the scheduling queue needs to keep the events happened during scheduling. 
+Thus, the busier cluster it is, the more memory it's likely to require.
+
+By freeing cached events as soon as possible, the impact on memory will be smaller. 
+(although we cannot eliminate the memory usage increase completely.)
 
 ## Design Details
 
@@ -327,13 +361,9 @@ type EnqueueExtensions interface {
 }
 ```
 
-Each `ClusterEventWithHint` has `ClusterEvent` and `QueueingHintFn`, which is executed when the event happens.
-Let's say the scheduling queue has the Pod which is rejected by pluginA and pluginB, 
-and both pluginA and pluginB are interested only in NodeAdded events.
-
-The scheduling queue is watching resources and keep tellng them `NodeAdded` events.
-For every events, `QueueingHintFn` from both plugins are executed, 
-and if either of them returns `Queue`, the Pod is moved to activeQ/backoffQ.
+Each `ClusterEventWithHint` has `ClusterEvent` and `QueueingHintFn`, which is executed when the event happens
+and determine whether the event could make the Pod schedulable or not.
+See [How QueueingHint is executed in the scheduling queue](#how-queueinghint-is-executed-in-the-scheduling-queue) to see the detail.
 
 ```go
 type ClusterEventWithHint struct {
@@ -371,8 +401,6 @@ const (
 )
 ```
 
-That's the basic idea of QueueingHint. 
-
 ### When to skip/not skip backoff
 
 BackoffQ is a light way of keeping throughput high 
@@ -390,29 +418,44 @@ But, some plugins need to go through some failures in the scheduling cycle by de
 In this kind of rejections, we cannot say the scheduling cycle is wasted because the scheduling result from it is used to proceed the Pod's scheduling forward, that particular scheduling cycle is failed though.
 So, Pods rejected by such reasons don't need to suffer a penalty (backoff).
 
-In order to support such cases, we introduces a new status `SuccessButReject`.
-When the `DRA` plugin rejected the Pod with `SuccessButReject` and later returns `Queue` in its `QueueingHintFn`,
+In order to support such cases, we introduces a new status `Pending`.
+When the `DRA` plugin rejected the Pod with `Pending` and later returns `Queue` in its `QueueingHintFn`,
 the pod skips the backoff and the Pod's scheduling is retried. 
 
-### Block a next scheduling retry
+### How QueueingHint is executed in the scheduling queue
 
-For example, when a PVC for the Pod isn't found, the Pod cannot be scheduled and `VolumeBinding` plugin returns `UnschedulableAndUnresolvable` in this case.
-The point here is that this Pod will never be schedulable until the appropriate PVC is created for the Pod. 
+When the cluster event happens, the scheduling queue executes `QueueingHintFn`
+of plugins which rejected the Pod in a previous scheduling cycle.
 
-For such cases, we introduced a new supplemental status `Blocked`, which can be used like this:
+Here are some scenarios to describe how they're executed and how the Pod is moved.
 
-```go
-func (pl *VolumeBinding) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	if hasPVC, err := pl.podHasPVCs(pod); err != nil {
-    if apierrors.IsNotFound(err) {
-      // PVC isn't found for this Pod.
-      // This rejection must be resolved before retrying this Pod's scheduling.
-      // Otherwise, the retry would just result in the same rejection from this plugin here.
-      return UnschedulableAndUnresolvable | Blocked
-    }
-    //...
-}
-```
+#### Pod rejected by one or more plugins
+
+Let's say there are three Nodes. 
+When the Pod goes to the scheduling cycle, one Node is rejected due to no enouch capacity, 
+other two Nodes are rejected because they don't match Pod's NodeAffinity.
+
+In this case, the Pod gets `NodeResourceFit` and `NodeAffinity` as unschedulable plugins,
+and it's put back to the unschedulable pod pool.
+
+After then, every time the cluster events registered in those plugins happen,
+the scheduling queue notifies them through QueueingHint.
+If either of QueueingHintFn from `NodeResourceFit` or `NodeAffinity` returns `Queue`,
+the Pod is moved to activeQ/backoffQ.
+(For example, when `NodeAdded` event happens, the QueueingHint of `NodeResourceFit` return `Queue`
+because the Pod may be schedulable to that new Node.)
+
+Whether it's moved to activeQ or backoffQ, that depends how long this Pod has stayed in the unschedulable pod pool.
+If the time staying in the unschedulable pod pool is longer than an expected backoff delay for the pod,
+it directly goes to activeQ. Otherwise, it goes to backoffQ.
+
+#### Pod rejected by `Pending` status
+
+When DRA plugin returns `Pending` to the Pod in a Reserve extension point,
+the Pod goes back to the scheduling queue and the scheduling queue records DRA as pending plugins of the Pod. 
+
+When DRA plugin's QueueingHint returns `Queue` for a event after that, 
+the scheduling queue put this Pod directly into activeQ.
 
 ### Track Pods being processed in the scheduling queue
 
@@ -426,7 +469,13 @@ Thinking about a problematic scenario, for example, Pod is being scheduled and i
 As mentioned, that new Node doesn't get in the candidates during this scheduling cycle, so this Pod is rejected by NodeAffinity anyways. 
 The problem here is that, if the scheduling queue put this Pod into the unschedulable Pod pool, this Pod would need to wait for another event, although there is already a Node matching the Pod's NodeAffinity.
 
-In order to prevent such Pods from missing the events during its scheduling, the scheduling queue remembers events happened during Pods's scheduling and decide where the Pod is enqueued to based on those events and `QueueingHint`.
+In order to prevent such Pods from missing the events during its scheduling, 
+the scheduling queue remembers events happened during Pods's scheduling 
+and decide where the Pod is enqueued to based on those events and `QueueingHint`.
+
+So, the scheduling queue caches all events since the Pod leaves the scheduling queue 
+until the Pod come back to the scheduling queue or got scheduled. 
+And, cached events are discarded when cached events are no longer needed. 
 
 ### Test Plan
 
@@ -494,6 +543,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - [`k8s.io/kubernetes/test/integration/scheduler/rescheduling_test.go`](https://github.com/kubernetes/kubernetes/blob/v1.28.0/test/integration/scheduler/rescheduling_test.go#L117): 
   - https://storage.googleapis.com/k8s-triage/index.html?test=TestReScheduling
+- [scheduler_perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf)
+  - We'll add scenarios where the cluster size gets changed several times so that we can make sure there is no regression in such cases of the cluster situation being changed a lot. 
 
 ##### e2e tests
 
@@ -510,74 +561,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 n/a
 
---
-
 This feature doesn't introduce any new API endpoints and doesn't interact with other components. 
 So, E2E tests doesn't add extra value to integration tests.
 
+But, regarding the performance test, 
+we'll keep monitoring the regression in scheduler_perf results, specially at high number of nodes.
+https://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfResults&Metric=SchedulingThroughput&Name=SchedulingBasic%2F5000Nodes%2Fnamespace-2&extension_point=not%20applicable&result=not%20applicable
+
 ### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 It was suggested we have a KEP for QueueingHint after we implemented it. 
 It's kind of a special case though, we can assume DRA is the parent KEP and this KEP stems from it. 
@@ -594,7 +585,9 @@ n/a
 
 - The scheduling queue is changed to work with QueueingHint.
 - The feature gate is implemented. (enabled by default) 
-- QueueingHint is implemented in a few plugins.
+- QueueingHint implementation in plugins:
+  - In 1.28: no beta plugins return scheduling hints
+  - In 1.29: at least 3 in-tree plugins return scheduling hints
 
 #### GA
 
@@ -782,7 +775,8 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-No. This feature is the internal feature of the scheduler and no impact left outside the scheduler.
+No. This feature is a in-memory feature of the scheduler 
+and thus calculations start from the beginning every time the scheduler is restarted.
 So, just upgrading it and upgrade->downgrade->upgrade are both the same.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -842,7 +836,11 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-n/a
+In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)), and this feature shouldn't bring any regression there.
+
+Based on that: 
+- `schedule_attempts_total` shouldn't be less than 100 in a second.
+- the average of `scheduling_algorithm_duration_seconds` shouldn't be above 10 ms.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1064,7 +1062,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Return `QueueImmediately`, `QueueAfterBackoff`, and `QueueSkip` from `QueueingHintFn` instead of introducing new status `SuccessButReject`
+### Return `QueueImmediately`, `QueueAfterBackoff`, and `QueueSkip` from `QueueingHintFn` instead of introducing new status `Pending`
 
 Instead of requeueing Pods based on why it was rejected, we can do the same by introducing separate `QueueingHint` for queueing - `QueueImmediately` and `QueueAfterBackoff`.
 
@@ -1072,6 +1070,41 @@ But, as explained in [When to skip/not skip backoff](#when-to-skipnot-skip-backo
 
 So, whether skipping backoff or not, it's something very close to why the Pod was rejected,
 and thus it's easier to be decided when the Pod is rejected than when the Pod is actually requeued.
+
+### Implement `Blocked` status to block a next scheduling retry until the plugin returns `Queue`
+
+For example, when a PVC for the Pod isn't found, the Pod cannot be scheduled and `VolumeBinding` plugin returns `UnschedulableAndUnresolvable` in this case.
+The point here is that this Pod will never be schedulable until the appropriate PVC is created for the Pod. 
+
+For such cases, we introduced a new supplemental status `Blocked`, which can be used like this:
+
+```go
+func (pl *VolumeBinding) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	if hasPVC, err := pl.podHasPVCs(pod); err != nil {
+    if apierrors.IsNotFound(err) {
+      // PVC isn't found for this Pod.
+      // This rejection must be resolved before retrying this Pod's scheduling.
+      // Otherwise, the retry would just result in the same rejection from this plugin here.
+      return UnschedulableAndUnresolvable | Blocked
+    }
+    //...
+}
+```
+
+Thinking about the current usecase of it, my first thought is that many PreFilter and Reserve plugins would want to return `Blocked`. 
+
+But, Looking at how PreFilter and Reserve plugins are executed from the scheduling framework runtime,
+when one of them return unschedulable, the runtime stops the iteration at that point 
+and the rest of plugins aren't executed.
+
+So, in other words, when one of PreFilter and Reserve plugins return unschedulable,
+the plugin would be the only one registered in the unschedulable plugins of the Pod, 
+and the Pod will stay in the unschedulable Pod pool until the plugin return `Queueue` in QueueingHint.
+
+Meaning, PreFilter and Reserve plugins don't need to return `Blocked`.
+
+The next question is that any Filter plugins would want to use `Blocked` or not.
+But, I don't think any of in-tree Filter plugins want.
 
 ## Infrastructure Needed (Optional)
 
