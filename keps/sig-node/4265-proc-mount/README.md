@@ -67,17 +67,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently the most container runtimes work is by masking and setting as read-only certain paths in `/proc`.
+Currently most container runtimes mask and set as read-only certain paths in `/proc`.
 This is to prevent data from being exposed into a container that should not be.
 However, there are certain use-cases where it is necessary to turn this off.
 
-In 1.12, this was introduced as the ProcMountType feature gate, and has languished since. This KEP is
+In 1.12, this was introduced as the ProcMountType feature gate, and has it has languished in alpha ever since. This KEP is
 a successor to (and heavily based on) https://github.com/kubernetes/community/pull/1934/, updated for the modern era.
 
 ## Motivation
 
-For end-users who would like to run unprivileged containers using user namespaces _nested inside_ CRI containers, we need an option to have a `ProcMount`.
-That is, we need an option to designate explicitly turn off masking and setting read-only of paths so that we can mount `/proc` in the nested container as an unprivileged user.
+Some end users would like to run unprivileged containers _nested inside_ a Kubernetes container using user namespaces. The outer container is started by the CRI implementation.
+Kubernetes defaults to masking the `/proc` mount of a container, setting some paths as read only. To run a nested container within an unprivileged Pod, a user would need a way to
+override that default masking behavior.
 
 Please see the following filed issues for more information:
 - [opencontainers/runc#1658](https://github.com/opencontainers/runc/issues/1658#issuecomment-373122073)
@@ -86,19 +87,16 @@ Please see the following filed issues for more information:
 
 ### Goals
 
-- Add the ProcMountType option to the pod API, allowing users to override the proc mount behavior in a container.
+- Allow users to opt out of the CRI masking `/proc` for Linux containers.
 
 ### Non-Goals
 
 ## Proposal
 
 
-Add a new `string` type field named `ProcMountType` will hold the viable
-options for `procMount` to the `SecurityContext`
-definition.
+Add a new `string` named `procMount` to the `securitContext` definition for choosing from a set of proc mount isolation mode options.
 
-By default,`procMount` is `default`, aka the same behavior as today and the
-paths are masked.
+The default for`procMount` is `default`, which instructs the container runtime to mask the aforementioned paths.
 
 This will look like the following in the spec:
 
@@ -112,7 +110,7 @@ const (
     DefaultProcMount ProcMountType = "Default"
 
     // UnmaskedProcMount bypasses the default masking behavior of the container
-    // runtime and ensures the newly created /proc the container stays in tact with
+    // runtime and ensures the newly created /proc the container stays intact with
     // no modifications.  
     UnmaskedProcMount ProcMountType = "Unmasked"
 )
@@ -123,16 +121,16 @@ procMount *ProcMountType
 where nil is default, and is interpreted as "Default" ProcMountType.
 
 When the kubelet is presented with a pod that has a ProcMountType as Unmasked, it will edit the default list of
-masked paths it passes down to the [CRI to be empty](https://github.com/kubernetes/kubernetes/blob/964529b/pkg/securitycontext/util.go#L216) which it does
+masked paths it passes down to the CRI to be [empty](https://github.com/kubernetes/kubernetes/blob/964529b/pkg/securitycontext/util.go#L216) which it does
 with the [CRI request](https://github.com/kubernetes/kubernetes/blob/964529b/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L889-L891).
 
 This requires changes to the CRI runtime integrations so that kubelet will add the specific `unmasked` option.
 This was done after alpha:
-CRI-O has support in v1.25.0 after https://github.com/cri-o/cri-o/pull/6025/commits/4102586132214263c5d0ae93ec257432653ab82b
-containerd has support in 1.6. See https://github.com/containerd/containerd/pull/5070/commits/07f1df4541d6a81c205d194f4f6ea3a6a95c3e29
+- CRI-O has support in v1.25.0 after https://github.com/cri-o/cri-o/pull/6025/commits/4102586132214263c5d0ae93ec257432653ab82b
+- containerd has support in 1.6. See https://github.com/containerd/containerd/pull/5070/commits/07f1df4541d6a81c205d194f4f6ea3a6a95c3e29
 
 The main use case for unmasking paths in `/proc` are for a user nesting unprivileged containers within a container. However, having an Unmasked ProcMountType
-is a privileged operation, and thus is part of the [privileged PSS policy](https://github.com/kubernetes/kubernetes/pull/103340). Since a user must have be in
+is a privileged operation, and thus is part of the [privileged](https://k8s.io/docs/concepts/security/pod-security-standards/#privileged) Pod Security Standard (PSS). Since a user must have be in
 the privileged policy, they are also trusted to choose the correct user ID and run a workload that won't interfere with the host.
 
 A container running as root user on the host and an unmasked `/proc` could be able to write to the host `/proc`, and thus this privileged designation is appropriate.
@@ -218,7 +216,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- N/A
+- N/A (Kubelet barely defines integration tests today, focusing on e2e_node tests instead)
 
 ##### e2e tests
 
@@ -227,7 +225,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - additional tests should be added to e2e_node suite to test the adherence of the ProcMount field
   - Test default behavior actually masks /proc paths.
   - Test Unmasked behavior is not masking /proc paths.
-  - Test PSS policies (if possible to test in e2e)
+  - Test PSS integration (if possible to test in e2e)
   - Test that Windows pod cannot be scehduled with the value of ProcMount specifies
 
 ### Graduation Criteria
@@ -329,7 +327,7 @@ It has been in support by kube-apiserver and kubelet since 1.12, so version skew
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: ProcMountType
-  - Components depending on the feature gate: kubelet, kube-apiserver
+  - Components depending on the feature gate: kubelet, kube-apiserver (whole cluster must have `ProcMountType` feature gate enabled)
 
 ###### Does enabling the feature change any default behavior?
 
@@ -451,7 +449,8 @@ No effect
 
 ###### What are other known failure modes?
 
-Malicious user, protected by PSS.
+Malicious user gaining access to the host `/proc` with a rootful container
+- protected by Pod Security Admission, which requires the namespace is labeled in privileged PSS.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
