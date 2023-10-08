@@ -86,7 +86,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [mistake in the implementation could result in Pods being stuck in the unschedulable Pod pool in a long time unnecessarily.](#mistake-in-the-implementation-could-result-in-pods-being-stuck-in-the-unschedulable-pod-pool-in-a-long-time-unnecessarily)
