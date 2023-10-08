@@ -287,15 +287,6 @@ So, Pods with dynamic resources need to go through several scheduling cycle by i
 In this case, we can skip backoff by returning the status of `Pending` in a reserve extension point
 so that the scheduling queue can understand that this Pod should skip the backoff when it's moved to activeQ.
 
-#### Story 3
-
-Supposing developping the `VolumeBinding` plugin.
-
-When PreFilter finds that the Pod refers to PVC, but PVC doesn't exist, 
-this Pod would never be schedulable until PVC is created.
-
-In this case, it can return `Blocked` so that the scheduling queue can understand this Pod will never be schedulable until `VolumeBinding` plugin returns `Queue`.
-
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -439,7 +430,7 @@ Here are some scenarios to describe how they're executed and how the Pod is move
 #### Pod rejected by one or more plugins
 
 Let's say there are three Nodes. 
-When the Pod goes to the scheduling cycle, one Node is rejected due to no enouch capacity, 
+When the Pod goes to the scheduling cycle, one Node is rejected due to no enough capacity, 
 other two Nodes are rejected because they don't match Pod's NodeAffinity.
 
 In this case, the Pod gets `NodeResourceFit` and `NodeAffinity` as unschedulable plugins,
@@ -593,8 +584,8 @@ n/a
 - The scheduling queue is changed to work with QueueingHint.
 - The feature gate is implemented. (enabled by default) 
 - QueueingHint implementation in plugins:
-  - In 1.28: no beta plugins return scheduling hints
-  - In 1.29: at least 3 in-tree plugins return scheduling hints
+  - In 1.28: no beta or stable plugins return scheduling hints
+  - In 1.29: at least 3 stable in-tree plugins return scheduling hints
 
 #### GA
 
@@ -1106,7 +1097,7 @@ and the rest of plugins aren't executed.
 
 So, in other words, when one of PreFilter and Reserve plugins return unschedulable,
 the plugin would be the only one registered in the unschedulable plugins of the Pod, 
-and the Pod will stay in the unschedulable Pod pool until the plugin return `Queueue` in QueueingHint.
+and the Pod will stay in the unschedulable Pod pool until the plugin return `Queue` in QueueingHint.
 
 Meaning, PreFilter and Reserve plugins don't need to return `Blocked`.
 
