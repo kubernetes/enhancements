@@ -701,7 +701,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No.
+No, basically. 
+But, if there is a bug in the implementation, Pods' rescheduling may be delayed up to `--pod-max-in-unschedulable-pods-duration` (5min by default). 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
