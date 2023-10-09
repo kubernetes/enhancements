@@ -229,7 +229,7 @@ know that this has succeeded?
 
 Improve scheduling throughput with the following changes:
 - Introduce `QueueingHint` to `EventsToRegister` and the scheduling queue requeues Pods based on the result from `QueueingHint`
-- Improve how the Pods being processed are tracked by the scheduling queue and requeued to an appropriate queue if they are rejected and back ot the queue.
+- Improve how the Pods being processed are tracked by the scheduling queue and requeued to an appropriate queue if they are rejected and back to the queue.
 
 ### Non-Goals
 
@@ -327,6 +327,14 @@ Thus, the busier cluster it is, the more memory it's likely to require.
 
 By freeing cached events as soon as possible, the impact on memory will be smaller. 
 (although we cannot eliminate the memory usage increase completely.)
+
+#### Breaking change in `EventsToRegister` in `EnqueueExtension`
+
+It requires the action for the custom scheduler plugin developers. 
+The `EventsToRegister` in `EnqueueExtension` changed the return value from `ClusterEvent` to `ClusterEventWithHint`. `ClusterEventWithHint` allows each plugin to filter out more useless events via the callback function named `QueueingHintFn`.
+
+For the ease of migration, nil `QueueingHintFn` is treated as always returning `Queue`. 
+So, if they want to just keep the existing behavior, they only have to change `ClusterEvent` to `ClusterEventWithHint` and register no `QueueingHintFn`. 
 
 ## Design Details
 
@@ -581,6 +589,7 @@ n/a
 #### Beta
 
 - The scheduling queue is changed to work with QueueingHint.
+- No performance degradation is confirmed via scheduler_perf.
 - The feature gate is implemented. (enabled by default) 
 - QueueingHint implementation in plugins:
   - In 1.28: no beta or stable plugins return scheduling hints
@@ -589,6 +598,7 @@ n/a
 #### GA
 
 - QueueingHint is implemented in all plugins.
+- No performance degradation is confirmed via scheduler_perf.
 - No bug report for a while.
 
 ### Upgrade / Downgrade Strategy
@@ -760,9 +770,9 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-If `scheduler_pending_pods` metric with `queue: unschedulable` label grows and keeps high number abnormally, 
-maybe something goes wrong with QueueingHint and Pods are stuck in the queue.
-
+Maybe something goes wrong with QueueingHint and Pods are stuck in the queue if 
+- `scheduler_pending_pods` metric with `queue: unschedulable` label grows and keeps high number abnormally 
+- `pod_scheduling_sli_duration_seconds` metric grows abnormally
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -846,7 +856,10 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: `scheduler_pending_pods` metric with `queue: unschedulable`
+  - Metric name: 
+    - `schedule_attempts_total` 
+    - `scheduling_algorithm_duration_seconds` 
+    - `scheduler_pending_pods` with `queue: unschedulable`
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
