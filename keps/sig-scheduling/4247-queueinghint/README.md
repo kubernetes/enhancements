@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
     - [mistake in the implementation could result in Pods being stuck in the unschedulable Pod pool in a long time unnecessarily.](#mistake-in-the-implementation-could-result-in-pods-being-stuck-in-the-unschedulable-pod-pool-in-a-long-time-unnecessarily)
     - [the increase in the memory usage](#the-increase-in-the-memory-usage)
+    - [Breaking change in <code>EventsToRegister</code> in <code>EnqueueExtension</code>](#breaking-change-in--in-)
 - [Design Details](#design-details)
   - [Overview](#overview)
   - [When to skip/not skip backoff](#when-to-skipnot-skip-backoff)
