@@ -126,19 +126,31 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-TBD
+No.
 
 ##### Unit tests
 
-TBD
+- `pkg/registry/core/service/storage`: `2023-10-10` - `89.9`
+
+More unit tests will be added shortly, mainly covers:
+* HealthCheck ports allocation/deallocation under different value of `allocateLoadBalancerHCNodePort`
+* the default value of `allocateLoadBalancerHCNodePort`
 
 ##### Integration tests
 
-TBD
+* with the featureGate `ServiceLBHealthCheckNodePortControl` enabled,
+a newly-created LoadBalancer-typed Services with ExternalTrafficPolicy=Local and `spec.allocateLoadBalancerHCNodePort=false` configured do not have healthCheckNodePort field set.
+* with the featureGate `ServiceLBHealthCheckNodePortControl` enabled,
+  a newly-created LoadBalancer-typed Services with ExternalTrafficPolicy=Local and `spec.allocateLoadBalancerHCNodePort=true` configured have healthCheckNodePort field set.
+
+More tests will be added shortly.
 
 ##### e2e tests
 
-TBD
+* e2e tests to test the default behavior for `allocateLoadBalancerHCNodePort` does not break any existing e2e tests.
+* e2e tests to enable, disable, disable with explictly unset `healthCheckNodePort` field, and re-enable HealthCheck ports.
+
+More tests will be added shortly.
 
 ### Graduation Criteria
 
