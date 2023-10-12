@@ -5,8 +5,12 @@ authors:
   - "@ichbinblau"
 owning-sig: sig-scheduling
 participating-sigs:
-status: 
 creation-date: 2023-09-06
+last-updated: 2023-10-12
 reviewers:
+  - "@Huang-Wei"
+  - "@chendave"
 approvers:
-
+  - "@Huang-Wei"
+status: implementable
+stage: alpha
