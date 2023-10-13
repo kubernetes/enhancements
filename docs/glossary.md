@@ -16,7 +16,7 @@ If an enhancement is considered to be changing the Kubernetes core API in any wa
  a mandatory API review is required. An Enhancement owner should proactively request an
  API review for an enhancements PR by adding a `/label api-review` comment.
  The status of an API review can be found in the
- [API review backlog](https://github.com/orgs/kubernetes/projects/13).
+ [API review backlog](https://github.com/orgs/kubernetes/projects/169).
 
 More details can be found in [Kubernetes API Review Process](https://github.com/kubernetes/community/blob/master/sig-architecture/api-review-process.md).
 
