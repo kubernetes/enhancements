@@ -237,6 +237,8 @@ ResizeRestartPolicy - a list of named subobjects (new object) that supports
   (e.g.  Java process needs to change its Xmx flag) By using ResizePolicy, user
   can mark Containers as safe (or unsafe) for in-place resource update. Kubelet
   uses it to determine the required action.
+* GateRequired - place a verification field in a pod on resize, act like NotRequired
+  policy once the field is removed.
 
 Note: `NotRequired` restart policy for resize does not *guarantee* that a container
 won't be restarted. The runtime may choose to stop the container if it is unable to
@@ -858,6 +860,7 @@ TODO: Identify more cases
 - VPA alpha integration of feature completed and any bugs addressed,
 - E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added,
 - Negative tests are identified and added.
+- Add scaling readiness Gate for dynamic users needs.
 - A "/resize" subresource is defined and implemented.
 - Pod-scoped resources are handled if that KEP is past alpha
 - ContainerStatus API change tests are enforced and containerd runtime must comply.
