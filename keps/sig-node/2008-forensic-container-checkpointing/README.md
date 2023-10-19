@@ -10,9 +10,19 @@
   - [Implementation](#implementation)
     - [CRI Updates](#cri-updates)
   - [User Stories](#user-stories)
+    - [Forensic Container Checkpointing](#forensic-container-checkpointing)
+    - [Fast Container Startup](#fast-container-startup)
+    - [Container Migration](#container-migration)
+      - [Fault Tolerance](#fault-tolerance)
+      - [Load Balancing](#load-balancing)
+      - [Spot Instances](#spot-instances)
+      - [Scheduler Integration](#scheduler-integration)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Future Enhancements](#future-enhancements)
+    - [Checkpoint Archive Management](#checkpoint-archive-management)
+    - [CLI (kubectl) Integration](#cli-kubectl-integration)
+    - [Checkpoint Options](#checkpoint-options)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -132,6 +142,24 @@ message CheckpointContainerResponse {}
 
 ### User Stories
 
+For the initial Alpha release this KEP was focusing on "Forensic Container
+Checkpointing". The checkpoint/restore technology, however, opens up the
+possibility to many different use cases. Since the introduction in Kubernetes
+1.25 there has been feedback from users that were using the checkpoint
+functionality for some of those other use cases. In the following some
+of the possible use cases are described starting with the original
+"Forensic Container Checkpointing" use case. At which point any of these
+use cases will be supported in Kubernetes is not defined yet. At this point
+any of the use cases can be used with the currently available implementation.
+One question for the future will be in how far any of the possible use cases can
+be made more user friendly by additional Kubernetes features.  Especially the
+container migration use case has many possibilities for optimization. CRIU,
+which is on the lowest level of the checkpoint/restore stack, offers the
+possibility to decrease container downtime during migration by techniques well
+known in virtual machine migration like pre-copy or post-copy migration.
+
+#### Forensic Container Checkpointing
+
 To analyze unusual activities in a container, the container should
 be checkpointed without stopping the container or without the container
 knowing it was checkpointed. Using checkpointing it is possible to take
@@ -140,10 +168,105 @@ continue to run without knowing a copy was created. This copy can then
 be restored in another (sandboxed) environment in the context of another
 container engine for detailed analysis of a possible attack.
 
+#### Fast Container Startup
+
+In addition to forensic analysis of a container checkpointing can be used to
+offer a way to quickly start containers. This is especially useful for
+containers that need a long time start. Either the software in the container
+needs a long time to initialize by loading many libraries or the container
+requires time to read data from a storage device. Using checkpointing it is
+possible to wait once until the container finished the initialization and save
+the initialized state to a checkpoint archive. Based on this checkpoint archive
+one or multiple copies of the container can be created without the need to wait
+for the initialization to finish. The startup time is reduced to the time
+necessary to read back all memory pages to their previous location.
+
+This feature is already used in production to decrease startup time of
+containers.
+
+Another similar use case for quicker starting containers has been reported in
+combination with persistent memory systems. The combination of checkpointed
+containers and persistent memory systems can reduce startup time after a reboot
+tremendously.
+
+#### Container Migration
+
+One of the main use cases for checkpointing and restoring containers is
+container migration. An open issue asking for container migration in
+Kubernetes exists since 2015: [#3949][migration-issue].
+
+With the current Alpha based implementation container migration is already
+possible as documented in [Forensic Container Checkpointing Alpha][kubernetes-blog-post].
+
+The following tries to give an overview of possible use cases for
+container migration.
+
+##### Fault Tolerance
+
+Container migration for fault tolerance is one of the typical reasons to
+migrate containers or processes. It is a well researched topic especially
+in the field of high performance computing (HPC). To avoid loss of work
+already done by a container the container is migrated to another node before
+the current node crashes. There are many scientific papers describing how
+to detect a node that might soon have a hardware problem. The main goal
+of using container migration for fault tolerance is to avoid loss of already
+done work. This is, in contrast to the forensic container checkpointing use
+case, only useful for stateful containers.
+
+With GPUs becoming a costly commodity, there is an opportunity to help
+users save on costs by leveraging container checkpointing to prevent
+re-computation if there are any faults.
+
+##### Load Balancing
+
+Container migration for load balancing is something where checkpoint/restore
+as implemented by CRIU is already used in production today. A prominent example
+is Google as presented at the Linux Plumbers conference in 2018:
+[Task Migration at Scale Using CRIU]<[task-migration]>
+
+If multiple containers are running on the same physical node in a cluster,
+checkpoint/restore, and thus container migration, open up the possibility
+of migrating containers across cluster nodes in case there are not enough
+computational resources (e.g., CPU, memory) available on the current node.
+While high-priority workloads can continue to run on the same node, containers
+with lower priority can be migrated. This way, stateful applications with low
+priority can continue to run on a different node without loosing their progress
+or state.
+
+This functionality is especially valuable in distributed infrastructure services
+for AI workloads, as it helps reduce the cost of AI by maximizing the aggregate
+useful throughput on a given pool with a fixed capacity of hardware accelerators.
+Microsoft's globally distributed scheduling service, [Singularity]<[singularity]>,
+is an example that demonstrates the efficiency and reliability of this mechanism
+with deep learning training and inference workloads.
+
+##### Spot Instances
+
+Yet another possible use case where checkpoint/restore is already used today
+are spot instances. Spot instances are usually resources that are cheaper but
+with the drawback that they might shut down with very short notice. With the
+help of checkpoint/restore workloads on spot instances can either be
+checkpointed regularly or the checkpointing can be triggered by a signal.
+Once checkpointed the container can be moved to another instance and
+continue to run without having to start from the beginning.
+
+##### Scheduler Integration
+
+All of the above-mentioned container migration use cases currently require manual
+checkpointing, manual transfer of the checkpoint archive, and manual restoration
+of the container (see [Forensic Container Checkpointing Alpha][kubernetes-blog-post]
+for details). If all these steps could be automatically performed by the scheduler,
+it would greatly improve the user experience and enable more efficient resource
+utilization. For example, the scheduler could transparently checkpoint, preempt,
+and migrate workloads across nodes while keeping track of available resources and
+identifying suitable nodes (with compatible hardware accelerators) where a container
+can be migrated. However, scheduler integration is likely to be implemented at a later
+stage and is a subject for future enhancements.
+
 ### Risks and Mitigations
 
-In its first implementation the risks are low as it tries to be a CRI API
-change with minimal changes to the kubelet and it is gated by the feature
+In its first implementation the risks are low as it tries to be a CRI API change
+with minimal changes to the kubelet and it is gated by the feature
 gate `ContainerCheckpoint`.
 
 ## Design Details
@@ -168,7 +291,54 @@ containers in the pod are checkpointed.
 
 One possible result of being able to checkpoint and restore containers and pods
 might be the possibility to migrate containers and pods in the future as
-discussed in [#3949](https://github.com/kubernetes/kubernetes/issues/3949).
+discussed in [#3949][migration-issue].
+
+#### Checkpoint Archive Management
+
+One of the questions from users has been what happens with old checkpoint archives.
+Especially if there are multiple checkpoints on a single node theses checkpoint
+archives can occupy node local disk space. Depending on the checkpoint archive size
+this could result in a situation where the node runs out of local disk space.
+
+One approach to avoid out of disk space situations would be some kind of
+checkpoint archive management or garbage collection of old checkpoint archives.
+
+One possible argument against checkpoint archive management could be that, especially
+for the forensic use case, once the checkpoint archive has been created the user should
+retrieve it from the node and delete it. As there are, however, many different use
+cases for container checkpointing it sounds more realistic to have an existing checkpoint
+archive management to automatically clean up old checkpoint archives.
+
+In its simplest form a checkpoint archive management could just start deleting checkpoint
+archives once the number of checkpoints reaches a certain threshold. If more checkpoint
+archives than the configurable threshold exist older checkpoint archives are deleted (see [#115888][checkpoint-management]).
+
+Another way to manage checkpoint archives would be to delete checkpoint archives once
+a certain amount disk space is used or if not enough free space is available.
+
+A third way to manage checkpoint archives would be the possibility to keep one checkpoint
+archive per day/week/month. The way to manage checkpoint archives probably depends on
+the checkpointing use case. For the forensic use case other checkpoint archives might
+be of interest in contrast to checkpointing and restoring containers in combination
+with spot instances where probably only the latest checkpoint is of interest to
+be able to continue preempted work.
+
+#### CLI (kubectl) Integration
+
+The current (Alpha) implementation only offers access to the checkpoint functionality
+through the *kubelet* API endpoint. A more user friendly interface would be a *kubectl*
+integration. As of this writing a pull request adding the *checkpoint* verb to
+*kubectl* exists: [#120898][kubectl-checkpoint]
+
+#### Checkpoint Options
+
+The current (Alpha) implementation does not allow additional checkpoint parameters to be
+passed to CRIU. During the integration of checkpoint/restore in other container projects
+(CRI-O, Docker, Podman, runc, crun, lxc) many CRIU specific options were exposed to the user.
+Common options are things like handle TCP established connections (`--tcp-established`),
+stop container after checkpointing, use pre-copy or post-copy algorithms to decrease
+container downtime during migration or compression method of the checkpoint archive (currently
+uncompressed but things like zstd or gzip possible).
 
 ### Test Plan
 
@@ -387,3 +557,10 @@ using checkpoint and restore in Kubernetes through the existing paths of
 runtimes and engines is not well known and maybe not even possible as
 checkpointing and restoring is tightly integrated as it requires much
 information only available by working closely with runtimes and engines.
+
+[kubernetes-blog-post]: https://kubernetes.io/blog/2022/12/05/forensic-container-checkpointing-alpha/
+[migration-issue]: https://github.com/kubernetes/kubernetes/issues/3949
+[task-migration]: https://lpc.events/event/2/contributions/69/attachments/205/374/Task_Migration_at_Scale_Using_CRIU_-_LPC_2018.pdf
+[singularity]: https://arxiv.org/abs/2202.07848
+[kubectl-checkpoint]: https://github.com/kubernetes/kubernetes/pull/120898
+[checkpoint-management]: https://github.com/kubernetes/kubernetes/pull/115888
