@@ -348,9 +348,6 @@ called. On later upgrades, one release after this feature is added, the certific
 renewal logic of `kubeadm upgrade` must be aware that the `super-admin.conf` file could
 be missing and should not be rotated.
 
-Updating the `kube-system/kubeadm-certs` Secret contents where an encrypted
-`admin.conf` is stored will not be updated during upgrade.
-
 The mitigation here is detailed unit tests and e2e tests that ensure that
 the migration for in-place upgrades is handled properly.
 
@@ -358,23 +355,23 @@ the migration for in-place upgrades is handled properly.
 
 Users or higher level tools that manage kubeadm re-place upgrades, by removing old
 control plane nodes and adding new control plane nodes, without calling
-`kubeadm upgrade apply/node` should handle this transition manually.
-The RBAC ClusterRoleBinding `kubeadm:cluster-admins` must be created before
-the upgrade has started. A new `admin.conf` that has the subject:
-`O = kubeadm:cluster-admins, CN = kubernetes-admin` must be uploaded in the
-`kube-system/kubeadm-certs` Secret and encrypted with the appropriate certificate key.
-Joining control plane nodes, must be able to download and decrypt the new `admin.conf`.
+`kubeadm upgrade apply/node` must handle this transition manually.
+The ClusterRoleBinding `kubeadm:cluster-admins` must be created before
+the upgrade has started. The `kubeadm join` process for control plane nodes
+will create new `admin.conf` files with certificates that bind to the
+`kubeadm:cluster-admins` Group.
 
-Again, tests will be required to ensure that the `admin.conf` subject is migrated
-properly. The `super-admin.conf` file will not exist at all under such conditions,
-therefore the administrator can sign one manually by using
-the `kubeadm kubeconfig user --client-name=kubernetes-super-admin --org=system:masters`
-command.
+Again, tests will be required to ensure that the `admin.conf` works
+properly and the ClusterRoleBinding `kubeadm:cluster-admins` exists.
 
-The same users or higher level tools can decide not to opt-in into this
-new behavior for existing clusters and continue using the `admin.conf` with
-`system:masters`. However, this means such clusters will drift away
-from the kubeadm security defaults.
+The `super-admin.conf` file will not exist at all in such clusters,
+that were upgraded from older versions of kubeadm. The administrator can sign
+a `super-admin.conf` manually by using the
+`kubeadm kubeconfig user --client-name=kubernetes-super-admin --org=system:masters`
+command and store it in a safe location.
+
+For new clusters of this kind, the `super-admin.conf` will exist on the node
+where `kubeadm init` was called. It can be left untouched or manually moved.
 
 ## Design Details
 
@@ -403,18 +400,21 @@ existing tests to make this code solid enough prior to committing the changes ne
 to implement this enhancement.
 
 kubeadm will include new unit tests to ensure the new separate admin files are
-generated properly. During init/join-control-plane/upgrade the existing
-[kinder](https://git.k8s.io/kubeadm/kinder) upgrade e2e test jobs will
-test this functionality.
+generated properly.
 
-One additional integration test can be added in `cmd/kubeadm/test`. It can be maintained
-for one or more releases until more users upgrade to the first release where this
-feature is available. It can do the following (can vary, subject to implementation details):
-- Calls `kubeadm init phase certs ca`.
-- Calls `kubeadm init phase kubeconfig admin`.
-- Checks if two admin kubeconfig files are generated.
-- Calls `kubeadm certs renew admin.conf` and verifies whether the kubeconfig files
-are updated.
+One additional e2e test will be added in the kubernetes/kubeadm repository
+by using the kinder tool. It can be maintained for one or more releases until
+more users upgrade to the first release where this feature is available.
+It can do the following:
+- Creates a 3 control plane node cluster that has the latest kubeadm installed.
+- Calls `kubeadm init` on one of them.
+- Verifies that kubeconfig files and RBAC are setup properly.
+- Calls `kubeadm join` on the remaining control plane nodes.
+- Verifies the kubeconfig files on the remaining control plane nodes.
+- Deletes the `super-admin.conf` file from the first control plane node.
+- Deletes the `kubeadm:cluster-admins` ClusterRoleBinding.
+- Calls `kubeadm upgrade` using the same kubeadm version.
+- Ensures that the RBAC and `super-admin.conf` are recreated.
 
 ##### Prerequisite testing updates
 
@@ -472,8 +472,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 <!-- - <test>: <link to test coverage> -->
 
-One new integration test can be added here:
-- `cmd/kubeadm/test`
+NONE
 
 ##### e2e tests
 
@@ -489,8 +488,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 <!-- - <test>: <link to test coverage> -->
 
-The functionality will be exercised by the existing regular and upgrade e2e tests
-that use the kinder tool.
+A new e2e test will be added by using the kinder tool.
 
 ### Graduation Criteria
 
@@ -631,8 +629,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 18.09.2023: KEP created (1.29)
+- 18.09.2023: KEP created (1.29).
 - 10.10.2023: Address minor feedback. KEP marked as implementable.
+- 10.19.2023: Adjust test plan and risk / mitigations.
 
 ## Drawbacks
 
