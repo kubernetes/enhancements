@@ -506,6 +506,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
+<!--
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node? Apply requests (`PATCH` with `application/apply-patch+yaml` mime type) have the same level of SLIs as other types of requests.
@@ -515,6 +516,19 @@ _This section must be completed when targeting beta graduation to a release._
       levels that could help debug the issue? The feature uses very little logging, and errors should be returned directly to the user.
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? Failure modes are tested exhaustively both as unit-tests and as integration tests.
+-->
+  - SSA updates fail for pods with duplicated env. names or container ports.
+    - Known bug at least since 1.26
+    - Bugs:
+      - [Pod container ports and env-vars listMapKeys != validation](https://github.com/kubernetes/kubernetes/issues/113482)
+      - [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261) (fixed in [#121103](https://github.com/kubernetes/kubernetes/pull/121103))
+    - Detection: The SSA request fails with 500. The response message is similar to the following:
+    `'failed to create manager for existing fields: failed to convert new object (app-b/app-b-5894548cb-7tssd; /v1, Kind=Pod) to smd typed: .spec.containers[name="app-b"].ports: duplicate entries for key [containerPort=8082,protocol="TCP"]'`.
+    - Mitigations: Make sure pods with duplicated keys for env. variables or
+      container pods are not created. Also, update the existing pods to cleanup
+      the problematic fields.
+    - Testing: [PodGC integration test](https://github.com/kubernetes/kubernetes/blob/7b9d244efd19f0d4cce4f46d1f34a6c7cff97b18/test/integration/podgc/podgc_test.go#L313)
+      reproduced the issue before withdrawing from SSA in PodGC in the [PR #121103](https://github.com/kubernetes/kubernetes/pull/121103).
 
 * **What steps should be taken if SLOs are not being met to determine the problem?** n/a
 
