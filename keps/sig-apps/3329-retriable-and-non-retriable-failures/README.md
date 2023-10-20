@@ -1738,9 +1738,15 @@ Third iteration (1.28):
   the terminal phase. Update user-facing documentation.
   Might be considered for backport to 1.27.
 
+Fourth iteration (1.29):
+- Fix the [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261).
+  by withdrawing from SSA in the k8s controllers which were adding the `DisruptionTarget` condition.
+  We will reconsider returning to SSA if the issue is fixed.
+
 #### GA
 
 - Address reviews and bug reports from Beta users
+- Reconsider returning to SSA if the issue [#113482](https://github.com/kubernetes/kubernetes/issues/113482) is fixed
 - Write a blog post about the feature
 - Graduate e2e tests as conformance tests
 - Lock the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates
@@ -2282,6 +2288,16 @@ No change from existing behavior of the Job controller.
     - Detection: Observe failed pods with reason `Preempting`, and message `Preempted in order to admit critical pod`, but without `DisruptionTarget` condition.
     - Mitigations: upgrade to a fixed version (1.26.6+, 1.27.3+ or 1.28+). Alternatively, set higher `backoffLimit` for Jobs.
     - Testing: Discovered bug is covered by an integration test.
+  - When `PodDisruptionConditions` and pods with duplicated env. names or container ports are used, then pods cannot be deleted by PodGC and other core k8s controllers.
+    - Known bug in 1.26.0-10, 1.27.0-7, 1.28.0-3
+    - Bugs: [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261)
+    - Detection: Pods expected to be deleted are stuck terminating. The logs show a message similar to the following: `'failed to create manager for existing fields: failed to convert new object (app-b/app-b-5894548cb-7tssd; /v1, Kind=Pod) to smd typed: .spec.containers[name="app-b"].ports: duplicate entries for key [containerPort=8082,protocol="TCP"]'`
+    - Mitigations: upgrade to a fixed version (1.26.11+, 1.27.8+, or 1.28.4+). Alternatively, make sure pods with
+      duplicated keys for env. variables or container pods are not created. Also, update the existing pods to cleanup
+      the problematic fields.
+    - Testing: [PodGC integration test](https://github.com/kubernetes/kubernetes/blob/7b9d244efd19f0d4cce4f46d1f34a6c7cff97b18/test/integration/podgc/podgc_test.go#L313)
+      reproduced the issue before withdrawing from SSA in PodGC in the [PR #121103](https://github.com/kubernetes/kubernetes/pull/121103).
+
 <!--
 For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
@@ -2361,6 +2377,7 @@ technics apply):
 - 2023-03-17: PR "Give terminal phase correctly to all pods that will not be restarted" ([link](https://github.com/kubernetes/kubernetes/pull/115331))
 - 2023-03-18: PR "API-initiated eviction: handle deleteOptions correctly" ([link](https://github.com/kubernetes/kubernetes/pull/116554))
 - 2023-05-23: PR "Add DisruptionTarget condition when preempting for critical pod" ([link](https://github.com/kubernetes/kubernetes/pull/117586))
+- 2023-10-19: PR "Use Patch instead of SSA for Pod Disruption condition" ([link](https://github.com/kubernetes/kubernetes/pull/121103))
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
