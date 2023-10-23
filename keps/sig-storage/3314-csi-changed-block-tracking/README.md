@@ -399,7 +399,8 @@ This requires that the backup application be authorized to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
 The token can be obtained directly by a call to this API, or indirectly via
 a projected volume in the Pod used to access the
-[Kubernetes SnapshotMetadata](#the-kubernetes-snapshotmetadata-service-api).
+[Kubernetes SnapshotMetadata](#the-kubernetes-snapshotmetadata-service-api)
+API.
 
 - The Kubernetes audience-scoped authentication token must be provided as the
   `security_token` field in each gRPC request message made by a backup
