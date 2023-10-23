@@ -271,14 +271,14 @@ or the changed blocks between a pair of snapshots of the same block volume.
 A [Kubernetes SnapshotMetadata gRPC service](#the-kubernetes-snapshotmetadata-service-api)
 is a variant of the new CSI SnapshotMetadata gRPC service
 that has been slightly modified to enable **direct usage by a Kubernetes client**.
+This API is implemented by the the community provided
+[external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar),
+which must be deployed by a CSI driver.
 A Kubernetes backup application will retrieve snapshot metadata through a
-TLS connection to a Kubernetes SnapshotMetadata gRPC service,
-implemented by a community provided
-[external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
-that is deployed by a CSI driver.
+TLS gRPC connection to such a service.
 This direct connection results in a minimal load on the Kubernetes API server,
-unrelated to the amount of metadata transferred
-or the sizes of the volumes and snapshots involved.
+unrelated to the amount of metadata transferred or the sizes of the volumes
+and snapshots involved.
 
 The [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
 communicates over a private UNIX domain socket with the CSI driver's
@@ -312,8 +312,8 @@ It should establish trust with the specified CA for use in gRPC calls and
 then directly make TLS gRPC calls to the
 [Kubernetes SnapshotMetadata](#the-kubernetes-snapshotmetadata-service-api)
 gRPC service's TCP endpoint.
-The audience-scoped authentication token must be passed in the metadata
-of each RPC as the value of the ``authorization`` metadata key;
+The audience-scoped authentication token must be passed in the `security_token`
+field of each RPC request message;
 it will be used to authorize the backup application's use of the service.
 Every RPC returns a gRPC stream through which the metadata can be recovered.
 
@@ -397,9 +397,12 @@ token in order to use a
 gRPC service.
 This requires that the backup application be authorized to use the Kubernetes
 [TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/).
+The token can be obtained directly by a call to this API, or indirectly via
+a projected volume in the Pod used to access the
+[Kubernetes SnapshotMetadata](#the-kubernetes-snapshotmetadata-service-api).
 
 - The Kubernetes audience-scoped authentication token must be provided as the
-  ``authorization`` metadata value in each gRPC call made by a backup
+  `security_token` field in each gRPC request message made by a backup
   application.
 
 - The [CSI SnapshotMetadata](#the-csi-snapshotmetadata-service-api)
@@ -695,7 +698,6 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `snapshot` | 5 NOT_FOUND | Indicates that the snapshot specified was not found. | The caller should re-check that this object exists. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid authorization | 16 UNAUTHENTICATED | The caller is not authorized. | The caller should obtain the correct authorization. |
 
 #### GetDelta RPC
 The `GetDelta` RPC returns the metadata on the blocks that have changed between
@@ -764,7 +766,6 @@ The following conditions are well defined:
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the snapshots specified were not found. | The caller should re-check that these objects exist. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
-| Invalid authorization | 16 UNAUTHENTICATED | The caller is not authorized. | The caller should obtain the correct authorization. |
 
 ### Kubernetes Components
 The following Kubernetes resources and components are involved at runtime:
@@ -811,12 +812,20 @@ The proposal could have called for client to use the
 itself when communicating with the sidecar, but there are a number of reasons
 to specify a different API, the **Kubernetes SnapshotMetadata API**, which a
 slight variant of the CSI API.
-These reasons include:
+These reasons and any related modifications to the API are described below:
 
 - Introduction of a level of indirection between the CSI specification
   and the Kubernetes implementation to decouple the life-cycle of the
   [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
   from the life-cycle of the CSI specification.
+
+- The need to pass a Kubernetes audience-scoped authentication token to
+  the sidecar.
+  This is handled by introducing a `security_token` field in every
+  request message.
+  All Kubernetes SnapshotMetadata API calls will return the `UNAUTHENTICATED`
+  gRPC error code if this token is incorrect or adequate authority has not
+  been granted to the invoker.
 
 - Kubernetes Snapshots must be identified by `namespace` and `name`, while the
   CSI specification uses a single identifier.
@@ -831,31 +840,27 @@ These reasons include:
   As such, all `secrets` parameters are removed from the
   Kubernetes SnapshotMetadata API messages.
 
-- The need to pass a Kubernetes audience-scoped authentication token to
-  the sidecar.
-  The Kubernetes SnapshotMetadata API requires such information to be sent as
-  gRPC `authorization` metadata.
-
-The only differences between the Kubernetes SnapshotMetadata API 
+The only structural differences between the Kubernetes SnapshotMetadata API 
 and the 
 [CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api)
-specifications are in some message properties
-and the requirement to pass the `authorization` metadata in each RPC call.
+specifications are in some message properties.
 The messages modified in the Kubernetes SnapshotMetadata API are shown below:
 ```
 message GetAllocatedRequest {
-  string namespace = 1;
-  string snapshot_name = 2;
-  uint64 starting_offset = 3;
-  uint32 max_results = 4;
+  string security_token = 1;
+  string namespace = 2;
+  string snapshot_name = 3;
+  uint64 starting_offset = 4;
+  uint32 max_results = 5;
 }
 
 message GetDeltaRequest {
-  string namespace = 1;
-  string base_snapshot_name = 2;
-  string target_snapshot_name = 3;
-  uint64 starting_byte_offset = 4;
-  uint32 max_results = 5;
+  string security_token = 1;
+  string namespace = 2;
+  string base_snapshot_name = 3;
+  string target_snapshot_name = 4;
+  uint64 starting_byte_offset = 5;
+  uint32 max_results = 6;
 }
 ```
 The full specification of the Kubernetes SnapshotMetadata API will be
@@ -918,8 +923,7 @@ spec:
         description: 'The presence of a SnapshotMetadataService CR advertises the existence of a CSI
           driver's Kubernetes SnapshotMetadata gRPC service.
           An audience scoped Kubernetes authentication bearer token must be passed in the
-          "authorization" metadata of each gRPC call made by a Kubernetes backup client.
-          No secret data should be sent by the Kubernetes backup client.'
+          "security_token" field of each gRPC call made by a Kubernetes backup client.'
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -936,7 +940,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: SnapshotMetadataServiceSpec contains data needed to connect to a Kubernetes SnapshotMetadata gRPC service.
+            description: This contains data needed to connect to a Kubernetes SnapshotMetadata gRPC service.
             properties:
               address:
                 type: string
@@ -944,7 +948,7 @@ spec:
               audience:
                 type: string
                 description: The audience string value expected in a client's authentication token passed in the
-                  "authorization" metadata of each gRPC call.
+                  "security_token" field of each gRPC call.
               caCert:
                 description: Certificate authority bundle needed by the client to validate the service.
                 format: byte
@@ -1010,7 +1014,7 @@ in this proposal, including
 - Fetching the vendor secrets identified by the VolumeSnapshot object, if any.
 
 A Kubernetes client must provide an audience scoped authentication token in the
-``authorization`` metadata value of each remote procedure call made to the service.
+`security_token` field of every remote procedure call request message.
 The sidecar will use the
 [TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
 to validate this authentication token, using the audience string specified in the
