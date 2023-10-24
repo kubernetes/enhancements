@@ -47,7 +47,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -117,7 +117,7 @@ The class diagram below describes the new data structures, modification of the e
 
 - framework Handle has been extended to return the ExtendedResource.Handle Registry for scheduler plugins to register handles.
 
-- The Cache interface has been extended to include the ability to retrieve extended cache by resource type. After the resource handle is registered, the extended cache of that resource is added to CacheImpl.
+- The Cache interface has been extended to include the ability to retrieve extended cache by resource type. After the resource handle is registered, the extended cache of that resource is added to cacheImpl.
 
 #### New Data Structures
 
@@ -131,7 +131,7 @@ The class diagram below describes the new data structures, modification of the e
 
 - frameworkImpl has been extended to return the ExtendedResource.Handle Registry for the scheduler plugins to register ExtendedResource.Handle.
 
-- CacheImpl has been extended to manage a collection of ExtendedCaches which keeps track of the all the registered extendedCacheImpl instances (extendedCacheImpl implements the ExtendedCache interface which encapsulates the cacheImpl and a resource type).
+- cacheImpl has been extended to manage a collection of ExtendedCaches which keeps track of the all the registered extendedCacheImpl instances (extendedCacheImpl implements the ExtendedCache interface which encapsulates the cacheImpl and a resource type).
 
 - frameworkOptions has been extended to include the HandleRegistry which would be passed to frameworkImpl to register the ExtendedResource.Handle.
 
@@ -139,12 +139,12 @@ The class diagram below describes the new data structures, modification of the e
 
 - The update and Clone methods of NodeInfo structs has been extended to include the extended resources.
 
-- Scheduler has been modified to initialize the ExtendedResource’s HandleRegistry and pass the registry to frameworks, set ExtendedCache in CacheImpl and invoke the Run method of each registered handle.
+- Scheduler has been modified to initialize the ExtendedResource’s HandleRegistry and pass the registry to frameworks, set ExtendedCache in cacheImpl and invoke the Run method of each registered handle.
 
 ```go
 // New returns a Scheduler
 
-func New(client clientset.Interface, … opts ...Option) (*Scheduler, error) {
+func New(ctx context.Context, … opts ...Option) (*Scheduler, error) {
 …
      // Initialize the Handle registry
 +    extendedResourceHandleRegistry := extendedhandleregistry.New()
@@ -161,7 +161,7 @@ func New(client clientset.Interface, … opts ...Option) (*Scheduler, error) {
 
 +    // iterate all handles in the extended resource registry and run the handle
 +    for key, handle := range extendedResourceHandleRegistry.Registry {
-+        handle.Run(schedulerCache.GetExtendedCache(key), +informerFactory)
++        handle.Run(schedulerCache.GetExtendedCache(key), informerFactory)
 +    }
     …
 }
