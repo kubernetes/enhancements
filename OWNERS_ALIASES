@@ -51,6 +51,11 @@ aliases:
     - kbhawkey
     - onlydole
     - sftim
+  sig-etcd-leads:
+    - ahrtr
+    - jmhbnz
+    - serathius
+    - wenjiaswe
   sig-instrumentation-leads:
     - dashpole
     - dgrisonnet
