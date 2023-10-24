@@ -225,51 +225,6 @@ Cluster administrators can use K8s quota to specify how many PVCs can use a spec
 ### CSI API
 The CSI create request will be extended to add mutable parameters. A new ControllerModifyVolume RPC will be added. More details in [CSI Spec PR](https://github.com/container-storage-interface/spec/pull/544).
 
-```
-// ControllerServer is the server API for Controller service.
-type ControllerServer interface {
-    ...
-    rpc ControllerModifyVolume (ControllerModifyVolumeRequest)
-        returns (ControllerModifyVolumeResponse) {
-            option (alpha_method) = true;
-        }
-    ...
-}
-
-message ControllerModifyVolumeRequest {
-  // Contains identity information for the existing volume.
-  // This field is REQUIRED.
-  string volume_id = 1;
-
-  // Secrets required by plugin to complete modify volume request.
-  // This field is OPTIONAL. Refer to the `Secrets Requirements`
-  // section on how to use this field.
-  map<string, string> secrets = 2 [(csi_secret) = true];
-
-  // Plugin specific volume attributes to mutate, passed in as 
-  // opaque key-value pairs. 
-  // This field is REQUIRED. The Plugin is responsible for
-  // parsing and validating these parameters. COs will treat these
-  // as opaque. The CO SHOULD specify the intended values of all mutable
-  // parameters it intends to modify. SPs MUST NOT modify volumes based
-  // on the absence of keys, only keys that are specified should result
-  // in modifications to the volume.
-  map<string, string> mutable_parameters = 3;
-}
-message ControllerModifyVolumeResponse {}
-
-message CreateVolumeRequest {
-  ...
-  // See CreateVolumeRequest.parameters.
-  // This field is OPTIONAL.
-  map<string, string> parameters = 4;
-  // Plugins MUST treat these 
-  // as if they take precedence over the parameters field.
-  // This field SHALL NOT be specified unless the SP has the
-  // MODIFY_VOLUME plugin capability.
-  map<string, string> mutable_parameters = 8;
-}
-```
 
 ### User Stories (Optional)
 
@@ -446,28 +401,8 @@ The resource quota controller is the only component capable of monitoring and re
 
 ### 3. Add new statuses in PVC API to indicate changes of VolumeAttributesClass and the status of the ModifyVolume operation.
 
-```
-type ModifyVolumeStatus struct {
-  ActualClassName string
-  TargetClassName string
-  Status *PersistentVolumeClaimModifyVolumeStatus
-}
+Please see session "Kubernetes API" above.
 
-// +enum
-type PersistentVolumeClaimModifyVolumeStatus string
-
-const (
-  // Pending indicates that the PersistentVolumeClaim cannot be modified due to requirements not being met, such as 
-  // the PersistentVolumeClaim being in an invalid state or the specified VolumeAttributesClass is existing
-  PersistentVolumeClaimControllerModifyVolumePending PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumePending"
-  // State set when modify volume controller starts modifying the volume in control-plane
-  // When the request has been rejected as invalid by the CSI driver. To resolve this error,
-  // the PersistentVolumeClaim needs to specify a valid VolumeAttributesClass.
-  PersistentVolumeClaimControllerModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInProgress"
-  // State set when modify volume has failed in modify volume controller with a terminal error.
-  PersistentVolumeClaimControllerModifyVolumeInfeasible PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInfeasible"
-)
-```
 ### 4. Add new CSI API ControllerModifyVolume, when there is a change of VolumeAttributesClass in PVC, external-resizer triggers a ControllerModifyVolume operation against a CSI endpoint. A Controller Plugin MUST implement this RPC call if it has MODIFY_VOLUME capability. 
 
 ### 5. Add new operation metrics for ModifyVolume operations
