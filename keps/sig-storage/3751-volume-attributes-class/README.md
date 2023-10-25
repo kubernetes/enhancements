@@ -197,7 +197,7 @@ type ModifyVolumeStatus struct {
   // TargetVolumeAttributesClassName is the name of the VolumeAttributesClass the PVC currently being reconciled
   TargetVolumeAttributesClassName string
   // Status is the status of the ControllerModifyVolume operation
-  Status *PersistentVolumeClaimModifyVolumeStatus
+  Status PersistentVolumeClaimModifyVolumeStatus
 }
 
 // +enum
@@ -206,7 +206,7 @@ type PersistentVolumeClaimModifyVolumeStatus string
 
 const (
   // Pending indicates that the PersistentVolumeClaim cannot be modified due to requirements not being met, such as 
-  // the PersistentVolumeClaim being in an invalid state or the specified VolumeAttributesClass is existing
+  // the specified VolumeAttributesClass doesn't exist
   PersistentVolumeClaimControllerModifyVolumePending PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumePending"
   // State set when modify volume controller starts modifying the volume
   PersistentVolumeClaimControllerModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInProgress"
@@ -581,7 +581,7 @@ spec:
 
 ModifyVolume is only allowed on bound PVCs. Under the ModifyVolume call, it will pass in the mutable parameters and do the update operation based on the `VolumeAttributesClass` parameters.
 
-![ModifyVolume Flow Diagram](./VolumeAttributesClass-ModifyVolume-Flow-v2.png)
+![ModifyVolume Flow Diagram](./VolumeAttributesClass-ModifyVolume-Flow-v3.png)
 
 ### Implementation & Handling Failure
 
