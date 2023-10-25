@@ -626,16 +626,16 @@ will test the K8s to CSI access mode mapping behavior because most storage end
 to end tests rely on the ReadWriteOnce access mode, which now maps to the
 SINGLE_NODE_MULTI_WRITER CSI access mode.
 
-E2E tests for alpha behavior can be found here:
-
-- [test/e2e/storage/testsuites/readwriteoncepod.go] : [k8s-triage]
-
 For beta, we will want to cover the additional cases for preemption:
 
 - A high-priority pod requesting a ReadWriteOncePod volume that's already in-use
   will result in the preemption of the pod previously using the volume
 - A low-priority (or no priority) pod requesting a ReadWriteOncePod volume
   that's already in-use will result in it being UnschedulableAndUnresolvable
+
+E2E tests for alpha and beta behavior can be found here:
+
+- [test/e2e/storage/testsuites/readwriteoncepod.go] : [k8s-triage]
 
 [test/e2e/storage/testsuites/readwriteoncepod.go]: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/readwriteoncepod.go
 [k8s-triage]: https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=read-write-once-pod
