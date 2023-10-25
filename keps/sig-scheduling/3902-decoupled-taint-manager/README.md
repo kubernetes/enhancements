@@ -213,7 +213,7 @@ This section must be completed when targeting beta to a release.
 This is an opt-in feature, and it does not change any default behavior. Unless there is a bug in the implementation, a  rollout can not fail. If a rollout does fail, running workloads will not be evicted properly on tainted nodes. We don't except a rollback can fail.
 
 ###### What specific metrics should inform a rollback?
-A significantly changing number of pod evictions (`taint_manager_pod_evictions_total`) and/or a substantial increase in pod eviction latency (`taint_manager_pod_eviction_latency`) in Kubernetes.
+A significantly changing number of pod evictions (`taint_eviction_controller_pod_evictions_total`) and/or a substantial increase in pod eviction latency (`taint_eviction_controller_pod_deletion_duration_seconds`) in Kubernetes.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 The upgrade will be tested in the planned unit and e2e tests. The rollback and upgrade-downgrade-upgrade path will
@@ -238,7 +238,7 @@ The performance of node taint-based eviction should remain the same level as bef
 The metrics for both `NodeLifecycleController` and `TaintEvictionController`'s queues should stay the same levels as before, the number of pod evictions and pod eviction latency.
 
 - [X] Metrics
-  - Metric name: `taint_eviction_controller_pod_evictions_total`, `taint_eviction_controller_pod_eviction_latency`
+  - Metric name: `taint_eviction_controller_pod_evictions_total`, `taint_eviction_controller_pod_deletion_duration_seconds`
   - Components exposing the metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
