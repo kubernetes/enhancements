@@ -176,8 +176,10 @@ type PersistentVolumeClaimSpec struct {
 // Condition is used to document the last error controller sees
 const (
   ...
-  // PersistentVolumeClaimVolumeAttriburesModifyError - a user trigger modify volume of pvc has error
-  PersistentVolumeClaimVolumeAttriburesModifyError PersistentVolumeClaimConditionType = "VolumeAttriburesModifyError"
+  // Applying the target VolumeAttributesClass encountered an error
+  PersistentVolumeClaimVolumeModifyVolumeError PersistentVolumeClaimConditionType = "ModifyVolumeError"
+  // Volume is being modified
+  PersistentVolumeClaimVolumeModifyingVolume PersistentVolumeClaimConditionType = "ModifyingVolume"
   ...
 )
 
@@ -185,15 +187,15 @@ const (
 // PersistentVolumeClaimStatus represents the status of PV claim
 type PersistentVolumeClaimStatus struct {
   ...
+  // CurrentVolumeAttributesClassName is the current name of the VolumeAttributesClass the PVC is using
+  CurrentVolumeAttributesClassName *string
   // ModifyVolumeStatus represents the status object of ControllerModifyVolume operation
-  ModifyVolumeStatus ModifyVolumeStatus
+  ModifyVolumeStatus *ModifyVolumeStatus
   ...
 }
 
 // ModifyVolumeStatus represents the status object of ControllerModifyVolume operation
 type ModifyVolumeStatus struct {
-  // CurrentVolumeAttributesClassName is the current name of the VolumeAttributesClass the PVC is using
-  CurrentVolumeAttributesClassName string
   // TargetVolumeAttributesClassName is the name of the VolumeAttributesClass the PVC currently being reconciled
   TargetVolumeAttributesClassName string
   // Status is the status of the ControllerModifyVolume operation
@@ -205,15 +207,14 @@ type ModifyVolumeStatus struct {
 type PersistentVolumeClaimModifyVolumeStatus string
 
 const (
-  // Pending indicates that the PersistentVolumeClaim cannot be modified due to requirements not being met, such as 
-  // the specified VolumeAttributesClass doesn't exist
-  PersistentVolumeClaimControllerModifyVolumePending PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumePending"
-  // State set when modify volume controller starts modifying the volume
-  PersistentVolumeClaimControllerModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInProgress"
-  // State set when modify volume has failed in modify volume controller with a terminal error.
-  // When the request has been rejected as invalid by the CSI driver. To resolve this error,
-  // the PersistentVolumeClaim needs to specify a valid VolumeAttributesClass.
-  PersistentVolumeClaimControllerModifyVolumeInfeasible PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInfeasible"
+  // Pending indicates that the PersistentVolumeClaim cannot be modified due to unmet requirements, such as 
+  // the specified VolumeAttributesClass not existing
+  PersistentVolumeClaimModifyVolumePending PersistentVolumeClaimModifyVolumeStatus = "Pending"
+  // InProgress indicates that the volume is being modified
+  PersistentVolumeClaimModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "InProgress"
+  // Infeasible indicates that the request has been rejected as invalid by the CSI driver. To
+  // resolve the error, a valid VolumeAttributesClass needs to be specified
+  PersistentVolumeClaimModifyVolumeInfeasible PersistentVolumeClaimModifyVolumeStatus = "Infeasible"
 )
 
 ```
