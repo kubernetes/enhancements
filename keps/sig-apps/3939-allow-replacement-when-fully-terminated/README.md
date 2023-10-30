@@ -528,9 +528,13 @@ We can use the default `busybox` image which is generally used in e2e tests and 
 
 ```shell  
 _term(){  
-  sleep 5 exit 143}  
-trap _term SIGTERMwhile true; do  
-  sleep 1done`  
+  sleep 5
+  exit 143
+}  
+trap _term SIGTERM
+while true; do  
+  sleep 1
+done  
 ```  
 
 An e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.
