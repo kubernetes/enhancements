@@ -3,15 +3,15 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-3721: EnvFiles for Containers
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -133,10 +133,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -173,6 +173,9 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+The Kubernetes Enhancement Proposal (KEP) titled "EnvFiles for Containers" endeavors to augment Kubernetes' capability in managing environment variables by introducing `FileEnvSource` and `FileKeySelector` constructs. The crux of the proposal is to enable dynamic generation and management of environment variables from files, particularly before a container's initiation, thereby bridging the existing gap when interacting with external systems for dynamic configurations or generating one-time secrets. This enhancement is envisaged to simplify container configuration and deployment, reduce operational overhead, and bolster security by providing a robust mechanism for managing dynamic credentials and one-time secrets.
+
+
 ## Motivation
 
 <!--
@@ -184,6 +187,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+The motivation behind this KEP comes from the need to instantiate environment variables shortly before the container is initiated. There are scenarios where environment variables necessitate dynamic definition, such as when interacting with Hashicorp Vault or generating one-time secrets via scripts. The proposed enhancement aims to facilitate the creation of environment variables from files, significantly simplifying the procedure, especially in cases where an initContainer generates configurations to be utilized by the main container.
+
 ### Goals
 
 <!--
@@ -191,12 +196,57 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-### Non-Goals
+**Dynamic Environment Variable Generation:**
+
+- To enable the instantiation of environment variables dynamically just before the initiation of the container.
+- To facilitate streamlined interactions with external systems such as Hashicorp Vault for dynamic configuration. Success in this aspect would be measured by the ease and efficiency of generating and utilizing dynamically created environment variables.
+
+**File-Based Environment Variable Management:**
+
+- To introduce FileEnvSource and FileKeySelector for creating and managing environment variables from files.
+- To ensure ease of integration and use with existing Kubernetes constructs like volumes and initContainers. Success in this regard would be evaluated based on the ease of integration and usage alongside a reduction in configuration complexities.
+
+**Seamless Container Configuration:**
+
+- To enable containers to effortlessly utilize environment variables generated on the fly, ensuring configurations can be easily shared and managed across containers within a Pod.
+- To eliminate the necessity for containers to possess prior knowledge of the environment variables, thus simplifying container configuration and deployment. The success of this goal would be gauged by the reduction in configuration hurdles and the ease of deploying and managing container configurations.
+
+
+## Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- **Overarching Configuration Management:**
+
+  This proposal does not aim to provide a comprehensive solution for configuration management within Kubernetes, but rather focuses solely on the dynamic generation and utilization of environment variables from files.
+
+- **Replacement of Existing Configuration Mechanisms:**
+
+  The introduction of FileEnvSource and FileKeySelector is not intended to replace or supersede existing mechanisms for configuration management such as ConfigMaps and Secrets.
+
+- **External Systems Integration:**
+
+  Although the proposal facilitates interactions with external systems like Hashicorp Vault, it does not aim to provide native integrations or manage external systems.
+
+- **Cross-Pod Environment Variable Sharing:**
+
+  The scope of this proposal is limited to managing environment variables within the confines of a single Pod and does not extend to sharing environment variables across multiple Pods.
+
+- **Automated Secret Rotation:**
+
+  This proposal does not encompass mechanisms for automated rotation of secrets or credentials generated dynamically.
+
+- **Storage Solutions:**
+
+  Provisioning or managing storage solutions is outside the scope of this proposal, even though it utilizes file-based mechanisms for environment variable management.
+
+- **Networking Configurations:**
+
+  Managing networking configurations or network policies is not a goal of this proposal.
+
 
 ## Proposal
 
@@ -208,6 +258,40 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+The core proposition of this KEP is to introduce `FileEnvSource` and `FileKeySelector` constructs in Kubernetes, which will allow for the dynamic generation and management of environment variables from files. This is geared towards addressing the challenges currently faced when aiming to generate environment variables dynamically, especially just before the container initialization.
+
+### Desired Outcomes
+
+1. **Ease of Dynamic Configuration**:
+   - Containers should be able to effortlessly access and utilize environment variables generated dynamically from files, thus simplifying the configuration process.
+
+2. **Enhanced Interaction with External Systems**:
+   - The proposal aims to streamline the process of interacting with external systems like Hashicorp Vault for dynamic configuration, without necessitating hard-coded configurations or additional operational overhead.
+
+3. **Simplified Container Deployment**:
+   - By eliminating the need for containers to have prior knowledge of environment variables, the proposal aims to simplify container deployment and configuration management.
+
+4. **Secure and Efficient Management of Environment Variables**:
+   - Provide a secure and efficient mechanism for managing one-time secrets and dynamic credentials through file-based environment variable management.
+
+### Measuring Success
+
+Success of this proposal would be measured based on the following criteria:
+
+1. **Ease of Use**:
+   - The ease with which developers and operators can adapt to the new constructs for managing environment variables from files.
+
+2. **Operational Efficiency**:
+   - Reduction in operational overhead and complexities associated with dynamic environment variable generation and management.
+
+3. **Security Enhancement**:
+   - The degree to which the proposal enhances the security posture, especially in managing dynamic credentials and one-time secrets.
+
+4. **Integration with Existing Constructs**:
+   - Seamless integration with existing Kubernetes constructs and workflows, ensuring that the proposed changes do not disrupt existing operations.
+
+5. **Positive Feedback from the Community**:
+   - Favorable feedback from the Kubernetes community and stakeholders regarding the utility and effectiveness of the proposed changes in solving the identified problem.
 
 ### User Stories (Optional)
 
@@ -253,6 +337,72 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+This section elucidates the design intricacies of introducing the `FileEnvSource` and `FileKeySelector` constructs in Kubernetes, aimed at enabling the dynamic generation and management of environment variables from files.
+
+### FileEnvSource and FileKeySelector Constructs
+
+The `FileEnvSource` and `FileKeySelector` are envisioned to be new Kubernetes API constructs that would facilitate file-based environment variable management in a Kubernetes Pod.
+
+- **FileEnvSource**: This construct is proposed to be a part of the PodSpec, allowing users to specify a file source from which environment variables can be loaded. This could be utilized in conjunction with volumes and initContainers to set up the required configurations before the main container starts.
+
+- **FileKeySelector**: An extension to the `FileEnvSource`, the `FileKeySelector` allows users to specify particular keys in the file to be used as environment variables, providing a granular control over which data should be exposed as environment variables.
+
+These constructs are proposed to have a straightforward API interface, ensuring ease of use and integration. Below is a hypothetical example illustrating how these constructs could be utilized in a Pod specification:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-file-env-source
+spec:
+  volumes:
+  - name: shared-env-volume
+    emptyDir: {}
+  initContainers:
+  - name: init-container
+    image: busybox:1.28
+    command: ['sh', '-c', 'echo "DYNAMIC_VAR=dynamic value" > /shared-env/vars.env']
+    volumeMounts:
+    - name: shared-env-volume
+      mountPath: /shared-env
+  containers:
+  - name: main-container
+    image: nginx:1.14.2
+    volumeMounts:
+    - name: shared-env-volume
+      mountPath: /shared-env
+    envFrom:
+    - fileEnvSource:
+        path: /shared-env/vars.env
+        keySelector:
+          - key: DYNAMIC_VAR
+```
+
+### Handling Dynamic Environment Variables
+
+The process of handling dynamic environment variables entails several steps:
+
+1. **Generation:** Initially, environment variables are generated by the initContainer or external systems, and are stored in a file within a shared volume.
+
+2. **Extraction:** Post-generation, the FileEnvSource and FileKeySelector constructs facilitate the extraction of environment variables from the specified file.
+
+3. **Utilization:** The main container then utilizes these environment variables during its operation, without requiring any prior knowledge of these variables.
+
+### Security Considerations
+
+Security is a paramount concern, especially when dealing with dynamic credentials or one-time secrets. The proposed constructs should ensure that sensitive data is securely handled, and access control measures are enforced to prevent unauthorized access.
+
+### Error Handling
+
+Error handling is crucial to ensure that failures in generating or accessing environment variables do not result in system disruptions. Clear error messages and fallback mechanisms should be implemented to handle various error scenarios.
+
+### Logging and Monitoring
+
+Implementing robust logging and monitoring solutions is essential to track the operations and diagnose issues promptly.
+
+This design detail provides a thorough understanding of the proposed changes, ensuring that the specifics of the proposal are well comprehended and highlighting the considerations that need to be addressed to ensure a successful implementation.
+
 
 ### Test Plan
 
@@ -584,10 +734,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 

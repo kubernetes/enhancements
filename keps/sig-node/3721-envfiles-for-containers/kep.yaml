@@ -1,28 +1,22 @@
-title: KEP Template
-kep-number: NNNN
+title: EnvFiles for Containers
+kep-number: 3721
 authors:
-  - "@jane.doe"
-owning-sig: sig-xyz
+  - "@sharpz7"
+owning-sig: sig-node
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
+  - sig-node
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
-creation-date: yyyy-mm-dd
+creation-date: 2023-10-30
 reviewers:
   - TBD
-  - "@alice.doe"
 approvers:
   - TBD
-  - "@oscar.doe"
 
 see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
 replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha|beta|stable
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -40,10 +34,7 @@ milestone:
 feature-gates:
   - name: MyFeature
     components:
-      - kube-apiserver
-      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
