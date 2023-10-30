@@ -317,8 +317,8 @@ resources and start experimenting with them in Kubernetes:
 - extend the CRI protocol to allow runtime to communicate available QoS-class
   resources (the types of resources and the classes within) to kubelet
 - introduce a feature gate for enabling QoS-class resource support in kubelet
-- extend PodSpec to support assignment of QoS-clsss resources
-- extend NodeStatus to show availability/capacity of QoS-clsss resources on a
+- extend PodSpec to support assignment of QoS-class resources
+- extend NodeStatus to show availability/capacity of QoS-class resources on a
   node
 
 ### Future work
@@ -413,8 +413,10 @@ would implement restrictions based on the namespace.
 The first implementation phase only adds basic filtering of nodes based on
 QoS-class resources and node scoring is not altered. However, the relevant
 scheduler plugins (e.g. NodeResourcesFit and NodeResourcesBalancedAllocation)
-could be extended to do scoring based on the capacity, availability and usage
-of QoS-class resources on the nodes.
+could be extended to do scoring based on the capacity (maximum number of
+assignments to a class), availability (how much of that still is available,
+i.e. capacity minus the current number of assignments) and usage (the current
+number of assignments to a class) of QoS-class resources on the nodes.
 
 #### Kubelet-initiated pod eviction
 
@@ -522,12 +524,12 @@ QoS-class resources from the runtime to the client. This information includes:
 
 QoS-class resources may be bounded in the way that the number of applications
 that can be assigned to a specific class (of one QoS-class resource) on a node
-can be limited. This limit is configuratble on a per-class (and per-node)
+can be limited. This limit is configurable on a per-class (and per-node)
 basis. This can be used to e.g. limit access to a high-tier class.
 
 Pod-level and container-level QoS-class resources are independent resource
 types. However, specifying a container-level QoS-class resource something in
-the pod-level request in PodSpec will be regarded by Kubernetres as a default
+the pod-level request in PodSpec will be regarded by Kubernetes as a default
 for all containers of the pod.
 
 Currently we identify two types of container-level QoS-class resources (RDT and
@@ -699,7 +701,9 @@ It would be possible to have QoS-class resources that would be managed by
 Kubernetes/kubelet instead of the container runtime. If we specify and manage
 official well-known QoS-class resource names in the API it would be possible to
 specify Kubernetes-internal names that the container runtime would know to
-ignore (or not try to manage itself).
+ignore (or not try to manage itself). E.g. any QoS-class resources with
+`k8s.io/` prefix could be treated as Kubernetes-managed and ignored by the
+container runtime.
 
 One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
 memory knobs in linux (see
@@ -1309,6 +1313,12 @@ The canonical Kubernetes names for QoS-class resources are non-namespaced (i.e.
 without a `<namespace>/` prefix). Namespaced (or fully qualified) names like
 `example.com/acme-qos` are not controlled and are meant for e.g. vendor or
 application specific QoS implementations.
+
+The `k8s.io/` prefix is reserved for possible future
+[Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources).
+Runtimes are not allowed to register QoS-class resources with `k8s.io/` prefix.
+Runtimes should treat any QoS-class resource with `k8s.io/` as ones managed by
+Kubernetes and consider assignments as informational-only.
 
 `<<[/UNRESOLVED]>>`
 
