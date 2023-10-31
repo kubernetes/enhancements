@@ -172,27 +172,49 @@ type PersistentVolumeClaimSpec struct {
   ...
 }
 
+// Add the PersistentVolumeClaimModifyVolume condition to existing PersistentVolumeClaimConditionType
+// Condition is used to document the last error controller sees
+const (
+  ...
+  // Applying the target VolumeAttributesClass encountered an error
+  PersistentVolumeClaimVolumeModifyVolumeError PersistentVolumeClaimConditionType = "ModifyVolumeError"
+  // Volume is being modified
+  PersistentVolumeClaimVolumeModifyingVolume PersistentVolumeClaimConditionType = "ModifyingVolume"
+  ...
+)
+
+
 // PersistentVolumeClaimStatus represents the status of PV claim
 type PersistentVolumeClaimStatus struct {
   ...
-  // The VolumeAttributesClassName string cannot be empty
-  VolumeAttributesClassName string
-  ModifyVolumeStatus *PersistentVolumeClaimModifyVolumeStatus
+  // CurrentVolumeAttributesClassName is the current name of the VolumeAttributesClass the PVC is using
+  CurrentVolumeAttributesClassName *string
+  // ModifyVolumeStatus represents the status object of ControllerModifyVolume operation
+  ModifyVolumeStatus *ModifyVolumeStatus
   ...
 }
 
+// ModifyVolumeStatus represents the status object of ControllerModifyVolume operation
+type ModifyVolumeStatus struct {
+  // TargetVolumeAttributesClassName is the name of the VolumeAttributesClass the PVC currently being reconciled
+  TargetVolumeAttributesClassName string
+  // Status is the status of the ControllerModifyVolume operation
+  Status PersistentVolumeClaimModifyVolumeStatus
+}
+
 // +enum
+// New statuses can be added in the future. Consumers should check for unknown statuses and fail appropriately
 type PersistentVolumeClaimModifyVolumeStatus string
 
 const (
-  // When modify volume is complete, the empty string is set by modify volume controller.
-  PersistentVolumeClaimNoModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = ""
-  // State set when modify volume controller starts modifying the volume in control-plane
-  PersistentVolumeClaimControllerModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeInProgress"
-  // State set when modify volume has failed in modify volume controller with a terminal error.
-  // Transient errors such as timeout should not set this status and should leave ModifyVolumeStatus
-  // unmodified, so as modify volume controller can resume the volume modification.
-  PersistentVolumeClaimControllerModifyVolumeFailed PersistentVolumeClaimModifyVolumeStatus = "ControllerModifyVolumeFailed"
+  // Pending indicates that the PersistentVolumeClaim cannot be modified due to unmet requirements, such as 
+  // the specified VolumeAttributesClass not existing
+  PersistentVolumeClaimModifyVolumePending PersistentVolumeClaimModifyVolumeStatus = "Pending"
+  // InProgress indicates that the volume is being modified
+  PersistentVolumeClaimModifyVolumeInProgress PersistentVolumeClaimModifyVolumeStatus = "InProgress"
+  // Infeasible indicates that the request has been rejected as invalid by the CSI driver. To
+  // resolve the error, a valid VolumeAttributesClass needs to be specified
+  PersistentVolumeClaimModifyVolumeInfeasible PersistentVolumeClaimModifyVolumeStatus = "Infeasible"
 )
 
 ```
@@ -204,37 +226,6 @@ Cluster administrators can use K8s quota to specify how many PVCs can use a spec
 ### CSI API
 The CSI create request will be extended to add mutable parameters. A new ControllerModifyVolume RPC will be added. More details in [CSI Spec PR](https://github.com/container-storage-interface/spec/pull/544).
 
-```
-// ControllerServer is the server API for Controller service.
-type ControllerServer interface {
-    ...
-    rpc ControllerModifyVolume (ModifyVolumeRequest)
-        returns (ModifyVolumeResponse) {
-            option (alpha_method) = true;
-        }
-    ...
-}
-
-message ModifyVolumeRequest {
-  // Contains identity information for the existing volume.
-  // This field is REQUIRED.
-  string volume_id = 1
-  // This field is OPTIONAL.This allows the CO to specify the
-  // mutable parameters to apply. 
-  map<string, string> mutable_parameters = 2;
-}
-message ModifyVolumeResponse {}
-
-message CreateVolumeRequest {
-  ...
-  // See CreateVolumeRequest.parameters.
-  // This field is OPTIONAL.
-  map<string, string> parameters = 4;
-  // This field is OPTIONAL. This allows the CO to specify the
-  // volume attributes class parameters to apply. 
-  map<string, string> mutable_parameters = 8;
-}
-```
 
 ### User Stories (Optional)
 
@@ -275,6 +266,7 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
 metadata:
   name: silver
+driverName: pd.csi.storage.gke.io
 parameters:
   iops: "500"
   throughput: "50MiB/s"
@@ -318,6 +310,7 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
 metadata:
   name: silver
+driverName: pd.csi.storage.gke.io
 parameters:
   iops: "500"
   throughput: "50MiB/s"
@@ -345,6 +338,7 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
 metadata:
   name: gold
+driverName: pd.csi.storage.gke.io
 parameters:
   iops: "1000"
   throughput: "100MiB/s"
@@ -408,15 +402,8 @@ The resource quota controller is the only component capable of monitoring and re
 
 ### 3. Add new statuses in PVC API to indicate changes of VolumeAttributesClass and the status of the ModifyVolume operation.
 
-```
-type VolumeAttributesClassStatus string
+Please see session "Kubernetes API" above.
 
-const (
-    PersistentVolumeClaimControllerModifyVolumeProgress VolumeAttributesClassStatus = "ControllerModifyVolumeInProgress"
-    PersistentVolumeClaimControllerModifyVolumePending VolumeAttributesClassStatus = "ControllerModifyVolumePending"
-    PersistentVolumeClaimControllerModifyVolumeFailed VolumeAttributesClassStatus = "ControllerModifyVolumeFailed"
-)
-```
 ### 4. Add new CSI API ControllerModifyVolume, when there is a change of VolumeAttributesClass in PVC, external-resizer triggers a ControllerModifyVolume operation against a CSI endpoint. A Controller Plugin MUST implement this RPC call if it has MODIFY_VOLUME capability. 
 
 ### 5. Add new operation metrics for ModifyVolume operations
@@ -454,7 +441,7 @@ There are a few conditions that will trigger add/remove pvc finalizers in the Vo
 1. PVC created with a VolumeAttributesClass
 
     The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PVC will enter the PENDING state because we do not want to impose ordering on object creation
+    * Check if the VolumeAttributesClass exists. If not, the PVC will enter the INPROGRESS state because we do not want to impose ordering on object creation
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none 
 2. PVC created with a VolumeAttributesClass being deleted
@@ -480,7 +467,7 @@ For unbound PVs referencing a VAC:
 
 1. Unbound PV created with a VolumeAttributesClass
     The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PV will enter the PENDING state because we do not want to impose ordering on object creation
+    * Check if the VolumeAttributesClass exists. If not, the PV will enter the INPROGRESS state because we do not want to impose ordering on object creation
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none
 2. PV has a VolumeAttributesClass and this PV is deleted
@@ -496,6 +483,7 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
 metadata:
   name: silver
+driverName: pd.csi.storage.gke.io
 parameters:
   iops: "500"
   throughput: "50MiB/s"
@@ -569,6 +557,7 @@ apiVersion: storage.k8s.io/v1alpha1
 kind: VolumeAttributesClass
 metadata:
   name: gold
+driverName: pd.csi.storage.gke.io
 parameters:
   iops: "1000"
   throughput: "100MiB/s"
@@ -593,7 +582,7 @@ spec:
 
 ModifyVolume is only allowed on bound PVCs. Under the ModifyVolume call, it will pass in the mutable parameters and do the update operation based on the `VolumeAttributesClass` parameters.
 
-![ModifyVolume Flow Diagram](./VolumeAttributesClass-ModifyVolume-Flow.png)
+![ModifyVolume Flow Diagram](./VolumeAttributesClass-ModifyVolume-Flow-v3.png)
 
 ### Implementation & Handling Failure
 
