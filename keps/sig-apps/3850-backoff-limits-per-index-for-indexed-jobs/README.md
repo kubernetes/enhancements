@@ -12,6 +12,7 @@
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Performance benchmark](#performance-benchmark)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [The Job object too big](#the-job-object-too-big)
   - [Expotential backoff delay issue](#expotential-backoff-delay-issue)
@@ -225,6 +226,53 @@ spec:
 ```
 
 ### Notes/Constraints/Caveats (Optional)
+
+#### Performance benchmark
+
+We assess the performance of the Beta implementation in comparison to
+the index jobs with regular `backoffLimit` using the two integration tests
+(`BenchmarkLargeIndexedJob` and `BenchmarkLargeFailureHandling`)
+in the [PR #121393](https://github.com/kubernetes/kubernetes/pull/121393).
+
+In the `BenchmarkLargeIndexedJob` test, the measured part creates N pods
+and marks them as `Succeeded`, awaiting for the Job status to be updated accordingly.
+This is a sanity test for the `backoffLimitPerIndex`, to demonstrate that the
+new branches of code don't have significant performance impact.
+
+Here are the results (lines re-ordered from smallest to the largest N):
+```sh
+go test -benchmem -run="^$" -timeout=80m -bench "^BenchmarkLargeIndexedJob" k8s.io/kubernetes/test/integration/job | grep "^Benchmark"
+BenchmarkLargeIndexedJob/regular_indexed_job_without_failures;_size=10-48                       	       1	3034342185 ns/op	14391160 B/op	  164352 allocs/op
+BenchmarkLargeIndexedJob/regular_indexed_job_without_failures;_size=100-48                      	       1	3050613253 ns/op	111100464 B/op	 1324757 allocs/op
+BenchmarkLargeIndexedJob/regular_indexed_job_without_failures;_size=1000-48                     	       1	19382609963 ns/op	1133953568 B/op	13079710 allocs/op
+BenchmarkLargeIndexedJob/regular_indexed_job_without_failures;_size=10_000-48                   	       1	222696805443 ns/op	11610639800 B/op	131946944 allocs/op
+BenchmarkLargeIndexedJob/job_with_backoffLimitPerIndex_without_failures;_size=10-48             	       1	3025650312 ns/op	14757368 B/op	  166282 allocs/op
+BenchmarkLargeIndexedJob/job_with_backoffLimitPerIndex_without_failures;_size=100-48            	       1	3045479158 ns/op	114324072 B/op	 1345524 allocs/op
+BenchmarkLargeIndexedJob/job_with_backoffLimitPerIndex_without_failures;_size=1000-48           	       1	19384632203 ns/op	1161105080 B/op	13216319 allocs/op
+BenchmarkLargeIndexedJob/job_with_backoffLimitPerIndex_without_failures;_size=10_000-48         	       1	223635439324 ns/op	11911685592 B/op	133325939 allocs/op
+```
+
+In the `BenchmarkLargeFailureHandling` test, the measured part of the test marks
+N running pods as `Failed` and awaits for the job status to be updated accordingly.
+In order to make the test comparable for regular indexed jobs and with
+backoffLimitPerIndex we set the max backoff delay due to pod failures as 10ms.
+Here are the results (lines re-ordered from smallest to the largest N):
+
+```sh
+go test -benchmem -run="^$" -timeout=80m -bench "^BenchmarkLargeFailureHandling" k8s.io/kubernetes/test/integration/job | grep "^Benchmark"
+BenchmarkLargeFailureHandling/regular_indexed_job_with_failures;_size=10-48                     	       1	2021272442 ns/op	13813736 B/op	  165760 allocs/op
+BenchmarkLargeFailureHandling/regular_indexed_job_with_failures;_size=100-48                    	       1	3036166978 ns/op	109866704 B/op	 1310651 allocs/op
+BenchmarkLargeFailureHandling/regular_indexed_job_with_failures;_size=1000-48                   	       1	21049273834 ns/op	1074301144 B/op	12832549 allocs/op
+BenchmarkLargeFailureHandling/regular_indexed_job_with_failures;_size=10_000-48                 	       1	202327947010 ns/op	10926201704 B/op	131423197 allocs/op
+BenchmarkLargeFailureHandling/job_with_backoffLimitPerIndex_with_failures;_size=10-48           	       1	3016501067 ns/op	14676224 B/op	  175301 allocs/op
+BenchmarkLargeFailureHandling/job_with_backoffLimitPerIndex_with_failures;_size=100-48          	       1	3038839798 ns/op	112090728 B/op	 1323948 allocs/op
+BenchmarkLargeFailureHandling/job_with_backoffLimitPerIndex_with_failures;_size=1000-48         	       1	21057643253 ns/op	1096364096 B/op	13008669 allocs/op
+BenchmarkLargeFailureHandling/job_with_backoffLimitPerIndex_with_failures;_size=10_000-48       	       1	202373728278 ns/op	11185209520 B/op	132578325 allocs/op
+```
+
+The above results show that the jobs using `.spec.backoffLimitPerIndex` are be
+slower for about 1% compared to regular indexed jobs. In practice the difference
+is expected to be covered by the expotential backoff delay due to pod failures.
 
 <!--
 What are the caveats to the proposal?
@@ -636,18 +684,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-The following scenarios will be covered with e2e tests:
-- handling of the `.spec.backoffLimitPerIndex` when the `FailIndex` is used -
-  the Job's index is marked as failed,
-- handling of the `.spec.backoffLimitPerIndex` when the number of failures for
-  an index exceeds the backoff - the index is marked as failed, but the Job
-  continues its execution until all indexes are finished.
-- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes`
-  is set and exceeded - the Job is marked as Failed and its execution is
-  terminated.
-
-More integration tests might be added to ensure good code coverage based on the
-actual implementation.
+The following scenario is covered with e2e tests for Beta:
+- [sig-apps#gce](https://testgrid.k8s.io/sig-apps#gce):
+  - Job should execute all indexes despite some failing when using backoffLimitPerIndex
+  - Job should terminate job execution when the number of failed indexes exceeds maxFailedIndexes
+  - Job should mark indexes as failed when the FailIndex action is matched in podFailurePolicy
 
 ### Graduation Criteria
 
