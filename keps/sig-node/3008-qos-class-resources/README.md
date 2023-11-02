@@ -701,9 +701,10 @@ It would be possible to have QoS-class resources that would be managed by
 Kubernetes/kubelet instead of the container runtime. If we specify and manage
 official well-known QoS-class resource names in the API it would be possible to
 specify Kubernetes-internal names that the container runtime would know to
-ignore (or not try to manage itself). E.g. any QoS-class resources with
-`k8s.io/` prefix could be treated as Kubernetes-managed and ignored by the
-container runtime.
+ignore (or not try to manage itself). E.g. any non-namespaced QoS-class
+resources (one without `<namespace>/` prefix in the name) would be treated as
+Kubernetes-managed and ignored by the container runtime. See [Consts](#consts)
+section below for details about QoS-class resource naming.
 
 One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
 memory knobs in linux (see
@@ -1309,16 +1310,20 @@ across different implementations.
 
 `<<[UNRESOLVED @sftim]>>`
 
-The canonical Kubernetes names for QoS-class resources are non-namespaced (i.e.
-without a `<namespace>/` prefix). Namespaced (or fully qualified) names like
+The canonical Kubernetes names for QoS-class resources come in two variants:
+
+- The `k8s.io/` prefix is reserved for "official" well-known runtime-managed
+  QoS resources.
+- Non-namespaced (i.e. without a `<namespace>/` prefix) names are reserved for
+  possible future
+  [Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources).
+  Runtimes are not allowed to register QoS-class resources with `k8s.io/`
+  prefix. Runtimes should treat any non-namespaced QoS-class resource with as
+  ones managed by Kubernetes and consider assignments as informational-only.
+
+Namespaced (or fully qualified) names outside `k8s.io/` like
 `example.com/acme-qos` are not controlled and are meant for e.g. vendor or
 application specific QoS implementations.
-
-The `k8s.io/` prefix is reserved for possible future
-[Kubernetes-managed QoS-class resources](#kubernetes-managed-qos-class-resources).
-Runtimes are not allowed to register QoS-class resources with `k8s.io/` prefix.
-Runtimes should treat any QoS-class resource with `k8s.io/` as ones managed by
-Kubernetes and consider assignments as informational-only.
 
 `<<[/UNRESOLVED]>>`
 
@@ -1327,18 +1332,19 @@ Kubernetes and consider assignments as informational-only.
 +       // QOSResourceRdt is the name of the QoS-class resource named IntelRDT
 +       // in the OCI runtime spec and interfaced through the resctrlfs
 +       // pseudp-filesystem in Linux. This is a container-level reosurce.
-+       QOSResourceIntelRdt = "rdt"
++       QOSResourceIntelRdt = "k8s.io/rdt"
 +       // QOSResourceBlockio is the name of the blockio QoS-class resource.
 +       // This is a container-level resource.
-+       QOSResourceBlockio = "blockio"
++       QOSResourceBlockio = "k8s.io/blockio"
 +)
 ```
 
 In later implementation phases (Beta) admission control (validation) is added to
-reject requests for unknown QoS-class resources in the "official" namespace.
-Also (in Beta), kubelet will reject the registration of unknown QoS-class resources in
-the "official" namespace. Custom/vendor-specific QoS-class resources will still
-be allowed outside the "official" namespace.
+reject requests for unknown QoS-class resources in the "official" namespaces
+(unprefixed or `k8s.io/`). Also (in Beta), kubelet will reject the registration
+of unknown QoS-class resources in the "official" namespaces (unprefixed or
+`k8s.io/`). Custom/vendor-specific QoS-class resources will still be allowed
+outside the "official" namespaces.
 
 ### Kubelet
 
