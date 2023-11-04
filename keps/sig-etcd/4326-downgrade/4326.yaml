@@ -1,0 +1,10 @@
+title: Downgrade support
+kep-number: 4326
+authors:
+  - "@serathius"
+owning-sig: sig-etcd
+status: implementable
+creation-date: yyyy-mm-dd
+reviewers:
+approvers:
+  - '@ahrtr'
