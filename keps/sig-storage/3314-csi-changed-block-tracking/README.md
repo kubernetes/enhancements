@@ -91,10 +91,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [The CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api)
     - [Metadata Format](#metadata-format)
-    - [GetAllocated RPC](#getallocated-rpc)
-      - [GetAllocated Errors](#getallocated-errors)
-    - [GetDelta RPC](#getdelta-rpc)
-      - [GetDelta Errors](#getdelta-errors)
+    - [GetMetadataAllocated RPC](#getmetadataallocated-rpc)
+      - [GetMetadataAllocated Errors](#getmetadataallocated-errors)
+    - [GetMetadataDelta RPC](#getmetadatadelta-rpc)
+      - [GetMetadataDelta Errors](#getmetadatadelta-errors)
   - [Kubernetes Components](#kubernetes-components)
     - [The Kubernetes SnapshotMetadata Service API](#the-kubernetes-snapshotmetadata-service-api)
     - [Snapshot Metadata Service Custom Resource](#snapshot-metadata-service-custom-resource)
@@ -265,13 +265,13 @@ nitty-gritty.
 
 The proposal extends the CSI specification with a new, optional,
 [CSI SnapshotMetadata gRPC service](#the-csi-snapshotmetadata-service-api),
-that is used to retrieve metadata on the allocated blocks of a single snapshot,
-or the changed blocks between a pair of snapshots of the same block volume.
+that is used by Kubernetes to retrieve metadata on the allocated blocks of a
+single snapshot, or the changed blocks between a pair of snapshots of the same
+block volume.
 
 A [Kubernetes SnapshotMetadata gRPC service](#the-kubernetes-snapshotmetadata-service-api)
-is a variant of the new CSI SnapshotMetadata gRPC service
-that has been slightly modified to enable **direct usage by a Kubernetes client**.
-This API is implemented by the the community provided
+is an API that is used by a Kubernetes backup application client to retrieve 
+snapshot metadata. This API is implemented by the the community provided
 [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar),
 which must be deployed by a CSI driver.
 A Kubernetes backup application will retrieve snapshot metadata through a
@@ -572,15 +572,16 @@ Refer to [CSI PR 551](https://github.com/container-storage-interface/spec/pull/5
 for the final form of the service. 
 ```
 service SnapshotMetadata {
-  rpc GetAllocated(GetAllocatedRequest)
-    returns (stream GetAllocatedResponse) {}
-  rpc GetDelta(GetDeltaRequest)
-    returns (stream GetDeltaResponse) {}
+  rpc GetMetadataAllocated(GetMetadataAllocatedRequest)
+    returns (stream GetMetadataAllocatedResponse) {}
+  rpc GetMetadataDelta(GetMetadataDeltaRequest)
+    returns (stream GetMetadataDeltaResponse) {}
 }
 
 enum BlockMetadataType {
-  FIXED_LENGTH=0;
-  VARIABLE_LENGTH=1;
+  UNKNOWN=0;
+  FIXED_LENGTH=1;
+  VARIABLE_LENGTH=2;
 }
 
 message BlockMetadata {
@@ -588,7 +589,7 @@ message BlockMetadata {
   uint64 size_bytes = 2;
 }
 
-message GetAllocatedRequest {
+message GetMetadataAllocatedRequest {
   string snapshot_id = 1;
   uint64 starting_offset = 2;
   uint32 max_results = 3;
@@ -596,23 +597,23 @@ message GetAllocatedRequest {
 }
 
 
-message GetAllocatedResponse {
+message GetMetadataAllocatedResponse {
   BlockMetadataType block_metadata_type = 1;
-  uint64 volume_size_bytes = 2;
+  uint64 volume_capacity_bytes = 2;
   repeated BlockMetadata block_metadata = 3;
 }
 
-message GetDeltaRequest {
+message GetMetadataDeltaRequest {
   string base_snapshot_id = 1;
   string target_snapshot_id = 2;
-  uint64 starting_byte_offset = 3;
+  uint64 starting_offset = 3;
   uint32 max_results = 4;
   map<string, string> secrets = 5;
 }
 
-message GetDeltaResponse {
+message GetMetadataDeltaResponse {
   BlockMetadataType block_metadata_type = 1;
-  uint64 volume_size_bytes = 2;
+  uint64 volume_capacity_bytes = 2;
   repeated BlockMetadata block_metadata = 3;
 }
 ```
@@ -635,19 +636,19 @@ defined collectively across the tuple lists returned in the RPC
 [message stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc).
 Note that the plugin must ensure that the style is not change mid-stream in any given RPC invocation.
 
-#### GetAllocated RPC
-The `GetAllocated` RPC returns metadata on the ***allocated blocks*** of a snapshot -
+#### GetMetadataAllocated RPC
+The `GetMetadataAllocated` RPC returns metadata on the ***allocated blocks*** of a snapshot -
 i.e. this identifies the data ranges that have valid data as they were the target of
 some previous write operation.
 Backup applications typically make an initial **full** backup of a volume followed
 by a series of **incremental** backups, and the size of the initial full backup can
 be reduced considerably if only the allocated blocks are saved.
 
-The RPC's input arguments are specified by the `GetAllocatedRequest` message,
+The RPC's input arguments are specified by the `GetMetadataAllocatedRequest` message,
 and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
-of `GetAllocatedResponse` messages.
-The fields of the `GetAllocatedRequest` message are defined as follows:
+of `GetMetadataAllocatedResponse` messages.
+The fields of the `GetMetadataAllocatedRequest` message are defined as follows:
  - `snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
 
@@ -670,26 +671,26 @@ The fields of the `GetAllocatedRequest` message are defined as follows:
  `csi.storage.k8s.io/snapshotter-secret-[name|namespace]`
 in the `VolumeSnapshotClass.Parameters` field.
 
-The fields of the `GetAllocatedResponse` message are defined as follows:
+The fields of the `GetMetadataAllocatedResponse` message are defined as follows:
 - `block_metadata_type`<br>
   This specifies the metadata format as described in the [Metadata Format](#metadata-format) section above.
 
-- `volume_size_bytes`<br>
+- `volume_capacity_bytes`<br>
   The size of the underlying volume, in bytes.
 
 - `block_metadata`<br>
   This is a list of `BlockMetadata` tuples as described in the
   [Metadata Format](#metadata-format) section above.
   The caller may request a maximum length of this list in the `max_results` field
-  of the `GetAllocatedRequest` message, otherwise the length is determined by the plugins.
+  of the `GetMetadataAllocatedRequest` message, otherwise the length is determined by the plugins.
 
-Note that while the `block_metadata_type` and `volume_size_bytes` fields are
-repeated in each `GetAllocatedResponse` message by the nature of the syntax of the
+Note that while the `block_metadata_type` and `volume_capacity_bytes` fields are
+repeated in each `GetMetadataAllocatedResponse` message by the nature of the syntax of the
 specification language, their values in a given RPC invocation must be constant.
 i.e. a plugin is not free to modify these value mid-stream.
 
-##### GetAllocated Errors
-If the plugin is unable to complete the `GetAllocated` call successfully it
+##### GetMetadataAllocated Errors
+If the plugin is unable to complete the `GetMetadataAllocated` call successfully it
 must return a non-OK gRPC code in the gRPC status.
 
 The following conditions are well defined:
@@ -700,15 +701,15 @@ The following conditions are well defined:
 | Invalid `snapshot` | 5 NOT_FOUND | Indicates that the snapshot specified was not found. | The caller should re-check that this object exists. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 
-#### GetDelta RPC
-The `GetDelta` RPC returns the metadata on the blocks that have changed between
+#### GetMetadataDelta RPC
+The `GetMetadataDelta` RPC returns the metadata on the blocks that have changed between
 a pair of snapshots from the same volume.
 
-The RPC's input arguments are specified by the `GetDeltaRequest` message,
+The RPC's input arguments are specified by the `GetMetadataDeltaRequest` message,
 and it returns a
 [stream](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
-of `GetDeltaResponse` messages.
-The fields of the `GetDeltaRequest` message are defined as follows:
+of `GetMetadataDeltaResponse` messages.
+The fields of the `GetMetadataDeltaRequest` message are defined as follows:
 
  - `base_snapshot_id`<br>
  The identifier of a snapshot of the specified volume, in the nomenclature of the plugins.
@@ -726,7 +727,7 @@ The fields of the `GetDeltaRequest` message are defined as follows:
 
  - `max_results`<br>
  This is an optional field. If non-zero it specifies the maximum length of the `block_metadata` list
- that the client wants to process in a given `GetDeltaResponse` element.
+ that the client wants to process in a given `GetMetadataDeltaResponse` element.
  The plugins will determine an appropriate value if 0, and is always free to send less than the requested
  maximum.
 
@@ -738,26 +739,26 @@ The fields of the `GetDeltaRequest` message are defined as follows:
 in the `VolumeSnapshotClass.Parameters` field.
 This field should not be set by a Kubernetes backup application client.
 
-The fields of the `GetDeltaResponse` message are defined as follows:
+The fields of the `GetMetadataDeltaResponse` message are defined as follows:
 - `block_metadata_type`<br>
   This specifies the metadata format as described in the [Metadata Format](#metadata-format) section above.
 
-- `volume_size_bytes`<br>
+- `volume_capacity_bytes`<br>
   The size of the underlying volume, in bytes.
 
 - `block_metadata`<br>
   This is a list of `BlockMetadata` tuples as described in the
   [Metadata Format](#metadata-format) section above.
   The caller may request a maximum length of this list in the `max_results` field
-  of the `GetDeltaRequest` message, otherwise the length is determined by the plugins.
+  of the `GetMetadataDeltaRequest` message, otherwise the length is determined by the plugins.
 
-Note that while the `block_metadata_type` and `volume_size_bytes` fields are
-repeated in each `GetDeltaResponse` message by the nature of the syntax of the
+Note that while the `block_metadata_type` and `volume_capacity_bytes` fields are
+repeated in each `GetMetadataDeltaResponse` message by the nature of the syntax of the
 specification language, their values in a given RPC invocation must be constant.
 i.e. a plugin is not free to modify these value mid-stream.
 
-##### GetDelta Errors
-If the plugin is unable to complete the `GetDelta` call successfully it
+##### GetMetadataDelta Errors
+If the plugin is unable to complete the `GetMetadataDelta` call successfully it
 must return a non-OK gRPC code in the gRPC status.
 
 The following conditions are well defined:
@@ -772,9 +773,7 @@ The following conditions are well defined:
 The following Kubernetes resources and components are involved at runtime:
 
 - The [Kubernetes SnapshotMetadata Service API](#the-kubernetes-snapshotmetadata-service-api)
-  is a variant of the
-  [CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api)
-  used by Kubernetes clients to retrieve snapshot metadata.
+  is used by Kubernetes clients to retrieve snapshot metadata.
 
 - A [SnapshotMetadataService CR](#snapshot-metadata-service-custom-resource)
   that advertises the existence of a
@@ -811,8 +810,7 @@ which will proxy the calls to an SP provided service that implements the
 The proposal could have called for client to use the
 [CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api)
 itself when communicating with the sidecar, but there are a number of reasons
-to specify a different API, the **Kubernetes SnapshotMetadata API**, which a
-slight variant of the CSI API.
+to specify a different API, the **Kubernetes SnapshotMetadata API**.
 These reasons and any related modifications to the API are described below:
 
 - Introduction of a level of indirection between the CSI specification
@@ -841,13 +839,13 @@ These reasons and any related modifications to the API are described below:
   As such, all `secrets` parameters are removed from the
   Kubernetes SnapshotMetadata API messages.
 
-The only structural differences between the Kubernetes SnapshotMetadata API 
-and the 
-[CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api)
-specifications are in some message properties.
+The proposed Kubernetes SnapshotMetadata API is very similar to the
+[CSI SnapshotMetadata Service API](#the-csi-snapshotmetadata-service-api).
+The only structural differences between the two specifications are in some
+message properties.
 The messages modified in the Kubernetes SnapshotMetadata API are shown below:
 ```
-message GetAllocatedRequest {
+message GetMetadataAllocatedRequest {
   string security_token = 1;
   string namespace = 2;
   string snapshot_name = 3;
@@ -855,12 +853,12 @@ message GetAllocatedRequest {
   uint32 max_results = 5;
 }
 
-message GetDeltaRequest {
+message GetMetadataDeltaRequest {
   string security_token = 1;
   string namespace = 2;
   string base_snapshot_name = 3;
   string target_snapshot_name = 4;
-  uint64 starting_byte_offset = 5;
+  uint64 starting_offset = 5;
   uint32 max_results = 6;
 }
 ```
@@ -978,7 +976,7 @@ client to SP identifiers before forwarding the remote procedure calls.
 The SP service decides whether the metadata is returned in *block-based* format
 (`block_metadata_type` is `FIXED_LENGTH`)
 or *extent-based* format (`block_metadata_type` is `VARIABLE_LENGTH`).
-In any given RPC call, the `block_metadata_type` and `volume_size_bytes` return
+In any given RPC call, the `block_metadata_type` and `volume_capacity_bytes` return
 properties should be constant;
 likewise the `size_bytes` of all `BlockMetadata` entries if the `block_metadata_type`
 value returned is `FIXED_LENGTH`.
@@ -1030,7 +1028,7 @@ The sidecar will attempt to load the VolumeSnapshots specified
 along with their associated VolumeSnapshotContent objects, to ensure that they still
 exist, belong to the CSI driver, and to obtain their SP identifiers.
 Additional checks may be performed depending on the RPC;
-for example, in the case of a [GetDelta](#getdelta-rpc) RPC, it will check
+for example, in the case of a [GetMetadataDelta](#getdelta-rpc) RPC, it will check
 that all the snapshots come from the same volume and that the
 snapshot order is correct.
 
