@@ -1,0 +1,12 @@
+title: Livez readyz
+kep-number: 4331
+authors:
+  - "@siyuanfoundation"
+  - "@chaochn47"
+owning-sig: sig-etcd
+status: implementable
+creation-date: yyyy-mm-dd
+reviewers:
+approvers:
+  - '@ahrtr'
+  - "@serathius"
