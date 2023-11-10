@@ -167,10 +167,6 @@ type TracingConfiguration struct {
 
 If `--opentelemetry-config-file` is not specified, the API Server will not send any spans, even if incoming requests ask for sampling.
 
-### Controlling use of the OpenTelemetry library
-
-As the community found in the [Metrics Stability Framework KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1209-metrics-stability/kubernetes-control-plane-metrics-stability.md#kubernetes-control-plane-metrics-stability), having control over how the client libraries are used in kubernetes can enable maintainers to enforce policy and make broad improvements to the quality of telemetry.  To enable future improvements to tracing, we will restrict the direct use of the OpenTelemetry library within the kubernetes code base, and provide wrapped versions of functions we wish to expose in a utility library.
-
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -207,15 +203,19 @@ Alpha
 
 Beta
 
-- [] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
+- [X] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
 - [X] OpenTelemetry reaches GA
-- [] Publish examples of how to use the OT Collector with kubernetes
+- [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
-- [] Revisit the format used to export spans.
-- [] Parity with the old text-based Traces
+- [X] Revisit the format used to export spans.
+- [X] Parity with the old text-based Traces
 
 GA
 
+- [ ] Publish guidelines for kubernetes components on when and how to add tracing to a component.
+- [ ] Graduate the TracingConfiguration component config to v1.
+- [ ] Define and document stability guarantees for trace instrumentation.
+- [ ] Add support for On-Demand trace collection as described above.
 
 ### Upgrade / Downgrade Strategy
 
