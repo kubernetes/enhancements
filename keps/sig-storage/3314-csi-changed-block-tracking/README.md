@@ -107,6 +107,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -1182,11 +1184,21 @@ changed blocks, and stream responses back to client, without imposing load on
 the K8s API server.
 * Initial e2e tests completed and enabled.
 
-<!--
 #### Beta
+
+* Involve 2 different storage providers and backup applications in the
+implementations of the `SnapshotMetadata` service to enable successful e2e
+backup workflow.
+* Increase e2e test coverage.
+* Gather feedback from CSI driver maintainers and backup users, especially
+on performance metrics.
 
 #### GA
 
+* CSI drivers include the `SnapshotMetadata` service as part of their distros.
+* Allowing time for user feedback.
+
+<!--
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
 in back-to-back releases.
