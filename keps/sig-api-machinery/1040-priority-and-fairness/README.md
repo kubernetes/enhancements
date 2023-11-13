@@ -3017,7 +3017,7 @@ GA:
 - [x] Implement borrowing by exempt priority levels.
 - [x] APF allows us to disable client-side rate limiting without causing the apiservers to wedge/crash.  Note that this falls a bit short of saying that we would actually want to disable client-side rate limiting.  While experiments show that APF can prevent server crashes, they do not show that the SLOs are met in all scenarios.  If the control plane is under-provisioned then the performance will have to suffer in one way or another.
 - [x] Satisfaction that the interface has sufficient tunability to be useful.
-- [ ] Setting `--enable-priority-and-fairness` to `false` disables deeply, including suppressing both the config supplying and config consuming controllers.
+- [x] Setting `--enable-priority-and-fairness` to `false` disables deeply, including suppressing both the config supplying and config consuming controllers.
 
 ### Upgrade / Downgrade Strategy
 
