@@ -66,7 +66,7 @@ Usage of aliyun container services can be seen from github issues in the existin
 
 ### Testgrid Integration
  Alibaba cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
- See [report](https://k8s-testgrid.appspot.com/conformance-alibaba-cloud-provider#Alibaba%20Cloud%20Provider,%20v1.10) for more details.
+ See [report](https://testgrid.k8s.io/conformance-alibaba-cloud-provider#Alibaba%20Cloud%20Provider,%20v1.10) for more details.
 
 ### CNCF Certified Kubernetes
  Alibaba cloud provider is accepted as part of the [Certified Kubernetes Conformance Program](https://github.com/cncf/k8s-conformance).

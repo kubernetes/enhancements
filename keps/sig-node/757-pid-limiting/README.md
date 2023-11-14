@@ -129,7 +129,7 @@ Beta
 - ensure proper node e2e test coverage is integrated verifying cgroup settings
 - see testing:
 https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pids_test.go
-https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3ASupportPodPidsLimit
+https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3ASupportPodPidsLimit
 
 GA
 - assuming no negative user feedback based on production experience, promote

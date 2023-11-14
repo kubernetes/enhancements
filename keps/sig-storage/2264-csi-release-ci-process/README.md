@@ -244,7 +244,7 @@ driver.
 
 - Test results are visible in GitHub PRs and test failures block merging.
 - Test results are visible in the [SIG-Storage
-  testgrid](https://k8s-testgrid.appspot.com/sig-storage-kubernetes) or
+  testgrid](https://testgrid.k8s.io/sig-storage-kubernetes) or
   a sub-dashboard.
 - The Prow test output and/or metadata clearly shows what revisions of the
   different components were tested.

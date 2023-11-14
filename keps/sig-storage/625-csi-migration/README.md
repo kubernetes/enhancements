@@ -307,7 +307,7 @@ Specifically, for each in-tree plugin corresponding CSI drivers, it havs
   - Full k8s storage e2e tests
   - Migration enabled functional e2e tests. For example:
     - GCE PD [migration testgrid](https://testgrid.k8s.io/provider-gcp-compute-persistent-disk-csi-driver#Migration%20Kubernetes%20Master%20Driver%20Stable).
-    - AWS EBS [migration testgrid](https://k8s-testgrid.appspot.com/provider-aws-ebs-csi-driver#ci-migration-test)
+    - AWS EBS [migration testgrid](https://testgrid.k8s.io/provider-aws-ebs-csi-driver#ci-migration-test)
     - Azuredisk [migration testgrid](https://testgrid.k8s.io/provider-azure-azuredisk-csi-driver#pr-azuredisk-csi-driver-e2e-migration).
     - Azurefile has [migration testgrid](https://testgrid.k8s.io/provider-azure-azurefile-csi-driver#pr-azurefile-csi-driver-e2e-migration).
     - Openstack has CSI migration tests for GCE/AWS/Azure/Cinder at [testgrid](https://testgrid.k8s.io/redhat-openshift-ocp-release-4.10-broken#Summary). And an upgrade test will be added soon in the future.

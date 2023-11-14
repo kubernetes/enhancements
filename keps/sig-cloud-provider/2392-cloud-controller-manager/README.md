@@ -243,7 +243,7 @@ such that these binaries can be installed via `kubectl apply -f` and the appropr
 running.
 
 Issues such as monitoring, configuring the new binaries will generally be left to cloud provider. However they should
-ensure that test runs upload the logs for these new processes to [test grid](https://k8s-testgrid.appspot.com/).
+ensure that test runs upload the logs for these new processes to [test grid](https://testgrid.k8s.io/).
 
 Applying the cloud controller manager is the only step that is different in the upgrade process.
 In order to complete the upgrade process, you need to apply the cloud-controller-manager deployment to the setup.

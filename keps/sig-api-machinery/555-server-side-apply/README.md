@@ -533,7 +533,7 @@ repo. The integration between that repo and kubernetes/kubernetes will mainly
 be tested by integration tests in [test/integration/apiserver/apply](https://github.com/kubernetes/kubernetes/tree/master/test/integration/apiserver/apply)
 and [test/cmd](https://github.com/kubernetes/kubernetes/blob/master/test/cmd/apply.sh),
 as well as unit tests where applicable. The feature will also be enabled in the
-[alpha-features e2e test suite](https://k8s-testgrid.appspot.com/sig-release-master-blocking#gce-cos-master-alpha-features),
+[alpha-features e2e test suite](https://testgrid.k8s.io/sig-release-master-blocking#gce-cos-master-alpha-features),
 which runs every hour and everytime someone types `/test pull-kubernetes-e2e-gce-alpha-features`
 on a PR. This will ensure that the cluster can still start up and the other
 endpoints will function normally when the feature is enabled.

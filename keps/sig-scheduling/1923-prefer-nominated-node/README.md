@@ -203,7 +203,7 @@ in back-to-back releases.
 
 - No negative feedback.
 - The feature gate `PreferNominatedNode` will graduate to GA.
-- [Integration test](https://k8s-testgrid.appspot.com/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestPreferNominatedNode).
+- [Integration test](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestPreferNominatedNode).
 
 ## Production Readiness Review Questionnaire
 

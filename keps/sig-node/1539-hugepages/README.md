@@ -540,13 +540,13 @@ locality guarantees as a feature of QoS.  In particular, pods in the
 
 - Reports of successful usage of the feature for isolating huge page resources.
 - E2E testing validating its usage.
--- https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3AHugePages
+-- https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3AHugePages
 
 ## Graduation Criteria for HugePageStorageMediumSize
 
 - Reports of successful usage of the hugepage-<size> resources
 - E2E testing validating its usage
--- https://k8s-testgrid.appspot.com/sig-node-kubelet#kubelet-serial-gce-e2e-hugepages
+-- https://testgrid.k8s.io/sig-node-kubelet#kubelet-serial-gce-e2e-hugepages
 
 ## Test Plan
 

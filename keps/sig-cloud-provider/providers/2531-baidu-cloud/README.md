@@ -60,7 +60,7 @@ CCE-ticket-3: User want to have multi-tenant ability in a shared large CCE clust
 
 ### Testgrid Integration
 
-Baidu applied for the testgrid in 2018, The original report for testgrid is [here](https://k8s-testgrid.appspot.com/conformance-cloud-provider-baiducloud). We are currently working on renewing the testgrid.
+Baidu applied for the testgrid in 2018, The original report for testgrid is [here](https://testgrid.k8s.io/conformance-cloud-provider-baiducloud). We are currently working on renewing the testgrid.
 
 ### CNCF Certified Kubernetes
 

@@ -287,7 +287,7 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 - [X] No negative feedback.
   - Issue [#102136](https://github.com/kubernetes/kubernetes/issues/102136) has been fixed and backported.
-- [X] [Integration test](https://k8s-testgrid.appspot.com/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestDefaultPodTopologySpread).
+- [X] [Integration test](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=TestDefaultPodTopologySpread).
 - [X] [E2E test]( https://testgrid.k8s.io/sig-scheduling#sig-scheduling-kind,%20multizone&include-filter-by-regex=Multi-AZ)
 
 ## Production Readiness Review Questionnaire

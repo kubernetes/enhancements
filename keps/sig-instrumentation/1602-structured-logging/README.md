@@ -210,7 +210,7 @@ klog.InfoS("Node unavailable", "node", klog.KRef("", "nodepool-1"))
 
 As migration to new message structure will be done manually we will be focusing on logs that have the greatest impact for log querying and processing. We will be focusing on log messages Proposed plan of measurements:
 
-* Using log data from single run of kubernetes [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance) tests
+* Using log data from single run of kubernetes [gce-master-scale-performance](https://testgrid.k8s.io/sig-scalability-gce#gce-master-scale-performance) tests
 * Based on logs generated on master node
 * Aggregate from components:
   * kube-controller-manager
@@ -449,7 +449,7 @@ I0129 03:30:57.673664       1 httplog.go:90] verb="GET" URI="/api/v1/namespaces/
 
 For migration to structured API we would like to propose to remove `statusStack` and `addedInfo` arguments. Our reasons:
 * Log format already neglects to put metadata for them, breaking the convention.
-* We didn't find any case of those fields being non empty in [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance)
+* We didn't find any case of those fields being non empty in [gce-master-scale-performance](https://testgrid.k8s.io/sig-scalability-gce#gce-master-scale-performance)
 
 Proposed log format for http access:
 ```go

@@ -408,7 +408,7 @@ The existing tests relying on `dockershim` will be run side by side until it is 
 
 #### Unit testing with CRITest
 
-Unit tests will be added in CRITest which is in the [Cri-Tools] repo. Tests are already running on Windows - see [testgrid](https://k8s-testgrid.appspot.com/sig-node-containerd#cri-validation-windows).
+Unit tests will be added in CRITest which is in the [Cri-Tools] repo. Tests are already running on Windows - see [testgrid](https://testgrid.k8s.io/sig-node-containerd#cri-validation-windows).
 
 ### Graduation Criteria
 
