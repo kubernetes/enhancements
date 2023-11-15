@@ -15,7 +15,6 @@
   - [Exporting Spans](#exporting-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
   - [APIServer Configuration and EgressSelectors](#apiserver-configuration-and-egressselectors)
-  - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
