@@ -182,12 +182,16 @@ None.
 
 ##### Unit tests
 
-- `staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go`: `10/10/2021`
-- `staging/src/k8s.io/component-base/tracing/api/v1/config_test.go`: `10/10/21`
+- `staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go`: `10/10/2021` 42.6%
+- `staging/src/k8s.io/component-base/tracing/api/v1/config_test.go`: `10/10/2021` 59.0%
 
 ##### Integration tests
 
-- ``test/integration/apiserver/tracing/tracing_test.go`
+- `test/integration/apiserver/tracing/tracing_test.go`
+  - TestAPIServerTracingWithKMSv2: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracingWithKMSv2
+  - TestAPIServerTracingWithEgressSelector: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracingWithEgressSelector
+  - TestAPIServerTracing: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracing
+
 
 ##### e2e tests
 
@@ -331,6 +335,10 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   The tracing client library has a small, in-memory cache for outgoing spans.  Based on current benchmarks, a full cache could use as much as 5 Mb of memory.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+  No. Collecting and exporter spans does not use additional node resources even when it is failing to connect to the backend.
 
 ### Troubleshooting
 
