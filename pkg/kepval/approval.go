@@ -30,7 +30,7 @@ import (
 )
 
 func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
-	requiredPRRApproval, _, _, err := isPRRRequired(kep)
+	requiredPRRApproval, err := isPRRRequired(kep)
 	if err != nil {
 		return errors.Wrap(err, "checking if PRR is required")
 	}
@@ -97,38 +97,37 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	return nil
 }
 
-func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage bool, err error) {
+func isPRRRequired(kep *api.Proposal) (required bool, err error) {
 	logrus.Debug("checking if PRR is required")
 
 	required = kep.Status == api.ImplementableStatus || kep.Status == api.ImplementedStatus
-	missingMilestone = kep.IsMissingMilestone()
-	missingStage = kep.IsMissingStage()
-
-	if missingMilestone {
-		logrus.Warnf("Missing the latest milestone field: %s", kep.Filename)
-		return required, missingMilestone, missingStage, nil
+	if !required {
+		return false, nil
 	}
 
-	if missingStage {
-		logrus.Warnf("Missing the stage field: %s", kep.Filename)
-		return required, missingMilestone, missingStage, nil
+	if kep.IsMissingMilestone() {
+		return required, fmt.Errorf("missing the latest milestone field: %s", kep.Filename)
+	}
+
+	if kep.IsMissingStage() {
+		return required, fmt.Errorf("missing the stage field: %s", kep.Filename)
 	}
 
 	// TODO: Consider making this a function
 	prrRequiredAtSemVer, err := semver.ParseTolerant("v1.21")
 	if err != nil {
-		return required, missingMilestone, missingStage, errors.Wrap(err, "creating a SemVer object for PRRs")
+		return required, errors.Wrap(err, "creating a SemVer object for PRRs")
 	}
 
 	latestSemVer, err := semver.ParseTolerant(kep.LatestMilestone)
 	if err != nil {
-		return required, missingMilestone, missingStage, errors.Wrap(err, "creating a SemVer object for latest milestone")
+		return required, errors.Wrap(err, "creating a SemVer object for latest milestone")
 	}
 
 	if latestSemVer.LT(prrRequiredAtSemVer) {
 		required = false
-		return required, missingMilestone, missingStage, nil
+		return required, nil
 	}
 
-	return required, missingMilestone, missingStage, nil
+	return required, nil
 }
