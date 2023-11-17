@@ -4,7 +4,7 @@ authors:
   - "@siyuanfoundation"
   - "@chaochn47"
 owning-sig: sig-etcd
-status: implementable
+status: provisional
 creation-date: yyyy-mm-dd
 reviewers:
 approvers:
