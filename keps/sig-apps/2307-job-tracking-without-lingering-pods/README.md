@@ -666,12 +666,13 @@ Yes, see [Deprecation](#deprecation) for the full plan.
       - Before 1.26: Observe the behavior in pods.
       - After 1.26: Based on metric `job_terminated_pod_tracking_finalizer`
     - Mitigations:
-      Before 1.26, disable `JobTrackingWithFinalizers`.
+      - Update to latest patch version of supported Kubernetes versions.
     - Diagnostics:
       The job controller reports errors updating the Job status and/or patching
       Pods.
       There were some bugs that would cause this (examples:
       [#109485](https://github.com/kubernetes/kubernetes/issues/109485),
+      [#119833](https://github.com/kubernetes/kubernetes/issues/119833),
       [#111646](https://github.com/kubernetes/kubernetes/pull/111646)).
       In newer versions, this can still happen if there is a buggy webhook
       that prevents pod updates to remove finalizers.
