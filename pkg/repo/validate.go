@@ -17,6 +17,7 @@ limitations under the License.
 package repo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -63,11 +64,20 @@ func (r *Repo) Validate() (
 
 			metadataFilename := ProposalMetadataFilename
 			metadataFilepath := filepath.Join(dir, metadataFilename)
+
 			if _, err := os.Stat(metadataFilepath); err == nil {
 				// There is KEP metadata file in this directory, only that one should be processed.
 				if info.Name() == metadataFilename {
 					files = append(files, metadataFilepath)
 					return filepath.SkipDir
+				}
+			}
+
+			if info.Name() == ProposalFilename && dir != kepDir {
+				// There is a proposal, we require metadata file for it.
+				if _, err := os.Stat(metadataFilepath); os.IsNotExist(err) {
+					kepErr := fmt.Errorf("metadata file missing for KEP: %s", metadataFilepath)
+					valErrMap[metadataFilepath] = append(valErrMap[metadataFilepath], kepErr)
 				}
 			}
 

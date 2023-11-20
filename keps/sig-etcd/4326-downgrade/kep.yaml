@@ -3,7 +3,7 @@ kep-number: 4326
 authors:
   - "@serathius"
 owning-sig: sig-etcd
-status: implementable
+status: provisional
 creation-date: yyyy-mm-dd
 reviewers:
 approvers:
