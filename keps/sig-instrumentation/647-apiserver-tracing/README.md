@@ -207,6 +207,7 @@ Alpha
 Beta
 
 - [X] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
+  - Verified in a manual run: https://github.com/kubernetes/kubernetes/pull/113695#issuecomment-1307665358. This is not part of periodic tests, although it may be useful for debugging with a low sampling rate in the future.
 - [X] OpenTelemetry reaches GA
 - [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
