@@ -15,7 +15,6 @@
   - [Exporting Spans](#exporting-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
   - [APIServer Configuration and EgressSelectors](#apiserver-configuration-and-egressselectors)
-  - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -167,10 +166,6 @@ type TracingConfiguration struct {
 
 If `--opentelemetry-config-file` is not specified, the API Server will not send any spans, even if incoming requests ask for sampling.
 
-### Controlling use of the OpenTelemetry library
-
-As the community found in the [Metrics Stability Framework KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1209-metrics-stability/kubernetes-control-plane-metrics-stability.md#kubernetes-control-plane-metrics-stability), having control over how the client libraries are used in kubernetes can enable maintainers to enforce policy and make broad improvements to the quality of telemetry.  To enable future improvements to tracing, we will restrict the direct use of the OpenTelemetry library within the kubernetes code base, and provide wrapped versions of functions we wish to expose in a utility library.
-
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -187,12 +182,16 @@ None.
 
 ##### Unit tests
 
-- `staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go`: `10/10/2021`
-- `staging/src/k8s.io/component-base/tracing/api/v1/config_test.go`: `10/10/21`
+- `staging/src/k8s.io/apiserver/pkg/server/options/tracing_test.go`: `10/10/2021` 42.6%
+- `staging/src/k8s.io/component-base/tracing/api/v1/config_test.go`: `10/10/2021` 59.0%
 
 ##### Integration tests
 
-- ``test/integration/apiserver/tracing/tracing_test.go`
+- `test/integration/apiserver/tracing/tracing_test.go`
+  - TestAPIServerTracingWithKMSv2: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracingWithKMSv2
+  - TestAPIServerTracingWithEgressSelector: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracingWithEgressSelector
+  - TestAPIServerTracing: https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=integration&test=TestAPIServerTracing
+
 
 ##### e2e tests
 
@@ -207,15 +206,20 @@ Alpha
 
 Beta
 
-- [] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
+- [X] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
+  - Verified in a manual run: https://github.com/kubernetes/kubernetes/pull/113695#issuecomment-1307665358. This is not part of periodic tests, although it may be useful for debugging with a low sampling rate in the future.
 - [X] OpenTelemetry reaches GA
-- [] Publish examples of how to use the OT Collector with kubernetes
+- [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
-- [] Revisit the format used to export spans.
-- [] Parity with the old text-based Traces
+- [X] Revisit the format used to export spans.
+- [X] Parity with the old text-based Traces
 
 GA
 
+- [ ] Publish guidelines for kubernetes components on when and how to add tracing to a component.
+- [ ] Graduate the TracingConfiguration component config to v1.
+- [ ] Define and document stability guarantees for trace instrumentation.
+- [ ] Add support for On-Demand trace collection as described above.
 
 ### Upgrade / Downgrade Strategy
 
@@ -332,6 +336,10 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   The tracing client library has a small, in-memory cache for outgoing spans.  Based on current benchmarks, a full cache could use as much as 5 Mb of memory.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+  No. Collecting and exporter spans does not use additional node resources even when it is failing to connect to the backend.
 
 ### Troubleshooting
 
