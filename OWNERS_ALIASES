@@ -209,6 +209,7 @@ aliases:
     - johnbelamaric
     - deads2k
     - wojtek-t
+    - jpbetz
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
