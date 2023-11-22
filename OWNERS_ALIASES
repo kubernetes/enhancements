@@ -32,6 +32,7 @@ aliases:
     - elmiko
     - nckturner
   sig-cluster-lifecycle-leads:
+    - CecileRobertMichon
     - fabriziopandini
     - justinsb
     - neolit123
@@ -39,18 +40,16 @@ aliases:
   sig-contributor-experience-leads:
     - MadhavJivrajani
     - Priyankasaggu11929
-    - cblecker
-    - jberkus
     - kaslin
-    - mrbobbytables
-    - nikhita
     - palnabarun
   sig-docs-leads:
     - divya-mohan0209
-    - jimangel
     - kbhawkey
+    - natalisucks
     - onlydole
+    - reylejano
     - sftim
+    - tengqm
   sig-etcd-leads:
     - ahrtr
     - jmhbnz
@@ -62,10 +61,10 @@ aliases:
     - ehashman
     - logicalhan
   sig-k8s-infra-leads:
+    - BenTheElder
     - ameukam
     - dims
-    - spiffxp
-    - thockin
+    - upodroid
   sig-multicluster-leads:
     - jeremyot
     - pmorie
@@ -74,20 +73,20 @@ aliases:
     - mikezappa87
     - shaneutt
     - thockin
-  sig-network-leads-emeritus:
-    - dcbw
-  sig-node-tech-leads:
+  sig-node-leads:
+    - SergeyKanzhelev
     - dchen1107
     - derekwaynecarr
     - mrunalp
   sig-release-leads:
+    - Verolop
     - cpanato
     - jeremyrickard
     - justaugustus
     - puerco
     - saschagrunert
   sig-scalability-leads:
-    - mm4tt
+    - marseel
     - shyamjvs
     - wojtek-t
   sig-scheduling-leads:
@@ -107,18 +106,14 @@ aliases:
     - alvaroaleman
     - aojea
     - cjwagner
+    - jbpratt
     - michelle192837
     - pohly
-    - stevekuznetsov
     - xmcqueen
   sig-ui-leads:
     - floreks
     - maciaszczykm
     - shu-mutou
-  sig-usability-leads:
-    - hpandeycodeit
-    - morengab
-    - tashimi
   sig-windows-leads:
     - aravindhp
     - claudiubelu
@@ -128,6 +123,12 @@ aliases:
   wg-api-expression-leads:
     - apelisse
     - kwiesmueller
+  wg-batch-leads:
+    - Huang-Wei
+    - endocrimes
+    - mwielgus
+    - soltysh
+    - swatisehgal
   wg-data-protection-leads:
     - xing-yang
     - yuxiangqian
@@ -135,51 +136,39 @@ aliases:
     - cantbewong
     - cindyxing
     - dejanb
-  wg-multitenancy-leads:
-    - srampal
-    - tashimi
+  wg-lts-leads:
+    - jeremyrickard
+    - liggitt
+    - micahhausler
   wg-policy-leads:
     - JimBugwadia
     - rficcaglia
-  wg-reliability-leads:
-    - deads2k
-    - stevekuznetsov
-    - wojtek-t
   wg-structured-logging-leads:
     - pohly
     - serathius
-  ug-big-data-leads:
-    - erikerlandson
-    - foxish
-    - liyinan926
-  ug-vmware-users-leads:
-    - brysonshepherd
-    - cantbewong
-    - mylesagray
-    - phenixblue
   committee-code-of-conduct:
-    - detiber
+    - AnaMMedina21
     - endocrimes
     - hlipsig
     - jeremyrickard
     - salaxander
   committee-security-response:
+    - SaranBalaji90
     - cjcullen
     - cji
     - enj
     - joelsmith
     - micahhausler
     - ritazh
-    - SaranBalaji90
     - tabbysable
   committee-steering:
     - BenTheElder
-    - cblecker
-    - cpanato
     - justaugustus
     - mrbobbytables
+    - pacoxu
     - palnabarun
-    - tpepper
+    - pohly
+    - soltysh
 ## BEGIN CUSTOM CONTENT
   enhancements-approvers:
     - jeremyrickard
@@ -219,12 +208,15 @@ aliases:
     - craiglpeters
     - feiskyer
     - khenidak
+  provider-gcp:
+    - abgworrall
   provider-ibmcloud:
     - spzala
   provider-openstack:
-    - chrigl
-    - lingxiankong
-    - ramineni
+    - dulek
+    - jichenjc
+    - kayrus
+    - zetaab
   provider-vmware:
     - cantbewong
     - frapposelli
