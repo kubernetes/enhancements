@@ -279,7 +279,7 @@ bogged down.
 
 Developers often face the challenge of injecting environment variables into containers at runtime. This need becomes particularly acute in scenarios where these variables, such as secrets or tokens, must be generated just before the container starts. A typical example is integrating with services like Hashicorp Vault, which necessitates creating environment variables through annotations. These are then fetched by an init container and written to a file in a volume shared with the main container.
 
-With this proposed change, developers can utilize the `FileEnvSource` and `FileKeySelector` to easily move enviromental variables between containers.
+With this proposed change, developers can utilize the `FileEnvSource` and `FileKeySelector` to easily move environmental variables between containers.
 
 ```yaml
 apiVersion: v1
