@@ -260,38 +260,6 @@ nitty-gritty.
 -->
 The core proposition of this KEP is to introduce `FileEnvSource` and `FileKeySelector` constructs in Kubernetes, which will allow for the dynamic generation and management of environment variables from files. This is geared towards addressing the challenges currently faced when aiming to generate environment variables dynamically, especially just before the container initialization.
 
-### Desired Outcomes
-
-1. **Ease of Dynamic Configuration**:
-   - Containers should be able to effortlessly access and utilize environment variables generated dynamically from files, thus simplifying the configuration process.
-
-2. **Enhanced Interaction with External Systems**:
-   - The proposal aims to streamline the process of interacting with external systems like Hashicorp Vault for dynamic configuration, without necessitating hard-coded configurations or additional operational overhead.
-
-3. **Simplified Container Deployment**:
-   - By eliminating the need for containers to have prior knowledge of environment variables, the proposal aims to simplify container deployment and configuration management.
-
-4. **Secure and Efficient Management of Environment Variables**:
-   - Provide a secure and efficient mechanism for managing one-time secrets and dynamic credentials through file-based environment variable management.
-
-### Measuring Success
-
-Success of this proposal would be measured based on the following criteria:
-
-1. **Ease of Use**:
-   - The ease with which developers and operators can adapt to the new constructs for managing environment variables from files.
-
-2. **Operational Efficiency**:
-   - Reduction in operational overhead and complexities associated with dynamic environment variable generation and management.
-
-3. **Security Enhancement**:
-   - The degree to which the proposal enhances the security posture, especially in managing dynamic credentials and one-time secrets.
-
-4. **Integration with Existing Constructs**:
-   - Seamless integration with existing Kubernetes constructs and workflows, ensuring that the proposed changes do not disrupt existing operations.
-
-5. **Positive Feedback from the Community**:
-   - Favorable feedback from the Kubernetes community and stakeholders regarding the utility and effectiveness of the proposed changes in solving the identified problem.
 
 ### User Stories (Optional)
 
@@ -303,6 +271,39 @@ bogged down.
 -->
 
 #### Story 1
+
+Developers often face the challenge of injecting environment variables into containers at runtime. This need becomes particularly acute in scenarios where these variables, such as secrets or tokens, must be generated just before the container starts. A typical example is integrating with services like Hashicorp Vault, which necessitates creating environment variables through annotations. These are then fetched by an init container and written to a file in a volume shared with the main container.
+
+With this proposed change, developers can utilize the `FileEnvSource` and `FileKeySelector` to easily move enviromental variables between containers.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-file-env-source
+spec:
+  volumes:
+  - name: shared-env-volume
+    emptyDir: {}
+  initContainers:
+  - name: init-container
+    image: busybox:1.28
+    command: ['sh', '-c', '[COMMAND TO GET ENV VARIABLES]']
+    volumeMounts:
+    - name: shared-env-volume
+      mountPath: /shared-env
+  containers:
+  - name: main-container
+    image: nginx:1.14.2
+    volumeMounts:
+    - name: shared-env-volume
+      mountPath: /shared-env
+    envFrom:
+    - fileEnvSource:
+        path: /shared-env/vars.env
+        keySelector:
+          - key: DYNAMIC_VAR
+```
 
 #### Story 2
 
@@ -377,6 +378,23 @@ spec:
         path: /shared-env/vars.env
         keySelector:
           - key: DYNAMIC_VAR
+```
+
+```go
+// FileEnvSource represents a source of environment variables initialized from a file.
+type FileEnvSource struct {
+    // Path is the file path containing the environment variables to load.
+    Path string `json:"path" protobuf:"bytes,1,opt,name=path"`
+
+    // KeySelector is an optional list of key selectors for specifying which keys to import from the file.
+    KeySelector []FileKeySelector `json:"keySelector,omitempty" protobuf:"bytes,2,rep,name=keySelector"`
+}
+
+// FileKeySelector selects a key from a FileEnvSource.
+type FileKeySelector struct {
+    // Key is the name of the key to select from the file.
+    Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
+}
 ```
 
 ### Handling Dynamic Environment Variables
