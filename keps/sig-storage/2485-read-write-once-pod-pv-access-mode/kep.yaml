@@ -6,7 +6,7 @@ owning-sig: sig-storage
 participating-sigs:
   - sig-storage
   - sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2021-02-10
 reviewers:
   - "@saad-ali"
