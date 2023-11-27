@@ -224,10 +224,10 @@ jwt:
     extra:
     - key: 'client_name'
       valueExpression: 'claims.some_claim'
-  userInfoValidationRules:
-  - rule: "!userInfo.username.startsWith('system:')"
+  userValidationRules:
+  - expression: "!user.username.startsWith('system:')"
     message: username cannot used reserved system: prefix
-  - rule: "userInfo.groups.all(group, !group.startsWith('system:'))"
+  - expression: "user.groups.all(group, !group.startsWith('system:'))"
     message: groups cannot used reserved system: prefix
 ```
 
@@ -273,7 +273,7 @@ TODO: mermaid diagram
     - TODO enumerate these
 2. Claim validation based on `claimValidationRules`
 3. Claim mapping based on `claimMappings`
-4. User info validation based on `userInfoValidationRules`
+4. User validation based on `userValidationRules`
 
 ```go
 type AuthenticationConfiguration struct {
@@ -315,11 +315,11 @@ type JWTAuthenticator struct {
     // +optional
     // ClaimsFilter []string `json:"claimFilters,omitempty"`
 
-    // userInfoValidationRules are rules that are applied to final userInfo before completing authentication.
+    // userValidationRules are rules that are applied to final userInfo before completing authentication.
     // These allow invariants to be applied to incoming identities such as preventing the
     // use of the system: prefix that is commonly used by Kubernetes components.
     // +optional
-    UserInfoValidationRules []UserInfoValidationRule `json:"userInfoValidationRules,omitempty"`
+    UserValidationRules []UserValidationRule `json:"userValidationRules,omitempty"`
 }
 ```
 
@@ -477,8 +477,6 @@ type JWTAuthenticator struct {
         // - key: "admin"
         //   valueExpression: '(has(claims.is_admin) && claims.is_admin) ? "true":""'
         //
-        // If multiple mappings have the same key, the result will be a concatenation of all values
-        // with the order preserved.
         // If the value is empty, the extra mapping will not be present.
         //
         // possible future way to pull multiple extra values out via expression.
@@ -493,6 +491,12 @@ type JWTAuthenticator struct {
 
     type ExtraMapping struct {
         // key is a string to use as the extra attribute key.
+        // key must be a domain-prefix path (e.g. example.org/foo). All characters before the first "/" must be a valid
+        // subdomain as defined by RFC 1123. All characters trailing the first "/" must
+        // be valid HTTP Path characters as defined by RFC 3986.
+        // key must be lowercase.
+        // key must be unique across all extra mappings.
+        // +required
         Key string `json:"key"`
         // valueExpression is a CEL expression to extract extra attribute value.
         // valueExpression must produce a string or string array value.
@@ -520,10 +524,10 @@ type JWTAuthenticator struct {
         // prefix is prepended to claim to prevent clashes with existing names.
         // Mutually exclusive with expression.
         // +optional
-        Prefix string `json:"prefix"`
+        Prefix *string `json:"prefix"`
 
         // expression represents the expression which will be evaluated by CEL.
-        // Must produce a string. CEL expressions have access to the contents of the token claims for claimValidationRules and claimMappings, userInfo for userInfoValidationRules. Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
+        // Must produce a string. CEL expressions have access to the contents of the token claims for claimValidationRules and claimMappings, user for userValidationRules. Documentation on CEL: https://kubernetes.io/docs/reference/using-api/cel/
         // Either claim or expression must be set.
         // +optional
         Expression string `json:"expression"`
@@ -593,8 +597,8 @@ type JWTAuthenticator struct {
 * There will be a maximum allowed CEL expression cost per authenticator (no limit on total authenticators is required due to the issuer uniqueness requirement).
 * One variable will be available to use in `claimValidationRules` and `claimMappings`:
   * `claims` for JWT claims (payload)
-* One variable will be available to use in `userInfoValidationRules`:
-  * `userInfo` with the same schema as [authentication.k8s.io/v1, Kind=UserInfo](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#userinfo-v1-authentication-k8s-io)
+* One variable will be available to use in `userValidationRules`:
+  * `user` with the same schema as [authentication.k8s.io/v1, Kind=UserInfo](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#userinfo-v1-authentication-k8s-io)
 * The standard Kubernetes CEL environment, including extension libraries, will be used.
   * Current environment:
     * [Extension libraries](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiserver/pkg/cel/library/libraries.go#L26)
