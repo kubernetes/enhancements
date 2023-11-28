@@ -571,7 +571,7 @@ this service.
 
 The service is defined as follows, and will be described in the sub-sections below.
 Refer to [CSI PR 551](https://github.com/container-storage-interface/spec/pull/551)
-for the final form of the service. 
+for the official specification. 
 ```
 service SnapshotMetadata {
   rpc GetMetadataAllocated(GetMetadataAllocatedRequest)
@@ -587,35 +587,35 @@ enum BlockMetadataType {
 }
 
 message BlockMetadata {
-  uint64 byte_offset = 1;
-  uint64 size_bytes = 2;
+  int64 byte_offset = 1;
+  int64 size_bytes = 2;
 }
 
 message GetMetadataAllocatedRequest {
   string snapshot_id = 1;
-  uint64 starting_offset = 2;
-  uint32 max_results = 3;
+  int64 starting_offset = 2;
+  int32 max_results = 3;
   map<string, string> secrets = 4;
 }
 
 
 message GetMetadataAllocatedResponse {
   BlockMetadataType block_metadata_type = 1;
-  uint64 volume_capacity_bytes = 2;
+  int64 volume_capacity_bytes = 2;
   repeated BlockMetadata block_metadata = 3;
 }
 
 message GetMetadataDeltaRequest {
   string base_snapshot_id = 1;
   string target_snapshot_id = 2;
-  uint64 starting_offset = 3;
-  uint32 max_results = 4;
+  int64 starting_offset = 3;
+  int32 max_results = 4;
   map<string, string> secrets = 5;
 }
 
 message GetMetadataDeltaResponse {
   BlockMetadataType block_metadata_type = 1;
-  uint64 volume_capacity_bytes = 2;
+  int64 volume_capacity_bytes = 2;
   repeated BlockMetadata block_metadata = 3;
 }
 ```
@@ -851,8 +851,8 @@ message GetMetadataAllocatedRequest {
   string security_token = 1;
   string namespace = 2;
   string snapshot_name = 3;
-  uint64 starting_offset = 4;
-  uint32 max_results = 5;
+  int64 starting_offset = 4;
+  int32 max_results = 5;
 }
 
 message GetMetadataDeltaRequest {
@@ -860,8 +860,8 @@ message GetMetadataDeltaRequest {
   string namespace = 2;
   string base_snapshot_name = 3;
   string target_snapshot_name = 4;
-  uint64 starting_offset = 5;
-  uint32 max_results = 6;
+  int64 starting_offset = 5;
+  int32 max_results = 6;
 }
 ```
 The full specification of the Kubernetes SnapshotMetadata API will be
