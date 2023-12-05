@@ -187,8 +187,8 @@ Kubernetes control-plane, by means of:
 - (starting point) binary-version 1.28 (compat-version 1.28)
 - upgrade binary-version to 1.31 (compat-version stays at 1.28 - this is our skip-level binary upgrade)
 - keep binary-version 1.31 while upgrading compat-version to 1.29 (stepwise upgrade of compatibility)
-- keep binary-version 1.31 while upgrading compat-version to 1.29 (stepwise upgrade of compatibility)
 - keep binary-version 1.31 while upgrading compat-version to 1.30 (stepwise upgrade of compatibility)
+- keep binary-version 1.31 while upgrading compat-version to 1.31 (stepwise upgrade of compatibility)
 
 
 ### Goals
@@ -198,7 +198,7 @@ Kubernetes control-plane, by means of:
 - A Kubernetes binary with compatibility version set to N, will pass the
   conformance and e2e tests from Kubernetes release version N.
 - A Kubernetes binary with compatibility version set to N does not enable any
-  changes (storage versions, CEL feature, feawtures) that would prevent it
+  changes (storage versions, CEL feature, features) that would prevent it
   from being rolled back to N-1.
 - The most recent Kubernetes version supports compatiblity version being set to
   the full range of supported versions (N..N-3).
@@ -226,11 +226,12 @@ type FeatureSpec struct {
 }
 ```
 
-When a component starts, feature gates will be compared against the compatibility version to 
-determine which features to enable for that compatibility version.
+When a component starts, feature gates will be compared against the
+compatibility version to determine which features to enable for that
+compatibility version.
 
-Similarily, StorageVersions, APIs and CEL features will be versioned such that configured
-to match a compatibbility version.
+Similarily, StorageVersions, APIs and CEL features will be versioned such that
+configured to match a compatibbility version.
 
 ### User Stories (Optional)
 
@@ -243,9 +244,9 @@ bogged down.
 
 #### Story 1
 
-A cluster administrator is running Kubernetes 1.30.12 and wishes to perform a cautious
-upgrade to 1.31.5 using the smallest upgrade steps possible, validaing the health
-of the cluster between each step.
+A cluster administrator is running Kubernetes 1.30.12 and wishes to perform a
+cautious upgrade to 1.31.5 using the smallest upgrade steps possible, validating
+the health of the cluster between each step.
 
 - For each control plane component, in the [recommended
   order](https://kubernetes.io/releases/version-skew-policy/):
