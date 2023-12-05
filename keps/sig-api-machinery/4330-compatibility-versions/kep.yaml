@@ -1,4 +1,4 @@
-title: KEP Template
+title: Compatibility Versions
 kep-number: 4330
 authors:
   - "@logicalhan"
@@ -32,7 +32,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MyFeature
+  - name: CompatibilityVersions
     components:
       - kube-apiserver
       - kube-controller-manager

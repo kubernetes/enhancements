@@ -154,18 +154,24 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We want to increase granularity of the upgrade sequence in Kubernetes, to make
-upgrades safer, by means of introducing a "compatibility version". A 
-"compatibility version" is distinct from the binary version of a Kubernetes
-component, effectively emulating the APIs and features from a given Kubernetes
-release. can
+We intend to introduce a "compatibility version" option to Kubernetes control
+plane components to make upgrades safer by increasing the granularity of steps
+avilable to cluster administrators. The "compatibility version" is distinct from
+the binary version of a Kubernetes component, and can be used to emulate the
+behavior (APIs, features, ...) of a prior Kubernetes release version.
 
 ## Motivation
 
 The notion of more granular steps in Kubernetes upgrades is attractive because
 it is more rigorous about how we step through a Kubernetes control-plane
 upgrade, introducing potentially corrupting data (i.e. data only present in N+1
-and not in N) only in later stages of the upgrade process.  
+and not in N) only in later stages of the upgrade process.
+
+For example, upgrading from Kubernetes 1.30 to 1.31 while keeping the compatibility
+version at 1.30 would enable a cluster administrator to validate that the new
+Kubernetes binary version is working as desired before exposing any feature changes
+introduced in 1.31 to cluster users, and without writing and data to storage at
+newer API versions.
 
 This extra step increases the granularity of our upgrade sequence so that 
 (1) failures are more easily diagnosed (since we have more granular steps, we
@@ -187,16 +193,44 @@ Kubernetes control-plane, by means of:
 
 ### Goals
 
-- introduce the metadata necessary to toggle features/APIs/storage-versions/CEL features at a specific released of Kubernetes
-
+- Introduce the metadata necessary to configure features/APIs/storage-versions/CEL
+  features to match the behavior of an older Kubernetes release version
+- A Kubernetes binary with compatibility version set to N, will pass the
+  conformance and e2e tests from Kubernetes release version N.
+- A Kubernetes binary with compatibility version set to N does not enable any
+  changes (storage versions, CEL feature, feawtures) that would prevent it
+  from being rolled back to N-1.
+- The most recent Kubernetes version supports compatiblity version being set to
+  the full range of supported versions (N..N-3).
 
 ### Non-Goals
 
-- changes to CAPI/kubeadm to absorb the compatibility versions will be addressed in a separate KEP 
+- Changes to CAPI/kubeadm/KIND/minikube to absorb the compatibility versions
+  will be addressed separate from this KEP
 
 ## Proposal
 
+Kubernetes components (apiservers, controller managers, schedulers) will offer a
+`--compatibility-version` flag that can be set to any of the previous three
+minor versions. If unset, the compatibility version defaults to the minor
+version of the binary.
 
+Features will be versioned, i.e.:
+
+```go
+type FeatureSpec struct {
+  //...
+
+  // Version indicates the version this feature spec was introduced.
+	Version semver.Version
+}
+```
+
+When a component starts, feature gates will be compared against the compatibility version to 
+determine which features to enable for that compatibility version.
+
+Similarily, StorageVersions, APIs and CEL features will be versioned such that configured
+to match a compatibbility version.
 
 ### User Stories (Optional)
 
@@ -208,6 +242,18 @@ bogged down.
 -->
 
 #### Story 1
+
+A cluster administrator is running Kubernetes 1.30.12 and wishes to perform a cautious
+upgrade to 1.31.5 using the smallest upgrade steps possible, validaing the health
+of the cluster between each step.
+
+- For each control plane component, in the [recommended
+  order](https://kubernetes.io/releases/version-skew-policy/):
+  - Upgrades binary to `kubernetes-1.31.5` but sets `--compatibility-version=1.30`
+  - Verifies that the cluster is healthy
+- Next, for each control plane component:
+  - Sets `--compatibility-version=1.31`
+  - Verifies that the cluster is healthy
 
 #### Story 2
 
@@ -221,6 +267,21 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 ### Risks and Mitigations
+
+Risk: Introducing this change increases the maintenance burden on Kubernetes
+maintainers.
+
+Why we think this is managable:
+
+- We already author features to be gated. The only change here is include
+  enough information about features so that they can be selectively enabled/disabled
+  based on compatibility version.
+- We already manually deprecate/remove features. This change will instead
+  leave features in code longer, and require feature gates to track at which
+  verion a feature is deprecated/removed.  The total maintenance work is
+  about the same.
+- Some maintenance becomes simpler as the additional version data about
+  features makes them easier to reason about and keep track of.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
