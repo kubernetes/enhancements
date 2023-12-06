@@ -243,17 +243,20 @@ compatibility version.
 
 CEL environments already [support a compatibility
 version](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45).
-The CEL compatibility version is use to ensure when a kubeneretes contol plane
-component reads a CEL expression from storage written by a N+1 newer version
-(either due to version skew or a rollback), that a compatible CEL environment 
-can still be constructed.  This is achieved by making any CEL environment changes
-(language settings, libraries, variables) available for [stored expressions one
-version before they are allowed to be written by new expressions](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/environment.go#L38).
+The CEL compatibility version is used to ensure when a kubeneretes contol plane
+component reads a CEL expression from storage written by a (N+1) newer version
+(either due to version skew or a rollback), that a compatible CEL environment
+can still be constructed and the expression can still be evaluated.  This is
+achieved by making any CEL environment changes (language settings, libraries,
+variables) available for [stored expressions one version before they are allowed
+to be written by new
+expressions](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/environment.go#L38).
 
 The only change we must make for this enhancement is to remove the
 [compatibility version
 constant](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45)
-and instead always pass in N-1 of the compatibility version introduced by this enhancement.
+and instead always pass in N-1 of the compatibility version introduced by this
+enhancement as the CEL compatibility version.
 
 ### StorageVersion Compatibility Versioning
 
@@ -261,23 +264,27 @@ StorageVersions specify what version an apiserver uses to write resources to etc
 for an API group. The StorageVersion differs across releases as API groups
 graduate through stability levels.
 
-the StorageVersions of an API group will need to be modified to track which
-storage versions are used for which version ranges.
+The StorageVersions of an API group will need to be modified to track which
+storage versions should be used for which Kubernetes versions.
 
-When an apiserver starts, StorageVersions will be compared against the compatibility version to 
-determine which StorageVersions should be used for each API group.
+When an apiserver starts, StorageVersions will be compared against the
+compatibility version to determine which StorageVersion should be used to write
+resources for each API group.
 
 ### API Compatibility Versioning
 
 Similar to feature flags, all APIs group-versions declarations will be modified
-to track which version the APIs are introduced and removed at.
+to track which Kubernetes version the API group-versions are introduced (or
+removed) at.
 
-If any on-by-default Beta APIs still exist (hopefully not), then they will be enabled
-if they were enabled at the compatibility version provided. Off-by-default Beta APIs 
-will need to be enabled by flags.
+GA APIs should match the exact set of APIs enabled in GA for the Kubernetes version
+the compatibility version is set to.
 
-When an apiserver starts, APIs will be compared against the compatibility version to 
-determine which APIs to match the APIs that were enabled for that compatibility version.
+All Alpha and Beta APIs (both off-by-default and on-by-default, if any of those
+still exist) need to behave exactly as they did for the Kubernetes version
+the compatibility version is set to. I.e. `--runtime-config=api/<version>` needs
+to be able to turn on APIs exactly like it did for each Kubernetes version that
+compatibility version can be set to.
 
 ### User Stories (Optional)
 
