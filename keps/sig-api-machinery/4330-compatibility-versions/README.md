@@ -83,7 +83,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Flags](#flags)
+  - [Component Flags](#component-flags)
   - [Feature Compatibility Versioning](#feature-compatibility-versioning)
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
@@ -215,12 +215,12 @@ Kubernetes control-plane, by means of:
 
 ## Proposal
 
-### Flags
+### Component Flags
 
 Kubernetes components (apiservers, controller managers, schedulers) will offer a
 `--compatibility-version` flag that can be set to any of the previous three
-minor versions. If unset, the compatibility version defaults to the minor
-version of the binary.
+minor versions. If unset, the compatibility version defaults to the `<major.minor>`
+version of the binary version.
 
 ### Feature Compatibility Versioning
 
@@ -236,8 +236,17 @@ type FeatureSpec struct {
 ```
 
 When a component starts, feature gates will be compared against the
-compatibility version to determine which features to enable for that
-compatibility version.
+compatibility version to determine which features to enable to match the set of
+features that where enabled for the Kubernetes version the compatibility version
+is set to.
+
+Also, `--feature-gates` must behave the same as it did for the Kubernetes
+version the compatibility version is set to. I.e. it must be possible to use
+`--feature-gates` to disable features that were beta, and enable feature that
+were alpha in the Kubernetes version the compatibility version is set to. One
+important implication of this requirement is that feature gating must be kept in
+the Kubenetes codebase until a feature has reached GA (or been removed) for N-3
+releases.
 
 ### CEL Environment Compatibility Versioning
 
@@ -261,15 +270,14 @@ enhancement as the CEL compatibility version.
 ### StorageVersion Compatibility Versioning
 
 StorageVersions specify what version an apiserver uses to write resources to etcd
-for an API group. The StorageVersion differs across releases as API groups
+for each API group. The StorageVersion changes across releases as API groups
 graduate through stability levels.
 
 The StorageVersions of an API group will need to be modified to track which
-storage versions should be used for which Kubernetes versions.
-
-When an apiserver starts, StorageVersions will be compared against the
-compatibility version to determine which StorageVersion should be used to write
-resources for each API group.
+StorageVersions was used for each Kubernetes version that the compatibility
+version can be set to. This will then be used when the apiserver to write
+resources with the same StorageVersions used by the Kubernetes version the
+compatibility version is set to.
 
 ### API Compatibility Versioning
 
