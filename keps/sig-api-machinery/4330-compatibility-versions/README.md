@@ -83,6 +83,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Flags](#flags)
+  - [Feature Compatibility Versioning](#feature-compatibility-versioning)
+  - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
+  - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
+  - [API Compatibility Versioning](#api-compatibility-versioning)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -156,7 +161,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 We intend to introduce a "compatibility version" option to Kubernetes control
 plane components to make upgrades safer by increasing the granularity of steps
-avilable to cluster administrators. The "compatibility version" is distinct from
+available to cluster administrators. The "compatibility version" is distinct from
 the binary version of a Kubernetes component, and can be used to emulate the
 behavior (APIs, features, ...) of a prior Kubernetes release version.
 
@@ -180,7 +185,7 @@ achieved failure) and (2) failures are more easily auto-reverted by upgrade
 orchestration as we are taking smaller and more incremental steps forward,
 which means there is less to “undo” on a failure condition.
 
-In beta, we intend to introduce support for greater compatibilty version skew
+In beta, we intend to introduce support for greater compatibility version skew
 (specifically, N-3) so that it would be possible to skip-level upgrade a 
 Kubernetes control-plane, by means of:
 
@@ -200,7 +205,7 @@ Kubernetes control-plane, by means of:
 - A Kubernetes binary with compatibility version set to N does not enable any
   changes (storage versions, CEL feature, features) that would prevent it
   from being rolled back to N-1.
-- The most recent Kubernetes version supports compatiblity version being set to
+- The most recent Kubernetes version supports compatibility version being set to
   the full range of supported versions (N..N-3).
 
 ### Non-Goals
@@ -210,10 +215,14 @@ Kubernetes control-plane, by means of:
 
 ## Proposal
 
+### Flags
+
 Kubernetes components (apiservers, controller managers, schedulers) will offer a
 `--compatibility-version` flag that can be set to any of the previous three
 minor versions. If unset, the compatibility version defaults to the minor
 version of the binary.
+
+### Feature Compatibility Versioning
 
 Features will be versioned, i.e.:
 
@@ -230,8 +239,45 @@ When a component starts, feature gates will be compared against the
 compatibility version to determine which features to enable for that
 compatibility version.
 
-Similarily, StorageVersions, APIs and CEL features will be versioned such that
-configured to match a compatibbility version.
+### CEL Environment Compatibility Versioning
+
+CEL environments already [support a compatibility
+version](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45).
+The CEL compatibility version is use to ensure when a kubeneretes contol plane
+component reads a CEL expression from storage written by a N+1 newer version
+(either due to version skew or a rollback), that a compatible CEL environment 
+can still be constructed.  This is achieved by making any CEL environment changes
+(language settings, libraries, variables) available for [stored expressions one
+version before they are allowed to be written by new expressions](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/environment.go#L38).
+
+The only change we must make for this enhancement is to remove the
+[compatibility version
+constant](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45)
+and instead always pass in N-1 of the compatibility version introduced by this enhancement.
+
+### StorageVersion Compatibility Versioning
+
+StorageVersions specify what version an apiserver uses to write resources to etcd
+for an API group. The StorageVersion differs across releases as API groups
+graduate through stability levels.
+
+the StorageVersions of an API group will need to be modified to track which
+storage versions are used for which version ranges.
+
+When an apiserver starts, StorageVersions will be compared against the compatibility version to 
+determine which StorageVersions should be used for each API group.
+
+### API Compatibility Versioning
+
+Similar to feature flags, all APIs group-versions declarations will be modified
+to track which version the APIs are introduced and removed at.
+
+If any on-by-default Beta APIs still exist (hopefully not), then they will be enabled
+if they were enabled at the compatibility version provided. Off-by-default Beta APIs 
+will need to be enabled by flags.
+
+When an apiserver starts, APIs will be compared against the compatibility version to 
+determine which APIs to match the APIs that were enabled for that compatibility version.
 
 ### User Stories (Optional)
 
@@ -258,6 +304,19 @@ the health of the cluster between each step.
 
 #### Story 2
 
+A cluster administrator is running Kubernetes 1.30.12 and wishes to perform a cautious
+upgrade to 1.31.5, but after upgrading realizes that a feature the workload depends on
+had been removed and needs to rollback until the workload can be modified to not
+depend on the feature.
+
+- For each control plane component, in the [recommended
+  order](https://kubernetes.io/releases/version-skew-policy/):
+  - sets `--compatibility-version=1.30`
+
+This avoids having to rollback the binary version.  Once the workload is fixed, the
+cluster administrator can remove the `--compatibility-version` to roll the cluster
+forward again.
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -272,7 +331,7 @@ This might be a good place to talk about core concepts and how they relate.
 Risk: Introducing this change increases the maintenance burden on Kubernetes
 maintainers.
 
-Why we think this is managable:
+Why we think this is manageable:
 
 - We already author features to be gated. The only change here is include
   enough information about features so that they can be selectively enabled/disabled
