@@ -104,6 +104,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Component instances pick a leader without a coordinator](#component-instances-pick-a-leader-without-a-coordinator)
+  - [Component instances pick a leader without identity leases or a coordinator](#component-instances-pick-a-leader-without-identity-leases-or-a-coordinator)
 - [Future Work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -1021,28 +1022,38 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+When evaluating alternatives, note that if we decide in the future to improve
+the algorithm, fix a bug in the algorithm, or change the criteria for how
+leaders are elected, our decision on where to put the code has a huge impact our
+how the change is rolled out.
+
+For example, it will be much easier change in a controller in the kube-apiserver
+than in client-go library code distributed to elected controllers, because once
+it is distributed into controllers, especially 3rd party controllers, any change
+requires updating client-go and then updating all controllers to that version of
+client-go.
+
 ### Component instances pick a leader without a coordinator
 
-The idea of this alternative is to elect a leader from a set of candidates
-without a coordinated election controller.
-
-Some rough ideas of how this might be done:
-
-1. A candidates is picked at random to be an election coordinator, and the
+- A candidates is picked at random to be an election coordinator, and the
    coordinator picks the leader:
   - Components race to claim the lease
-  - If a component claims the lease, the first thing it does is check to see if there is a better leader
-  - If it finds a better lease, it assigns the lease to that component instead of itself
+  - If a component claims the lease, the first thing it does is check the
+    identity leases to see if there is a better leader
+  - If it finds a better lease, it assigns the lease to that component instead
+    of itself
 
 Pros: 
-
   - No coordinated election controller
+
 Cons: 
 
   - All component instances must watch the identity leases
   - All components must have the code to decide which component is the best leader
 
-2. The candidates agree on the leader collectively
+### Component instances pick a leader without identity leases or a coordinator
+
+- The candidates communicate through the lease to agree on the leader
   - Leases have "Election" and "Term" states
   - Leases are first created in the "election" state.
   - While in the "election" state, candidates self-nominate by updating the lease
@@ -1064,11 +1075,6 @@ Cons:
   algorithm cannot not be fixed by only upgrading kubernetes..  all controllers
   in the ecosystem with the bug must upgrade client-go and release to be fixed.
 - More difficult to change/customize the criteria for which candidate is best. 
-
-If we decide in the future to shard controllers and wish to leverage coordinated
-eader election to balance shards, it's much easier introduce the change in a
-controller in the apiserver than in client-go library code distributed to
-elected controllers.
 
 ## Future Work
 
