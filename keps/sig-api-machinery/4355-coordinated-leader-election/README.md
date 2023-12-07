@@ -71,13 +71,16 @@ SIG Architecture for cross-cutting KEPs).
   - [Coordinated Election Controller](#coordinated-election-controller)
   - [Coordinated Lease Lock](#coordinated-lease-lock)
   - [Enabling on a component](#enabling-on-a-component)
+  - [Migrations](#migrations)
   - [Comparison of leader election](#comparison-of-leader-election)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [Risk: This breaks leader election in some super subtle way](#risk-this-breaks-leader-election-in-some-super-subtle-way)
+    - [Risk: Amount of writes performed by leader election increases substantially](#risk-amount-of-writes-performed-by-leader-election-increases-substantially)
+    - [Risk: leases watches increases apiserver load substantially](#risk-leases-watches-increases-apiserver-load-substantially)
+    - [Risk: We have to &quot;start over&quot; and build confidence in a new leader election algorithm](#risk-we-have-to-start-over-and-build-confidence-in-a-new-leader-election-algorithm)
     - [Risk: How is the election controller elected?](#risk-how-is-the-election-controller-elected)
     - [Risk: What if the election controller fails to elect a leader?](#risk-what-if-the-election-controller-fails-to-elect-a-leader)
 - [Design Details](#design-details)
@@ -100,6 +103,8 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Component instances pick a leader without a coordinator](#component-instances-pick-a-leader-without-a-coordinator)
+- [Future Work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -309,6 +314,36 @@ flowchart TD
 Components with a `--leader-elect-resource-lock` flag (kube-controller-manager,
  kube-scheduler) will accept `coordinatedleases` as a resource lock type.
 
+### Migrations
+
+So long as the API server is running a coordinated election controller, it is
+safe to directly migrate a component from Lease Based Leader Election to
+Coordinated Leader Election (or vis-versa).
+
+During the upgrade, a mix of components will be running both election
+approaches. When the leader lease expires, there are a couple possibilities:
+
+- A controller instance using Lease Based Leader Election claims the leader lease
+- The coordinated election controller picks a leader, from the components that
+  have written identity leases, and claims the lease on the leader's behalf
+
+Both possibilities have acceptable outcomes during the migration-- a component
+is elected leader, and once elected, remains leader so long as it keeps the
+lease renewed. The elected leader might not be the leader that Coordinated
+Leader Election would pick, but this is no worse than how leader election works
+before the upgrade, and once the upgrade is complete, Coordinated Leader
+Election works as intended.
+
+There is one thing that could make migrations slightly cleaner: If Coordinated
+Leader Election adds a
+`coordination.k8s.io/elected-by: leader-election-controller` annotation to any
+leases that it claims. It can also check for this annotation and only mark
+leases as "end-of-term" if that annotation is present. Lease Based Leader Election
+would ignore "end-of-term" annotations anyway, so this isn't strictly needed,
+but it would reduce writes from the coordinated election controller to leases that
+were claimed by component instances not using Coordinated Leader Election
+
+
 ### Comparison of leader election
 
 |                 | Lease Based Leader Election      | Coordinated Leader Election                                                    |
@@ -359,12 +394,45 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-#### Risk: This breaks leader election in some super subtle way
+#### Risk: Amount of writes performed by leader election increases substantially
 
-The goal of this proposal is to minimize this risk by:
+This enhancement introduces an identity lease for each instance of each component.
 
-- Continuing to renew leases in the same was as before and to never change leaders until a lease expires
-- Fallback to direct lease claiming by components if a leader is not elected
+Example:
+
+- HA cluster with 3 control plane nodes
+- 3 elected components (kube-controller-manager, schedule, cloud-controller-manager) per control plane node
+- 9 identity leases are created and renewed by the components
+
+Introducing this feature is roughtly equivalent to adding the same lease load
+as adding 9 nodes to a kubernetes cluster.
+
+The [API Server Identity enhancement](../1965-kube-apiserver-identity) also
+introduces similar leases. For comparison, in a HA cluster with 3 control plane
+nodes, API Server Identity adds 3 leases.
+
+This risk can be migitated by scale testing and, if needed, extending the lease
+duration and renewal times to reduce writes/s.
+
+#### Risk: leases watches increases apiserver load substantially
+
+The [Unknown Version Interoperability Proxy (UVIP) enhancement](../4020-unknown-version-interoperability-proxy) also adds
+lease watches on [API Server Identity](../1965-kube-apiserver-identity) leases in the kube-system namespace.
+This enhancement would increase the expected number of resources being watched from ~3 (for UVIP) to ~12.
+
+#### Risk: We have to "start over" and build confidence in a new leader election algorithm
+
+We've built confidence in the existing leasing algorithm, through an investment
+of engineering effort, and in core hours testing it and running it in production.
+
+Changing the algorithm "resets the clock" and forces us to rebuild confidence on
+the new algorithm.
+
+The goal of this proposal is to minimize this risk by reusing as much of the
+existing lease algorithm as possible:
+
+- Renew leases in exactly the same way as before
+- Leases can never be claimed by another leader until a lease expires
 
 #### Risk: How is the election controller elected?
 
@@ -373,7 +441,9 @@ Requires the election controller make careful use concurrency control primitives
 
 #### Risk: What if the election controller fails to elect a leader?
 
-Fallback to letting component instances self elect after a longer delay.
+Fallback to letting component instances claim the lease directly, after a longer
+delay, to give the coordinated election controller an opportunity to elect
+before resorting to the fallback.
 
 ## Design Details
 
@@ -951,11 +1021,61 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Component instances pick a leader without a coordinator
+
+The idea of this alternative is to elect a leader from a set of candidates
+without a coordinated election controller.
+
+Some rough ideas of how this might be done:
+
+1. A candidates is picked at random to be an election coordinator, and the
+   coordinator picks the leader:
+  - Components race to claim the lease
+  - If a component claims the lease, the first thing it does is check to see if there is a better leader
+  - If it finds a better lease, it assigns the lease to that component instead of itself
+
+Pros: 
+
+  - No coordinated election controller
+Cons: 
+
+  - All component instances must watch the identity leases
+  - All components must have the code to decide which component is the best leader
+
+2. The candidates agree on the leader collectively
+  - Leases have "Election" and "Term" states
+  - Leases are first created in the "election" state.
+  - While in the "election" state, candidates self-nominate by updating the lease
+    with their identity and version information.  Candidates only need to 
+    self nominate if they are a better candidate than candidate information
+    already written to the lease.
+  - When "Election" timeout expires, the best candidate becomes the leader
+  - The leader sets the state to "term" and starts renewing the lease
+  - If the lease expires, it goes back to the "election" state
+
+Pros:
+
+- No coordinated election controller
+- No identity leases
+
+Cons:
+
+- Complex election algorithm is distributed as a client-go library. A bug in the
+  algorithm cannot not be fixed by only upgrading kubernetes..  all controllers
+  in the ecosystem with the bug must upgrade client-go and release to be fixed.
+- More difficult to change/customize the criteria for which candidate is best. 
+
+If we decide in the future to shard controllers and wish to leverage coordinated
+eader election to balance shards, it's much easier introduce the change in a
+controller in the apiserver than in client-go library code distributed to
+elected controllers.
+
+## Future Work
+
+- Controller sharding could leverage coordinated leader election to load balance
+  controllers against apiservers.
+- Optimizations for graceful and performant failover can be built on this
+  enhancement.
 
 ## Infrastructure Needed (Optional)
 
