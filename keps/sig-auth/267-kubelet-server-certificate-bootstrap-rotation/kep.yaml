@@ -7,7 +7,7 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-node
   - sig-security
-status: implemented
+status: provisional
 creation-date: 2017-04-24
 reviewers:
   - "@awly"
