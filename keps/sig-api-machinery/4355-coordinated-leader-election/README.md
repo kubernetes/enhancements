@@ -200,16 +200,31 @@ between old and new.
 
 ### Goals
 
-- Offer an opt-in leader election mechanism to:
-  - Elect the candidate with the oldest version available.
-  - Provide a way to preempt the current leader.
-  - Reuse the existing lease mechanism as much as possible.
+During HA upgrades/rollbacks/downgrades, 
+
+Leader elected components:
+
+- Change versions at predictable times
+- Do not violate version skew, even during node-by-node rollbacks
+
+The control plane:
+
+- Can safely canary components and nodes at the new version for an extended
+  period of time, or to pause an upgrade at any step durning an upgrade. This
+  enhancement, combined with
+  [UVIP](../4020-unknown-version-interoperability-proxy) helps achieve this.
+  
 
 ### Non-Goals
 
 - Change the default leader election for components.
 
 ## Proposal
+
+- Offer an opt-in leader election mechanism to:
+  - Elect the candidate with the oldest version available.
+  - Provide a way to preempt the current leader.
+  - Reuse the existing lease mechanism as much as possible.
 
 ### Component Identity Leases
 
