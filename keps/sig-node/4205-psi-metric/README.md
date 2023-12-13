@@ -121,7 +121,7 @@ PSI metric will be available for users in the Kubernetes metrics API.
 
 #### Story 2
 
-Kubernetes users want to prevent new pods to be scheduled on the nodes that have resource starvation. By using PSI metric, the kubelet will set Node Condition to avoid pods being scheduled on nodes under high resource pressure. The node controller could then set a (taint on the node based on these new Node Conditions)[https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/#taint-nodes-by-condition].
+Kubernetes users want to prevent new pods to be scheduled on the nodes that have resource starvation. By using PSI metric, the kubelet will set Node Condition to avoid pods being scheduled on nodes under high resource pressure. The node controller could then set a [taint on the node based on these new Node Conditions](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/#taint-nodes-by-condition).
 
 ### Risks and Mitigations
 
@@ -137,20 +137,23 @@ default threshold to be used for reporting the nodes under heavy resource pressu
 
 #### Phase 1
 1. Add new Data structures PSIData and PSIStats corresponding to the PSI metric output format as following:
+
+```
 some avg10=0.00 avg60=0.00 avg300=0.00 total=0
 full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+```
 
 ```go
 type PSIData struct {
-	Avg10 *float64 `json:”avg10”`
-	Avg60 *float64 `json:”avg60”`
-  Avg300 *float64 `json:”avg300”`
-  Total *float64 `json:”total”`
+	Avg10  *float64 `json:"avg10"`
+	Avg60  *float64 `json:"avg60"`
+	Avg300 *float64 `json:"avg300"`
+	Total  *float64 `json:"total"`
 }
 
 type PSIStats struct {
-	Some *PSIData  `json:”some,omitempty”`
-  Full *PSIData  `json:”full,omitempty”`
+	Some *PSIData `json:"some,omitempty"`
+	Full *PSIData `json:"full,omitempty"`
 }
 ```
 
@@ -161,8 +164,8 @@ metric data will be available through CRI instead.
 ##### CPU
 ```go
 type CPUStats struct { 
-// PSI stats of the overall node
-  PSI cadvisorapi.PSIStats `json:”psi,omitempty”`
+	// PSI stats of the overall node
+	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -170,7 +173,7 @@ type CPUStats struct {
 ```go
 type MemoryStats struct {
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:”psi,omitempty”`
+	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -179,23 +182,22 @@ type MemoryStats struct {
 // IOStats contains data about IO usage.
 type IOStats struct {
 	// The time at which these stats were updated.
-	Time metav1.Time  `json:”time”`
+	Time metav1.Time `json:"time"`
 
-  // PSI stats of the overall node
-	PSI cadvisorapi.PSIStats  `json:”psi,omitempty”`
+	// PSI stats of the overall node
+	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
 }
 
 type NodeStats struct {
 	// Stats about the IO pressure of the node
-	IO *IOStats `json:”io,omitempty”`
-
+	IO *IOStats `json:"io,omitempty"`
 }
 ```
 
 #### Phase 2 to add PSI based actions.
 **Note:** These actions are tentative, and will depend on different the outcome from testing and discussions with sig-node members, users, and other folks. 
 
-1. Introduce a new kubelet config parameter, pressure threshold to let users specify the pressure percentage beyond which the kubelet would report the node condition to disallow workloads to be scheduled on it.
+1. Introduce a new kubelet config parameter, pressure threshold, to let users specify the pressure percentage beyond which the kubelet would report the node condition to disallow workloads to be scheduled on it.
 
 2. Add new node conditions corresponding to high PSI (beyond threshold levels) on CPU, Memory and IO.
 
@@ -205,14 +207,14 @@ type NodeStats struct {
 const (
 …
 	// Conditions based on pressure at system level cgroup.
-  NodeSystemCPUContentionPressure NodeConditionType = “SystemCPUContentionPressure”
-  NodeSystemMemoryContentionPressure NodeConditionType = “SystemMemoryContentionPressure”
-  NodeSystemDiskContentionPressure NodeConditionType = “SystemDiskContentionPressure”
+	NodeSystemCPUContentionPressure    NodeConditionType = "SystemCPUContentionPressure"
+	NodeSystemMemoryContentionPressure NodeConditionType = "SystemMemoryContentionPressure"
+	NodeSystemDiskContentionPressure   NodeConditionType = "SystemDiskContentionPressure"
 
 	// Conditions based on pressure at kubepods level cgroup.
-  NodeKubepodsCPUContentionPressure NodeConditionType = “KubepodsCPUContentionPressure”
-  NodeKubepodsMemoryContentionPressure NodeConditionType = “KubepodsMemoryContentionPressure”
-  NodeKubepodsDiskContentionPressure NodeConditionType = “KubepodsDiskContentionPressure”
+	NodeKubepodsCPUContentionPressure    NodeConditionType = "KubepodsCPUContentionPressure"
+	NodeKubepodsMemoryContentionPressure NodeConditionType = "KubepodsMemoryContentionPressure"
+	NodeKubepodsDiskContentionPressure   NodeConditionType = "KubepodsDiskContentionPressure"
 )
 ```
 
@@ -226,13 +228,14 @@ In theory, 10s interval might be rapid to taint a node with NoSchedule effect. T
   * If avg60 < threshold for a node tainted with NoSchedule effect, remove the NodeCondition.
 
 4. Collaborate with sig-scheduling to modify TaintNodesByCondition feature to integrate new taints for the new Node Conditions introduced in this enhancement.
-node.kubernetes.io/memory-contention-pressure=:NoSchedule
-node.kubernetes.io/cpu-contention-pressure=:NoSchedule
-node.kubernetes.io/disk-contention-pressure=:NoSchedule
+
+* `node.kubernetes.io/memory-contention-pressure=:NoSchedule`
+* `node.kubernetes.io/cpu-contention-pressure=:NoSchedule`
+* `node.kubernetes.io/disk-contention-pressure=:NoSchedule`
 
 5. Perform experiments to finalize the default optimal pressure threshold value.
 
-6. Add a new feature gate PSINodeCondition, and guard the node condition related logic behind the feature gate. Set --feature-gates=PSINodeCondition=true to enable the feature.
+6. Add a new feature gate PSINodeCondition, and guard the node condition related logic behind the feature gate. Set `--feature-gates=PSINodeCondition=true` to enable the feature.
 
 ### Test Plan
 
@@ -511,7 +514,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 For Phase 1:
-Use `kubectl get --raw "/api/v1/nodes/{$nodeName}/proxy/stats/summary"`` to call Summary API. If the PSIStats field is seen in the API response,
+Use `kubectl get --raw "/api/v1/nodes/{$nodeName}/proxy/stats/summary"` to call Summary API. If the PSIStats field is seen in the API response,
 the feature is available to be used by workloads.
 
 For Phase 2:
