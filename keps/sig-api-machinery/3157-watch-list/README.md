@@ -372,7 +372,7 @@ Step 2: Right after receiving a request from the reflector, the cacher gets the 
 It is used to make sure the cacher is up to date (has seen data stored in etcd) and to let the reflector know it has seen all initial data.
 There are ways to do that cheaply, e.g. we could issue a count request against the datastore.
 Next, the cacher creates a new cacheWatcher (implements watch.Interface) passing the given bookmarkAfterResourceVersion, and gets initial data from the watchCache.
-After sending initial data the cacheWatcher starts listening on an incoming channel for new events, including a bookmark event.
+After sending initial data the cacheWatcher starts listening on an input channel for new events, including a bookmark event.
 At some point, the cacher will receive an event with the resourceVersion equal or greater to the bookmarkAfterResourceVersion.
 It will be propagated to the cacheWatcher and then back to the reflector as a BOOKMARK event.
 
@@ -386,9 +386,9 @@ Since the watchCache implements the Store interface it is used by the reflector 
 Step 2b: What happens when new events are received while the cacheWatcher is sending initial data?
 
 The cacher maintains a list of all current watchers (cacheWatcher) and a separate goroutine (dispatchEvents) for delivering new events to the watchers.
-New events are added via the cacheWatcher.nonblockingAdd method that adds an event to the cacheWatcher.incoming channel.
-The cacheWatcher.incoming is a buffered channel and has a different size for different Resources (10 or 1000).
-Since the cacheWatcher starts processing the cacheWatcher.incoming channel only after sending all initial events it might block once its buffered channel tips over.
+New events are added via the cacheWatcher.nonblockingAdd method that adds an event to the cacheWatcher.input channel.
+The cacheWatcher.input is a buffered channel and has a different size for different Resources (10 or 1000).
+Since the cacheWatcher starts processing the cacheWatcher.input channel only after sending all initial events it might block once its buffered channel tips over.
 In that case, it will be added to the list of blockedWatchers and will be given another chance to deliver an event after all nonblocking watchers have sent the event.
 All watchers that have failed to deliver the event will be closed.
 
