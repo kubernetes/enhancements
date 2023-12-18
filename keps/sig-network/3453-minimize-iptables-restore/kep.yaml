@@ -3,7 +3,7 @@ kep-number: 3453
 authors:
   - "@danwinship"
 owning-sig: sig-network
-status: implementable
+status: implemented
 creation-date: 2022-08-02
 reviewers:
   - "@thockin"
