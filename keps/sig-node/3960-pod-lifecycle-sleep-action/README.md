@@ -45,16 +45,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -212,11 +212,23 @@ to implement this enhancement.
 
 ##### Unit tests
 
+alpha:
 - Test that the runSleepHandler function sleeps for the correct duration when given a valid duration value.
 - Test that the runSleepHandler function returns without error when given a valid duration value.
 - Test that the validation returns an error when given an invalid duration value (e.g., a negative value).
 - Test that the validation returns an error when given duration is longer than the termination graceperiod.
 - Test that the runSleepHandler function returns immediately when given a duration of zero.
+
+beta:
+- Test the `switch` of the feature-gate itself.
+  - Test the handler is silently dropped when a pod created with feature-gate disabled.
+  - Test the handler is correctly added when a pod created with feature-gate enabled. 
+  - Test the handler is silently dropped when a pod created with no handler and feature-gate enabled is updated with handler and feature-gate disabled.
+  - Test the handler is correctly added when a pod created with no handler and feature-gate disabled is updated with handler and feature-gate enabled.
+
+Currently coverages:
+- `k8s.io/kubernetes/pkg/apis/core/validation`:`2023-12-20` - `83.9`
+- `k8s.io/kubernetes/pkg/kubelet/lifecycle/handlers`:`2023-12-20` - `86.3` 
 
 ##### Integration tests
 N/A
@@ -252,6 +264,14 @@ N/A
   4. For each termination grace period value, delete the pod and observe the time it takes for the container to terminate.
   5. Verify that the container is terminated after the min(sleep, grace).
 
+Tests List
+- [pod-lifecycle-sleep-action test](https://github.com/kubernetes/kubernetes/blob/a1ffdedf782edf1472102b0b99c1467d4ed39753/test/e2e/common/node/lifecycle_hook.go#L550)
+  - [failure-links](https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=PodLifecycleSleepAction)
+  - [test-grid](https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features)
+- [x]Basic functionality(alpha)
+- [x]Interaction with termination grace period(alpha)
+- []Sleep duration boundary testing(beta)
+- []Container exit/crash testing(beta)
 ### Graduation Criteria
 
 #### Alpha
@@ -297,12 +317,6 @@ If only the kubelet enable this feature, when creating/updating a resource with 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodLifecycleSleepAction
   - Components depending on the feature gate: kubelet,kube-apiserver
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -320,8 +334,8 @@ New pods with sleep action in prestop hook can be created.
 Previously created pod with sleep hook set will execute it before terminating.
 
 ###### Are there any tests for feature enablement/disablement?
-
-Yes. Some unit tests will be designed to test the verification process of the "sleep" field under different scenarios, such as when the feature is enabled, disabled, or switched. These tests will be included in the alpha version.
+For alpha, the `switch` of feature gate is tested manually.
+For beta, unit tests for the `switch` of feature gate itself will be added in `pkg/registry/core/pod/strategy_test`.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -331,8 +345,21 @@ The change is opt-in, it doesn't impact already running workloads.
 
 ###### What specific metrics should inform a rollback?
 
+Metric `sleep_action_terminated_early_total` will be added in beta. 
+If it increases unreasonably, then user should check if something goes wrong and may need a rollback.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+This is an opt-in feature, and it does not change any default behavior. We manually tested enabling and disabling this feature by changing kubelet and kube-api-server config and restarting them.
+
+The manual test steps are as following:
+
+1. Create a local 1.29 k8s cluster, and create a test-pod in that cluster.
+2. Enable PodLifecycleSleepAction feature in kubelet and kube-api-server and restart both. 
+3. Add a prestop hook with sleep action to the test-pod and delete it, observe the time cost.
+4. Create another pod with sleep action.
+5. Disable PodLifecycleSleepAction feature in kubelet and kube-api-server and restart both.  
+6. Delete the pod created in step 4, and observe the time cost.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No
@@ -359,10 +386,9 @@ N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+    - sleep_action_terminated_early_total(counts the number of Pods got terminated before sleep action finishes)
 - [x] Other (treat as last resort)
   - Details: Check the logs of the container during termination, check the termination duration.
 
@@ -422,11 +448,12 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A
+Disable PodLifecycleSleepAction feature gate, and restart related components.
 
 ## Implementation History
 
 - 2023-04-22: Initial draft KEP
+- 2023-12-20: Target to beta in v1.30 
 
 ## Drawbacks
 
