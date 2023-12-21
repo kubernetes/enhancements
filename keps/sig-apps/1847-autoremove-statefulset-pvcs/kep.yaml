@@ -25,7 +25,7 @@ latest-milestone: "v1.27"
 milestone:
   alpha: "v1.23"
   beta: "v1.27"
-  stable: "v1.28"
+  stable: "v1.31"
 
 feature-gates:
   - name: StatefulSetAutoDeletePVC
