@@ -154,8 +154,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [] (R) Production readiness review completed
+- [] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -570,6 +570,11 @@ E2E Test Use Cases addition:
 - E2E tests for eviction api with separate disk
   - Replicate existing disk pressure eviction e2e tests with disk.
 
+E2E tests for separate disk:
+
+- Presubmits - Added [separate-imagefs](https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgroupv2-imagefs-e2e-diskpressure)
+- Presubmits - Added [conformance test for imagefs](https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagefs-e2e)
+
 ### Graduation Criteria
 
 #### Alpha [Release the CRI API and Kubelet Changes]
@@ -927,6 +932,8 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - Initial Draft (September 12th 2023)
+- KEP Merged (October 5th 2023)
+- Alpha 1 PRs merged (October 31st 2023)
 
 ## Drawbacks
 
