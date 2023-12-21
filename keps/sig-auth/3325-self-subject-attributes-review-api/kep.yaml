@@ -15,7 +15,7 @@ approvers:
 - "@deads2k"
 - "@liggitt"
 creation-date: "2022-05-30"
-status: implementable
+status: implemented
 stage: stable
 latest-milestone: "v1.28"
 milestone:
