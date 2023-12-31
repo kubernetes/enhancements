@@ -591,16 +591,20 @@ n/a
 
 - The scheduling queue is changed to work with QueueingHint.
 - No performance degradation is confirmed via scheduler_perf.
-- The feature gate is implemented. (enabled by default) 
+- The feature gate is implemented. (disabled by default) 
 - QueueingHint implementation in plugins:
   - In 1.28: no beta or stable plugins return scheduling hints
   - In 1.29: at least 3 stable in-tree plugins return scheduling hints
 
 #### GA
 
+- The feature gate is enabled by default.
 - QueueingHint is implemented in all plugins.
+- The integration tests are implemented for requeueing scenarios in all plugins.
+- `PreCheck` feature in the scheduling queue is completely removed.
+- No significant degradation in memory comsumption.
 - No performance degradation is confirmed via scheduler_perf.
-- No bug report for a while.
+- No bug report for a while after enabling it by default.
 
 ### Upgrade / Downgrade Strategy
 
