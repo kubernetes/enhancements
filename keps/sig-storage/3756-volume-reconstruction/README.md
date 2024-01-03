@@ -434,9 +434,9 @@ We propose adding these new metrics, both to the old and new VolumeManager code:
     in ASW (those are not reconstructed).
 * `force_cleaned_failed_volume_operations_total` / `force_cleaned_failed_volume_operation_errors_total`: nr.
   of all / unsuccessful cleanups of volumes that failed reconstruction.
-* `orphaned_volumes_cleanup_errors_total`: nr. of reports
+* `orphan_pod_cleaned_volumes_errors`: nr. of pods that failed cleanup with errors
   like `orphaned pod "<uid>" found, but XYZ failed`
-  ([example](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L215)).
+  ([example](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L215)) in the last sync.
   These messages can be a symptom of failed reconstruction (e.g.
   [#105536](https://github.com/kubernetes/kubernetes/issues/105536)).
   Note that kubelet logs this periodically and bumping this metric periodically
@@ -444,11 +444,11 @@ We propose adding these new metrics, both to the old and new VolumeManager code:
   [`cleanupOrphanedPodDirs`](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L168)
   needs to be changed to collect errors found during
   one `/var/lib/kubelet/pods/` check and report collected "nr of errors during
-  the last housekeeping sweep (every 2 seconds)".
-    * TODO: do we want to have a label to distinguish each error reason,
-      e.g. "Pod found, but volumes are still mounted on disk" from say
-      "orphaned pod %q found, but error occurred during reading of
-      volume-subpaths dir from disk"?
+  the last housekeeping sweep (every 2 seconds)". There is no label that would
+  distinguish between each error cause.
+* `orphan_pod_cleaned_volumes`: nr. of total pods that were attempted to be
+  cleaned up by `cleanupOrphanedPodDirs` in the last sync, both successful and
+  failed.
 
 ### Test Plan
 
