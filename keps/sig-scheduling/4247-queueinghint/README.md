@@ -591,16 +591,18 @@ n/a
 
 - The scheduling queue is changed to work with QueueingHint.
 - No performance degradation is confirmed via scheduler_perf.
-- The feature gate is implemented. (enabled by default) 
-- QueueingHint implementation in plugins:
-  - In 1.28: no beta or stable plugins return scheduling hints
-  - In 1.29: at least 3 stable in-tree plugins return scheduling hints
+- The feature gate is implemented. (disabled by default) 
+- QueueingHint implementation in all plugins.
+- The integration tests are implemented for requeueing scenarios in all plugins.
+- `PreCheck` feature in the scheduling queue is completely removed.
+- No significant degradation in memory comsumption.
+- No performance degradation is confirmed via scheduler_perf.
+- The feature gate is enabled by default.
+- No bug report for a while after enabling it by default.
 
 #### GA
 
-- QueueingHint is implemented in all plugins.
-- No performance degradation is confirmed via scheduler_perf.
-- No bug report for a while.
+- No bug report for a while after reaching Beta.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1059,6 +1061,8 @@ Major milestones might include:
 - Jul 15, 2023: The feature gate is implemented. (enabled by default)
 - Jul 18, 2023: The scheduling queue tracks the Pod being processed to put it back to an appropriate queue.
 - Oct 01, 2023: The initial KEP is submitted.
+- Dec 13, 2023: The feature gate is changed to be disabled by default.
+- Dec 31, 2023: The KEP is updated based on the situation as of v1.30 release cycle. The beta/GA criteria is sorted.
 
 ## Drawbacks
 

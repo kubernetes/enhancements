@@ -23,7 +23,7 @@ latest-milestone: "v1.29"
 milestone:
   alpha: "v1.26" # This KEP stems from /keps/sig-node/3063-dynamic-resource-allocation.
   beta: "v1.28"
-  stable: "v1.30"
+  stable: "v1.32"
 
 feature-gates:
   - name: SchedulerQueueingHints
