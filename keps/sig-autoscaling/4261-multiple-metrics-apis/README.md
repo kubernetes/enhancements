@@ -122,14 +122,13 @@ This could be done adding a new optional field in the HPA API object in case of 
      external:
         metric:
           name: s0-prometheus-http_requests_total
-          subdomain: xxxxx
           selector:
             matchLabels:
               scaledobject.keda.sh/name: gdpr
         target:
           type: AverageValue
           averageValue: '100'
-
+        subdomain: xxxxx
 ```
 
 As each subdomain works as a different tenant, if there is any HPA pointing to a subdomain that doesn’t exist, we will return that the metric doesn’t exist, never routing the request against the default service (because it probably doesn’t know about it). 
