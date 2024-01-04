@@ -74,6 +74,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Scheduler improvements](#scheduler-improvements)
     - [Kubelet-initiated pod eviction](#kubelet-initiated-pod-eviction)
     - [Default and limits](#default-and-limits)
+    - [Cluster autoscaler](#cluster-autoscaler)
     - [API objects for resources and classes](#api-objects-for-resources-and-classes)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
@@ -221,7 +222,9 @@ resources.
 This KEP identifies two technologies that can immediately be enabled with
 QoS-class resources. However, these are just two examples and the proposed
 changes are generic (and not tied to these two QoS-class resource types in any
-way), making it easier to implement new QoS-class resource types.
+way), making it easier to implement new QoS-class resource types. For example,
+the [NRI API][nri-api] would be good mechanism to implement new QoS-class
+resources.
 
 [Intel RDT][intel-rdt] implements a class-based mechanism for controlling the
 cache and memory bandwidth QoS of applications. All processes in the same
@@ -251,28 +254,24 @@ annotations on a Kubernetes Pod. The goal of this KEP is to get these types of
 resources first class citizens and properly supported in Kubernetes, providing
 visibility, a well-defined user interface, and permission controls.
 
-
-
-We can identify two types, container-level and pod-level QoS-class resources.
-Container-level resources enable QoS on per-container granularity, for example
-container-level cgroups in Linux or cache and memory bandwidth control
-technologies. Examples for pod-level QoS include e.g. pod-level cgroups or
-network QoS that cannot support per-container granularity.
+Two types of QoS-class resources are identified, container-level and pod-level
+QoS-class resources. Container-level resources enable QoS on per-container
+granularity, for example container-level cgroups in Linux or cache and memory
+bandwidth control technologies. Examples for pod-level QoS include e.g.
+pod-level cgroups or network QoS that cannot support per-container granularity.
 
 ### Goals
 
-- Make it possible to request QoS-class resources
-  - Support RDT class assignment of containers. This is already supported by
-    the containerd and CRI-O runtime and part of the OCI runtime-spec
-  - Support blockio class assignment of containers.
-  - Support Pod-level (sandbox-level) QoS-class resources
-- Make the API to support updating QoS-class resource assignment of running containers
-- Make the extensions flexible, enabling simple addition of other QoS-class
-  resource types in the future.
-- Make QoS-class resources opaque (as possible) to the CRI client
-- Discovery of the available QoS-class resources
-- Resource status/capacity
+- Make it possible to request QoS-class resources from the PodSpec
+  - Container-level QoS-class resources
+  - Pod-level (sandbox-level) QoS-class resources
+- Make it simple to implement new types QoS-class resource
+- Make QoS-class resources opaque (as possible) to Kubernetes
+- Support automatic discovery of the available QoS-class resources
+- Support per-node status/capacity of QoS-class resources
 - Access control ([future work](#future-work))
+- Support updating QoS-class resource assignment of running containers
+  ([future work](#in-place-pod-vertical-scaling))
 
 ### Non-Goals
 
@@ -479,6 +478,13 @@ Use field name `Ceiling` instead `Capacity` in QOSResourceClassLimit.
 Not supporting Max (i.e. only supporting Default) in LimitRanges could simplify
 the API.
 
+#### Cluster autoscaler
+
+The cluster autoscaler support will be extended to support QoS-class resources.
+The behavior will be comparable to extended resources. The expectation would be
+that all nodes in a node group would have an identical set of QoS-class
+resources.
+
 #### API objects for resources and classes
 
 `<<[UNRESOLVED]>>`
@@ -585,7 +591,8 @@ spec:
 As a vendor I want to implement custom QoS controls as an extension of the
 container runtime. I want my QoS control to be visible in the cluster and
 integrated e.g. in the Kubernetes sheduler and not rely e.g. on Pod annotations
-to communicate QoS requests.
+to communicate QoS requests. I will implement my QoS-class resources as an
+[NRI API][nri-api] plugin.
 
 #### Defaults and limits
 
@@ -1458,19 +1465,17 @@ Container QoS resources:
 
 ### Container runtimes
 
-Currently, there is support (container-level QoS-class resources) for Intel RDT
-and blockio in CRI-O and containerd runtimes:
+There is support (container-level QoS-class resources) for Intel RDT
+and blockio in CRI-O ([~~#4830~~](https://github.com/cri-o/cri-o/pull/4830),
+[~~#4873~~](https://github.com/cri-o/cri-o/pull/4873)) and containerd
+([~~#5439~~](https://github.com/containerd/containerd/pull/5439),
+[~~#5490~~](https://github.com/containerd/containerd/pull/5490)) runtimes.
+The current user interface is provided through pod and container annotations.
+The plan is to start using QoS-class resources instead of annotations.
 
-- cri-o:
-  - [~~Add support for Intel RDT~~](https://github.com/cri-o/cri-o/pull/4830)
-  - [~~Support for cgroups blockio~~](https://github.com/cri-o/cri-o/pull/4873)
-- containerd:
-  - [~~Support Intel RDT~~](https://github.com/containerd/containerd/pull/5439)
-  - [~~Support for cgroups blockio~~](https://github.com/containerd/containerd/pull/5490)
-
-The design paradigm here is that the container runtime configures the QoS-class
-resources according to a given configuration file. Enforcement on containers is
-done via OCI. User interface is provided through pod and container annotations.
+The plan is also to extend the [NRI API][nri-api]
+(Node Resource Interface) to support QoS-class resources, allowing for example
+the implementation of new types of QoS-class resources as NRI plugins.
 
 Container runtimes will be updated to support the
 [CRI API extensions](#cri-api)
@@ -2347,3 +2352,4 @@ required.
 [oci-runtime-rdt]: https://github.com/opencontainers/runtime-spec/blob/v1.0.2/config-linux.md#IntelRdt
 [pod-qos-class]: https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/
 [dra-kep]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation
+[nri-api]: https://github.com/containerd/nri
