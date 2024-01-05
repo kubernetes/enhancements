@@ -76,6 +76,8 @@ As of the 1.26 release, enhancements from this repo are visualized in the Enhanc
 
 Links:
 
+- [1.30 Milestone](https://bit.ly/k8s130-enhancements)
+- [1.29 Milestone](https://bit.ly/k8s129-enhancements)
 - [1.28 Milestone](https://bit.ly/k8s128-enhancements)
 - [1.27 Milestone](https://bit.ly/k8s127-enhancements)
 - [1.26 Milestone](https://bit.ly/k8s126-enhancements)
