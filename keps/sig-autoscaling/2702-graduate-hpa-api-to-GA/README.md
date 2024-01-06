@@ -482,7 +482,7 @@ For each of them, fill in the following information by copying the below templat
       [API](https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/20190307-configurable-scale-velocity-for-hpa.md)
       
 * Container Resource Targets
-    * [Proposed]([https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/0001-container-resource-autoscaling.md](https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/1610-container-resource-autoscaling/README.md)https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/1610-container-resource-autoscaling/README.md) on Mar 30, 2020
+    * [Proposed](https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/1610-container-resource-autoscaling/README.md) on Mar 30, 2020
 
 ## Drawbacks
 
