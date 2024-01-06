@@ -6,7 +6,7 @@ authors:
   - "@DangerOnTheRanger"
   - "@leilajal"
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2021-05-26
 reviewers:
   - "@deads2k"
