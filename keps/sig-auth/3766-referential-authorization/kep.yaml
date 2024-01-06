@@ -1,4 +1,4 @@
-title: Move ReferenceGrant to sig-auth API Group
+title: Referential Authorization
 kep-number: 3766
 authors:
   - "@robscott"
@@ -21,9 +21,9 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.27"
+latest-milestone: "v1.30"
 
 milestone:
-  alpha: "v1.27"
+  alpha: "v1.30"
 
 disable-supported: true

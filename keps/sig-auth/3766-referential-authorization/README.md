@@ -1,4 +1,4 @@
-# KEP-3766: Move ReferenceGrant to SIG Auth API Group
+# KEP-3766: Referential Authorization
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -8,20 +8,23 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [No Default Implementation](#no-default-implementation)
     - [Potential for Variations Among Implementations](#potential-for-variations-among-implementations)
     - [Cross-Namespace References may Weaken Namespace Boundaries](#cross-namespace-references-may-weaken-namespace-boundaries)
 - [Design Details](#design-details)
   - [General Notes](#general-notes)
     - [<code>ReferenceGrant</code> is half of a handshake](#referencegrant-is-half-of-a-handshake)
     - [ReferenceGrant authors must have sufficient access](#referencegrant-authors-must-have-sufficient-access)
-    - [<code>Resource</code> vs <code>Kind</code>](#resource-vs-kind)
+    - [<code>resource</code> versus <code>kind</code>](#-versus-)
     - [Revocation behavior](#revocation-behavior)
   - [Example Usage](#example-usage)
-    - [Gateway API Gateway Referencing Secret](#gateway-api-gateway-referencing-secret)
+    - [Gateway API Cross-Namespace Secret Reference](#gateway-api-cross-namespace-secret-reference)
+  - [Existing ReferenceGrant Usage Examples](#existing-referencegrant-usage-examples)
     - [Gateway API HTTPRoute Referencing Service](#gateway-api-httproute-referencing-service)
     - [PersistentVolumeClaim using cross namespace data source](#persistentvolumeclaim-using-cross-namespace-data-source)
   - [API Spec](#api-spec)
+    - [ClusterReferenceConsumer](#clusterreferenceconsumer)
+    - [ClusterReferencePattern](#clusterreferencepattern)
+    - [ReferenceGrant](#referencegrant)
   - [Outstanding questions and clarifications](#outstanding-questions-and-clarifications)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -58,10 +61,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -82,59 +85,86 @@ been [used by
 sig-storage](https://kubernetes.io/blog/2023/01/02/cross-namespace-data-sources-alpha/)
 to enable cross-namespace data sources.
 
-This KEP proposes moving ReferenceGrant from its current
-`gateway.networking.k8s.io` API group into the `authorization.k8s.io` API
-group.
+This KEP proposes building that overall idea of referential authorization
+directly into Kubernetes. This will build on the original idea of ReferenceGrant
+but add additional capabilities along the way.
 
 ## Motivation
 
-Any project that wants to enable cross-namespace references currently has to choose
-between introducing a dependency on Gateway API's ReferenceGrant or creating a
-new API that would be partially redundant (leading to confusion for users).
-	
-Recent interest between SIGs has made it clear that ReferenceGrant is wanted for use
-cases other than Gateway API. We would like to move ReferenceGrant to a neutral home
-(ideally, under SIG Auth) in order to make it the canonical API for managing references
-across namespaces.
+Any project that wants to enable cross-namespace references currently has to
+choose between introducing a dependency on Gateway API's ReferenceGrant or
+creating a new API that would be partially redundant (leading to confusion for
+users).
+
+Recent interest between SIGs has made it clear that ReferenceGrant is wanted for
+use cases other than Gateway API. We would like to move ReferenceGrant to a
+neutral home (ideally, under SIG Auth) in order to make it the canonical API for
+managing references across namespaces.
+
+At the same time, Ingress and Gateway controllers are often deployed with read
+access to all Secrets in a cluster. This can be a significant security risk as
+these components often already sit on the edge of a cluster. Finding a way to
+compromise an Ingress or Gateway controller could potentially provide access to
+all Secrets in a cluster. Ideally, a solution that is related to referential
+authorization could also help mitigate this problem.
 
 ### Goals
 
-* Move ReferenceGrant to an API Group that SIG Auth manages
+* Introduce API(s) that enable the same capabilities that ReferenceGrant does
+  within Gateway API.
+* In addition to ReferenceGrant's capabilities, expand the scope of this KEP so
+  that it enables:
+  * Authorizing controllers to read only resources that have been referenced by
+    resources they are implementing.
+  * Building a more generic approach that will enable generic controllers and
+    authorizers to implement this API without prior knowledge of resources that
+    references are from or to.
 * Clearly define how ReferenceGrant should be used, including both current use
-  cases and guidance for future use cases
+  cases and guidance for future use cases.
 * Implement a library to ensure that ReferenceGrant is implemented consistently
-  by all controllers
+  by all controllers.
 
 ### Non-Goals
 
-* Develop an authorizer that will automatically implement ReferenceGrant for all
-  use cases. (It would be impossible to represent concepts like "all namespaces"
-  or label selectors that have become important for this KEP).
+* Advanced capabilities like label selectors and the ability to allow references
+  from any namespace are likely reasonable future extensions of this API but are
+  intentionally out of scope for the initial work.
 
 ## Proposal
 
-Move the existing ReferenceGrant resource into a new
-`authorization.k8s.io` API group, defined within the Kubernetes code base
-as part of the 1.27 release.
+Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
 
-We will take this opportunity to clarify and update the API after SIG Auth
-feedback. This resource will start with v1alpha1 as the API version.
-
+1. **ClusterReferencePattern:** This resource defines a common reference
+   pattern. For example, a `gateway-tls` ClusterReferencePattern would define
+   how references from Gateways to TLS Secrets work. Authors of APIs would
+   bundle these definitions with their APIs.
+2. **ClusterReferenceConsumer:** This resource links a consumer (defined by a
+   RBAC Subject) to one or more ClusterReferencePatterns. For example, a Gateway
+   controller that used a ServiceAccount for auth, would include a
+   ClusterReferenceConsumer tying that ServiceAccount to the `gateway-tls`
+   pattern described above.
+3. **ReferenceGrant:** This resource authorizes a specific instance of a
+   ClusterReferencePattern. For example, if an owner of a Secret in namespace
+   `foo` wants to allow a TLS reference to that Secret from a Gateway in
+   namespace `bar`, they would create a ReferenceGrant that allowed the
+   `gateway-tls` pattern to be used from the `bar` namespace to their namespace
+   (`foo`).
 
 ### Risks and Mitigations
 
-#### No Default Implementation
-Similar to the Ingress and Gateway APIs, this API will be dependent on
-implementations by controllers that are not included by default in Kubernetes.
-This could lead to confusion for users. We'll need to rely heavily on
-documentation for this feature, tracking all uses of official Kubernetes APIs
-that support ReferenceGrant in a central place.
-
 #### Potential for Variations Among Implementations
+Although the authorization logic for ReferenceGrant will be built into
+Kubernetes, controllers will still need to perform additional checks. For
+example, consider the case where 2 Gateways target the same Secret, but only
+one of those references is allowed by a ReferenceGrant. The authorization logic
+built into Kubernetes would have granted the controller access to the Secret
+but the controller would still need to perform separate checks to ensure that
+a ReferenceGrant had allowed a specific reference.
+
 Because this relies on each individual controller to implement the logic,
 it is possible that implementations may become inconsistent. To avoid that,
 we'll provide a standard library for implementing ReferenceGrant. We'll
-also strongly recommend that every API that relies on ReferenceGrant 
+also strongly recommend that every API that relies on ReferenceGrant
 includes robust conformance tests covering this functionality. Existing
 Gateway API conformance tests can serve as a model for this.
 
@@ -154,38 +184,27 @@ authorization.
 
 When thinking about ReferenceGrant, it is important to remember that it does not
 do anything by itself. It *Grants* the *possibility* of making a *Reference*
-across namespaces. It's intended that _another object_ (that is, the From object)
-complete the handshake by creating a reference to the referent object (the To
-object).
+across namespaces. It's intended that _another resource_ (that is, the `from`
+resource) complete the handshake by creating a reference to the referent
+resource (the `to` resource).
 
 #### ReferenceGrant authors must have sufficient access
 
-Anyone creating or updating a ReferenceGrant MUST have read access to the resources
-they are providing access to. If that authorization check fails, the update or
-create action will also fail.
+Anyone creating or updating a ReferenceGrant **MUST** have at least the level of
+access to the resources they are providing access to. For example, if the
+ClusterReferencePattern specifies `[get, list, watch]` as `verbs`, the author of
+any ReferenceGrant using that pattern must also have access for all of those
+verbs. If that authorization check fails, the ReferenceGrant update or create
+action will also fail.
 
-<<[UNRESOLVED Do we need checks beyond read access? ]>>
-Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084528657
-
-Comment that started that thread:
-
-does anything ensure the user creating the ReferenceGrant has permissions (read?
-write?) on the object they are granting access to? Translating the existing
-ReferenceGrant into an authz check means translating from Kind to Resource
-
-since this is extending "half of a handshake", it seems important to ensure the
-actor extending the handshake actually has permission to do so
-
-<<[/UNRESOLVED]>>
-
-#### `Resource` vs `Kind`
+#### `resource` versus `kind`
 
 When creating a metaresource (that is, a resource that targets other resources)
 like ReferenceGrant, it's important to consider if the metaresource uses the more
-common `Kind` or the more correct `Resource`.
+common `kind` or the more correct `resource`.
 
-In the original Gateway API implementation, we chose to use `Kind` rather than
-`Resource`, mainly to improve the user experience. That is, it's easier users
+In the original Gateway API implementation, we chose to use `kind` rather than
+`resource`, mainly to improve the user experience. That is, it's easier users
 to take the value from the `kind` field at the top of the YAML they are already
 using, and put it straight into these fields, rather than needing to do a
 kind-resource lookup for every user's interaction with the API. @robscott even
@@ -193,51 +212,9 @@ ended up making https://github.com/kubernetes/community/pull/5973 to clarify
 the API conventions.
 
 However, in discussion on this KEP, it's clear that the more generic nature of
-_this_ API requires the additional specificity that `Resource` provides.
-
-The Gateway API ReferenceGrant looked like this:
-```yaml
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: ReferenceGrant
-metadata:
-  name: allow-gateways
-  namespace: bar
-spec:
-  from:
-    # Note that in Gateway API, Group is currently defaulted
-    # to this, which means you to explicitly set the group to
-    # the empty string for Core resources. We should definitely
-    # change this.
-    - group: "gateway.networking.kubernetes.io"
-      kind: Gateway
-      namespace: foo
-  to:
-   - group: ""
-     kind: Secret
-```
-
-The new version will look like this instead:
-```yaml
-apiVersion: authorization.k8s.io/v1alpha1
-kind: ReferenceGrant
-metadata:
-  name: allow-gateways
-  namespace: bar
-spec:
-  from:
-    # Assuming that we leave the default for Group to the empty
-    # string, so that Core objects don't need additional config.
-    - group: "gateway.networking.kubernetes.io" 
-      resource: gateways
-      namespace: foo
-  to:
-    - group: ""
-      resource: secrets
-
-```
-
-The new version communicates the scope more clearly because `group`+`resource`
-is unambiguous and corresponds to exactly one set of objects on the API Server.
+_this_ API requires the additional specificity that `resource` provides. The new
+version communicates the scope more clearly because `group`+`resource` is
+unambiguous and corresponds to exactly one set of objects on the API Server.
 
 This change also leaves room for an enhancement. Whether we have an in-tree or
 CRD implementation, we can rely on the exact matching that the plural resource
@@ -246,11 +223,14 @@ either side of the grant is for an API that's not served by this cluster.
 
 #### Revocation behavior
 
-Unfortunately, there's no way to be specific about what happens when a
-ReferenceGrant is deleted in every possible case - the revocation behavior is
-dependent on what access is being granted (and revoked). With that said, we
-expect the following guidelines to be rules to apply to ALL implementations of
-the API:
+When a ReferenceGrant is deleted/revoked, the corresponding authorization for
+controllers to access that resource via that ReferenceGrant will also be
+revoked.
+
+Unfortunately that only covers a portion of the behavior that ReferenceGrant
+enables. APIs that make use of ReferenceGrant will need to clearly define how
+the revocation of a ReferenceGrant works. With that said, we expect the
+following guidelines to be rules to apply to **ALL** implementations of the API:
 
 * Deletion of a ReferenceGrant means the granted access is revoked.
 * ReferenceGrant controllers must remove any configuration generated by the
@@ -259,58 +239,68 @@ the API:
   forwarding requests or persisting data) cannot be undone, but no future
   actions should be allowed.
 
-The examples below include information about what happens when the ReferenceGrant
-is removed as data points.
-
 ### Example Usage
 
-#### Gateway API Gateway Referencing Secret
+#### Gateway API Cross-Namespace Secret Reference
 
-In this example (from the Gateway API docs), we have a Gateway in the
-`gateway-api-example-ns1` namespace, referencing a Secret in the
-`gateway-api-example-ns2` namespace. The following ReferenceGrant allows this:
+Authors of APIs can bundle ClusterReferencePatterns with their API definitions
+for any references they expect to be common. For example, Gateway API could
+bundle the following ClusterReferencePattern to describe how Gateways reference
+`kubernetes.io/tls` Secrets. Note that this also allows API authors to define a
+`SameNamespace` `baselineGrant` that would automatically authorize all
+references following this pattern without crossing namespace boundaries.
 
 ```yaml
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: Gateway
+kind: ClusterReferencePattern
+apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
-  name: cross-namespace-tls-gateway
-  namespace: gateway-api-example-ns1
-spec:
-  gatewayClassName: acme-lb
-  listeners:
-  - name: https
-    protocol: HTTPS
-    port: 443
-    hostname: "*.example.com"
-    tls:
-      # There's a Kind/Resource mismatch here, which sucks, but it is not
-      # easily fixable, since Gateway is already a beta, close to GA
-      # object.
-      certificateRefs:
-      - kind: Secret
-        group: ""
-        name: wildcard-example-com-cert
-        namespace: gateway-api-example-ns2
----
-apiVersion: authorization.k8s.io/v1alpha1
-kind: ReferenceGrant
-metadata:
-  name: allow-ns1-gateways-to-ref-secrets
-  namespace: gateway-api-example-ns2
-spec:
-  from:
-  - group: gateway.networking.k8s.io
-    resource: gateways
-    namespace: gateway-api-example-ns1
-  to:
-  - group: ""
-    resource: secrets
+  name: gateway-tls
+group: gateway.networking.k8s.io
+resource: gateways
+version: v1
+path: ".spec.listeners[*].tls.certificateRefs[*]"
+baselineGrant: SameNamespace
 ```
 
-For Gateway TLS references, if this ReferenceGrant is deleted (revoking, 
-the grant), then the Listener will become invalid, and the configuration
-will be removed as soon as possible (eventual consistency permitting).
+Implementations of APIs can bundle ClusterReferenceConsumer resources as part of
+their deployment. This resource links an RBAC subject (likely the ServiceAccount
+used by the controller) to a ClusterReferencePattern. Once linked, controllers
+will gain access to anything that has been granted following that pattern.
+
+```yaml
+kind: ClusterReferenceConsumer
+apiVersion: reference.authorization.k8s.io/v1alpha1
+metadata:
+  name: contour-gateway
+subject:
+  kind: ServiceAccount
+  name: contour
+  namespace: contour-system
+patternNames:
+- gateway-tls
+```
+
+Finally, users can use ReferenceGrant to authorize specific references that
+follow a ClusterReferencePattern. For example, the following ReferenceGrant
+authorizes references from Gateways in the `prod` namespace to the `acme-tls`
+Secret in the `prod-tls` namespace:
+
+```yaml
+kind: ReferenceGrant
+apiVersion: reference.authorization.k8s.io/v1alpha1
+metadata:
+  name: prod-gateways
+  namespace: prod-tls
+patternName: gateway-tls
+from:
+- namespace: prod
+to:
+- group: ""
+  resource: secrets
+  name: "acme-tls"
+```
+
+### Existing ReferenceGrant Usage Examples
 
 #### Gateway API HTTPRoute Referencing Service
 
@@ -318,7 +308,7 @@ In this example, a HTTPRoute in the `baz` namespace is directing traffic
 to a Service backend in the `quux` namespace.
 
 ```yaml
-apiVersion: gateway.networking.k8s.io/v1beta1
+apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: quuxapp
@@ -340,7 +330,7 @@ spec:
       namespace: quux
       port: 80
 ---
-apiVersion: authorization.k8s.io/v1alpha1
+apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
   name: allow-baz-httproutes
@@ -348,11 +338,11 @@ metadata:
 spec:
   from:
   - group: gateway.networking.k8s.io
-    resource: httproutes
+    kind: HTTPRoute
     namespace: baz
   to:
   - group: ""
-    resource: services
+    kind: Service
 ```
 
 For HTTPRoute objects referencing a backend in another namespace, if the
@@ -392,18 +382,18 @@ spec:
     namespace: prod
   volumeMode: Filesystem
 ---
-apiVersion: authorization.k8s.io/v1alpha1
+apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
   name: allow-prod-pvc
   namespace: prod
 spec:
   from:
-  - resource: persistentvolumeclaims
+  - kind: PersistentVolumeClaim
     namespace: dev
   to:
   - group: snapshot.storage.k8s.io
-    resource: volumesnapshots
+    king: VolumeSnapshot
     name: new-snapshot-demo
 ```
 
@@ -413,76 +403,79 @@ rejected".
 
 ### API Spec
 
+#### ClusterReferenceConsumer
+
 ```golang
-// ReferenceGrant identifies kinds of resources in other namespaces that are
-// trusted to reference the specified kinds of resources in the same namespace
-// as the policy.
-//
-// Each ReferenceGrant can be used to represent a unique trust relationship.
-// Additional ReferenceGrants can be used to add to the set of trusted
-// sources of inbound references for the namespace they are defined within.
-//
-// ReferenceGrant is a form of runtime verification allowing users to assert
-// which cross-namespace object references are permitted. Implementations that
-// support ReferenceGrant MUST NOT permit cross-namespace references which have
-// no grant, and MUST respond to the removal of a grant by revoking the access
-// that the grant allowed. 
-//
-// Implementation of ReferenceGrant is eventually consistent, dependent on
-// watch events being received from the Kubernetes API. Although some processing
-// delay is inevitable, any updates that could result in revocation of access MUST
-// be considered high priority and handled as quickly as possible.
-//
-// Implementations of ReferenceGrant MUST treat all of the following scenarios
-// as equivalent:
-//
-// * A reference to a Namespace that doesn't exist
-// * A reference to a Namespace that exists and a Resource that doesn't exist
-// * A reference to Namespace and Resource that exists but a ReferenceGrant
-//   allowing the reference does not exist
-//
-// If any of the above occur, a generic error message such as "RefNotPermitted" 
-// should be communicated, likely via status on the referring resource.
-//
-// Support: Core
+// ClusterReferenceConsumer identifies a common form of referencing pattern. This
+// can then be used with ReferenceGrants to selectively allow references.
+type ClusterReferenceConsumer struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Subject refers to the subject that is a consumer of the referenced
+	// pattern(s).
+	Subject rbacv1.Subject `json:"subject"`
+
+	// The names of the ClusterReferencePatterns this consumer implements.
+	PatternNames []string `json:"patternNames"`
+}
+```
+
+#### ClusterReferencePattern
+
+```golang
+// ClusterReferencePattern identifies a common form of referencing pattern. This
+// can then be used with ReferenceGrants to selectively allow references.
+type ClusterReferencePattern struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Group is the group of the referent.
+	Group string `json:"group"`
+
+	// Resource is the resource of the referent.
+	Resource string `json:"resource"`
+
+	// Version is the API version of this resource this path applies to.
+	Version string `json:"version,omitempty"`
+
+	// Path is the path which this reference may come from.
+	Path string `json:"path"`
+
+	// BaselineGrant allows granting access to same-namespace references by
+	// default without the need for ReferenceGrants.
+	BaselineGrant string `json:"baselineGrant"`
+}
+```
+
+#### ReferenceGrant
+
+
+```golang
+// ReferenceGrant identifies namespaces of resources that are trusted to
+// reference the specified names of resources in the same namespace as the
+// grant.
 type ReferenceGrant struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Spec defines the desired state of ReferenceGrant.
-	Spec ReferenceGrantSpec `json:"spec,omitempty"`
+	// PatternName refers to the name of the ClusterReferencePattern this allows.
+	PatternName string `json:"patternName"`
 
-	// Note that `Status` sub-resource has been excluded at the
-	// moment as it was difficult to work out the design.
-	// A `Status` sub-resource may be added in the future.
-}
-
-// +kubebuilder:object:root=true
-// ReferenceGrantList contains a list of ReferenceGrant.
-type ReferenceGrantList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ReferenceGrant `json:"items"`
-}
-
-// ReferenceGrantSpec identifies a cross namespace relationship that is trusted
-// for Gateway API.
-type ReferenceGrantSpec struct {
 	// From describes the trusted namespaces and kinds that can reference the
-	// resources described in "To". Each entry in this list MUST be considered
-	// to be an additional place that references can be valid from, or to put
-	// this another way, entries MUST be combined using OR.
+	// resources described in the Pattern and optionally the "to" list.
+	//
+	// Support: Core
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	From []ReferenceGrantFrom `json:"from"`
 
-	// To describes the resources in this namespace that may be referenced by
-	// the resources described in "From". Each entry in this list MUST be
-	// considered to be an additional set of objects that references can be
-	// valid to, or to put this another way, entries MUST be combined using OR.
+	// To describes the names of resources that may be referenced from the
+	// namespaces described in "From" following the linked pattern. When
+	// unspecified or empty, references to all resources matching the pattern
+	// are allowed.
 	//
-	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	To []ReferenceGrantTo `json:"to"`
 }
@@ -510,26 +503,19 @@ discussion](https://groups.google.com/g/kubernetes-api-reviewers/c/ldmrXXQC4G4)
 on the kubernetes-api-reviewers mailing list that's also relevant to this.
 <<[/UNRESOLVED]>>
 
-```go
-
-// ReferenceGrantFrom describes trusted namespaces and kinds.
+```golang
+// ReferenceGrantFrom describes trusted namespaces.
 type ReferenceGrantFrom struct {
-	// Group is the group of the referent.
-	// When empty, the Kubernetes core API group is inferred.
-	Group Group `json:"group"`
-
-	// Resource is the resource of the referent.
-	Resource string `json:"resource"`
-
 	// Namespace is the namespace of the referent.
+	//
+	// Support: Core
 	Namespace string `json:"namespace"`
 }
 
-// ReferenceGrantTo describes what Kinds are allowed as targets of the
-// references.
+// ReferenceGrantTo describes what Names and Resources are allowed as targets of
+// the references.
 type ReferenceGrantTo struct {
 	// Group is the group of the referent.
-	// When empty, the Kubernetes core API group is inferred.
 	Group string `json:"group"`
 
 	// Resource is the resource of the referent.
@@ -540,7 +526,7 @@ type ReferenceGrantTo struct {
 	// namespace.
 	//
 	// +optional
-	Name *string `json:"name,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 ```
 
@@ -563,8 +549,8 @@ moving ReferenceGrant to the new API group, just notes to save discussion time.
 <<[UNRESOLVED do we need status? ]>>
 Original Thread: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084670421
 
-We want to be able to represent the following, in descending order of 
-importance: 
+We want to be able to represent the following, in descending order of
+importance:
 
 1. Communicate that the ReferenceGrant is actively being used
 2. Communicate which controllers are using this ReferenceGrant
@@ -746,7 +732,7 @@ In both cases, this would significantly increase implementation
 complexity.
 
 As a potential middleground, we could explore a solution that left
-room for namespace selectors without actually including them. For example: 
+room for namespace selectors without actually including them. For example:
 
 ```go
 type ReferenceGrantFrom struct {
@@ -881,7 +867,7 @@ Users may also create ReferenceGrants to enable cross-namespace references.
 ###### Will enabling / using this feature result in introducing new API types?
 
 API Type: ReferenceGrant
-Supported Number of Objects per Cluster: No limit 
+Supported Number of Objects per Cluster: No limit
 Supported Number of Objects per Namespace: No limit
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
