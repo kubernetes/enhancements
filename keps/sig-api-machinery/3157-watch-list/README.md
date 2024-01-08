@@ -673,6 +673,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Implement a consistency check detector that will compare data received through a new watchlist request 
   with data obtained through a standard list request. The detector will be added to the reflector 
   and activated when an environment variable is set. The environment variable will be set for all jobs run in the Kube CI. 
+- Update the client-go generated List function to watchList data when the feature gate has been enabled and the ListOptions are satisfied.
 
 #### GA
 - Consider using WatchProgressRequester to request progress notifications directly from etcd.
