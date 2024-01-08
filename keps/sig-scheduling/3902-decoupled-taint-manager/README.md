@@ -45,17 +45,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X]  (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://git.k8s.io/enhancements) (not the initial KEP PR)
 - [X]  (R) KEP approvers have approved the KEP status as `implementable`
 - [X]  (R) Design details are appropriately documented
-- [ ]  (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-    - [ ]  e2e Tests for all Beta API Operations (endpoints)
-    - [ ]  (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-    - [ ]  (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ]  (R) Graduation criteria is in place
-    - [ ]  (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ]  (R) Production readiness review completed
-- [ ]  (R) Production readiness review approved
-- [ ]  "Implementation History" section is up-to-date for milestone
-- [ ]  User-facing documentation has been created in [kubernetes/website](https://git.k8s.io/website), for publication to [kubernetes.io](https://kubernetes.io/)
-- [ ]  Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X]  (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+    - [X]  e2e Tests for all Beta API Operations (endpoints)
+    - [X]  (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+    - [X]  (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X]  (R) Graduation criteria is in place
+    - [X]  (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X]  (R) Production readiness review completed
+- [X]  (R) Production readiness review approved
+- [X]  "Implementation History" section is up-to-date for milestone
+- [X]  User-facing documentation has been created in [kubernetes/website](https://git.k8s.io/website), for publication to [kubernetes.io](https://kubernetes.io/)
+- [X]  Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -154,9 +154,14 @@ Kubernetes already has a good coverage of node `No-Execute` eviction. We will ad
 - Verify the ability to enable and disable the default `TaintEvictionController`.
 - Verify the new `TaintEvictionController`to act on node taints properly.
 
+- `test/integration/node/lifecycle_test.go#TestEvictionForNoExecuteTaintAddedByUser`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestEvictionForNoExecuteTaintAddedByUser)
+- `test/integration/node/lifecycle_test.go#TestTaintBasedEvictions`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestTaintBasedEvictions)
+
 ##### E2E tests
 - Verify the new controllers to pass the existing E2E and conformance tests using the split `TaintEvictionController`.
 - Manually test rollback and the `upgrade->downgrade->upgrade` path to verify it can pass the existing e2e tests.
+
+- `test/e2e/node/taints.go`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=NoExecuteTaintManager)
 
 ### Graduation Criteria
 
@@ -173,7 +178,7 @@ Since there are no new API changes, we can skip Alpha and go to Beta directly.
 
 #### GA
 
-* Fix all reported bugs if any.
+* No negative feedback.
 
 ### Upgrade / Downgrade Strategy
 
@@ -216,8 +221,19 @@ This is an opt-in feature, and it does not change any default behavior. Unless t
 A significantly changing number of pod evictions (`taint_eviction_controller_pod_evictions_total`) and/or a substantial increase in pod eviction latency (`taint_eviction_controller_pod_deletion_duration_seconds`) in Kubernetes.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-The upgrade will be tested in the planned unit and e2e tests. The rollback and upgrade-downgrade-upgrade path will
-be tested manually (see [Test Plan](#test-plan) section).
+Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
+re-enabled the feature gate.
+
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+1. Create a cluster in v1.29, the `SeparateTaintEvictionController` enabled by default.
+2. Run the existing e2e tests to verify the new controllers work as expected. Above mentioned metrics found.
+3. Simulate downgrade by modifying control-plane manifests to disable `SeparateTaintEvictionController`.
+4. Run the existing e2e tests to verify the current behavior without the new controllers.
+5. Simulate upgrade by modifying control-plane manifests to enable `SeparateTaintEvictionController`.
+6. Repeat step 2.
+
+The e2e tests are mentioned in the [Test Plan](#test-plan) section.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -287,6 +303,7 @@ If the pod eviction latency increases significantly, validate if the communicati
 
 * 2023-03-06: Initial KEP published.
 * 2023-10-23: KEP updated to update name of the `SeparateTaintEvictionController` feature-flag and exposed metrics.
+* 2024-04-22: KEP promoted to Stable.
 
 ## Drawbacks
 
