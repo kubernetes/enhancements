@@ -142,8 +142,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -867,6 +867,7 @@ N/A
 ## Implementation History
 The KEP was proposed on 2023-03-01
 The KEP was promoted to beta on 2023-10-02
+The KEP was promoted to stable on 2024-01-09
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
