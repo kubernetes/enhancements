@@ -1795,10 +1795,23 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes it can.
 
 Running workloads continue to work without any changes. Restarting or
-re-deploying a workload causes it to fail as the requested QoS-class resources
+re-deploying a workload may cause it to fail as the requested QoS-class resources
 are not available in Kubernetes anymore. The resources are still supported by
 the underlying runtime but disabling the feature in Kubernetes makes them
 unavailable and the related PodSpec fields are not accepted in validation.
+
+In particular:
+
+- kubelet will ignore any QoS-class resources specified in the PodSpec if the
+  feature is disabled. New pods and containers (re-)created on the node
+  effectively have no QoS set as the information about QoS-class resource
+  assignments is not propagated to the CRI runtime.
+- kube-scheduler will ignore any QoS-class resource requests if the feature is
+  disabled. This may cause pod admission failures on the node if the feature
+  is enabled in kubelet.
+- kube-apiserver will reject creation of new pods with QoS-class resource
+  requests if the feature is disabled. This may cause e.g. failures in
+  re-deployment of an application that previously succeeded.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
