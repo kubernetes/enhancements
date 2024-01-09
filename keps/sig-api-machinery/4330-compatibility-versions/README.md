@@ -100,6 +100,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -210,7 +212,7 @@ Kubernetes control-plane, by means of:
 
 ### Non-Goals
 
-- Changes to CAPI/kubeadm/KIND/minikube to absorb the compatibility versions
+- Changes to Cluster API/kubeadm/KIND/minikube to absorb the compatibility versions
   will be addressed separate from this KEP
 
 ## Proposal
@@ -392,7 +394,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -424,26 +426,31 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
+For Alpha, we will fill this out as we implement.
+
 - `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
+For Alpha we will add integration test to ensure `--compatibility-version` behaves expected according to the following grid:
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+**Transition**|**N-1 Behavior**|**N Behavior**|**Expect when compatibility-version=N-1**|**Expect when compatibility-version=N (or is unset)**
+-----|-----|-----|-----|-----
+Alpha feature introduced|-|off-by-default|feature does not exist, feature gate may not be set|feature enabled only when `--feature-gates=<feature>=true`
+Alpha feature graduated to Beta|off-by-default|on-by-default|feature enabled only when `--feature-gates=<feature>=true`|feature enabled unless `--feature-gates=<feature>=false`
+Beta feature graduated to GA|on-by-default|on|feature enabled unless `--feature-gates=<feature>=false`|feature always enabled, feature gate may not be set
+Beta feature removed|on-by-default|-|feature enabled unless `--feature-gates=<feature>=false`|feature does not exist
+Alpha API introduced|-|off-by-default|feature does not exist, feature gate may not be set|API available only when `--runtime-config=api/<api>=true`
+Beta API graduated to GA|off-by-default|on|API available only when `--runtime-config=api/<api>=true`|API available
+Beta API removed|off-by-default|-|API available only when `--runtime-config=api/<api>=true`|API does not exist
+on-by-default Beta API removed|on-by-default|-|API available unless `--runtime-config=api/<api>=false`|API does not exist
+API Storage version changed|v1beta1|v1|Resources stored as v1beta1|Resources stored as v1
+new CEL function|-|function in StoredExpressions CEL environment|CEL function does not exist|Resources already containing CEL expression can be evaluated
+introduced CEL function|function in StoredExpressions CEL environment|function in NewExpressions CEL environment|Resources already containing CEL expression can be evaluated|CEL expression can be written to resources and can be evaluted from storage
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+- The other edge cases we will test are:
+  - `--compatibility-version=<N-2>` - fails validation
+  - `--compatibility-version=<N+1>` - fails validation
 
 ##### e2e tests
 
@@ -457,9 +464,26 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+For e2e testing, we intend to run e2e tests from the N-1 minor version of kubernetes
+against the version being tested with --compatibility-version set to the N-1 minor versions.
+
+This is a new kind of testing-- it requires running the tests from a release branch against
+the the branch being tested (either master or another release branch).
+
+We intend to have this up and running for Beta
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Compatibility version support for N-1 minor versions
+- Integration tests completed and enabled
+
+#### Beta
+
+- Initial cross-branch e2e tests completed and enabled
+- Compatibility version support for N-3 minor versions
 
 <!--
 **Note:** *Not required until targeted at a release.*
