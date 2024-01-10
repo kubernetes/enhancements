@@ -7,20 +7,39 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [Bindings](#bindings)
-    - [Unsetting values](#unsetting-values)
+  - [Summary](#summary-1)
+  - [Phase 1](#phase-1)
+    - [API Shape](#api-shape)
     - [Old object state](#old-object-state)
-    - [Scoped mutations](#scoped-mutations)
-    - [Multiple mutations](#multiple-mutations)
-      - [Order](#order)
-      - [Reinvocation](#reinvocation)
+    - [Construct Typed Object](#construct-typed-object)
+    - [Bindings](#bindings)
+    - [Parameterization](#parameterization)
+    - [Reinvocation](#reinvocation)
+    - [Metrics](#metrics)
+  - [Phase 2](#phase-2)
+    - [Construct Type Enforcement](#construct-type-enforcement)
+    - [Unsetting values](#unsetting-values)
       - [Safety](#safety)
+    - [CEL Library Change](#cel-library-change)
+    - [Share Bindings](#share-bindings)
+    - [Type Handling](#type-handling)
+    - [Composition variables](#composition-variables)
+  - [Risk](#risk)
   - [User Stories](#user-stories)
     - [Use case: Set a label](#use-case-set-a-label)
-    - [Use case: Set a field](#use-case-set-a-field)
+    - [Use case: AlwaysPullImages](#use-case-alwayspullimages)
+    - [Use case: DefaultIngressClass](#use-case-defaultingressclass)
+    - [Use case: DefaultStorageClass](#use-case-defaultstorageclass)
+    - [Use case: DefaultTolerationSeconds](#use-case-defaulttolerationseconds)
+    - [Use case: if-conditional based on value contained in nested map-list](#use-case-if-conditional-based-on-value-contained-in-nested-map-list)
+    - [Use case: LimitRanger](#use-case-limitranger)
+    - [Use case: priority class](#use-case-priority-class)
     - [Use case: Sidecar injection](#use-case-sidecar-injection)
-    - [Use case: Clear an annotation](#use-case-clear-an-annotation)
+    - [Use case: Remove an annotation](#use-case-remove-an-annotation)
     - [Use case: If an annotation is set, set a field instead](#use-case-if-an-annotation-is-set-set-a-field-instead)
+    - [Use case: modify deprecated field under CRD versions](#use-case-modify-deprecated-field-under-crd-versions)
+    - [Use Case - mutation VS controller fight](#use-case---mutation-vs-controller-fight)
+    - [Use Case - limitation](#use-case---limitation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -44,6 +63,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Alternative 1: JSONPatch](#alternative-1-jsonpatch)
+  - [Alternative 2: Introduce new syntax](#alternative-2-introduce-new-syntax)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -97,7 +118,7 @@ the work started by [`KEP-3488`
 API](/keps/sig-api-machinery/3488-cel-admission-control/README.md) for
 validating admission policies.
 
-This enhancement proposes and approach where mutations are declared in CEL by
+This enhancement proposes an approach where mutations are declared in CEL by
 combining CEL's object instantiation and Server Side Apply's merge algorithms.
 
 ## Motivation
@@ -146,7 +167,40 @@ applied after all other mutating admission operations have been applied.
 
 ## Proposal
 
-Introduce `MutatingAdmissionPolicy` API, e.g.
+### Summary
+
+Before getting into all the individual fields and capabilities, let's look at the general "shape" of the API.
+Very similar to what we have in ValidatingAdmissionPolicy, this API separates policy definition from policy configuration by splitting responsibilities across resources. The resources involved are:
+- Policy definitions (MutatingAdmissionPolicy)
+- Policy bindings (MutatingAdmissionPolicyBinding)
+- Policy param resources (custom resources or config maps)
+
+The idea is to leverage the CEL power of the object construction and allow users to define how they want to mutate the admission request through CEL expression.
+This proposal aims to allow mutations to be expressed using the "apply configuration" introduced by Server Side Apply. 
+And users would be able to define only the fields they care about inside MutatingAdmissionPolicy, the object will be constructed using CEL which would be similar to a Server Side Apply configuration patch and then be merged into the request object using the structural merge strategy. 
+See sigs.k8s.io/structured-merge-diff for more details.
+
+Note: See the alternative consideration section for the alternatives.
+
+Pros:
+- Consistent with Server Side Apply so that we will continue investing SSA as the best way to do patch updates to resources;
+- Does not require the users to learn a new syntax;
+- Inherit the declarative nature;
+- Existing merging strategy to be leverage without rewritten and the effort of maintaining multiple systems;
+- Support the existing makers/openapi extensions.
+
+Cons:
+- Lack of deletion support (see the unsetting values section for the details and workaround);
+- Migration effort from Mutation Webhook
+  
+
+### Phase 1
+
+#### API Shape
+Similar to the `validations` field in ValidatingAdmissionPolicy, a `mutations` field will be defined inside MutatingAdmissionPolicy which allows users to define a list of mutations that apply to the specific resources.
+Each mutation field contains a CEL expression which evaluates to a partially populated object representing a Server Side Apply "apply configuration". The apply configuration is then merged into the request object.
+
+Here is an example of injecting an initContainer.
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1alpha1
@@ -168,8 +222,10 @@ spec:
     - name: does-not-already-have-sidecar
       expression: "!object.spec.initContainers.exists(ic, ic.name == params.name)"
   failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
   mutations:
-    - mutation: >
+    - patchType: "ApplyConfiguration" // "ApplyConfiguration", "JSONPatch" supported. Default to "ApplyConfiguration"
+      mutation: >
         Object{
           spec: Object.spec{
             initContainers: [
@@ -180,36 +236,42 @@ spec:
                 restartPolicy: params.restartPolicy
                 // ... other container fields injected here ...
               }
-            ] + oldObject.spec.initContainers
+            ]
           }
         }
-      mutationValidation:
-        type: Expression
-        expression: "object.spec.initContainers.exists(ic, ic.name == params.name)"
-
 ```
+The field `mergeStrategy` is used to specify which strategy is used for the mutation.
+Supported values include "ApplyConfiguration", "JSONPatch". It will default to "ApplyConfiguration" if not specified.
+The "ApplyConfiguration" strategy will prevent user from manipulating atomic list. 
+For any mutation requires modification on atomic list, "JSONPatch" strategy is needed.
 
-The `mutation` field contains a CEL expression that evalutes to a partially
-populated object representing an Server Side Apply "apply configuration". The
-apply configuration is then merged into the request object.
+Note: 
+- "JSONPatch" should be supported before the feature going to beta
+- The API design of "JSONPatch" should be discussed before second alpha
+
+The "JSONPatch" strategy will use JSONPatch like what is done in Mutating Webhook. 
+@andrewsykim has a [prototype](https://github.com/kubernetes/enhancements/pull/3776) on this earlier.
+The following context will focus on "ApplyConfiguration" strategy.
+
+When "ApplyConfiguration" specified, the expression evaluates to an object that has the same type as the incoming object, and the type alias Object refers to the type (see Type Handling for details).
 
 By using Server Side Apply merge algorithms, schema declarations like
 `x-kubernetes-list-type: map`, that control how a merge is performed, will be
 respected.
 
 However, unlike with server side apply, these mutations will not have a field
-manager. This has important implications in how the merge is performed that will
+manager specified. This has important implications in how the merge is performed that will
 be discussed in more detail in the below "Unsetting values" section.
 
-The `mutationValidation` field declares how the validate the the mutation has
-been correctly applied. This is important when multiple mutations are applied to
-an object and will be discussed in more detail below.
+Note: Mutation policy will generally follow the way how mutation webhook deals with field manager.
 
 In this example, note that:
 
 - `Object{}`, `Object.spec{}` and similar are CEL object instantiations, and are
   used to create a subset of the fields of a `Pod`.
-- `oldObject` refers to the state of the object before the mutation is applied.
+- `object` refers to the state of the object before the mutation policy is applied.
+- `oldObject` refers to the state of object currently in etcd.
+- `params` refers to the param resource.
 
 To use this `MutatingAdmissionPolicy` we first must create a policy binding
 and `Sidecar` parameter resource:
@@ -229,8 +291,8 @@ spec:
 # Sidecar parameter resource
 apiVersion: mutations.example.com
 kind: Sidecar
-metadata: meshproxy-test.example.com
-  name: 
+metadata: 
+  name: meshproxy-test.example.com
 spec:
   name: mesh-proxy
   image: mesh/proxy:v1.0.0
@@ -269,12 +331,103 @@ spec:
     image: example/myapp:v1.0.0
 ```
 
+#### Old object state
+
+Sometimes the current state of the object will be needed. This is available via
+the `object` variable. For example, to update all containers in a pod to use
+the "Always" imagePullPolicy:
+
+```cel
+Object{
+  spec: Object.spec{
+    containers: object.spec.containers.map(c,
+      Object.spec.containers.item{
+          name: c.name,
+          imagePullPolicy: "Always"
+      }
+    )
+  }
+}
+```
+
+#### Construct Typed Object
+In the mutation expressions, CEL supports constructing the object with a named type. 
+At the language level, the named type can be anything that the CEL library registers with the environment. 
+For MutatingAdmissionPolicy, Object is the alias of the type that the incoming object confirms.
+
+With the object construction syntax, field names are no longer quoted because they are no longer map keys. 
+If any of the object construction violates the defined schema, the expression compilation will error and the user can retrieve the error from the rejection message.
+For list types, i.e. with the OpenAPI type of “array”, the special item field resolves the type of its items.
+In Alpha 1, the CEL environment and its type providers compile the constructed object, but make no effort to check if the field names and types match these of the schemas (i.e. everything is still Dyn). 
+See Construct Type Enforcement in Alpha 2 for future plans.
+
 #### Bindings
 
 Bindings will be almost the same as `ValidatingAdmissionPolicyBinding`, but with
 the following difference:
 
 - No `validationActions` field (unless anyone can think of any useful way to offer a dry-run type option)
+
+#### Parameterization
+Similar to ValidatingAdmissionPolicy, the mutation admission policy can refer to a param, and the param object can be specified per-namespace. 
+We expect to fully reuse existing params handling logic from ValidatingAdmissionPolicy.
+
+#### Reinvocation
+
+The existing reinvocation policy established between webhooks and admission controllers will be extended to also handle admission policies.
+Ref: [the current re-invocation mechanism for webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#reinvocation-policy).
+Admission policies will be reinvoked after admission controllers and before webhooks. 
+
+With mutating admission policies added, the the mutating admission plugin order will become:
+- Mutating admission controllers(e.g. DefaultIngressClass, DefaultStorageClass, etc)
+- Mutating admission policies (introduced within this enhancement and the order will be discussed below)
+- Mutating admission webhooks (ordered lexicographically by webhook name)
+
+To allow mutating admission plugins to observe changes made by other plugins, built-in mutating admission plugins are re-run if a mutating webhook modifies an object, 
+same will apply with mutating policy. The mutating policies are rerun if a mutating webhook or mutation policy modifies an object.
+
+For the running order within mutating admission policies, there are a couple options proposed:
+- option 1(suggested by @deads2k): ordered randomly but keep the same random order while reinvocation.
+  - Pros: 
+    - Encourage user to write order-independent mutations
+  - Cons: 
+    - The final state of request is not deterministic
+    - The mutation should not have dependencies in between
+- option 2: the lexicographical ordering of the resource names
+  - Pros:
+    - Align with the behavior with mutating webhook
+  - Cons:
+    - User has to be mindful on the order if there is dependency existing
+    - User has a hacky way to enforce the order
+
+Considering it would be easier to go with random order and then switch to a particular order, 
+
+Notes: If the mutations run in random order, a concern would be if people didn't write idempotence mutations,
+the result might be different between two admission request. Please refer to Safety section for ways to check idempotence.
+
+#### Metrics
+Goals:
+- Parity with validating admission policy metrics 
+  - Should include counter of deny, success violations 
+  - Label by {policy, policy binding, mutation expression} identifiers
+- Counters for number of policy definitions and policy bindings in cluster 
+  - Label by state (active vs. error), enforcement action (deny, warn)
+- Counters for Variable Composition 
+  - Should include a counter of variable resolutions to measure time saved. 
+  - Label by policy identifier
+
+
+### Phase 2
+
+All these capabilities are required and should be discussed thoughtfully before Beta, but will not be implemented in the first alpha release of this enhancement due to the size and complexity of this enhancement.
+
+#### Construct Type Enforcement
+
+The type alias Object and its descendants, in Phase 2, are now real types that derive from the resolved OpenAPI schemas. 
+If any type violations happen in the constructed object, the CEL checker will raise the errors before the expressions evaluate.
+
+For bigger schemas, the construction of CEL types can be expensive. It is recorded to take ~100ms to resolve and parse apps/v1.Deployment. 
+Optimizations like caching or lazy sub-schema resolution can be candidates of beta/GA graduation criteria.
 
 #### Unsetting values
 
@@ -289,9 +442,31 @@ feature to make it possible to express that a value should be unset. For example
 ```cel
 Object{
   spec: Object.spec{
-    ?fieldToRemove: optional.none() # plz remove
+    ?fieldToRemoveIfPresent: optional.none()
   }
 }
+```
+The policy declaratively describes that, in the final object, if fieldToRemoveIfPresent presents it should be removed or no-op otherwise.
+
+The optional.none() function creates a CEL object defined as optional(T) where T is the type of the receiving field. 
+In conjunction with standard CEL macros, simple expressions can perform more complicated and precise operations.
+
+For example, to remove the env of a sidecar container, filter by its name.
+
+```yaml
+mutations:
+  - mutaton: >
+        Object{
+            spec: Object.spec{
+                containers: object.spec.containers{
+                    object.spec.containers.filter(c, c.name == "sidecar")
+                    .map(c, Object.spec.containers.item{
+                        ?env: optional.none()
+                    })
+                }
+            }
+        }
+
 ```
 
 We will track which fields are unset in this way and remove them after the
@@ -299,171 +474,71 @@ server side apply merge algorithm is run.
 
 This solves the vast majority of value removal needs. Specifically:
 
-| Schema type | Merge type | Example of how to unset a value                                      |
-| ----------- | -----------| -------------------------------------------------------------------- |
-| struct      | atomic     | See below                                                            |
-| struct      | granular   | `?fieldToRemove: optional.none()`                                    |
-| map         | atomic     | `mapField: oldObject.spec.mapField.filter(k, k != "keyToRemove")`    |
-| map         | granular   | `mapField: {?"keyToRemove": optional.none()}`                        |
-| list        | atomic     | `listField: oldObject.spec.listField.filter(e, e != "itemToRemove")` |
-| list        | set        | `setField: oldObject.spec.setField.filter(e, e != "itemToRemove")`   |
-| list        | map        | See below                                                            |
+| Schema type | Merge type | Example of how to unset a value                                                  |
+|-------------| -----------|----------------------------------------------------------------------------------|
+| struct      | atomic     | ```Object{ spec: Object.spec{ structField: {?fieldToRemove: optional.none()}}}``` |
+| struct      | granular   | `?fieldToRemove: optional.none()`                                                |
+| map         | atomic     | `mapField: object.spec.mapField.filter(k, k != "keyToRemove")`                   |
+| map         | granular   | `mapField: {?"keyToRemove": optional.none()}`                                    |
+| list        | atomic     | Use `JSONPatch`                                                                  |
+| list        | set        | `setField: object.spec.setField.filter(e, e != "itemToRemove")`                  |
+| list        | map        | See below                                                                        |
+| list        | granular   | See below                                                                        | 
 
-<<[UNRESOLVED jpbetz ]>>
-Pick an option for atomic structs and lists with "map" merge type.
-<<[/UNRESOLVED]>>
 
-Atomic struct options:
-  - Recreate the struct, e.g.: `Object.spec.structField: Object.spec.structField{field1: oldObject.spec.structField.field1}`
-  - TODO: The entire OpenAPIv3 stanza of a CRD is an atomic struct, can we support mutations of it?
-
-List with "map" merge type options:
-  - Add a `objects.filter(<list>, <keys-to-remove>)` CEL function that makes it possible
-    to remove "list,type=map" entries.
-  - Use a synthetic "$remove: true" directive field to all "list,type=map" object
-    schemas so that a user could do `[Object.spec.listMapField{keyField: "key", $remove: true}]`.
-  - Offer way to declare which fields are "owned" by the mutation, and then remove
-    any fields that are owned but where no replacement value is set.
-
-#### Old object state
-
-Sometimes the current state of the object will be needed. This is available via
-the `oldObject` variable. For example, to update all containers in a pod to use
-the "Always" imagePullPolicy:
-
-```cel
-Object{
-  spec: Object.spec{
-    containers: oldObject.spec.containers.map(c,
-      Object.spec.containers.item{
-          name: c.name,
-          imagePullPolicy: "Always"
-      }
-    )
-  }
-}
-```
-
-#### Scoped mutations
-
-When a list is atomic, there is no way to merge in an added field to each list
-item using server side apply directly. (What was done above in the imagePullPolicy
-example only works for a list when listType=map).
-
-This can be addressed if we allow mutations to be scoped. For example:
-
+List with "map" merge type:
+  - Filter `objects.filter(<list>, <keys-to-remove>)` could be used for the deletion
+  - For associatedList with multiple keys like example above, a directive field added could be used to indicate the deletion.
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
-kind: MutatingAdmissionPolicy
-metadata:
-  name: "widget-policy.example.com"
-spec:
-  matchConstraints:
-    resourceRules:
-    - apiGroups:   ["example.com"]
-      apiVersions: ["v1"]
-      operations:  ["CREATE"]
-      resources:   ["parts"]
-  mutations:
-    - scope: "spec.widgets[*]"
-      mutation: >
-        Object.spec.widget{
-          reticulated: true
+mutations:
+  - mutaton: >
+      Object{
+        spec: Object.spec{
+                assocListField: [Object.spec.assocListField{
+                       keyField1: "key1",
+                       keyField2: "key2",
+                       _: optional.none()
+                }]
         }
-```
-
-We considered not offering this `scope` field, but because of how server side
-apply merges work, it is more than just a convenience-- It makes it possible to
-express mutations that would otherwise require exposing additional merge utility
-functions.
-
-When a mutation is scoped, we will also provide an `oldSelf` variable that provides
-access to the scoped value before the mutation is applied.
-
-Alternative considered: Offer an `apply()` function in CEL, e.g.:
-
-```cel
-Object{
-    spec: Object.spec{
-        widgets: oldObject.spec.widgets.map(oldWidget,
-            objects.apply(oldWidget, Object.spec.widgets.item{
-                reticulated: true
-            })
-        )
-    }
 }
+
 ```
 
-#### Multiple mutations
+For examples of removing item from List with Map filtered by a subfield:
+```yaml
+mutations:
+  - mutaton: >
+        Object{
+            spec: Object.spec{
+                containers: object.spec.containers.filter(c, c.envvar != "remove-this-container")
+                }
+            }
+        }
 
-##### Order
+```
 
-With mutating admission policies added, the the mutating admission plugin order
-will become:
-
-  - Mutating admission webhooks (ordered lexographically by webhook name)
-  - Mutating admission policies (ordered by scope)
-  - Mutating admission controllers
-
-Mutating admission policies will be ordered primarily by scope where mutations
-scoped nearer to the root are ordered before deeper scoped mutations.
-
-For example, the following scopes are correctly ordered:
-
-- `spec`
-- `spec.initContainers[name:sidecar]`
-- `spec.initContainers[*].imagePullPolicy`
-
-For mutations at the same level, the lexographical name of the policy
-will be used to ensure a deterministic order. E.g.:
-
-- `spec.a`
-- `spec.b`
-
-The scope of a mutation will be computed as follows:
-
-- Start with the explicitly stated `scope` of each mutation
-- Inspect the CEL expression to identify which parts of the apply configuration
-  are just path information and narrow the scope using this information.
-  - Example: `Object{ spec: Object.spec{ containers: oldObject.spec.containers.filter(...) }}` is
-    scoped to `spec.containers`.
-- When a mutating admission policies declares the multiple mutations, the "least
-  common denominator" scope will be used. E.g. for `spec.a`, `spec.b` the LCD scope
-  is `spec`.
-
-Alternative considered: Do what mutating webhooks do: order mutations using the
-lexographical ordering of the resource names. Just like with mutating webhooks,
-reinvocation will be required.
-
-Alternative considered: Order by constructing a DAG of which fields each
-mutation reads and writes. CEL expressions can be statically analyzed to build a
-list of the schema fields that are read/written. Potential cycles could be
-detected and a warning written to status.. This is significantly more coplex
-than the other alternatives. For this alternative to offer any advantage, we
-would need to be able to use the data to ban cycles from being introduced so
-that the DAG can be used to determine a total order of mutations.
-
-##### Reinvocation
-
-The existing reinvocation policy established between webhooks and admission controllers
-will be extended to also handle admission policies.  Admission policies will be
-reinvoked after webhooks and before admission controllers.
+For granular list removal, a use case would be removing an item with a sub field named `remove-this-item`.
+```yaml
+mutations:
+  - mutation: >
+      Object{
+        spec: Object.spec{
+                granularList: object.spec.granularList.filter(c, c.subField != "remove-this-item")
+        }
+      }
+```
 
 ##### Safety
 
 To ensure mutations are not "broken" by other mutations (overwritten, undone, or
-otherwise invalidated), we will register a validation in the validating
-admission plugin chain for mutation.  These validation checks will ensure if
-mutation has had the desired effect.
+otherwise invalidated) and ensure the deterministic final state due to the random running order,
+we provide an option to check if rerun certain mutation policy leads to object change.
+It also helps to ensure the mutation is written in a idempotent way in consideration of the random running ordering. 
 
-
-These validation checks will be declared using a `mutationValidation` field, which
-is a union with a `type` field that must be one of:
-
-- `ExactAfterReplay` - Replaying the mutation on the mutated object results in an identical object.
-- `Expression` - An `expression` field provides a CEL expression to validate the post condition.
-- `SkipValidation` - Don't validate. Since we expect most mutations should be post checked, we will
-                 require developers explicitly opt out if they don't want validation.
+These validation checks will be declared using a `mutationValidationPolicy` field, which is an enum of the following values:
+- Fail - Replaying the mutation on the mutated object should result in an identical object,  if not, fail the request.
+- Warn - Replaying the mutation on the mutated object should result in an identical object,  if not, pass the request with a warning message.
+- Skip - Don't replay the mutation.
 
 For example:
 
@@ -486,32 +561,97 @@ spec:
                 restartPolicy: params.restartPolicy
                 // ... other container fields injected here ...
               }
-            ] + oldObject.spec.initContainers
+            ] + object.spec.initContainers
           }
         }
-      mutationValidation: 
-        type: Expression
-        expression: "object.spec.initContainers.exists(ic, ic.name == params.name)"
+  mutationValidationPolicy: Fail
 ```
+If rerun the mutation policy caused object change, the request should be failed
 
-Or, if the mutation is idempotent and expected to be applied exactly, simply do:
+To validate an object after all mutations are guaranteed complete, we highly recommend to use a validating admission policy to validate the final state of object. 
 
+#### CEL Library Change
+We expect this feature to require minimal changes to the core or the Kubernetes-specific CEL library. 
+However, this feature uses the optional library in a way that the library was not designed to. We acknowledge the risk where not all current or future features of the optional library will be available.
+
+We will be evaluating the existing CEL library to see if any specific func should be added for mutation use case.
+A potential candidate would be the hashing function which might be helpful in the recent discussion of controller sharding.
+Ref: https://github.com/timebertt/kubernetes-controller-sharding/blob/main/docs/design.md#the-clusterring-resource-and-sharder-webhook (the kubernetes-controller-sharding project could also eliminate their webhook if we supported this). 
+
+In consideration of written expression for deep nested list/map, library which could help with flatten the list or accumulation alike functions might be useful to add.
+
+#### Share Bindings
+
+The suggested best practice of using MutatingAdmissionPolicy would be having ValidatingAdmissionPolicy also set to validate if the request matches the desired result. 
+However, having both MutatingAdmissionPolicy and ValidatingAdmissionPolicy with parameterization would result in 6 new resources(policy, binding and params for both Mutating and validating).
+A possible path would be allowing one binding to bind both MutatingAdmissionPolicy and ValidatingAdmissionPolicy which could be further discussed before going to Beta.
+
+#### Type Handling
+
+The type system works differently than ValidatingAdmissionPolicy in the following aspects.
+
+1. Schema Enforcement of Structural Merge Diff
+
+  The resulting object will be converted into typed objects as understood by SMD, with existing SMD schema validations still effective. 
+  Should SMD return an error during the conversion, the error handling follows the failure policy. 
+  Note that it is possible to pass CEL expression compilation but still fail the schema validation if Variable Composition is used, see Variable Composition below.
+2. Type Checking Before Runtime
+
+  Similar to ValidatingAdmissionPolicy, a controller, running in kube-controller-manager, compiles the expressions against the types defined in matchConstraints. 
+  The number of types to check are also heavily limited to prevent the checks taking up too much computing time from the KCM.
+
+#### Composition variables
+To control the size of mutation expression, and to better reuse parts of the expressions, sub-expressions can be extracted into a separate variables section, similar to variables of ValidatingAdmissionPolicy.
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
-kind: MutatingAdmissionPolicy
-metadata:
-  name: "widget-policy.example.com"
-spec:
-  # ...
-  mutations:
-    - scope: "spec.widgets[*]"
-      mutation: >
-        Object.spec.widget{
-          reticulated: true
-        }
-      mutationValidation:
-        type: ExactAfterReplay
+variables:
+  - name: targetContainers
+    expression: >-
+      object.spec.template.containers.filter(c,
+      c.image.contains("example.com"))
+  - name: transformedContainers
+    expression: >
+      variables.targetContainers.map(c, {"name": c.name, "env": {"name": "FOO",
+      "value": "foo"}})
+mutations:
+  - mutation: |
+      Object{
+          spec: Object.spec{
+              template: Object.spec.template{
+                  containers: variables.transformedContainers
+              }
+          }
+      }
+
 ```
+
+With variable composition, it is possible to escape from compile-time type checking. For example
+```yaml
+variables:
+  - name: definitelyNotAContainer # resulting type is Dyn
+    expression: >-
+      params.foo == "bar" ? true : "true"
+mutations:
+    - mutation: |
+        Object{
+          spec: Object.spec{
+              template: Object.spec.template{
+                  containers: [variables.definitelyNotAContainer] # will pass, but error at runtime.
+              }
+          }
+      }
+
+```
+
+### Risk
+
+1. Ensure the final state match expectation.
+There might be multiple mutating admission policies, mutating webhooks, other controllers trying to mutate the incoming request and each happens separately, 
+and they might mutate the same part of the object. 
+It might be hard to ensure that the final state matches expectations. 
+For best practice, the validation process is highly recommended whenever there is a mutation process set up. The validating admission policy is recommended to be set up whenever a mutation admission policy is set to verify the final state of the data matches the expectation. Also refer to the Safety section for further details.
+
+2. Failures in MutatingAdmissionPolicy will fail request in admission chain.
+If the failure policy is set to fail and the mutation admission policy matches all resources, the failure/error in MAP might infect the control plane availability.
 
 ### User Stories
 
@@ -526,12 +666,12 @@ Object.spec{
 }
 ```
 
-#### Use case: Set a field
-
+#### Use case: AlwaysPullImages
+Force all image pull policy under containers to Always
 ```cel
 Object{
     spec: Object.spec{
-        containers: oldObject.spec.containers.map(c,
+        containers: object.spec.containers.map(c,
             Object.spec.containers.item{
                 name: c.name,
                 imagePullPolicy: "Always"
@@ -540,6 +680,98 @@ Object{
         // ... same for initContainers and ephemeralContainers ...
     }
 }
+```
+
+#### Use case: DefaultIngressClass
+While creation of Ingress objects that do not request any specific ingress class,
+adds a default ingress class to them.
+
+```yaml
+matchConditions:
+  - name: 'need-default-ingress-class'
+    expression: '!has(object.spec.ingressClassName)'
+mutations:
+  - mutation: |
+      Object{
+        spec: Object.spec{
+          ingressClassName: "defaultIngressClass"
+        }
+      }
+```
+
+#### Use case: DefaultStorageClass
+While creation of PersistentVolumeClaim objects that do not request any specific storage class,
+adds a default storage class to them.
+```yaml
+matchConditions:
+  - name: 'need-default-storage-class'
+    expression: '!has(object.spec.storageClassName)'
+mutations:
+  - mutation: |
+      Object{
+        spec: Object.spec{
+          storageClassName: "defaultStorageClass"
+        }
+      }
+```
+
+#### Use case: DefaultTolerationSeconds
+Sets the default forgiveness toleration for pods to tolerate the taints `notready:NoExecute`.
+
+Should be supported through `JSONPatch`.
+
+#### Use case: if-conditional based on value contained in nested map-list
+If the volumemount specified in containers does not have a volume associated, add a volume.
+```yaml
+variables:
+  - name: volumeMountsList
+    expression: "object.spec.containers.map(c, c.volumeMounts.map(v, v.name))"
+  - name: volumesList
+    expression: "object.spec.volumes.map(v, v.name)"
+mutations:
+  - mutation: |
+      Object{
+        spec: Object.spec{
+          volumes: volumeMountsList.filter(n, !(n in volumesList)).map(v, {
+              name: v,
+              configMap: params.addFields
+          })
+        }
+      }
+```
+It could be simplified with composition variables.
+I have a [gist example](https://gist.github.com/cici37/e8181e53069435a307cd7822305b217c) here.
+
+#### Use case: LimitRanger
+Apply default resource requests to Pods that don't specify any.
+```yaml
+mutations:
+  - mutation: |
+      Object{
+        spec: Object.spec{
+          containers: object.spec.containers.filter(c, !has(c.resources)).map(c, 
+            {
+                name: c.name,
+                resources: {#default resources settings}
+            }
+        }
+      }
+```
+
+#### Use case: priority class 
+
+Add a default priority class if it is not set in pod
+```yaml
+matchConditions:
+  - name: 'no-priority-class'
+    expression: '!has(object.spec.priorityClassName)'
+mutations:
+  - mutation: |
+      Object{
+        spec: Object.spec{
+          priorityClassName: params.defaultPriorityClass
+        }
+      }
 ```
 
 #### Use case: Sidecar injection
@@ -555,12 +787,13 @@ Object{
         restartPolicy: params.restartPolicy
         // ... other container fields injected here ...
       }
-    ] + oldObject.spec.initContainers
+    ] + object.spec.initContainers
   }
 }
 ```
 
-#### Use case: Clear an annotation
+
+#### Use case: Remove an annotation
 
 ```cel
 Object{
@@ -580,10 +813,30 @@ Object{
       ?"some-annotation": optional.none()
   }
   spec: Object.spec{
-    someField: oldObject.annotations["some-annotation"]
+    someField: object.annotations["some-annotation"]
   }
 }
 ```
+
+#### Use case: modify deprecated field under CRD versions
+Support atomic list modification through JSONPatch
+
+
+#### Use Case - mutation VS controller fight
+https://github.com/open-policy-agent/gatekeeper/issues/2963#issuecomment-1683971371
+Out of scope. The proposed feature is going to be added as an admission plugin which has no control over other controllers potentially being added.
+
+#### Use Case - limitation
+
+The current design will not support the following use cases
+- Involves creation of additional resources
+- Reference additional resources which is not fixed
+- It is tricky to write expression in deeply nested list/map with conditional check 
+
+For 1, additional resources creation is not supported since the current design focuses on updating the incoming request.
+
+For 2, parameter resources could potentially be used for any operation requires additional resource involved.
+However, if the additional resource involved is based on querying in incoming request, it will not be supported.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -604,11 +857,14 @@ a more directly way than previously available.
   mitigate by statically estimating the "memory cost" of CEL expressions that
   include any form of data literal (list, map, object or scalar).
 
-Risk: Ordering muations based on scope of the change instead of lexographical
-order of resource name make it more difficult to reason about mutation order.
+Risk: Final state of the object might not match the output of mutation policies.
+There might be multiple mutating admission policies, mutating webhooks, other controllers trying to mutate the incoming request and each happens separately, 
+and they might mutate the same part of the object. It might be hard to ensure that the final state matches expectations. 
 
-- Mitigation/Justification: The order will still be deterministic, which is the
-  main benefit lexographical order provided.
+- Mitigation/Justification: For best practice, the validation process is highly recommended whenever there is a mutation process set up. 
+The validating admission policy is recommended to be set up whenever a mutation admission policy is set to verify the final state of the data matches the expectation. Also refer to the Safety section for further details.
+
+
 
 ## Design Details
 
@@ -654,7 +910,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[ x ] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -698,6 +954,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+In the alpha phase, the integration tests are expected to be added for:
+
+- The behavior with feature gate and API turned on/off and mix match
+- The happy path with everything configured and mutation proceeded successfully
+- Mutation with different failure policies
+- Mutation with different Match Criteria
+- Mutation violations for different reasons including type checking failures, misconfiguration, failed mutation, etc and formatted messages
 - <test>: <link to test coverage>
 
 ##### e2e tests
@@ -711,7 +974,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-
+We will test the edge cases mostly in integration test and unit test. We may add e2e test for spot check of the feature presence.
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
@@ -849,15 +1112,10 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [ x ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: MutatingAdmissionPolicy
+  - Components depending on the feature gate: kube-apiserver
+
 
 ###### Does enabling the feature change any default behavior?
 
@@ -865,6 +1123,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No, default behavior is the same.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -878,10 +1137,13 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes, disabling the feature will result in mutation expressions being ignored.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+The MutatingAdmissionPolicy will be enforced again.
 
 ###### Are there any tests for feature enablement/disablement?
+Unit test and integration test will be introduced in alpha implementation.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -913,6 +1175,11 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+The existing workload could potentially be mutated and cause unexpected data stored if the mutation is misconfigured.
+
+While rollout, the cluster administrator could use `mutationValidationPolicy` to reduce the risk of unexpected mutation.
+The failurePolicy could be configured to decide if a failure should reject the admission request.
+In this way it will minimize the effect on the running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -920,6 +1187,12 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+On a cluster that has not yet opted into MutatingAdmissionPolicy, non-zero counts for either of the following metrics mean the feature is not working as expected:
+
+- cel_admission_mutation_total
+- cel_admission_mutation_errors
+
+On a cluster that opt into MutatingAdmissionPolicy, consider rollout if observed elevated API server errors or excessive `apiserver_cel_evaluation_duration_seconds` / `apiserver_cel_compilation_duration_seconds`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -928,12 +1201,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Upgrade and rollback will be tested before the feature goes to Beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -951,6 +1226,10 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+The following metrics could be used to see if the feature is in use:
+
+- mutating_admission_policy/check_total
+- mutating_admission_policy/definition_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -962,14 +1241,7 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Metrics like mutating_admission_policy/check_total can be used to check how many mutations applied in total
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -987,6 +1259,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+No impact on latency for admission request when MutatingAdmissionPolicy are absent.
+Performance when MutatingAdmissionPolicy are in use will need to be measured and optimized before GA.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -996,10 +1270,10 @@ Pick one more of these and delete the rest.
 
 - [ ] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    The Metrics below could be used:
+    mutating_admission_policy/check_total
+    mutating_admission_policy/definition_total
+    mutating_admission_policy/check_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1007,15 +1281,17 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No. We are open to input.
 
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+No.
 
 ###### Does this feature depend on any specific services running in the cluster?
-
+No.
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
@@ -1057,6 +1333,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+Yes. A new API group is introduced which will be used for this feature.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1066,6 +1343,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+Yes. We introduced two new kinds for this feature: MutatingAdmissionPolicy and MutatingAdmissionPolicyBinding as described in this doc.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1074,6 +1352,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1083,6 +1362,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1094,6 +1374,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+The existing admission request latency might be affected when the feature is used. We expect this to be negligible and will measure it before GA.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1106,6 +1387,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+We don't expect it to. Especially comparing to the existing method to achieve the same goal, using this feature will not result in non-negligible increase of resource usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1118,6 +1400,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No.
 
 ### Troubleshooting
 
@@ -1148,8 +1431,15 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+Same as without this feature.
+
+###### What are other known failure modes?
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+The feature can be disabled by disabling the API or setting the feature-gate to false if the performance impact of it is not tolerable.
+Try to run the validations separately to see which rule is slow
+Remove the problematic rules or update the rules to meet the requirement
 
 ## Implementation History
 
@@ -1177,6 +1467,31 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+Here are the alternative considerations compared to using the apply configurations introduced by Server Side Apply.
+
+### Alternative 1: JSONPatch
+
+Mutating Admission Webhooks express intended mutation in JSONPatch.  Previous attempt by  Andrew Sy Kim proposed a similar solution. However, because MutatingAdmissionPolicy, running inside the API server, no longer requires a remote call, modification can apply without serialization as JSONPatch.
+- Pros:
+  - Same as the current way Mutation Webhook used
+  - Support most of the existing use cases
+  - Low learning curve while migration from Mutation Webhook
+- Cons:
+  - No type checking
+  - Long JSON in declarative API
+  - Do not support types like `strategicMergePatch`, `JSONMergePatch` and `ApplyConfigurations`
+  - Low learning curve while setting up mutations from scratch
+  
+### Alternative 2: Introduce new syntax
+  
+Another alternative consideration would be rewriting your own merge algorithm which is a lot of duplicated effort.
+- Pros:
+  - More flexibility on how merging works
+  - Support most of the existing use cases
+- Cons:
+  - Duplicated effort
+  - Introducing a new language model into k8s which increase the maintenance effort
+
 
 ## Infrastructure Needed (Optional)
 
