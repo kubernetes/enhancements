@@ -252,7 +252,7 @@ expires, the component is considered unavailable for leader election purposes.
 
 ### Coordinated Election Controller
 
-A Coordinated Election Controller will reconcile component Leader Leases
+A new Coordinated Election Controller will reconcile component Leader Leases
 (primary resource) and Identity Leases (secondary resource, changes trigger
 reconciliation of related leader leases).
 
@@ -378,9 +378,9 @@ A cluster administrator upgrades a cluster's control plane node-by-node,
 expecting version skew to be respected.
 
 - When the first and second nodes are upgraded, any components that were leaders
-  will typically loose the lease during the node downtime
-  - If one happens to retain it's lease, it will be preempted by the coordinated
-    election controller after it updates it's identity lease with new version
+  will typically lose the lease during the node downtime
+  - If one happens to retain its lease, it will be preempted by the coordinated
+    election controller after it updates its identity lease with new version
     information
 - When the third node is upgraded, all components will be at the new version and one
   will be elected
@@ -430,7 +430,7 @@ nodes, API Server Identity adds 3 leases.
 This risk can be migitated by scale testing and, if needed, extending the lease
 duration and renewal times to reduce writes/s.
 
-#### Risk: leases watches increases apiserver load substantially
+#### Risk: lease watches increase apiserver load substantially
 
 The [Unknown Version Interoperability Proxy (UVIP) enhancement](../4020-unknown-version-interoperability-proxy) also adds
 lease watches on [API Server Identity](../1965-kube-apiserver-identity) leases in the kube-system namespace.
