@@ -377,7 +377,7 @@ what we expect, the kubelet needs to chown the file to a UID that is mapped into
 the pod's userns (e.g. UID 65536 in this example), as that is what root inside
 the container is mapped to in the user namespace.
 
-We tried this before, but several limitations were hit. See the 
+We tried this before, but several limitations were hit. See the
 [alternatives section](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
 for more details on the limitations we hit.
 
@@ -765,6 +765,18 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+The rollout is just a feature flag on the kubelet and the kube-apiserver.
+
+If one API server is upgraded while others aren't, the pod will be accepted (if the apiserver is >=
+1.25). If it is scheduled to a node that the kubelet has the feature flag activated and the node
+meets the requirements to use user namespaces, then the pod will be created with the namespace. If
+it is scheduled to a node that has the feature disabled, it will be scheduled without the user
+namespace.
+
+On a rollback, pods created while the feature was active (created with user namespaces) will have to
+be restarted to be re-created without user namespaces. Just a re-creation of the pod will do the
+trick.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -777,6 +789,10 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+On Kubernetes side, the kubelet should start correctly.
+
+On the node runtime side, a pod created with pod.spec.HostUsers=false should be on RUNNING state if
+all node requirements are met.
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
@@ -784,6 +800,16 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+Yes.
+
+We tested to enable the feature flag, create a deployment with pod.spec.HostUsers=false, and then disable
+the feature flag and restart the kubelet and kube-apiserver.
+
+After that, we deleted the deployment pods (not the deployment object), the pods were re-created
+without user namespaces just fine, without any modification needed on the deployment yaml.
+
+We then enabled the feature flag on the kubelet and kube-apiserver, and deleted the deployment pod.
+This re-created caused the pod to be re-created, this time with user namespaces enabled again.
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -792,6 +818,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -807,6 +834,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+Check if any pod has the pod.spec.HostUsers field set to false.
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -814,6 +842,11 @@ logs or events for this purpose.
 -->
 
 ###### How can someone using this feature know that it is working for their instance?
+
+Check if any pod has the pod.spec.HostUsers field set to false and is on RUNNING state on a node
+that meets all the requirements.
+
+There are step-by-step examples in the Kubernetes documentation too.
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -825,14 +858,21 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+  - Condition name:
+  - Other field:
+- [x] Other (treat as last resort)
+  - Details: check pods with pod.spec.HostUsers field set to false, and see if they are in RUNNING
+    state.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+If a node meets all the requirements, there should be no change to existing SLO/SLIs.
+
+If a container runtime wants to support old kernels, it can have a performance impact, though. For
+more details, see the question:
+    "Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?"
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -851,6 +891,7 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+No new SLI needed for this feature.
 <!--
 Pick one more of these and delete the rest.
 -->
@@ -864,6 +905,17 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+No.
+
+This feature is using yet another namespace when creating a pod. If the pod creation fails (by
+an error on the kubelet or returned by the container runtime), a clear error is returned to the
+user. The feedback on this is very direct to the user actions.
+
+A metric like "errors returned in pods with user namespaces enabled" can be very noisy, as the error
+can be completely unrelated (image pull secret errors, configmap referenced and not defined, any
+other container runtime error, etc.). We can't see any metric that can be helpful, as the user has a
+very direct feedback already.
+
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
@@ -876,6 +928,19 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+Yes:
+
+- [CRI version]
+  - Usage description: CRI changes done in k8s 1.27 are needed
+    - Impact of its outage on the feature: minimal, feature will be ignored by runtimes using an
+      older version (e.g. containerd 1.6) or will return an error (e.g containerd 1.7).
+    - Impact of its degraded performance or high-error rates on the feature: N/A.
+
+- [Linux kernel]
+  - Usage description: Linux 6.3 or higher
+    - Impact of its outage on the feature: pod creation with hostUsers=false will return an error.
+    - Impact of its degraded performance or high-error rates on the feature: N/A.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -1029,8 +1094,8 @@ and validate the declared limits?
 
 The kubelet is spliting the host UID/GID space for different pods, to use for
 their user namespace mapping. The design allows for 65k pods per node, and the
-resource is limited to maxPods per node (currently maxPods defaults to 110, it is unlikely we will
-reach the host limit).
+resource is limited to maxPods per node (currently maxPods defaults to 110, it
+is unlikely we will reach 65k).
 
 For container runtimes, they might use more disk space or inodes to chown the
 rootfs. This is if they chose to support this feature without relying on new
@@ -1057,7 +1122,143 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No changes to current kubelet behaviors. The feature only uses kubelet-local information.
+
 ###### What are other known failure modes?
+
+- Some filesystem used by the pod doesn't support idmap mounts on the kernel used.
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        See the pod events, it fails with:
+
+    	  Warning  Failed     2s (x2 over 4s)  kubelet, 127.0.0.1  Error: failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: failed to fulfil mount request: failed to set MOUNT_ATTR_IDMAP on /var/lib/kubelet/pods/f037a704-742c-40fe-8dbf-17ed9225c4df/volumes/kubernetes.io~empty-dir/hugepage: invalid argument (maybe the source filesystem doesn't support idmap mounts on this kernel?): unknown
+
+        Note the "maybe the source filesystem doesn't support idmap mounts on this kernel?" part.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.HostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The error is returned on pod-creation, no need to search for logs.
+
+        The idmap mount is created by the OCI runtime, not at the kubelet layer. At the kubelet layer, this
+        is just another OCI runtime error.
+
+        The container runtime logs will show something as shown before:
+
+            OCI runtime create failed: runc create failed: unable to start container process: error during container init: failed to fulfil mount request: failed to set MOUNT_ATTR_IDMAP on /var/lib/kubelet/pods/f037a704-742c-40fe-8dbf-17ed9225c4df/volumes/kubernetes.io~empty-dir/hugepage: invalid argument (maybe the source filesystem doesn't support idmap mounts on this kernel?): unknown
+
+        This is for runc, crun shows a [very similar error](https://github.com/containers/crun/pull/1382/files#diff-a260cc17fa708d3dc67330596e9d277d05601f8c48621a67379f7e0fb097fbb6R4089).
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        There are tests in low level container runtimes.
+
+        Testing this at the Kubernetes level is hard to do. We need to choose a file-system that doesn't
+        support idmap mounts today, but that might not be the case after a kernel upgrade, as the new
+        kernel might support idmap mounts for that file-system. Is very easy to create flaky tests for this
+        at the Kubernetes layer.
+
+        The low level container runtimes, that are the ones to do the idmap mount, have unit tests for this
+        and return a clear error.
+
+
+
+- Error allocating IDs for a pod user namespace
+
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        Errors are returned on pod creation, directly to the user. No need to use metrics.
+
+        See the pod events, it should contain something like:
+
+          Warning  FailedCreatePodSandBox  3s    kubelet            Failed to create pod sandbox: can't allocate user namespace: could not find an empty slot to allocate a user namespace
+
+        We can add a metric for this on general, but as any pod creation that fails has this direct
+        feedback to the user, we don't think it is needed.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.HostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        No extra logs, the error is returned to the user.
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        Yes, there are unit tests for this at the pkg/kubelet/userns package.
+
+- Error to save/read pod mappings file.
+The kubelet records the mappings used for a pod in a file. There can be an error while reading or
+writing to this file.
+
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        Errors are returned to the operation failed (like pod creation), no need to see metrics nor
+        logs.
+
+        Errors are returned to the either on:
+         * Kubelet initialization: the initialization fails if the feature gate is active and there is a
+           fatal error while reading the pod's mapping file.
+         * Pod creation: an error is returned to the user (shown in the pod events) if there is an error to
+           read or write to this file.
+
+        We can add a metric for this, but as the errors have very direct feedback (kubelet init
+        fails with a clear error or a pod creation fails with a clear error), we don't think it is needed.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.HostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The most likely reason why this can fail is if the kernel doesn't support idmapped mounts.  In this
+        case the error reported from the OCI runtime is clear enough, both the runc and crun OCI runtimes were
+        instrumented to return a clear error message.
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        There are extensive unit tests on the function that parses the file content.
+        There are no tests for failures to read or write the file, the code-paths just return the errors
+        in those cases.
+
+
+- Error getting the kubelet IDs range configuration
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        In this case the Kubelet will fail to start with a clear error message.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Disable the user namespace support via the feature flag, or fix the configuration.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The Kubelet will fail to start with a clear error message stating that it could not
+        retrieve the range of IDs to use for the user namespaces.
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        It is part of the system configuration.
 
 <!--
 For each of them, fill in the following information by copying the below template:
