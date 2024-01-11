@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Component Flags](#component-flags)
   - [Changes to Feature Gates](#changes-to-feature-gates)
     - [Feature Gate Lifespans](#feature-gate-lifespans)
+    - [Feature gating changes](#feature-gating-changes)
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API Compatibility Versioning](#api-compatibility-versioning)
@@ -317,6 +318,20 @@ Note that this respects a 1yr deprecation policy.
 
 All feature gating and tracking must remain in code through 1.32 for N-3
 compatibility version support.
+
+#### Feature gating changes
+
+In order to preserve the behavior of in-development features across multiple releases,
+feature implementations may also be gated by version number.
+
+For example, if `FeatureA` is partially implemented in 1.28 and additional functionality
+is added in 1.29, the feature developer is expected to gate the functionality by version.
+E.g.:
+
+```go
+if feature_gate.Enabled(FeatureA) && feature_gate.StabilityVersion(FeatureA) == "1.28" {implementation 1}
+if feature_gate.Enabled(FeatureA) && feature_gate.StabilityVersion(FeatureA) == "1.29" {implementation 2}
+```
 
 ### CEL Environment Compatibility Versioning
 
