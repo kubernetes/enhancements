@@ -258,7 +258,7 @@ See [Jobs create replacement Pods as soon as a Pod is marked for deletion](https
 #### Story 2
 
 As a cloud user, users would want to guarantee that the number of pods that are running is exactly the amount that they specify.  
-Terminating pods do not relinguish resources so scarce compute resource are still scheduled to those pods.
+Terminating pods do not relinquish resources so scarce compute resource are still scheduled to those pods.
 Replacement pods do not produce unnecessary scale ups.
 
 #### Story 3
@@ -520,30 +520,24 @@ Tests will verify counting of terminating fields regardless of `PodDisruptionCon
 
 ##### e2e tests
 
-Generally the only tests that are useful for this feature are when `PodReplacementPolicy: Failed`.
+Generally the only tests that are useful for this feature are when `PodReplacementPolicy: Failed`.  
+Test should to create a Job which can catch a SIGTERM signal and allow for graceful termination, so when we delete the test  
+we can first assert that pods aren't created while the Pod is terminating and finally when it terminates that a new Pod is created.
 
-An example job spec that can reproduce this issue is below:
+We can use the default `busybox` image which is generally used in e2e tests and override the command field with something like:
 
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: job-slow-cleanup-with-pod-recreate-feature
-spec:
-  completions: 1
-  parallelism: 1
-  backoffLimit: 2
-  podReplacementPolicy: Failed
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-      - name: sleep
-        image: gcr.io/k8s-staging-perf-tests/sleep
-        args: ["-termination-grace-period", "1m", "60s"]
-```
+```shell  
+_term(){  
+  sleep 5
+  exit 143
+}  
+trap _term SIGTERM
+while true; do  
+  sleep 1
+done  
+```  
 
-A e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.  
+An e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.
 
 If `podReplacementPolicy: TerminatingOrFailed` is specified we would test that pod creation happens closely after deletion.
 
@@ -905,8 +899,9 @@ During pod terminations, an operator can see that the terminating field is being
 
 We will use a new metric:
 
-- `job_pods_creation_total` (new) the `action` label will mention what triggers creation (`new`, `recreateTerminatingOrFailed`, `recreateTerminated`))
-This can be used to get the number of pods that are being recreated due to `recreateTerminated`.  Otherwise we would expect to see `new` or `recreateTerminatingOrFailed` as the normal values.  
+- `job_pods_creation_total` (new) the `reason` label will mention what triggers creation (`new`, `recreate_terminating_or_failed`, `recreate_failed`))  
+  and the `status` label will mention the status of the pod creation (`succeeded`, `failed`).  
+This can be used to get the number of pods that are being recreated due to `recreateTerminated`.  Otherwise, we would expect to see `new` or `recreateTerminatingOrFailed` as the normal values.  
 
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
