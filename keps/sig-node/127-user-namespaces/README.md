@@ -591,14 +591,10 @@ use container runtime versions that have the needed changes.
 
 ##### Beta
 
-- Make plans on whether, when, and how to enable by default
-
-###### Open Questions
-
-- Should we reconsider making the mappings smaller by default?
-- Should we allow any way for users to for "more" IDs mapped? If yes, how many more and how?
-- Should we allow the user to ask for specific mappings?
-- Get review from VM container runtimes maintainers
+- Gather and address feedback from the community
+- Be able to configure UID/GID ranges to use for pods
+- Get review from VM container runtimes maintainers (not blocker, as VM runtimes should just ignore
+  the field, but nice to have)
 
 ##### GA
 
@@ -1361,15 +1357,23 @@ KEPs can explore this path if they so want to.
 
 ### 64k mappings?
 
-We will start with mappings of 64K. Tim Hockin, however, has expressed
-concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
-SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
-to limit the number of pods so we guarantee enough spare host UIDs in case we
-need them for the future. There is no final decision yet on how to handle this.
-For now we will limit the number of pods, so the wide mapping is not
-problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
+We discussed using shorter or even allowing for longer mappings in the past. The decision is to use
+64k mappings (IDs from 0-65535 are mapped/valid in the pod).
 
-For stateless pods this is of course not an issue.
+The reasons to consider smaller mappings were valid only before idmap mounts was merged into the
+kernel. However, idmap mounts is merged for some years now and we require it, making those reasons
+void.
+
+The issues without idmap mounts in previous iterations of this KEP, is that the IDs assigned to a
+pod had to be unique for every pod in the cluster, easily reaching a limit when the cluster is "big
+enough" and the UID space runs out.  However, with idmap mounts the IDs assigned to a pod just needs
+to be unique within the node (and with 64k ranges we have 64k pods possible in the node, so not
+really an issue). IOW, by using idmap mounts, we changed the IDs limit to be node-scoped instead of
+cluster-wide/cluster-scoped.
+
+There are no known use cases for longer mappings that we know of. The 16bit range (0-65535) is what
+is assumed by all POSIX tools that we are aware of. If the need arises, longer mapping can be
+considered in a future KEP.
 
 ### Allow runtimes to pick the mapping?
 
@@ -1378,7 +1382,11 @@ mapping and have different runtimes pick different mappings. While KEP authors
 disagree on this, we still need to discuss it and settle on something.  This was
 [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
 
-This is not a blocker for the KEP, but it is something that can be changed later on.
+Furthermore, the reasons mentioned by Tim (some nodes having CRIO, some others having containerd,
+etc.) are handled correctly now. Different nodes can use different container runtimes, if a custom
+range needs to be used by the kubelet, that can be configured per-node.
+
+Therefore, this old concerned is now resolved.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
