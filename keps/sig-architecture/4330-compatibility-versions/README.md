@@ -84,7 +84,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Component Flags](#component-flags)
-  - [Feature Compatibility Versioning](#feature-compatibility-versioning)
+  - [Changes to Feature Gates](#changes-to-feature-gates)
+    - [Feature Gate Lifespans](#feature-gate-lifespans)
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API Compatibility Versioning](#api-compatibility-versioning)
@@ -224,17 +225,26 @@ Kubernetes components (apiservers, controller managers, schedulers) will offer a
 minor versions. If unset, the compatibility version defaults to the `<major.minor>`
 version of the binary version.
 
-### Feature Compatibility Versioning
+### Changes to Feature Gates
 
-Features will be versioned, i.e.:
+Features will track version information, i.e.:
 
 ```go
-type FeatureSpec struct {
-  //...
-
-  // Version indicates the version this feature spec was introduced.
-	Version semver.Version
-}
+map[Feature]VersionedSpecs{
+		featureA: VersionedSpecs{
+			{Version: mustParseVersion("1.27"), Default: false, PreRelease: Beta},
+			{Version: mustParseVersion("1.28"), Default: true, PreRelease: GA},
+		},
+		featureB: VersionedSpecs{
+			{Version: mustParseVersion("1.28"), Default: false, PreRelease: Alpha},
+		},
+		featureC: VersionedSpecs{
+			{Version: mustParseVersion("1.28"), Default: false, PreRelease: Beta},
+		},
+		featureD: VersionedSpecs{
+			{Version: mustParseVersion("1.26"), Default: false, PreRelease: Alpha},
+			{Version: mustParseVersion("1.28"), Default: true, PreRelease: Deprecated},
+		}
 ```
 
 When a component starts, feature gates will be compared against the
@@ -242,13 +252,71 @@ compatibility version to determine which features to enable to match the set of
 features that where enabled for the Kubernetes version the compatibility version
 is set to.
 
-Also, `--feature-gates` must behave the same as it did for the Kubernetes
+#### Feature Gate Lifespans 
+
+`--feature-gates` must behave the same as it did for the Kubernetes
 version the compatibility version is set to. I.e. it must be possible to use
 `--feature-gates` to disable features that were beta, and enable feature that
 were alpha in the Kubernetes version the compatibility version is set to. One
 important implication of this requirement is that feature gating must be kept in
 the Kubenetes codebase until a feature has reached GA (or been removed) for N-3
 releases.
+
+For example, a feature that is promoted once per release would look something like:
+
+```go
+map[Feature]VersionedSpecs{
+		featureA: VersionedSpecs{
+			{Version: mustParseVersion("1.26"), Default: false, PreRelease: Alpha},
+			{Version: mustParseVersion("1.27"), Default: true, PreRelease: Beta},
+			{Version: mustParseVersion("1.28"), Default: true, PreRelease: GA},
+		},
+}
+```
+
+The lifecycle of the feature would be:
+
+| Release | Stage | Feature tracking information                      |
+| ------- | ----- | ------------------------------------------------- |
+| 1.26    | alpha | Alpha: 1.26                                       |
+| 1.27    | beta  | Alpha: 1.26, Beta: 1.27 (on-by-default)           |
+| 1.28    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
+| 1.29    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
+| 1.30    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
+| 1.31    | GA    | **Feature implementation becomes part of normal code, Feature gate and feature tracking information may be removed from code** |
+
+All feature gating and tracking must remain in code through 1.30 for N-3
+compatibility version support.
+
+For a feature that is removed, e.g.:
+
+```go
+map[Feature]VersionedSpecs{
+		featureA: VersionedSpecs{
+			{Version: mustParseVersion("1.26"), Default: false, PreRelease: Alpha},
+			{Version: mustParseVersion("1.27"), Default: false, PreRelease: Deprecated},
+			{Version: mustParseVersion("1.31"), Default: false, PreRelease: Removed},
+		},
+}
+```
+
+The lifecycle of the feature implementation would be:
+
+| Release | Stage | Feature tracking information                      |
+| ------- | ----- | ------------------------------------------------- |
+| 1.26    | alpha | Alpha: 1.26                                       |
+| 1.27    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
+| 1.28    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
+| 1.29    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
+| 1.30    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
+| 1.31    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
+| 1.32    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
+| 1.33    | -     | **Feature implementation and feature tracking information may be removed from code** |
+
+Note that this respects a 1yr deprecation policy.
+
+All feature gating and tracking must remain in code through 1.32 for N-3
+compatibility version support.
 
 ### CEL Environment Compatibility Versioning
 
@@ -328,7 +396,8 @@ depend on the feature.
 
 - For each control plane component, in the [recommended
   order](https://kubernetes.io/releases/version-skew-policy/):
-  - sets `--compatibility-version=1.30`
+  - Cluster admin restarts the component with `--compatibility-version=1.30` set
+  - 
 
 This avoids having to rollback the binary version.  Once the workload is fixed, the
 cluster administrator can remove the `--compatibility-version` to roll the cluster
@@ -608,62 +677,31 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+  - Feature gate name: CompatibilityVersions
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. Only when the feature gate is enabled AND `--compatibility-version` is set
+does behavior change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Once disabled, the component ignores any `--compatibility-version` value
+and operates normally at the current binary version.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Behavior is as expected, `--compatibility-version` is again applied.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes, feature enablement/disablement will be fully tested in Alpha.
 
 ### Rollout, Upgrade and Rollback Planning
 
