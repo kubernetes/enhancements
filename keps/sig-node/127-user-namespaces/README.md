@@ -19,6 +19,7 @@
   - [Pod.spec changes](#podspec-changes)
   - [CRI changes](#cri-changes)
   - [Support for pods](#support-for-pods)
+    - [Configuration of ranges](#configuration-of-ranges)
   - [Handling of volumes](#handling-of-volumes)
     - [Example of how idmap mounts work](#example-of-how-idmap-mounts-work)
       - [Example without idmap mounts](#example-without-idmap-mounts)
@@ -315,10 +316,21 @@ The picked range will be stored under a file named `userns` in the pod folder
 (by default it is usually located in `/var/lib/kubelet/pods/$POD/userns`). This
 way, the Kubelet can read all the allocated mappings if it restarts.
 
-During alpha, to make sure we don't exhaust the host UID namespace, we will
-limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
-leaves us plenty of host UID space free and this limits is probably never hit in
-practice. See the [Unresolved section](#unresolved) for more details on this.
+#### Configuration of ranges
+
+If no configuration is present, the kubelet will use a sane default:
+
+ * `0-65535`: reserved for the host processes and files
+ * `65536-<65536 * maxPods>`: reserved for pods
+
+The kubelet will detect if a configuration is present by using the `getsubids` binary. It will query
+for ranges allocated to the "kubelet" user.
+
+If the kubelet user doesn't exist or `getsubids` is not installed, the kubelet will use the sane
+default aforementioned. On any other cases, it will return an error.
+
+By using `getsubids` we make sure the kubelet interacts fine with other programs in the host that
+also allocate ranges for user namespaces (be it /etc/subuid or centralized systems as freeIPA).
 
 ### Handling of volumes
 
@@ -1017,9 +1029,8 @@ and validate the declared limits?
 
 The kubelet is spliting the host UID/GID space for different pods, to use for
 their user namespace mapping. The design allows for 65k pods per node, and the
-resource is limited in the alpha phase to the min between maxPods per node
-kubelet setting and 1024. This guarantees we are not inadvertly exhausting the
-resource.
+resource is limited to maxPods per node (currently maxPods defaults to 110, it is unlikely we will
+reach the host limit).
 
 For container runtimes, they might use more disk space or inodes to chown the
 rootfs. This is if they chose to support this feature without relying on new
