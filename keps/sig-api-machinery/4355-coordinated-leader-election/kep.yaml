@@ -4,6 +4,7 @@ authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
 participating-sigs:
+  - sig-cluster-lifecycle
 status: provisional
 creation-date: 2023-14-05
 reviewers:

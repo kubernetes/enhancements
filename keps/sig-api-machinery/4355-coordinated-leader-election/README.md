@@ -189,7 +189,7 @@ To respect the [Kubernetes skew policy](https://kubernetes.io/releases/version-s
 
 But a node-by-node upgrade or rollback does not achieve this today.
 
-- For upgrade, there is about a 25% chance of a new version of the controller
+- For 3 node control plane upgrade, there is about a 25% chance of a new version of the controller
   running while old versions of the apiserver are active, resulting in a skew
   violation. (Consider case where the 2nd node upgraded has the lease)
 - For rollback, it is almost a certainty that skew will be violated.
@@ -236,12 +236,12 @@ kind: Lease
 metadata:
   annotations:
     coordination.k8s.io/binary-version: "1.29"
-    coordination.k8s.io/can-lead-leases: kube-system/sample-controller
+    coordination.k8s.io/can-lead-leases: kube-system/some-custom-controller
     coordination.k8s.io/compatibility-version: "1.29"
-  name: sample-controller-0001A
+  name: some-custom-controller-0001A
   namespace: kube-system
 spec:
-  holderIdentity: sample-controller-0001A
+  holderIdentity: some-custom-controller-0001A
   leaseDurationSeconds: 10
   renewTime: "2023-12-05T02:33:08.685777Z"
 ```
@@ -284,7 +284,7 @@ kind: Lease
 metadata:
   annotations:
     coordination.k8s.io/elected-by: coordinated-election-controller
-  name: sample-controller
+  name: some-custom-controller
   namespace: kube-system
 spec:
   holderIdentity: controller-a
