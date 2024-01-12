@@ -85,7 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Component Flags](#component-flags)
   - [Changes to Feature Gates](#changes-to-feature-gates)
-    - [Feature Gate Lifespans](#feature-gate-lifespans)
+    - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
@@ -95,6 +95,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Risk: Increased maintenance burden on Kubernetes maintainers](#risk-increased-maintenance-burden-on-kubernetes-maintainers)
+    - [Risk: Unintended and out-of-allowance compatibility skew](#risk-unintended-and-out-of-allowance-compatibility-skew)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -190,8 +192,8 @@ orchestration as we are taking smaller and more incremental steps forward,
 which means there is less to “undo” on a failure condition.
 
 In beta, we intend to introduce support for greater compatibility version skew
-(specifically, N-3) so that it would be possible to skip-level upgrade a 
-Kubernetes control-plane, by means of:
+(specifically, N-3) so that it would be possible to skip binary versions while
+still performing a stepwise upgrade of Kubernetes control-plane. For example:
 
 - (starting point) binary-version 1.28 (compat-version 1.28)
 - upgrade binary-version to 1.31 (compat-version stays at 1.28 - this is our skip-level binary upgrade)
@@ -253,7 +255,7 @@ compatibility version to determine which features to enable to match the set of
 features that where enabled for the Kubernetes version the compatibility version
 is set to.
 
-#### Feature Gate Lifespans 
+#### Feature Gate Lifecycles
 
 `--feature-gates` must behave the same as it did for the Kubernetes
 version the compatibility version is set to. I.e. it must be possible to use
@@ -429,8 +431,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-Risk: Introducing this change increases the maintenance burden on Kubernetes
-maintainers.
+#### Risk: Increased maintenance burden on Kubernetes maintainers
 
 Why we think this is manageable:
 
@@ -444,17 +445,21 @@ Why we think this is manageable:
 - Some maintenance becomes simpler as the additional version data about
   features makes them easier to reason about and keep track of.
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### Risk: Unintended and out-of-allowance compatibility skew
 
-How will security be reviewed, and by whom?
+From @deads2k: "I see an additional risk of unintended and out-of-allowance compatibility skew between binaries. A kube-apiserver and kube-controller-manager contract is still +/-1 (as far as I see here). This compatibility level, especially across three versions, makes it more likely for accidental mismatches.
 
-How will UX be reviewed, and by whom?
+While a hard shutdown of a process is likely worse than the disease, exposing some sort of externally trackable signal for cluster-admins and describing how to use it could significantly mitigate the problem."
 
-Consider including folks who also work outside the SIG or subproject.
--->
+Possible mitigations:
+
+- Clients send version numbers in request headers. Servers use this to detect
+  out-of-allowance skew. Servers then surface this to cluster administrators.
+- Components register identity leases (apiserver already does this)
+  https://github.com/kubernetes/enhancements/pull/4356 proposes doing it for
+  controller managers. Components include their version information in the
+  identity leases. A separate controller inspects all the leases for skew and
+  surafces it to cluster administrators.
 
 ## Design Details
 
