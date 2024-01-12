@@ -331,8 +331,8 @@ is added in 1.29, the feature developer is expected to gate the functionality by
 E.g.:
 
 ```go
-if feature_gate.Enabled(FeatureA) && feature_gate.StabilityVersion(FeatureA) == "1.28" {implementation 1}
-if feature_gate.Enabled(FeatureA) && feature_gate.StabilityVersion(FeatureA) == "1.29" {implementation 2}
+if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() <= "1.28" {implementation 1}
+if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() >= "1.29" {implementation 2}
 ```
 
 ### CEL Environment Compatibility Versioning
@@ -529,10 +529,10 @@ Alpha feature introduced|-|off-by-default|feature does not exist, feature gate m
 Alpha feature graduated to Beta|off-by-default|on-by-default|feature enabled only when `--feature-gates=<feature>=true`|feature enabled unless `--feature-gates=<feature>=false`
 Beta feature graduated to GA|on-by-default|on|feature enabled unless `--feature-gates=<feature>=false`|feature always enabled, feature gate may not be set
 Beta feature removed|on-by-default|-|feature enabled unless `--feature-gates=<feature>=false`|feature does not exist
-Alpha API introduced|-|off-by-default|feature does not exist, feature gate may not be set|API available only when `--runtime-config=api/<api>=true`
-Beta API graduated to GA|off-by-default|on|API available only when `--runtime-config=api/<api>=true`|API available
-Beta API removed|off-by-default|-|API available only when `--runtime-config=api/<api>=true`|API does not exist
-on-by-default Beta API removed|on-by-default|-|API available unless `--runtime-config=api/<api>=false`|API does not exist
+Alpha API introduced|-|off-by-default|API does not exist|API available only when `--runtime-config=api/v1alpha1=true`
+Beta API graduated to GA|off-by-default|on|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1` available
+Beta API removed|off-by-default|-|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1beta1` does not exist
+on-by-default Beta API removed|on-by-default|-|API available unless `--runtime-config=api/v1beta1=false`|API `api/v1beta1` does not exist
 API Storage version changed|v1beta1|v1|Resources stored as v1beta1|Resources stored as v1
 new CEL function|-|function in StoredExpressions CEL environment|CEL function does not exist|Resources already containing CEL expression can be evaluated
 introduced CEL function|function in StoredExpressions CEL environment|function in NewExpressions CEL environment|Resources already containing CEL expression can be evaluated|CEL expression can be written to resources and can be evaluted from storage
