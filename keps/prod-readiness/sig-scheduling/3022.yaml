@@ -6,3 +6,5 @@ alpha:
   approver: "@wojtek-t"
 beta:
   approver: "@johnbelamaric"
+stable:
+  approver: "@wojtek-t"
