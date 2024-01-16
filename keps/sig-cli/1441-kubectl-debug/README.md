@@ -651,8 +651,8 @@ integration test for [Pod Troubleshooting with Ephemeral Debug Container
 
 #### Beta -> GA Graduation
 
-- [ ] Test plan GA milestones reached
-- [ ] User feedback gathered over 2 release cycles.
+- [x] Test plan GA milestones reached
+- [x] User feedback gathered over 2 release cycles.
 - [ ] 3 external articles suggest using `kubectl debug`
 
 ### Upgrade / Downgrade Strategy
@@ -848,6 +848,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - *2020-09-20*: Updated KEP to reflect actual implementation details.
 - *2020-09-23*: Update KEP for mutating multiple container images in debug-by-copy.
 - *2020-09-24*: Update KEP for Production Readiness and beta graduation.
+- *2024-01-16*: Promote kubectl debug to GA
 
 ## Alternatives
 
