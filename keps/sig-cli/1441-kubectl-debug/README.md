@@ -653,7 +653,10 @@ integration test for [Pod Troubleshooting with Ephemeral Debug Container
 
 - [x] Test plan GA milestones reached
 - [x] User feedback gathered over 2 release cycles.
-- [ ] 3 external articles suggest using `kubectl debug`
+- [x] 3 external articles suggest using `kubectl debug`
+  - https://collabnix.com/debug-your-kubernetes-applications-made-easy-with-kubectl-debug-tool/
+  - https://www.linkedin.com/pulse/debug-kubernetes-applications-kubectl-cuong-nguyen-duc
+  - https://medium.com/datamindedbe/debugging-running-pods-on-kubernetes-2ba160c47ef5
 
 ### Upgrade / Downgrade Strategy
 
