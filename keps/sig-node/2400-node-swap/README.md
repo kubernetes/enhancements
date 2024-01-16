@@ -27,7 +27,9 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Existing use cases of Swap](#existing-use-cases-of-swap)
+    - [Exhausting swap resource](#exhausting-swap-resource)
     - [Security risk](#security-risk)
+    - [Cgroupv1 support](#cgroupv1-support)
 - [Design Details](#design-details)
   - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
   - [API Changes](#api-changes)
@@ -225,7 +227,7 @@ The main concern would be swapping in the critical services on the control plane
 
 ##### Use of a dedicated disk for swap
 
-We recommend using a separate disk for your swap partition. 
+We recommend using a separate disk for your swap partition.
 
 ### Steps to Calculate Swap Limit
 
@@ -317,12 +319,16 @@ clusters).
 
 This user story is addressed by scenarios 1 and 2, and could benefit from 3.
 
+It turns out that we discovered usecases where someone areas set `--fail-swap-on=false`
+to allow for swap enabled nodes for local development.
+
 #### Low footprint systems
 
 For example, edge devices with limited memory.
 
 - Edge compute systems/devices with small memory footprints (\<2Gi)
   https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751398086
+  https://github.com/k0sproject/k0s/issues/3830
 - Clusters with nodes \<4Gi memory
   https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751404417
 
@@ -402,6 +408,13 @@ To address this, we will propose a new field to `MemorySwap` called `NoSwap`. Th
 
 This can address existing use cases where `--fail-swap-on=false` in cgroupv1 and still allow us to turn this feature on.
 
+#### Exhausting swap resource
+
+In previous releases of Swap, we had an `UnlimitedSwap` option for workloads.
+This can cause problems where workloads can use up all swap.
+If all swap is used up on a node, it can make the node go unhealthy.
+To avoid exhausting swap on a node, `UnlimitedSwap` was dropped from the API in beta2.
+
 #### Security risk
 
 Enabling swap on a system without encryption poses a security risk, as critical information, such as Kubernetes secrets, may be swapped out to the disk. If an unauthorized individual gains access to the disk, they could potentially obtain these secrets. To mitigate this risk, it is recommended to use encrypted swap. However, handling encrypted swap is not within the scope of kubelet; rather, it is a general OS configuration concern and should be addressed at that level. Nevertheless, it is essential to provide documentation that warns users of this potential issue, ensuring they are aware of the potential security implications and can take appropriate steps to safeguard their system.
@@ -409,6 +422,11 @@ Enabling swap on a system without encryption poses a security risk, as critical 
 To guarantee that system daemons are not swapped, the kubelet must configure the `memory.swap.max` setting to `0` within the system reserved cgroup. Moreover, to make sure that burstable pods are able to utilize swap space, kubelet should verify that the cgroup associated with burstable pods should not be nested under the cgroup designated for system reserved.
 
 Additionally, end user may decide to disable swap completely for a Pod or a container in beta 1 by making Pod guaranteed or set request == limit for a container. This way, there will be no swap enabled for the corresponding containers and there will be no information exposure risks.
+
+#### Cgroupv1 support
+
+In the early release of this feature, there was a goal to support cgroup v1. As the feature progressed, sig-node realized that supporting swap with cgroup v1 would be very difficult.
+Therefore, this feature is limited to cgroupv2 only. The main goal is to deprecate cgroupv1 eventually so this should not be a major inconvience.
 
 ## Design Details
 
@@ -435,7 +453,7 @@ Swap can be enabled as follows:
 1. Enable the `NodeSwap` feature flag on the kubelet,
 1. Set `--fail-on-swap` flag to `false`, and
 1. (Optional) Allow Kubernetes workloads to use swap by setting
-   `MemorySwap.SwapBehavior` to either `LimitedSwap` or `UnlimitedSwap` in the kubelet config.
+   `MemorySwap.SwapBehavior` to `LimitedSwap` in the kubelet config.
 
 ### API Changes
 
@@ -461,7 +479,6 @@ type MemorySwapConfiguration struct {
 	// Configure swap memory available to container workloads. May be one of
   // "", "NoSwap": workload will not use swap
 	// "LimitedSwap": workload combined memory and swap usage cannot exceed pod memory limit
-	// "UnlimitedSwap": workloads can use unlimited swap, up to the allocatable limit.
 	SwapBehavior string
 }
 ```
@@ -477,12 +494,9 @@ container specification for the `--memory-swap` flag. Thus, the
   * With cgroups v2, swap is configured independently from memory. Thus, the
     container runtimes can set [`memory.swap.max`] to 0 in this case, and _no_ swap
     usage will be permitted.
-* If `SwapBehavior` is set to `"UnlimitedSwap"`, the container is allowed to
-  use unlimited swap, up to the maximum amount available on the host system.
 * If `SwapBehavior` is set to `""` or `"NoSwap"`, no workloads will utilize swap.
 
 [docker]: https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details
-[`memory.memsw.limit_in_bytes`]: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v1/memory.html
 [`memory.swap.max`]: https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#memory
 
 #### CRI Changes
@@ -643,8 +657,8 @@ For beta 1:
 
 #### Alpha
 
-- Kubelet can be started with swap enabled and will support three configurations
-  for Kubernetes workloads: `LimitedSwap`, `UnlimitedSwap` and `NoSwap`.
+- Kubelet can be started with swap enabled and will support two configurations
+  for Kubernetes workloads: `LimitedSwap` and `NoSwap`.
 - Kubelet can configure CRI to allocate swap to Kubernetes workloads. By
   default, workloads will not be allocated any swap.
 - e2e test jobs are configured for Linux systems with swap enabled.
@@ -688,7 +702,7 @@ Here are specific improvements to be made:
 
 #### Beta 2
 
-- Publish a Kubernetes doc page encoring user to use encrypted swap if they wish to enable this feature.
+- Publish a Kubernetes doc page encouraging users to use encrypted swap if they wish to enable this feature.
 - Add [swap specific tests](https://github.com/kubernetes/kubernetes/issues/120798) such as, handling the usage of
   swap during container restart boundaries for writes to tmpfs (which may require pod cgroup change beyond what
   container runtime will do at (container cgroup boundary).
@@ -696,7 +710,7 @@ Here are specific improvements to be made:
 - Address eviction related [issue](https://github.com/kubernetes/kubernetes/issues/120800) in swap implementation.
 - Add `NoSwap` as the default setting.
 - Add e2e test confirming that `NoSwap` will actually not swap
-- Add e2e test confirming that swap is used for `LimitedSwap` and `UnlimitedSwap`
+- Add e2e test confirming that swap is used for `LimitedSwap`.
 - Document [best practices](#best-practices) for setting up Kubernetes with swap
 
 [via cgroups]: #restrict-swap-usage-at-the-cgroup-level
@@ -830,7 +844,7 @@ been used over time. We propose a configuration in `MemorySwap` called `NoSwap`.
 Users could also set `NoSwap` in `MemorySwap` to disable all workloads from
 using swap without requiring the user to disable swap if that is needed.
 
-In Beta releases of this feature, one could use turn off `NodeSwap` feature toggle 
+In Beta releases of this feature, one could use turn off `NodeSwap` feature toggle
 but once this feature is GA, users could use another option to disable swap
 for workloads.
 
@@ -1083,8 +1097,8 @@ It is possible for this feature to affect performance of some worker node-level
 SLIs/SLOs. We will need to monitor for differences, particularly during beta
 testing, when evaluating this feature for beta and graduation.
 
-We discovered degration of system critical daemons like Kubelet and systemd if swap is enabled. 
-We recommend disabling swap for the `system.slice` and setting `io.latency` for the `system.slice`.
+We discovered degration of system critical daemons like Kubelet and systemd if swap is enabled.
+We recommend disabling swap and setting `io.latency` for the `system.slice`.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
