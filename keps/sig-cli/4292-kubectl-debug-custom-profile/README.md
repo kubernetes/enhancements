@@ -134,16 +134,16 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -164,21 +164,21 @@ This proposal adds a new custom profiling feature on top of predefined profiles 
 ## Motivation
 
 `kubectl debug` command provides a set of predefined profiles and users can pick the appropriate ones
-according to their needs and roles. However, in some cases(maybe even in most cases), users might want 
-to customize these profiles by adding;
+according to their needs and roles. However, in some cases (maybe even in most cases), users might want 
+to customize these profiles by adding:
 * environment variables https://github.com/kubernetes/kubectl/issues/1486
 * replicate volume mounts https://github.com/kubernetes/kubectl/issues/1071
 * security contexts https://github.com/kubernetes/kubernetes/pull/113009
 * labels https://github.com/kubernetes/kubectl/issues/1364, https://github.com/kubernetes/kubernetes/issues/115679
 * image pull secrets https://github.com/kubernetes/kubectl/issues/1506
 
-and many others. Users can overcome these problems by manually patching pod specs(unless the required intervention
+and many others. Users can overcome these problems by manually patching pod specs (unless the required intervention
 prevents the pod to become available) but this is impractical, especially if this should be done frequently
 and that's why, users first reaction is opening an issue about this or pull request proposing a new flag to
-manage only a particular fields in pod specs. Adding a new flag for every field puts a debug command in a risk of
+manage only a particular fields in pod specs. Adding a new flag for every field puts a debug command at risk of
 unmanageable and unmaintainable state from not only maintainers point of view but also users. 
 
-Due to for all these reasons, this proposal adds a custom profiling support on top of predefined profiles debug command.
+Due to all these reasons, this proposal adds a custom profiling support on top of predefined profiles debug command.
 Custom profiling mitigates the new flag request pressure.
 
 ### Goals
@@ -192,7 +192,7 @@ Custom profiling mitigates the new flag request pressure.
 ## Proposal
 
 There will be a new flag, namely `custom`, in `kubectl debug` which is used to pass
-a json file that includes the fields whose are compatible with container spec(e.g. 
+a json file that includes the fields that are compatible with container spec (e.g. 
 
 ```json
 {
@@ -234,7 +234,7 @@ profiles. As a result, custom profiles always suppress the properties inside pre
 of conflicts. Because for example, user may pass security context via custom profiles and netadmin profile has its own
 security context properties and custom profile should override it.
 
-To achieve this patching(and overriding) mechanism, custom profiling uses `StrategicMergePatch` that has already been used in code base
+To achieve this patching (and overriding) mechanism, custom profiling uses `StrategicMergePatch` that has already been used in code base
 and proves that it covers such cases. This is an example of code portion demonstrates that how SMP will be used;
 
 ```go
@@ -245,13 +245,13 @@ and proves that it covers such cases. This is an example of code portion demonst
 ``` 
 
 This feature focuses only on container spec customization and has no attempt to change the other fields in pod spec. 
-The reason of this decision is that there are three type of debugging methods(copy to node, copy to pod and ephemeral container) 
+The reason of this decision is that there are three types of debugging methods(copy to node, copy to pod and ephemeral container) 
 and their largest intersection type is corev1.Container. Copy to node and Copy to pod both cover corev1.PodSpec type as
 opposed to ephemeral container which only manifests itself as corev1.Container.
-Therefore, pod spec related changes can be managed by flags which presumably should be only a few(annotations, labels, etc.).
+Therefore, pod spec related changes can be managed by flags which presumably should be only a few (annotations, labels, etc.).
 
 Besides that Container spec has several fields and to prevent possible confusions and start more restrictive, custom
-profile does not allow some fields to be used to overwrite, such as Name, Command, Image, Lifecycle and VolumeDevices(
+profile does not allow some fields to be used to overwrite, such as Name, Command, Image, Lifecycle and VolumeDevices (
 first 3 fields have their own flags already). We can extend disallowed fields as a starting point and consider enabling
 more fields per request separately in the future.
 
@@ -288,7 +288,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 * When user mounts a persistent volume claim to the debug pod, this must not affect 
-the actual pod's functionality. If there is such a feature or property exists in storage,
+the actual pod's functionality. If such a feature or property exists in storage,
 kubectl debug should handle this and prevent mounting.
 * kubectl debug pod --copy-to already copies the fields in original pod spec to
 the copied pod spec which seems justifying the custom profiling. But in cases where
@@ -682,7 +682,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-In alpha phase, all the tests can be done after only enabling this feature.
+In alpha phase, all the tests can be done only after enabling this feature.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -988,14 +988,14 @@ information to express the idea and why it was not acceptable.
 -->
 
 ### Flags for all fields
-This alternative solution would be providing a flag in kubectl debug for each field. For example,
+The alternative solution would be providing a flag in kubectl debug for each field. For example,
 if user wants to mount a volume, there will be `--mount-volume` flag and user explicitly 
 specifies the volume. However, this has a major drawback that it results in kubectl debug command
 falling into unmanageable category with a numerous flags and users don't understand which one should be
 used and for all new fields in pod spec, there is pressure to create a new flag in kubectl debug to support.
 
 ### Customizable Pod Spec instead corev1.Container
-This alternative solution would be instead of custom profile json accepts corev1.Container type,
+The alternative solution would be instead of custom profile json accepts corev1.Container type,
 it will get PodSpec template and this covers the need of customizing all fields in Pod Spec including the labels 
 and annotations. But this isn't applicable for ephemeral containers because they are residing in the 
 original pod rather than copied pod.
