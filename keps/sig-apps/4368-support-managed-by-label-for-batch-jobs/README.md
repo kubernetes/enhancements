@@ -53,6 +53,7 @@
   - [Custom wrapping CRD](#custom-wrapping-crd)
   - [Use the spec.suspend field](#use-the-specsuspend-field)
   - [Using label selectors](#using-label-selectors)
+  - [Condition to indicated Job is skipped](#condition-to-indicated-job-is-skipped)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -253,7 +254,17 @@ const (
 #### Implementation overview
 
 We skip synchronization of the Jobs with the `managed-by` label, if it has any
-different value than `job-controller.k8s.io`.
+different value than `job-controller.k8s.io`. When the synchronization is skipped,
+the name of the controller managing the Job object is logged.
+
+We leave the particular place at which the synchronization is skipped as
+implementation detail which can be determined during the implementation phase,
+however, two candidate places are:
+1. inside `syncJob` function
+2. inside `enqueueSyncJobInternal` function
+
+Note that, if we skip inside `enqueueSyncJobInternal` we may save on some memory
+needed to needlessly enqueue the Job keys.
 
 There is no validation for the values of the field beyond that of standard
 permitted label values.
@@ -942,6 +953,28 @@ This means we would need to go via a difficult process of ensuring all jobs
 have the label, or listen on events from two informers. In any case, the use of
 label-selectors is significantly more complicated than the skip `if` inside the
 `syncJob`, and does not allow for big memory gain.
+
+### Condition to indicated Job is skipped
+
+In order to inform the user that a job is skipped from synchronization we
+could add a dedicated condition, say `ManagedBy`, indicating that the job is
+skipped by the built-in controller.
+
+**Reasons for discarding/deferring**
+
+- Since the Job label is immutable, then the usability of the condition is limited,
+because the timestamp of the other fields will not bring extra debugging value.
+- Conceptually, we want to give full ownership of the Job object to the other
+job controller, objects mutated by two controllers could actually make debugging
+more involving.
+- The MultiKueue controller would have to non-trivially reconcile the Job Status.
+If it just blindly mirrored the status from the worker cluster (as currently
+planned), then it would remove the condition. Other controllers would need to be
+careful not to remove the condition either.
+- It requires extra request per job, and risks conflicts for the status Update
+requests.
+- If other (non built-in) controllers were to indicate that they skip with
+a condition, we would have many conditions.
 
 ## Infrastructure Needed (Optional)
 
