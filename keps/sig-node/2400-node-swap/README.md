@@ -227,7 +227,9 @@ The main concern would be swapping in the critical services on the control plane
 
 ##### Use of a dedicated disk for swap
 
-We recommend using a separate disk for your swap partition.
+We recommend using a separate disk for your swap partition. With [encryption](#security-risk), an encrypted disk is recommended for swap.
+If swap is on a partition or the root filesystem, workloads can interfere with system processes needing to write to disk.
+If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/cri-o/systemd, which would affect other workloads
 
 ### Steps to Calculate Swap Limit
 
@@ -709,6 +711,7 @@ Here are specific improvements to be made:
 - Fix flaking/failing swap node e2e jobs.
 - Address eviction related [issue](https://github.com/kubernetes/kubernetes/issues/120800) in swap implementation.
 - Add `NoSwap` as the default setting.
+- Remove `UnlimitedSwap` as a supported option.
 - Add e2e test confirming that `NoSwap` will actually not swap
 - Add e2e test confirming that swap is used for `LimitedSwap`.
 - Document [best practices](#best-practices) for setting up Kubernetes with swap
