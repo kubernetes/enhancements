@@ -37,7 +37,7 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -137,19 +137,17 @@ None
 
 There is a unit test coverage for the certificate manager.
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/kubelet/certificate`: `2024-01-17` - `52.1`
 
 ##### Integration tests
 
-None found.
-
-- <test>: <link to test coverage>
+There are tests in `pkg/kubelet/certificate/bootstrap`.
 
 ##### e2e tests
 
-None found.
+Discussing this feature in sig-auth it was suggested that integration tests should be sufficient
 
-- <test>: <link to test coverage>
+NA
 
 ### Graduation Criteria
 
@@ -159,7 +157,12 @@ N/A: this is retroactive KEP, feature is already in Beta
 
 #### Beta
 
-N/A: this is retroactive KEP, feature is already in Beta
+This is retroactive KEP, feature is already in Beta
+
+- [ ] Metrics promoted to Beta:
+  - `certificate_manager_server_rotation_seconds`
+  - `certificate_manager_server_ttl_seconds`
+  - `server_expiration_renew_errors`
 
 #### GA
 
