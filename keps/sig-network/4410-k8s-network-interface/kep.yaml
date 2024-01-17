@@ -1,5 +1,5 @@
 title: k8s-network-interface
-kep-number: NNNN
+kep-number: 4410
 authors:
   - "@mikezappa87"
 owning-sig: sig-network
