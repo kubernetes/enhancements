@@ -1171,9 +1171,9 @@ nodes that do not use swap memory.
 - **2017-10-06:** Discussed in [#53533](https://github.com/kubernetes/kubernetes/issues/53533).
 - **2021-01-05:** Initial design discussion document for swap support and use cases.
 - **2021-04-05:** Alpha KEP drafted for initial node-level swap support and implementation (KEP-2400).
-- **2021-08-09:** New in Kubernetes v1.22: alpha support for using swap memory: https://kubernetes.io/blog/2021/08/09/run-nodes-with-swap-alpha/
-- **2023-04-17:** KEP update for beta1 [#3957](https://github.com/kubernetes/enhancements/pull/3957)
-- **2023-08-15:** Beta1 released in kubernetes 1.28 2023-08-15
+- **2021-08-09:** New in Kubernetes v1.22: alpha support for using swap memory: https://kubernetes.io/blog/2021/08/09/run-nodes-with-swap-alpha/.
+- **2023-04-17:** KEP update for beta1 [#3957](https://github.com/kubernetes/enhancements/pull/3957).
+- **2023-08-15:** Beta1 released in kubernetes 1.28
 - **2024-01-12:** Updates to Beta2 KEP.
 
 ## Drawbacks
