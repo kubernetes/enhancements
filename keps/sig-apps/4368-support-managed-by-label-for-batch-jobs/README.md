@@ -914,6 +914,9 @@ the K8s job, but the label-based mechanism for other CRD Jobs may result in
 decreased adoption of k8s Job, relative to the alternative Job CRDs, for the
 batch-related tasks.
 
+It would not be compatible with CronJob. Using CronJob with MultiKueue is a valid
+use case we want to support.
+
 ### Use the spec.suspend field
 
 This approach is to keep `spec.suspend=true` on the management cluster, while
