@@ -4,6 +4,7 @@ authors:
   - "@logicalhan"
   - "@jpbetz"
   - "@liggitt"
+  - "@siyuanfoundation"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-architecture

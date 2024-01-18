@@ -324,8 +324,9 @@ compatibility version support.
 #### Feature gating changes
 
 In order to preserve the behavior of in-development features across multiple releases,
-feature implementations may also be gated by version number.
+feature implementation history should also be preserved in the code base.
 
+Naively, the feature implementations can be gated by version number. 
 For example, if `FeatureA` is partially implemented in 1.28 and additional functionality
 is added in 1.29, the feature developer is expected to gate the functionality by version.
 E.g.:
@@ -333,6 +334,74 @@ E.g.:
 ```go
 if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() <= "1.28" {implementation 1}
 if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() >= "1.29" {implementation 2}
+```
+
+A better way might be to define a `featureOptions` struct constructed based on the the feature gate, and have the `featureOptions` control the main code flow, so that the main code is version agnostic. 
+E.g.:
+```go
+// in kube_features.go
+const (
+  FeatureA featuregate.Feature = "FeatureA"
+  FeatureB featuregate.Feature = "FeatureB"
+)
+
+func init() {
+	utilfeature.DefaultMutableFeatureGate.AddVersioned(defaultKubernetesFeatureGates)
+}
+
+var defaultKubernetesFeatureGates = map[Feature]VersionedSpecs{
+		featureA: VersionedSpecs{
+			{Version: mustParseVersion("1.27"), Default: false, PreRelease: Alpha},
+		},
+    featureB: VersionedSpecs{
+			{Version: mustParseVersion("1.28"), Default: false, PreRelease: Alpha},
+			{Version: mustParseVersion("1.30"), Default: true, PreRelease: Beta},
+		},
+}
+
+type featureOptions struct {
+  AEnabled        bool
+  AHasCapabilityZ bool
+  BEnabled        bool
+  BHandler        func()
+}
+
+func newFeatureOptions(featureGate FeatureGate) featureOptions {
+  opts := featureOptions{}
+  if featureGate.Enabled(FeatureA) {
+    opts.AEnabled = true
+  }
+  if featureGate.CompatibilityVersion() > "1.29" {
+    opts.AHasCapabilityZ = true
+  }
+
+  if featureGate.Enabled(FeatureB) {
+    opts.BEnabled = true
+  }
+  if featureGate.CompatibilityVersion() > "1.28" {
+    opts.BHandler = newHandler
+  } else {
+    opts.BHandler = oldHandler
+  }
+  return opts
+}
+
+// in client.go
+func ClientFunction() {
+  // ...
+  featureOpts := newFeatureOptions(utilfeature.DefaultFeatureGate)
+  if featureOpts.AEnabled {
+    // ...
+    if featureOpts.AHasCapabilityZ {
+      // run CapabilityZ
+    }
+  }
+  if featureOpts.BEnabled {
+    featureOpts.BHandler()
+  }
+  // ...
+}
+
 ```
 
 ### CEL Environment Compatibility Versioning
