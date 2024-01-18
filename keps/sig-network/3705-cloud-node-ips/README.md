@@ -259,17 +259,6 @@ values means that the IPv4 `ExternalIP` will be preserved.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
@@ -395,10 +384,6 @@ value to a new single-stack value.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Assuming no drastic bugs (eg, the cloud provider assigns Node X's IP
@@ -435,20 +420,31 @@ correctly.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO; do a manual test
+Not really applicable. Enable->disable->enable was tested and works
+fine, but:
+
+  - "(feature is disabled) → upgrade → rollback" is uninteresting
+    since the feature is disabled
+
+  - "enable feature → upgrade" is impossible because you can't
+    enable the feature before upgrading to a release that supports it.
+
+  - "upgrade → enable feature → rollback" is expected to fail, because
+    the rolled-back-to kubelet will not support the configuration
+    with the feature enabled.
+
+  - "upgrade → enable feature → disable feature → rollback" is just a
+    combination of the (tested) enable→disable case with the
+    (uninteresting) upgrade→rollback case.
+
+(The question seems more targeted at API objects rather than component
+configuration.)
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No.
 
 ### Monitoring Requirements
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -478,10 +474,6 @@ startup speed). There is no ongoing "service".
 No
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -523,17 +515,6 @@ No
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 It does not add any new failure modes. (The kubelet and cloud provider
@@ -542,19 +523,6 @@ but they _already_ do that. And the failure mode there is just
 "updates don't get processed until the API server comes back".)
 
 ###### What are other known failure modes?
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
