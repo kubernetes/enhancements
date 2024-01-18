@@ -233,6 +233,9 @@ older version of k8s which does not support the label yet. In that case
 two controllers might start running and compete with Job status updates at the
 same time.
 
+Note that an analogous situation may happen when the version of Kubernetes
+already supports the label, but the feature gate is disabled in `kube-controller-manager`.
+
 To mitigate this risk we warn about it in Kueue documentation, to use this label
 only against newer versions of Kubernetes.
 
