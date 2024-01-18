@@ -231,6 +231,16 @@ We recommend using a separate disk for your swap partition. With [encryption](#s
 If swap is on a partition or the root filesystem, workloads can interfere with system processes needing to write to disk.
 If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/cri-o/systemd, which would affect other workloads
 
+##### Swap as the default
+
+We will turn the feature on for Beta 2 but the default setting will be `NoSwap`.
+
+Enabling Swap on nodes is a pretty advanced feature which requires tuning and knowledge of the kernel.
+We do not recommend swap on all nodes so we still suggest `--fail-swap-on=true` for most cases of Kubernetes.
+
+If there is interest in trying out this feature, we suggest provisioning swap space on the worker node along with setting ``--fail-swap-on=false`
+and restarting kubelet.
+
 ### Steps to Calculate Swap Limit
 
 1. **Calculate the container's memory proportionate to the node's memory:**
