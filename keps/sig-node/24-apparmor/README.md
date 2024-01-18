@@ -11,7 +11,8 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API](#api)
-    - [Pod Annotations](#pod-annotations)
+    - [Pod Annotations (beta API)](#pod-annotations-beta-api)
+    - [Pod API](#pod-api)
       - [RuntimeDefault Profile](#runtimedefault-profile)
       - [Localhost Profile](#localhost-profile)
     - [Validation](#validation)
@@ -24,7 +25,16 @@
       - [e2e tests](#e2e-tests)
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Pod Creation](#pod-creation)
+    - [Pod Security Admission](#pod-security-admission)
+    - [Pod Update](#pod-update)
+    - [PodTemplates](#podtemplates)
+    - [Warnings](#warnings)
+    - [Kubelet fallback](#kubelet-fallback)
+    - [Runtime Profiles](#runtime-profiles)
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+      - [Kubelet Backwards compatibility](#kubelet-backwards-compatibility)
+    - [Removing annotation support](#removing-annotation-support)
   - [Graduation Criteria](#graduation-criteria)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -35,6 +45,8 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Syncing fields &amp; annotations on workload resources](#syncing-fields--annotations-on-workload-resources)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -67,7 +79,10 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 ## Summary
 
-This is a (retroactive) KEP to add AppArmor support to the Kubernetes API.
+This is a proposal to add AppArmor support to the Kubernetes API.
+
+For GA graduation, this proposal aims to do the _bare minimum_ to clean up the feature from its beta
+release, without blocking future enhancements.
 
 ## Motivation
 
@@ -81,11 +96,21 @@ Kubernetes AppArmor support predates most of our current feature lifecycle pract
 KEP process. This KEP is backfilling for current AppArmor support. For the original AppArmor
 proposal, see https://github.com/kubernetes/design-proposals-archive/blob/main/auth/apparmor.md.
 
+This KEP is proposing a minimal path to GA, per the
+[no perma-Beta requirement](/keps/sig-architecture/1635-prevent-permabeta/README.md).
+This feature graduation closely parallels that of [Seccomp](/keps/sig-node/135-seccomp/README.md).
+The notable exceptions are that the AppArmor annotations are immutable on pods, which simplifies the
+migration. AppArmor is also feature gated, via the `AppArmor` gate.
+
 ### Goals
 
 - Allow running Pods with AppArmor confinement
 
 ### Non-Goals
+
+This KEP proposes the absolute minimum to provide generally available AppArmor
+confinement for Pods and their containers. Further functional enhancements are out of scope,
+including:
 
 - Defining any standard "Kubernetes branded" AppArmor profiles
 - Formally specifying the AppArmor profile format in Kubernetes
@@ -95,13 +120,18 @@ proposal, see https://github.com/kubernetes/design-proposals-archive/blob/main/a
 
 ## Proposal
 
-Add an immutable pod annotation to configure the AppArmor profile on a per-container basis.
+Add a new field to the Pod API that allows defining the AppArmor profile. The new field should be
+part of the security context.
 
 ### API
 
-The beta API is defined through annotations on pods.
+Pods and PodTemplate will include an `appArmorProfile` field that you can set either for a Pod's
+security context or for an individual container. If AppArmor options are defined at both the pod and
+container level, the container-level options override the pod options.
 
-#### Pod Annotations
+#### Pod Annotations (beta API)
+
+The beta API was defined through annotations on pods.
 
 The `container.apparmor.security.beta.kubernetes.io/<container_name>` annotation will be used to
 configure the AppArmor profile that the container named `<container_name>` is run with. The
@@ -116,6 +146,65 @@ Possible annotation values are:
 3. `localhost/<profile_name>` - Run the container using the `<profile_name>` AppArmor profile. The
    profile must be pre-loaded into the kernel (typically via `apparmor_parser` utility), otherwise
    the container will not be started.
+
+#### Pod API
+
+The Pod AppArmor API is generally immutable, except in `PodTemplates`.
+
+```go
+type PodSecurityContext struct {
+    ...
+    // The AppArmor options to use by the containers in this pod.
+    // Note that this field cannot be set when spec.os.name is windows.
+    // +optional
+    AppArmorProfile  *AppArmorProfile
+    ...
+}
+
+type SecurityContext struct {
+    ...
+    // The AppArmor options to use by this container. If AppArmor options are
+    // provided at both the pod & container level, the container options
+    // override the pod options.
+    // Note that this field cannot be set when spec.os.name is windows.
+    // +optional
+    AppArmorProfile  *AppArmorProfile
+    ...
+}
+
+// AppArmorProfile defines a pod or container's AppArmor settings.
+// Only one profile source may be set.
+// +union
+type AppArmorProfile struct {
+    // type indicates which kind of AppArmor profile will be applied.
+    // Valid options are:
+    //   Localhost - a profile pre-loaded on the node.
+    //   RuntimeDefault - the container runtime's default profile.
+    //   Unconfined - no AppArmor enforcement.
+    // +unionDescriminator
+    Type AppArmorProfileType
+
+    // LocalhostProfile indicates a loaded profile on the node that should be used.
+    // The profile must be preconfigured on the node to work.
+    // Must match the loaded name of the profile.
+    // Must only be set if type is "Localhost".
+    // +optional
+    LocalhostProfile *string
+}
+
+type AppArmorProfileType string
+
+const (
+    AppArmorProfileTypeUnconfined     AppArmorProfileType = "Unconfined"
+    AppArmorProfileTypeRuntimeDefault AppArmorProfileType = "RuntimeDefault"
+    AppArmorProfileTypeLocalhost      AppArmorProfileType = "Localhost"
+)
+```
+
+This API makes the options more explicit and leaves room for new profile sources
+to be added in the future (e.g. Kubernetes predefined profiles or ConfigMap
+profiles) and for future extensions, such as defining the behavior when a
+profile cannot be set.
 
 ##### RuntimeDefault Profile
 
@@ -179,18 +268,35 @@ profiles.
 
 #### Validation
 
-The following validations are applied to the AppArmor annotations on pods:
+The following validations were applied to the AppArmor annotations on pods:
 - Pod annotations are immutable (cannot be added, modified, or removed on pod update)
 - Annotation value must have a `localhost/` prefix, or be one of: `""`, `runtime/default`, `unconfined`.
 
+The annotation validations will be carried over to the field API, and the following additional
+validations are proposed:
+1. Fields must match the corresponding annotations when both are present, except for ephemeral containers.
+2. AppArmor profile must be unset on Windows pods (`spec.os.name == "windows"`). Only enforced on fields.
+3. Localhost profile must not be empty, and must not be padded with whitespace. Only enforced on creation.
+   This was previously enforced by the [Kubelet](https://github.com/kubernetes/kubernetes/blob/2624e93d55375a9642977d4d5795841ab7463b1d/pkg/security/apparmor/validate.go#L70-L77).
+
+*Note on localhost profile validation:* AppArmor profile naming is flexible, but both of the leading
+CRI implementations (containerd & cri-o) require a profile with a matching name to be loaded. This
+prevents the special `unconfined` profile, or various wildcard and variable profile names from being
+used in practice. This validation is deferred to the runtime, rather than being enforced by the API
+for backwards compatibility.
+
 #### Node Status
 
-The Kubelet appends "AppArmor enabled" to the message on the node ready condition to indicate if a
-node is AppArmor enabled.
+The Kubelet SHOULD NOT append the AppArmor status to the node ready condition message.
+
+The ready condition is certainly not the right place for this message, but more generally the
+kubelet does not broadcast the status of every optional feature. (A beta implementation of
+this feature, added before the Kubernetes enhancement process was formalized, did customize
+the node ready condition message).
 
 ## Design Details
 
-When an AppArmor profile is set on a container, the kubelet will pass the option on to the
+When an AppArmor profile is set on a container (or pod), the kubelet will pass the option on to the
 container runtime, which is responsible for running the container with the desired profile. Profiles
 must be loaded into the kernel before the container is started (profile loading is out of scope for
 this KEP). For more details, see https://kubernetes.io/docs/tutorials/security/apparmor/.
@@ -213,6 +319,9 @@ None
 - [Host validation tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/security/apparmor/validate_test.go)
 - [Pod Security Admission policy](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/pod-security-admission/policy/check_appArmorProfile_test.go)
 
+New tests will be added covering the annotation/field conflict cases described
+under [Version Skew Strategy](#version-skew-strategy).
+
 ##### Integration tests
 
 - Pod Security tests: https://github.com/kubernetes/kubernetes/blob/1ded677b2a77a764a0a0adfa58180c3705242c49/test/integration/auth/podsecurity_test.go
@@ -223,6 +332,8 @@ None
   - These tests are guarded by the `[Feature:AppArmor]` tag and run as part of the
     [containerd E2E features](https://testgrid.k8s.io/sig-node-containerd#node-e2e-features)
     test suite.
+
+The E2E tests will be migrated to the field-based API.
 
 ### Failure and Fallback Strategy
 
@@ -235,13 +346,99 @@ below are the ones we mapped and their outcome once this KEP is implemented:
 | 2) Using custom or `runtime/default` profile that restricts actions a container is trying to make. | Pod created          | The outcome is workload and AppArmor dependent. In this scenario containers may 1) fail to start, 2) misbehave or 3) log violations.                  |
 | 3) Using a localhost profile that does not exist on the node.                                      | Pod created          | Container runtime dependent: containers fail to start. Retry respecting RestartPolicy and back-off delay.  Error message in event.                |
 | 4) Using an unsupported runtime profile (i.e. `runtime/default-audit`).                            | Fails validation: pod **not** created. | N/A                                                                                                                                                   |
-| 5) Using localhost or explicit `runtime/default` profile when AppArmor is disabled by the host or build | Pod created. | Kubelet puts Pod in blocked ssstate.                                                                                                                    |
+| 5) Using localhost or explicit `runtime/default` profile when AppArmor is disabled by the host or build | Pod created. | Kubelet puts Pod in blocked state.                                                                                                                    |
 | 6) Using implicit (default) `runtime/default` profile when AppArmor is disabled by the host or build. | Pod created | Container created without AppArmor enforcement. |
+| 7) Using localhost profile with invalid (empty) name                                               | Fails validation: pod **not** created. | N/A                                                                                                                                                   |
 
 Scenario 2 is the expected behavior of using AppArmor and it is included here
 for completeness.
 
+Scenario 7 represents the case of failing the existing validation, which is
+defined at [Pod API](#pod-api).
+
 ### Version Skew Strategy
+
+All API skew is resolved in the API server.
+
+#### Pod Creation
+
+If no AppArmor annotations or fields are specified, no action is necessary.
+
+If the `AppArmor` feature is disabled per feature gate, then the annotations and
+fields are cleared ([current behavior](https://github.com/kubernetes/kubernetes/blob/f58f70bd5730658505042cd9baa80f72d3b6e31e/pkg/api/pod/util.go#L526-L532)).
+
+If the pod's OS is `windows`, fields are forbidden to be set and annotations
+are not copied to the corresponding fields.
+
+If _only_ AppArmor fields are specified, add the corresponding annotations. If these
+are specified at the Pod level, copy the annotations to each container that does
+not have annotations already specified. This ensures that the fields are enforced
+even if the node version trails the API version (see [Version Skew Strategy](##version-skew-strategy)).
+
+If _only_ AppArmor annotations are specified, copy the values into the
+corresponding fields. This ensures that existing applications continue to
+enforce AppArmor, and prevents the kubelet from needing to resolve annotations &
+fields. If the annotation is empty, then the `runtime/default` profile will be
+used by the CRI container runtime. If a localhost profile is specified, then
+container runtimes will strip the `localhost/` prefix, too. This will be covered
+by e2e tests during the GA promotion.
+
+If both AppArmor annotations _and_ fields are specified, the values MUST match.
+This will be enforced in API validation.
+
+Container-level AppArmor profiles override anything set at the pod-level.
+
+#### Pod Security Admission
+
+The Pod Security admission plugin will be updated to evaluate AppArmorProfile fields in addition to
+annotations.
+
+The [policy for the **baseline** Pod security standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/#baseline)
+forbids setting an `Unconfined` profile, but allows unset, `RuntimeDefault` and `Localhost`
+profiles. In the case of localhost profiles, this can include OS profiles intended for other system
+daemons, so additional profile restrictions are encouraged (e.g. via
+[ValidatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/)).
+
+
+#### Pod Update
+
+The AppArmor fields on a pod are immutable, which also applies to the
+[annotation](https://github.com/kubernetes/kubernetes/blob/b46612a74224b0871a97dae819f5fb3a1763d0b9/pkg/apis/core/validation/validation.go#L177-L182).
+
+When an [Ephemeral Container](/keps/sig-node/277-ephemeral-containers/README.md) is added, it
+will follow the same rules for using or overriding the pod's AppArmor profile.
+Ephemeral container's will never sync with an AppArmor annotation.
+
+#### PodTemplates
+
+PodTemplates (and their embeddings within e.g. ReplicaSets, Deployments, StatefulSets, etc.) will be
+ignored. The field/annotation resolution will happen on template instantiation.
+
+#### Warnings
+
+To raise awareness of workloads using the beta AppArmor annotations that need to be migrated, a
+warning will be emitted when only AppArmor annotations are set (no fields) on pod creation, or pod
+template (including workload resources with an embedded pod template) create & update.
+
+#### Kubelet fallback
+
+Since Kubelet versions must not be ahead of API versions, Kubelets can defer annotation/field
+resolution to the API server, and only consider the AppArmor fields.
+
+The exception to this is static pods. In this case, Kubelet will copy annotation values to fields in the
+[`applyDefaults`](https://github.com/kubernetes/kubernetes/blob/2363cdcc399cbf428210efb2c51575ddcad2b84a/pkg/kubelet/config/common.go#L57C6-L57C19)
+function. In this case, Kubelet will also log a warning.
+
+#### Runtime Profiles
+
+The API Server will continue to reject annotations with runtime profiles
+different than `runtime/default`, to maintain the existing behavior.
+
+Violations would lead to the error message:
+
+```
+Invalid value: "runtime/profile-name": must be a valid AppArmor profile
+```
 
 #### Upgrade / Downgrade Strategy
 
@@ -259,6 +456,31 @@ must continue to be supported and backfilled for at least 2 versions passed the
 initial implementation. Specifically, fields will no longer be copied to annotations for older kubelet
 versions. However, annotations submitted to the API server will continue to be copied to fields at the
 kubelet indefinitely, as was done with Seccomp.
+
+##### Kubelet Backwards compatibility
+
+Since we don't support running newer Kubelets than API server, new Kubelets only need to handle
+AppArmor fields. All the version skew resolution happens within the API server.
+
+#### Removing annotation support
+
+_(Assuming field support merges in 1.30, otherwise adjust all versions a constant amount)_
+
+Phase 1 (v1.30): AppArmor field support merged
+- Sync annotations & fields on Pod create (version skew strategy described above)
+- Warn on annotation use, if field isn't set
+- Kubelet copies static pod annotations to fields
+
+Phase 2 (v1.34):
+- API server stops copying fields to annotations
+- Warn on ALL annotation use
+- **Risk:** policy controllers that don't consider field values
+
+Phase 3 (v1.36): End state
+- API server stops copying annotations to fields
+- Kubelet stops copying annotations to fields for static pods
+- Validation that annotations & fields match persists indefinitely
+- **Risk:** workloads that haven't migrated
 
 ### Graduation Criteria
 
@@ -288,11 +510,11 @@ No - AppArmor has been enabled by default since Kubernetes v1.4.
 
 Yes. Containers already running with AppArmor enforcement will continue to do so, but on restart
 will fallback to the container runtime default. Pods created with AppArmor disabled will have their
-annotations stripped.
+fields & annotations stripped.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Newly started or restarted containers in pods that still have the AppArmor annotations will
+Newly started or restarted containers in pods that still have the AppArmor field/annotations will
 have the specified AppArmor profile applied, rather than the runtime default.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -302,6 +524,10 @@ No.
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+The [Version Skew Strategy](#version-skew-strategy) section covers this point.
+Running workloads should have no impact as the Kubelet will support either the
+existing annotations or the new fields introduced by this KEP.
 
 Disabling the AppArmor feature will cause the container runtimes to apply the runtime default
 profile (except for privileged pods). In cases where a user was expecting to apply a custom profile
@@ -318,11 +544,15 @@ The following errors could indicate problems with how kubelets are interpreting 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Yes.
+Automated tests will cover the scenarios with and without the changes proposed
+on this KEP. As defined under [Version Skew Strategy](#version-skew-strategy),
+we are assuming the cluster may have kubelets with older versions (without
+this KEP' changes), therefore this will be covered as part of the new tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+The promotion of AppArmor to GA would deprecate the beta annotations as described in the
+[Version Skew Strategy](#version-skew-strategy).
 
 ### Monitoring requirements
 
@@ -335,10 +565,10 @@ pods/containers have a AppArmorProfile set.
 ###### How can someone using this feature know that it is working for their instance?
 
 The AppArmor enforcement status is not directly surfaced by Kubernetes, but is visible through the
-linux proc API:
+linux proc API. For example, you can check what profile a container is running with by execing into it:
 
 ```sh
-$ cat /proc/1/attr/current
+$ kubectl exec -n $NAMESPACE $POD_NAME -- cat /proc/1/attr/current
 k8s-apparmor-example-deny-write (enforce)
 ```
 
@@ -415,3 +645,15 @@ N/A
 - Custom AppArmor profiles are not fully managed by Kubernetes
 - AppArmor support adds a dimension to the feature compatibility matrix, as support is not
   guaranteed in linux
+
+## Alternatives
+
+### Syncing fields & annotations on workload resources
+
+AppArmor fields & annotations on Pods are immutable, which means that syncing fields & annotations
+is a one-time operation. This is not true for workload resources (ReplicaSets, Deployments, etc).
+
+In order to support syncing fields on workload resources, we need to account for clients that only
+pay attention to one of the field/annotation settings. When combined with the validation requirement
+that fields & annotations match, getting this right in both the patch & update cases adds
+significant complexity.
