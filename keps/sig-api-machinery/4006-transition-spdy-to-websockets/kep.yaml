@@ -14,14 +14,15 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@jpbetz"
+  - "@liggitt"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -35,11 +36,18 @@ feature-gates:
   - name: KUBECTL_REMOTE_COMMAND_WEBSOCKETS
     components:
       - kubectl
-  - name: ClientRemoteCommandWebsockets
+  - name: KUBECTL_PORT_FORWARD_WEBSOCKETS
+    components:
+      - kubectl
+  - name: TranslateStreamCloseWebsocketRequests
+    components:
+      - kube-apiserver
+  - name: PortForwardWebsockets
     components:
       - kube-apiserver
 disable-supported: true
 
-# The following PRR answers are required at beta release
+# The following PRR answers are required at beta release.
 metrics:
-  - TBD (complete for beta)
+  - num_ws_remote_command_v5_total
+  - num_ws_port_forward_v2_total
