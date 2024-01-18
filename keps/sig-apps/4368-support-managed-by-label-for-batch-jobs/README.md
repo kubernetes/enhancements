@@ -193,7 +193,8 @@ Then, if the label is switched to the mirroring Kueue controller (which by
 itself does not manage pods). Then, the pods are leaking and remain running.
 
 In order to avoid the risk of pods leaking between the controllers when changing
-value of the `managed-by` label, we make the label immutable (see also
+value of the `managed-by` label, we make the label immutable (allow to be added
+on Job creation, but fail requests trying to update its value, see also
 [label mutability](#label-mutability)).
 
 However, the question remains if we can make the label mutable when the job is
