@@ -51,7 +51,7 @@
 - [Alternatives](#alternatives)
   - [Don't use idmap mounts and rely chown all the files correctly](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
   - [64k mappings?](#64k-mappings)
-  - [Allow runtimes to pick the mapping?](#allow-runtimes-to-pick-the-mapping)
+  - [Allow runtimes to pick the mapping](#allow-runtimes-to-pick-the-mapping)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -126,8 +126,8 @@ Here we use UIDs, but the same applies for GIDs.
   inside the container to different IDs in the host. In particular, mapping root
   inside the container to unprivileged user and group IDs in the node.
 - Increase pod to pod isolation by allowing to use non-overlapping mappings
-  (UIDs/GIDs) whenever possible. IOW, if two containers runs as user X, they run
-  as different UIDs in the node and therefore are more isolated than today.
+  (UIDs/GIDs) whenever possible. In other words: if two containers runs as user
+  X, they run as different UIDs in the node and therefore are more isolated than today.
 - Allow pods to have capabilities (e.g. `CAP_SYS_ADMIN`) that are only valid in
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
@@ -291,7 +291,7 @@ message Mount {
 ### Support for pods
 
 Make pods work with user namespaces. This is activated via the
-bool `pod.spec.HostUsers`.
+bool `pod.spec.hostUsers`.
 
 The mapping length will be 65536, mapping the range 0-65535 to the pod. This wide
 range makes sure most workloads will work fine. Additionally, we don't need to
@@ -403,7 +403,7 @@ If the pod wants to read who is the owner of file `/vol/configmap/foo`, now it
 will see the owner is root inside the container. This is due to the IDs
 transformations that the idmap mount does for us.
 
-In other words, we can make sure the pod can read files instead of chowning them
+In other words: we can make sure the pod can read files instead of chowning them
 all using the host IDs the pod is mapped to, by just using an idmap mount that
 has the same mapping that we use for the pod user namespace.
 
@@ -469,7 +469,7 @@ something else to this list:
 - What about windows or VM container runtimes, that don't use linux namespaces?
   We need a review from windows maintainers once we have a more clear proposal.
   We can then adjust the needed details, we don't expect the changes (if any) to be big.
-  IOW, in my head this looks like this: we merge this KEP in provisional state if
+  In my head this looks like this: we merge this KEP in provisional state if
   we agree on the high level idea, with @giuseppe we do a PoC so we can fill-in
   more details to the KEP (like CRI changes, changes to container runtimes, how to
   configure kubelet ranges, etc.), and then the Windows folks can review and we
@@ -686,7 +686,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: UserNamespacesPodsSupport
+  - Feature gate name: UserNamespacesSupport
   - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -733,7 +733,7 @@ Pods will have to be re-created to use the feature.
 
 We will add.
 
-We will test for when the field pod.spec.HostUsers is set to true, false
+We will test for when the field pod.spec.hostUsers is set to true, false
 and not set. All of this with and without the feature gate enabled.
 
 We will also unit test that, if pods were created with the new field
@@ -766,7 +766,7 @@ The rollout is just a feature flag on the kubelet and the kube-apiserver.
 If one API server is upgraded while others aren't, the pod will be accepted (if the apiserver is >=
 1.25). If it is scheduled to a node that the kubelet has the feature flag activated and the node
 meets the requirements to use user namespaces, then the pod will be created with the namespace. If
-it is scheduled to a node that has the feature disabled, it will be scheduled without the user
+it is scheduled to a node that has the feature disabled, it will be created without the user
 namespace.
 
 On a rollback, pods created while the feature was active (created with user namespaces) will have to
@@ -787,7 +787,7 @@ will rollout across nodes.
 
 On Kubernetes side, the kubelet should start correctly.
 
-On the node runtime side, a pod created with pod.spec.HostUsers=false should be on RUNNING state if
+On the node runtime side, a pod created with pod.spec.hostUsers=false should be on RUNNING state if
 all node requirements are met.
 <!--
 What signals should users be paying attention to when the feature is young
@@ -798,7 +798,7 @@ that might indicate a serious problem?
 
 Yes.
 
-We tested to enable the feature flag, create a deployment with pod.spec.HostUsers=false, and then disable
+We tested to enable the feature flag, create a deployment with pod.spec.hostUsers=false, and then disable
 the feature flag and restart the kubelet and kube-apiserver.
 
 After that, we deleted the deployment pods (not the deployment object), the pods were re-created
@@ -830,7 +830,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Check if any pod has the pod.spec.HostUsers field set to false.
+Check if any pod has the pod.spec.hostUsers field set to false.
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -839,7 +839,7 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Check if any pod has the pod.spec.HostUsers field set to false and is on RUNNING state on a node
+Check if any pod has the pod.spec.hostUsers field set to false and is on RUNNING state on a node
 that meets all the requirements.
 
 There are step-by-step examples in the Kubernetes documentation too.
@@ -859,7 +859,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name:
   - Other field:
 - [x] Other (treat as last resort)
-  - Details: check pods with pod.spec.HostUsers field set to false, and see if they are in RUNNING
+  - Details: check pods with pod.spec.hostUsers field set to false, and see if they are in RUNNING
     state.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -1135,7 +1135,7 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
   - Mitigations: What can be done to stop the bleeding, especially for already
     running user workloads?
 
-        Remove the pod.spec.HostUsers field or disable the feature gate.
+        Remove the pod.spec.hostUsers field or disable the feature gate.
 
   - Diagnostics: What are the useful log messages and their required logging
     levels that could help debug the issue?
@@ -1183,7 +1183,7 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
   - Mitigations: What can be done to stop the bleeding, especially for already
     running user workloads?
 
-        Remove the pod.spec.HostUsers field or disable the feature gate.
+        Remove the pod.spec.hostUsers field or disable the feature gate.
 
   - Diagnostics: What are the useful log messages and their required logging
     levels that could help debug the issue?
@@ -1217,7 +1217,7 @@ writing to this file.
   - Mitigations: What can be done to stop the bleeding, especially for already
     running user workloads?
 
-        Remove the pod.spec.HostUsers field or disable the feature gate.
+        Remove the pod.spec.hostUsers field or disable the feature gate.
 
   - Diagnostics: What are the useful log messages and their required logging
     levels that could help debug the issue?
@@ -1233,12 +1233,11 @@ writing to this file.
         There are no tests for failures to read or write the file, the code-paths just return the errors
         in those cases.
 
-
 - Error getting the kubelet IDs range configuration
   - Detection: How can it be detected via metrics? Stated another way:
     how can an operator troubleshoot without logging into a master or worker node?
 
-        In this case the Kubelet will fail to start with a clear error message.
+        In this case the kubelet will fail to start with a clear error message.
 
   - Mitigations: What can be done to stop the bleeding, especially for already
     running user workloads?
@@ -1369,21 +1368,23 @@ The issues without idmap mounts in previous iterations of this KEP, is that the 
 pod had to be unique for every pod in the cluster, easily reaching a limit when the cluster is "big
 enough" and the UID space runs out.  However, with idmap mounts the IDs assigned to a pod just needs
 to be unique within the node (and with 64k ranges we have 64k pods possible in the node, so not
-really an issue). IOW, by using idmap mounts, we changed the IDs limit to be node-scoped instead of
-cluster-wide/cluster-scoped.
+really an issue). In other words: by using idmap mounts, we changed the IDs limit to be node-scoped
+instead of cluster-wide/cluster-scoped.
 
-There are no known use cases for longer mappings that we know of. The 16bit range (0-65535) is what
-is assumed by all POSIX tools that we are aware of. If the need arises, longer mapping can be
-considered in a future KEP.
+Some use cases for longer mappings include:
 
-### Allow runtimes to pick the mapping?
+- running a container tool inside a Pod, where that container tool wants to use a UID range.
+- running an application inside a Pod where the application uses UIDs
+  above 65535 by default.
+
+### Allow runtimes to pick the mapping
 
 Tim suggested that we might want to allow the container runtimes to choose the
 mapping and have different runtimes pick different mappings. While KEP authors
 disagree on this, we still need to discuss it and settle on something.  This was
 [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
 
-Furthermore, the reasons mentioned by Tim (some nodes having CRIO, some others having containerd,
+Furthermore, the reasons mentioned by Tim Hockin (some nodes having CRIO, some others having containerd,
 etc.) are handled correctly now. Different nodes can use different container runtimes, if a custom
 range needs to be used by the kubelet, that can be configured per-node.
 
