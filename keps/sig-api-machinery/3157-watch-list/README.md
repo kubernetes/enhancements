@@ -958,12 +958,12 @@ W1002 09:11:40.656641       1 reflector.go:340] The watch-list feature is not su
 …
 ```
 
-Disable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+Disable the `WatchListClient` feature gate for the `kcm` by editing the static pod manifest directly.
 ```
 docker exec -ti kind-control-plane bash
 vim /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
-and pass `- --feature-gates=WatchList=false` to the `kcm` container.
+and pass `- --feature-gates=WatchListClient=false` to the `kcm` container.
 
 Check if `kcm` is running.
 ```
@@ -1003,12 +1003,12 @@ Check if the `kas` has not recorded the watchlist latency metric.
 kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
 ```
 
-Enable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+Enable the `WatchListClient` feature gate for the `kcm` by editing the static pod manifest directly.
 ```
 docker exec -ti kind-control-plane bash
 vim /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
-and remove `- --feature-gates=WatchList=false` for the `cm` container.
+and remove `- --feature-gates=WatchListClient=false` for the `cm` container.
 
 Check if `kcm` is running.
 ```
@@ -1252,7 +1252,7 @@ When etcd is unavailable, requests attempting to retrieve the most recent state 
 - kube-controller-manager is unable to start.
   - Detection: How can it be detected via metrics? Examine the prometheus `up` time series or examine the pod status or the number of restarts.
   - Mitigations: What can be done to stop the bleeding, especially for already
-    running user workloads? Disable the feature. Pass `WatchList=false` to `feature-gates` command line flag.
+    running user workloads? Disable the feature. Pass `WatchListClient=false` to `feature-gates` command line flag.
   - Diagnostics:  What are the useful log messages and their required logging
     levels that could help debug the issue? N/A
   - Testing: Are there any tests for failure mode? If not, describe why. Yes, if kube-controller-manager is unable to start then a lot of existing e2e tests will fail.
