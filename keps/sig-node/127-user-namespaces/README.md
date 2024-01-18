@@ -1276,6 +1276,7 @@ For each of them, fill in the following information by copying the below templat
 - 2016: First iterations of this KEP, but code never landed upstream.
 - Kubernetes 1.25: Support for stateless pods merged (alpha)
 - Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
+- Kubernetes 1.28: Support for stateful pods, renamed feature gate (alpha)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
