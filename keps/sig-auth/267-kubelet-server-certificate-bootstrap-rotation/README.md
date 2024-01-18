@@ -11,10 +11,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -74,7 +74,7 @@ expiration approaches.
 
 The feature is heavily used and is a part of [CIS Kubernetes benchmark](https://www.cisecurity.org/benchmark/kubernetes):
 
-> 1.3.6	Ensure that the `RotateKubeletServerCertificate` argument is set to true
+> 1.3.6 Ensure that the `RotateKubeletServerCertificate` argument is set to true
 
 This indicates feature maturity and high production readiness.
 
@@ -121,6 +121,95 @@ Implementation PRs:
 - Feature gate introduced: [#45059](https://github.com/kubernetes/kubernetes/pull/45059)
 - Feature promoted to GA: [#51045](https://github.com/kubernetes/kubernetes/pull/51045)
 
+### Enabling the feature
+
+`ServerTLSBootstrap` is added to the KubeletConfig to enable rotation of the server certificate.
+
+```golang
+ // serverTLSBootstrap enables server certificate bootstrap. Instead of self
+ // signing a serving certificate, the Kubelet will request a certificate from
+ // the 'certificates.k8s.io' API. This requires an approver to approve the
+ // certificate signing requests (CSR). The RotateKubeletServerCertificate feature
+ // must be enabled when setting this field.
+ // Default: false
+ // +optional
+ ServerTLSBootstrap bool `json:"serverTLSBootstrap,omitempty"`
+```
+
+The corresponding CLI (which CLI for Kubelet are deprecated) is `--rotate-server-certificates`.
+
+When the feature gate `RotateKubeletServerCertificate` is true, then `ServerTLSBootstrap` is also required to be true.
+
+As this feature has been in beta since 1.11, there is little worry that this feature will be off in production clusters.
+
+### Implementation
+
+[certificate](https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/certificate) contains the implementation of this feature.
+
+This features creates the object `NewKubeletServerCertificateManager`.
+
+### Metrics
+
+Three metrics were added for this feature.
+
+- "server_expiration_renew_errors"
+- "certificate_manager_server_rotation_seconds"
+- "certificate_manager_server_ttl_seconds"
+
+```golang
+compbasemetrics.NewCounter(
+  &compbasemetrics.CounterOpts{
+   Subsystem:      metrics.KubeletSubsystem,
+   Name:           "server_expiration_renew_errors",
+   Help:           "Counter of certificate renewal errors.",
+   StabilityLevel: compbasemetrics.ALPHA,
+  },
+ )
+
+compbasemetrics.NewHistogram(
+  &compbasemetrics.HistogramOpts{
+   Subsystem: metrics.KubeletSubsystem,
+   Name:      "certificate_manager_server_rotation_seconds",
+   Help:      "Histogram of the number of seconds the previous certificate lived before being rotated.",
+   Buckets: []float64{
+    60,        // 1  minute
+    3600,      // 1  hour
+    14400,     // 4  hours
+    86400,     // 1  day
+    604800,    // 1  week
+    2592000,   // 1  month
+    7776000,   // 3  months
+    15552000,  // 6  months
+    31104000,  // 1  year
+    124416000, // 4  years
+   },
+   StabilityLevel: compbasemetrics.ALPHA,
+  },
+  	legacyregistry.RawMustRegister(compbasemetrics.NewGaugeFunc(
+		&compbasemetrics.GaugeOpts{
+			Subsystem: metrics.KubeletSubsystem,
+			Name:      "certificate_manager_server_ttl_seconds",
+			Help: "Gauge of the shortest TTL (time-to-live) of " +
+				"the Kubelet's serving certificate. The value is in seconds " +
+				"until certificate expiry (negative if already expired). If " +
+				"serving certificate is invalid or unused, the value will " +
+				"be +INF.",
+			StabilityLevel: compbasemetrics.ALPHA,
+		},
+		func() float64 {
+			if c := m.Current(); c != nil && c.Leaf != nil {
+				return math.Trunc(time.Until(c.Leaf.NotAfter).Seconds())
+			}
+			return math.Inf(1)
+		},
+	))
+```
+
+These metrics are all in alpha stage so it is recommended to promote these metrics to GA.
+
+These metrics should be promoted to [beta](https://github.com/kubernetes/kubernetes/pull/122834
+) before GA.
+
 ### Test Plan
 
 Configuration testing is already done.
@@ -164,6 +253,8 @@ This is retroactive KEP, feature is already in Beta
   - `certificate_manager_server_ttl_seconds`
   - `server_expiration_renew_errors`
 
+- https://github.com/kubernetes/kubernetes/pull/122834
+
 #### GA
 
 - [x] Feature is actively used with the positive feedback
@@ -194,6 +285,10 @@ Feature exists for a long time, no risk for Enablement and Rollback.
 Configuration settings must be used - command line argument
 (`--rotate-server-certificates`: deprecated) or Node config flag
 `serverTLSBootstrap`.
+
+`serverTLSBootstrap` or `--rotate-server-certificates` can be set to false and the feature will be disabled.
+
+In beta, it is also possible to turn the feature flag off. This is not possible in GA.
 
 ###### Does enabling the feature change any default behavior?
 
