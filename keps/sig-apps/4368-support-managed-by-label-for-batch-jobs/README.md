@@ -290,10 +290,12 @@ to implement this enhancement.
 - `pkg/apis/batch/v1`: `2023-12-20` - `29.3%` (mostly generated code)
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io`
-- the Job controller reconciles jobs without the `managed-by` label
-- the Job controller does not reconcile a job with any other value of the `managed-by` label
-- verify the label is immutable, both when the job is suspended or unsuspended
+- the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io` when the feature is enabled
+- the Job controller reconciles jobs without the `managed-by` label when the feature is enabled
+- the Job controller does not reconcile jobs with custom value of the `managed-by` label when the feature is enabled
+- the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
+- verify the label is immutable, both when the job is suspended or unsuspended; when the feature is enabled
+- enablement / disablement of the feature after the Job (with custom `managed-by` label) is created
 
 ##### Integration tests
 
@@ -301,6 +303,7 @@ The following scenarios are covered:
 - the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io`
 - the Job controller reconciles jobs without the `managed-by` label
 - the Job controller does not reconcile a job with any other value of the `managed-by` label
+- the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
 
 During the implementation more scenarios might be covered.
 
@@ -472,7 +475,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Given that this feature doesn't introduce any new API field, enablement/disablement tests will not provide reasonable value and won't be added.
+Yes, we will have unit tests for the feature enablement / disablement after the
+Job is created (see [unit tests](#unit-tests)).
 
 ### Rollout, Upgrade and Rollback Planning
 
