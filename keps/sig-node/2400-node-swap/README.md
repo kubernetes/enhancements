@@ -15,6 +15,7 @@
       - [Protect system critical daemons for iolatency](#protect-system-critical-daemons-for-iolatency)
       - [Control Plane Swap](#control-plane-swap)
       - [Use of a dedicated disk for swap](#use-of-a-dedicated-disk-for-swap)
+      - [Swap as the default](#swap-as-the-default)
   - [Steps to Calculate Swap Limit](#steps-to-calculate-swap-limit)
     - [Example](#example)
   - [User Stories](#user-stories)
