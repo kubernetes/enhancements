@@ -16,6 +16,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Ecosystem fragmentation due to forks](#ecosystem-fragmentation-due-to-forks)
     - [Two controllers running at the same time on old version](#two-controllers-running-at-the-same-time-on-old-version)
+    - [Debuggability](#debuggability)
 - [Design Details](#design-details)
     - [API](#api)
     - [Implementation overview](#implementation-overview)
@@ -53,7 +54,9 @@
   - [Custom wrapping CRD](#custom-wrapping-crd)
   - [Use the spec.suspend field](#use-the-specsuspend-field)
   - [Using label selectors](#using-label-selectors)
-  - [Condition to indicated Job is skipped](#condition-to-indicated-job-is-skipped)
+  - [Alternative ideas to improve debuggability](#alternative-ideas-to-improve-debuggability)
+    - [Condition to indicated Job is skipped](#condition-to-indicated-job-is-skipped)
+    - [Event indicating the Job is skipped](#event-indicating-the-job-is-skipped)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -242,6 +245,31 @@ only against newer versions of Kubernetes.
 Finally, this risk will fade away with time as the new versions of
 Kubernetes support it.
 
+#### Debuggability
+
+With this mechanism new failure modes can occur. For example, a user may make
+a typo in the label value, or the cluster administrator may not install the
+custom controller (like MultiKueue) on that cluster.
+
+In such cases the user may not observe any progress by the job for a long time
+and my need to debug the Job.
+
+In order to allow for debugging of situations like this the Job controller will
+put a log line indicating the synchronization is delegated to another controller
+(see [implementation overview](#implementation-overview)).
+
+Additionally, before re-evaluate extending the `kubectl` command-line tool
+before [GA](#ga). We could extend the command to provide useful debugging
+information with the following:
+- new `MANAGED_BY` column for `kubectl get job -owide` (possibly also without `-owide`)
+- a line in the `kubectl describe job` output, just before the list of events,
+providing a user readable information if the Job is synchronized by a custom
+controller.
+
+Alternative ideas considered were
+[a dedicated condition](#condition-to-indicated-job-is-skipped)
+and [events](#event-indicating-the-job-is-skipped).
+
 ## Design Details
 
 #### API
@@ -330,6 +358,7 @@ We propose a single e2e test for the following scenario:
 
 - Address reviews and bug reports from Beta users
 - e2e test
+- Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
 - Re-evaluate the support for mutability of the label
 - Lock the feature gate
 
@@ -965,7 +994,9 @@ have the label, or listen on events from two informers. In any case, the use of
 label-selectors is significantly more complicated than the skip `if` inside the
 `syncJob`, and does not allow for big memory gain.
 
-### Condition to indicated Job is skipped
+### Alternative ideas to improve debuggability
+
+#### Condition to indicated Job is skipped
 
 In order to inform the user that a job is skipped from synchronization we
 could add a dedicated condition, say `ManagedBy`, indicating that the job is
@@ -984,6 +1015,25 @@ planned), then it would remove the condition. Other controllers would need to be
 careful not to remove the condition either.
 - It requires extra request per job, and risks conflicts for the status Update
 requests.
+
+Additionally, notice that the analogous situation takes place when `spec.schedulerName`
+does not match a custom scheduling profile. There is no condition indicating that.
+
+#### Event indicating the Job is skipped
+
+Job controller could emit event on the Job creation event indicating the Job
+is synchronized by a custom controller. This would not run into the issue with
+controllers conflicting on status updates.
+
+**Reasons for discarding/deferring**
+
+Events have expiration time, which is potentially cloud-provider dependent.
+It makes them not that useful to debug situations when the Job didn't make
+progress for long time. So, they would not give a reliable signal for debugging
+based on playbooks.
+
+Renewing the even on every Job update seems excessive from the performance
+perspective.
 
 ## Infrastructure Needed (Optional)
 
