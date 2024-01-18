@@ -973,8 +973,6 @@ planned), then it would remove the condition. Other controllers would need to be
 careful not to remove the condition either.
 - It requires extra request per job, and risks conflicts for the status Update
 requests.
-- If other (non built-in) controllers were to indicate that they skip with
-a condition, we would have many conditions.
 
 ## Infrastructure Needed (Optional)
 
