@@ -619,7 +619,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-This feature does not propose SLOs.
+This feature does not propose SLOs. We don't expect any of the existing SLOs
+to be impacted negatively by the proposal.
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
