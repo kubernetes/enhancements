@@ -17,9 +17,11 @@
     - [Ecosystem fragmentation due to forks](#ecosystem-fragmentation-due-to-forks)
     - [Two controllers running at the same time on old version](#two-controllers-running-at-the-same-time-on-old-version)
     - [Debuggability](#debuggability)
+    - [Custom controllers not compatible with API assumptions by CronJob](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob)
 - [Design Details](#design-details)
     - [API](#api)
     - [Implementation overview](#implementation-overview)
+    - [Job status validation](#job-status-validation)
     - [Label mutability](#label-mutability)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -270,6 +272,22 @@ Alternative ideas considered were
 [a dedicated condition](#condition-to-indicated-job-is-skipped)
 and [events](#event-indicating-the-job-is-skipped).
 
+#### Custom controllers not compatible with API assumptions by CronJob
+
+Currently, the validation of the Job status API is rather relaxed, allowing for
+potential situations, when modified by custom controllers, which might be
+problematic for the API consumers, like the built-in CronJob controller.
+
+In particular, the CronJob relies on the assumption that the `CompletionTime`
+is only set to successful jobs. Also, that a job does not flip its state from
+Complete to Failed (or the other way round). Also, a finished job should not
+flip back to non-finished.
+
+In order to mitigate for this risk, we strengthen the validation of the Job
+Status API to prevent faulty custom controllers to do unexpected changes to the
+status (see [here](#job-status-validation)).
+
+
 ## Design Details
 
 #### API
@@ -300,6 +318,15 @@ needed to needlessly enqueue the Job keys.
 
 There is no validation for the values of the field beyond that of standard
 permitted label values.
+
+#### Job status validation
+
+We will add the following validation rules, which are currently satisfied by the
+built-in Job controller, to mitigate the risk of [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob):
+- the `CompletionTime` field is only set for jobs with `Failed` condition (per
+  [API comment](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/apis/batch/types.go#L436)).
+- once the `Failed=True` or `Complete=True` conditions are added, their status
+  cannot be changed. They are also mutually exclusive.
 
 #### Label mutability
 
@@ -356,6 +383,7 @@ We propose a single e2e test for the following scenario:
 - skip synchronization of jobs when the `managed-by` label does not exist, or equals `job-controller.k8s.io`
 - unit & integration tests
 - implement the `job_by_external_controller_total` metric
+- implement the additional Job status validation (see [here](#job-status-validation))
 - The feature flag enabled by default
 
 #### GA
