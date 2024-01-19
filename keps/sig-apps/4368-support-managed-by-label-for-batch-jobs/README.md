@@ -323,7 +323,7 @@ permitted label values.
 
 We will add the following validation rules, which are currently satisfied by the
 built-in Job controller, to mitigate the risk of [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob):
-- the `CompletionTime` field is only set for jobs with `Failed` condition (per
+- the `CompletionTime` field is only set for jobs with `Succeeded` condition (per
   [API comment](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/apis/batch/types.go#L436)).
 - once the `Failed=True` or `Complete=True` conditions are added, their status
   cannot be changed. They are also mutually exclusive.
