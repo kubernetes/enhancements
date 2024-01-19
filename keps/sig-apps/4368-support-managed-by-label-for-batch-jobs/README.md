@@ -146,7 +146,7 @@ controller on the management cluster.
 
 The mechanism should be per-Job, because the management cluster might also be
 one of the worker clusters, for two reasons:
-1. Disabling the Job controller per cluster requires access the `kube-controller-manager`
+1. Disabling the Job controller per cluster requires access to the `kube-controller-manager`
    manifest. Such access is generally discouraged by cloud providers.
 2. The management cluster may also be a worker. Supporting this scenario is important
    for smooth transition of Kueue users from a single-cluster to multi-cluster.
