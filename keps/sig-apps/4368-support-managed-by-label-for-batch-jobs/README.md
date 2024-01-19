@@ -151,7 +151,7 @@ one of the worker clusters, for two reasons:
 2. The management cluster may also be a worker. Supporting this scenario is important
    for smooth transition of Kueue users from a single-cluster to multi-cluster.
 
-Ideally, I prefer the mechanism to be lightweight so that it is easy to be adopted
+Ideally, the mechanism should be lightweight so that it is easy to be adopted
 by other Job CRDs supported by Kueue
 (see [here](https://github.com/kubernetes-sigs/kueue/blob/6d428f3279a9ca0e204c083dc649dbbc6558db71/config/components/manager/controller_manager_config.yaml#L31-L42)):
 MPIJob, RayJob, JobSet, multiple Kubeflow jobs.
