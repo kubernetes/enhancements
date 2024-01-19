@@ -352,6 +352,7 @@ We propose a single e2e test for the following scenario:
 
 - skip synchronization of jobs when the `managed-by` label does not exist, or equals `job-controller.k8s.io`
 - unit & integration tests
+- implement the `job_by_external_controller_count` metric
 - The feature flag enabled by default
 
 #### GA
@@ -543,6 +544,11 @@ being flipped between two owners.
 The feature is opt-in so in case of such problems the custom `managed-by` label
 should not be used.
 
+Also, an admin could check if the value of the `job_by_external_controller_count`
+matches the expectations. For example, if the value of the metric does not increase
+when new jobs are being added with a custom `managed-by` label, it might be
+indicative that the feature is not working correctly.
+
 A substantial drop in the `job_sync_duration_seconds`, while the number of
 jobs with the custom `managed-by` label is low, could be indicative of the
 Job controller skipping reconciliation of jobs it should reconcile. This could
@@ -642,6 +648,10 @@ Pick one more of these and delete the rest.
 if the metric increases, while there are Jobs using custom values of `managed-by`
 label, it may be indicative of two controllers stepping onto each-other causing
 conflicts (see [here](#two-controllers-running-at-the-same-time-on-old-version)).
+    - `job_by_external_controller_count` (new), with the `name` label corresponding
+to the custom value of the `managed-by` label: if the metric does not report
+any jobs for the external controllers, but there are jobs with custom `managed-by`
+label if might be indicative of the feature not working correctly.
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?

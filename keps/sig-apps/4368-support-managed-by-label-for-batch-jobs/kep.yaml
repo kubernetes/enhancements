@@ -38,3 +38,4 @@ feature-gates:
 disable-supported: true
 
 metrics:
+- job_by_external_controller_count
