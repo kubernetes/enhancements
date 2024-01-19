@@ -404,6 +404,10 @@ N/A. This feature is limited to control plane. Also, This feature doesn't
 require coordination between control plane components, the changes to each
 controller are self-contained.
 
+In case kube-apiserver is running in HA mode, and the versions are skewed, then
+the old version of kube-apiserver may let the label get mutated, if the feature
+is not supported on the old version.
+
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
