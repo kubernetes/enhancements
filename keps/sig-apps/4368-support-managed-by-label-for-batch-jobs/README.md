@@ -352,7 +352,7 @@ We propose a single e2e test for the following scenario:
 
 - skip synchronization of jobs when the `managed-by` label does not exist, or equals `job-controller.k8s.io`
 - unit & integration tests
-- implement the `job_by_external_controller_count` metric
+- implement the `job_by_external_controller_total` metric
 - The feature flag enabled by default
 
 #### GA
@@ -552,7 +552,7 @@ being flipped between two owners.
 The feature is opt-in so in case of such problems the custom `managed-by` label
 should not be used.
 
-Also, an admin could check if the value of the `job_by_external_controller_count`
+Also, an admin could check if the value of the `job_by_external_controller_total`
 matches the expectations. For example, if the value of the metric does not increase
 when new jobs are being added with a custom `managed-by` label, it might be
 indicative that the feature is not working correctly.
@@ -603,7 +603,11 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Check if a Job has the `managed-by` label.
+Check the `job_by_external_controller_total` metric. If the value is non-zero
+for a label, it means there were Jobs using the custom controller created, so
+the feature is in use.
+
+For a specific Job in question, check if the Job has the `managed-by` label.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -657,10 +661,10 @@ Pick one more of these and delete the rest.
 if the metric increases, while there are Jobs using custom values of `managed-by`
 label, it may be indicative of two controllers stepping onto each-other causing
 conflicts (see [here](#two-controllers-running-at-the-same-time-on-old-version)).
-    - `job_by_external_controller_count` (new), with the `name` label corresponding
-to the custom value of the `managed-by` label: if the metric does not report
-any jobs for the external controllers, but there are jobs with custom `managed-by`
-label if might be indicative of the feature not working correctly.
+    - `job_by_external_controller_total` (new), with the `controllerName` label
+corresponding to the custom value of the `managed-by` label: if the metric does
+not report any jobs for the external controllers, but there are jobs with custom
+`managed-by` label if might be indicative of the feature not working correctly.
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
