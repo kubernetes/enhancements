@@ -258,7 +258,7 @@ In order to allow for debugging of situations like this the Job controller will
 put a log line indicating the synchronization is delegated to another controller
 (see [implementation overview](#implementation-overview)).
 
-Additionally, before re-evaluate extending the `kubectl` command-line tool
+Additionally, re-evaluate extending the `kubectl` command-line tool
 before [GA](#ga). We could extend the command to provide useful debugging
 information with the following:
 - new `MANAGED_BY` column for `kubectl get job -owide` (possibly also without `-owide`)
