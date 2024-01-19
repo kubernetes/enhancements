@@ -328,6 +328,9 @@ built-in Job controller, to mitigate the risk of [here](#custom-controllers-not-
 - once the `Failed=True` or `Complete=True` conditions are added, their status
   cannot be changed. They are also mutually exclusive.
 
+Additionally, we verify the following:
+- the format of the `completedIndexes` and `failedIndexes` fields
+
 #### Label mutability
 
 We keep the label immutable. See also the discussion in
@@ -354,6 +357,7 @@ The following scenarios are covered:
 - the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
 - verify the label is immutable, both when the job is suspended or unsuspended; when the feature is enabled
 - enablement / disablement of the feature after the Job (with custom `managed-by` label) is created
+- verify the new Job Status API validation rules (see [here](#job-status-validation))
 
 ##### Integration tests
 
