@@ -99,7 +99,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [DNS](#dns)
       - [No PTR records necessary for multicluster DNS](#no-ptr-records-necessary-for-multicluster-dns)
       - [Not allowing cluster-specific targeting via DNS](#not-allowing-cluster-specific-targeting-via-dns)
-    - [EndpointSlice](#endpointslice)
+  - [Tracking Endpoints](#tracking-endpoints)
+    - [Using <code>EndpointSlice</code> objects to track endpoints](#using--objects-to-track-endpoints)
     - [Endpoint TTL](#endpoint-ttl)
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
   - [Global Properties](#global-properties)
@@ -546,20 +547,6 @@ resolution](#constraints-and-conflict-resolution)). If all `ServiceExport`
 instances are deleted, each `ServiceImport` will also be deleted from all
 clusters.
 
-Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
-given `EndpointSlice` will reference its `ServiceImport` using the label
-`multicluster.kubernetes.io/service-name` similarly to how an `EndpointSlice` is
-associated with its `Service` in a single cluster.
-
-Each imported `EndpointSlice` will also have a
-`multicluster.kubernetes.io/source-cluster` label with the cluster id, a
-clusterset-scoped unique identifier for the cluster. The `EndpointSlice`s
-imported for a service are not guaranteed to exactly match the originally
-exported `EndpointSlice`s, but each slice is guaranteed to map only to a single
-source cluster.
-
-The mcs-controller is responsible for managing imported `EndpointSlice`s.
-
 ```golang
 // ServiceImport describes a service imported from clusters in a clusterset.
 type ServiceImport struct {
@@ -641,6 +628,7 @@ type ClusterStatus struct {
  Cluster string `json:"cluster"`
 }
 ```
+
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
 kind: ServiceImport
@@ -659,52 +647,28 @@ spec:
 status:
   clusters:
   - cluster: us-west2-a-my-cluster
----
-apiVersion: discovery.k8s.io/v1beta1
-kind: EndpointSlice
-metadata:
-  name: imported-my-svc-cluster-b-1
-  namespace: my-ns
-  labels:
-    multicluster.kubernetes.io/source-cluster: us-west2-a-my-cluster
-    multicluster.kubernetes.io/service-name: my-svc
-  ownerReferences:
-  - apiVersion: multicluster.k8s.io/v1alpha1
-    controller: false
-    kind: ServiceImport
-    name: my-svc
-addressType: IPv4
-ports:
-  - name: http
-    protocol: TCP
-    port: 80
-endpoints:
-  - addresses:
-      - "10.1.2.3"
-    conditions:
-      ready: true
-    topology:
-     topology.kubernetes.io/zone: us-west2-a
 ```
 
 The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 this cluster.
+
 
 ### ClusterSet Service Behavior Expectations
 
 #### Service Types
 
 - `ClusterIP`: This is the straightforward case most of the proposal assumes.
-  Each `EndpointSlice` associated with the exported service is combined with
-  slices from other clusters to make up the clusterset service. They will be
-  imported to the cluster behind the clusterset IP, with a `ServiceImport` of
-  type `ClusterSetIP`. [Details](#EndpointSlice)
+  Each endpoint from a producing cluster associated with the exported service is
+  aggregated with endpoints from other clusters to make up the clusterset
+  service. They will be imported to the cluster behind the clusterset IP, with a
+  `ServiceImport` of type `ClusterSetIP`. The details on how the clusterset IP
+  is allocated or how the combined slices are maintained may vary by
+  implementation; see also [Tracking Endpoints](#TrackingEndpoints).
 - `ClusterIP: none` (Headless): Headless services are supported and will be
-  imported with a `ServiceImport` and `EndpointSlices` like any other
-  `ClusterIP` service, but do not configure a VIP and must be consumed via
-  [DNS](#DNS). Their `ServiceImport`s will be of type `Headless`. A
-  multi-cluster service's headlessness is derived from it's constituent exported
-  services according to the [conflict resolution
+  imported with a `ServiceImport` like any other `ClusterIP` service, but do not
+  configure a VIP and must be consumed via [DNS](#DNS). Their `ServiceImport`s
+  will be of type `Headless`. A multi-cluster service's headlessness is derived
+  from it's constituent exported services according to the [conflict resolution
   policy](#constraints-and-conflict-resolution).
 
   _Exporting a non-headless service to an otherwise headless service can
@@ -713,7 +677,7 @@ this cluster.
   deployment error. Conditions and events on the `ServiceExport` will be used to
   communicate conflicts to the user._
 - `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
-  sync as expected. For example If you export a `NodePort` service, the
+  sync as expected. For example if you export a `NodePort` service, the
   resulting cross-cluster service will still be a clusterset IP type. The local
   service will not be affected. Node ports can still be used to access the
   cluster-local service in the source cluster, and only the clusterset IP will
@@ -891,8 +855,25 @@ additional label gives additional context, which is implementation-dependent and
 may be used for instance to uniquely identify the cluster registry with which a
 cluster is registered.
 
+### Tracking Endpoints
 
-#### EndpointSlice
+The specific mechanism by which the `mcs-controller` maintains references to the
+individual backends for an aggregated service is an implementation detail not
+fully prescribed by this specification. Implementations may depend on a higher
+level (possibly vendor-specific) API, offload to a load balancer or xDS server
+(like Envoy), or use Kubernetes networking APIs. If the implementation depends
+on Kubernetes networking APIs, specifically `EndpointSlice` objects, they must
+conform to the specification in the following section.
+
+#### Using `EndpointSlice` objects to track endpoints
+
+_Optional to create, but specification defined if present._
+
+If an implementation does create `discovery.k8s.io/v1 EndpointSlice`s, they must
+conform to the following structure. This structure was originally required as
+part of this specification in alpha, and are the structure on which other
+SIG-endorsed reference implementations and tooling, like the [CoreDNS
+multicluster plugin](https://github.com/coredns/multicluster/), depend.
 
 When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
 the underlying `Service` to be created in each importing cluster within the
@@ -903,6 +884,68 @@ clusterset, associated with the derived `ServiceImport`. One or more
 controller, so that the endpoint slice controller doesn’t delete them.
 `EndpointSlices` will have an owner reference to their associated
 `ServiceImport`.
+
+Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
+given `EndpointSlice` will reference its `ServiceImport` using the label
+`multicluster.kubernetes.io/service-name` similarly to how an `EndpointSlice` is
+associated with its `Service` in a single cluster.
+
+Each imported `EndpointSlice` will also have a
+`multicluster.kubernetes.io/source-cluster` label with the cluster id, a
+clusterset-scoped unique identifier for the cluster. The `EndpointSlice`s
+imported for a service are not guaranteed to exactly match the originally
+exported `EndpointSlice`s, but each slice is guaranteed to map only to a single
+source cluster.
+
+If the implementation is using `EndpointSlice`s in this way, the mcs-controller
+is responsible for managing the imported `EndpointSlice`s and making sure they
+are conformant with this section.
+
+```yaml
+apiVersion: multicluster.k8s.io/v1alpha1
+kind: ServiceImport
+metadata:
+  name: my-svc
+  namespace: my-ns
+spec:
+  ips:
+  - 42.42.42.42
+  type: "ClusterSetIP"
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+  sessionAffinity: None
+status:
+  clusters:
+  - cluster: us-west2-a-my-cluster
+---
+apiVersion: discovery.k8s.io/v1beta1
+kind: EndpointSlice
+metadata:
+  name: imported-my-svc-cluster-b-1
+  namespace: my-ns
+  labels:
+    multicluster.kubernetes.io/source-cluster: us-west2-a-my-cluster
+    multicluster.kubernetes.io/service-name: my-svc
+  ownerReferences:
+  - apiVersion: multicluster.k8s.io/v1alpha1
+    controller: false
+    kind: ServiceImport
+    name: my-svc
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 80
+endpoints:
+  - addresses:
+      - "10.1.2.3"
+    conditions:
+      ready: true
+    topology:
+     topology.kubernetes.io/zone: us-west2-a
+```
 
 ```
 <<[UNRESOLVED]>>
