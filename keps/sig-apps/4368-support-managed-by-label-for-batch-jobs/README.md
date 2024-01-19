@@ -377,10 +377,14 @@ to use it users need to add the `managed-by` label to their Jobs.
 
 #### Downgrade
 
-A downgrade to a version which does not support this feature does not require
-any additional configuration changes. All jobs, including these that
-specified a custom value for `managed-by`, will be handled in the default
-way by the Job controller.
+A downgrade to a version which does not support this feature (1.29 an below)
+does not require any additional configuration changes. All jobs, including these
+that specified a custom value for `managed-by`, will be handled in the default
+way by the Job controller. However, this introduces the risk of
+[two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+
+In order to prepare the risk the admins may want to make sure the custom controllers
+using the `managed-by` labels are disabled before the downgrade.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
