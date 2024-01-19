@@ -191,7 +191,7 @@ As a cluster admin, I would like to have cgroup management and log size manageme
 
 ##### e2e tests
 
-* A test should confirm that the kubelet.conf.d directory is correctly processed, and its contents are accurately reported in the configz endpoint.
+* A [test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/kubelet_config_dir_test.go) should confirm that the kubelet.conf.d directory is correctly processed, and its contents are accurately reported in the configz endpoint.
 
 ### Graduation Criteria
 
@@ -295,12 +295,15 @@ In beta and onwards, the user will be able to read this off logs or the API, to 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+The node bootstrap time should be minimal so kubelet doesn't take too long to reconcile the configuration.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+No noticeable increase in the kubelet startup time.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+No
 
 ### Dependencies
 
@@ -370,7 +373,8 @@ Fix the invalid configuration, or remove configurations.
 
 - 2023-05-04: KEP initialized.
 - 2023-07-17: Alpha is implemented in 1.28
-- 2023-09-25: KEP targeted to Beta in 1.29
+- 2023-09-25: KEP retargeted to Alpha in 1.29
+- 2024-01-19: Added an [e2e](https://testgrid.k8s.io/sig-node-release-blocking#node-kubelet-serial-containerd&include-filter-by-regex=KubeletConfigDropInDir) test and set KEP target to Beta in 1.30
 
 
 ## Drawbacks
