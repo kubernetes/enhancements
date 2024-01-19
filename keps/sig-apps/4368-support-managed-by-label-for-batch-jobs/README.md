@@ -13,6 +13,7 @@
     - [Prior work](#prior-work)
     - [Graduating directly to Beta](#graduating-directly-to-beta)
     - [Can the label be mutable?](#can-the-label-be-mutable)
+    - [Use for MultiKueue](#use-for-multikueue)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Ecosystem fragmentation due to forks](#ecosystem-fragmentation-due-to-forks)
     - [Two controllers running at the same time on old version](#two-controllers-running-at-the-same-time-on-old-version)
@@ -213,6 +214,25 @@ It would also complicate debuggability of the feature.
 
 We decide to keep the label immutable, at least for [Beta](#beta), we will
 re-evaluate the decision for [GA](#ga).
+
+#### Use for MultiKueue
+
+The `managed-by` label is going to be added by a dedicated MultiKueue webhook
+for Jobs created by users, and the Jobs remain suspended until ready to run.
+Once the job is ready to run its mirror copy is created on a selected worker
+cluster. Note that the mirror copy differs from the Job on the management cluster
+as it does not have the `managed-by` label (removed), and will have different
+UIDs.
+
+When the job is running it is unsuspended (both on the management and the worker
+clusters). Until the job completes, the MultiKueue controller mirrors back
+the Job status, periodically,  from the worker onto the Job object in the
+management cluster.
+
+Note that for simplicity of the design, and thus debugging, there is one-to-one
+relationship between the Job on the management cluster and the Job on the
+worker cluster (it is [non-goal](https://github.com/kubernetes-sigs/kueue/tree/main/keps/693-multikueue#non-goals)
+to distribute the Job among multiple clusters).
 
 ### Risks and Mitigations
 
