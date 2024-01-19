@@ -222,7 +222,7 @@ as users may prefer to use their forked controllers rather than contribute
 upstream.
 
 First, this risk, to some extent, exists even today as admins with access to the
-control plane can disable by passing `--controllers=-job,*` in the manifest for
+control plane can disable job controller by passing `--controllers=-job,*` in the manifest for
 `kube-controller-manager` (see more info on the `--controllers` flag
 [here](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/)).
 
