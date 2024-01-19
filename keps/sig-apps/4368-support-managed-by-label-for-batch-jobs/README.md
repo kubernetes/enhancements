@@ -207,7 +207,7 @@ which guards mutability of the Job's pod template labels.
 It seems possible, and could be handy in [Story 1](#story-1), but it is also not
 a blocker.
 
-It would also the complicate debuggability of the feature.
+It would also complicate debuggability of the feature.
 
 We decide to keep the label immutable, at least for [Beta](#beta), we will
 re-evaluate the decision for [GA](#ga).
