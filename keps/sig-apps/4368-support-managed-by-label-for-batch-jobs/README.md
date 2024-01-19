@@ -112,7 +112,7 @@ synchronization to an external controller.
 As a part of [Kueue](https://github.com/kubernetes-sigs) (an effort done by
 Batch-WG, in cooperation with SIG-Autoscaling, SIG-Scheduling, SIG-Apps and SIG-Node) we
 are working on a multi-cluster job dispatcher project, called
-[MultiKueue](https://github.com/kubernetes-sigs/kueue/pull/1380).
+[MultiKueue](https://github.com/kubernetes-sigs/kueue/tree/main/keps/693-multikueue).
 
 In the MultiKueue design, which follows manager-worker architecture, a user
 creates a Job in the management cluster, but a mirror-copy of the Job is created
