@@ -335,6 +335,9 @@ The following scenarios are covered:
 - the Job controller reconciles jobs without the `managed-by` label
 - the Job controller does not reconcile a job with any other value of the `managed-by` label
 - the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
+- the `job_by_external_controller_total` metric is incremented when a new Job with custom `managed-by` is created
+- the `job_by_external_controller_total` metric is not incremented for a new Job without `managed-by` or with default value
+- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the `managed-by`)
 
 During the implementation more scenarios might be covered.
 
