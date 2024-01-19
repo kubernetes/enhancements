@@ -201,6 +201,25 @@ still performing a stepwise upgrade of Kubernetes control-plane. For example:
 - keep binary-version 1.31 while upgrading compat-version to 1.30 (stepwise upgrade of compatibility)
 - keep binary-version 1.31 while upgrading compat-version to 1.31 (stepwise upgrade of compatibility)
 
+Benefits to upgrading binary version independent of compatibility version:
+
+- During an upgrade, it is possible verify the binary version before
+  accumulating any client usage of features/API at the new version, making
+  a binary rollback at this stage of an upgrade fundamentally safer
+- Any upgrade system that successfully detects failures between upgrade steps
+  can report which upgrade step failed. This makes it easier to diagnose the
+  failures, because there are fewer possible causes of the failure. (There's a
+  huge difference between "A cluster upgrade failed" and "A cluster upgrade
+  failed when only the apiserver's binary version changed").
+- For upgrades where multiple failures occur, this increases the odds those
+  failures are split across steps. An upgrade system that is able to pause after
+  a step where failures are detected allow for failures at that step to be
+  addressed before proceeding to subsequent steps. These failures can be
+  addressed without the disruption and "noise" from failures in subsequent
+  steps.
+- A compatibility version rollback can be performed without changing binary
+  version.
+
 
 ### Goals
 
@@ -325,6 +344,10 @@ compatibility version support.
 
 In order to preserve the behavior of in-development features across multiple releases,
 feature implementation history should also be preserved in the code base.
+
+Only sigificant and observable changes in feature capabilities should be across
+releases. We do not want to impose a unreasonable burdon on feature authors.
+Bugs, performance optimizations should not be gated by version. 
 
 Naively, the feature implementations can be gated by version number. 
 For example, if `FeatureA` is partially implemented in 1.28 and additional functionality
@@ -607,8 +630,8 @@ new CEL function|-|function in StoredExpressions CEL environment|CEL function do
 introduced CEL function|function in StoredExpressions CEL environment|function in NewExpressions CEL environment|Resources already containing CEL expression can be evaluated|CEL expression can be written to resources and can be evaluted from storage
 
 - The other edge cases we will test are:
-  - `--compatibility-version=<N-2>` - fails validation
-  - `--compatibility-version=<N+1>` - fails validation
+  - `--compatibility-version=<N-2>` - fails flag validation, binary exits
+  - `--compatibility-version=<N+1>` - fails flag validation, binary exits
 
 ##### e2e tests
 
