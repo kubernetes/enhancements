@@ -474,7 +474,8 @@ N/A
 ## Implementation History
 
 - 2021-05-06: Initial KEP
-- 2023-08-15: Alpha release with kuberentes 1.28
+- 2023-08-15: Alpha release with Kubernetes 1.28
+- 2023-10-30: Beta release with Kubernetes 1.29
 
 ## Drawbacks
 
