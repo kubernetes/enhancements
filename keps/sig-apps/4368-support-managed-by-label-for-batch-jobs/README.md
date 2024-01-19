@@ -287,6 +287,10 @@ In order to mitigate for this risk, we strengthen the validation of the Job
 Status API to prevent faulty custom controllers to do unexpected changes to the
 status (see [here](#job-status-validation)).
 
+Additionally, we indend to strenghten the CronJob implementation to vefify the
+Job has the `Complete` condition before using `CompletionTime`
+(see [here](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/controller/cronjob/cronjob_controllerv2.go#L452)).
+
 
 ## Design Details
 
@@ -329,7 +333,7 @@ built-in Job controller, to mitigate the risk of [here](#custom-controllers-not-
   cannot be changed. They are also mutually exclusive.
 
 Additionally, we verify the following:
-- the format of the `completedIndexes` and `failedIndexes` fields
+- the format of the `completedIndexes` and `failedIndexes` fields (but tolerate corrupted values if already present)
 
 #### Label mutability
 
@@ -388,6 +392,7 @@ We propose a single e2e test for the following scenario:
 - unit & integration tests
 - implement the `job_by_external_controller_total` metric
 - implement the additional Job status validation (see [here](#job-status-validation))
+- make CronJob more resillient by checking the Job condition is `Complete` when using `CompletionTime`
 - The feature flag enabled by default
 
 #### GA
