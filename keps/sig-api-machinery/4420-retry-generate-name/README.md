@@ -141,7 +141,7 @@ This enhancement proposes that create requests using generateName are retried au
 
 ## Motivation
 
-Kubernetes [generateName](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/) [randomly generates a 5 char sequence](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) that is appended to the generateName prefix.
+Kubernetes [generateName](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/) [generates](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) a 5 char random suffix that is appended to the generateName prefix.
 
 Each char in the sequence is from the ["bcdfghjklmnpqrstvwxz2456789" range](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go#L83C15-L83C42).
 
@@ -164,6 +164,15 @@ clients don't realize to do this and hit this problem in production.
 
 ### Non-Goals
 
+- Change the length of the random suffix. This is a breaking change:
+  - There is a 63 char name length limit. to guarantee a 5 char random suffix
+    length, generateName is trimmed if its length is >58 chars. If the random
+    suffix length were to be increased, generateName would need to trimmed to a
+    shorter length, breaking users that depend on 58 chars of generateName being
+    preserved. (Increasing the max lengh of name would also be a breaking
+    change).
+  - There are major downstream projects that use "{5}" regexes to match the
+    random suffix.
 - Eliminate the possibility of generated name conflicts entirely. This is
   much harder problem given that generateName does create names in a reserved
   identifier space, and so any mecanism to pick names is prone to conflicts.
@@ -295,7 +304,7 @@ trigger name collisions.
 #### Beta
 
 - Gather feedback from developers and surveys
-- Add integration and e2e tests
+- Add integration tests
 - Additional tests are in Testgrid and linked in KEP
 - Benchmark worst case: Max retries are attempted for all create requests.
 
@@ -500,11 +509,18 @@ severe problems, up to and including data corruption and loss.
 
 There are many alternatives that we considered including:
 
-- Increasing the number of characters appended to generateName when generating
-  a name. This is problematic because there are systems that use regexes to
-  extract the appended random chars from generated names which assume the
-  length of the random suffix is 5 chars.  Note that the selected design
-  is statistically as good as increasing the characters appended from 5 to 11.
+- Increasing the length of the random suffix appended to generateName when generating
+  a name. This would be a breaking change in two ways:
+  - There is a 63 char name length limit. to guarantee a 5 char random suffix
+    length, generateName is trimmed if its length is >58 chars. If the random
+    suffix length were to be increased, generateName would need to trimmed to a
+    shorter length, breaking users that depend on 58 chars of generateName being
+    preserved. (Increasing the max lengh of name would also be a breaking
+    change).
+  - There are major downstream projects that use "{5}" regexes to match the
+    random suffix.
+  - Note that the selected design is statistically as good as increasing the
+    characters appended from 5 to 11.
 - After generating a name, check if the name exists in etcd and, if it does,
   generate another name.  See https://github.com/kubernetes/kubernetes/compare/master...jpbetz:kubernetes:retry-generate-name
   The downside to this approach is that it adds a round-trip to etcd for
