@@ -451,3 +451,9 @@ _This section must be completed when targeting beta graduation to a release._
 2020-04-15: KEP opened
 
 2020-05-19: KEP marked implementable
+
+2021-02-08: Graduate to alpha
+
+2023-05-07: Graduate to beta
+
+2024-01-20: Graduate to stable
