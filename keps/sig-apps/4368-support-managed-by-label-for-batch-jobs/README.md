@@ -372,6 +372,7 @@ to implement this enhancement.
 
 - `pkg/controller/job`: `2023-12-20` - `91.5%`
 - `pkg/registry/batch/job`: `2023-12-20` - `92.2%`
+- `pkg/apis/batch/validation`: `2024-01-22` - `98.0%`
 - `pkg/apis/batch/v1`: `2023-12-20` - `29.3%` (mostly generated code)
 
 The following scenarios are covered:
