@@ -21,11 +21,18 @@ see-also:
 stage: alpha
 latest-milestone: "v1.27"
 milestone:
-  alpha: "v1.24"
-  beta: "v1.27"
-  stable: "v1.29"
+  alpha: "v1.24"  # SELinuxMountReadWriteOncePod
+  beta: "v1.27"   # SELinuxMountReadWriteOncePod
+  stable: "v1.31" # Very optimistic plan for SELinuxMountReadWriteOncePod GA
+
+  # alpha: "v1.30"  # SELinuxMount
+
 feature-gates:
   - name: SELinuxMountReadWriteOncePod
+    components:
+      - kube-apiserver
+      - kubelet
+  - name: SELinuxMount
     components:
       - kube-apiserver
       - kubelet

@@ -64,7 +64,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -483,7 +483,9 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `SELinuxMountReadWriteOncePod`
+    - Feature gate name: `SELinuxMountReadWriteOncePod` (beta in 1.27)
+    - Feature gate name: `SELinuxMount` (alpha in 1.30)
+      - To enable `SELinuxMount` feature gate, `SELinuxMountReadWriteOncePod` **must** be enabled too.
     - Components depending on the feature gate: apiserver (API validation only), kubelet
   - [ ] Other
     - Describe the mechanism:
@@ -543,7 +545,7 @@ _This section must be completed when targeting beta graduation to a release._
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and do that now.
 
-  This will be tested manually before releasing `SELinuxMountReadWriteOncePod`
+  This was tested manually before releasing `SELinuxMountReadWriteOncePod`
   enabled by default.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
@@ -568,7 +570,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
 
-  - [ ] Metrics
+  - [x] Metrics
     - All `errors_total` metrics below cover real errors when a Pod can't start.
       It applies to `ReadWriteOncePod` volumes.
     - All `warnings_total` metrics below cover **future** errors that would appear if this feature was extended to all volumes.
@@ -713,6 +715,11 @@ _This section must be completed when targeting beta graduation to a release._
 * 1.26: Alpha with everything implemented.
 * 1.27: Targeting beta.
   * Volume reconstruction separated into its own KEP + Feature [#3756](https://github.com/kubernetes/enhancements/issues/3756).
+* 1.30: `SELinuxMountReadWriteOncePod` still beta, SELinuxMount (early) alpha.
+  * Implement bare minimum of `SELinuxMount` for experiments, including:
+    * Extend SELinux mount to all volume access modes.
+    * Implement aforementioned kubelet admission to reject Pods that use a volume that is already mounted with a different SELinux context.
+      This admission was useless with RWOP volumes, because kubelet already rejects Pods that use a RWOP volume that's used by another Pod.
 
 ## Drawbacks [optional]
 
