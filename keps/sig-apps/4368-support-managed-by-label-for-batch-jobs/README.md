@@ -620,6 +620,12 @@ matches the expectations. For example, if the value of the metric does not incre
 when new jobs are being added with a custom `managed-by` label, it might be
 indicative that the feature is not working correctly.
 
+A substantial increase in `kube_cronjob_status_active` after upgrade may suggest
+that the Jobs are not making progress. Additionally, if the non-progressing
+Jobs use custom `managed-by` label, then rollback of the feature might be
+justified to make the CronJobs run, by letting the built-in Job controller
+handle the Jobs.
+
 A substantial drop in the `job_sync_duration_seconds`, while the number of
 jobs with the custom `managed-by` label is low, could be indicative of the
 Job controller skipping reconciliation of jobs it should reconcile. This could
