@@ -10,13 +10,13 @@ reviewers:
 approvers:
   - "@thockin"
 creation-date: "2022-08-07"
-last-updated: v1.29
+last-updated: v1.30
 status: implementable
 stage: stable
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 milestone:
   beta: "v1.27"
-  stable: "v1.29"
+  stable: "v1.30"
 feature-gates:
   - name: StableLoadBalancerNodeSet
     components:
