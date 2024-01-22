@@ -326,19 +326,19 @@ proposal will be implemented, this is the place to discuss them.
 This is the prospective code snippet of a function that applies the custom profile.
 ```go
 func (o *DebugOptions) applyCustomProfile(debugPod *corev1.Pod, containerName string, ephemeral bool) error {
-	// Find container in pod and encode it as json
+        // Find container in pod and encode it as json
 
-	patchedContainer, err := strategicpatch.StrategicMergePatch(debugContainerJS, customJS, corev1.Container{})
-	if err != nil {
-		return fmt.Errorf("error creating three way patch to add debug container: %v", err)
-	}
+        patchedContainer, err := strategicpatch.StrategicMergePatch(debugContainerJS, customJS, corev1.Container{})
+        if err != nil {
+            return fmt.Errorf("error creating three way patch to add debug container: %v", err)
+        }
 
-    err = json.Unmarshal(patchedContainer, &debugPod.Spec.Containers[index])
-    if err != nil {
-        return fmt.Errorf("unable to unmarshall patched container to ephemeral container: %v", err)
+        err = json.Unmarshal(patchedContainer, &debugPod.Spec.Containers[index])
+        if err != nil {
+            return fmt.Errorf("unable to unmarshall patched container to ephemeral container: %v", err)
+        }
+        ...
     }
-	...
-}
 ```
 
 After predefined profiles are applied, there will be a generated podSpec that is pending for creation.
