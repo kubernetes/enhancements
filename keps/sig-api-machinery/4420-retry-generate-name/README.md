@@ -180,10 +180,10 @@ clients don't realize to do this and hit this problem in production.
 ## Proposal
 
 Modify the apiserver to retry name generation. When performing the create
-operation at the storage layer of the kube-apiserver, if the crewate fails
+operation at the storage layer of the kube-apiserver, if the create fails
 with a "name conflict" error, generate a new name and retry.
 
-If we retry up to 7 times, we can generate up to 1 million names before reaching a 0.1% chance of a collision. This is roughtly the same probability of collision we would get if we were to increased the number of chars per random generateName suffix to 11.
+If we retry up to 7 times, we can generate up to 1 million names before reaching a 0.1% chance of a collision. This is roughly the same probability of collision we would get if we were to increased the number of chars per random generateName suffix to 11.
 
 While this doesn't eliminate the possibility of name conflicts when very large
 numbers of resources are generated with the same generateName prefix, it does
