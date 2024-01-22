@@ -353,6 +353,7 @@ built-in Job controller, to mitigate the risk of [here](#custom-controllers-not-
   cannot be changed. They are also mutually exclusive.
 
 Additionally, we verify the following:
+- the `completedIndexes` and `failedIndexes` fields are non-nil only when `.spec.completionMode: Indexed`
 - the format of the `completedIndexes` and `failedIndexes` fields (but tolerate corrupted values if already present)
 
 #### Label mutability
