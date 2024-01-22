@@ -3,7 +3,7 @@ kep-number: 3895
 authors:
   - "@ardaguclu"
 owning-sig: sig-cli
-status: implementable
+status: implemented
 creation-date: 2023-03-01
 reviewers:
   - "@eddiezane"
