@@ -104,19 +104,19 @@ SIG Architecture for cross-cutting KEPs).
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [  ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -566,6 +566,9 @@ https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-cri-containerd-e2e-cos-gc
 > "https://35.247.99.121/api/v1/namespaces": dial tcp 35.247.99.121:443:
 > connect: connection refused
 
+A whole new job was added to ensure static pods can start when kubelet restarts: [ci-kubernetes-e2e-storage-kind-disruptive](https://testgrid.k8s.io/sig-storage-kubernetes#kind-disruptive).
+There was a single installation flake in the last 14 days (captured on 2024-01-23).
+
 ### Graduation Criteria
 
 #### Alpha
@@ -769,7 +772,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet. This will be a manual test.
+Yes, see https://github.com/kubernetes/enhancements/issues/3756#issuecomment-1906255361 (and expand `Details`).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -985,6 +988,20 @@ This through this both in small and large cases, again with respect to the
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -1044,6 +1061,8 @@ Ensure that:
   and behind `SELinuxMountReadWriteOnce` feature gate.
 
 * 1.27: Splitting out as a separate KEP, targeting Beta in this release.
+
+* 1.30: GA.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
