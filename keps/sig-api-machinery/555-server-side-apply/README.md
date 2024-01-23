@@ -517,8 +517,8 @@ _This section must be completed when targeting beta graduation to a release._
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? Failure modes are tested exhaustively both as unit-tests and as integration tests.
 -->
-  - SSA updates fail for pods with duplicated env. names or container ports.
-    - Known bug at least since 1.26
+  - SSA status updates fail for pods with duplicated env. names or container ports.
+    - Known bug at least since 1.26, fixed in 1.29 with in [Update sigs.k8s.io/structured-merge-diff to v4.4.0](https://github.com/kubernetes/kubernetes/pull/121575)
     - Bugs:
       - [Pod container ports and env-vars listMapKeys != validation](https://github.com/kubernetes/kubernetes/issues/113482)
       - [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261) (fixed in [#121103](https://github.com/kubernetes/kubernetes/pull/121103))
