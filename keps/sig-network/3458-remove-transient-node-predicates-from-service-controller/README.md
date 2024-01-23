@@ -227,7 +227,7 @@ people not being affected by anything mentioned in (Risks)[#Risks] or other.
 Given the lack of reported issues in Beta: the feature gate will be locked-in in
 GA.
 
-Tentative timeline for this is in v1.29. Services of `type: LoadBalancer` are
+Tentative timeline for this is in v1.30. Services of `type: LoadBalancer` are
 sufficiently common on any given Kubernetes cluster, that any cloud provider
 susceptible to the (Risks)[#Risks] will very likely report issues in Beta.
 
@@ -316,11 +316,11 @@ the amount of load balancer related syncs performed by the service controller.
 This will include load balancer syncs caused by Service and Node changes. See:
 https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/metrics.go#L44-L49
 
-A new metric `nodesync_error_rate` has been added for explicitly monitoring the
+A new metric `nodesync_error_count` has been added for explicitly monitoring the
 amount of errors produced by syncing Node related events for load balancers. The
 goal is have an indicator of if the service controller is impacted by point 3.
-mentioned in (Risk)[#Risk], and at which frequency. See: 
-https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/metrics.go#L44-L49
+mentioned in (Risk)[#Risk], and at which frequency. See:
+https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cloud-provider/controllers/service/metrics.go#L50-L55
 
 ###### How can an operator determine if the feature is in use by workloads?
 
