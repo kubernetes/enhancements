@@ -6,7 +6,7 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2021-09-01
 reviewers:
   - "@Huang-Wei"
