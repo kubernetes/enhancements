@@ -307,7 +307,7 @@ In order to mitigate for this risk, we strengthen the validation of the Job
 Status API to prevent faulty custom controllers to do unexpected changes to the
 status (see [here](#job-status-validation)).
 
-Additionally, we indend to strengthen the CronJob implementation to vefify the
+Additionally, we intend to strengthen the CronJob implementation to verify the
 Job has the `Complete` condition before using `CompletionTime`
 (see [here](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/controller/cronjob/cronjob_controllerv2.go#L452)).
 
