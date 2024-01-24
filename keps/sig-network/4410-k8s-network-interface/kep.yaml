@@ -8,9 +8,9 @@ participating-sigs:
 status: provisional
 creation-date: 2024-01-11
 reviewers:
-  - TBD
+  - @shaneutt
 approvers:
-  - TBD
+  - @shaneutt
 
 see-also:
   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
@@ -28,9 +28,9 @@ latest-milestone: "v1.30"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.30"
-  beta: "v1.31"
-  stable: "v1.32"
+  alpha: "v1.31"
+  beta: "v1.32"
+  stable: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

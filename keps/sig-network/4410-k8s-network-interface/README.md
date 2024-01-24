@@ -173,6 +173,8 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+This proposal is to design and implement the KNI [Kubernetes Networking Interface] or better known as Kubernetes Networking reImagined. KNI is a foundational network API that is specific to Kubernetes. KNI will provide the users the ability to make Kubernetes networking completely pluggable. 
+
 ## Motivation
 
 <!--
@@ -191,12 +193,28 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+1. Design and implement the KNI-API
+2. Provide documentation, examples, troubleshooting and FAQ's for KNI.
+   * we should provide a example network runtime
+3. Provide an API that is flexible for experimentation and opinionated use cases
+   * example extradata map[string] string
+4. Provide integration with on premise or cloud systems to provide network status
+5. Provide an API that provides networks available on the node
+6. Determine the reference implementation
+7. Establish feature parity with current [ADD, DEL]
+8. Decouple Node and Pod network setup
+9. Ensure that the network runtime is consolidated inside of a Pod
+10. Design a cool looking t-shirt
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+1. Any changes to the kube-scheduler 
+2. Any specific implementation other than the reference implementation. However we should ensure the KNI-API is flexible enough to support
 
 ## Proposal
 
@@ -209,6 +227,14 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+The proposal of this KEP is to design and implement the KNI-API and make necessary changes to the CRI-API and container runtimes. The scope should be kept to a minimum and we should target feature parity which will include the following:
+
+AttachNetwork
+DetachNetwork
+QueryPodNetwork
+QueryNetworkStatus
+QueryNodeNetworks
+
 ### User Stories (Optional)
 
 <!--
@@ -217,6 +243,8 @@ Include as much detail as possible so that people can understand the "how" of
 the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
+
+
 
 #### Story 1
 
@@ -254,6 +282,124 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### Draft KNI-API (used in POC)
+
+We will review with community and take feedback
+
+```
+service KNI {
+    rpc AttachNetwork(AttachNetworkRequest) returns (AttachNetworkResponse) {} //MVP
+    rpc DetachNetwork(DetachNetworkRequest) returns (DetachNetworkResponse) {} //MVP
+    rpc QueryPodNetwork(QueryPodNetworkRequest) returns (QueryPodNetworkResponse) {} //MVP
+    rpc SetupNodeNetwork(SetupNodeNetworkRequest) returns (SetupNodeNetworkResponse) {}
+    rpc QueryNodeNetworks(QueryNodeNetworksRequest) returns (QueryNodeNetworksResponse) {}
+}
+
+message AttachNetworkRequest {
+    string name = 1;
+    string id = 2;
+    string namespace = 3;
+    Isolation isolation = 4;
+    DNSConfig dns_config = 5;
+    repeated PortMapping port_mappings = 6;
+    map<string,string> labels = 7;
+    map<string,string> annotations = 8;
+    map<string,string> extradata = 9;
+}
+    
+message AttachNetworkResponse {
+    map<string, IPConfig> ipconfigs = 1;
+    map<string,string> extradata = 2;
+}
+    
+message DetachNetworkRequest {
+    string name = 1;
+    string id = 2;
+    string namespace = 3;
+    Isolation isolation = 4;
+    map<string,string> labels = 5;
+    map<string,string> annotations = 6;
+    map<string,string> extradata = 7;
+}
+    
+message DetachNetworkResponse {
+}
+    
+message IPConfig {
+    repeated string ip = 1;
+    string mac = 2;
+    map<string,string> extradata = 3;
+}
+    
+message Network {
+    string name = 1;
+    bool ready = 2;
+    map<string,string> extradata = 3;
+}
+    
+message Isolation {
+    string path = 1;
+    string type = 2; //Network Namespace, kernel, …
+    map<string,string> extradata = 3;
+}
+    
+// DNSConfig specifies the DNS servers and search domains of a sandbox.
+message DNSConfig {
+    // List of DNS servers of the cluster.
+    repeated string servers = 1;
+    // List of DNS search domains of the cluster.
+    repeated string searches = 2;
+    // List of DNS options. See https://linux.die.net/man/5/resolv.conf
+    // for all available options.
+    repeated string options = 3;
+}
+
+enum Protocol {
+    TCP = 0;
+    UDP = 1;
+    SCTP = 2;
+}
+
+// PortMapping specifies the port mapping configurations of a sandbox.
+message PortMapping {
+    // Protocol of the port mapping.
+    Protocol protocol = 1;
+    // Port number within the container. Default: 0 (not specified).
+    int32 container_port = 2;
+    // Port number on the host. Default: 0 (not specified).
+    int32 host_port = 3;
+    // Host IP.
+    string host_ip = 4;
+}
+
+message QueryNodeNetworksRequest {
+
+}
+
+message QueryNodeNetworksResponse {
+    repeated Network networks = 1;
+    map<string,string> extradata = 2;
+}
+
+message SetupNodeNetworkRequest {
+    
+}
+
+message SetupNodeNetworkResponse {
+
+}
+
+message QueryPodNetworkRequest {
+    string name = 1;
+    string id = 2;
+    string namespace = 3;
+}
+
+message QueryPodNetworkResponse {
+    map<string, IPConfig> ipconfigs = 1;
+    map<string,string> extradata = 2;
+}
+```
 ### Test Plan
 
 <!--
