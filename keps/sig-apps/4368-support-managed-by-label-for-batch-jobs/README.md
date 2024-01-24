@@ -390,7 +390,9 @@ The following scenarios are covered:
 The following scenarios are covered:
 - the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io`
 - the Job controller reconciles jobs without the `managed-by` label
-- the Job controller does not reconcile a job with any other value of the `managed-by` label
+- the Job controller does not reconcile a job with any other value of the `managed-by` label. In particular:
+  - it does not reset the status for a Job with `.spec.suspend=false`,
+  - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
 - the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
 - the `job_by_external_controller_total` metric is incremented when a new Job with custom `managed-by` is created
 - the `job_by_external_controller_total` metric is not incremented for a new Job without `managed-by` or with default value
@@ -404,7 +406,8 @@ The feature does not depend on kubelet, so the functionality can be fully
 covered with unit & integration tests.
 
 We propose a single e2e test for the following scenario:
-- the Job controller does not reconcile a job with any other value of the `managed-by` label
+- the Job controller does not reconcile a job with any other value of the `managed-by` label. In particular,
+  it does not reset the status for an unsuspended Job.
 
 ### Graduation Criteria
 
