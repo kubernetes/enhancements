@@ -741,22 +741,21 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric name:
-    - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
-if the metric increases, while there are Jobs using custom values of `managed-by`
-label, it may be indicative of two controllers stepping onto each-other causing
-conflicts (see [here](#two-controllers-running-at-the-same-time-on-old-version)).
     - `job_by_external_controller_total` (new), with the `controllerName` label
 corresponding to the custom value of the `managed-by` label. The metric is
 incremented by the built-in Job controller on each ADDED Job event,
-corresponding to a Job with custom value of the `managed-by` label. If the metric does
-not report any jobs for the external controllers, but there are jobs with custom
-`managed-by` label, it might be indicative of the feature not working correctly
-(the jobs with custom `managed-by` label are not skipped by the built-in controller).
+corresponding to a Job with custom value of the `managed-by` label.
+This metric can be helpful to determine the service health in combination
+with already existing metrics (see below).
+    - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
+substantial increase of this metric, when additionally `job_by_external_controller_total>0`
+may be indicative of two controllers stepping onto each-other causing
+conflicts (see [here](#two-controllers-running-at-the-same-time-on-old-version)).
     - `kube_cronjob_status_active` (existing), substantial increase of this
 metric, may suggest that there are accumulating non-progressing jobs controlled
-by `CronJob`, and managed by a custom Job controller. If additionally
-`job_by_external_controller_total>0` it may suggest that the Jobs are getting
-stuck due to not being synchronized by the custom controller.
+by `CronJob`. If additionally `job_by_external_controller_total>0` it may suggest
+that the Jobs are getting stuck due to not being synchronized by the custom
+controller.
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
