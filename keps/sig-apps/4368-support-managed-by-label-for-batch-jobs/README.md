@@ -58,7 +58,7 @@
   - [Use the spec.suspend field](#use-the-specsuspend-field)
   - [Using label selectors](#using-label-selectors)
   - [Alternative ideas to improve debuggability](#alternative-ideas-to-improve-debuggability)
-    - [Condition to indicated Job is skipped](#condition-to-indicated-job-is-skipped)
+    - [Condition to indicate Job is skipped](#condition-to-indicate-job-is-skipped)
     - [Event indicating the Job is skipped](#event-indicating-the-job-is-skipped)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -1096,7 +1096,7 @@ label-selectors is significantly more complicated than the skip `if` inside the
 
 ### Alternative ideas to improve debuggability
 
-#### Condition to indicated Job is skipped
+#### Condition to indicate Job is skipped
 
 In order to inform the user that a job is skipped from synchronization we
 could add a dedicated condition, say `ManagedBy`, indicating that the job is
