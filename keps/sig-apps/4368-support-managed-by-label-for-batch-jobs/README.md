@@ -552,6 +552,12 @@ automations, so be extremely careful here.
 
 Yes.
 
+However, when the feature is disabled and there are Jobs external controllers by
+using `managed-by` label there is a risk of
+[two controller running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+Thus, it is recommended administrators make sure there are no Jobs using external
+controllers before rollback.
+
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
