@@ -756,7 +756,7 @@ not report any jobs for the external controllers, but there are jobs with custom
 metric, may suggest that there are accumulating non-progressing jobs controlled
 by `CronJob`, and managed by a custom Job controller. If additionally
 `job_by_external_controller_total>0` it may suggest that the Jobs are getting
-stuck due as they are not synchronized by the custom controller.
+stuck due to not being synchronized by the custom controller.
   - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
