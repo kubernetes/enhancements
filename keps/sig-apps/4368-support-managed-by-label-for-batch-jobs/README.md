@@ -466,13 +466,19 @@ enhancement:
 
 ### Version Skew Strategy
 
-N/A. This feature is limited to control plane. Also, This feature doesn't
-require coordination between control plane components, the changes to each
-controller are self-contained.
+This feature is limited to control plane, so the version skew with kubelet does
+not matter.
 
 In case kube-apiserver is running in HA mode, and the versions are skewed, then
 the old version of kube-apiserver may let the label get mutated, if the feature
 is not supported on the old version.
+
+In case the version of the kube-controller-manager leader is skewed (old), the
+built-in Job controller would reconcile the Jobs with custom `managed-by` labels,
+running into the risk of
+[two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+It is recommended the users don't create jobs with custom `managed-by` label
+during an ongoing upgrade.
 
 <!--
 If applicable, how will the component handle version skew with other
