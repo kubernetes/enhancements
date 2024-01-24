@@ -7,7 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Clarify the semantic of a <code>[Feature:]</code> label](#clarify-the-semantic-of-a--label)
+  - [Clarify the semantic of a <code>[Feature:]</code> label](#clarify-the-semantic-of-a-feature-label)
   - [Feature label clean up](#feature-label-clean-up)
   - [Clean up labels that means whether special environment is needed](#clean-up-labels-that-means-whether-special-environment-is-needed)
     - [NodeSpecialFeature](#nodespecialfeature)

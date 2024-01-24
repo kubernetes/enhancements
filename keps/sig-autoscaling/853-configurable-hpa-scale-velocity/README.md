@@ -17,7 +17,7 @@
     - [Story 6: Avoid false positive signals for scaling up](#story-6-avoid-false-positive-signals-for-scaling-up)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Algorithm Pseudocode](#algorithm-pseudocode)
-    - [Introducing <code>stabilizationWindowSeconds</code> Option](#introducing--option)
+    - [Introducing <code>stabilizationWindowSeconds</code> Option](#introducing-stabilizationwindowseconds-option)
     - [Default Values](#default-values)
     - [Stabilization Window](#stabilization-window)
     - [API Changes](#api-changes)

@@ -7,7 +7,7 @@
   - [Goals/Non-Goals](#goalsnon-goals)
 - [Proposal](#proposal)
   - [Promote annotations to fields (beta)](#promote-annotations-to-fields-beta)
-  - [Promote <code>--experimental-allowed-unsafe-sysctls</code> kubelet flag to kubelet config api option](#promote--kubelet-flag-to-kubelet-config-api-option)
+  - [Promote <code>--experimental-allowed-unsafe-sysctls</code> kubelet flag to kubelet config api option](#promote---experimental-allowed-unsafe-sysctls-kubelet-flag-to-kubelet-config-api-option)
   - [Gate the feature](#gate-the-feature)
   - [User Stories (Optional)](#user-stories-optional)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)

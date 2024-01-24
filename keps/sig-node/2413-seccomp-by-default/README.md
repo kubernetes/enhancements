@@ -30,8 +30,8 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [Alternative 1: Define a new <code>KubernetesDefault</code> profile](#alternative-1-define-a-new--profile)
-  - [Alternative 2: Allow admins to pick one of <code>KubernetesDefault</code>, <code>RuntimeDefault</code> or a custom profile](#alternative-2-allow-admins-to-pick-one-of---or-a-custom-profile)
+  - [Alternative 1: Define a new <code>KubernetesDefault</code> profile](#alternative-1-define-a-new-kubernetesdefault-profile)
+  - [Alternative 2: Allow admins to pick one of <code>KubernetesDefault</code>, <code>RuntimeDefault</code> or a custom profile](#alternative-2-allow-admins-to-pick-one-of-kubernetesdefault-runtimedefault-or-a-custom-profile)
 <!-- /toc -->
 
 ## Release Signoff Checklist

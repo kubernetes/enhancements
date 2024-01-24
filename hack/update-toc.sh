@@ -19,7 +19,7 @@ set -o nounset
 set -o pipefail
 
 # keep in sync with hack/verify-toc.sh
-TOOL_VERSION=b8c54a57d69f29386d055584e595f38d65ce2a1f
+TOOL_VERSION=v1.1.0
 
 # cd to the root path
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"

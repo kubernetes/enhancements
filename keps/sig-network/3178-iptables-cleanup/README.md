@@ -9,9 +9,9 @@
 - [Proposal](#proposal)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [The Chains in Question and Their Purpose](#the-chains-in-question-and-their-purpose)
-    - [Eliminating <code>KUBE-MARK-DROP</code>](#eliminating-)
+    - [Eliminating <code>KUBE-MARK-DROP</code>](#eliminating-kube-mark-drop)
     - [External Users of Kubelet's IPTables Chains](#external-users-of-kubelets-iptables-chains)
-    - [<code>iptables-wrapper</code>](#)
+    - [<code>iptables-wrapper</code>](#iptables-wrapper)
     - [Martian Packet Blocking](#martian-packet-blocking)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
@@ -43,8 +43,8 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Use a Feature Gate in Kube-Proxy As Well](#use-a-feature-gate-in-kube-proxy-as-well)
-  - [Move <code>KUBE-MARK-DROP</code> to Kube-Proxy Rather Than Removing It](#move--to-kube-proxy-rather-than-removing-it)
-  - [Remove <code>KUBE-MARK-MASQ</code> from Kube-Proxy and Let Kubelet Own It](#remove--from-kube-proxy-and-let-kubelet-own-it)
+  - [Move <code>KUBE-MARK-DROP</code> to Kube-Proxy Rather Than Removing It](#move-kube-mark-drop-to-kube-proxy-rather-than-removing-it)
+  - [Remove <code>KUBE-MARK-MASQ</code> from Kube-Proxy and Let Kubelet Own It](#remove-kube-mark-masq-from-kube-proxy-and-let-kubelet-own-it)
 <!-- /toc -->
 
 ## Release Signoff Checklist

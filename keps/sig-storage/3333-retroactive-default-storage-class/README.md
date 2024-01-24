@@ -37,7 +37,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [New annotation](#new-annotation)
-  - [Bind PVCs with <code>nil</code> will wait for default SC](#bind-pvcs-with--will-wait-for-default-sc)
+  - [Bind PVCs with <code>nil</code> will wait for default SC](#bind-pvcs-with-nil-will-wait-for-default-sc)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
