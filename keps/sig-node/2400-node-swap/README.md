@@ -228,9 +228,9 @@ The main concern would be swapping in the critical services on the control plane
 
 ##### Use of a dedicated disk for swap
 
-We recommend using a separate disk for your swap partition. With [encryption](#security-risk), an encrypted disk is recommended for swap.
+We recommend using a separate disk for your swap partition. We recommend the separate disk be [encrypted](#security-risk).
 If swap is on a partition or the root filesystem, workloads can interfere with system processes needing to write to disk.
-If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/cri-o/systemd, which would affect other workloads
+If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/container runtime/systemd, which would affect other workloads
 
 ##### Swap as the default
 
@@ -331,9 +331,6 @@ clusters).
   https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-589275277
 
 This user story is addressed by scenarios 1 and 2, and could benefit from 3.
-
-It turns out that we discovered usecases where someone areas set `--fail-swap-on=false`
-to allow for swap enabled nodes for local development.
 
 #### Low footprint systems
 
