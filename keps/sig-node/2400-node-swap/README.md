@@ -230,7 +230,8 @@ The main concern would be swapping in the critical services on the control plane
 
 We recommend using a separate disk for your swap partition. We recommend the separate disk be [encrypted](#security-risk).
 If swap is on a partition or the root filesystem, workloads can interfere with system processes needing to write to disk.
-If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/container runtime/systemd, which would affect other workloads
+If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/container runtime/systemd, which would affect other workloads.
+Swap space is located on a disk so it is imperative to make sure your disk is fast enough.
 
 ##### Swap as the default
 
