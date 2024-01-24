@@ -57,12 +57,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
-
 
 ## Summary
 
@@ -136,6 +133,9 @@ runtimes through the CRI wrt. how they should treat the caching of images on a
 node. Such as store for public use but only if encrypted. Or Store for private
 use un-encrypted...
 
+This feature will not change the behavior of pod with image pull policy `Always`
+and `Never`.
+
 ## Proposal
 
 For alpha `kubelet` will keep a list, across reboots of host and restart of
@@ -149,13 +149,14 @@ used is not present, thus enforcing authentication / re-authentication.
 ### User Stories
 
 #### Story 1
+
 User with multiple tenants will be able to support all image pull policies without
 concern that one tenant will gain access to an image that they don't have rights to.
 
 #### Story 2
+
 User will will no longer have to inject the Pull Always Image Pull Policy to
 ensure all tenants have rights to the images that are already present on a host.
-
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -183,8 +184,8 @@ or expect preloaded images since boot.
 
 ## Design Details
 
-Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image. The hash map
-will not be persisted to disk, in alpha. For alpha explicitly, we will not reuse or add other state manager concepts to kubelet.
+Kubelet will track, in memory, a hash map for the credentials that were successfully
+used to pull an image.
 
 See PR linked above for detailed design / behavior documentation.
 
@@ -193,15 +194,18 @@ the expired duration configurable. The default value could be 1d. For a pod with
 IfNotPresent image pull policy and an image pull secret, kubelet will recheck
 the secret after `PullImageSecretRecheckDuration`.
 
-To make the cluster in most secure situation, set `PullImageSecretRecheckDuration` to 0,
-which means always recheck.
+Use image pull policy `Always` if user want to recheck the secret everytime.
 
-If user doesn't want to do recheck, set `PullImageSecretRecheckDuration` to -1 to disable recheck.
+For image pull policy "if not present", when admin/user doesn't want to automatically
+recheck the secret, set `PullImageSecretRecheckDuration` to 0 to disable it(which means
+never recheck).
 
-For kubelet restart, recheck is acceptable, because kubelet only restart when upgrade or in maintennance modes in most cases.
+Note: using the tag `:latest` is equivalent to using the image pull policy `Always.`
 
-- upgrade: user needs to drain the node according to the best practice, and re-check is acceptable. (Honestly, many users don't)
-- other scanerios(like changing a configuration or some restart scripts for memory leak): still some maintenance modes.
+Note: since the cache is not persisted to disk, a recheck will happen every kubelet restart.
+This is acceptable because kubelet only restarts during upgrades or in maintenance modes.
+In other words, it should be relatively infrequent(and much less frequent than the default
+value of `PullImageSecretRecheckDuration`).
 
 ### Test Plan
 
@@ -211,39 +215,43 @@ necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-
 ##### Unit tests
 
 For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by the feature gate will be run with the feature gate on and with the feature gate off. Unit buckets will be provided for:
+
 - HashAuth - (new, small) returns a hash code for a CRI pull image auth [link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-ca08601dfd2fdf846f066d0338dc332beddd5602ab3a71b8fac95b419842da63R704-R751) ** per review comment will use SHA256 **
 - shouldPullImage - (modified, large sized change) determines if image should be pulled based on presence, and image pull policy, and now with the feature gate on if the image has been pulled/ensured by a secret. A unit test bucket did not exist for this function. The unit bucket will cover a matrix for:
-```
-	pullIfNotPresent := &v1.Container{
+
+```golang
+  pullIfNotPresent := &v1.Container{
     ..
-   	ImagePullPolicy: v1.PullIfNotPresent,
- 	}
- 	pullNever := &v1.Container{
+     ImagePullPolicy: v1.PullIfNotPresent,
+   }
+   pullNever := &v1.Container{
     ..
     ImagePullPolicy: v1.PullNever,
- 	}
- 	pullAlways := &v1.Container{
- 		..
+   }
+   pullAlways := &v1.Container{
+     ..
     ImagePullPolicy: v1.PullAlways,
- 	}
- 	tests := []struct {
- 		description       string
- 		container         *v1.Container
- 		imagePresent      bool
- 		pulledBySecret    bool
- 		ensuredBySecret   bool
- 		expectedWithFGOff bool
- 		expectedWithFGOn  bool
- 	}
+   }
+   tests := []struct {
+     description       string
+     container         *v1.Container
+     imagePresent      bool
+     pulledBySecret    bool
+     ensuredBySecret   bool
+     expectedWithFGOff bool
+     expectedWithFGOn  bool
+   }
 ```
+
 [TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
 
 Additionally, for Alpha we will update this readme with an enumeration of the core packages being touched by the PR to implement this enhancement and provide the current unit coverage for those in the form of:
+
 - <package>: <date> - <current test coverage>
+
 The data will be read from:
 https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 
@@ -305,6 +313,7 @@ TBD subsequent to alpha
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
+
 - At Alpha this feature will be disabled by default with a feature gate.
 - At Beta this feature will be enabled by default with the feature gate.
 - At GA the ability to gate the feature will be removed leaving the feature enabled.
@@ -333,6 +342,7 @@ Will go back to working as designed.
 Yes, tests run both enabled and disabled.
 
 ### Rollout, Upgrade and Rollback Planning
+
 TBD
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
