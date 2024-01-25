@@ -95,6 +95,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Risk: Increased cost in test due to the need to test changes against the e2e tests of multiple release branches](#risk-increased-cost-in-test-due-to-the-need-to-test-changes-against-the-e2e-tests-of-multiple-release-branches)
     - [Risk: Increased maintenance burden on Kubernetes maintainers](#risk-increased-maintenance-burden-on-kubernetes-maintainers)
     - [Risk: Unintended and out-of-allowance compatibility skew](#risk-unintended-and-out-of-allowance-compatibility-skew)
 - [Design Details](#design-details)
@@ -171,6 +172,16 @@ available to cluster administrators. The "compatibility version" is distinct fro
 the binary version of a Kubernetes component, and can be used to emulate the
 behavior (APIs, features, ...) of a prior Kubernetes release version.
 
+"Compatibility version" is not a bug-for-bug compatibility model. It specifically
+controls which APIs, feature gates, configs and flags are enabled to match
+that of a previous release version.
+
+The [Version skew policy](https://kubernetes.io/releases/version-skew-policy/)
+will apply to compatibility versions, not binary versions, allowing binary
+versions to be skipped when performing skip version upgrades, so long the
+upgrade transitions incrementally through compatibility versions according
+to the supported version skew constraints.
+
 ## Motivation
 
 The notion of more granular steps in Kubernetes upgrades is attractive because
@@ -241,6 +252,9 @@ Benefits to upgrading binary version independent of compatibility version:
 
 ### Non-Goals
 
+- Support compatibility version for Alpha features.  Alpha feature are not
+  designed to be upgradable, so we will not allow alpha features to be used in
+  conjunction with compatibility version.
 - Changes to Cluster API/kubeadm/KIND/minikube to absorb the compatibility versions
   will be addressed separate from this KEP
 
@@ -316,30 +330,33 @@ The lifecycle of the feature would be:
 All feature gating and tracking must remain in code through 1.30 for N-3
 compatibility version support.
 
-For a feature that is removed, e.g.:
+For a Beta feature that is removed, e.g.:
 
 ```go
 map[Feature]VersionedSpecs{
 		featureA: VersionedSpecs{
-			{Version: mustParseVersion("1.26"), Default: false, PreRelease: Alpha},
+			{Version: mustParseVersion("1.26"), Default: false, PreRelease: Beta},
 			{Version: mustParseVersion("1.27"), Default: false, PreRelease: Deprecated},
 			{Version: mustParseVersion("1.31"), Default: false, PreRelease: Removed},
 		},
 }
 ```
 
-The lifecycle of the feature implementation would be:
+The steps to remove the Beta feature would be:
 
 | Release | Stage | Feature tracking information                      |
 | ------- | ----- | ------------------------------------------------- |
-| 1.26    | alpha | Alpha: 1.26                                       |
-| 1.27    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
-| 1.28    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
-| 1.29    | alpha | Alpha: 1.26, Deprecated: 1.27                     |
-| 1.30    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
-| 1.31    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
-| 1.32    | -     | Alpha: 1.26, Deprecated: 1.27, Removed: 1.31      |
+| 1.26    | beta  | Beta: 1.26                                        |
+| 1.27    | beta  | Beta: 1.26, Deprecated: 1.27                      |
+| 1.28    | beta  | Beta: 1.26, Deprecated: 1.27                      |
+| 1.29    | beta  | Beta: 1.26, Deprecated: 1.27                      |
+| 1.30    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
+| 1.31    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
+| 1.32    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
 | 1.33    | -     | **Feature implementation and feature tracking information may be removed from code** |
+
+(Features that are deleted before reaching Beta do not require n-3 compatibility
+support since we don't support compatibility version for alpha features)
 
 Note that this respects a 1yr deprecation policy.
 
@@ -473,11 +490,13 @@ removed) at.
 GA APIs should match the exact set of APIs enabled in GA for the Kubernetes version
 the compatibility version is set to.
 
-All Alpha and Beta APIs (both off-by-default and on-by-default, if any of those
+All Beta APIs (both off-by-default and on-by-default, if any of those
 still exist) need to behave exactly as they did for the Kubernetes version
 the compatibility version is set to. I.e. `--runtime-config=api/<version>` needs
 to be able to turn on APIs exactly like it did for each Kubernetes version that
 compatibility version can be set to.
+
+Alpha APIs may not be enabled in conjunction with compatibility version.
 
 ### User Stories (Optional)
 
@@ -528,6 +547,10 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 ### Risks and Mitigations
+
+### Risk: Increased cost in test due to the need to test changes against the e2e tests of multiple release branches
+
+TODO: Establish a plan for this for Alpha. Implement for Beta.
 
 #### Risk: Increased maintenance burden on Kubernetes maintainers
 
@@ -623,11 +646,11 @@ For Alpha we will add integration test to ensure `--compatibility-version` behav
 
 **Transition**|**N-1 Behavior**|**N Behavior**|**Expect when compatibility-version=N-1**|**Expect when compatibility-version=N (or is unset)**
 -----|-----|-----|-----|-----
-Alpha feature introduced|-|off-by-default|feature does not exist, feature gate may not be set|feature enabled only when `--feature-gates=<feature>=true`
+Alpha feature introduced|-|off-by-default|feature does not exist, feature gate may not be set|alpha features may not be used in conjunction with compatibility version
 Alpha feature graduated to Beta|off-by-default|on-by-default|feature enabled only when `--feature-gates=<feature>=true`|feature enabled unless `--feature-gates=<feature>=false`
 Beta feature graduated to GA|on-by-default|on|feature enabled unless `--feature-gates=<feature>=false`|feature always enabled, feature gate may not be set
 Beta feature removed|on-by-default|-|feature enabled unless `--feature-gates=<feature>=false`|feature does not exist
-Alpha API introduced|-|off-by-default|API does not exist|API available only when `--runtime-config=api/v1alpha1=true`
+Alpha API introduced|-|off-by-default|API does not exist|alpha APIs may not be used in conjunction with compatibility version
 Beta API graduated to GA|off-by-default|on|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1` available
 Beta API removed|off-by-default|-|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1beta1` does not exist
 on-by-default Beta API removed|on-by-default|-|API available unless `--runtime-config=api/v1beta1=false`|API `api/v1beta1` does not exist
