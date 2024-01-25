@@ -2,7 +2,7 @@ title: Retry Generate Name
 kep-number: 4420
 authors:
   - "@jpbetz"
-owning-sig: sig-apimachinery
+owning-sig: sig-api-machinery
 participating-sigs:
 status: implementable
 creation-date: 2024-01-19
@@ -28,7 +28,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: RetryGenerateName
+  - name: NameGenerationRetries
     components:
       - kube-apiserver
 disable-supported: true
@@ -36,4 +36,4 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
   - apiserver_request_duration_seconds
-    - `generate_name_retries: {count}` label to be added
+    - `generate_name_retries` label to be added

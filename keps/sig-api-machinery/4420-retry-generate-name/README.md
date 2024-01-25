@@ -308,6 +308,13 @@ trigger name collisions.
 - Add integration tests
 - Additional tests are in Testgrid and linked in KEP
 - Benchmark worst case: Max retries are attempted for all create requests.
+- Consider further optimizing. One possible option:  If the
+  first create attempt conflicts, do a loop to check etcd
+  for all subsequent name generations to make sure the name
+  doesn't exist before retrying the create request.  This
+  would be more efficient for cases where multiple retries
+  are required while still keeping the non-conflicting case
+  fast.
 
 #### GA
 
@@ -331,7 +338,7 @@ served by an apiserver with this feature enabled.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: RetryGenerateName
+  - Feature gate name: NameGenerationRetries
   - Components depending on the feature gate: kube-apiserver
 
 
@@ -530,7 +537,8 @@ There are many alternatives that we considered including:
   request. This would reinvoke the entire admission chain and increase
   the latency of request handling more significantly than the other approaches
   considered.
-- Introduce automatic retry logic into the client.
+- Introduce automatic retry logic into the client, either by default
+  or an opt-in approach (special query param on create requests).
 - Continue to require clients to explicitly check for the error and retry.
 
 ## Infrastructure Needed (Optional)
