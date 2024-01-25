@@ -203,9 +203,15 @@ still performing a stepwise upgrade of Kubernetes control-plane. For example:
 
 Benefits to upgrading binary version independent of compatibility version:
 
-- During an upgrade, it is possible verify the binary version before
-  accumulating any client usage of features/API at the new version, making
-  a binary rollback at this stage of an upgrade fundamentally safer
+- A skip-version binary upgrade that transitions through compat versions has
+  higher probability of bugs in those intermediate binary versions already being
+  fixed.
+- During an upgrade, it is possible upgrade the new binary version while the
+  compatibility version is fixed (e.g. `binaryVersion: 1.28` -> `{binaryVersion: 1.29, compatVersion: 1.28}`).
+  This allow differences in the binary (bugs fixed or introduced, performance
+  changes, ...) to be introduced into a cluster and verified safe before
+  allowing access to the new APIs and features new version. Once the binary
+  version has been deamed safe, the compatibility version can then be upgraded.
 - Any upgrade system that successfully detects failures between upgrade steps
   can report which upgrade step failed. This makes it easier to diagnose the
   failures, because there are fewer possible causes of the failure. (There's a
