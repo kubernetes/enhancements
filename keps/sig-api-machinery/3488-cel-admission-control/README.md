@@ -2407,7 +2407,7 @@ in back-to-back releases.
 - Complete type check for CRD and aggregated types
 - Scalability evaluation. Evaluate ValidatingAdmissionPolicy scalability including how many validators it could run, runtime cost evaluation, evaluating the reasonable ResourceQuota for
   ValidatingAdmissionPolicy, how much faster comparing with Webhook, the scale target, etc.
-- Fix the known issues along the way([variables should keep the type info](https://github.com/kubernetes/kubernetes/issues/120239), [variables should mark omitempty](https://github.com/kubernetes/kubernetes/issues/120491), [properly escape](https://github.com/kubernetes/kubernetes/issues/118230))
+- Fix the known issues along the way([variables should keep the type info](https://github.com/kubernetes/kubernetes/issues/120239), [variables should mark omitempty](https://github.com/kubernetes/kubernetes/issues/120491), [properly escape](https://github.com/kubernetes/kubernetes/issues/118230), [reconsilition with api-server restart](https://github.com/kubernetes/kubernetes/issues/122658))
 - Get agreement on the excluded resources in [this issue](https://github.com/kubernetes/kubernetes/issues/122205).
 - Define the mechanism for CEL library update policy after GA(version skew policy, the policy to update CEL library, etc). Sync with Declarative Validation on CEL libraries to prevent unexpected libraries be added after GA. Provide documentation on library change.
 - Adoption: at least two organizations have demonstrated it is useful for major use cases.
