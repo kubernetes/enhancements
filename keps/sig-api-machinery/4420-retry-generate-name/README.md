@@ -137,16 +137,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement proposes that create requests using generateName are retried automatically by the apiserver when the generated name conflicts with an existing resource name.
+This enhancement proposes that create requests using `generateName` are retried automatically by the API server when the generated name conflicts with an existing resource name.
 
 ## Motivation
 
-Kubernetes [generateName](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/) [generates](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) a 5 char random suffix that is appended to the generateName prefix.
+Kubernetes [generateName](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/) [generates](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) a 5 char random suffix that is appended to a prefix
+typically specified as `.metadata.generateName`
 
 Each char in the sequence is from the ["bcdfghjklmnpqrstvwxz2456789" range](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go#L83C15-L83C42).
 
 This leads to $`27^5 = 14,348,907`$ possible names per generateName prefix. For
-context, we have seen clusters store 100,000..1,000,000 CRDs, so the total
+context, we have seen clusters store 100,000..1,000,000 custom resources, so the total
 number of names that can be generated is not currently a problem.
 
 But there is a problem with name conflicts. There is a 50% chance of hitting a
@@ -160,22 +161,22 @@ clients don't realize to do this and hit this problem in production.
 ### Goals
 
 - Reduce probability of generated name conflicts to below 0.1% for up to 1
-  million generated names per generateName prefix.
+  million generated names per `generateName` prefix.
 
 ### Non-Goals
 
 - Change the length of the random suffix. This is a breaking change:
   - There is a 63 char name length limit. to guarantee a 5 char random suffix
-    length, generateName is trimmed if its length is >58 chars. If the random
-    suffix length were to be increased, generateName would need to trimmed to a
-    shorter length, breaking users that depend on 58 chars of generateName being
-    preserved. (Increasing the max lengh of name would also be a breaking
+    length, `generateName` is trimmed if its length is >58 chars. If the random
+    suffix length were to be increased, `generateName` would need to trimmed to a
+    shorter length, breaking users that depend on 58 chars of `generateName` being
+    preserved. (Increasing the max length of `name` would also be a breaking
     change).
-  - There are major downstream projects that use "{5}" regexes to match the
-    random suffix.
+  - There are major downstream projects that use regular expressions with a `{5}` exact match
+    count that is intended to match the random suffix.
 - Eliminate the possibility of generated name conflicts entirely. This is
-  much harder problem given that generateName does create names in a reserved
-  identifier space, and so any mecanism to pick names is prone to conflicts.
+  much harder problem given that `generateName` does create names in a reserved
+  identifier space, and so any mechanism to pick names is prone to conflicts.
 
 ## Proposal
 
@@ -186,9 +187,9 @@ with a "name conflict" error, generate a new name and retry.
 If we retry up to 7 times, we can generate up to 1 million names before reaching a 0.1% chance of a collision. This is roughly the same probability of collision we would get if we were to increased the number of chars per random generateName suffix to 11.
 
 While this doesn't eliminate the possibility of name conflicts when very large
-numbers of resources are generated with the same generateName prefix, it does
+numbers of resources are generated with the same `generateName` prefix, it does
 effectively eliminate name conflicts for more typical use cases. When generating
-<=100,000 resources with a single generateName prefix, there is a 1 in
+<=100,000 resources with a single `generateName` prefix, there is a 1 in
 $`1.6x10^{13}`$ chance of ever encountering a name conflict.
 
 ### Risks and Mitigations
@@ -395,7 +396,7 @@ with a count greater than 1 would indicate this feature has been used.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other
-  - Details: The lack of name conflict errors when using generateName is the only user visible behavior, but it
+  - Details: The lack of name conflict errors when using `generateName` is the only user visible behavior, but it
     is non-deterministic.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -446,23 +447,23 @@ No
 
 This can happen.
 
-When a retry does occur, if the resource being created with generateName has
+When a retry does occur, if the resource being created with `generateName` has
 validating webhooks registered, the validating webhooks will be called for each
 retry. For slow webhooks this could result in a significant increase to request
-latency for the create requests using generateName.
+latency for the create requests using `generateName`.
 
 We expect retries to be very rare, even for large numbers of resources
 (100k-1M), but if a cluster were somehow able to generate a very large number of
-resources for a generateName, say 2M or higher, then retries could become more
+resources for a `generateName`, say 2M or higher, then retries could become more
 common. 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No, at least not in all but the most pathologcial of situations.
+No, at least not in all but the most pathological of situations.
 
 If a cluster was receiving a high load of create requests for generateName
 resources with a large number (millions) of existing resources already generated
-with the same generateName prefix, this could cause up to a 7x increase in CPU.
+with the same `generateName` prefix, this could cause up to a 7x increase in CPU.
 But we do not expect this to actually happen, primarily because etcd cannot
 support these volumes of resources.
 
@@ -484,7 +485,7 @@ on webhooks with this feature.
 
 Look at the number of resources (using kube-state-metrics or similar). If there
 exists a very large number of resources (millions) of a particular resource kind
-and they all share the same generateName prefix, this might be triggering
+and they all share the same `generateName` prefix, this might be triggering
 high retry load.
 
 ## Implementation History
@@ -509,13 +510,13 @@ severe problems, up to and including data corruption and loss.
 
 There are many alternatives that we considered including:
 
-- Increasing the length of the random suffix appended to generateName when generating
+- Increasing the length of the random suffix appended to `generateName` when generating
   a name. This would be a breaking change in two ways:
-  - There is a 63 char name length limit. to guarantee a 5 char random suffix
-    length, generateName is trimmed if its length is >58 chars. If the random
-    suffix length were to be increased, generateName would need to trimmed to a
-    shorter length, breaking users that depend on 58 chars of generateName being
-    preserved. (Increasing the max lengh of name would also be a breaking
+  - There is a 63 char `name` length limit. To guarantee a 5 char random suffix
+    length, `generateName` is trimmed if its length is >58 chars. If the random
+    suffix length were to be increased, `generateName` would need to trimmed to a
+    shorter length, breaking users that depend on 58 chars of `generateName` being
+    preserved. (Increasing the max length of `name` would also be a breaking
     change).
   - There are major downstream projects that use "{5}" regexes to match the
     random suffix.
@@ -524,7 +525,7 @@ There are many alternatives that we considered including:
 - After generating a name, check if the name exists in etcd and, if it does,
   generate another name.  See https://github.com/kubernetes/kubernetes/compare/master...jpbetz:kubernetes:retry-generate-name
   The downside to this approach is that it adds a round-trip to etcd for
-  all create requests that use generateName.
+  all create requests that use `generateName`.
 - Add a "retry filter" to the apiserver's filter chain to retry the entire
   request. This would reinvoke the entire admission chain and increase
   the latency of request handling more significantly than the other approaches
