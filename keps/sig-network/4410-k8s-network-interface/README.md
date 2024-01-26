@@ -192,18 +192,18 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-1. Design and implement the KNI-API
-2. Provide documentation, examples, troubleshooting and FAQ's for KNI.
+1. Design a cool looking t-shirt
+2. Design and implement the KNI-API
+3. Provide documentation, examples, troubleshooting and FAQ's for KNI.
    * we should provide a example network runtime
-3. Provide an API that is flexible for experimentation and opinionated use cases
+4. Provide an API that is flexible for experimentation and opinionated use cases
    * example extradata map[string] string
-4. Provide integration with on premise or cloud systems to provide network status
-5. Provide an API that provides networks available on the node
-6. Determine the reference implementation
-7. Establish feature parity with current [ADD, DEL]
-8. Decouple Node and Pod network setup
-9. Ensure that the network runtime is consolidated inside of a Pod
-10. Design a cool looking t-shirt
+5. Provide integration with on premise or cloud systems to provide network status
+6. Provide an API that provides networks available on the node
+7. Determine the reference implementation
+8. Establish feature parity with current [ADD, DEL]
+9. Decouple Node and Pod network setup
+10. Ensure that the network runtime is consolidated inside of a Pod
 
 ### Non-Goals
 
@@ -226,13 +226,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal of this KEP is to design and implement the KNI-API and make necessary changes to the CRI-API and container runtimes. The scope should be kept to a minimum and we should target feature parity which will include the following:
-
-AttachNetwork
-DetachNetwork
-QueryPodNetwork
-QueryNetworkStatus
-QueryNodeNetworks
+The proposal of this KEP is to design and implement the KNI-API and make necessary changes to the CRI-API and container runtimes. The scope should be kept to a minimum and we should target feature parity. 
 
 ### User Stories (Optional)
 
