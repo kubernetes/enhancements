@@ -136,8 +136,8 @@ controller, and delegate the status synchronization to the Kueue controller.
 
 ## Proposal
 
-The proposal is to support the "managed-by" label to indicate the only
-controller responsible for the Job object synchronization.
+The proposal is to support the "managed-by" label (full name: `batch.kubernetes.io/managed-by`)
+to indicate the only controller responsible for the Job object synchronization.
 
 ### User Stories (Optional)
 
