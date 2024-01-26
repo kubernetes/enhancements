@@ -58,13 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
+# KEP-4410: Kubernetes Networking reImagined
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -177,14 +171,19 @@ This proposal is to design and implement the KNI [Kubernetes Networking Interfac
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+Kubernetes networking has traditionally been challenging to understand for users
+interacting with the Kubernetes API, and there has been considerable flexibility
+in how Container Network Interfaces (CNIs) set up networking within clusters.
+This has resulted in a scenario where things like pod networking (including pod
+to pod networking) is opaque to users, with different implementations taking
+markedly different approaches. This fragmentation and issues with the API have
+negatively impacted adoption in sectors such as telecommunications. Our goal is
+to transform Kubernetes networking by making networks and their components
+actual resources within the Kubernetes API. This will allow for the development
+of shared functionalities and their integration into the API. We anticipate that
+this new approach will enhance support for areas that are currently struggling,
+facilitate the development and promotion of common features, and better define
+and accommodate advanced functionalities and potential areas for expansion.
 
 ### Goals
 

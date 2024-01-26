@@ -2,6 +2,7 @@ title: k8s-network-interface
 kep-number: 4410
 authors:
   - "@mikezappa87"
+  - "@shaneutt"
 owning-sig: sig-network
 participating-sigs:
   - sig-network
@@ -10,7 +11,6 @@ creation-date: 2024-01-11
 reviewers:
   - @shaneutt
 approvers:
-  - @shaneutt
 
 see-also:
   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
