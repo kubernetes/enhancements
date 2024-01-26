@@ -194,7 +194,7 @@ In a confidential setting a user does not want to reconfigure the VM
 needs a fully static view of resources needed for VM sizing.
 
 Independent of hot or cold-plug the hypervisor needs to know how the PCI(e)
-topology needs to look like at sandbox creation time.  
+topology needs to look like at sandbox creation time.
 
 Updating resources of a container means also resizing the VM, hence the
 hypervisors needs the complete list of resources available at a update container
@@ -270,8 +270,11 @@ be container runtime specific details.
 
 #### Story 3
 
-As a cluster administrator, I want to install an OCI hook/runc wrapper/NRI
-plugin that does customized resource handling.
+As a cluster administrator, I want to install an NRI plugin that does
+customized resource handling. I run kubelet with CPU manager and memory manager
+disabled. Instead I use my NRI plugin to do customized resource allocation
+(e.g. cpu and memory pinning). To do that properly I need the actual resource
+requests and limits requested by the user.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -432,9 +435,10 @@ Kubelet code is refactored/modified so that all container resources are known
 before sandbox creation. This mainly consists of preparing all mounts (of all
 containers) early.
 
-Kubelet will be be extended to pass down the unmodified resource requests and
-limits to the container runtime in all related CRI requests, i.e.
-RunPodSandbox, CreateContainer and UpdateContainerResources.
+Kubelet will be be extended to pass down all mounts, devices, CDI devices and
+the unmodified resource requests and limits to the container runtime in all
+related CRI requests, i.e.  RunPodSandbox, CreateContainer and
+UpdateContainerResources.
 
 For example, take a PodSpec:
 
@@ -444,26 +448,23 @@ kind: Pod
 ...
 spec:
   containers:
-    - name: cnt-1
-      ...
-      resources:
-        requests:
-          cpu: 1
-          memory: 1G
-        limits:
-          cpu: 2
-          memory: 2G
-    - name: cnt-2
-      ...
-      resources:
-        requests:
-          cpu: 100m
-          memory: 100M
-          vendor.com/xpu: 1
-        limits:
-          cpu: 200m
-          memory: 200M
-          vendor.com/xpu: 1
+  - name: cnt-1
+    image: k8s.gcr.io/pause
+    resources:
+      requests:
+        cpu: 1
+        memory: 1G
+        example.com/resource: 1
+      limits:
+        cpu: 2
+        memory: 2G
+        example.com/resource: 1
+    volumeMounts:
+    - mountPath: /my-volume
+      name: my-volume
+  volumes:
+  - name: my-volume
+    emptyDir:
 ```
 
 Then kubelet will send the following RunPodSandboxRequest when creating the Pod
@@ -475,23 +476,32 @@ RunPodSandboxRequest:
   ...
     podResources:
       containers:
-        - name: cnt-1
+      - name: cnt-1
+        kubernetes_resources:
           requests:
-            cpu: 1
+            cpu: "1"
             memory: 1G
+            example.com/resource: "1"
           limits:
-           cpu: 2
-           memory: 2G
-        - name: cnt-2
-          requests:
-            cpu: 100m
-            memory: 100M
-            vendor.com/xpu: 1
-          limits:
-            cpu: 200m
-            memory: 200M
-            vendor.com/xpu: 1
+            cpu: "2"
+            memory: 2G
+            example.com/resource: "1"
+        CDI_devices:
+        - name: example.com/resource=CDI-Dev-1
+        mounts:
+        - container_path: /my-volume
+          host_path: /var/lib/kubelet/pods/<pod-uid>/volumes/kubernetes.io~empty-dir/my-volume
+        - container_path: /var/run/secrets/kubernetes.io/serviceaccount
+          host_path: /var/lib/kubelet/pods/<pod-uid>/volumes/kubernetes.io~projected/kube-api-access-4srqm
+          readonly: true
+        - container_path: /dev/termination-log
+          host_path: /var/lib/kubelet/pods/<pod-uid>/containers/cnt-1/<uuid>
 ```
+
+Note that all device plugin resources are passed down in the
+`kubernetes_resources` field but this does not contain any properties of the
+device that was actually allocated for the container. However, these properties
+are exposed through the `CDI_devices`, `mounts` and `devices` fields.
 
 ### Test Plan
 
