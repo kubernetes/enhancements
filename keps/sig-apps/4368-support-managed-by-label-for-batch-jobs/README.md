@@ -113,7 +113,7 @@ synchronization to an external controller.
 ## Motivation
 
 As a part of [Kueue](https://github.com/kubernetes-sigs) (an effort done by
-Batch-WG, in cooperation with SIG-Autoscaling, SIG-Scheduling, SIG-Apps and SIG-Node) we
+WG Batch, in cooperation with SIG Autoscaling, SIG Scheduling, SIG Apps and SIG Node) we
 are working on a multi-cluster job dispatcher project, called
 [MultiKueue](https://github.com/kubernetes-sigs/kueue/tree/main/keps/693-multikueue).
 
