@@ -141,8 +141,7 @@ This enhancement proposes that create requests using `generateName` are retried 
 
 ## Motivation
 
-Kubernetes [generateName](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/) [generates](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) a 5 char random suffix that is appended to a prefix
-typically specified as `.metadata.generateName`
+Kubernetes [generates](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L49) a 5 char random suffix that is appended to a prefix specified by [`.metadata.generateName`](https://dev-k8sref-io.web.app/docs/common-definitions/objectmeta-/).
 
 Each char in the sequence is from the ["bcdfghjklmnpqrstvwxz2456789" range](https://github.com/jpbetz/kubernetes/blob/4b5ee802e847a3ea8243946aeae588906bd6f79f/staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go#L83C15-L83C42).
 
@@ -184,7 +183,10 @@ Modify the apiserver to retry name generation. When performing the create
 operation at the storage layer of the kube-apiserver, if the create fails
 with a "name conflict" error, generate a new name and retry.
 
-If we retry up to 7 times, we can generate up to 1 million names before reaching a 0.1% chance of a collision. This is roughly the same probability of collision we would get if we were to increased the number of chars per random generateName suffix to 11.
+If we retry up to 7 times, we can generate up to 1 million names before reaching
+a 0.1% chance of a collision. This is roughly the same probability of collision
+we would get if we were to increased the number of chars per random generateName
+suffix to 11.
 
 While this doesn't eliminate the possibility of name conflicts when very large
 numbers of resources are generated with the same `generateName` prefix, it does
@@ -236,7 +238,7 @@ After 7 attempts, the probability of a conflict for 1 million entries drops belo
 
 For comparison, the probability of a conflict if we were instead to increase the number of chars are:
 
-| number of chars | # of possible names | 50% probability of conflict when # of names added | 0.1% probability of conflict when # of names added |
+| random suffix chars | # of possible names | 50% probability of conflict when N names are added | 0.1% probability of conflict when N names are added |
 | --------------- | -------------- | ------ | ----- |
 | 5               | 14348907       | 5000   | 500   |
 | 6               | 387420489      | 25000  | 900   |
@@ -246,11 +248,26 @@ For comparison, the probability of a conflict if we were instead to increase the
 | 10              | 205891132094649 | 17000000 | 600000 |
 | 11              | 5559060566555523 | 24000000 | 3400000 | 
 
-(based on https://kevingal.com/apps/collision.html)
+Here, we can see that we need 11 random suffix chars to for the "0.1% probability of conflict
+when N names are added" to exceed 1 million. The gives us a way to compare
+approaches; 7 retries provides roughly the same probability of conflict that we
+would get if we were to increased the number of random suffix chars to 11.
 
-Here, we can see that we need 11 chars to for the "0.1% probability of conflict when # of names added" to exceed 1 million. The gives us a way to compare approaches.
+If we were to increase the number of random suffix chars we would break clients.
+We could argue that we had never guaranteed a random suffix char size and that
+we're not technically breaking our API, but we know we would break some clients,
+including major downstream projects that use "{5}" regexes to match the random
+suffix. We consider breaking thes projects disruptive enough that we would not
+want to do it immediately without ample warning and a long wait period for fixes
+to propagate to the ecosystem.
 
-This is how we concluded that 7 retries provides roughly the same probability of conflict that we would get if we were to increased the number of chars per hash to 11.
+This is why we favor this retry approach in the short term. It is an effective
+bandaid that makes the problem effectively go away for the vast majority of users
+and is something we can do now.
+
+Note that if we were to add more random suffix chars, we would like increase it
+to more than 11 to reduce the potential for collisions to probabilities similar
+to [git hash collision probabilities](https://git-scm.com/book/en/v2/Git-Tools-Revision-Selection#:~:text=The%20SHA%2D1%20digest,sand%20on%20the%20earth.).
 
 ### Test Plan
 
@@ -521,14 +538,12 @@ There are many alternatives that we considered including:
   a name. This would be a breaking change in two ways:
   - There is a 63 char `name` length limit. To guarantee a 5 char random suffix
     length, `generateName` is trimmed if its length is >58 chars. If the random
-    suffix length were to be increased, `generateName` would need to trimmed to a
+    suffix length were to be increased, `generateName` would either need to trim to a
     shorter length, breaking users that depend on 58 chars of `generateName` being
-    preserved. (Increasing the max length of `name` would also be a breaking
-    change).
+    preserved, or, we'd need to increates the length of the generated `name` would be a breaking
+    for clients that have come to expect that the generated name size will never exceed 63 chars.
   - There are major downstream projects that use "{5}" regexes to match the
     random suffix.
-  - Note that the selected design is statistically as good as increasing the
-    characters appended from 5 to 11.
 - After generating a name, check if the name exists in etcd and, if it does,
   generate another name.  See https://github.com/kubernetes/kubernetes/compare/master...jpbetz:kubernetes:retry-generate-name
   The downside to this approach is that it adds a round-trip to etcd for
