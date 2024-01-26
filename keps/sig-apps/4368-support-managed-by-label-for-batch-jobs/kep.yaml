@@ -13,7 +13,7 @@ approvers:
   - "@soltysh"
 
 see-also:
-  - "https://github.com/kubernetes/enhancements/pull/4073"
+  - "https://github.com/kubernetes/enhancements/pull/4073" # closed PR
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta
