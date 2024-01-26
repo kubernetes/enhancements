@@ -197,6 +197,8 @@ aimed at enabling) are:
 
 - multiple containers can be assigned to the same class of a certain type of
   QoS-class resource
+- classes are mutually exclusive - a given entity (pod or container) can only
+  have one class assigned for each type of QoS-class resource resource
 - QoS-class resources are represented by an enumerable set of class identifiers
 - each type of QoS-class resource has an independent set of class identifiers
 
