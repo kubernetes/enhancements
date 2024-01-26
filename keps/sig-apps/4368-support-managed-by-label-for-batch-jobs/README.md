@@ -107,7 +107,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We support the `managed-by` label as a lightweight mechanism to delegate the Job
+We support the "managed-by" label as a lightweight mechanism to delegate the Job
 synchronization to an external controller.
 
 ## Motivation
@@ -136,7 +136,7 @@ controller, and delegate the status synchronization to the Kueue controller.
 
 ## Proposal
 
-The proposal is to support the `managed-by` label to indicate the only
+The proposal is to support the "managed-by" label to indicate the only
 controller responsible for the Job object synchronization.
 
 ### User Stories (Optional)
@@ -169,7 +169,7 @@ mirror Job within the cluster.
 #### Prior work
 
 This approach of allowing another controller to mirror information between APIs
-is already supported with the `managed-by` label used by
+is already supported with the "managed-by" label used by
 EndpointSlices ([`endpointslice.kubernetes.io/managed-by`](https://github.com/kubernetes/kubernetes/blob/5104e6566135e05b0b46eea1c068a07388c78044/staging/src/k8s.io/api/discovery/v1/well_known_labels.go#L27), see also in [KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/0752-endpointslices#endpointslice-api))
 and IPAddresses ([`ipaddress.kubernetes.io/managed-by`](https://github.com/kubernetes/kubernetes/blob/5104e6566135e05b0b46eea1c068a07388c78044/staging/src/k8s.io/api/networking/v1alpha1/well_known_labels.go#L32)).
 
@@ -199,7 +199,7 @@ Then, if the label is switched to the mirroring Kueue controller (which by
 itself does not manage pods). Then, the pods are leaking and remain running.
 
 In order to avoid the risk of pods leaking between the controllers when changing
-value of the `managed-by` label, we make the label immutable (allow to be added
+value of the "managed-by" label, we make the label immutable (allow to be added
 on Job creation, but fail requests trying to update its value, see also
 [label mutability](#label-mutability)).
 
@@ -217,11 +217,11 @@ re-evaluate the decision for [GA](#ga).
 
 #### Use for MultiKueue
 
-The `managed-by` label is going to be added by a dedicated MultiKueue webhook
+The "managed-by" label is going to be added by a dedicated MultiKueue webhook
 for Jobs created by users, and the Jobs remain suspended until ready to run.
 Once the job is ready to run its mirror copy is created on a selected worker
 cluster. Note that the mirror copy differs from the Job on the management cluster
-as it does not have the `managed-by` label (removed), and will have different
+as it does not have the "managed-by" label (removed), and will have different
 UIDs.
 
 When the job is running it is unsuspended (both on the management and the worker
@@ -327,7 +327,7 @@ const (
 
 #### Implementation overview
 
-We skip synchronization of the Jobs with the `managed-by` label, if it has any
+We skip synchronization of the Jobs with the "managed-by" label, if it has any
 different value than `job-controller.k8s.io`. When the synchronization is skipped,
 the name of the controller managing the Job object is logged.
 
@@ -377,26 +377,26 @@ to implement this enhancement.
 - `pkg/apis/batch/v1`: `2023-12-20` - `29.3%` (mostly generated code)
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io` when the feature is enabled
-- the Job controller reconciles jobs without the `managed-by` label when the feature is enabled
-- the Job controller does not reconcile jobs with custom value of the `managed-by` label when the feature is enabled
-- the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
+- the Job controller reconciles jobs with the "managed-by" label equal to `job-controller.k8s.io` when the feature is enabled
+- the Job controller reconciles jobs without the "managed-by" label when the feature is enabled
+- the Job controller does not reconcile jobs with custom value of the "managed-by" label when the feature is enabled
+- the Job controller reconciles jobs with custom "managed-by" label when the feature gate is disabled
 - verify the label is immutable, both when the job is suspended or unsuspended; when the feature is enabled
-- enablement / disablement of the feature after the Job (with custom `managed-by` label) is created
+- enablement / disablement of the feature after the Job (with custom "managed-by" label) is created
 - verify the new Job Status API validation rules (see [here](#job-status-validation))
 
 ##### Integration tests
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the `managed-by` label equal to `job-controller.k8s.io`
-- the Job controller reconciles jobs without the `managed-by` label
-- the Job controller does not reconcile a job with any other value of the `managed-by` label. In particular:
+- the Job controller reconciles jobs with the "managed-by" label equal to `job-controller.k8s.io`
+- the Job controller reconciles jobs without the "managed-by" label
+- the Job controller does not reconcile a job with any other value of the "managed-by" label. In particular:
   - it does not reset the status for a Job with `.spec.suspend=false`,
   - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
-- the Job controller reconciles jobs with custom `managed-by` label when the feature gate is disabled
-- the `job_by_external_controller_total` metric is incremented when a new Job with custom `managed-by` is created
-- the `job_by_external_controller_total` metric is not incremented for a new Job without `managed-by` or with default value
-- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the `managed-by`)
+- the Job controller reconciles jobs with custom "managed-by" label when the feature gate is disabled
+- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managed-by" is created
+- the `job_by_external_controller_total` metric is not incremented for a new Job without "managed-by" or with default value
+- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managed-by")
 
 During the implementation more scenarios might be covered.
 
@@ -406,14 +406,14 @@ The feature does not depend on kubelet, so the functionality can be fully
 covered with unit & integration tests.
 
 We propose a single e2e test for the following scenario:
-- the Job controller does not reconcile a job with any other value of the `managed-by` label. In particular,
+- the Job controller does not reconcile a job with any other value of the "managed-by" label. In particular,
   it does not reset the status for an unsuspended Job.
 
 ### Graduation Criteria
 
 #### Beta
 
-- skip synchronization of jobs when the `managed-by` label does not exist, or equals `job-controller.k8s.io`
+- skip synchronization of jobs when the "managed-by" label does not exist, or equals `job-controller.k8s.io`
 - unit & integration tests
 - implement the `job_by_external_controller_total` metric
 - implement the additional Job status validation (see [here](#job-status-validation))
@@ -439,18 +439,18 @@ We propose a single e2e test for the following scenario:
 
 An upgrade to a version which supports this feature does not require any
 additional configuration changes. This feature is opt-in at the Job-level, so
-to use it users need to add the `managed-by` label to their Jobs.
+to use it users need to add the "managed-by" label to their Jobs.
 
 #### Downgrade
 
 A downgrade to a version which does not support this feature (1.29 an below)
 does not require any additional configuration changes. All jobs, including these
-that specified a custom value for `managed-by`, will be handled in the default
+that specified a custom value for "managed-by", will be handled in the default
 way by the Job controller. However, this introduces the risk of
 [two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
 
 In order to prepare the risk the admins may want to make sure the custom controllers
-using the `managed-by` labels are disabled before the downgrade.
+using the "managed-by" labels are disabled before the downgrade.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -474,10 +474,10 @@ the old version of kube-apiserver may let the label get mutated, if the feature
 is not supported on the old version.
 
 In case the version of the kube-controller-manager leader is skewed (old), the
-built-in Job controller would reconcile the Jobs with custom `managed-by` labels,
+built-in Job controller would reconcile the Jobs with custom "managed-by" labels,
 running into the risk of
 [two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
-It is recommended the users don't create jobs with custom `managed-by` label
+It is recommended the users don't create jobs with custom "managed-by" label
 during an ongoing upgrade.
 
 <!--
@@ -559,7 +559,7 @@ automations, so be extremely careful here.
 Yes.
 
 However, when the feature is disabled and there are Jobs external controllers by
-using `managed-by` label there is a risk of
+using "managed-by" label there is a risk of
 [two controller running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
 Thus, it is recommended administrators make sure there are no Jobs using external
 controllers before rollback.
@@ -616,33 +616,33 @@ will rollout across nodes.
 -->
 
 The rollout will not impact already running workloads, unless they set the
-`managed-by` label to a custom value, but this would require a prior intentional
+"managed-by" label to a custom value, but this would require a prior intentional
 action.
 
 ###### What specific metrics should inform a rollback?
 
 A substantial increase in the `apiserver_request_total[code=409, resource=job, group=batch]`,
-while there are jobs with the custom `managed-by` label, can be indicative of
+while there are jobs with the custom "managed-by" label, can be indicative of
 the built-in job controller stepping onto another controller, causing conflicts.
 This can be further investigate per-job by checking the `.metadata.managedFields.manager`
 being flipped between two owners.
 
-The feature is opt-in so in case of such problems the custom `managed-by` label
+The feature is opt-in so in case of such problems the custom "managed-by" label
 should not be used.
 
 Also, an admin could check if the value of the `job_by_external_controller_total`
 matches the expectations. For example, if the value of the metric does not increase
-when new jobs are being added with a custom `managed-by` label, it might be
+when new jobs are being added with a custom "managed-by" label, it might be
 indicative that the feature is not working correctly.
 
 A substantial increase in `kube_cronjob_status_active` after upgrade may suggest
 that the Jobs are not making progress. Additionally, if the non-progressing
-Jobs use custom `managed-by` label, then rollback of the feature might be
+Jobs use custom "managed-by" label, then rollback of the feature might be
 justified to make the CronJobs run, by letting the built-in Job controller
 handle the Jobs.
 
 A substantial drop in the `job_sync_duration_seconds`, while the number of
-jobs with the custom `managed-by` label is low, could be indicative of the
+jobs with the custom "managed-by" label is low, could be indicative of the
 Job controller skipping reconciliation of jobs it should reconcile. This could
 be further investigated per-job by looking at the timestamp of changes in
 `.metadata.managedFields.time`, and owners in `.metadata.managedFields.manager`.
@@ -691,7 +691,7 @@ Check the `job_by_external_controller_total` metric. If the value is non-zero
 for a label, it means there were Jobs using the custom controller created, so
 the feature is in use.
 
-For a specific Job in question, check if the Job has the `managed-by` label.
+For a specific Job in question, check if the Job has the "managed-by" label.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -742,9 +742,9 @@ Pick one more of these and delete the rest.
 - [x] Metrics
   - Metric name:
     - `job_by_external_controller_total` (new), with the `controllerName` label
-corresponding to the custom value of the `managed-by` label. The metric is
+corresponding to the custom value of the "managed-by" label. The metric is
 incremented by the built-in Job controller on each ADDED Job event,
-corresponding to a Job with custom value of the `managed-by` label.
+corresponding to a Job with custom value of the "managed-by" label.
 This metric can be helpful to determine the service health in combination
 with already existing metrics (see below).
     - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
@@ -844,7 +844,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No, unless a custom value of the `managed-by` label is set. In the worst case
+No, unless a custom value of the "managed-by" label is set. In the worst case
 scenario this can be 93B (30 for the key, and 63 for the value).
 
 <!--
