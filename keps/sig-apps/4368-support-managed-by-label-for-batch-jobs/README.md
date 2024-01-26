@@ -446,7 +446,7 @@ to use it users need to add the "managed-by" label to their Jobs.
 
 #### Downgrade
 
-A downgrade to a version which does not support this feature (1.29 an below)
+A downgrade to a version which does not support this feature (1.29 and below)
 does not require any additional configuration changes. All jobs, including these
 that specified a custom value for "managed-by", will be handled in the default
 way by the Job controller. However, this introduces the risk of
