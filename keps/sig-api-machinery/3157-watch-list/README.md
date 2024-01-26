@@ -372,7 +372,7 @@ Step 2: Right after receiving a request from the reflector, the cacher gets the 
 It is used to make sure the cacher is up to date (has seen data stored in etcd) and to let the reflector know it has seen all initial data.
 There are ways to do that cheaply, e.g. we could issue a count request against the datastore.
 Next, the cacher creates a new cacheWatcher (implements watch.Interface) passing the given bookmarkAfterResourceVersion, and gets initial data from the watchCache.
-After sending initial data the cacheWatcher starts listening on an incoming channel for new events, including a bookmark event.
+After sending initial data the cacheWatcher starts listening on an input channel for new events, including a bookmark event.
 At some point, the cacher will receive an event with the resourceVersion equal or greater to the bookmarkAfterResourceVersion.
 It will be propagated to the cacheWatcher and then back to the reflector as a BOOKMARK event.
 
@@ -386,9 +386,9 @@ Since the watchCache implements the Store interface it is used by the reflector 
 Step 2b: What happens when new events are received while the cacheWatcher is sending initial data?
 
 The cacher maintains a list of all current watchers (cacheWatcher) and a separate goroutine (dispatchEvents) for delivering new events to the watchers.
-New events are added via the cacheWatcher.nonblockingAdd method that adds an event to the cacheWatcher.incoming channel.
-The cacheWatcher.incoming is a buffered channel and has a different size for different Resources (10 or 1000).
-Since the cacheWatcher starts processing the cacheWatcher.incoming channel only after sending all initial events it might block once its buffered channel tips over.
+New events are added via the cacheWatcher.nonblockingAdd method that adds an event to the cacheWatcher.input channel.
+The cacheWatcher.input is a buffered channel and has a different size for different Resources (10 or 1000).
+Since the cacheWatcher starts processing the cacheWatcher.input channel only after sending all initial events it might block once its buffered channel tips over.
 In that case, it will be added to the list of blockedWatchers and will be given another chance to deliver an event after all nonblocking watchers have sent the event.
 All watchers that have failed to deliver the event will be closed.
 
@@ -679,6 +679,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Consider using WatchProgressRequester to request progress notifications directly from etcd.
   This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
   and could reduce the overall latency for watchlist requests.
+- [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
+  the `storage/cacher` to use streaming directly from etcd 
+  (This will also allow us to [remove](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/client-go/tools/cache/reflector.go#L110) the `reflector.UseWatchList` field).
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -958,12 +961,12 @@ W1002 09:11:40.656641       1 reflector.go:340] The watch-list feature is not su
 …
 ```
 
-Disable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+Disable the `WatchListClient` feature gate for the `kcm` by editing the static pod manifest directly.
 ```
 docker exec -ti kind-control-plane bash
 vim /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
-and pass `- --feature-gates=WatchList=false` to the `kcm` container.
+and pass `- --feature-gates=WatchListClient=false` to the `kcm` container.
 
 Check if `kcm` is running.
 ```
@@ -1003,12 +1006,12 @@ Check if the `kas` has not recorded the watchlist latency metric.
 kubectl get --raw '/metrics' | grep "apiserver_watch_list_duration_seconds"
 ```
 
-Enable the `WatchList` feature gate for the `kcm` by editing the static pod manifest directly.
+Enable the `WatchListClient` feature gate for the `kcm` by editing the static pod manifest directly.
 ```
 docker exec -ti kind-control-plane bash
 vim /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
-and remove `- --feature-gates=WatchList=false` for the `cm` container.
+and remove `- --feature-gates=WatchListClient=false` for the `cm` container.
 
 Check if `kcm` is running.
 ```
@@ -1252,7 +1255,7 @@ When etcd is unavailable, requests attempting to retrieve the most recent state 
 - kube-controller-manager is unable to start.
   - Detection: How can it be detected via metrics? Examine the prometheus `up` time series or examine the pod status or the number of restarts.
   - Mitigations: What can be done to stop the bleeding, especially for already
-    running user workloads? Disable the feature. Pass `WatchList=false` to `feature-gates` command line flag.
+    running user workloads? Disable the feature. Pass `WatchListClient=false` to `feature-gates` command line flag.
   - Diagnostics:  What are the useful log messages and their required logging
     levels that could help debug the issue? N/A
   - Testing: Are there any tests for failure mode? If not, describe why. Yes, if kube-controller-manager is unable to start then a lot of existing e2e tests will fail.

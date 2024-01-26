@@ -35,7 +35,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Full <code>kubectl debug</code> Arguments](#full--arguments)
+  - [Full <code>kubectl debug</code> Arguments](#full-kubectl-debug-arguments)
   - [Test Plan](#test-plan)
     - [Alpha milestones](#alpha-milestones)
     - [Beta milestones](#beta-milestones)
@@ -389,11 +389,11 @@ Probes and labels continue to be stripped from Pod copies.
 
 #### Profile: sysadmin
 
-| Journey             | Debug Container Behavior                                                   |
-| ------------------- | -------------------------------------------------------------------------- |
-| Node                | sets `SYS_ADMIN` and privileged; uses host namespaces                      |
-| Pod Copy            | sets `SYS_ADMIN` on debugging container                                    |
-| Ephemeral Container | sets `SYS_ADMIN` on ephemeral container                                    |
+| Journey             | Debug Container Behavior               |
+| ------------------- | -------------------------------------- |
+| Node                | sets privileged; uses host namespaces  |
+| Pod Copy            | sets privileged on debugging container |
+| Ephemeral Container | sets privileged on ephemeral container |
 
 This profile offers elevated privileges for system debugging.
 

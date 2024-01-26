@@ -102,7 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Mitigation: Blacklisted Validations](#mitigation-blacklisted-validations)
       - [Mitigation: Conservative Ratcheting Rule](#mitigation-conservative-ratcheting-rule)
 - [Design Details](#design-details)
-  - [<code>kube-openapi</code> changes](#-changes)
+  - [<code>kube-openapi</code> changes](#kube-openapi-changes)
   - [Structural-Schema-based validation changes](#structural-schema-based-validation-changes)
     - [Correlation of Old and New](#correlation-of-old-and-new)
   - [Cel-Validator changes](#cel-validator-changes)

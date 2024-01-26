@@ -26,7 +26,7 @@
 - [Design Details](#design-details)
   - [AdminNetworkPolicy API Design](#adminnetworkpolicy-api-design)
     - [General Notes on the AdminNetworkPolicy API](#general-notes-on-the-adminnetworkpolicy-api)
-    - [Further examples utilizing the self field for <code>NamespacedPeer</code> objects](#further-examples-utilizing-the-self-field-for--objects)
+    - [Further examples utilizing the self field for <code>NamespacedPeer</code> objects](#further-examples-utilizing-the-self-field-for-namespacedpeer-objects)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
     - [Sample spec for Story 1: Deny traffic at a cluster level](#sample-spec-for-story-1-deny-traffic-at-a-cluster-level)
     - [Sample spec for Story 2: Allow traffic at a cluster level](#sample-spec-for-story-2-allow-traffic-at-a-cluster-level)

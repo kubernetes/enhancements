@@ -8,11 +8,11 @@ approvers: ['@thockin']
 creation-date: "2023-02-03"
 status: implementable
 stage: beta
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 milestone:
     alpha: "v1.28"
-    beta: "v1.29"
-    stable: "v1.30"
+    beta: "v1.30"
+    stable: "v1.31"
 feature-gates:
   - name: KubeProxyDrainingTerminatingNodes
     components:
