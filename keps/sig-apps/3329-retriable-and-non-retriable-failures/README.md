@@ -1193,10 +1193,12 @@ feature documentation to explain this change. In particular, we are going to
 provide a list of example scenarios impacted by this change, including:
 invalid image reference, invalid config map reference.
 
-One release after the `PodDisruptionCondition` feature gate graduates to GA
-we plan to simplify Job controller to consider as failed (and count as such)
-pods which are in terminal phase regardless of the fact if the `podFailurePolicy`
-is specified (see [Deprecation](#deprecation)).
+We considered to simplify Job controller to count as failed only pods which
+are in terminal phase regardless of the fact if the `podFailurePolicy`.
+However, we will not do it as discussed on the dedicated issue
+[Job controller should wait for Pods to be in a terminal phase before considering them failed or succeeded](https://github.com/kubernetes/kubernetes/issues/116858),
+because this would not only be a cleanup, but also change of the current semantic
+when pod failure policy is not used. The current semantic matches the expectations.
 
 ### Risks and Mitigations
 
@@ -1741,12 +1743,13 @@ Third iteration (1.28):
 Fourth iteration (1.29):
 - Fix the [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261).
   by withdrawing from SSA in the k8s controllers which were adding the `DisruptionTarget` condition.
-  We will reconsider returning to SSA if the issue is fixed.
+  We will reconsider returning to SSA if the issue is fixed, but we consider the
+  transition as a technical detail, not impacting the API, which can be done
+  independently of the KEP graduation cycles.
 
 #### GA
 
 - Address reviews and bug reports from Beta users
-- Reconsider returning to SSA if the issue [#113482](https://github.com/kubernetes/kubernetes/issues/113482) is fixed
 - Write a blog post about the feature
 - Graduate e2e tests as conformance tests
 - Lock the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates
@@ -1768,9 +1771,6 @@ in back-to-back releases.
 
 In GA+1 release:
 - Modify the code to ignore the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
-- Simplify the Job controller to wait for pods to terminate before counting them
-  as failed or matching against the pod failure policy, regardless if the pod
-  failure policy is specified (see: [Job controller should wait for Pods to terminate to match the failure policy](https://github.com/kubernetes/kubernetes/issues/113855)).
 
 In GA+2 release:
 - Remove the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
