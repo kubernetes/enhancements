@@ -1,4 +1,4 @@
-title: Support managed-by label for Jobs
+title: Job API managed-by label
 kep-number: 4368
 authors:
   - "@mimowo"
