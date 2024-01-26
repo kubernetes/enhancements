@@ -49,6 +49,9 @@
 - [Alternatives](#alternatives)
   - [Reserved controller name value](#reserved-controller-name-value)
   - [Defaulting of the manage-by label for newly created jobs](#defaulting-of-the-manage-by-label-for-newly-created-jobs)
+  - [Alternative names (scopes)](#alternative-names-scopes)
+    - [Generic kubernetes.io/managed-by](#generic-kubernetesiomanaged-by)
+    - [Job-prefixed job.kubernetes.io/managed-by](#job-prefixed-jobkubernetesiomanaged-by)
   - [Alternative mechanisms to mirror the Job status](#alternative-mechanisms-to-mirror-the-job-status)
     - [mirrored-by label](#mirrored-by-label)
     - [.spec.controllerName](#speccontrollername)
@@ -745,8 +748,8 @@ Pick one more of these and delete the rest.
 corresponding to the custom value of the "managed-by" label. The metric is
 incremented by the built-in Job controller on each ADDED Job event,
 corresponding to a Job with custom value of the "managed-by" label.
-This metric can be helpful to determine the service health in combination
-with already existing metrics (see below).
+This metric can be helpful to determine the health of a job and its controller
+in combination with already existing metrics (see below).
     - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
 substantial increase of this metric, when additionally `job_by_external_controller_total>0`
 may be indicative of two controllers stepping onto each-other causing
@@ -979,6 +982,38 @@ Job controller for many releases before we can ensure that all the jobs have it.
 
 An additional case for jobs without the label does not increase the
 complexity significantly.
+
+### Alternative names (scopes)
+
+#### Generic kubernetes.io/managed-by
+
+The idea was suggested (see [thread](https://github.com/kubernetes/enhancements/pull/4370/files#r1433055461))
+that the similar mechanism might be useful for other k8s controllers.
+
+**Reasons for discarding/deferring**
+
+There is currently no clear use case to support the label across the stack for
+APIs like StatefulSets, Deployments, or DaemonSets.
+
+A generic name without support across all k8s APIs might be confusing to the
+users, and supporting it for all k8s APIs would be much bigger effort than
+currently needed for the MultiKueue scenario use.
+
+The "managed-by" label idea has significant risks, such as
+[ecosystem fragmentation due to forks](#ecosystem-fragmentation-due-to-forks).
+It makes sense to start with limited scope as a "pilot" and assess the impact.
+
+#### Job-prefixed job.kubernetes.io/managed-by
+
+The idea of job-prefixed label was suggested (see [here](https://github.com/kubernetes/enhancements/pull/4370/files#r1467153754)).
+
+**Reasons for discarding/deferring**
+
+We prefer the "batch" prefix for consistency with current labels used by the Job
+controller (see [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/batch/types.go#L29-L46)).
+
+The "batch" prefix fits well for the use case of supporting this label
+in other batch Job CRDs supported by Kueue, such as JobSet, MPIJob, RayJob, etc.
 
 ### Alternative mechanisms to mirror the Job status
 
