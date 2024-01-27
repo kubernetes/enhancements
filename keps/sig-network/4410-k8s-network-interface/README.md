@@ -167,7 +167,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This proposal is to design and implement the KNI [Kubernetes Networking Interface] or better known as Kubernetes Networking reImagined. KNI is a foundational network API that is specific to Kubernetes. KNI will provide the users the ability to make Kubernetes networking completely pluggable. 
+This proposal is to design and implement the KNI [Kubernetes Networking Interface] or better known as Kubernetes Networking reImagined. KNI will create a Network resource and provide an API that will provide network status, availability, how to attach a pod to a network, detach the pod from the network and update a pods network.  
 
 ## Motivation
 
@@ -195,15 +195,21 @@ know that this has succeeded?
 1. Design a cool looking t-shirt
 2. Design and implement the KNI-API
 3. Provide documentation, examples, troubleshooting and FAQ's for KNI.
-   * we should provide a example network runtime
+   * we should provide a example network runtime and easy starter project
 4. Provide an API that is flexible for experimentation and opinionated use cases
    * example extradata map[string] string
-5. Provide integration with on premise or cloud systems to provide network status
-6. Provide an API that provides networks available on the node
-7. Determine the reference implementation
-8. Establish feature parity with current [ADD, DEL]
-9. Decouple Node and Pod network setup
-10. Ensure that the network runtime is consolidated inside of a Pod
+5. Provide an API to report on a networks status
+6. Provide an API to provide network metrics such as available IP addresses
+7. Provide an API that provides networks available on the node
+8. Provide an API that will attach a one or more networks to a pod
+9. Provide an API that will detach a one or more network from a pod 
+10. Provide an API that will update a network attachment of a pod
+11. Determine the reference implementation
+12. Establish feature parity with current CNI [ADD, DEL]
+13. We should decouple the Pod and Node Network setup (The reporting of this could be different statuses?)
+14. Provide the ability to run garbage collection to ensure no resources are left behind 
+15. We will provide the ability to identify the IP address family without parsing the value (such as a field)
+16. Make a design that is backwards compatible with the CNI 
 
 ### Non-Goals
 
@@ -241,7 +247,18 @@ bogged down.
 
 #### Story 1
 
+As a cluster operator, I need the ability to determine my network(s) is ready so that my pods come up with a working network.
+
 #### Story 2
+
+As a cluster operator, I need the ability to determine what networks are available on my node so that upstream components can ensure the pod is scheduled on the appropriate node. 
+
+#### Story 3
+
+As a Kubernetes developer, I need the ability to have extension points for pod network setup, teardown and update so that I can support future Kubernetes networking features with either reducing the changes to core kubernetes or eliminating them
+
+#### Story 4
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -251,6 +268,8 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+"Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
 
 ### Risks and Mitigations
 
