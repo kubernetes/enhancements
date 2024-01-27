@@ -201,6 +201,11 @@ know that this has succeeded?
 5. Provide an API to report on a networks status
 6. Provide an API to provide network metrics such as available IP addresses
 7. Provide an API that provides networks available on the node
+8. Provide a K8s resource to define a Network
+    * this should provide the usable cidr block(s) per node
+    * this should provide the needed information to the controller to reconcile to establish pod to pod networking
+8. Provide an API that will create a network on a node
+9. Provide an API that will delete a network off a node
 8. Provide an API that will attach a one or more networks to a pod
 9. Provide an API that will detach a one or more network from a pod 
 10. Provide an API that will update a network attachment of a pod
@@ -220,6 +225,7 @@ and make progress.
 
 1. Any changes to the kube-scheduler 
 2. Any specific implementation other than the reference implementation. However we should ensure the KNI-API is flexible enough to support
+3. Changes to the Pod specification 
 
 ## Proposal
 
@@ -269,7 +275,12 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-"Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
+The specifics of "Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
+
+We should consider the trade offs to using a Native K8s Network object or CRD's.
+Using a native object would allow passing a slice of network type to AttachNetwork
+
+Since the network runtime can be run separated from the container runtime, you can package everything into a pod and not need to have binaries on disk. This allows the CNI plugins to be isolated in the pod and the pod will never need to mount /opt/cni/bin or /etc/cni/net.d. This offers a potentially more ability to control execution. Keep in mind CNI is the implementation however when this is used chaining is still available. 
 
 ### Risks and Mitigations
 
@@ -296,7 +307,9 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Draft KNI-API (used in POC)
 
-We will review with community and take feedback
+We will review with community and take feedback. 
+
+This is the version where we don't have a native k8s network object. 
 
 ```
 service KNI {
