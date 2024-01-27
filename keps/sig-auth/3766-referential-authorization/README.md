@@ -14,7 +14,7 @@
   - [General Notes](#general-notes)
     - [<code>ReferenceGrant</code> is half of a handshake](#referencegrant-is-half-of-a-handshake)
     - [ReferenceGrant authors must have sufficient access](#referencegrant-authors-must-have-sufficient-access)
-    - [<code>resource</code> versus <code>kind</code>](#-versus-)
+    - [<code>resource</code> versus <code>kind</code>](#resource-versus-kind)
     - [Revocation behavior](#revocation-behavior)
   - [Example Usage](#example-usage)
     - [Gateway API Cross-Namespace Secret Reference](#gateway-api-cross-namespace-secret-reference)
@@ -134,21 +134,23 @@ authorization could also help mitigate this problem.
 
 Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
 
-1. **ClusterReferencePattern:** This resource defines a common reference
-   pattern. For example, a `gateway-tls` ClusterReferencePattern would define
-   how references from Gateways to TLS Secrets work. Authors of APIs would
-   bundle these definitions with their APIs.
-2. **ClusterReferenceConsumer:** This resource links a consumer (defined by a
-   RBAC Subject) to one or more ClusterReferencePatterns. For example, a Gateway
-   controller that used a ServiceAccount for auth, would include a
-   ClusterReferenceConsumer tying that ServiceAccount to the `gateway-tls`
-   pattern described above.
-3. **ReferenceGrant:** This resource authorizes a specific instance of a
-   ClusterReferencePattern. For example, if an owner of a Secret in namespace
-   `foo` wants to allow a TLS reference to that Secret from a Gateway in
-   namespace `bar`, they would create a ReferenceGrant that allowed the
-   `gateway-tls` pattern to be used from the `bar` namespace to their namespace
-   (`foo`).
+1. **ClusterReferenceGrant:** This resource grants access to resources by
+   following references within the same namespace. For example, a `gateway-tls`
+   ClusterReferenceGrant would grant access to Gateway controllers for
+   same-namespace references from Gateways to TLS Secrets. API developers would
+   bundle these resources with their APIs.
+2. **ClusterReferenceConsumer:** This resource links a consumer (defined by
+   something like a RBAC Subject) to (Cluster)ReferenceGrants. For example, a
+   Gateway controller that used a ServiceAccount for auth, would
+   include a ClusterReferenceConsumer tying that ServiceAccount to references
+   from "Gateways" to "Secrets" for "tls". This would link that consumer to any
+   (Cluster)ReferenceGrants with the same `from`, `to`, and `for` values.
+3. **ReferenceGrant:** This resource authorizes specific instances of
+   cross-namespace references. For example, if an owner of a `acme-cert` Secret
+   in namespace `foo` wants to allow a TLS reference to that Secret from a
+   Gateway in namespace `bar`, they would create a ReferenceGrant that allowed
+   references from Gateways in the `bar` namespace to the `acme-cert` Secret in
+   their namespace (`foo`).
 
 ### Risks and Mitigations
 
@@ -243,29 +245,32 @@ following guidelines to be rules to apply to **ALL** implementations of the API:
 
 #### Gateway API Cross-Namespace Secret Reference
 
-Authors of APIs can bundle ClusterReferencePatterns with their API definitions
+Authors of APIs can bundle ClusterReferenceGrants with their API definitions
 for any references they expect to be common. For example, Gateway API could
-bundle the following ClusterReferencePattern to describe how Gateways reference
-`kubernetes.io/tls` Secrets. Note that this also allows API authors to define a
-`SameNamespace` `baselineGrant` that would automatically authorize all
-references following this pattern without crossing namespace boundaries.
+bundle the following ClusterReferenceGrant to authorize same-namespace
+references from Gateways to Secrets for "tls".
 
 ```yaml
-kind: ClusterReferencePattern
+kind: ClusterReferenceGrant
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: gateway-tls
-group: gateway.networking.k8s.io
-resource: gateways
-version: v1
-path: ".spec.listeners[*].tls.certificateRefs[*]"
-baselineGrant: SameNamespace
+from:
+  group: gateway.networking.k8s.io
+  resource: gateways
+  version: v1
+  path: ".spec.listeners[*].tls.certificateRefs[*]"
+to:
+  group: ""
+  resource: secrets
+for: tls
 ```
 
 Implementations of APIs can bundle ClusterReferenceConsumer resources as part of
-their deployment. This resource links an RBAC subject (likely the ServiceAccount
-used by the controller) to a ClusterReferencePattern. Once linked, controllers
-will gain access to anything that has been granted following that pattern.
+their deployment. This resource links a subject (likely the ServiceAccount
+used by the controller) to matching (Cluster)ReferenceGrants. The subject of
+this ClusterReferenceConsumer will receive authorization for any
+(Cluster)ReferenceGrant with matching `from`, `to`, and `for` values.
 
 ```yaml
 kind: ClusterReferenceConsumer
@@ -276,28 +281,35 @@ subject:
   kind: ServiceAccount
   name: contour
   namespace: contour-system
-patternNames:
-- gateway-tls
+from:
+  group: gateway.networking.k8s.io
+  resource: gateways
+to:
+  group: ""
+  resource: secrets
+for: tls
 ```
 
-Finally, users can use ReferenceGrant to authorize specific references that
-follow a ClusterReferencePattern. For example, the following ReferenceGrant
-authorizes references from Gateways in the `prod` namespace to the `acme-tls`
-Secret in the `prod-tls` namespace:
+Finally, users can use ReferenceGrant to authorize specific cross-namespace
+references. For example, the following ReferenceGrant authorizes references from
+Gateways in the `prod` namespace to the `acme-tls` Secret in the `prod-tls`
+namespace:
 
 ```yaml
 kind: ReferenceGrant
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: prod-gateways
-  namespace: prod-tls
-patternName: gateway-tls
 from:
-- namespace: prod
+  group: gateway.networking.k8s.io
+  resource: gateways
+  namespace: prod
 to:
-- group: ""
+  group: ""
   resource: secrets
-  name: "acme-tls"
+  names:
+  - acme-tls
+for: tls
 ```
 
 ### Existing ReferenceGrant Usage Examples
