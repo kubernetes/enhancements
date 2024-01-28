@@ -250,7 +250,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-test: https://github.com/kubernetes/kubernetes/blob/19c8a2127177b43effb9bfe1de272d6f08ea56e8/test/integration/scheduler/filters/filters_test.go#L1060
+test: https://github.com/kubernetes/kubernetes/blob/c6064489223862fe1888fcbe0656ab1087461adb/test/integration/scheduler/filters/filters_test.go#L1349
 k8s-triage: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestPodTopologySpreadFilter
 
 ##### e2e tests
