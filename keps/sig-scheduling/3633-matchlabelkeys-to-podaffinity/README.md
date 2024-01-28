@@ -758,12 +758,23 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+It shouldn't impact already running workloads. It's an opt-in feature,
+and users need to set `matchLabelKeys` or `mismatchLabelKeys` field in PodAffinity or PodAntiAffinity to use this feature. 
+
+When this feature is disabled by the feature flag, the already created Pod's `matchLabelKeys`/`mismatchLabelKeys` (+ `labelSelector` generated from them) is kept.
+But, the newly created Pod's `matchLabelKeys` or `mismatchLabelKeys` field is silently dropped.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- A spike on metric `schedule_attempts_total{result="error|unschedulable"}` when pods using this feature are added.
+
+No need to check latency of the scheduler because the scheduler doesn't get changed at all for this feature.
+The only possibility is the bug in the Pod creation process in kube-apiserver and it results in some unintended scheduling.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -773,11 +784,31 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+We'll test it via this scenario:
+
+1. start kube-apiserver with this feature disabled. 
+2. create one Pod with `matchLabelKeys` in PodAffinity. 
+3. No change should be observed in `labelSelector` in PodAffinity because the feature is disabled.
+4. restart kube-apiserver with this feature enabled. (**First enablement**)
+5. No change in Pod created at (2).
+6. create one Pod with `matchLabelKeys` in PodAffinity.
+7. `labelSelector` in PodAffinity should be changed based on `matchLabelKeys` and label value in the Pod because the feature is enabled.
+8. restart kube-apiserver with this feature disabled. (**First disablement**)
+9. No change in Pods created before.
+10. create one Pod with `matchLabelKeys` in PodAffinity. 
+11. No change should be observed in `labelSelector` in PodAffinity because the feature is disabled.
+12. restart kube-apiserver with this feature enabled. (**Second enablement**)
+13. No change in Pods created before.
+14. create one Pod with `matchLabelKeys` in PodAffinity.
+15. `labelSelector` in PodAffinity should be changed based on `matchLabelKeys` and label value in the Pod because the feature is enabled.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -796,6 +827,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The operator can query pods with `matchLabelKeys` or `mismatchLabelKeys` field set in PodAffinity or PodAntiAffinity.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -807,13 +840,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
+- [x] Other (treat as last resort)
   - Details:
+              This feature doesn't cause any logs, any events, any pod status updates.
+              But, people can determine it's being evaluated by looking at `labelSelector` in PodAffinity or PodAntiAffinity 
+              in which they set `matchLabelKey` or `mismatchLabelKeys`.
+              If `labelSelector` is modified after Pods' creation, this feature is working correctly.
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -832,18 +865,20 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Metric `plugin_execution_duration_seconds{plugin="InterPodAffinity"}` <= 100ms on 90-percentile.
+
+This feature shouldn't change the latency of InterPodAffinity plugin at all.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - Metric name: `schedule_attempts_total{result="error|unschedulable"}`
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -851,6 +886,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -874,6 +911,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -902,6 +941,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -911,6 +952,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -918,6 +961,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -927,6 +972,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -939,6 +987,10 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+Yes. there is an additional work: kube-apiserver uses the keys in `matchLabelKeys` or `mismatchLabelKeys` to look up label values from the pod, 
+and change `labelSelector` according to them.
+Maybe result in a very small impact in the latency of pod creation request in kube-apiserver. 
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -950,6 +1002,35 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No.
+
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
 
 ### Troubleshooting
 
@@ -966,6 +1047,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server and/or etcd is not available, this feature will not be available. 
+This is because this feature depends on Pods creation.
+
 ###### What are other known failure modes?
 
 <!--
@@ -981,7 +1065,16 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+N/A.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Check the metric `schedule_attempts_total{result="error|unschedulable"}` to determine if the number 
+  of attempts increased. 
+  If increased, You need to determine the cause of the failure by the event of 
+  the pod. If it's caused by plugin `InterPodAffinity`, you can further analyze this problem by looking 
+  at `labelSelector` in PodAffinity/PodAntiAffinity with `matchLabelKeys`/`mismatchLabelKeys`.
+  If `labelSelector` seems to be updated incorrectly, it's the problem in this feature.
 
 ## Implementation History
 
@@ -998,6 +1091,7 @@ Major milestones might include:
 
  - 2022-11-09: Initial KEP PR is submitted.
  - 2023-05-14 / 2023-06-08: PRs to change it from MatchLabelKeys to MatchLabelSelector are submitted. (to satisfy the user story 2)
+ - 2024-01-28: The PR to update KEP for beta is submitted.
 
 ## Drawbacks
 
