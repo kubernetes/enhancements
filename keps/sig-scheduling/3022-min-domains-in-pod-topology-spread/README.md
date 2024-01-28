@@ -20,6 +20,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.24):](#alpha-v124)
     - [Beta (v1.25):](#beta-v125)
+    - [GA (v1.30):](#ga-v130)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
