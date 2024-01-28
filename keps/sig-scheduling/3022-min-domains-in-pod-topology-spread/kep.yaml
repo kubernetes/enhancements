@@ -20,7 +20,7 @@ milestone:
   alpha: "v1.24"
   beta: "v1.25"
   stable: "v1.30"
-disable-supported: true
+disable-supported: false
 feature-gates:
   - name: MinDomainsInPodTopologySpread
     components:
