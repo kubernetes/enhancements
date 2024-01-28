@@ -1063,6 +1063,7 @@ Major milestones might include:
 - Oct 01, 2023: The initial KEP is submitted.
 - Dec 13, 2023: The feature gate is changed to be disabled by default.
 - Dec 31, 2023: The KEP is updated based on the situation as of v1.30 release cycle. The beta/GA criteria is sorted.
+- Jan 28, 2024: The KEP is updated to target the beta graduation at v1.30
 
 ## Drawbacks
 
