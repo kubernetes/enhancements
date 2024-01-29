@@ -197,9 +197,9 @@ Additionally, the following tools were developed by the Policy WG:
 * [kubearmor-adapter](https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report/kubearmor-adapter)
 * [Trestle OSCAL Transformer](https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report/oscal-transformer)
 
-Since working groups are temporary and do not own code (see [governance](https://github.com/kubernetes/community/blob/master/committee-steering/governance/wg-governance.md)), we propose moving the Policy Reports API to `github.com/kubernetes-sigs/policy-report-api`.
+Since working groups are temporary and do not own code (see [governance](https://github.com/kubernetes/community/blob/master/committee-steering/governance/wg-governance.md)), we propose moving the PolicyReport API to `github.com/kubernetes-sigs/policy-report-api`.
 
-Promoting the Policy Report API will further increase adoption and signifies enhanced reliability, improved usability, and reinforces its significance within the cloud-native ecosystem.
+Promoting the PolicyReport API will further increase adoption and signifies enhanced reliability, improved usability, and reinforces its significance within the cloud-native ecosystem.
 
 ## Motivation
 
@@ -243,7 +243,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-In order to make Policy Report API an official Kubernetes SIG API, we propose:
+In order to make PolicyReport API an official Kubernetes SIG API, we propose:
 
 * Create a new project `policy-report-api` (__name subject to change__) repository under the `kubernetes-sigs` org following the guidelines mentioned [here](https://github.com/kubernetes/community/blob/master/github-management/kubernetes-repositories.md#rules-for-new-repositories)
 * Cleanup the [existing policy-report directory](https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report) to contain only the necessary content for migration
@@ -279,7 +279,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-* The Policy Report CRD originated with this proposal back in 2020. Refer to [Policy Report Custom Resource Definition](https://docs.google.com/document/d/1nICYLkYS1RE3gJzuHOfHeAC25QIkFZfgymFjgOzMDVw/edit#heading=h.nhx5d35q5eth).
+* The PolicyReport CRD originated with this proposal back in 2020. Refer to [PolicyReport Custom Resource Definition](https://docs.google.com/document/d/1nICYLkYS1RE3gJzuHOfHeAC25QIkFZfgymFjgOzMDVw/edit#heading=h.nhx5d35q5eth).
 * Presented to `sig-auth` about the proposal to make PolicyReport an official SIG API on [June 21, 2023](https://docs.google.com/document/d/1woLGRoONE3EBVx-wTb4pvp4CI7tmLZ6lS26VTbosLKM/view#heading=h.ii52a0istwiv). This KEP is the outcome of that presentation.
 * List of projects using the PolicyReport CRD either from `wg-policy-prototypes` or maintain their own fork. See [this comment](https://github.com/kubernetes-sigs/wg-policy-prototypes/issues/112#issuecomment-1453209660).
 
