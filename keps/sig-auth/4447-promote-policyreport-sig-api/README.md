@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4447: Promote Policy Reports API to a Kubernetes SIG API
+# KEP-4447: Promote PolicyReport API to a Kubernetes SIG API
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -173,11 +173,11 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This is a proposal to migrate the [Policy Report API](https://htmlpreview.github.io/?https://github.com/kubernetes-sigs/wg-policy-prototypes/blob/master/policy-report/docs/index.html) to a SIG repository.
+This is a proposal to migrate the [PolicyReport API](https://htmlpreview.github.io/?https://github.com/kubernetes-sigs/wg-policy-prototypes/blob/master/policy-report/docs/index.html) to a SIG repository.
 
-The Policy Report API was developed under the Kubernetes Policy Working Group (SIG-Auth is a sponsor) and provides an API that can be used by any policy engine, security scanner, or other security and compliance tool that wants to produce, or consume, policy results, security findings, or other reports for cluster resources.
+The PolicyReport API was developed under the Kubernetes Policy Working Group (SIG-Auth is a sponsor) and provides an API that can be used by any policy engine, security scanner, or other security and compliance tool that wants to produce, or consume, policy results, security findings, or other reports for cluster resources.
 
-The Policy Report API is currently hosted at: https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report and is used by the following projects:
+The PolicyReport API is currently hosted at: https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report and is used by the following projects:
 
 **Report producers:**
 * [Kyverno](https://kyverno.io/docs/policy-reports/)
@@ -212,7 +212,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The Policy Report API is already being used by several projects and tools in the Kubernetes community and CNCF ecosystem, as detailed above. Moving the API to a the `github.com/kubernetes-sigs/` GitHub org will provide a permanent home for the API, along with improved visibility and colloboration.
+The PolicyReport API is already being used by several projects and tools in the Kubernetes community and CNCF ecosystem, as detailed above. Moving the API to a the `github.com/kubernetes-sigs/` GitHub org will provide a permanent home for the API, along with improved visibility and collaboration.
 
 ### Goals
 
@@ -247,7 +247,7 @@ In order to make Policy Report API an official Kubernetes SIG API, we propose:
 
 * Create a new project `policy-report-api` (__name subject to change__) repository under the `kubernetes-sigs` org following the guidelines mentioned [here](https://github.com/kubernetes/community/blob/master/github-management/kubernetes-repositories.md#rules-for-new-repositories)
 * Cleanup the [existing policy-report directory](https://github.com/kubernetes-sigs/wg-policy-prototypes/tree/master/policy-report) to contain only the necessary content for migration
-* Notify existing projects and tools about the new repository location and share with relevant sigs (`sig-auth`, `sig-security`, `sig-apimachinery`)
+* Notify existing projects and tools about the new repository location and share with relevant special interest groups (SIG API Machinery, SIG Auth, SIG Security)
 
 ### User Stories (Optional)
 
@@ -305,7 +305,7 @@ an implementation may produce 20,000 reports. This can overwhelm etcd.
 
 This risk can be mitigated in a couple of ways:
 1. The implementation can limit the total size and number of reports
-2. An aggregate API service can be used for reports (see: https://github.com/kyverno/KDP/pull/51).
+2. An aggregate API service can be used for reports (example implementation: https://github.com/kyverno/KDP/pull/51).
 
 ## Design Details
 
@@ -866,6 +866,7 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+- Adopt PolicyReport as an official, in-tree Kubernetes API
 
 ## Infrastructure Needed (Optional)
 * a new repository called `policy-report-api` under the `kubernetes-sigs` org
