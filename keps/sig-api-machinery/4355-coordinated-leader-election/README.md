@@ -79,7 +79,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Risk: Amount of writes performed by leader election increases substantially](#risk-amount-of-writes-performed-by-leader-election-increases-substantially)
-    - [Risk: leases watches increases apiserver load substantially](#risk-leases-watches-increases-apiserver-load-substantially)
+    - [Risk: lease watches increase apiserver load substantially](#risk-lease-watches-increase-apiserver-load-substantially)
     - [Risk: We have to &quot;start over&quot; and build confidence in a new leader election algorithm](#risk-we-have-to-start-over-and-build-confidence-in-a-new-leader-election-algorithm)
     - [Risk: How is the election controller elected?](#risk-how-is-the-election-controller-elected)
     - [Risk: What if the election controller fails to elect a leader?](#risk-what-if-the-election-controller-fails-to-elect-a-leader)
