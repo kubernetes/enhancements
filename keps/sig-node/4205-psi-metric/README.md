@@ -421,7 +421,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Not in Phase 1. Phase 2 is TBD in K8s 1.30.
+Not in Phase 1. Phase 2 is TBD in K8s 1.31.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -598,7 +598,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-Yes, it depends on runc version 1.2.0.
+Yes, it depends on runc version 1.2.0. This KEP can be implemented only after runc 1.2.0 is released, which is estimated to be released in Q1 2024.
 
 ### Scalability
 
