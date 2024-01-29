@@ -1,100 +1,38 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4444: Routing Preference for Services
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+  - [Topology Keys](#topology-keys)
+  - [Topology Aware Routing and InternalTrafficPolicy](#topology-aware-routing-and-internaltrafficpolicy)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
+    - [Story 4](#story-4)
+    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Standard Heuristic Implementation (kube-proxy dataplane)](#standard-heuristic-implementation-kube-proxy-dataplane)
+    - [<code>Default</code> and <code>PreferEqualSpread</code>](#default-and-preferequalspread)
+    - [<code>PreferZone</code>](#preferzone)
+  - [Changes within kube-proxy](#changes-within-kube-proxy)
+  - [Status Reporting](#status-reporting)
+    - [Condition usage by other implementations](#condition-usage-by-other-implementations)
+  - [Choice of field name](#choice-of-field-name)
+  - [Intersection with internal/externalTrafficPolicy](#intersection-with-internalexternaltrafficpolicy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,6 +45,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Repurpose the existing topology annotation to recognize additional values](#repurpose-the-existing-topology-annotation-to-recognize-additional-values)
+  - [Reuse the fields internal/externalTrafficPolicy to offer these routing preferences](#reuse-the-fields-internalexternaltrafficpolicy-to-offer-these-routing-preferences)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -170,11 +110,18 @@ important to understand the precursors that shaped this KEP.
 * This early mechanism allowed users to specify ordered routing preferences (e.g.,
 prioritize local nodes, then zone, then anywhere). 
 
-* **Limitations:** However, it lacked flexibility for implementations to make smart
-  decisions on its own, like incorporating feedback-based routing optimizations
-  (e.g., avoiding overloaded endpoints). The name `topologyKeys` might be
-  perceived as overly restrictive, given the desire to incorporate non-topology
-  factors into routing decisions.
+* **Limitations:** 
+  * It lacked flexibility for implementations to make smart decisions on its
+    own, like incorporating feedback-based routing optimizations (e.g., avoiding
+    overloaded endpoints). 
+  * The name `topologyKeys` might be perceived as overly restrictive, given the
+    desire to incorporate non-topology factors into routing decisions.
+  * The arbitrary ordering, lengths, and keys made it difficult to integrate
+    with systems that have more standard settings like preferring same zone
+    routing. With `topologyKeys`, a user could theoretically request that an
+    entirely arbitrary topology key be given preference over zone or region,
+    which might not be possible or extremely difficult for an implementation to
+    achieve.
 
 ### Topology Aware Routing and InternalTrafficPolicy
 
@@ -189,10 +136,15 @@ successors of `topologyKeys` and allow implementations to be more flexible.
     possible and choose what it considered to be the best routing criteria. The
     field didn’t support any other value by design with the thought that the
     implementation should be able to make the best possible choice for the user.
-  * **Limitation:** While designed for intelligent routing, this mode offers less
-    user control and can be less predictable. Some users prioritize
-    predictability for performance optimization, even when accepting potential
-    endpoint overload in certain situations.
+  * **Limitation:** 
+      * While designed for intelligent routing, this mode offers less user
+        control and can be less predictable. Users filed issues reporting that
+        hints weren't being applied or didn't function as expected.
+      * The design attempted to strike a balance between safety and preferential
+        zone-based routing, but may have fallen short in achieving both
+        effectively. Some users prioritize predictability for performance
+        optimization, even when accepting potential endpoint overload in certain
+        situations.
 
 * InternalTrafficPolicy 
   * The spec.internalTrafficPolicy field with the "Local" setting restricts
@@ -206,7 +158,10 @@ Note that while the initial proposal of InternalTrafficPolicy proposed a
 PreferLocal policy, it was dropped later on. This meant that now
 TopologyAwareRouting in conjunction with InternalTrafficPolicy didn’t exactly
 allow users to express a much desired use case from topologyKeys which is
-"prefer node-local, failover to same zone, then route anywhere"
+"prefer node-local, failover to same zone, then route anywhere" While this
+specific behavior is a non-goal for the initial implementation of the
+`routingPreference` field, the design allows for the potential introduction of
+such a preference in future refinements.
 
 ## Goals
 
@@ -293,7 +248,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Solution:** Set `routingPreference=Default` (or leave the field unset)
 * **Effect:** The Kubernetes implementation will apply its best-effort routing
   strategy based on its design. This strategy might change over time as the
-  implementation evolves. It may load balance across zones or regions regions.
+  implementation evolves. It may load balance across zones or regions.
 
 #### Story 2
 * **Requirement:** I want my application to primarily receive traffic from
@@ -311,16 +266,17 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I prioritize application availability and want to minimize the
   risk of outages due to localized overload. I'm willing to accept potentially
   higher costs associated with cross-zone traffic distribution.
-* **Solution:** Set `routingPreference=PreferSpread`
+* **Solution:** Set `routingPreference=PreferEqualSpread`
 * **Effect:** The Kubernetes implementation will try to distribute traffic as
   equally as possible across endpoints, potentially spanning multiple zones or
   regions. This can improve resilience but might lead to increased network
   traffic costs.
 
 #### Story 4
-* **Requirement:** As a developer deploying applications across multiple
-  Kubernetes environments, I want a consistent way to express my routing
-  preferences. 
+* **Requirement:** As a developer of a widely deployed cluster-addon, I want to
+  be able to provide users an easy way to configure my Helm chart and/or
+  deployment configuration to enable same-zone routing behavior in a portable
+  way that works across many different environments.
 * **Solution:** Using one of the available standard values in the
   `routingPreference` field will allow the customer to use the same Helm Chart
   configurations with greater confidence regardless of the underlying Kubernetes
@@ -339,34 +295,37 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+None.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+* **Risk:** Having a routing preference like `PreferZone` comes at the risk of
+  endpoints in certain zones being overloaded if the originating traffic is
+  skewed towards a particular zone.
 
-How will security be reviewed, and by whom?
+  **Mitigation:**
+    * Emphasize in the documentation that the `PreferZone` preference is
+      designed for low-latency or monetory-cost reasons, with the understanding
+      that it can lead to overload within zones.
+    * Recommend approaches like having deployments per zone which can scale
+      independently of other zones.
 
-How will UX be reviewed, and by whom?
+* **Risk:** Users migrating from the `service.kubernetes.io/topology-mode`
+  annotation might encounter differences in exact routing behavior:
+  * The new field doesn't support a routing preference that is exactly similar
+    to using `service.kubernetes.io/topology-mode=Auto` from the old annotation.
+  * If both field and the annotation are set, the annotation will take precedence.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+  **Mitigation:** Properly document the suggested migration paths with
+  limitations.
 
 ## Design Details
 
 ### Standard Heuristic Implementation (kube-proxy dataplane)
 
-kube-proxy based dataplane (along with EndpointSlice controller, within
-kube-controller-manager as the control plane) will support the three standard
-routing preferences (`Default`, `PreferEqualSpread`, `PreferZone`).
+kube-proxy (along with EndpointSlice controller, within kube-controller-manager
+as the control plane) will support the three standard routing preferences
+(`Default`, `PreferEqualSpread`, `PreferZone`).
 
 #### `Default` and `PreferEqualSpread`
 * Initially, kube-proxy will treat the `Default` preference the same as
@@ -404,6 +363,23 @@ NOTE: The fact that EndpointSlice hints are not expected to be implemented by
   data plane will respect the Hints, it’s sufficient for the kube-proxy and
   kube-controller-manager based implementations to say that we do support the
   standard heuristics.
+
+### Changes within kube-proxy
+
+**Present behaviour:** kube-proxy only considers EndpointSlice hints for route
+programming if the `service.kubernetes.io/topology-aware-hints` annotation is
+set to "Auto"
+
+**New behaviour:** Irrespective of what the annotation
+`service.kubernetes.io/topology-aware-hints` or field `routingPreference` are
+set to (or even if they are not set at all), kube-proxy will always consider
+EndpointSlice hints.
+
+NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
+  have corresponding hints for kube-proxy to utilize them. This avoids scenarios
+  with partial hints. The reason for this requirement is the same one highlighted in [KEP-2433 Topology
+  Aware
+  Hints](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2433-topology-aware-hints/README.md#kube-proxy), i.e. _"This is to provide safer transitions between enabled and disabled states. Without this fallback, endpoints could easily get overloaded as hints were being added or removed from some EndpointSlices but had not yet propagated to all of them."_
 
 ### Status Reporting
 
@@ -448,6 +424,8 @@ types with a domain string (e.g., `my.domain.io/RoutingPreferenceAccepted`) to
 prevent conflicts when multiple control planes (like the default EndpointSlice
 controller) are present.
 
+<<[UNRESOLVED Name for the field is being discussed]>>
+
 ### Choice of field name
 The name `routingPreference` is meant to capture the highly
 implementation-specific nature of this field and how it affects the routing of
@@ -471,7 +449,9 @@ traffic
   so as not to confuse with the actual process of selecting the complete set of
   pods backing a service.
 
-## Intersection with internal/externalTrafficPolicy
+<<[/UNRESOLVED]>>
+
+### Intersection with internal/externalTrafficPolicy
 
 The intersection of the field with `internalTrafficPolicy` and
 `externalTrafficPolicy` fields remains the same as the annotation. The following
@@ -514,280 +494,152 @@ captures the precedence
 </tbody>
 </table>
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
-
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+No updates required.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+The main packages that will see major changes due to this enhancement are:
+- `k8s.io/kubernetes/vendor/k8s.io/endpointslice/topologycache`: `2024-01-26` -
+  `74.8`
+- `k8s.io/kubernetes/vendor/k8s.io/endpointslice`: `2024-01-26` - `80.7`
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+There will be some code refactoring into newer packages which may prevent exact
+comparisons, but the updated packages will aim to provide equivalent coverage.
 
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+The following packages will also see minor changes:
+- `k8s.io/kubernetes/pkg/controller/endpointslice`: `2024-01-26` - `61.4`
+- `k8s.io/kubernetes/pkg/proxy`: `2024-01-26` - `69.5`
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+* Verify that if both the annotation `service.kubernetes.io/topology-mode=Auto`
+  and field `routingPreference=PreferZone` are configured, precedence is given
+  to the annotation.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+* Verify that EndpointSlice hints are correctly populated when
+  `routingPreference=PreferZone`
+* Verify through probes that when `routingPreference=PreferZone`, requests
+  originating from a zone which has service pods get sent to a pod in the same
+  zone. For requests originating from zones with no service pods, requests
+  should not get blackholed and should rather be forwarded to any service pod
+  from the cluster.
 
 ### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
 #### Alpha
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
 
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+No special considerations are required for upgrade / downgrade:
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Upon upgrade of the EndpointSlice controller (within kube-controller-manager)
+and kube-proxy:
+* If a Service had both annotation `service.kubernetes.io/topology-mode` and
+  field `routingPreference`, then the annotation will take precedence and the
+  field will be ignored. 
+* If a Service only had the annotation `service.kubernetes.io/topology-mode`,
+  then field `routingPreference`'s value will be assumed to be `Default` and the
+  behaviour will be the same as above with the annotation taking precedence.
+
+Upon downgrade of EndpointSlice controller (within kube-controller-manager) and
+kube-proxy, the `routingPreference` will simply not be considered in any
+decisions.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+Version skews should naturally get handled as per the following behaviour.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+* **kube-apiserver:** [Kubernetes Version Skew
+  Policies](https://kubernetes.io/releases/version-skew-policy/#supported-version-skew)
+  require that kube-apiserver is atleast at the version of kube-proxy or
+  kube-controller-manager. The only valid version skew would mean that a newer
+  kube-apiserver serves the new `routingPreference` field but the older
+  kube-proxy and kube-controller-manager would silently ignore this field. (No
+  adverse affect, behaviour equivalent to feature being disabled)
+
+* **New kube-controller-manager (EndpointSlice controller) / Old kube-proxy:**
+
+  1. **Both `service.kubernetes.io/topology-mode` and `routingPreference` are
+     set:** For EndpointSlice controller, since the annotation takes precedence
+     it will have the same behaviour as the old version, which will naturally
+     work with the old kube-proxy.
+
+  2. **Only `routingPreference` is set:** EndpointSlice controller configure
+     EndpointSlice hints for the new routing preference, but kube-proxy still
+     sees that `service.kubernetes.io/topology-mode` is unset (i.e. disabled)
+     hence ignores the hints.
+
+  3. **Only `service.kubernetes.io/topology-mode` is set:** Same as scenario 1.
+
+* **Old kube-controller-manager (EndpointSlice controller) / New kube-proxy:**
+
+  1. **Both `service.kubernetes.io/topology-mode` and `routingPreference` are
+     set:** Old EndpointSlice controller programs hints as per
+     `service.kubernetes.io/topology-mode`. kube-proxy sees that the
+     `routingPreference` is set to takes the hints into account (it's not a
+     problem that the hints were programmed according to the annotation)
+
+  2. **Only `routingPreference` is set:** EndpointSlice controller does NOT
+     configure EndpointSlice hints for the new routing preference. kube-proxy
+     recognizes the new routing preference and checks for any hints. Since no
+     hints are set, it configures routes as it would without any hints.
+
+  3. **Only `service.kubernetes.io/topology-mode` is set:** Same as scenario 1,
+     because if `routingPreference` is not set, kube-proxy would think it's set
+     to the `Default` value.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ServiceRoutingPreference`
+  - Components depending on the feature gate: kube-controller-manager, kube-proxy, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. (since we are giving precedence to the existing
+`service.kubernetes.io/topology-mode` over the new `routingPreference` field)
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Disabling the feature would mean that the new field (if set) will be
+ignored. Additionally, introducing the new field through the standard process of
+[Adding Unstable Features to Stable Versions
+](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions)
+will ensure safe rollback/disablement for kube-apiserver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+This would be equivalent to enabling the feature for the first time. Refer
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes we will have unit tests covering the same.
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+_This section will be completed when targeting beta to a release._
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -818,11 +670,10 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-For implementations like kube-proxy which supported the topology annotation (which was a beta feature), its functionality will persist and will have precedence over the new field. The annotation will not support any new heuristics (and only support the existing `Auto`/`Disabled` keywords)
-
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+For implementations like kube-proxy which supported the topology annotation
+(which was a beta feature), its functionality will persist and will have
+precedence over the new field. The annotation will not support any new
+heuristics (and only support the existing `Auto`/`Disabled` keywords)
 
 ### Monitoring Requirements
 
@@ -832,6 +683,8 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+_This section will be completed when targeting beta to a release._
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -899,114 +752,42 @@ implementation difficulties, etc.).
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+- Users using the new field will see an see an increase in the Service object of
+  ~10 bytes
+- Also, in situations when the status for this new field is reported, size
+  equivalent to the addition of two Condition types may be observed.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No.
 
 ### Troubleshooting
 
@@ -1020,6 +801,9 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+
+_This section will be completed when targeting beta to a release._
+
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -1121,8 +905,4 @@ picking one of the two bad options.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+N/A

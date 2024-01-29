@@ -11,15 +11,13 @@ reviewers:
   - "@danwinship"
   - "@thockin"
 approvers:
-  - TBD
-  - "@oscar.doe"
+  - "@danwinship"
+  - "@thockin"
 
 see-also:
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/536-topology-aware-routing"
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/2433-topology-aware-hints"
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/2086-service-internal-traffic-policy"
-replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -32,8 +30,6 @@ latest-milestone: "v1.30"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.30"
-  beta: "v1.31"
-  stable: "v1.32" # TODO(gauravkghildiyal): TBD
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -42,9 +38,9 @@ feature-gates:
     components:
       - kube-controller-manager
       - kube-proxy
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
-# TODO(gauravkghildiyal)
-metrics:
-  - my_feature_metric
+# metrics:
+#   - my_feature_metric
