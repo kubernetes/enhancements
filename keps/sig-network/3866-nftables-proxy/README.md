@@ -1179,17 +1179,11 @@ don't necessarily know what that is ahead of time.) Admins can use
 
 #### Behavior of service IPs
 
-```
-<<[UNRESOLVED unused service IP ports ]>>
+Traffic to invalid ports on active cluster IPs will be rejected by the
+nftables proxy. If the [MultiServiceCIDRAllocator] feature gate is
+enabled, it will additionally drop traffic to unassigned cluster IPs.
 
-@thockin has suggested that service IPs should reject connections on
-ports they aren't using. (This would most easily be implemented by
-adding a `--service-cidr` flag to kube-proxy so we could just "reject
-everything else", but even without that we could at least reject
-connections on inactive ports of active service IPs.)
-
-<<[/UNRESOLVED]>>
-```
+[MultiServiceCIDRAllocator]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/1880-multiple-service-cidrs
 
 ```
 <<[UNRESOLVED service IP pings ]>>
