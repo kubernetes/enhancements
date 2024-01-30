@@ -306,11 +306,24 @@ This is the version where we don't have a native k8s network object aka a 'messa
 
 ```
 service KNI {
+    // Pre RunPodSandbox - for kata
+    rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse) {} //MVP
+    // Post RunPodSandbox, Pre CreateContainers
     rpc AttachNetwork(AttachNetworkRequest) returns (AttachNetworkResponse) {} //MVP
     rpc DetachNetwork(DetachNetworkRequest) returns (DetachNetworkResponse) {} //MVP
     rpc QueryPodNetwork(QueryPodNetworkRequest) returns (QueryPodNetworkResponse) {} //MVP
     rpc SetupNodeNetwork(SetupNodeNetworkRequest) returns (SetupNodeNetworkResponse) {}
     rpc QueryNodeNetworks(QueryNodeNetworksRequest) returns (QueryNodeNetworksResponse) {}
+}
+
+message CreateNetworkRequest {
+  // optional for kubelet to generate the network namespace path
+  string netns_path = 1;
+}
+
+message CreateNetworkResponse {
+  string netns_path = 1;
+  map<string,string> extradata = 2;
 }
 
 message AttachNetworkRequest {
