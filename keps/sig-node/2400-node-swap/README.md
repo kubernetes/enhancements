@@ -211,7 +211,8 @@ This section is a recommendation for how to set up your nodes with swap if using
 ##### Disable swap for system critical daemon
 
 As we were testing this feature, we found degration of services if you allow system critical daemons to swap.
-The recommendation is to set the cgroup for the system slice to avoid swap (ie `memory.swap.max 0`).
+This could mean that kubelet is performing slower than normal so if you experience this,
+we recommend setting the cgroup for the system slice to avoid swap (ie `memory.swap.max 0`).
 While doing this, we found that it is still possible for workloads to impact critical daemons.
 
 ##### Protect system critical daemons for iolatency
@@ -223,7 +224,7 @@ See [io-control](https://facebookmicrosites.github.io/cgroup2/docs/io-controller
 
 ##### Control Plane Swap
 
-We only recommend enabling swap for the worker nodes. The control plane contains mostly Guaranteed QoS Pods, so swap may be disabled mostly.
+We only recommend enabling swap for the worker nodes. The control plane contains mostly Guaranteed QoS Pods, so swap may be disabled for the most part.
 The main concern would be swapping in the critical services on the control plane which can cause a performance impact.
 
 ##### Use of a dedicated disk for swap
@@ -231,7 +232,8 @@ The main concern would be swapping in the critical services on the control plane
 We recommend using a separate disk for your swap partition. We recommend the separate disk be [encrypted](#security-risk).
 If swap is on a partition or the root filesystem, workloads can interfere with system processes needing to write to disk.
 If they occupy the same disk, it's possible processes can overwhelm swap and throw off the I/O of kubelet/container runtime/systemd, which would affect other workloads.
-Swap space is located on a disk so it is imperative to make sure your disk is fast enough.
+See [#protect-system-critical-daemons-for-iolatency] for more details on that.
+Swap space is located on a disk so it is imperative to make sure your disk is fast enough for your use cases.
 
 ##### Swap as the default
 
