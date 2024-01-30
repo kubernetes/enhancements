@@ -366,13 +366,22 @@ compatibility version support.
 #### Feature gating changes
 
 In order to preserve the behavior of in-development features across multiple releases,
-feature implementation history should also be preserved in the code base.
+feature implementation history should also be preserved in the code base instead of in place modifications.
 
 Only sigificant and observable changes in feature capabilities should be across
 releases. We do not want to impose a unreasonable burdon on feature authors.
 Bugs, performance optimizations should not be gated by version. 
 
-Naively, the feature implementations can be gated by version number. 
+Here are some examples of feature changes that should be or do not need not be preserved:
+**Feature**|**Changes That Should Be Preserved**|**Changes That Do Not Need To Be Preserved**
+-----|-----|-----
+APIPriorityAndFairness | [add v1beta3 for Priority And Fairness](https://github.com/kubernetes/kubernetes/pull/112306) | [More seat metrics for APF](https://github.com/kubernetes/kubernetes/pull/105873)
+ValidatingAdmissionPolicy | | [Drop AvailableResources from controller context](https://github.com/kubernetes/kubernetes/pull/117977), [Encapsulate KCM controllers with their metadata](https://github.com/kubernetes/kubernetes/pull/120371)
+APIServerTracing | | [Revert "Graduate API Server tracing to beta"](https://github.com/kubernetes/kubernetes/pull/113803)
+MemoryManager | | [Don't reuse memory of a restartable init container](https://github.com/kubernetes/kubernetes/pull/120715)
+NodeSwap | if done after promoting to beta: [Add full cgroup v2 swap support and remove cgroup v1 support](https://github.com/kubernetes/kubernetes/pull/118764) | [only configure swap if swap is enabled](https://github.com/kubernetes/kubernetes/pull/120784)
+
+To preserve the behavior, naively the feature implementations can be gated by version number. 
 For example, if `FeatureA` is partially implemented in 1.28 and additional functionality
 is added in 1.29, the feature developer is expected to gate the functionality by version.
 E.g.:
