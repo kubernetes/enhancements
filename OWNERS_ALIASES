@@ -79,6 +79,10 @@ aliases:
     - dchen1107
     - derekwaynecarr
     - mrunalp
+  sig-node-tech-leads:
+    - dchen1107
+    - derekwaynecarr
+    - mrunalp
   sig-release-leads:
     - Verolop
     - cpanato
