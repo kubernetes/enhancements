@@ -26,6 +26,7 @@
     - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
   - [Pod Security Standards (PSS) integration](#pod-security-standards-pss-integration)
   - [Unresolved](#unresolved)
+    - [Pod Security Standards (PSS)](#pod-security-standards-pss)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -433,15 +434,6 @@ inside the container:
 - `spec.containers[*].securityContext.runAsUser`
 - `spec.initContainers[*].securityContext.runAsUser`
 - `spec.ephemeralContainers[*].securityContext.runAsUser`
-- `spec.containers[*].securityContext.allowPrivilegeEscalation`
-- `spec.initContainers[*].securityContext.allowPrivilegeEscalation`
-- `spec.ephemeralContainers[*].securityContext.allowPrivilegeEscalation`
-- `spec.containers[*].securityContext.capabilities.drop`
-- `spec.initContainers[*].securityContext.capabilities.drop`
-- `spec.ephemeralContainers[*].securityContext.capabilities.drop`
-- `spec.containers[*].securityContext.capabilities.add`
-- `spec.initContainers[*].securityContext.capabilities.add`
-- `spec.ephemeralContainers[*].securityContext.capabilities.add`
 
 A serial test will be added to validate the functionality with the enabled
 feature gate.
@@ -467,6 +459,23 @@ something else to this list:
   allows). Same applies for VM runtimes.
   UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
 
+#### Pod Security Standards (PSS)
+
+The following security context fields have not been relaxed with respect to PSS
+because of [raised security concerns](https://github.com/kubernetes/kubernetes/pull/118760#discussion_r1373287637):
+
+- `spec.containers[*].securityContext.allowPrivilegeEscalation`
+- `spec.initContainers[*].securityContext.allowPrivilegeEscalation`
+- `spec.ephemeralContainers[*].securityContext.allowPrivilegeEscalation`
+- `spec.containers[*].securityContext.capabilities.drop`
+- `spec.initContainers[*].securityContext.capabilities.drop`
+- `spec.ephemeralContainers[*].securityContext.capabilities.drop`
+- `spec.containers[*].securityContext.capabilities.add`
+- `spec.initContainers[*].securityContext.capabilities.add`
+- `spec.ephemeralContainers[*].securityContext.capabilities.add`
+
+Further investigations will be done in future Kubernetes releases to revisit
+them.
 
 ### Test Plan
 
