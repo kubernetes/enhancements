@@ -198,16 +198,7 @@ know that this has succeeded?
    * we should provide a example network runtime and easy starter project
 4. Provide an API that is flexible for experimentation and opinionated use cases
    * example extradata map[string] string
-5. Provide an API to report on a networks status
-6. Provide an API to provide network metrics such as available IP addresses
-7. Provide an API that provides networks available on the node
-8. Provide a K8s resource to define a Network
-    * this should provide the usable cidr block(s) per node
-    * this should provide the needed information to the controller to reconcile to establish pod to pod networking
-8. Provide an API that will create a network on a node
-9. Provide an API that will delete a network off a node
-8. Provide an API that will attach a one or more networks to a pod
-9. Provide an API that will detach a one or more network from a pod 
+5. Provide APIs for the creation, configuration and management of networks for `Pods`.
 10. Provide an API that will update a network attachment of a pod
 11. Determine the reference implementation
 12. Establish feature parity with current CNI [ADD, DEL]
