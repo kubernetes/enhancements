@@ -15,9 +15,10 @@ approvers:
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
 stage: alpha
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 milestone:
   alpha: "v1.29"
+  beta: "v1.30"
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
@@ -25,3 +26,7 @@ feature-gates:
     components:
       - kube-apiserver
 disable-supported: true
+metrics:
+- apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds
+- apiserver_authorization_config_controller_automatic_reload_success_total{apiserver_id_hash}
+- apiserver_authorization_config_controller_automatic_reload_failures_total{apiserver_id_hash}
