@@ -199,13 +199,14 @@ know that this has succeeded?
 4. Provide an API that is flexible for experimentation and opinionated use cases
    * example extradata map[string] string
 5. Provide APIs for the creation, configuration and management of networks for `Pods`.
-10. Provide an API that will update a network attachment of a pod
-11. Determine the reference implementation
-12. Establish feature parity with current CNI [ADD, DEL]
-13. We should decouple the Pod and Node Network setup (The reporting of this could be different statuses?)
-14. Provide the ability to run garbage collection to ensure no resources are left behind 
-15. We will provide the ability to identify the IP address family without parsing the value (such as a field)
-16. Make a design that is backwards compatible with the CNI 
+6. Provide an API that will update a network attachment of a pod
+7. Determine the reference implementation
+8. Establish feature parity with current CNI [ADD, DEL]
+9. We should decouple the Pod and Node Network setup (The reporting of this could be different statuses?)
+10. Provide the ability to run garbage collection to ensure no resources are left behind 
+11. We will provide the ability to identify the IP address family without parsing the value (such as a field)
+12. Make a design that is backwards compatible with the CNI 
+13. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
 
 ### Non-Goals
 
@@ -216,7 +217,6 @@ and make progress.
 
 1. Any changes to the kube-scheduler 
 2. Any specific implementation other than the reference implementation. However we should ensure the KNI-API is flexible enough to support
-3. Changes to the Pod specification 
 
 ## Proposal
 
@@ -266,6 +266,8 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+Changes to the pod specification will require hard evidence. 
+
 The specifics of "Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
 
 We should consider the trade offs to using a Native K8s Network object or CRD's.
@@ -300,7 +302,7 @@ proposal will be implemented, this is the place to discuss them.
 
 We will review with community and take feedback. 
 
-This is the version where we don't have a native k8s network object. 
+This is the version where we don't have a native k8s network object aka a 'message PodNetworkRequest/Response' for the proto
 
 ```
 service KNI {
