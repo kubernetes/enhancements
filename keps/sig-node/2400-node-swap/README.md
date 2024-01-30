@@ -1107,12 +1107,14 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-It is possible for this feature to affect performance of some worker node-level
-SLIs/SLOs. We will need to monitor for differences, particularly during beta
-testing, when evaluating this feature for beta and graduation.
+Yes, enabling swap can affect performance of other critical daemons on the system.
+Any scenario where swap memory gets utilized is a result of system running out of physical RAM.
+Hence, to maintain the SLIs/SLOs of critical daemons on the node we highly recommend to disable the swap for the system.slice
+along with reserving adequate enough system reserved memory.
 
-We discovered degration of system critical daemons like Kubelet and systemd if swap is enabled.
-We recommend disabling swap and setting `io.latency` for the `system.slice`.
+The SLI that could potentially be impacted is [pod startup latency](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md).
+If the container runtime or kubelet are performing slower than expected, pod startup latency would be impacted.
+In addition to this SLI, general areas around pod lifecycle (image pulls, sandbox creation, storage) could become slow.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
