@@ -54,6 +54,7 @@ and accommodate advanced functionalities and potential areas for expansion.
 11. We will provide the ability to identify the IP address family without parsing the value (such as a field)
 12. Make a design that is backwards compatible with the CNI 
 13. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
+14. Provide support for Kata and other virtualized runtimes
 
 ### Non-Goals
 
