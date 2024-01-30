@@ -1353,12 +1353,10 @@ in back-to-back releases.
 #### Beta
 
 - Implement proper termination ordering.
-- Allow sidecar containers to restart during the shutdown of the Pod.
 - Add tests with feature activation and deactivation (see [Feature Enablement and Rollback](#feature-enablement-and-rollback)).
 
 #### GA
 
-- Enable `livenessProbe` during the shutdown of the Pod for sidecar containers that restart.
 - Allow to apply security policies on all containers in `initContainers`
     collection. Example may be disabling `kubectl exec` on containers in
     `initContainers` collection.
