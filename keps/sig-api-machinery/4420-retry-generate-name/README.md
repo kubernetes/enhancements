@@ -361,7 +361,8 @@ served by an apiserver with this feature enabled.
 
 ###### Does enabling the feature change any default behavior?
 
-No. It only reduces the probability of a error that can occur randomly.
+Yes, the default is to retry requests which will be visible to clients
+in latency, metrics and in validation admission webhook calls.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
