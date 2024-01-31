@@ -19,8 +19,8 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Standard Heuristic Implementation (kube-proxy dataplane)](#standard-heuristic-implementation-kube-proxy-dataplane)
-    - [<code>Default</code> and <code>PreferEqualSpread</code>](#default-and-preferequalspread)
-    - [<code>PreferZone</code>](#preferzone)
+    - [<code>Default</code> and <code>Spread</code>](#default-and-spread)
+    - [<code>Zone</code>](#zone)
   - [Changes within kube-proxy](#changes-within-kube-proxy)
   - [Status Reporting](#status-reporting)
     - [Condition usage by other implementations](#condition-usage-by-other-implementations)
@@ -47,6 +47,7 @@
 - [Alternatives](#alternatives)
   - [Repurpose the existing topology annotation to recognize additional values](#repurpose-the-existing-topology-annotation-to-recognize-additional-values)
   - [Reuse the fields internal/externalTrafficPolicy to offer these routing preferences](#reuse-the-fields-internalexternaltrafficpolicy-to-offer-these-routing-preferences)
+  - [Granular Routing Controls](#granular-routing-controls)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -125,11 +126,11 @@ prioritize local nodes, then zone, then anywhere).
 
 ### Topology Aware Routing and InternalTrafficPolicy
 
-TopologyAwareRouting together with InternalTrafficPolicy were meant to be the
-successors of `topologyKeys` and allow implementations to be more flexible.
+Topology aware routing together with `internalTrafficPolicy` were meant to be
+the successors of `topologyKeys` and allow implementations to be more flexible.
 
 * TopologyAwareRouting: 
-  * Exposes the annotation service.kubernetes.io/topology-mode. When this
+  * Responds the annotation service.kubernetes.io/topology-mode. When this
     annotation is set to Auto, an implementation specific heuristic is used to
     route the traffic. 
   * **Goal:** The aim with Auto was to allow implementations to be as smart as
@@ -155,7 +156,7 @@ successors of `topologyKeys` and allow implementations to be more flexible.
   * **Limitation:** Lacks failover; traffic is dropped if no local endpoint exists.
 
 Note that while the initial proposal of InternalTrafficPolicy proposed a
-PreferLocal policy, it was dropped later on. This meant that now
+Local policy, it was dropped later on. This meant that now
 TopologyAwareRouting in conjunction with InternalTrafficPolicy didn’t exactly
 allow users to express a much desired use case from topologyKeys which is
 "prefer node-local, failover to same zone, then route anywhere" While this
@@ -188,9 +189,9 @@ such a preference in future refinements.
   decisions.
 
 * **Mandatory and Uniform Implementation Support:** Kubernetes implementations
-  are not required to support all standard heuristics (e.g., PreferZone,
-  ProportionalZoneCPU). Even when standard heuristics are supported, their
-  precise behavior and interpretation might vary across implementations.
+  are not required to support all standard heuristics (e.g., `Zone`, `Spread`).
+  Even when standard heuristics are supported, their precise behavior and
+  interpretation might vary across implementations.
 
 * **Replacement of Traffic Policies:** The new field is complementary to
   InternalTrafficPolicy and ExternalTrafficPolicy. It does not aim to substitute
@@ -198,7 +199,7 @@ such a preference in future refinements.
 
 * **Immediate Support for All Possible Heuristics:** The initial implementation
   focuses on a core set of heuristics. Addition of new heuristics (like
-  `PreferLocal` for Node local preference) could be explored in future
+  `Local` for Node local preference) could be explored in future
   refinements.
 
 ## Proposal
@@ -212,9 +213,9 @@ The field will support the following initial values:
 * `Default`: Indicates no specific routing preference. The user delegates the
   routing decision to the implementation, allowing it to apply its best-effort
   strategy.
-* `PreferEqualSpread`: Encourages an equal distribution of traffic across
+* `Spread`: Encourages an equal distribution of traffic across
   endpoints, potentially spanning multiple zones (or regions).
-* `PreferZone`: Encourages routing traffic to endpoints within the same zone as
+* `Zone`: Encourages routing traffic to endpoints within the same zone as
   the client. If no endpoints are available within the zone, traffic should be
   routed to other zones.
 
@@ -229,14 +230,14 @@ reserved for potential future standardization.
 
 NOTE: Implementations reserve the right to refine the behavior associated with
   any heuristic, including standard heuristics. This means the behavior enabled
-  by values such as `Default` or `PreferZone` might evolve over time. Such
-  refinements could improve the implementation's ability to honor the original
-  intent of the heuristic, even if the specific mechanisms change. For example,
-  in the case of PreferZone, an implementation might initially route traffic
-  within a zone with equal probability. A future improvement could introduce
-  load-aware routing within the zone to further optimize performance while still
-  adhering to the core principle of zonal preference. The decision of what
-  constitutes an "improvement" remains at the discretion of the implementation.
+  by values such as `Default` or `Zone` might evolve over time, and some
+  evolutions might interpret the heuristic goals slightly differently. For
+  example, in the case of `Zone`, an implementation might initially route
+  traffic within the zone without considering endpoint overload, while a future
+  refinement could introduce feedback mechanisms to detect overload and route
+  traffic outside the zone when necessary, optimizing overall performance. The
+  decision of what constitutes an "improvement" remains at the discretion of the
+  implementation.
 
 ### User Stories
 
@@ -254,7 +255,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I want my application to primarily receive traffic from
   endpoints within the same zone for performance or cost reasons. However,
   I want to avoid connection failures if no local endpoints are available.
-* **Solution:** Set `routingPreference=PreferZone`
+* **Solution:** Set `routingPreference=Zone`
 * **Effect:** The Kubernetes implementation will aim to prioritize routing
   traffic to endpoints in the same zone as the client. If no endpoints are
   available within the zone, traffic will be routed to other zones. It's
@@ -266,7 +267,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I prioritize application availability and want to minimize the
   risk of outages due to localized overload. I'm willing to accept potentially
   higher costs associated with cross-zone traffic distribution.
-* **Solution:** Set `routingPreference=PreferEqualSpread`
+* **Solution:** Set `routingPreference=Spread`
 * **Effect:** The Kubernetes implementation will try to distribute traffic as
   equally as possible across endpoints, potentially spanning multiple zones or
   regions. This can improve resilience but might lead to increased network
@@ -295,16 +296,17 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 
 ### Notes/Constraints/Caveats (Optional)
 
-None.
+This proposal is our third attempt at an API revolving around such a
+configuration. There's a non-zero chance that we may need to revisit this again.
 
 ### Risks and Mitigations
 
-* **Risk:** Having a routing preference like `PreferZone` comes at the risk of
+* **Risk:** Having a routing preference like `Zone` comes at the risk of
   endpoints in certain zones being overloaded if the originating traffic is
   skewed towards a particular zone.
 
   **Mitigation:**
-    * Emphasize in the documentation that the `PreferZone` preference is
+    * Emphasize in the documentation that the `Zone` preference is
       designed for low-latency or monetory-cost reasons, with the understanding
       that it can lead to overload within zones.
     * Recommend approaches like having deployments per zone which can scale
@@ -314,7 +316,9 @@ None.
   annotation might encounter differences in exact routing behavior:
   * The new field doesn't support a routing preference that is exactly similar
     to using `service.kubernetes.io/topology-mode=Auto` from the old annotation.
-  * If both field and the annotation are set, the annotation will take precedence.
+  * If both field and the annotation are set, the annotation will take
+    precedence. (However, this behavior is temporary as the annotation will be
+    deprecated and removed in future releases)
 
   **Mitigation:** Properly document the suggested migration paths with
   limitations.
@@ -325,24 +329,24 @@ None.
 
 kube-proxy (along with EndpointSlice controller, within kube-controller-manager
 as the control plane) will support the three standard routing preferences
-(`Default`, `PreferEqualSpread`, `PreferZone`).
+(`Default`, `Spread`, `Zone`).
 
-#### `Default` and `PreferEqualSpread`
+#### `Default` and `Spread`
 * Initially, kube-proxy will treat the `Default` preference the same as
-  `PreferEqualSpread`
+  `Spread`
 * This leverages existing implementation, requiring no major changes.
 
-#### `PreferZone`
+#### `Zone`
 * This preference will be implemented by the use of Hints within EndpointSlices.
 * We already use Hints to implement `service.kubernetes.io/topology-mode=Auto`
   Similarly, we’ll use the same Hints within the EndpointSlice to implement the
-  PreferZone heuristic – the hints will match the zone of the endpoint itself.
+  `Zone` heuristic – the hints will match the zone of the endpoint itself.
 * While it may seem redundant to populate the hints here since kube-proxy can
   already derive the zone hint from the endpoints zone (as they would be the
   same), we will still use this for implementation simply because of the reason
   that it’s easier to implement and provides a better design. Consider an
   alternative implementation where kube-proxy reads
-  `routingPreference=PreferZone` field and then constructs the route rules
+  `routingPreference=Zone` field and then constructs the route rules
   accordingly. This means some extra logic needs to be baked into the kube-proxy
   which could have just as easily been implemented by an already existing
   extensibility mechanism (i.e. EndpointSlice hints)
@@ -373,7 +377,7 @@ set to "Auto"
 **New behaviour:** Irrespective of what the annotation
 `service.kubernetes.io/topology-aware-hints` or field `routingPreference` are
 set to (or even if they are not set at all), kube-proxy will always consider
-EndpointSlice hints.
+EndpointSlice hints (assuming this feature-gate is enabled).
 
 NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
   have corresponding hints for kube-proxy to utilize them. This avoids scenarios
@@ -521,14 +525,14 @@ The following packages will also see minor changes:
 ##### Integration tests
 
 * Verify that if both the annotation `service.kubernetes.io/topology-mode=Auto`
-  and field `routingPreference=PreferZone` are configured, precedence is given
+  and field `routingPreference=Zone` are configured, precedence is given
   to the annotation.
 
 ##### e2e tests
 
 * Verify that EndpointSlice hints are correctly populated when
-  `routingPreference=PreferZone`
-* Verify through probes that when `routingPreference=PreferZone`, requests
+  `routingPreference=Zone`
+* Verify through probes that when `routingPreference=Zone`, requests
   originating from a zone which has service pods get sent to a pod in the same
   zone. For requests originating from zones with no service pods, requests
   should not get blackholed and should rather be forwarded to any service pod
@@ -868,8 +872,8 @@ along the following lines:
 ### Reuse the fields internal/externalTrafficPolicy to offer these routing preferences
 
 This has been a major topic of discussion in the past, with questions around
-which field would be appropriate to support a heuristic like PreferZone. If we
-were to in fact use this approach we would be faced with the dilemma of choosing
+which field would be appropriate to support a heuristic like `Zone`. If we were
+to in fact use this approach we would be faced with the dilemma of choosing
 between two less-than-ideal options:
 
 * Dilute purpose and sacrifice semantic expectation 
@@ -884,14 +888,14 @@ between two less-than-ideal options:
     node since the logs would then report an incorrect log source.”. Values like
     "Local" mandate that traffic must remain within the Node boundary. 
 
-  * **Problem:** Introducing routing preferences like "PreferZone" would dilute this
+  * **Problem:** Introducing routing preferences like `Zone` would dilute this
     clear semantic meaning and could create potential misinterpretations. Using
     a separate field dedicated to routing preferences avoids this confusion and
     maintains consistency.
 
 * Become inflexible or rigid
 
-  * Alternatively, if we introduce "PreferZone" without diluting the meaning of
+  * Alternatively, if we introduce `Zone` without diluting the meaning of
     the existing fields, we'd need to create extremely specific and inflexible
     rules for how it works across all implementations.
 
@@ -902,6 +906,39 @@ between two less-than-ideal options:
 Given the above, introducing a new dedicated field seems to be better than
 picking one of the two bad options.
 
+### Granular Routing Controls
+
+One approach to routing control would be introducing numerous configuration
+fields, either directly in the Service API or within a separate, dedicated API.
+This offers users maximum precision in defining routing behaviors based on
+factors like location, weighted preferences, and other criteria. This approach
+can be seen as a revisited, and potentially expanded, version of the
+`topologyKeys` concept (and hence would suffer from some of the downsides of
+`topologyKeys`, as stated previously.)
+
+In some sense, the approach is indeed very tempting. The reason why an option
+like `routingPreference` might be a better option is:
+
+* Introducing numerous configuration options within the Service API (or a
+  separate API type) could be sacrificing some of the core simplicity of the
+  Service API. Future, more complex needs could (and should) be explored within
+  the Gateway API.
+
+* The `routingPreference` field elegantly balances control and abstraction.
+  Users can influence behavior with high-level heuristics (`Zone`, `Spread`)
+  while implementations handle the underlying complexity. Heuristics can flag
+  potential issues and guide users towards safe configurations. Using
+  independent fields increases the risk of unintended consequences, as
+  interactions between seemingly unrelated settings can create unexpected and
+  potentially damaging routing behavior. Additionally, even simple routing
+  adjustments might require tweaking multiple fields, adding complexity for the
+  user.
+
+* Rigid API contracts with granular fields can hinder an implementation's
+  ability to introduce innovative routing strategies that don't fit the
+  predefined mold. `routingPreference` encourages flexibility by treating
+  preferences as hints, allowing for sophisticated, implementation-specific
+  algorithms that can evolve over time.
 
 ## Infrastructure Needed (Optional)
 
