@@ -298,7 +298,8 @@ See Proposal section.
 Kubelet only checks size limits but otherwise passes values through
 [source](https://github.com/kubernetes/kubernetes/blob/f025a96d2f60984765731e01ad0de2c89e959b42/pkg/kubelet/network/dns/dns.go#L114).
 
-Since the resolv.conf file is interpreted by the DNS resolver in the container image
+Since the resolv.conf file is interpreted by the DNS resolver in the container image and not by the container runtime, the change
+does not depend on the container runtime or its version.
 
 ## Production Readiness Review Questionnaire
 
