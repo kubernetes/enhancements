@@ -370,10 +370,19 @@ In order to preserve the behavior of in-development features across multiple rel
 feature implementation history should also be preserved in the code base instead of in place modifications.
 
 Only sigificant and observable changes in feature capabilities should be across
-releases. We do not want to impose a unreasonable burdon on feature authors.
-Bugs, performance optimizations should not be gated by version. 
+releases. We do not want to impose a unreasonable burdon on feature authors. 
+The main criteria to make the decision is: 
+**Does this change break the contract with existing users of the feature?** i.e. would this change break the workloads of existing feature users if the user does not change the compatibility version?
 
-Here are some examples of feature changes that should be or do not need not be preserved:
+Here are some common change scenarios and whether the change needs to be preserved or not:
+* API change [Yes]
+* Change of supported systems [Yes]
+* Bug fix [No]
+* Performance optimizations [No]
+* Unstable metrics change [No]
+* Code refactoring [No]
+
+Listed below are some concrete examples of feature changes:
 **Feature**|**Changes That Should Be Preserved**|**Changes That Do Not Need To Be Preserved**
 -----|-----|-----
 APIPriorityAndFairness | [add v1beta3 for Priority And Fairness](https://github.com/kubernetes/kubernetes/pull/112306) | [More seat metrics for APF](https://github.com/kubernetes/kubernetes/pull/105873)
