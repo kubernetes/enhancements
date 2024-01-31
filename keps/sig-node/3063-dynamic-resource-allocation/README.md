@@ -111,6 +111,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Post-filter](#post-filter)
     - [Pre-score](#pre-score)
     - [Reserve](#reserve)
+    - [PreBind](#prebind)
     - [Unreserve](#unreserve)
   - [Cluster Autoscaler](#cluster-autoscaler)
   - [kubelet](#kubelet)
@@ -150,7 +151,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Improving scheduling performance](#improving-scheduling-performance)
     - [Optimize for network-attached resources](#optimize-for-network-attached-resources)
     - [Moving blocking API calls into goroutines](#moving-blocking-api-calls-into-goroutines)
-    - [RPC calls instead of <code>PodSchedulingContext</code>](#rpc-calls-instead-of-)
+    - [RPC calls instead of <code>PodSchedulingContext</code>](#rpc-calls-instead-of-podschedulingcontext)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -1818,13 +1819,11 @@ notices this, the current scheduling attempt for the pod must stop and the pod
 needs to be put back into the work queue. It then gets retried whenever a
 ResourceClaim gets added or modified.
 
-The following extension points are implemented in the new claim plugin. Some of
-them invoke API calls to create or update objects. This is done to simplify
-error handling: a failure during such a call puts the pod into the backoff
-queue where it will be retried after a timeout. The downside is that the
-latency caused by those blocking calls not only affects pods using claims, but
-also all other pending pods because the scheduler only schedules one pod at a
-time.
+The following extension points are implemented in the new claim plugin. Except
+for some unlikely edge cases (see below) there are no API calls during the main
+scheduling cycle. Instead, the plugin collects information and updates the
+cluster in the separate goroutine which invokes PreBind.
+
 
 #### EventsToRegister
 
@@ -1906,6 +1905,12 @@ At the moment, the claim plugin has no information that might enable it to
 prioritize which resource to deallocate first. Future extensions of this KEP
 might attempt to improve this.
 
+This is currently using blocking API calls. They are unlikely because this
+situation can only arise when there are multiple claims per pod and allocation
+for one of them fails despite all drivers agreeing that a node should be
+suitable, or when reusing a claim for multiple pods (not a common use case) and
+the original node became unusable for the next pod.
+
 #### Pre-score
 
 This is passed a list of nodes that have passed filtering by the claim
@@ -1936,9 +1941,21 @@ of its ResourceClaims. The driver can and should already have added
 the Pod when specifically allocating the claim for it, so it may
 be possible to skip this update.
 
+All the PodSchedulingContext and ResourceClaim updates are recorded in the
+plugin state. They will be written to the cluster during PreBind.
+
 If some resources are not allocated yet or reserving an allocated resource
 fails, the scheduling attempt needs to be aborted and retried at a later time
-or when the statuses change.
+or when the statuses change. The Reserve call itself never fails. If resources
+are not currently available, that information is recorded in the plugin state
+and will cause the PreBind call to fail instead.
+
+#### PreBind
+
+This is called in a separate goroutine. The plugin now checks all the
+information gathered earlier and updates the cluster accordingly. If some
+claims are not allocated or not reserved, PreBind fails and the pod must be
+retried.
 
 #### Unreserve
 
@@ -1957,6 +1974,13 @@ attempts have a chance to succeed. It's non-deterministic which pod will win,
 but eventually one of them will. Not giving up the reservations would lead to a
 permanent deadlock that somehow would have to be detected and resolved to make
 progress.
+
+Unreserve is called in two scenarios:
+- In the main goroutine when scheduling a pod has failed: in that case the plugin's
+  Reserve call hasn't actually changed the claim status yet, so there is nothing
+  that needs to be rolled back.
+- After binding has failed: this runs in a goroutine, so reverting the
+  `claim.status.reservedFor` with a blocking call is acceptable.
 
 ### Cluster Autoscaler
 
@@ -2439,6 +2463,8 @@ For beta:
 
 #### Alpha -> Beta Graduation
 
+- In normal scenarios, scheduling pods with claims must not block scheduling of
+  other pods by doing blocking API calls
 - Implement integration with Cluster Autoscaler through numeric parameters
 - Gather feedback from developers and surveys
 - Positive acknowledgment from 3 would-be implementors of a resource driver,
