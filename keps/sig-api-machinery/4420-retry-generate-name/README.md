@@ -335,8 +335,13 @@ trigger name collisions.
 
 #### GA
 
-- Add `generate_name_retries: {count}` label to `apiserver_request_duration_seconds`
-  metric.
+- Add `retry_for_generate_name: true` label to `apiserver_request_duration_seconds`
+  metric for requests that were retried.
+
+This metric will be primarily used to determine if there is a problem with the
+feature. In clusters optimized to store unusally high volumes of resources, this
+might occur if a single `generateName` prefix is used for a large number of
+resources (>1million).
 
 ### Upgrade / Downgrade Strategy
 
@@ -392,9 +397,14 @@ N/A
 increases significantly when this feature is enabled, it may indicate
 an issue with this feature.
 
-We also plan to add a `generate_name_retries: {count}` label to this metric
+We also plan to add a `retry_for_generate_name: true` label to this metric
 to make it easy to inspect the latency of create requests where retries
 occurred.
+
+This metric will be primarily used to determine if there is a problem with the
+feature. In clusters optimized to store unusally high volumes of resources, this
+might occur if a single `generateName` prefix is used for a large number of
+resources (>1million).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -415,7 +425,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Presence of the `generate_name_retries: {count}` label on the `apiserver_request_duration_seconds` metric
+Presence of the `retry_for_generate_name: true` label on the `apiserver_request_duration_seconds` metric
 with a count greater than 1 would indicate this feature has been used.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -437,6 +447,8 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric name: `apiserver_request_duration_seconds` for creates
+    - should be unchanged when `retry_for_generate_name` label is unset
+    - A change in latency when `retry_for_generate_name: true` can be used to monitor this features performance impact
 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
