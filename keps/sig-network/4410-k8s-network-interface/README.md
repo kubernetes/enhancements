@@ -40,21 +40,18 @@ and accommodate advanced functionalities and potential areas for expansion.
 ### Goals
 
 1. Design a cool looking t-shirt
-2. Design and implement the KNI-API
+2. Provide Kubernetes APIs for the creation, configuration and management of networks (e.g. `Pod` networks)
 3. Provide documentation, examples, troubleshooting and FAQ's for KNI.
-   * we should provide a example network runtime and easy starter project
-4. Provide an API that is flexible for experimentation and opinionated use cases
-   * example extradata map[string] string
-5. Provide APIs for the creation, configuration and management of networks for `Pods`.
-6. Provide an API that will update a network attachment of a pod
-7. Determine the reference implementation
-8. Establish feature parity with current CNI [ADD, DEL]
-9. We should decouple the Pod and Node Network setup (The reporting of this could be different statuses?)
-10. Provide the ability to run garbage collection to ensure no resources are left behind 
-11. We will provide the ability to identify the IP address family without parsing the value (such as a field)
-12. Make a design that is backwards compatible with the CNI 
-13. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
-14. Provide support for Kata and other virtualized runtimes
+4. Establish feature parity with current CNI [ADD, DEL]
+5. Handle support levels like Gateway API (e.g. "core" and "extended")
+6. Handle implementation-specific use cases through extension points
+7. Decouple the Pod and Node Network setup
+8. Simplify/enable triggering garbage collection to ensure no resources are left behind
+9. Provide the ability to identify the IP address family without parsing the value (such as a field)
+10. Provide as much backwards-compatibility with CNI as is feasible
+11. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
+12. Provide support for Kata and other virtualized runtimes
+13. Provide a reference implementation
 
 ### Non-Goals
 
