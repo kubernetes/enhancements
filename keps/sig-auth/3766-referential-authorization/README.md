@@ -23,7 +23,7 @@
     - [PersistentVolumeClaim using cross namespace data source](#persistentvolumeclaim-using-cross-namespace-data-source)
   - [API Spec](#api-spec)
     - [ClusterReferenceConsumer](#clusterreferenceconsumer)
-    - [ClusterReferencePattern](#clusterreferencepattern)
+    - [ClusterReferenceGrant](#clusterreferencegrant)
     - [ReferenceGrant](#referencegrant)
   - [Outstanding questions and clarifications](#outstanding-questions-and-clarifications)
   - [Test Plan](#test-plan)
@@ -36,10 +36,16 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
-- [Open Questions](#open-questions)
-  - [Do We Need Verbs?](#do-we-need-verbs)
-  - [Do We Need Any or Wildcard Selectors?](#do-we-need-any-or-wildcard-selectors)
+- [Intentional Omissions](#intentional-omissions)
+  - [Wildcard Selectors?](#wildcard-selectors)
+    - [Rationale](#rationale)
+    - [Context](#context)
   - [Do We Need Label Selectors?](#do-we-need-label-selectors)
+    - [Rationale](#rationale-1)
+    - [Context](#context-1)
+  - [Do We Need Status?](#do-we-need-status)
+    - [Rationale](#rationale-2)
+    - [Context](#context-2)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -50,6 +56,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Implement a revised ReferenceGrant as a CustomResourceDefinition](#implement-a-revised-referencegrant-as-a-customresourcedefinition)
+  - [Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant](#every-api-that-wants-to-support-cross-namespace-references-maintains-its-own-equivalent-to-referencegrant)
+  - [Use CEL to define ClusterReferencePattern, rather than JSONPath](#use-cel-to-define-clusterreferencepattern-rather-than-jsonpath)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -96,17 +105,22 @@ choose between introducing a dependency on Gateway API's ReferenceGrant or
 creating a new API that would be partially redundant (leading to confusion for
 users).
 
-Recent interest between SIGs has made it clear that ReferenceGrant is wanted for
-use cases other than Gateway API. We would like to move ReferenceGrant to a
-neutral home (ideally, under SIG Auth) in order to make it the canonical API for
-managing references across namespaces.
+Recent interest between SIGs and projects (SIG Network, SIG Storage, and Flux)
+has made it clear that ReferenceGrant is wanted for use cases other than Gateway
+API. We would like to move ReferenceGrant to a neutral home (ideally, under SIG
+Auth) in order to make it the canonical API for managing references across
+namespaces.
 
-At the same time, Ingress and Gateway controllers are often deployed with read
-access to all Secrets in a cluster. This can be a significant security risk as
-these components often already sit on the edge of a cluster. Finding a way to
-compromise an Ingress or Gateway controller could potentially provide access to
-all Secrets in a cluster. Ideally, a solution that is related to referential
-authorization could also help mitigate this problem.
+Due to lack of better alternatives, Ingress and Gateway controllers, for
+instance, are often deployed with read access to all Secrets in the cluster.
+This can be a significant security risk as these components often already sit on
+the edge of a cluster. Finding a way to compromise an Ingress or Gateway
+controller could potentially provide access to all Secrets in a cluster. This
+KEP provides a more fine-grained approach to authorizing cross- and in-namespace
+references, such that users have the realistic possibility of removing coarse
+RBAC rules such as that the Ingress controller can access all the Secrets in the
+cluster. This KEP does not offer extra security for references, in case RBAC
+rules are applied in such a coarse manner.
 
 ### Goals
 
@@ -193,11 +207,9 @@ resource (the `to` resource).
 #### ReferenceGrant authors must have sufficient access
 
 Anyone creating or updating a ReferenceGrant **MUST** have at least the level of
-access to the resources they are providing access to. For example, if the
-ClusterReferencePattern specifies `[get, list, watch]` as `verbs`, the author of
-any ReferenceGrant using that pattern must also have access for all of those
-verbs. If that authorization check fails, the ReferenceGrant update or create
-action will also fail.
+access to the resources they are providing access to. For the scope of this KEP,
+referential authorization translates to `[get, list, watch]` access. In the
+future, that may be configurable.
 
 #### `resource` versus `kind`
 
@@ -214,9 +226,10 @@ ended up making https://github.com/kubernetes/community/pull/5973 to clarify
 the API conventions.
 
 However, in discussion on this KEP, it's clear that the more generic nature of
-_this_ API requires the additional specificity that `resource` provides. The new
-version communicates the scope more clearly because `group`+`resource` is
-unambiguous and corresponds to exactly one set of objects on the API Server.
+_this_ API requires the additional specificity that `resource` provides. The
+design in this KEP communicates the scope more clearly because
+`group`+`resource` is unambiguous and corresponds to exactly one set of objects
+on the API Server.
 
 This change also leaves room for an enhancement. Whether we have an in-tree or
 CRD implementation, we can rely on the exact matching that the plural resource
@@ -300,6 +313,7 @@ kind: ReferenceGrant
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: prod-gateways
+  namespace: prod-tls
 from:
   group: gateway.networking.k8s.io
   resource: gateways
@@ -323,7 +337,7 @@ to a Service backend in the `quux` namespace.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: quuxapp
+  name: quux-route
   namespace: baz
 spec:
   parentRefs:
@@ -405,7 +419,7 @@ spec:
     namespace: dev
   to:
   - group: snapshot.storage.k8s.io
-    king: VolumeSnapshot
+    kind: VolumeSnapshot
     name: new-snapshot-demo
 ```
 
@@ -418,80 +432,118 @@ rejected".
 #### ClusterReferenceConsumer
 
 ```golang
-// ClusterReferenceConsumer identifies a common form of referencing pattern. This
-// can then be used with ReferenceGrants to selectively allow references.
+// Subject refers to the subject that is a consumer of the referenced
+// pattern(s).
 type ClusterReferenceConsumer struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Subject refers to the subject that is a consumer of the referenced
-	// pattern(s).
-	Subject rbacv1.Subject `json:"subject"`
+    // Subject refers to the subject that is a consumer of the referenced
+    // pattern(s).
+    Subject Subject       `json:"subject"`
 
-	// The names of the ClusterReferencePatterns this consumer implements.
-	PatternNames []string `json:"patternNames"`
+    // From refers to the group and resource that these references originate from.
+    From    GroupResource `json:"from"`
+
+    // To refers to the group and resource that these references target.
+    To      GroupResource `json:"to"`
+
+    // For refers to the purpose of this reference. (Cluster)ReferenceGrants
+    // matching the From, To, and For of this resource will be authorized for
+    // the Subject of this resource.
+    //
+    // This value must be a valid DNS label as defined per RFC-1035.
+    For     string        `json:"for"`
+}
+
+// Subject is a copy of RBAC Subject that excludes APIGroup.
+type Subject struct {
+    // Kind of object being referenced. Values defined by this API group are
+    // "User", "Group", and "ServiceAccount". If the Authorizer does not
+    // recognized the kind value, the Authorizer should report an error.
+    Kind string `json:"kind"`
+    // Name of the object being referenced.
+    Name string `json:"name"`
+    // Namespace of the referenced object.  If the object kind is non-namespace,
+    // such as "User" or "Group", and this value is not empty the Authorizer
+    // should report an error. +optional
+    Namespace string `json:"namespace,omitempty"`
 }
 ```
 
-#### ClusterReferencePattern
+#### ClusterReferenceGrant
 
 ```golang
-// ClusterReferencePattern identifies a common form of referencing pattern. This
-// can then be used with ReferenceGrants to selectively allow references.
-type ClusterReferencePattern struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+// ClusterReferenceGrant authorizes same-namespace references matching the
+// specified pattern.
+type ClusterReferenceGrant struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Group is the group of the referent.
-	Group string `json:"group"`
+    // From refers to the group, resource, and pthat that these references
+    // originate from.
+    From    GroupVersionResourcePath `json:"from"`
 
-	// Resource is the resource of the referent.
-	Resource string `json:"resource"`
+    // To refers to the group and resource that these references target.
+    To      GroupResource `json:"to"`
 
-	// Version is the API version of this resource this path applies to.
-	Version string `json:"version,omitempty"`
+    // For refers to the purpose of this reference. Subjects of
+    // ClusterReferenceConsumers will be authorized to follow references matching
+    // the From, To, and For of this resource.
+    //
+    // This value must be a valid DNS label as defined per RFC-1035.
+    For     string        `json:"for"`
+}
 
-	// Path is the path which this reference may come from.
-	Path string `json:"path"`
-
-	// BaselineGrant allows granting access to same-namespace references by
-	// default without the need for ReferenceGrants.
-	BaselineGrant string `json:"baselineGrant"`
+type GroupVersionResourcePath struct {
+    Group    string `json:"group"`
+    Resource string `json:"resource"`
+    Version  string `json:"version"`
+    // JSONPath is the JSONPath which this reference may come from.
+    JSONPath string `json:"jsonPath"`
 }
 ```
 
 #### ReferenceGrant
-
 
 ```golang
 // ReferenceGrant identifies namespaces of resources that are trusted to
 // reference the specified names of resources in the same namespace as the
 // grant.
 type ReferenceGrant struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// PatternName refers to the name of the ClusterReferencePattern this allows.
-	PatternName string `json:"patternName"`
+    // From refers to the group and resource that these references originate from.
+    From    GroupResource `json:"from"`
 
-	// From describes the trusted namespaces and kinds that can reference the
-	// resources described in the Pattern and optionally the "to" list.
-	//
-	// Support: Core
-	//
-	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=16
-	From []ReferenceGrantFrom `json:"from"`
+    // To refers to the group, resource, and names that these references can
+    // target.
+    To      ReferenceGrantTo `json:"to"`
 
-	// To describes the names of resources that may be referenced from the
-	// namespaces described in "From" following the linked pattern. When
-	// unspecified or empty, references to all resources matching the pattern
-	// are allowed.
-	//
-	// +kubebuilder:validation:MaxItems=16
-	To []ReferenceGrantTo `json:"to"`
+    // For refers to the purpose of this reference. Subjects of
+    // ClusterReferenceConsumers will be authorized to follow references
+    // matching the From, To, and For of this resource.
+    //
+    // This value must be a valid DNS label as defined per RFC-1035.
+    For     string        `json:"for"`
 }
 
+// ReferenceGrantTo describes what group, resource, and names are allowed as
+// targets of the references.
+type ReferenceGrantTo struct {
+    // Group is the group of the referents.
+    Group string `json:"group"`
+
+    // Resource is the resource of the referents.
+    Resource string `json:"resource"`
+
+    // Names are the names of the referents. When unspecified or empty, no
+    // access is granted.
+    //
+    // +kubebuilder:validation:MaxItems=16
+    Names []string `json:"names"`
+}
 ```
 <<[UNRESOLVED Are "To" and "From" the right field names? ]>>
 Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084671720
@@ -515,33 +567,6 @@ discussion](https://groups.google.com/g/kubernetes-api-reviewers/c/ldmrXXQC4G4)
 on the kubernetes-api-reviewers mailing list that's also relevant to this.
 <<[/UNRESOLVED]>>
 
-```golang
-// ReferenceGrantFrom describes trusted namespaces.
-type ReferenceGrantFrom struct {
-	// Namespace is the namespace of the referent.
-	//
-	// Support: Core
-	Namespace string `json:"namespace"`
-}
-
-// ReferenceGrantTo describes what Names and Resources are allowed as targets of
-// the references.
-type ReferenceGrantTo struct {
-	// Group is the group of the referent.
-	Group string `json:"group"`
-
-	// Resource is the resource of the referent.
-	Resource string `json:"resource"`
-
-	// Name is the name of the referent. When unspecified, this policy
-	// refers to all resources of the specified Group and Kind in the local
-	// namespace.
-	//
-	// +optional
-	Name string `json:"name,omitempty"`
-}
-```
-
 ### Outstanding questions and clarifications
 
 This section lists some of the outstanding questions people have had about
@@ -556,52 +581,8 @@ moving ReferenceGrant to the new API group, just notes to save discussion time.
   specific `To` Kinds.
 * Corollary for future work, define how controllers interact. Is it a problem if
   multiple controllers consume the same ReferenceGrant?
-* Status design is still pending, but it's currently expected that controllers
-  will indicate status on the _referring_ resources, not on ReferenceGrant itself.
-<<[UNRESOLVED do we need status? ]>>
-Original Thread: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084670421
-
-We want to be able to represent the following, in descending order of
-importance:
-
-1. Communicate that the ReferenceGrant is actively being used
-2. Communicate which controllers are using this ReferenceGrant
-3. Communicate how many times it's been used with sufficient granularity that I
-   can see the effects of my changes (if I remove this reference, am I removing
-   a dependency on this ReferenceGrant?)
-
-We could introduce a status structure that allowed each implementing controller
-to write 1 entry:
-
-```yaml
-status:
-  referencesAllowed:
-  - controllerName: gateway.example.com
-    numReferences: 1
-```
-
-@thockin responded with:
-
-If we think that the cardinality of controllers is low, we can put it in status.
-The downsides are:
-
-1. Could frequently require retries because of optimistic concurrency failures
-   (I'm trying to increment my count, but so is everyone else)
-1. If we're wrong about cardinality, there's not an easy way out
-1. Lots of writes to a resource that will be watched fairly often (every
-   controller which needs refs will watch all refgrants)
-1. We need .status.
-1. If we instead put that into a ReferenceGrantUse resource (just a tuple of
-   controller-name and count), then we only have optimistic concurrency
-   problems with ourselves, we have ~infinite cardinality, nobody will be
-   watching them, and RefGrant doesn't need .status.
-
-Downsides:
-
-1. It's another new resource
-1. It's a new pattern, untested in other places.
-
-<<[/UNRESOLVED]>>
+* Similar to the Gateway API version of ReferenceGrant, controllers will
+  indicate status on the _referring_ resources, not on ReferenceGrant itself.
 * Clarify that the expected operating model for implementations expects them to
   have broad, read access to both ReferenceGrant and the specific `To` Kinds they
   support, and then self-limit to only _use_ the relevant ones.
@@ -692,26 +673,21 @@ the old Gateway API resources as part of a seamless migration. We expect that
 many implementations will provide this recommendation to users, and we may even
 provide tooling to simplify this process.
 
-<<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
-## Open Questions
+## Intentional Omissions
 
-This KEP was merged in a provisional state with a number of open questions
-remaining. This section highlights the questions we have not resolved yet.
+This KEP is already large in scope, so it is intentionally leaving some features
+out of scope. These are discussed below. In some cases these may be added in the
+future if needed.
 
-### Do We Need Verbs?
+### Wildcard Selectors?
 
-Previous Discussion: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084509958
+#### Rationale
+We are leaving this feature out because it dramatically increases the complexity
+of these APIs (both for users and implementations). These APIs do allow
+authorizing all same-namespace references, and support a list of names for
+cross-namespace references.
 
-We could add a `verbs` field to enable users to specify the kind of referential
-access they want to grant. For example, we could define "read", "route", and
-"backup" as well-known verbs to start. We could also allow implementations to
-support additional domain-prefixed verbs.
-
-This would enable more precise grants, and potentially more open ended fields
-elsewhere in the resource, see the next item for more.
-
-### Do We Need Any or Wildcard Selectors?
-
+#### Context
 Previous Discussions:
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086020464
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086012665
@@ -730,12 +706,19 @@ a moot point.
 
 ### Do We Need Label Selectors?
 
+#### Rationale
+We are leaving this feature out because it dramatically increases the complexity
+of these APIs (both for users and implementations). These APIs do allow
+authorizing all same-namespace references, and support a list of names for
+cross-namespace references.
+
+#### Context
 Previous Discussions:
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084492070
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084674648
 
-As a natural next step, instead of simply allowing all, we could use
-label selectors to enable:
+As a natural next step, instead of simply allowing a named list of resources, we
+could use label selectors to enable:
 
 1. Access to resources with specific labels
 1. Access from namespaces with specific labels
@@ -752,7 +735,7 @@ type ReferenceGrantFrom struct {
   Peer ReferenceGrantPeer
 }
 
-// Exatcly one field should be set. If none are found, clients must
+// Exactly one field should be set. If none are found, clients must
 // assume that an unknown value was specified.
 type ReferenceGrantPeer {
     Namespace *string
@@ -781,8 +764,61 @@ type NamespaceResource struct {
     Resource string
 }
 ```
-<<[/UNRESOLVED]>>
 
+### Do We Need Status?
+#### Rationale
+ReferenceGrant is conceptually similar to existing RBAC resources which have
+worked well for some time without any form of status. We've explored at least
+one path below (ReferenceGrantUse) that could accomplish similar goals in the
+future if needed without modifying these APIs. Fundamentally it is challenging
+to have status on ReferenceGrant as it least part of it will be implemented by
+multiple controllers.
+
+#### Context
+Original Thread: https://github.com/kubernetes/enhancements/pull/3767#discussion_r1084670421
+
+If we had status, we'd want to be able to represent the following, in descending
+order of importance:
+
+1. Communicate that the ReferenceGrant is actively being used
+2. Communicate which controllers are using this ReferenceGrant
+3. Communicate how many times it's been used with sufficient granularity that I
+   can see the effects of my changes (if I remove this reference, am I removing
+   a dependency on this ReferenceGrant?)
+
+We could introduce a status structure that allowed each implementing controller
+to write 1 entry:
+
+```yaml
+status:
+  referencesAllowed:
+  - controllerName: gateway.example.com
+    numReferences: 1
+```
+
+If we think that the cardinality of controllers is low, we can put it in status.
+The downsides are:
+
+1. Could frequently require retries because of optimistic concurrency failures
+   (I'm trying to increment my count, but so is everyone else)
+1. If we're wrong about cardinality, there's not an easy way out
+1. Lots of writes to a resource that will be watched fairly often (every
+   controller which needs refs will watch all refgrants)
+1. We need .status.
+
+If we instead put that into a ReferenceGrantUse resource (just a tuple of
+controller-name and count), then we only have optimistic concurrency
+problems with ourselves, we have ~infinite cardinality, nobody will be
+watching them, and RefGrant doesn't need .status.
+
+Downsides:
+
+1. It's another new resource
+1. It's a new pattern, untested in other places.
+
+Both of these options have downsides, but at least with a ReferenceGrantUse
+resource, it's a concept we could add in the future if needed without modifying
+the APIs proposed in this KEP.
 
 ## Production Readiness Review Questionnaire
 
@@ -878,9 +914,18 @@ Users may also create ReferenceGrants to enable cross-namespace references.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+API Type: ClusterReferenceConsumer
+Supported Number of Objects per Cluster: 100
+Supported Number of Objects per Namespace: N/A
+
+API Type: ClusterReferenceGrant
+Supported Number of Objects per Cluster: 100
+Supported Number of Objects per Namespace: N/A
+
 API Type: ReferenceGrant
-Supported Number of Objects per Cluster: No limit
-Supported Number of Objects per Namespace: No limit
+Supported Number of Objects per Cluster: 5,000
+Supported Number of Objects per Namespace: 500
+
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -929,11 +974,27 @@ N/A
 
 ## Alternatives
 
-1. ReferenceGrant could remain as a CRD
-This would probably be fine, we just don't really have a good place for it to
-live. This could also complicate installation of Gateway API and other APIs that
-depended on this.
+### Implement a revised ReferenceGrant as a CustomResourceDefinition
+Implement the API defined within this KEP, but as a CustomResourceDefinition
+rather than as an in-tree API.
 
-2. Every API that wanted to support cross-namespace references could maintain their own version of ReferenceGrant
+A CRD implementation is feasible but would make integration with in-tree
+authorization features, such as Kubernetes RBAC, more complex. Cluster operators
+who wanted to adopt an out-of-tree ReferenceGrant would need to deploy a webhook
+or other mechanism outside the core control plane to implement the access
+mechanism, and ensuring that this mechanism operates reliably then falls on each
+cluster and its operators.
+
+Additionally, anything that integrated with ReferenceGrant as a CRD would need
+to be prepared to handle the case where existing ReferenceGrants and the entire
+API could be removed from a cluster. With the in-tree option, we get a point in
+time where every supported Kubernetes release provides ReferenceGrant as a
+stable API, and other software can assume it will remain available.
+
+### Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant
 This would be a confusing mess, we should avoid this at all costs.
 
+### Use CEL to define ClusterReferencePattern, rather than JSONPath
+This could be a reasonable path and potential future addition, but Kubernetes
+users are currently more familiar with JSONPath as it is exposed in prominent
+places such as kubectl.
