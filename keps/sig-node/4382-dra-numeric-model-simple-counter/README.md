@@ -59,7 +59,7 @@ should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
 
-# [KEP-4382](https://github.com/kubernetes/enhancements/issues/4382): Simple counter as numeric parameter for Dynamic Resource Allocation
+# [KEP-4382](https://github.com/kubernetes/enhancements/issues/4382): Simple counter as semantic parameter for Dynamic Resource Allocation
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -148,12 +148,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-One or more "numeric model" need to be defined and implemented for "numeric
+One or more "semantic model" need to be defined and implemented for "semantic
 parameters" ([KEP
 #4381](https://github.com/kubernetes/enhancements/issues/4381)) to be usable
 with Dynamic Resource Allocation (DRA).
 
-This KEP defines a numeric model that roughly corresponds in functionality to
+This KEP defines a semantic model that roughly corresponds in functionality to
 extended resources.
 
 ## Motivation
@@ -182,17 +182,17 @@ among claims.
 
 ### Risks and Mitigations
 
-Adding another numeric model doesn't add any additional risks. There is a
+Adding another semantic model doesn't add any additional risks. There is a
 slight performance impact when checking whether the builtin controller of the
-numeric model needs to do something for a claim or NodeResourceCapacity object,
+semantic model needs to do something for a claim or NodeResourceCapacity object,
 but that impact should be minimal when the model is not in use.
 
 ## Design Details
 
-Everything related to this numeric model is hosted in
+Everything related to this semantic model is hosted in
 `k/k/staging/src/k8s.io/dynamic-resource-allocation`:
 
-- `numeric/counter`: the implementation of the builtin controller
+- `semantic/counter`: the implementation of the builtin controller
 - `apis/counter`: the versioned type(s)
 - `apis/internal/counter`: the internal type for conversion
 
@@ -202,29 +202,27 @@ dynamic resource scheduler plugin if (and only if) the model is enabled.
 ### Capacity type
 
 ```
-// Capacity defines how much of certain items are available respectively
-// required.
+// Capacity defines how much of certain items are available.
 type Capacity struct {
 	// ObjectMeta may be set when publishing capacity, but is not required.
-	// It is ignored when matching requests against available capacity.
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// TypeMeta must have non-empty kind and apiVersion.
-	metav1.TypeMeta `json:",inline"`
+	metav1.ObjectMeta
 
 	// Count is the total number of available items per node when
-	// publishing capacity and the required number of items when requesting
-	// resources.
-	Count int64 `json:"count"`
+	// publishing capacity.
+	Count int64
 }
 ```
 
 ### Claim parameter type
 
-There is no separate type because the same `Count` field also makes sense when
-requesting items. The examples in the numeric parameters KEP show how this then
-gets used by a DRA driver.
+```
+// Capacity defines how much of certain items are available.
+type Parameters struct {
+	// Required is the total number of items that are needed.
+    Requested int64
+}
+```
 
 ### Allocation result
 
