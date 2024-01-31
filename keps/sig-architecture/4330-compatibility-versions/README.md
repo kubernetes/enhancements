@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API Compatibility Versioning](#api-compatibility-versioning)
+  - [Discovery](#discovery)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -506,6 +507,27 @@ to be able to turn on APIs exactly like it did for each Kubernetes version that
 compatibility version can be set to.
 
 Alpha APIs may not be enabled in conjunction with compatibility version.
+
+### Discovery
+
+Discovery will [enable](https://github.com/kubernetes/kubernetes/blob/7080b51ee92f67623757534f3462d8ae862ef6fe/staging/src/k8s.io/apiserver/pkg/util/openapi/enablement.go#L32) the group versions matching the compatibility version.
+
+API fields that were introduced after the compatibility version will **not** be
+pruned. There is a tradoff here:
+
+- If we keep the fields in the API, we leak information about fields that were
+  introduced in Kubernetes versions newer than the compatibility version.
+- If we remove the fields, we have an inconsistency between discovery and the
+  implementation, because the server implementation is aware of the field, and
+  may include it in responses (e.g. via defaulting).
+
+Note that even though we are deciding to include fields that were introduced
+after the compatibility version in discovery, new fields are always feature
+gated, so the fields will not settable and may not impact default behavior.
+
+Also note that we that show information about unavailable features in discovery
+today. We introduce fields into APIs for disabled-by-default features and make
+no attempt to hide those fields in discovery.
 
 ### User Stories (Optional)
 
