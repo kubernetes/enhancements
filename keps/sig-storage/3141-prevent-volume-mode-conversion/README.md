@@ -262,7 +262,7 @@ Consider including folks who also work outside the SIG or subproject.
 ## Design Details
 
 A new out-of-tree flag named `PreventVolumeModeConversion` will be introduced on 
-`snapshot-controller` and `external-provisioner`. Both of these components are 
+`snapshot-controller` and `csi-provisioner`. Both of these components are
 out-of-tree so this proposal will not require any in-tree feature gates. 
 
 ### Changes to VolumeSnapshotContent API
@@ -735,7 +735,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 2023-02-06: KEP updated to mark transition to beta
+- 2023-02-06: KEP updated to mark transition to beta off-by-default
+- 2023-12-23: KEP updated to mark transition to beta on-by-default
 - 2024-01-24: KEP updated to mark transition to stable
 
 ## Drawbacks
