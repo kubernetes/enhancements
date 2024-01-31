@@ -8,7 +8,7 @@ creation-date: 2024-01-22
 reviewers:
   - TBD
 approvers:
-  - TBD
+  - "@thockin"
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
 
@@ -29,7 +29,6 @@ feature-gates:
   - name: RelaxedDNSSearchValidation
     components:
       - kube-apiserver
-      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release

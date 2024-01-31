@@ -148,39 +148,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+Currently, Kubernetes validates search string in the `dnsConfig.searches` according to [RFC-1123](https://datatracker.ietf.org/doc/html/rfc1123)
+which defines restrictions for hostnames. While most DNS names identify hosts, there are record types (like SRV) that don't. For these, it's less clear
+whether hostname restritions apply, for example [RFC-1035 Section 2.3.1](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.1) points out
+that it's better to stick with valid host names but also states that labels must meet the hostname requirements.
 
-A good summary is probably at least a paragraph in length.
+In practice, legcay workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
 
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
-Currently, Kubernetes applies the same restrictions to DNS search strings as it does to object names.
-These restrictions are derived from [RFC-1123](https://datatracker.ietf.org/doc/html/rfc1123). However,
-DNS name segments may contain more characters than are allowed in host names (see [RFC-2181](https://datatracker.ietf.org/doc/html/rfc2181#section-11)).
-In practice, DNS names sometimes contain characters, such as underscores, which would not be allowed by RFC-1123.
-
-This KEP proposes relaxing the checks on DNS search strings, specifically, without changing the restrictions on Kubernetes object
-names or other uses of DNS names within Kubernetes. Allowing these values in the `searches` field of `dnsConfig` allows pods to
-resolve short names properly in cases where the search string contains characters that are not currently allowed.
+This KEP proposes relaxing the checks on DNS search strings only. Allowing these values in the `searches` field of `dnsConfig` allows pods to
+resolve short names properly in cases where the search string contains and underscore.
 
 ## Motivation
 
 For workloads that resolve short DNS names where the full DNS name includes disallowed characters (like underscores),
-it’s not possible to configure search strings using dnsConfig. For example, if a pod needs to resolve abc123.abc_d.example.com
-using the short name of abc123, we would like to be able to add abc_d.example.com to the searches in the dnsConfig.
+it’s not possible to configure search strings using dnsConfig. For example, if a pod needs to look up an SRV record `_sip._tcp.abc_d.example.com`
+using the short name of `_sip._tcp`, we would like to be able to add `abc_d.example.com` to the searches in the dnsConfig.
 
 Here’s an example configuration which would support this case:
 
@@ -208,11 +190,9 @@ However, this returns an error:
 The Pod "dns-example" is invalid: spec.dnsConfig.searches[0]: Invalid value: "abc_d.example.com": a DNS-1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
 ```
 
-While a case could be made that these names are incorrect as host names based on RFC-1123, DNS servers generally allow such names
-and once they are in use DNS names can be complicated to change especially when they're used by legacy systems and not purely
-within Kubernetes. The DNS searches in the Kubernetes pods spec are not defining the host name, so even under the stricter interpretation
-of RFC-1123, relaxing these checks does not allow users of Kubernetes to introduce an invalid host name where one did not
-already exist outside of Kubernetes.
+Allowing underscores in the search string allows integration with legacy workloads without allowing anyone to define
+these names within Kubernetes. Since having underscores in a name creates other issues (such as inability to obtain a publicly trusted TLS certificate),
+search strings seem like the only area where this is likely to occur.
 
 ### Goals
 
@@ -221,9 +201,8 @@ already exist outside of Kubernetes.
 ## Proposal
 
 Introduce a RelaxedDNSSearchValidation feature gate which is disabled by default. When the feature gate is enabled,
-DNS search strings will be validated according to RFC-2181:
-- The length of any one label is limited to between 1 and 63 octets
-- A full domain name is limited to 255 octets (including the separators)
+a new DNS name validation function will be used, which keeps the existing check but also allows an underscore (`_`) in any place
+where a dash (`-`) would be allowed currently.
 
 Since the relaxed check allows previously invalid values, care must be taken to support cluster downgrades safely. To accomplish this, the validation will distinguish between new resources and updates to existing resources:
 -	When the feature gate is disabled:
@@ -239,26 +218,12 @@ As long as the gate is disabled, there is no compatibility change, so cluster do
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+The change is opt-in, since it requires configuring a search string with an underscore. So there is no risk beyond
+the upgrade/downgrade risks which are addressed in the Proposal section.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+See Proposal
 
 ### Test Plan
 
@@ -286,26 +251,8 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+Added validation will be covered by unit tests along with unit tests covering the behavior
+when the gate is enabled or disabled.
 
 ##### Integration tests
 
@@ -328,110 +275,30 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+Add a test that verifies when an underscore is present in the `dnsConfig.searches` that it appears in resolv.conf in the pod.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
-
-- Feature implemented behind a feature flag
+- Feature implementd behind a gate
 - Initial e2e tests completed and enabled
 
 #### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- No trouble reports from alpha release
 
 #### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- No trouble reports with the beta release, plus some anecdotal evidence of it being used successfully.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+See Proposal section.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+Kubelet only checks size limits but otherwise passes values through
+[source](https://github.com/kubernetes/kubernetes/blob/f025a96d2f60984765731e01ad0de2c89e959b42/pkg/kubelet/network/dns/dns.go#L114).
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Since the resolv.conf file is interpreted by the DNS resolver in the container image
 
 ## Production Readiness Review Questionnaire
 
@@ -476,8 +343,8 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+  - Feature gate name: RelaxedDNSSearchValidation
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
