@@ -1910,7 +1910,7 @@ At the moment, the claim plugin has no information that might enable it to
 prioritize which resource to deallocate first. Future extensions of this KEP
 might attempt to improve this.
 
-This is currently using blocking API calls. They are unlikely because this
+This is currently using blocking API calls. It's quite rare because this
 situation can only arise when there are multiple claims per pod and allocation
 for one of them fails despite all drivers agreeing that a node should be
 suitable, or when reusing a claim for multiple pods (not a common use case) and
