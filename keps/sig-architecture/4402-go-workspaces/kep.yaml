@@ -6,7 +6,7 @@ owning-sig: sig-architecture
 participating-sigs:
   - sig-release
   - sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2024-01-13
 reviewers:
   - "@sttts"
