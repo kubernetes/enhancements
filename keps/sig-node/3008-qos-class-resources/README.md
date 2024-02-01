@@ -483,9 +483,19 @@ the API.
 #### Cluster autoscaler
 
 The cluster autoscaler support will be extended to support QoS-class resources.
-The behavior will be comparable to extended resources. The expectation would be
-that all nodes in a node group would have an identical set of QoS-class
-resources.
+The expectation would be that all nodes in a node group would have an identical
+set of QoS-class resources (same resource types, same set of classes with the
+same capacity for each).
+
+The functionality will be comparable to extended resources. The cluster
+autoscaler uses the Kubernetes scheduler framework for running simulations.
+Scaling up node groups with one or more nodes works practically without any
+changes as the Kubernetes scheduler handles QoS-class resources and the cluster
+autoscaler can correctly run the simulation based on the QoS-class resources
+available on the existing node(s) of the node group. However, to support
+scaling of empty node groups needs to be worked on, implementing specific
+mechanisms (e.g. annotations) for each infrastructure provider to inform the
+autoscaler about the QoS-class resources of node groups.
 
 #### API objects for resources and classes
 
