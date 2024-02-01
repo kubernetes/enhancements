@@ -131,14 +131,14 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -512,12 +512,12 @@ integration and its implementation.
 In particular, update existing UTs or add new UTs
 in the following packages:
 
-- `pkg/api/pod`: `10/3/2022` - `70.1%`
-- `pkg/apis/core/validation`: `10/3/2022` - `82.3%`
-- `pkg/registry/core/pod`: `10/3/2022` - `60.4%`
-- `cmd/kube-scheduler/app`: `10/3/2022` - `32.9`
-- `pkg/scheduler`: `10/3/2022` - `75.9%`
-- `pkg/scheduler/framework/runtime`: `10/3/2022` - `81.9%`
+- `pkg/api/pod`: `1/29/2024` - `74.8%`
+- `pkg/apis/core/validation`: `1/29/2022` - `83.9%`
+- `pkg/registry/core/pod`: `1/29/2022` - `61.7%`
+- `cmd/kube-scheduler/app`: `1/29/2022` - `32%`
+- `pkg/scheduler`: `1/29/2022` - `78%`
+- `pkg/scheduler/framework/runtime`: `1/29/2022` - `80.3%`
 
 ##### Integration tests
 
@@ -1086,6 +1086,19 @@ This through this both in small and large cases, again with respect to the
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -1143,7 +1156,8 @@ Major milestones might include:
 -->
 
 - 2022-09-16: Initial KEP
-- 2022-01-14: Graduate the feature to Beta
+- 2023-01-14: Graduate the feature to Beta
+- 2024-01-29: Graduate the feature to Stable
 
 ## Drawbacks
 
