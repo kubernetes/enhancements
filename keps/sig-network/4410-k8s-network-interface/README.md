@@ -50,8 +50,9 @@ and accommodate advanced functionalities and potential areas for expansion.
 9. Provide the ability to identify the IP address family without parsing the value (such as a field)
 10. Provide as much backwards-compatibility with CNI as is feasible
 11. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
-12. Provide support for Kata and other virtualized runtimes
-13. Provide a reference implementation
+12. If feasible, provide API awareness of Pod network namespaces (e.g. interface names)
+13. Provide support for Kata and other virtualized runtimes
+14. Provide a reference implementation
 
 ### Non-Goals
 
@@ -75,6 +76,13 @@ As a cluster operator, I need the ability to determine what networks are availab
 #### Story 3
 
 As a Kubernetes developer, I need the ability to have extension points for pod network setup, teardown and update so that I can support future Kubernetes networking features with either reducing the changes to core kubernetes or eliminating them
+
+#### Story 4
+
+As a tool which manages eBPF programs on a Kubernetes cluster (bpfman,
+inspektorgadget), I would like to be able to see the network interfaces of a
+`Pod` via the Kubernetes API so that I can attach TC/XDP network programs to
+those interfaces based on knowing the Pod name.
 
 ### Notes/Constraints/Caveats
 
