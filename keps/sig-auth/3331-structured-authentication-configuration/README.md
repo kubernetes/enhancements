@@ -207,6 +207,8 @@ jwt:
     url: https://example.com
     audiences:
     - my-app
+    - other-app
+  audienceMatchPolicy: MatchAny
   claimValidationRules:
   - claim: hd
     requiredValue: example.com
@@ -343,7 +345,7 @@ type JWTAuthenticator struct {
         //
         // Example:
         // A discovery url that is exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
-        // certificateAuthority is used to verify the TLS connection and the hostname on the leaf certifcation
+        // certificateAuthority is used to verify the TLS connection and the hostname on the leaf certificate
         // must be set to 'oidc.oidc-namespace'.
         //
         // curl https://oidc.oidc-namespace (.discoveryURL field)
@@ -365,10 +367,23 @@ type JWTAuthenticator struct {
         CertificateAuthority string `json:"certificateAuthority,omitempty"`
 
         // audiences is the set of acceptable audiences the JWT must be issued to.
-        // At least one of the entries must match the "aud" claim in presented JWTs.
         // Same value as the --oidc-client-id flag (though this field supports an array).
         // Required to be non-empty.
         Audiences []string `json:"audiences,omitempty"`
+
+        // audienceMatchPolicy defines how the "audiences" field is used to match the "aud" claim in the presented JWT.
+        // Allowed values are:
+        // 1. "MatchAny" when multiple audiences are specified and
+        // 2. empty (or unset) or "MatchAny" when a single audience is specified.
+        //
+        // - MatchAny: the "aud" claim in the presented JWT must match at least one of the entries in the "audiences" field.
+        // For example, if "audiences" is ["foo", "bar"], the "aud" claim in the presented JWT must contain either "foo" or "bar" (and may contain both).
+        //
+        // - "": The match policy can be empty (or unset) when a single audience is specified in the "audiences" field. The "aud" claim in the presented JWT must contain the single audience (and may contain others).
+        //
+        // For more nuanced audience validation, use claimValidationRules.
+        //   example: claimValidationRule[].expression: 'sets.equivalent(claims.aud, ["bar", "foo", "baz"])' to require an exact match.
+        AudienceMatchPolicy AudienceMatchPolicy `json:"audienceMatchPolicy"`
    }
    ```
 
