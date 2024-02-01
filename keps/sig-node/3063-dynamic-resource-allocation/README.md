@@ -664,7 +664,7 @@ allocation also may turn out to be insufficient. Some risks are:
   captured yet (like limited number of nodes that they can be attached to).
 
 - Cluster autoscaling will not work as expected unless the DRA driver
-  uses [numeric parameters](https://github.com/kubernetes/enhancements/issues/4381).
+  uses [semantic parameters](https://github.com/kubernetes/enhancements/issues/4381).
 
 All of these risks will have to be evaluated by gathering feedback from users
 and resource driver developers.
@@ -1841,6 +1841,11 @@ like "drivers have provided information" occurs, instead of forcing the pod to
 go through the backoff queue and the usually 5 second long delay associated
 with that.
 
+Queuing hints are an optional feature of the scheduler, with (as of Kubernetes
+1.29) their own `SchedulerQueueingHints` feature gate that defaults to
+off. When turned off, performance of scheduling pods with resource claims is
+slower compared to a cluster configuration where they are turned on.
+
 #### PreEnqueue
 
 This checks whether all claims referenced by a pod exist. If they don't,
@@ -1992,11 +1997,11 @@ to simulate the effect of allocating claims as part of scheduling and of
 creating or removing nodes.
 
 This is not possible with opaque parameters as described in this KEP. If a DRA
-driver developer wants to support Cluster Autoscaler, they have to use numeric
-parameters. Numeric parameters are an extension of this KEP that is defined in
+driver developer wants to support Cluster Autoscaler, they have to use semantic
+parameters. Semantic parameters are an extension of this KEP that is defined in
 [KEP #4381](https://github.com/kubernetes/enhancements/issues/4381).
 
-Numeric parameters are not necessary for network-attached resources because
+Semantic parameters are not necessary for network-attached resources because
 adding or removing nodes doesn't change their availability and thus Cluster
 Autoscaler does not need to understand their parameters.
 
@@ -2465,7 +2470,7 @@ For beta:
 
 - In normal scenarios, scheduling pods with claims must not block scheduling of
   other pods by doing blocking API calls
-- Implement integration with Cluster Autoscaler through numeric parameters
+- Implement integration with Cluster Autoscaler through semantic parameters
 - Gather feedback from developers and surveys
 - Positive acknowledgment from 3 would-be implementors of a resource driver,
   from a diversity of companies or projects
@@ -2821,6 +2826,18 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### Semantic Parameters instead of PodSchedulingContext
+
+When a DRA driver uses semantic parameters, there is no DRA driver controller
+and no need for communication between scheduler and such a controller. The
+PodSchedulingContext object and the associated support in the scheduler then
+aren't needed. Once semantic parameters are mature enough and confirmed to be
+sufficient for DRA drivers, it might become possible to remove the
+PodSchedulingContext API from this KEP.
+
+It might still be needed for other drivers and use cases, which then can be
+discussed in a new KEP which focuses specifically on those use cases.
 
 ### ResourceClaimTemplate
 
