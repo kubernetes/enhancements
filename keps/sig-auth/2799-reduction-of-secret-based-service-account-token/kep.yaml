@@ -12,11 +12,11 @@ reviewers:
   - "@mikedanese"
 approvers:
   - "@liggitt"
-stage: beta
-latest-milestone: "v1.29"
+stage: stable
+latest-milestone: "v1.30"
 milestone:
   beta: "v1.24"
-  stable: "v1.26"
+  stable: "v1.30"
 feature-gates:
   - name: LegacyServiceAccountTokenNoAutoGeneration
     components:
