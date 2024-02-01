@@ -6,7 +6,7 @@ owning-sig: sig-network
 status: provisional
 creation-date: 2024-01-22
 reviewers:
-  - TBD
+  - "@danwinship"
 approvers:
   - "@thockin"
 # The target maturity stage in the current dev cycle for this KEP.
