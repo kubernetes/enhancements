@@ -220,6 +220,10 @@ to implement this enhancement.
 
 ##### e2e tests
 
+- e2e test added: 
+  - [Link to testgrid](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-e2e-gci-gce&include-filter-by-regex=kubectl%20subresource)
+  - [Link to test](https://github.com/kubernetes/kubernetes/blob/11b974043604f5ccbeb6e5e62e1d9edcf00bc336/test/e2e/kubectl/kubectl.go#L2101)
+
 ### Graduation Criteria
 
 #### Alpha
@@ -234,7 +238,11 @@ to implement this enhancement.
 
 #### GA
 
-- User feedback gathered for at least 1 cycle.
+Since v1.27 when the feature moved to beta, there have been no reported bugs concerning this feature.
+In fact, it is reassuring to see the community use this feature quite commonly such as in bug reports:
+https://github.com/kubernetes/kubernetes/issues/116311 
+
+Seeing this and given our added unit, integration and e2e tests gives us the confidence to graduate to GA.
 
 
 ### Upgrade / Downgrade Strategy
@@ -332,7 +340,14 @@ No.
 
 ### Monitoring Requirements
 
+Considering that this feature is a flag contained fully within in the `kubectl` client, there exist no 
+monitoring requirements for the same.
+
 ###### How can an operator determine if the feature is in use by workloads?
+
+N/A
+
+###### How can someone using this feature know that it is working for their instance?
 
 N/A
 
@@ -388,6 +403,10 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -408,6 +427,9 @@ N/A
 2021-04-06: KEP proposed
 2021-04-07: [Demo] in SIG CLI meeting
 2022-05-25: PR for alpha implementation merged
+2023-01-12: KEP graduated to Beta
+2023-03-15: e2e test added for KEP as part of beta graduation
+2024-02-01: KEP graduated to Stable
 
 [POC PR]: https://github.com/kubernetes/kubernetes/pull/99556
 [Demo]: https://youtu.be/zUa7dudYCQM?t=299
