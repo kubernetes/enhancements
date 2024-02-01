@@ -141,6 +141,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Semantic Parameters instead of PodSchedulingContext](#semantic-parameters-instead-of-podschedulingcontext)
   - [ResourceClaimTemplate](#resourceclaimtemplate)
   - [Reusing volume support as-is](#reusing-volume-support-as-is)
   - [Extend volume support](#extend-volume-support)
