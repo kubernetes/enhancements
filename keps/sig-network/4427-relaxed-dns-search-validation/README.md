@@ -96,7 +96,7 @@ that it's better to stick with valid host names but also states that labels must
 In practice, legcay workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
 
 This KEP proposes relaxing the checks on DNS search strings only. Allowing these values in the `searches` field of `dnsConfig` allows pods to
-resolve short names properly in cases where the search string contains and underscore.
+resolve short names properly in cases where the search string contains an underscore.
 
 ## Motivation
 
