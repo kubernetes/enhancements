@@ -2,6 +2,7 @@ title: Coordinated Leader Election
 kep-number: 4355
 authors:
   - "@jpbetz"
+  - "@jefftree"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-cluster-lifecycle
