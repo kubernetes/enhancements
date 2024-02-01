@@ -77,6 +77,13 @@ As a cluster operator, I need the ability to determine what networks are availab
 
 As a Kubernetes developer, I need the ability to have extension points for pod network setup, teardown and update so that I can support future Kubernetes networking features with either reducing the changes to core kubernetes or eliminating them
 
+#### Story 4
+
+As a tool which manages eBPF programs on a Kubernetes cluster (bpfman,
+inspektorgadget), I would like to be able to see the network interfaces of a
+`Pod` via the Kubernetes API so that I can attach TC/XDP network programs to
+those interfaces based on knowing the Pod name.
+
 ### Notes/Constraints/Caveats
 
 Changes to the pod specification will require hard evidence. 
