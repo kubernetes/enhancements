@@ -417,7 +417,7 @@ We propose a single e2e test for the following scenario:
 #### Beta
 
 - skip synchronization of jobs when the "managed-by" label does not exist, or equals `job-controller.k8s.io`
-- unit & integration tests
+- unit, integration and e2e tests
 - implement the `job_by_external_controller_total` metric
 - implement the additional Job status validation (see [here](#job-status-validation))
 - make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
@@ -662,8 +662,30 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-It will be tested manually prior to beta launch.
+The Upgrade->downgrade->upgrade testing will be done manually prior to release
+as Beta, with the following steps:
 
+1. Start the cluster with the `JobManagedByLabel` enabled for api server and control-plane.
+
+Then, create two-long running Jobs:
+- `job-managed` with custom value of the `managed-by` label
+- `job-regular` without the `managed-by` label
+
+Then, verify that:
+- the `job-managed` does not get status updates from built-in controller. Update the status manually and observe it is not reset by the built-in controller.
+- the `job-regular` starts making progress (creates pods and updates the status accordingly by the built-in controller)
+
+2. Simulate downgrade by disabling the feature for api server and control-plane.
+
+Then, verify that:
+- the `job-managed` starts to make progress, the status is reset, and updated to some new values
+- the `job-regular` continues making progress
+
+3. Simulate upgrade by re-enabling the feature for api server and control-plane.
+
+Then, verify that:
+- the `job-managed` stops getting status updates from the built-in controller. Update the status manually and observe it is not reset by the built-in controller.
+- the `job-regular` continues making progress
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
