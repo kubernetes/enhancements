@@ -41,6 +41,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
     - [Downgrade](#downgrade)
@@ -251,8 +252,7 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 With `maxUnavailable` feature enabled, we'll bring down more than one pod at a time, if your application can't tolerate
-this behavior, you should absolutely disable this feature or leave the field unconfigured, which will behave as the default
-behavior.
+this behavior, you should absolutely leave the field unset or use 1, which will match default behavior.
 
 ### Risks and Mitigations
 
@@ -431,50 +431,10 @@ https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset
 
 #### Metrics
 
-We'll add a new metric named `rolling-update-duration-seconds`, it tracks how long a statefulset takes to finish a rolling-update,
-the general logic is:
+We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable):
 
-when [performing update](https://github.com/kubernetes/kubernetes/blob/c984d53b31655924b87a57bfd4d8ff90aaeab9f8/pkg/controller/statefulset/stateful_set_control.go#L97-L138),
-if the `currentRevision` != `updateRevision`, then we take it as starting to rolling update, but because rolling update can not
-finish in one reconciling loop, then we may have to track it, we have two approaches:
+We already have a check for that, and for now we are just firing a log entry at [pkg/controller/statefulset/stateful_set_control.go#L646](https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L767). Here we could fire the new metric increasing the count for statefulset_unavailability_violation, with labels including the StatefulSet namespace, statefulset_name, and a reason. Reason here being `exceededMaxUnavailable`.
 
-- One is add a new field in the `defaultStatefulSetControl`, like below:
-
-  ```golang
-  type defaultStatefulSetControl struct {
-    podControl        *StatefulPodControl
-    statusUpdater     StatefulSetStatusUpdaterInterface
-    controllerHistory history.Interface
-    recorder          record.EventRecorder
-
-    // <Newly Added>
-    // rollingUpdateStartTimes records when each statefulset starts to perform rolling update.
-    // key is the statefulset name, value is the start time.
-    rollingUpdateStartTimes map[string]time.Time
-  }
-  ```
-
-  Then when `currentRevision` != `updateRevision`, we'll check whether the statefulset name
-  exists in the `rollingUpdateStartTimes`, if exists, skip, if not, write the
-  start time.
-
-  If we found rolling update completed in [updateStatefulSetStatus](https://github.com/kubernetes/kubernetes/blob/c984d53b31655924b87a57bfd4d8ff90aaeab9f8/pkg/controller/statefulset/stateful_set_control.go#L682-L701),
-  then we'll report the metrics here and clear the statefulset from the `rollingUpdateStartTimes`.
-
-- Another approach is add a new field to `StatefulSetStatus` as below:
-
-  ```golang
-  type StatefulSetStatus struct {
-
-    // rollingUpdateStartTime will record when the statefulSet starts to rolling update.
-    rollingUpdateStartTime *time.Time
-  }
-  ```
-
-  The logic general looks the same, we'll update the time together with status update, so there's no
-  extra api calls.
-
-  Prefer Opt-2 as we already record the rolling update messages in the status.
 
 ### Test Plan
 
@@ -572,7 +532,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `test/e2e/apps: we'll add a test to verify that the number of pods brought down each
+- `test/integration/statefulset`: we'll add a test to verify that the number of pods brought down each
 time is equal to configured maxUnavailable.
 
 ## Graduation Criteria
@@ -645,8 +605,11 @@ in back-to-back releases.
 
 #### Beta
 
-- Enabled by default with default value of 1 with upgrade downgrade tested at least manually.
-- Additional e2e tests listed in the test plan should be added.
+- Enabled by default with default value of 1 with upgrade/downgrade tested at least manually.
+- Additional e2e/integration tests listed in the test plan should be added.
+
+#### GA
+
 - No critical bugs reported and no bad feedbacks collected.
 
 ### Upgrade / Downgrade Strategy
@@ -680,6 +643,9 @@ enhancement:
 - If we try to set this field, it will be silently dropped.
 - If the object with this field already exists, we maintain is as it is, but the controller
   will just ignore this field.
+- downgrade of kube-apiserver to a version with the feature flag was disabled, when the field was previously set - it gets cleared, new operations setting the field will be silently dropped
+- downgrade of kube-controller-manager to version with the feature flag disabled, when the field was previously set - the field gets ignored by controller, and controller behaves as if the field is not set
+- downgrade of either kube-apiserver or kube-controller-manager to a version with the feature flag was disabled, when the field was not set  the behavior doesn't change
 
 ### Version Skew Strategy
 
@@ -724,8 +690,7 @@ Yes, you can disable the feature-gate manually once it's in Beta.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again,
-that's say we'll restart to respect the value of `maxUnavailable` when rolling update.
+If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again. [Even if this is a new field, it only gets cleared if it was not set before (if it was nil). So if it is set it continues to exist and is enforced.](https://github.com/kubernetes/kubernetes/blob/bb67eb5bd237334d6d0343aa382b351002653404/pkg/registry/apps/statefulset/strategy.go#L120-L137)
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -761,15 +726,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-It depends, like
+The impact on StatefulSets during feature enablement and rollback depends on various factors:
 
-- In a HA cluster, if part of the API servers enabled with this feature gate but the others not, then
-  for already running workloads, they will not be impacted in rolling update because the process is controlled
-  by the statefulset controller.  But for newly created statefulset, their `maxUnavailable` field will
-  be dropped if requested a feature-gate disabled api-server.
+1. In a High-Availability (HA) cluster with mixed feature gate settings across API servers:
+   - For existing StatefulSets undergoing a rolling update, the behavior will be determined by the statefulset controller based on the API server that processed the original request. If the StatefulSet was created or updated by an API server with the feature enabled, it will use the `maxUnavailable` setting. Conversely, if the StatefulSet interacts with an API server where the feature is disabled, the `maxUnavailable` field will be ignored, and the StatefulSet will behave as if the feature is not enabled.
+   - For new StatefulSets, the behavior will depend on whether the creating API server has the feature gate enabled. If the feature gate is disabled on the API server handling the request, the StatefulSet will default to updating one pod at a time.
 
-- With this feature enabled and a statefulset running into the rolling-update, then we disabled the feature-gate,
-  then this statefulset will be impacted as it will fall into the default behavior, updating a pod at one time.
+2. During a rolling update of a StatefulSet with the feature enabled:
+   - If the feature gate is disabled in the midst of the rolling update, the behavior of the StatefulSet will shift to the default rolling update mechanism (updating one pod at a time). Existing pods that were terminated as part of the rolling update when the feature was enabled will continue their termination process. However, the creation of new pods will adhere to the default rolling update strategy, potentially leading to a slower update process if `maxUnavailable` was originally set to a value greater than 1.
+
+To summarize, the impact on running StatefulSets during feature enablement and rollback is primarily observed in the rolling update behavior. StatefulSets that begin a rolling update with the feature enabled will utilize the `maxUnavailable` setting until a change in the feature gate status is detected, after which the behavior will revert to the default update strategy.
 
 ###### What specific metrics should inform a rollback?
 
@@ -778,13 +744,12 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- As a normal user, with `maxUnavailable` enabled, and we're rolling update a statefulset, the number of pods brought down should
-equal to the `maxUnavailable`, if not, we should rollback.
+Metric Name: statefulset_unavailability_violation
 
-- As a administrator(as well for normal user), I can check the new metric `rolling-update-duration-seconds`, if we enabled the feature with
-greater than 1 `maxUnavailable` set for statefulsets, but didn't see the duration fall down, then we may have some problems here.
-This is not precise because rolling-update duration can be impacted by several factors, e.g. pulling down a big, new image, but
-can be some indicators refer to.
+Description: This metric counts the number of times a StatefulSet exceeds its maxUnavailable threshold during a rolling update. This metric increases whenever a StatefulSet is processed and it's observed that spec.replicas - status.readyReplicas > maxUnavailable. The metric is labeled with namespace, statefulset, and a reason label, where reason could be exceededMaxUnavailable. This provides a clear indication of which StatefulSets are not complying with the defined maxUnavailable constraint, allowing for quick identification and remediation.
+
+Usage: Administrators and SREs can use this metric to monitor and alert on StatefulSet configurations that violate the maxUnavailable constraint. This metric is particularly useful for ensuring that the rolling updates are proceeding as expected and that no unexpected unavailability is occurring. This metric can be aggregated across multiple clusters for large-scale monitoring.
+
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -799,13 +764,12 @@ No
 ###### How can an operator determine if the feature is in use by workloads?
 
 If their StatefulSet rollingUpdate section has the field maxUnavailable specified with
-a value different than 1.
-The below command should show maxUnavailable value:
+a value different than 1. While in alpha and beta, the feature-gate needs to be enabled.
+
+The command bellow should show the maxUnavailable value:
 ```
 kubectl get statefulsets -o yaml | grep maxUnavailable
 ```
-
-Or refer to the new metric `rolling-update-duration-seconds`, it should exist.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -831,9 +795,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Rolling update duration is impacted by a lot of factors, like the container hooks, image size, network, container logics,
-so what we can roughly know here is for each individual statefulset. So generally, if we set the `maxUnavailable` to X, then
-the rolling update duration should reduce X times. Keep in mind that, this is not precise.
+Less than 0.5% of rolling updates should experience unavailability violations where the number of unavailable pods exceeds the maxUnavailable limit over a rolling 30-day window.
+
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -842,7 +805,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: rolling-update-duration-seconds
+  - Metric name: statefulset_unavailability_violation
   - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -870,9 +833,6 @@ No
 A struct gets added to every StatefulSet object which has three fields, one 32 bit integer and two fields of type string.
 The struct in question is IntOrString.
 
-If we introduce the new metric with Opt-2, then we'll have a new field `rollingUpdateStartTime` with `*Time` type
-in the `StatefulSetStatus`.
-
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 No
 
@@ -886,7 +846,7 @@ No.
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-The RollingUpdate will fail or will not be able to proceed if etcd or apiserver is unavailable and
+The RollingUpdate will fail or will not be able to proceed if etcd or API server is unavailable and
 hence this feature will also be not be able to be used.
 
 ###### What are other known failure modes?
@@ -904,13 +864,14 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-Disable the feature-gate when performing rolling-update.
+Generalized Max Unavailable Threshold Violations
 
-- [Failure mode brief description]
-  - Detection: The `maxUnavailabel` is not respected.
-  - Mitigations: If rolling update in parallel is tolerated for application, set the `podManagementPolicy=Parallel`.
-  - Diagnostics: Set the logger level great than 4.
-  - Testing: We have e2e tests to cover the right behaviors.
+- The number of unavailable pods during a rolling update exceeds the specified maxUnavailable limit for many Stateful Sets.
+  - Detection: Monitor statefulset_unavailability_violation metric; a significant increase in this metric indicates the failure mode.
+  - Mitigations: Investigate the cause of excess unavailability and take corrective actions, such as adjusting the maxUnavailable parameter or troubleshooting problematic pods.
+  - Diagnostics: Increase logging verbosity and examine logs for messages indicating why pods are not becoming ready or why more pods than expected are being terminated.
+  - Testing: Implement e2e tests that simulate scenarios where pods fail to become ready and verify that the maxUnavailable limit is not exceeded.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
