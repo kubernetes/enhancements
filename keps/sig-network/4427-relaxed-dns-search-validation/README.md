@@ -136,7 +136,7 @@ search strings seem like the only area where this is likely to occur.
 
 ### Goals
 
-- Support workloads that need to resolve DNS short names where the full DNS name includes characters disallowed by RFC-1123.
+- Support workloads that need to resolve DNS short names where the full DNS name includes an underscore (`_`).
 
 ## Proposal
 
