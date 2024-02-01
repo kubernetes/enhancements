@@ -58,6 +58,8 @@ Major milestones for Portworx in-tree plugin CSI migration:
   - Portworx CSI migration to Alpha
 - 1.25
   - Portworx CSI migration to Beta, off by default
+- 1.31
+  - Portworx CSI migration to Beta, on by default
 
 ## Design details
 
