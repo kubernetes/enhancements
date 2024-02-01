@@ -924,7 +924,7 @@ Alpha feature was implemented in 1.27: <https://github.com/kubernetes/kubernetes
 
 ### Beta
 
-Add e2e tests(WIP):
+Add e2e tests <https://github.com/kubernetes/kubernetes/pull/121604>(WIP):
 
 1. A new node_e2e test to confirm image pull will be blocked if maxParallelImagePulls is reached.
 2. Verfiy behavior of image pull in parallel for same image using `imagePullPolicy:Always`.
