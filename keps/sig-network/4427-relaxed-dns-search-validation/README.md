@@ -90,7 +90,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Currently, Kubernetes validates search string in the `dnsConfig.searches` according to [RFC-1123](https://datatracker.ietf.org/doc/html/rfc1123)
 which defines restrictions for hostnames. While most DNS names identify hosts, there are record types (like SRV) that don't. For these, it's less clear
-whether hostname restritions apply, for example [RFC-1035 Section 2.3.1](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.1) points out
+whether hostname restrictions apply, for example [RFC-1035 Section 2.3.1](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.1) points out
 that it's better to stick with valid host names but also states that labels must meet the hostname requirements.
 
 In practice, legcay workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
