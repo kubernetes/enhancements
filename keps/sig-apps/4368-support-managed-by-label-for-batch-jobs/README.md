@@ -426,7 +426,6 @@ We propose a single e2e test for the following scenario:
 #### GA
 
 - Address reviews and bug reports from Beta users
-- e2e test
 - Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
 - Re-evaluate the support for mutability of the label
 - Asses the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
