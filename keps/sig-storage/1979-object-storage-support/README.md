@@ -2,6 +2,7 @@
 
 ## Table of Contents
 
+<!-- generate with hack/update-toc.sh -->
 <!-- toc -->
   - [Release Signoff Checklist](#release-signoff-checklist)
   - [Introduction](#introduction)
@@ -157,13 +158,13 @@ COSI defines 5 new API types
  - [BucketClass](#bucketclass)
  - [BucketAccessClass](#bucketaccessclass)
 
-Detailed information about these API types are provided inline with user stories. 
+Detailed information about these API types are provided inline with user stories.
 
 Here is a TL;DR version:
 
- - BucketClaims/Bucket are similar to PVC/PV. 
- - BucketClaim is used to request generation of new buckets. 
- - Buckets represent the actual Bucket. 
+ - BucketClaims/Bucket are similar to PVC/PV.
+ - BucketClaim is used to request generation of new buckets.
+ - Buckets represent the actual Bucket.
  - BucketClass is similar to StorageClass. It is meant for admins to define and control policies for Bucket Creation
  - BucketAccess is required before a bucket can be "attached" to a pod.
  - BucketAccess both represents the attachment status and holds a pointer to the access credentials secret.
@@ -194,8 +195,8 @@ The BucketClaim is a claim to create a new Bucket. This resource can be used to 
     |   protocols:                 |                      |--------------------------------|
     |   - s3                       |
     |------------------------------|
-                                                          
-``` 
+
+```
 
 ###### 2. COSI creates an intermediate Bucket object
 
@@ -248,10 +249,10 @@ The following stakeholders are involved in the lifecycle of access credential ge
  - Users  - request access to buckets
  - Admins - establish cluster wide access policies
 
-Access credentials are represented by BucketAccess objects. The separation of BucketClaim and BucketAccess is a reflection of the usage pattern of Object Storage, where buckets are always accessed over the network, and all access is subject to authentication and authorization i.e. lifecycle of a bucket and its access are not tightly coupled. 
+Access credentials are represented by BucketAccess objects. The separation of BucketClaim and BucketAccess is a reflection of the usage pattern of Object Storage, where buckets are always accessed over the network, and all access is subject to authentication and authorization i.e. lifecycle of a bucket and its access are not tightly coupled.
 
 __Example: for the same bucket, one might need a BucketAccess with a "read-only" policy and another to with a "write" policy__
- 
+
 
 Here are the steps for creating a BucketAccess:
 
@@ -261,9 +262,9 @@ The BucketAccessClass represents a set of common properties shared by multiple B
 
 The BucketAccess is used to request access to a bucket. It contains fields for choosing the Bucket for which the credentials will be generated, and also includes a bucketAccessClassName field, which in-turn contains configuration for authorizing users to access buckets. More information about BucketAccess is [here](#bucketaccess)
 
-BucketAccessClass can be used to specify a authorization mechanism. It can be one of 
- - KEY  (__default__) 
- - IAM 
+BucketAccessClass can be used to specify a authorization mechanism. It can be one of
+ - KEY  (__default__)
+ - IAM
 
 The KEY based mechanism is where access and secret keys are generated to be provided to pods. IAM style is where pods are implicitly granted access to buckets by means of a metadata service. IAM style access provides greater control for the infra/cluster administrator to rotate secret tokens, revoke access, change authorizations etc., which makes it more secure.
 
@@ -380,7 +381,7 @@ If IAM style authentication was specified, then the `serviceAccountName` specifi
     |   containers:                                   |
     |   - volumeMounts:                               |
     |       name: cosi-bucket                         |
-    |       mountPath: /cosi/bucket1                  | 
+    |       mountPath: /cosi/bucket1                  |
     | volumes:                                        |
     | - name: cosi-bucket                             |
     |   projected:                                    |
@@ -405,7 +406,7 @@ The above volume definition will prompt kubernetes to retrieve the secret and pl
     |-----------------------------------------------|
     | {                                             |
     |   apiVersion: "v1alpha1",                     |
-    |   kind: "BucketInfo",                         | 
+    |   kind: "BucketInfo",                         |
     |   metadata: {                                 |
     |       name: "bc-$uuid"                        |
     |   },                                          |
@@ -432,7 +433,7 @@ In case IAM style authentication was specified, then workloadIdentityToken will 
     |-------------------------------------------------|
     | {                                               |
     |   apiVersion: "v1alpha1",                       |
-    |   kind: "BucketInfo",                           | 
+    |   kind: "BucketInfo",                           |
     |   metadata: {                                   |
     |       name: "bc-$uuid"                          |
     |   },                                            |
@@ -463,7 +464,7 @@ The benefits of COSI can also be brought to existing buckets/ones created outsid
 
 ###### 1. Admin creates a Bucket API object
 
-When a Bucket object is manually created, and has its `bucketID` set, then COSI assumes that this Bucket has already been created. 
+When a Bucket object is manually created, and has its `bucketID` set, then COSI assumes that this Bucket has already been created.
 
 The admin must ensure that this bucket binds only to a specific BucketClaim by specifying the BucketClaim.
 
@@ -515,11 +516,11 @@ Similar to the BucketAccess for COSI created bucket, this BucketAccess should re
 
 ## Bucket deletion
 
- - A Bucket created by COSI as a result of a BucketClaim can deleted by deleting the BucketClaim 
+ - A Bucket created by COSI as a result of a BucketClaim can deleted by deleting the BucketClaim
  - A Bucket created outside of COSI, once bound, can be deleted by deleting the BucketClaim to which it is bound
- - A Bucket created outside of COSI, unless it is bound to a particular BucketClaim, cannot be deleted by users from any particular namespace. Privileged users can however delete the Bucket object at their discretion. 
- 
-Once a delete has been issued to a bucket, no new BucketAccesses can be created for it. Buckets having valid BucketAccesses (Buckets in use) will not be deleted until all the BucketAccesses are cleaned up. 
+ - A Bucket created outside of COSI, unless it is bound to a particular BucketClaim, cannot be deleted by users from any particular namespace. Privileged users can however delete the Bucket object at their discretion.
+
+Once a delete has been issued to a bucket, no new BucketAccesses can be created for it. Buckets having valid BucketAccesses (Buckets in use) will not be deleted until all the BucketAccesses are cleaned up.
 
 Buckets can be created with one of two deletion policies:
  - Retain
@@ -527,13 +528,13 @@ Buckets can be created with one of two deletion policies:
 
 When the deletion policy is Retain, then the underlying bucket is not cleaned up when the Bucket object is deleted. When the deletion policy is Delete, then the underlying bucket is cleaned up when the Bucket object is deleted.
 
-Only when all accessors (BucketAccesses) of the Bucket are deleted, is the Bucket itself cleaned up. There is a finalizer on the Bucket that prevents it from being deleted until all the accessors are done using it. 
+Only when all accessors (BucketAccesses) of the Bucket are deleted, is the Bucket itself cleaned up. There is a finalizer on the Bucket that prevents it from being deleted until all the accessors are done using it.
 
-When a user deletes a BucketAccess, the corresponding secret/serviceaccount are also deleted. If a pod has that secret mounted when delete is called, then a finalizer on the secret will prevent it from being deleted. Instead, the deletionTimestamp will be set on the secret. In this way, access to a Bucket is preserved until the application pod dies. 
+When a user deletes a BucketAccess, the corresponding secret/serviceaccount are also deleted. If a pod has that secret mounted when delete is called, then a finalizer on the secret will prevent it from being deleted. Instead, the deletionTimestamp will be set on the secret. In this way, access to a Bucket is preserved until the application pod dies.
 
-When an admin deletes any of the class objects, it does not affect existing Buckets as fields from the class objects are copied into the Buckets during creation. 
+When an admin deletes any of the class objects, it does not affect existing Buckets as fields from the class objects are copied into the Buckets during creation.
 
-If a Bucket is manually deleted by an admin, then a finalizer on the Bucket prevents it from being deleted until the binding BucketClaim is deleted. 
+If a Bucket is manually deleted by an admin, then a finalizer on the Bucket prevents it from being deleted until the binding BucketClaim is deleted.
 
 # Usability
 
@@ -553,7 +554,7 @@ These properties will be specified in the BucketRequest and follow the same patt
 
 The following resources are managed by admins
 
-- Bucket in case of brownfield buckets 
+- Bucket in case of brownfield buckets
 - BucketClass
 - BucketAccessClass
 
@@ -598,7 +599,7 @@ Bucket {
     // Name of the BucketClass specified in the BucketRequest
     BucketClassName  string
 
-    // Name of the BucketClaim that resulted in the creation of this Bucket 
+    // Name of the BucketClaim that resulted in the creation of this Bucket
     // In case the Bucket object was created manually, then this should refer
     // to the BucketClaim with which this Bucket should be bound
     BucketClaim corev1.ObjectReference
@@ -647,7 +648,7 @@ BucketClaim {
   Spec BucketClaimSpec {
     // Name of the BucketClass
     BucketClassName string
-    
+
     // Protocols are the set of data API this bucket is required to support.
     // The possible values for protocol are:
     // -  S3: Indicates Amazon S3 protocol
@@ -655,7 +656,7 @@ BucketClaim {
     // -  GCS: Indicates Google Cloud Storage protocol
     Protocols []Protocol
 
-    // Name of a bucket object that was manually 
+    // Name of a bucket object that was manually
     // created to import a bucket created outside of COSI
     // If unspecified, then a new Bucket will be dynamically provisioned
     // +optional
@@ -668,7 +669,7 @@ BucketClaim {
     BucketReady bool
 
     // BucketName is the name of the provisioned Bucket in response
-    // to this BucketClaim. It is generated and set by the COSI controller 
+    // to this BucketClaim. It is generated and set by the COSI controller
     // before making the creation request to the OSP backend.
     // +optional
     BucketName string
@@ -713,11 +714,11 @@ BucketAccess {
     // BucketClaimName is the name of the BucketClaim.
     BucketClaimName string
 
-    // Protocol is the name of the Protocol 
+    // Protocol is the name of the Protocol
     // that this access credential is supposed to support
     // If left empty, it will choose the protocol supported
     // by the bucket. If the bucket supports multiple protocols,
-    // the end protocol is determined by the driver. 
+    // the end protocol is determined by the driver.
     // +optional
     Protocol Protocol
 
@@ -729,7 +730,7 @@ BucketAccess {
     // assumed that credentials have already been generated. It is not overridden.
     // This secret is deleted when the BucketAccess is delted.
     CredentialsSecretName string
-    
+
     // ServiceAccountName is the name of the serviceAccount that COSI will map
     // to the OSP service account when IAM styled authentication is specified
 	// +optional
@@ -739,7 +740,7 @@ BucketAccess {
   Status BucketAccessStatus {
     // AccessGranted indicates the successful grant of privileges to access the bucket
     AccessGranted bool
-    
+
     // AccountID is the unique ID for the account in the OSP. It will be populated
     // by the COSI sidecar once access has been successfully granted.
     // +optional
@@ -783,7 +784,7 @@ BucketInfo {
   ObjectMeta
 
   Spec BucketInfoSpec {
-    // BucketName is the name of the Bucket 
+    // BucketName is the name of the Bucket
     BucketName string
 
     // AuthenticationType denotes the style of authentication
@@ -794,10 +795,10 @@ BucketInfo {
 
     // Endpoint is the URL at which the bucket can be accessed
     Endpoint string
-    
+
     // Region is the vendor-defined region where the bucket "resides"
     Region string
-    
+
     // Protocols are the set of data APIs this bucket is expected to support.
     // The possible values for protocol are:
     // -  S3: Indicates Amazon S3 protocol
@@ -1029,14 +1030,15 @@ gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
-
-N/A since we are only targeting alpha for this Kubernetes release
+All COSI components are out-of-tree. We don't need extra feature gate testing that would be needed
+for in-tree features. COSI API is CRD-related and does not require core API conversion.
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+Resources are deployed via Kubernetes Deployments with already-existing rollout/rollback systems.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -1049,6 +1051,12 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+COSI's controllers don't impact the data path of Pods using already-running object storage
+applications.
+
+However, if upgrade fails resulting in COSI unavailability, users will be unable to create new
+Buckets or Bucket Accesses. Key rotation might not be available during rollout/rollback failure as
+well.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1070,7 +1078,6 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-
 No
 
 ### Monitoring Requirements
@@ -1100,13 +1107,27 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: `Bucket provisioning 'bucket-name' failed`
-- [ ] API .status
-  - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`) 
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- Bucket
+  - [ ] Events
+    - Event Reason: `Bucket provisioning 'bucket-name' failed`
+    - TODO: capture more Events
+  - [ ] API .status
+    - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`)
+    - TODO: investigate more
+- BucketAccess
+  - [ ] Events
+    - Event Reason: `BucketAccess provisioning 'bucket-access-name' failed`
+    - TODO: capture more Events
+  - [ ] API .status
+    - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`)
+    - TODO: investigate more
+- BucketClass
+  - Does not have events or status
+- BucketAccessClass
+  - Does not have events or status
+- COSI Controller
+  - Does not have events or status; it will add events and status to CRs
+  - Logs will be sufficient for deeper info
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1197,9 +1218,9 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-Existing components will not make any new API calls. 
+Existing components will not make any new API calls.
 
-The API load of COSI components will be a factor of the number of buckets being managed and the number of bucket-accessors for these buckets. Essentially O(num-buckets * num-bucket-access). There is no per-node or per-namespace load by COSI. 
+The API load of COSI components will be a factor of the number of buckets being managed and the number of bucket-accessors for these buckets. Essentially O(num-buckets * num-bucket-access). There is no per-node or per-namespace load by COSI.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
