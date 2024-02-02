@@ -75,9 +75,9 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [CRI API](#cri-api)
-    - [ContainerConfig](#containerconfig)
-    - [UpdateContainerResourcesRequest](#updatecontainerresourcesrequest)
     - [PodSandboxConfig](#podsandboxconfig)
+    - [CreateContainer](#createcontainer)
+    - [UpdateContainerResourcesRequest](#updatecontainerresourcesrequest)
   - [kubelet](#kubelet)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -85,6 +85,9 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -263,10 +266,10 @@ guaranteed to get the resources they require.
 
 #### Story 2
 
-As a platform-optimized CRI runtime developer, I want to know detailed
-container resource requests to be able to make optimal, platform specific,
-resource allocations. Some of the resources may be handled outside cgroups and
-be container runtime specific details.
+As a developer of non-runc / non-Linux CRI runtime, I want to know detailed
+container resource requests to be able to make correct resource allocation for
+the applications. I cannot rely on cgroup parameters on this but need to know
+what the user requested to fairly allocate resources between applications.
 
 #### Story 3
 
@@ -326,67 +329,17 @@ interoperability between containers inside the Pod.
 
 ### CRI API
 
-#### ContainerConfig
-
-The ContainerConfig message (used in CreateContainer request) is extended to
-contain unmodified resource requests from the PodSpec.
-
-```diff
-+import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
-
- message ContainerConfig {
- 
- ...
- 
-     // Configuration specific to Windows containers.
-     WindowsContainerConfig windows = 16;
- 
-     // CDI devices for the container.
-     repeated CDIDevice CDI_devices = 17;
-+
-+    // Kubernetes resource spec of the container
-+    KubernetesResources kubernetes_resources = 18;
- }
- 
-+// KubernetesResources contains the resource requests and limits as specified
-+// in the Kubernetes core API ResourceRequirements.
-+message KubernetesResources {
-+    // Requests and limits from the Kubernetes container config.
-+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 1;
-+    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 2;
-+}
-```
-
-#### UpdateContainerResourcesRequest
-
-The UpdateContainerResourcesRequest message is extended to pass down unmodified
-resource requests from the PodSpec.
-
-```diff
- message UpdateContainerResourcesRequest {
-     // ID of the container to update.
-     string container_id = 1;
-     // Resource configuration specific to Linux containers.
-     LinuxContainerResources linux = 2;
-     // Resource configuration specific to Windows containers.
-     WindowsContainerResources windows = 3;
-     // Unstructured key-value map holding arbitrary additional information for
-     // container resources updating. This can be used for specifying experimental
-     // resources to update or other options to use when updating the container.
-     map<string, string> annotations = 4;
-+
-+    // Kubernetes resource spec of the container
-+    KubernetesResources kubernetes_resources = 5;
- }
-```
-
 #### PodSandboxConfig
 
 The PodSandboxConfig message (part of the RunPodSandbox request) will be
 extended to contain information about resources of all its containers known at
-the pod creation time. The container resources here are non-binding and only
-informational, e.g. for the runtime to prepare for optimal allocation of
-resources of all the containers of the Pod.
+the pod creation time. The container runtime may use this information to make
+preparations for all upcoming containers of the pod. E.g. setup all needed
+resources for a VM-based pod or  prepare for optimal allocation of resources of
+all the containers of the Pod. However, the container runtime may continue to
+operate as they did (before this enhancement). That is, it can safely ignore
+the per-container resource information and allocate resources for each
+container separately, one at a time, with the `CreateContainer`.
 
 ```diff
  message PodSandboxConfig {
@@ -427,6 +380,66 @@ resources of all the containers of the Pod.
 +    // CDI devices for the container.
 +    repeated CDIDevice CDI_devices = 5;
 +}
+```
+
+#### CreateContainer
+
+The ContainerConfig message (used in CreateContainer request) is extended to
+contain unmodified resource requests from the PodSpec.
+
+```diff
++import "k8s.io/apimachinery/pkg/api/resource/generated.proto";
+
+ message ContainerConfig {
+ 
+ ...
+ 
+     // Configuration specific to Windows containers.
+     WindowsContainerConfig windows = 16;
+ 
+     // CDI devices for the container.
+     repeated CDIDevice CDI_devices = 17;
++
++    // Kubernetes resource spec of the container
++    KubernetesResources kubernetes_resources = 18;
+ }
+ 
++// KubernetesResources contains the resource requests and limits as specified
++// in the Kubernetes core API ResourceRequirements.
++message KubernetesResources {
++    // Requests and limits from the Kubernetes container config.
++    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> requests = 1;
++    map<string, k8s.io.apimachinery.pkg.api.resource.Quantity> limits = 2;
++}
+```
+
+The resources (mounts, devices, CDI devices, Kubernetes resources) in the
+CreateContainer request should be identical to what was (pre-)informed in the
+RunPodSandbox request. If they are different, the CRI runtime may fail the
+container creation, for example because changes cannot be applied after a
+VM-based Pod has been created.
+
+#### UpdateContainerResourcesRequest
+
+The UpdateContainerResourcesRequest message is extended to pass down unmodified
+resource requests from the PodSpec.
+
+```diff
+ message UpdateContainerResourcesRequest {
+     // ID of the container to update.
+     string container_id = 1;
+     // Resource configuration specific to Linux containers.
+     LinuxContainerResources linux = 2;
+     // Resource configuration specific to Windows containers.
+     WindowsContainerResources windows = 3;
+     // Unstructured key-value map holding arbitrary additional information for
+     // container resources updating. This can be used for specifying experimental
+     // resources to update or other options to use when updating the container.
+     map<string, string> annotations = 4;
++
++    // Kubernetes resource spec of the container
++    KubernetesResources kubernetes_resources = 5;
+ }
 ```
 
 ### kubelet
@@ -516,7 +529,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -526,6 +539,8 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+
+No prerequisite testing updates have been identified.
 
 ##### Unit tests
 
@@ -548,7 +563,12 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2024-02-02` - `68.3%`
+
+The
+[fake_runtime](https://github.com/kubernetes/cri-api/blob/master/pkg/apis/testing/fake_runtime_service.go)
+will be used in unit tests to verify that the Kubelet correctly passes down the
+resource information to the CRI runtime.
 
 ##### Integration tests
 
@@ -560,7 +580,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+For alpha, no new integration tests are planned.
 
 ##### e2e tests
 
@@ -574,7 +594,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+For alpha, no new e2e tests are planned.
 
 ### Graduation Criteria
 
@@ -640,6 +660,25 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial unit tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Feature gate enabled by default
+- containerd and CRI-O runtimes have released versions that have adopted the
+  new CRI API changes
+- The [NRI API](https://github.com/containerd/nri) has adopted the feature
+
+#### GA
+
+- No bugs reported in the previous cycle
+- N examples of real-world usage
+- N installs
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -653,6 +692,10 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+The feature gate (in kubelet) controls the feature enablement. Existing runtime
+implementations will continue to work as previously, even if the feature is
+enabled.
 
 ### Version Skew Strategy
 
@@ -668,6 +711,16 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+The feature is node-local (kubelet-only) so there is no dependencies or effects
+to other Kubernetes components.
+
+The behavior is unchanged if either kubelet or the CRI runtime running on a
+node does not support the feature. If kubelet has the feature enabled but the
+CRI runtime does not support it, the CRI runtime will ignore the new fields in
+the CRI API and function as previously. Similarly, if the CRI runtime supports
+the feature but the kubelet does not, the runtime will resort to the previous
+behavior.
 
 ## Production Readiness Review Questionnaire
 
