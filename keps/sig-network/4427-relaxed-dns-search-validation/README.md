@@ -208,12 +208,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 ##### e2e tests
 
-Add a test that verifies when an underscore is present in the `dnsConfig.searches` that it appears in resolv.conf in the pod.
+- Add a test that verifies successful creation of a pod whose `dnsConfig.searches` contains an underscore
+- Add tests that verify successful creation of objects with a podTemplate whose `dnsConfig.searches`
+  contains an underscore
 
 ### Graduation Criteria
 
 #### Alpha
-- Feature implementd behind a gate
+- Feature implemented behind a gate
 - Initial e2e tests completed and enabled
 
 #### Beta
