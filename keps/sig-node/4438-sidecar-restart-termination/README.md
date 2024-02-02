@@ -131,17 +131,17 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -225,6 +225,12 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+The proposal is to introduce a new feature gate for the sidecar containers KEP to decouple the sidecar feature
+from the restart during Pod termination feature and allow users to use sidecar containers without the refactoring
+required for the restart during Pod termination.
+
+Please refer to the original KEP for the details of the sidecar containers feature:
+https://git.k8s.io/enhancements/keps/sig-node/753-sidecar-containers
 
 ### User Stories (Optional)
 
@@ -319,7 +325,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/kubelet/kuberuntime`: `2024/02/06` - `66.8%`
 
 ##### Integration tests
 
@@ -350,9 +356,53 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
 
 - <test>: <link to test coverage>
+-->
+
+###### Existing tests
+
+- should respect termination grace period seconds
+- should respect termination grace period seconds with long-running preStop hook https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L536
+- should call the container's preStop hook and terminate it if its startup probe fails https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/container_lifecycle_test.go#L616
+- should call the container's preStop hook and terminate it if its liveness probe fails https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L683
+
+###### New tests
+
+Probes:
+- Readiness probes are still running while in preStop
+- Readiness status is beings updated for the container and the Pod while in preStop
+- Liveness probes are NOT running for regular containers while the Pod is terminating 
+- SIDECAR: Liveness probes DO run for sidecar containers while the Pod is terminating 
+- SIDECAR: sidecar container will be restarted when liveness probe failed during Pod termination
+
+Not fully started containers:
+- preStop will not be executed for the container that hasn’t started yet
+- preStop will be called on the container even if postStart is still running
+- postStart hook CONTINUE EXECUTE even if container started termination
+- postStart hook will stop once pod passed it’s graceful termination period
+
+Pod with some containers terminated:
+- BUGFIX, SIDECAR: Container can be restarted when there are terminating containers in the Pod A container cannot restart when there is any terminating container in the same pod · Issue #121398
+
+Re-terminating the Pod:
+- When the Pod is terminating, another call to terminate the pod with the smaller grace period will override the grace period to terminate Pod faster
+- When the Pod is terminating, another call to terminate the pod with the greater grace period will override the grace period to allow longer termination
+- BUGFIX: Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
+
+Pre-stop vs. SIGTERM traps:
+- Same as existing and above tests, need to validate that the container that traps the SIGTERM behaves the same way as with preStop:
+- Respect the grace period
+- Liveness probes are not running
+- Readiness probes are running
+
+Test what is available for during preStop:
+- BUGFIX: While the Pod is terminating, service account tokens are rotated Kubelet stops rotating service account tokens when pod is terminating, breaking preStop hooks · Issue #116481
+- BUGFIX: Service account token is valid if the terminating Pod was deleted again Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
+
+Eviction and OOM kills:
+- preStop is called when Pod is evicted
+- preStop is NOT called when Container is OOMkilled
 
 ### Graduation Criteria
 
@@ -445,6 +495,9 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+This feature only concerns the kubelet, so the upgrade and downgrade strategy is limited to the kubelet.
+Moreover, the Pod spec is not altered, so no changes are required for existing workloads to make use of the feature.
+Likewise, no changes are required for these workloads to revert to previous behavior.
 
 ### Version Skew Strategy
 
@@ -460,6 +513,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+There is no version skew strategy for this feature.
+The kubelet is the only component that needs to be updated to make use of this feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -537,7 +592,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 Yes, the feature can be disabled once it has been enabled.
-There is no alteration to the Pod spec, so existing workloads will not be affected.
+There is no alteration to the Pod spec, so existing workloads will be terminated according to the current behavior,
+after the kubelet is restarted with the feature gate disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 No side effect, the feature can be switched on or off.
@@ -557,6 +613,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 Yes, unit tests will be added to ensure the feature can be enabled and disabled.
+The KEP will be updated with the details of the tests as they are added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -825,6 +882,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2024-01-30: `Summary` and `Motivation` sections merged
+- 2024-02-08: `Proposal` section merged, KEP marked as `implementable`
+- v1.30: Alpha release
 
 ## Drawbacks
 
