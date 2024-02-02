@@ -36,7 +36,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -88,14 +87,14 @@ which defines restrictions for hostnames. While most DNS names identify hosts, t
 whether hostname restrictions apply, for example [RFC-1035 Section 2.3.1](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.1) points out
 that it's better to stick with valid host names but also states that labels must meet the hostname requirements.
 
-In practice, legcay workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
+In practice, legacy workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
 
 This KEP proposes relaxing the checks on DNS search strings only. Allowing these values in the `searches` field of `dnsConfig` allows pods to
 resolve short names properly in cases where the search string contains an underscore.
 
 ## Motivation
 
-For workloads that resolve short DNS names where the full DNS name includes disallowed characters (like underscores),
+For workloads that resolve short DNS names where the full DNS name includes underscores,
 it’s not possible to configure search strings using dnsConfig. For example, if a pod needs to look up an SRV record `_sip._tcp.abc_d.example.com`
 using the short name of `_sip._tcp`, we would like to be able to add `abc_d.example.com` to the searches in the dnsConfig.
 
@@ -136,11 +135,11 @@ search strings seem like the only area where this is likely to occur.
 ## Proposal
 
 Introduce a RelaxedDNSSearchValidation feature gate which is disabled by default. When the feature gate is enabled,
-a new DNS name validation function will be used, which keeps the existing check but also allows an underscore (`_`) in any place
+a new DNS name validation function will be used, which keeps the existing validation logic but also allows an underscore (`_`) in any place
 where a dash (`-`) would be allowed currently.
 
 Since the relaxed check allows previously invalid values, care must be taken to support cluster downgrades safely. To accomplish this, the validation will distinguish between new resources and updates to existing resources:
--	When the feature gate is disabled:
+- When the feature gate is disabled:
   - (a) New resources will use strict validation based on RFC-1123 (no change to current validation)
   - (b) Updates to existing resources will use relaxed validation if any search string in the existing list fails strict validation
 - When the feature gate is enabled:
@@ -336,6 +335,7 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Will be tested during implementation.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -468,11 +468,3 @@ this case (instead it refers to a name configured outside the cluster).
 
 A workaround is to re-write the resolv.conf file from inside the pod. This typically requires running
 the pod with higher privileges than the actual workload requires, however.
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
