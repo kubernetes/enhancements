@@ -84,7 +84,6 @@ SIG Architecture for cross-cutting KEPs).
     - [Risk: How is the election controller elected?](#risk-how-is-the-election-controller-elected)
     - [Risk: What if the election controller fails to elect a leader?](#risk-what-if-the-election-controller-fails-to-elect-a-leader)
 - [Design Details](#design-details)
-  - [Running the Coordinated Leader Election in the APIServer](#running-the-coordinated-leader-election-in-the-apiserver)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -103,6 +102,10 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Similar approaches involving the leader election controller](#similar-approaches-involving-the-leader-election-controller)
+    - [Running the leader election controller in HA on every apiserver](#running-the-leader-election-controller-in-ha-on-every-apiserver)
+    - [Running the coordinated leader election controller in KCM](#running-the-coordinated-leader-election-controller-in-kcm)
+    - [Running the coordinated leader election controller in a new container](#running-the-coordinated-leader-election-controller-in-a-new-container)
   - [Component instances pick a leader without a coordinator](#component-instances-pick-a-leader-without-a-coordinator)
   - [Component instances pick a leader without identity leases or a coordinator](#component-instances-pick-a-leader-without-identity-leases-or-a-coordinator)
 - [Future Work](#future-work)
@@ -125,22 +128,31 @@ Check these off as they are completed for the Release Team to track. These
 checklist items _must_ be updated for the enhancement to be released.
 -->
 
-Items marked with (R) are required *prior to targeting to a milestone / release*.
+Items marked with (R) are required *prior to targeting to a milestone /
+release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+  [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+  SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance
+    Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA
+    Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
+    [Conformance
+    Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] User-facing documentation has been created in [kubernetes/website], for
+  publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to
+  mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -156,13 +168,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This proposes a component leader election mechanism that is safer for upgrades
 and rollbacks.
 
-This leader election approach continues to use leases, but with two
-key modifications:
+This leader election approach continues to use leases, but with two key
+modifications:
 
-- Instead of a race by component instances to claim the lease, component instances
-  declare candidacy for a lease and a election coordinator claims the lease for the
-  best available candidate. This allows the election coordinator to pick a
-  candidate with the lowest version to ensure that skew rules are not violated.
+- Instead of a race by component instances to claim the lease, component
+  instances declare candidacy for a lease and a election coordinator claims the
+  lease for the best available candidate. This allows the election coordinator
+  to pick a candidate with the lowest version to ensure that skew rules are not
+  violated.
 - The election coordinator can mark a lease as "end of term" to signal to the
   current leader to stop renewing the lease. This allows the election
   coordinator to preempt the current leader and replace it with a better one.
@@ -180,18 +193,20 @@ Systems using node-by-node upgrades:
 - kubeadm
 - KIND
 
-To respect the [Kubernetes skew policy](https://kubernetes.io/releases/version-skew-policy/):
+To respect the [Kubernetes skew
+policy](https://kubernetes.io/releases/version-skew-policy/):
 
-- Upgrades should keep controller managers and schedulers at the *old* version until all apiservers
-  are upgraded.
-- Rollbacks should rollback controller managers and schedulers at the *old* version before any
-  apiservers are rolledback.
+- Upgrades should keep controller managers and schedulers at the *old* version
+  until all apiservers are upgraded.
+- Rollbacks should rollback controller managers and schedulers at the *old*
+  version before any apiservers are rolledback.
 
 But a node-by-node upgrade or rollback does not achieve this today.
 
-- For 3 node control plane upgrade, there is about a 25% chance of a new version of the controller
-  running while old versions of the apiserver are active, resulting in a skew
-  violation. (Consider case where the 2nd node upgraded has the lease)
+- For 3 node control plane upgrade, there is about a 25% chance of a new version
+  of the controller running while old versions of the apiserver are active,
+  resulting in a skew violation. (Consider case where the 2nd node upgraded has
+  the lease)
 - For rollback, it is almost a certainty that skew will be violated.
 
 There is also the possiblity that the lease will be lost by a leader during an
@@ -228,7 +243,8 @@ The control plane:
 
 ### Component Identity Leases
 
-Components will create identity leases similar to those used by apiserver identity, e.g.:
+Components will create identity leases similar to those used by apiserver
+identity, e.g.:
 
 ```yaml
 apiVersion: coordination.k8s.io/v1
@@ -295,20 +311,25 @@ spec:
 
 The Coordinated Election Controller will run in the kube-apiserver.
 
-The apiserver runs very few controllers, and they are not elected, but instead
-all run concurrently in HA configurations.  Because of this, controller in the
-apiserver must make careful use of concurrency control primitives to ensure
-multiple instances collaborate, not fight. This is discussed in depth in the
-below design details.
+In an HA configuration, the Coordinated Leader Election Controller will have its
+own lease similar to how other leader elected controllers behaves today. It will
+be responsible for renewing its own lease and gracefully shutdown if the lease
+is expired. Only one instance of the coordinated leader election controller will
+be active at a time, and this prevents instances of the coordinated leader
+election controller from interfering with each other. Unlike in KCM, the
+coordinated leader election controller must gracefully shutdown and restart as
+it will be running in the kube-apiserver and calling `os.Exit()` is not an
+option.
 
 ### Coordinated Lease Lock
 
 A new `resourceLock` type of `coordinatedleases`, and `CoordinatedLeaseLock`
 implementation of `resourcelock.Interface` will be added to client-go that:
 
-- Creates Identity Lease when ready to be Leader
-	- Renews identity lease periodically
-- Watches Leader Lease, waiting to be elected leader by the Coordinated Election Controller
+- Creates Identity Lease when ready to be Leader - Renews identity lease
+	periodically
+- Watches Leader Lease, waiting to be elected leader by the Coordinated Election
+  Controller
 - When it becomes leader:
   - Perform role of active component instance
   - Renew leader lease periodically
@@ -339,7 +360,8 @@ Coordinated Leader Election (or vis-versa).
 During the upgrade, a mix of components will be running both election
 approaches. When the leader lease expires, there are a couple possibilities:
 
-- A controller instance using Lease Based Leader Election claims the leader lease
+- A controller instance using Lease Based Leader Election claims the leader
+  lease
 - The coordinated election controller picks a leader, from the components that
   have written identity leases, and claims the lease on the leader's behalf
 
@@ -351,13 +373,13 @@ before the upgrade, and once the upgrade is complete, Coordinated Leader
 Election works as intended.
 
 There is one thing that could make migrations slightly cleaner: If Coordinated
-Leader Election adds a
-`coordination.k8s.io/elected-by: leader-election-controller` annotation to any
-leases that it claims. It can also check for this annotation and only mark
-leases as "end-of-term" if that annotation is present. Lease Based Leader Election
-would ignore "end-of-term" annotations anyway, so this isn't strictly needed,
-but it would reduce writes from the coordinated election controller to leases that
-were claimed by component instances not using Coordinated Leader Election
+Leader Election adds a `coordination.k8s.io/elected-by:
+leader-election-controller` annotation to any leases that it claims. It can also
+check for this annotation and only mark leases as "end-of-term" if that
+annotation is present. Lease Based Leader Election would ignore "end-of-term"
+annotations anyway, so this isn't strictly needed, but it would reduce writes
+from the coordinated election controller to leases that were claimed by
+component instances not using Coordinated Leader Election
 
 
 ### Comparison of leader election
@@ -382,16 +404,16 @@ expecting version skew to be respected.
   - If one happens to retain its lease, it will be preempted by the coordinated
     election controller after it updates its identity lease with new version
     information
-- When the third node is upgraded, all components will be at the new version and one
-  will be elected
+- When the third node is upgraded, all components will be at the new version and
+  one will be elected
 
 #### Story 2
 
 A cluster administrator rolls back a cluster's control plane node-by-node,
 expecting version skew to be respected.
 
-- When the first node is rolled back, any components that were leaders
-  will typically loose the lease during the node downtime
+- When the first node is rolled back, any components that were leaders will
+  typically loose the lease during the node downtime
 - Once one of the components updates its identity lease with new version
   information, the coordinated election controller will preempt the current
   leader so that this lower version component becomes leader.
@@ -412,16 +434,18 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Risk: Amount of writes performed by leader election increases substantially
 
-This enhancement introduces an identity lease for each instance of each component.
+This enhancement introduces an identity lease for each instance of each
+component.
 
 Example:
 
 - HA cluster with 3 control plane nodes
-- 3 elected components (kube-controller-manager, schedule, cloud-controller-manager) per control plane node
+- 3 elected components (kube-controller-manager, schedule,
+  cloud-controller-manager) per control plane node
 - 9 identity leases are created and renewed by the components
 
-Introducing this feature is roughtly equivalent to adding the same lease load
-as adding 9 nodes to a kubernetes cluster.
+Introducing this feature is roughtly equivalent to adding the same lease load as
+adding 9 nodes to a kubernetes cluster.
 
 The [API Server Identity enhancement](../1965-kube-apiserver-identity) also
 introduces similar leases. For comparison, in a HA cluster with 3 control plane
@@ -432,14 +456,17 @@ duration and renewal times to reduce writes/s.
 
 #### Risk: lease watches increase apiserver load substantially
 
-The [Unknown Version Interoperability Proxy (UVIP) enhancement](../4020-unknown-version-interoperability-proxy) also adds
-lease watches on [API Server Identity](../1965-kube-apiserver-identity) leases in the kube-system namespace.
-This enhancement would increase the expected number of resources being watched from ~3 (for UVIP) to ~12.
+The [Unknown Version Interoperability Proxy (UVIP)
+enhancement](../4020-unknown-version-interoperability-proxy) also adds lease
+watches on [API Server Identity](../1965-kube-apiserver-identity) leases in the
+kube-system namespace. This enhancement would increase the expected number of
+resources being watched from ~3 (for UVIP) to ~12.
 
 #### Risk: We have to "start over" and build confidence in a new leader election algorithm
 
 We've built confidence in the existing leasing algorithm, through an investment
-of engineering effort, and in core hours testing it and running it in production.
+of engineering effort, and in core hours testing it and running it in
+production.
 
 Changing the algorithm "resets the clock" and forces us to rebuild confidence on
 the new algorithm.
@@ -452,8 +479,11 @@ existing lease algorithm as possible:
 
 #### Risk: How is the election controller elected?
 
-It's not. It will run directly in the apiserver. The apiserver runs very few controllers, and they are not elected, but instead all run concurrently in HA configurations.  
-Requires the election controller make careful use concurrency control primitives to ensure multiple instances collaborate, not fight.*
+The leader election controller will be selected by the first apiserver that
+claims the leader election lease lock. This is the same as how kube controller
+manager and other components are elected today. The leader selected is not
+deterministic during an update, but we do not see many changes to the leader
+election controller.
 
 #### Risk: What if the election controller fails to elect a leader?
 
@@ -462,29 +492,6 @@ delay, to give the coordinated election controller an opportunity to elect
 before resorting to the fallback.
 
 ## Design Details
-
-### Running the Coordinated Leader Election in the APIServer
-
-When the Coordinated Leader Election controller runs in the apiserver, it
-is possible that two instances of the controller will have different
-views of the candidate list. This happens when one controller has
-fallen behind on a watch (which can happen for many underlying reasons).
-
-When two controllers have differnet candidate lists, they might "fight".
-One likely way they would fight is:
-
-- controller A thinks X is the best leader
-- controller B thinks Y is the best leader (because it has stale data from a point in time when this was true)
-- controller A elects X
-- controller B marks the leader lease as ""End of term" since it believes Y should be leader
-- controller B elects Y as leader
-- controller A marks the leader lease as ""End of term" since it believes X should be leader
-- ...
-
-This can be avoided by tracking resourceVersion or generation numbers of
-resources used to make a decision in the lease being reconciled and authoring
-the controllers to not to write to a lease when the data used is stale compared
-to the already tracked resourceVersion or generation numbers.
 
 ### Test Plan
 
@@ -500,8 +507,8 @@ when drafting this test plan.
 -->
 
 [x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
@@ -531,7 +538,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `staging/src/k8s.io/client-go/tools/leaderelection`: `TODO` - `client-go coordinated leader election tests`
+- `staging/src/k8s.io/client-go/tools/leaderelection`: `TODO` - `client-go
+  coordinated leader election tests`
 - `pkg/controller/leaderelection`: `TODO` - `new controller tests`
 - `<package>`: `<date>` - `<test coverage>`
 
@@ -656,8 +664,8 @@ enhancement:
 
 The feature uses leases in a standard way, so if some components instances are
 configured to use the old direct leases and others are configured to use this
-enhancement's coordinated leases, the component instances may still safely
-share the same lease, and leaders will be safely elected.
+enhancement's coordinated leases, the component instances may still safely share
+the same lease, and leaders will be safely elected.
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -721,22 +729,23 @@ well as the [existing list] of feature gates.
     - kube-scheduler
 - [ ] Other
   - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+  - Will enabling / disabling the feature require downtime of the control plane?
+  - Will enabling / disabling the feature require downtime or reprovisioning of
+    a node?
 
 ###### Does enabling the feature change any default behavior?
 
-No, even when the feature is enabled, a component must be configured with `--leader-elect-resource-lock=coordinatedleases` to use the feature.
+No, even when the feature is enabled, a component must be configured with
+`--leader-elect-resource-lock=coordinatedleases` to use the feature.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature uses leases in a standard way, so if some components are configured to
-use direct leases and others are configured to use coordinated leases, elections will
-still happen. Also, coordinated leader election falls back to direct leasing
-of the election coordinator does not elect leader within a reasonable period of time, making
-it safe to disable this feature in HA clusters.
+Yes, the feature uses leases in a standard way, so if some components are
+configured to use direct leases and others are configured to use coordinated
+leases, elections will still happen. Also, coordinated leader election falls
+back to direct leasing of the election coordinator does not elect leader within
+a reasonable period of time, making it safe to disable this feature in HA
+clusters.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -745,8 +754,8 @@ elections. Any elected leaders would continue to renew their leases.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, this will be tested, including tests where the are a mix of components
-with the feature enabled and disabled.
+Yes, this will be tested, including tests where the are a mix of components with
+the feature enabled and disabled.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -1048,6 +1057,68 @@ it is distributed into controllers, especially 3rd party controllers, any change
 requires updating client-go and then updating all controllers to that version of
 client-go.
 
+### Similar approaches involving the leader election controller
+
+#### Running the leader election controller in HA on every apiserver
+
+The apiserver runs very few controllers, and they are not elected, but instead
+all run concurrently in HA configurations.  
+Requires the election controller make careful use concurrency control primitives
+to ensure multiple instances collaborate, not fight.
+
+When the Coordinated Leader Election controller runs in the apiserver, it is
+possible that two instances of the controller will have different views of the
+candidate list. This happens when one controller has fallen behind on a watch
+(which can happen for many underlying reasons).
+
+When two controllers have differnet candidate lists, they might "fight". One
+likely way they would fight is:
+
+- controller A thinks X is the best leader
+- controller B thinks Y is the best leader (because it has stale data from a
+  point in time when this was true)
+- controller A elects X
+- controller B marks the leader lease as ""End of term" since it believes Y
+  should be leader
+- controller B elects Y as leader
+- controller A marks the leader lease as ""End of term" since it believes X
+  should be leader
+- ...
+
+This can be avoided by tracking resourceVersion or generation numbers of
+resources used to make a decision in the lease being reconciled and authoring
+the controllers to not to write to a lease when the data used is stale compared
+to the already tracked resourceVersion or generation numbers.
+
+One drawback to this approach is that updating the leader election controller
+can cause undefined behavior when multiple instances of the leader election
+controller are "collaborating". It is difficult to test and prove edge cases
+when an update to the leader election controller code is necessary and could
+fight with the previous version during an mixed version state.
+
+#### Running the coordinated leader election controller in KCM
+
+Since the coordinated leader election controller is a controller that is
+elected, it would also make sense to run in KCM. However, a major drawback is
+that KCM forcefully shuts down when it loses the leader lock and it is possible
+that the leader election controller on the same KCM instance is the leader at
+that time. This causes the coordinated leader election controller to change
+leaders which could cause disruptions.
+
+Two ways to solve this are to gracefully shutdown the KCM and fork the process
+such that the coordinated leader election controller is unaffected. Gracefully
+shutting down the KCM is difficult as controllers are used to the KCM forcefully
+shutting them, and we have no guarantee that third party controllers do not rely
+on this "feature". Forking the process causes additional overhead that we'd like
+to avoid.
+
+#### Running the coordinated leader election controller in a new container
+
+Instead of running in KCM, the coordinated leader election controller could be
+run in a new container (eg: `kube-coordinated-leader-election`). There will be a
+large memory footprint with this approach and adding a new component to the
+control plane could change our Kubernetes architecture in an undesirable way.
+
 ### Component instances pick a leader without a coordinator
 
 - A candidates is picked at random to be an election coordinator, and the
@@ -1064,15 +1135,16 @@ Pros:
 Cons: 
 
   - All component instances must watch the identity leases
-  - All components must have the code to decide which component is the best leader
+  - All components must have the code to decide which component is the best
+    leader
 
 ### Component instances pick a leader without identity leases or a coordinator
 
 - The candidates communicate through the lease to agree on the leader
   - Leases have "Election" and "Term" states
   - Leases are first created in the "election" state.
-  - While in the "election" state, candidates self-nominate by updating the lease
-    with their identity and version information.  Candidates only need to 
+  - While in the "election" state, candidates self-nominate by updating the
+    lease with their identity and version information.  Candidates only need to
     self nominate if they are a better candidate than candidate information
     already written to the lease.
   - When "Election" timeout expires, the best candidate becomes the leader
