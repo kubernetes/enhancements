@@ -4,3 +4,5 @@
 kep-number: 3960
 alpha:
   approver: "@wojtek-t"
+beta:
+  approver: "@wojtek-t"
