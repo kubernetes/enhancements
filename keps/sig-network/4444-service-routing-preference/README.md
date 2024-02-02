@@ -48,6 +48,8 @@
   - [Repurpose the existing topology annotation to recognize additional values](#repurpose-the-existing-topology-annotation-to-recognize-additional-values)
   - [Reuse the fields internal/externalTrafficPolicy to offer these routing preferences](#reuse-the-fields-internalexternaltrafficpolicy-to-offer-these-routing-preferences)
   - [Granular Routing Controls](#granular-routing-controls)
+  - [Reuse Pod Topology Spread Constraints for Traffic Distribution](#reuse-pod-topology-spread-constraints-for-traffic-distribution)
+    - [Complementary Use of Pod Topology Spread Constraints and routingPreference](#complementary-use-of-pod-topology-spread-constraints-and-routingpreference)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -974,8 +976,8 @@ A dedicated `routingPreference` fields gets us:
   distribution.
 
 * **Implementation Flexibility:** Implementations can intelligently incorporate
-  TSC information (if desired) alongside other factors like latency, load, or
-  custom heuristics to optimize routing decisions.
+  Topology Spread Constraints information (if desired) alongside other factors
+  like latency, load, or custom heuristics to optimize routing decisions.
 
 #### Complementary Use of Pod Topology Spread Constraints and routingPreference
 
