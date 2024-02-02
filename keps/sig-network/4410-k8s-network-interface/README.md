@@ -28,9 +28,11 @@ interacting with the Kubernetes API, and there has been considerable flexibility
 in how Container Network Interfaces (CNIs) set up networking within clusters.
 This has resulted in a scenario where things like pod networking (including pod
 to pod networking) is opaque to users, with different implementations taking
-markedly different approaches. This fragmentation and issues with the API have
-negatively impacted adoption in sectors such as telecommunications. Our goal is
-to transform Kubernetes networking by making networks and their components
+markedly different approaches. This fragmentation has spread networking across
+all layers of the stack which include k8s components like kube-proxy, netpol agents,
+container runtime with CNI plugins and low level runtimes like kata and issues
+with the API have negatively impacted adoption in sectors such as telecommunications.
+Our goal is to transform Kubernetes networking by making networks and their components
 actual resources within the Kubernetes API. This will allow for the development
 of shared functionalities and their integration into the API. We anticipate that
 this new approach will enhance support for areas that are currently struggling,
@@ -65,6 +67,8 @@ The proposal of this KEP is to design and implement the KNI-API and make necessa
 
 ### User Stories
 
+We are constantly adding these user stories, please join the community sync to discuss. 
+
 #### Story 1
 
 As a cluster operator, I need the ability to determine my network(s) is ready so that my pods come up with a working network.
@@ -85,6 +89,8 @@ inspektorgadget), I would like to be able to see the network interfaces of a
 those interfaces based on knowing the Pod name.
 
 ### Notes/Constraints/Caveats
+
+Additional Information/Diagrams: https://docs.google.com/document/d/1Gz7iNtJNMI-zKJhaOcI3aflPCx3etJ01JMxzbtvruKk/edit?usp=sharing
 
 Changes to the pod specification will require hard evidence. 
 
