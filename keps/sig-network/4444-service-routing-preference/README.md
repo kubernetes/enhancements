@@ -156,7 +156,7 @@ the successors of `topologyKeys` and allow implementations to be more flexible.
   * **Limitation:** Lacks failover; traffic is dropped if no local endpoint exists.
 
 Note that while the initial proposal of InternalTrafficPolicy proposed a
-Local policy, it was dropped later on. This meant that now
+`PreferLocal` policy, it was dropped later on. This meant that now
 TopologyAwareRouting in conjunction with InternalTrafficPolicy didn’t exactly
 allow users to express a much desired use case from topologyKeys which is
 "prefer node-local, failover to same zone, then route anywhere" While this
@@ -939,6 +939,57 @@ like `routingPreference` might be a better option is:
   predefined mold. `routingPreference` encourages flexibility by treating
   preferences as hints, allowing for sophisticated, implementation-specific
   algorithms that can evolve over time.
+
+### Reuse Pod Topology Spread Constraints for Traffic Distribution
+
+[Pod Topology Spread
+Constraints](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)
+offer a powerful mechanism to influence how Kubernetes schedules pods across
+topology domains (like zones, nodes, or regions). Pod Topology Spread
+Constraints can be re-used to guide traffic to stay within the same topology
+domain as the originating pod.
+
+Challenges:
+
+* **Conflicting Domains:** Services often span multiple pods, which might belong to
+different topology domains (e.g., a Service with pods constrained to both
+node-level and zone-level Pod Topology Spread Constraints). Resolving routing
+conflicts in such scenarios would require complex decision-making. 
+
+* **Data Plane Overhead:** Informing data planes like kube-proxy of detailed Topology Spread
+Constraints information for each pod could significantly increase the complexity
+of communication between the control plane and data plane. This might
+necessitate changes to resources like `EndpointSlices` to communicate this extra
+information to the data plane (or alternatively, have the data-palne watching
+all pods across all nodes, which also tends to be a bad idea.)
+
+The potential benefits of traffic routing based solely on Topology Spread
+Constraints might not outweigh the added implementation and configuration
+complexity. 
+
+A dedicated `routingPreference` fields gets us:
+
+* **Clear Intent:** The `routingPreference` field provides an explicit way for
+  users to signal desired traffic patterns, focusing solely on traffic
+  distribution.
+
+* **Implementation Flexibility:** Implementations can intelligently incorporate
+  TSC information (if desired) alongside other factors like latency, load, or
+  custom heuristics to optimize routing decisions.
+
+#### Complementary Use of Pod Topology Spread Constraints and routingPreference
+
+Rather than having to choose between the two, Pod Topology Spread Constraints
+and `routingPreference` can offer slightly better and resilient traffic
+distribution when used in conjunction.
+
+* Users can set `routingPreference` to `Zone` to express the preference for
+  keeping traffic within the same zone as the client.
+* Then, they can configure Pod Topology Spread Constraints to Ensure balanced
+  pod distribution across zones, maximizing the likelihood that the
+  `routingPreference` can be satisfied and reduce (although not completely
+  eliminate) chances of overload for a single zone.
+
 
 ## Infrastructure Needed (Optional)
 
