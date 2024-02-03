@@ -32,12 +32,12 @@ replaces:
 
 stage: "alpha"
 
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 
 milestone:
   alpha: "v1.27"
-  beta: "v1.30"
-  stable: "v1.31"
+  beta: "v1.31"
+  stable: "v1.32"
 
 feature-gates:
   - name: InPlacePodVerticalScaling
