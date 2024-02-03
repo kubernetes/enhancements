@@ -492,14 +492,10 @@ https://storage.googleapis.com/k8s-triage/index.html
   - `matchLabelKeys`/`mismatchLabelKeys` with the feature gate enabled/disabled.
 
 **Filter**
-- `k8s.io/kubernetes/test/integration/scheduler/filters/filters_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter
+- [`k8s.io/kubernetes/test/integration/scheduler/filters/filters_test.go`](https://github.com/kubernetes/kubernetes/blob/3a4c35cc89c0ce132f8f5962ce4b9a48fae77873/test/integration/scheduler/filters/filters_test.go#L807-L1069): https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter
 
 **Score**
-- `k8s.io/kubernetes/test/integration/scheduler/scoring/priorities_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring
-
-Also, we should make sure this feature brings no significant performance degradation in both Filter and Score.
-
-- `k8s.io/kubernetes/test/integration/scheduler_perf/scheduler_perf_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling
+- [`k8s.io/kubernetes/test/integration/scheduler/scoring/priorities_test.go`](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/scoring/priorities_test.go#L383-L643): https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring
 
 ##### e2e tests
 
@@ -761,8 +757,9 @@ will rollout across nodes.
 It shouldn't impact already running workloads. It's an opt-in feature,
 and users need to set `matchLabelKeys` or `mismatchLabelKeys` field in PodAffinity or PodAntiAffinity to use this feature. 
 
-When this feature is disabled by the feature flag, the already created Pod's `matchLabelKeys`/`mismatchLabelKeys` (+ `labelSelector` generated from them) is kept.
-But, the newly created Pod's `matchLabelKeys` or `mismatchLabelKeys` field is silently dropped.
+When this feature is disabled by the feature flag, 
+the already created Pod's `matchLabelKeys`/`mismatchLabelKeys` is kept and the `labelSelector` is not modified back.
+But, the newly created Pod's `matchLabelKeys` or `mismatchLabelKeys` field is ignored and silently dropped.
 
 ###### What specific metrics should inform a rollback?
 
@@ -989,7 +986,7 @@ Think about adding additional work or introducing new steps in between
 
 Yes. there is an additional work: kube-apiserver uses the keys in `matchLabelKeys` or `mismatchLabelKeys` to look up label values from the pod, 
 and change `labelSelector` according to them.
-Maybe result in a very small impact in the latency of pod creation request in kube-apiserver. 
+The impact in the latency of pod creation request in kube-apiserver should be negligible. 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
