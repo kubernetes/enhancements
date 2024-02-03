@@ -9,9 +9,9 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Enable Swap Support only for Burstable QoS Pods](#enable-swap-support-only-for-burstable-qos-pods)
-    - [Set Aside Swap for System Critical Daemon](#set-aside-swap-for-system-critical-daemon)
+    - [Set Aside Swap for System Critical Daemons](#set-aside-swap-for-system-critical-daemons)
     - [Best Practices](#best-practices)
-      - [Disable swap for system critical daemon](#disable-swap-for-system-critical-daemon)
+      - [Disable swap for system critical daemons](#disable-swap-for-system-critical-daemons)
       - [Protect system critical daemons for iolatency](#protect-system-critical-daemons-for-iolatency)
       - [Control Plane Swap](#control-plane-swap)
       - [Use of a dedicated disk for swap](#use-of-a-dedicated-disk-for-swap)
@@ -192,7 +192,7 @@ By doing so, we can ensure a thorough understanding of the feature's performance
 
 Allocate the swap limit equal to the requested memory for each container and adjust the proportion of swap based on the total swap memory available.
 
-#### Set Aside Swap for System Critical Daemon
+#### Set Aside Swap for System Critical Daemons
 
 **Note** In Beta2, we found that having system critical daemons swapping memory could cause degration of services.
 
@@ -208,7 +208,7 @@ This is the total amount of swap available for all the Burstable QoS pods; let's
 
 This section is a recommendation for how to set up your nodes with swap if using this feature.
 
-##### Disable swap for system critical daemon
+##### Disable swap for system critical daemons
 
 As we were testing this feature, we found degration of services if you allow system critical daemons to swap.
 This could mean that kubelet is performing slower than normal so if you experience this,
