@@ -888,7 +888,7 @@ A previous version of kubelet interprets mutation to Pod Resources as a Containe
 change and will restart the container with the new Resources. This could lead to Node resource
 over-subscription. In order to address this, the feature-gate will remain default false for
 atleast two versions after v1.27 alpha release. i.e: beta is planned for v1.29 and
-InPlacePodVeritcalScaling feature-gate will be true in versions v1.29+
+InPlacePodVerticalScaling feature-gate will be true in versions v1.29+
 
 kubelet: When feature-gate is disabled, if kubelet sees a Proposed resize, it rejects the
 resize as Infeasible.
