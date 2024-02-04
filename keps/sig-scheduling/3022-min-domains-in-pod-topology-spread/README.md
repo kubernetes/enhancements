@@ -429,6 +429,8 @@ logs or events for this purpose.
 -->
 
 The operator can query pods with `pod.spec.topologySpreadConstraints.minDomains` field set.
+And, after adopting `minDomains` in some Pods, they can confirm that `minDomains` impacts on the scheduling 
+by observing an increase in `plugin_evaluation_total{plugin="PodTopologySpread",extension_point="Filter"}`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -486,9 +488,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-It was lacking the way to see which filter plugin affected Pod's scheduling results in metrics
-(https://github.com/kubernetes/kubernetes/issues/110643),
-and we've got `plugin_evaluation_total`.
+No.
 
 ### Dependencies
 
