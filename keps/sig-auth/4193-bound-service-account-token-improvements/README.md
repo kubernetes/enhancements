@@ -148,7 +148,7 @@ When a TokenRequest is being issued/fulfilled, we will modify the issuing code t
 can be later used to trace the requests that a specific issued token has made to the apiserver via the audit log.
 
 This will require changing the JWT issuing code to actually generate this UUID, as well as extending the code around the
-audit log to have it record this information into audit entries when a token is issued (as `authentication.k8s.io/issued-credential-id`).
+audit log to have it record this information into audit entries when a token is issued (via the `authentication.k8s.io/issued-credential-id` audit annotation).
 
 As this UUID will be embedded as part of a user's ExtraInfo, it'll automatically be persisted into audit events for all
 requests made using a token that embeds a credential identifier (as `authentication.k8s.io/credential-id`).
