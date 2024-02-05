@@ -148,7 +148,10 @@ When a TokenRequest is being issued/fulfilled, we will modify the issuing code t
 can be later used to trace the requests that a specific issued token has made to the apiserver via the audit log.
 
 This will require changing the JWT issuing code to actually generate this UUID, as well as extending the code around the
-audit log to have it record this information into audit entries.
+audit log to have it record this information into audit entries when a token is issued (as `authentication.k8s.io/issued-credential-id`).
+
+As this UUID will be embedded as part of a user's ExtraInfo, it'll automatically be persisted into audit events for all
+requests made using a token that embeds a credential identifier (as `authentication.k8s.io/credential-id`).
 
 ### User Stories (Optional)
 
@@ -164,10 +167,10 @@ The node assertion can be checked to ensure the host identity matches the node a
 Bob is an administrator of a cluster and has noticed some strange request patterns from an unknown service account.
 
 Bob would like to understand who initially issued/authorised this token to be issued. To do so, Bob looks up the JTI
-of the token making the suspicious requests by looking inside the audit log entries for these suspect requests.
+of the token making the suspicious requests by looking inside the audit log entries at user's ExtraInfo for these suspect requests.
 
 This JTI is then used for a further audit log lookup - namely, looking for the TokenRequest `create` call which contains
-the audit annotation with key `authentication.kubernetes.io/token-identifier` and the value set to that of the suspect token.
+the audit annotation with key `authentication.kubernetes.io/issued-credential-id` and the value set to that of the suspect token.
 
 This allows Bob to determine precisely who made the original request for this token, and (depending on the 'chain'
 above this token), allows Bob to recursively perform this lookup to find all involved parties that led to this token
@@ -304,7 +307,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 #### Beta
 
 - Decide what the default of the new flag should be
+  - Decision: this flag was not added during alpha, and MAY be added post-beta, but will definitely default to **off**.
+  - This does not need to block promotion of ServiceAccountTokenPodNodeInfo feature as a result.
 - Decide if using an audit annotation is the correct approach
+  - Decision: audit annotation is the correct approach as this is only for `serviceaccounts/<name>/token` requests, not all
+  - Renaming audit annotation to `authentication.kubernetes.io/issued-credential-id` to disambiguate from `authentication.kubernetes.io/credential-id` in user's ExtraInfo
 - Docs around the SA JWT schema (this does not exist today)
 
 #### GA
@@ -360,9 +367,13 @@ you need any help or guidance.
 
 * `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log / the SA user info.
 * `ServiceAccountTokenPodNodeInfo` feature flag will toggle including node info associated with pods in tokens.
+* `ServiceAccountTokenNodeBindingValidation` feature flag will toggle the apiserver validating Node claims in node bound service account tokens.
 * `ServiceAccountTokenNodeBinding` feature flag will toggle allowing service account tokens to be bound to Node objects.
 
-Both of these feature flags can be disabled without any unexpected adverse affects or coordination required.
+The `ServiceAccountTokenNodeBindingValidation` feature will graduate to beta one release earlier than `ServiceAccountTokenNodeBinding`
+to ensure a safe rollback from version N+1 to N (more info below in rollback considerations section).
+
+All other feature flags can be disabled without any unexpected adverse affects or coordination required.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
