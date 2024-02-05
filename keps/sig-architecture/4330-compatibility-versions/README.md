@@ -475,11 +475,15 @@ StorageVersions specify what version an apiserver uses to write resources to etc
 for each API group. The StorageVersion changes across releases as API groups
 graduate through stability levels.
 
-The StorageVersions of an API group will need to be modified to track which
-StorageVersions was used for each Kubernetes version that the compatibility
-version can be set to. This will then be used when the apiserver to write
-resources with the same StorageVersions used by the Kubernetes version the
-compatibility version is set to.
+During upgrades and downgrades, the storage version is particularly important.
+To enable upgrades and rollbacks, the version selected for storage in etcd in 
+version N must be (en/de)codable for k8s versions N-1 through N+1.
+
+Thus, to determine the storage version to use at compatibility version N, we 
+will find the set of all supported GVRs for each of N-1, N, and N+1 and intersect 
+them to find a list of all GVRs supported by every binary version in the window. 
+The storage version of each group-resource is the newest 
+(using kube-aware version sorting) version found in that list for that group-resource.
 
 ### API Compatibility Versioning
 
