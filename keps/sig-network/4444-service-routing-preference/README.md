@@ -15,7 +15,7 @@
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Standard Heuristic Implementation (kube-proxy dataplane)](#standard-heuristic-implementation-kube-proxy-dataplane)
@@ -50,7 +50,6 @@
   - [Granular Routing Controls](#granular-routing-controls)
   - [Reuse Pod Topology Spread Constraints for Traffic Distribution](#reuse-pod-topology-spread-constraints-for-traffic-distribution)
     - [Complementary Use of Pod Topology Spread Constraints and routingPreference](#complementary-use-of-pod-topology-spread-constraints-and-routingpreference)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -132,7 +131,7 @@ Topology aware routing together with `internalTrafficPolicy` were meant to be
 the successors of `topologyKeys` and allow implementations to be more flexible.
 
 * TopologyAwareRouting: 
-  * Responds the annotation service.kubernetes.io/topology-mode. When this
+  * Responds the annotation `service.kubernetes.io/topology-mode`. When this
     annotation is set to Auto, an implementation specific heuristic is used to
     route the traffic. 
   * **Goal:** The aim with Auto was to allow implementations to be as smart as
@@ -196,8 +195,8 @@ such a preference in future refinements.
   interpretation might vary across implementations.
 
 * **Replacement of Traffic Policies:** The new field is complementary to
-  InternalTrafficPolicy and ExternalTrafficPolicy. It does not aim to substitute
-  their role in enforcing strict traffic locality.
+  `internalTrafficPolicy` and `externalTrafficPolicy`. It does not aim to
+  substitute their role in enforcing strict traffic locality.
 
 * **Immediate Support for All Possible Heuristics:** The initial implementation
   focuses on a core set of heuristics. Addition of new heuristics (like
@@ -212,6 +211,8 @@ while making routing decisions. It does not offer strict routing guarantees.
 
 The field will support the following initial values:
 
+<<[UNRESOLVED Name for field values is under discussion]>>
+
 * `Default`: Indicates no specific routing preference. The user delegates the
   routing decision to the implementation, allowing it to apply its best-effort
   strategy.
@@ -220,6 +221,8 @@ The field will support the following initial values:
 * `Zone`: Encourages routing traffic to endpoints within the same zone as
   the client. If no endpoints are available within the zone, traffic should be
   routed to other zones.
+
+<<[/UNRESOLVED]>>
 
 Implementations are strongly encouraged to support the standard values. While
 some flexibility in interpretation is permitted, implementations should aim to
@@ -248,7 +251,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I don't have strong preferences for how my application
   traffic is routed. I prioritize simplicity and trust my Kubernetes
   implementation to optimize traffic distribution.
-* **Solution:** Set `routingPreference=Default` (or leave the field unset)
+* **Solution:** Set `routingPreference: Default` (or leave the field unset)
 * **Effect:** The Kubernetes implementation will apply its best-effort routing
   strategy based on its design. This strategy might change over time as the
   implementation evolves. It may load balance across zones or regions.
@@ -257,7 +260,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I want my application to primarily receive traffic from
   endpoints within the same zone for performance or cost reasons. However,
   I want to avoid connection failures if no local endpoints are available.
-* **Solution:** Set `routingPreference=Zone`
+* **Solution:** Set `routingPreference: Zone`
 * **Effect:** The Kubernetes implementation will aim to prioritize routing
   traffic to endpoints in the same zone as the client. If no endpoints are
   available within the zone, traffic will be routed to other zones. It's
@@ -269,7 +272,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I prioritize application availability and want to minimize the
   risk of outages due to localized overload. I'm willing to accept potentially
   higher costs associated with cross-zone traffic distribution.
-* **Solution:** Set `routingPreference=Spread`
+* **Solution:** Set `routingPreference: Spread`
 * **Effect:** The Kubernetes implementation will try to distribute traffic as
   equally as possible across endpoints, potentially spanning multiple zones or
   regions. This can improve resilience but might lead to increased network
@@ -290,13 +293,13 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I have some other precise preferences for how traffic should
   be routed, and I know that my chosen implementation supports the desired
   preference. 
-* **Solution:** Set `routingPreference=<domain>/<heuristicName>` (where
+* **Solution:** Set `routingPreference: <domain>/<heuristicName>` (where
   `<domain>` and `<heuristicName>` are provided by your implementation).
 * **Effect:** The Kubernetes implementation will apply the specified routing
   heuristic. It's important to note that the precise behavior of
   implementation-specific heuristics might vary.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 This proposal is our third attempt at an API revolving around such a
 configuration. There's a non-zero chance that we may need to revisit this again.
@@ -340,15 +343,16 @@ as the control plane) will support the three standard routing preferences
 
 #### `Zone`
 * This preference will be implemented by the use of Hints within EndpointSlices.
-* We already use Hints to implement `service.kubernetes.io/topology-mode=Auto`
-  Similarly, we’ll use the same Hints within the EndpointSlice to implement the
-  `Zone` heuristic – the hints will match the zone of the endpoint itself.
+* We already use Hints to implement `service.kubernetes.io/topology-mode: Auto`
+  In a similar manner, the EndpointSlice controller will now also populate hints
+  for `routingPreference: Zone` -- although in this case, the zone hint will
+  match the endpoint of the zone itself.
 * While it may seem redundant to populate the hints here since kube-proxy can
   already derive the zone hint from the endpoints zone (as they would be the
   same), we will still use this for implementation simply because of the reason
   that it’s easier to implement and provides a better design. Consider an
   alternative implementation where kube-proxy reads
-  `routingPreference=Zone` field and then constructs the route rules
+  `routingPreference: Zone` field and then constructs the route rules
   accordingly. This means some extra logic needs to be baked into the kube-proxy
   which could have just as easily been implemented by an already existing
   extensibility mechanism (i.e. EndpointSlice hints)
@@ -417,8 +421,8 @@ currently provide a condition denoting acknowledgment from the dataplane. In the
 future when this is possible, another condition like the following could be
 used:
 
-* RoutingPreferenceReady
-  * **Type:** `RoutingPreferenceReady`
+* RoutingPreferenceHonored
+  * **Type:** `RoutingPreferenceHonored`
   * **Description:** Confirms that the dataplane has received the hints,
     acknowledged them, and configured itself accordingly.
 
@@ -480,22 +484,22 @@ captures the precedence
     <td>-</td>
     <td>-</td>
     <td>Auto</td>
-    <td>routingPreference=Auto</td>
-    <td>routingPreference=Auto</td>
+    <td>routingPreference: Auto</td>
+    <td>routingPreference: Auto</td>
   </tr>
   <tr>
     <td>Local</td>
     <td>-</td>
     <td>Auto</td>
-    <td>ExternalTrafficPolicy=Local</td>
-    <td>routingPreference=Auto</td>
+    <td>ExternalTrafficPolicy: Local</td>
+    <td>routingPreference: Auto</td>
   </tr>
   <tr>
     <td>Local</td>
     <td>Local</td>
     <td>Auto</td>
-    <td>ExternalTrafficPolicy=Local</td>
-    <td>InternalTrafficPolicy=Local</td>
+    <td>ExternalTrafficPolicy: Local</td>
+    <td>InternalTrafficPolicy: Local</td>
   </tr>
 </tbody>
 </table>
@@ -526,25 +530,24 @@ The following packages will also see minor changes:
 
 ##### Integration tests
 
-* Verify that if both the annotation `service.kubernetes.io/topology-mode=Auto`
-  and field `routingPreference=Zone` are configured, precedence is given
-  to the annotation.
+* Verify that if both the annotation `service.kubernetes.io/topology-mode: Auto`
+  and field `routingPreference: Zone` are configured, precedence is given to the
+  annotation.
 
 ##### e2e tests
 
 * Verify that EndpointSlice hints are correctly populated when
-  `routingPreference=Zone`
-* Verify through probes that when `routingPreference=Zone`, requests
-  originating from a zone which has service pods get sent to a pod in the same
-  zone. For requests originating from zones with no service pods, requests
-  should not get blackholed and should rather be forwarded to any service pod
-  from the cluster.
+  `routingPreference` is set to `Zone`.
+* Verify through probes that for `routingPreference: Zone`, requests originating
+  from a zone which has service pods get sent to a pod in the same zone. For
+  requests originating from zones with no service pods, requests should not get
+  blackholed and should rather be forwarded to any service pod from the cluster.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag
+- Feature implemented behind a feature gate
 - Initial e2e tests completed and enabled
 
 ### Upgrade / Downgrade Strategy
@@ -570,11 +573,11 @@ Version skews should naturally get handled as per the following behaviour.
 
 * **kube-apiserver:** [Kubernetes Version Skew
   Policies](https://kubernetes.io/releases/version-skew-policy/#supported-version-skew)
-  require that kube-apiserver is atleast at the version of kube-proxy or
+  require that kube-apiserver is at least at the version of kube-proxy or
   kube-controller-manager. The only valid version skew would mean that a newer
   kube-apiserver serves the new `routingPreference` field but the older
   kube-proxy and kube-controller-manager would silently ignore this field. (No
-  adverse affect, behaviour equivalent to feature being disabled)
+  adverse affect, behaviour equivalent to feature being disabled).
 
 * **New kube-controller-manager (EndpointSlice controller) / Old kube-proxy:**
 
@@ -991,8 +994,3 @@ distribution when used in conjunction.
   pod distribution across zones, maximizing the likelihood that the
   `routingPreference` can be satisfied and reduce (although not completely
   eliminate) chances of overload for a single zone.
-
-
-## Infrastructure Needed (Optional)
-
-N/A
