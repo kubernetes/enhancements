@@ -2830,7 +2830,8 @@ Why should this KEP _not_ be implemented?
 
 ### Semantic Parameters instead of PodSchedulingContext
 
-When a DRA driver uses semantic parameters, there is no DRA driver controller
+When a DRA driver uses semantic parameters, there is no need for a DRA driver controller
+which allocates the claim
 and no need for communication between scheduler and such a controller. The
 PodSchedulingContext object and the associated support in the scheduler then
 aren't needed. Once semantic parameters are mature enough and confirmed to be
