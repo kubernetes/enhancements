@@ -59,18 +59,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
     - [ ] e2e Tests for all Beta API Operations (endpoints)
     - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
     - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
     - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -198,54 +198,17 @@ a `unhealthyPodEvictionPolicy`, and will not require the actual API to change.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
 We assess that the eviction api has adequate test coverage for places which might be impacted by
 this enhancement. Thus, no additional tests prior implementing this enhancement
 are needed.
 
 ##### Unit tests
-
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-Unit tests covering:
-  - The current behavior stays unchanged when the policy is not specified.
-  - Correct behavior for both policies in the eviction API.
-  - Feature gate disablement.
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
 
 The core packages (with their unit test coverage) which are going to be modified during the implementation:
 - `k8s.io/kubernetes/pkg/apis/policy/validation`: `5 October 2022` - `93%`  <!--(validation of the PodDisruptionBudget configuration with regard to the unhealthyPodEvictionPolicy)-->
@@ -267,21 +230,13 @@ Integration tests covering:
   - Correct behavior for both policies in the eviction API.
   - Feature gate disablement.
 
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-- <test>: <link to test coverage>
--->
-
 [TestEvictionWithUnhealthyPodEvictionPolicy](https://github.com/kubernetes/kubernetes/blob/c8010537913422cc221cdd784936ff99817f621c/test/integration/evictions/evictions_test.go#L417): https://storage.googleapis.com/k8s-triage/index.html?test=UnhealthyPodEvictionPolicy
 
 ##### e2e tests
 
-Verify passing existing E2E and conformance tests for PDBs and Eviction.
+Introduce tests covering:
+  - Create a Deployment and a PDB with IfHealthyBudget policy and check that evictions work accordingly
+  - Create a Deployment and a PDB with AlwaysAllow policy and check that evictions work accordingly
 
 <!--
 This question should be filled when targeting a release.
@@ -294,7 +249,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
-
+TBD
 
 ### Graduation Criteria
 
@@ -316,6 +271,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Every bug report is fixed.
 - Introduce E2E tests for this field and confirm their stability.
+- Verify existing E2E and conformance tests for PDBs and Eviction.
 - The eviction API ignores the feature gate.
 
 #### Deprecation
@@ -340,12 +296,6 @@ This feature doesn't depend on the version for nodes.
     - Feature gate name: PDBUnhealthyPodEvictionPolicy
     - Components depending on the feature gate:
       - kube-apiserver
-- [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -394,8 +344,7 @@ A manual test was performed, as follows:
 8. Verify that eviction of pods for Deployment A and StatefulSet B use the default behavior.
    Verify that the `AlwaysAllow` UnhealthyPodEvictionPolicy can be set again to a PDB of Deployment A and test the eviction behavior
 
-TODO:
-A manual test will be performed, as follows:
+A manual test was performed, as follows:
 
 1. Create a cluster in 1.26.
 2. Upgrade to 1.27.
@@ -482,34 +431,17 @@ No
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 No change from the existing behavior of the eviction API.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+None.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
@@ -517,6 +449,7 @@ For each of them, fill in the following information by copying the below templat
 - 2022-11-11: Initial alpha implementation merged into 1.26
 - 2022-12-07: KEP rewritten to match the implementation (PodHealthyPolicy was renamed to UnhealthyPodEvictionPolicy)
 - 2023-02-06: Update for beta promotion
+- 2024-01-30: Update for stable promotion
 
 ## Drawbacks
 
