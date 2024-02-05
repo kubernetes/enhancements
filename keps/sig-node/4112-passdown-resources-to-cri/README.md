@@ -186,7 +186,7 @@ hot-plugged to the PCIe root-port or switch-port. If the number of pre-allocated
 pluggable ports is too low, the attachment will fail (container devices >
 pre-allocated hot-pluggable ports).
 
-In the case of Confidential Containers (uses Kata unter the hood with additional
+In the case of Confidential Containers (uses Kata under the hood with additional
 software components for attestation) the CRI needs to consider the cold-plug aka
 direct attachment use-case. At sandbox creation time the hypervisor needs to
 know the exact number of pass-through devices and its properties
@@ -335,11 +335,12 @@ The PodSandboxConfig message (part of the RunPodSandbox request) will be
 extended to contain information about resources of all its containers known at
 the pod creation time. The container runtime may use this information to make
 preparations for all upcoming containers of the pod. E.g. setup all needed
-resources for a VM-based pod or  prepare for optimal allocation of resources of
+resources for a VM-based pod or prepare for optimal allocation of resources of
 all the containers of the Pod. However, the container runtime may continue to
-operate as they did (before this enhancement). That is, it can safely ignore
-the per-container resource information and allocate resources for each
-container separately, one at a time, with the `CreateContainer`.
+operate as they did (before this enhancement). That is, it can ignore
+the resource information presented here and allocate resources for each
+container separately at container creation time with the `CreateContainer`
+request.
 
 ```diff
  message PodSandboxConfig {
@@ -358,8 +359,7 @@ container separately, one at a time, with the `CreateContainer`.
 +// PodResourceConfig contains information of all resources requirements of
 +// the containers of a pod.
 +message PodResourceConfig {
-+    repeated ContainerResourceConfig init_containers = 1;
-+    repeated ContainerResourceConfig containers = 2;
++    repeated ContainerResourceConfig containers = 1;
 +}
  
 +// ContainerResourceConfig contains information of all resource requirements of
@@ -368,17 +368,26 @@ container separately, one at a time, with the `CreateContainer`.
 +    // Name of the container
 +    string name= 1;
 +
++    // Type of the container
++    ContainerType type= 2;
++
 +    // Kubernetes resource spec of the container
-+    KubernetesResources kubernetes_resources = 2;
++    KubernetesResources kubernetes_resources = 3;
 +
 +    // Mounts for the container.
-+    repeated Mount mounts = 3;
++    repeated Mount mounts = 4;
 +
 +    // Devices for the container.
-+    repeated Device devices = 4;
++    repeated Device devices = 5;
 +
 +    // CDI devices for the container.
-+    repeated CDIDevice CDI_devices = 5;
++    repeated CDIDevice CDI_devices = 6;
++}
+
++enum ContainerType {
++    INIT_CONTAINER    = 0;
++    SIDECAR_CONTAINER = 1;
++    REGULAR_CONTAINER = 2;
 +}
 ```
 
@@ -413,6 +422,9 @@ contain unmodified resource requests from the PodSpec.
 +}
 ```
 
+Note that mounts, devices, CDI devices are part of the ContainerConfig message
+but are left out of the diff snippet above.
+
 The resources (mounts, devices, CDI devices, Kubernetes resources) in the
 CreateContainer request should be identical to what was (pre-)informed in the
 RunPodSandbox request. If they are different, the CRI runtime may fail the
@@ -442,16 +454,24 @@ resource requests from the PodSpec.
  }
 ```
 
+Note that mounts, devices, CDI devices are not part of the
+UpdateContainerResourcesRequest message and this proposal does not suggest
+adding them.
+
 ### kubelet
 
 Kubelet code is refactored/modified so that all container resources are known
 before sandbox creation. This mainly consists of preparing all mounts (of all
 containers) early.
 
-Kubelet will be be extended to pass down all mounts, devices, CDI devices and
-the unmodified resource requests and limits to the container runtime in all
-related CRI requests, i.e.  RunPodSandbox, CreateContainer and
-UpdateContainerResources.
+Kubelet will be extended to pass down all resources of containers in all
+related CRI requests (as described in the [CRI API](#cri-api) section). That
+is:
+
+- adding mounts, devices, CDI devices and the unmodified resource requests and
+  limits of all containers into RunPodSandbox request
+- adding unmodified resource requests and limits into CreateContainer and
+  UpdateContainerResources requests
 
 For example, take a PodSpec:
 
