@@ -295,6 +295,9 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+Add a feature gate `InformMetrics` in client-go. It is disabled when in the Alpha state.
+
+### Informer metrics
 Introduce the informer metrics struct `informerMetrics` and `eventHandlerMetrics`. It is similar to the existing `workqueue` metrics.
 
 ```
@@ -348,7 +351,32 @@ Add prometheus metrics item in subsystem `informer`
 | event_process_duration       | eventHandler name  | How long in seconds eventHandler processing an item from RingGrowing takes |
 
 
-Add an environment `ENABLE_INFORMER_METRICS` to enable informer metrics, it is disable by default.
+### Reflector metrics
+This change https://github.com/kubernetes/kubernetes/pull/74636 will be reverted.
+
+Each reflector metrics contains 3 counter, 4 summary and 1 gauge.
+```
+type reflectorMetrics struct {
+	numberOfLists       CounterMetric
+	listDuration        SummaryMetric
+	numberOfItemsInList SummaryMetric
+
+	numberOfWatches      CounterMetric
+	numberOfShortWatches CounterMetric
+	watchDuration        SummaryMetric
+	numberOfItemsInWatch SummaryMetric
+
+	lastResourceVersion GaugeMetric
+}
+```
+According to kubernetes/kubernetes#73587, the memory leak is caused by summary. Every summary contains `AgeBuckets`of buckets which contains an array with 500 quantile.Sample. Reduce summary `ageBuckets` to mitigate memory usage. 
+
+The listDuration/numberOfItemsInList/watchDuration/numberOfItemsInWatch will not `Observe` very frequently, it is enough to set `ageBuckets` to 1.
+
+### Metrics remove
+When the informers and reflectors stopped, the reference metrics will be removed.
+
+Kube component-base metrics support to delete metrics by matching labels.
 
 
 ### Test Plan
@@ -416,6 +444,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - <test>: <link to test coverage>
+When the informers and reflectors are stopped, ensure the reference metrics will be removed.
 
 ##### e2e tests
 
@@ -509,8 +538,6 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-The informer will not expose metrics by default. Users can user environment `ENABLE_INFORMER_METRICS` to enable informer metrics.
-
 ### Version Skew Strategy
 
 <!--
@@ -571,8 +598,9 @@ well as the [existing list] of feature gates.
 -->
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+  - Feature gate name: InformerMetrics
+  - Components depending on the feature gate: 
+    - components via client-go library
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -586,6 +614,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No. It does not change any default behavior. When this feature is enabled, it will increase memory usage in client-go.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -600,7 +629,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, by disabling `InformerMetrics` FeatureGate for components via client-go library.
+In this case informers will not expose metrics anymore.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+The expected behavior of the feature will be restored.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -616,6 +649,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+For now, there is no tests for feature enablement/disablement. The unit tests will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -716,9 +751,9 @@ Pick one more of these and delete the rest.
 -->
 
 - [ ] Metrics
-  - Metric name:
+  - Metric name: Memory usage
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: Operating System/golang pprof
 - [ ] Other (treat as last resort)
   - Details:
 
