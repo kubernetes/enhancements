@@ -13,8 +13,10 @@ status: provisional
 creation-date: 2023-12-01
 reviewers:
   - "@deads2k"
+  - "@thockin"
 approvers:
-  - "@deads2k"
+  - "@johnbelamaric"
+  - "@dims"
 see-also:
   - "/keps/sig-api-machinery/4020-unknown-version-interoperability-proxy"
 stage: alpha
