@@ -178,10 +178,8 @@ For pod failure policies to be able communicate different failure types to highe
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Modifying PodFailurePolicy behavior
+- The Job controller using this new field for any purpose not explicitly defined in the proposal.
 
 ## Proposal
 
