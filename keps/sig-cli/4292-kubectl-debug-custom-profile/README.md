@@ -655,7 +655,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-In alpha phase, all the tests can be done only after enabling this feature.
+Enablement and disablement of this feature is managed by `KUBECTL_DEBUG_CUSTOM_PROFILE` environment
+variable. When user sets this environment variable, new `custom` flag becomes visible. We can
+add basic enablement/disablement test to check that flag is visible or not.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -743,7 +745,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name: 
   - Other field: 
 - [X] Other (treat as last resort)
-  - Details: Checking the value of `KUBECTL_DEBUG_CUSTOM_PROFILE` environment variable
+  - Details: Checking the value of `KUBECTL_DEBUG_CUSTOM_PROFILE` environment variable, or
+    they can run a test debug and see if their profile is respected in the resulting container.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
