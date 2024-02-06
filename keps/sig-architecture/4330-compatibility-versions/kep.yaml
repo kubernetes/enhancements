@@ -1,19 +1,22 @@
 title: Compatibility Versions
 kep-number: 4330
 authors:
-  - "@logicalhan"
+  - "@alexzielenski"
   - "@jpbetz"
   - "@liggitt"
+  - "@logicalhan"
   - "@siyuanfoundation"
-owning-sig: sig-api-machinery
+owning-sig: sig-architecture
 participating-sigs:
-  - sig-architecture
+  - sig-api-machinery
   - wg-lts
 status: provisional
 creation-date: 2023-12-01
 reviewers:
   - "@deads2k"
   - "@thockin"
+  - "@wojtek-t"
+  - "@dims"
 approvers:
   - "@johnbelamaric"
   - "@dims"

@@ -268,6 +268,9 @@ Kubernetes components (apiservers, controller managers, schedulers) will offer a
 minor versions. If unset, the compatibility version defaults to the `<major.minor>`
 version of the binary version.
 
+The kubelet is out of scope for this enhancement. Note that the kubelet already
+supports N-3 version skew with the kube-apiserver.
+
 ### Changes to Feature Gates
 
 Features will track version information, i.e.:
@@ -326,7 +329,7 @@ The lifecycle of the feature would be:
 | 1.28    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
 | 1.29    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
 | 1.30    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
-| 1.31    | GA    | **Feature implementation becomes part of normal code, Feature gate and feature tracking information may be removed from code** |
+| 1.31    | GA    | **Feature implementation becomes part of normal code. `if featureGate enabled { // implement feature }` code may be removed at this step** |
 
 All feature gating and tracking must remain in code through 1.30 for N-3
 compatibility version support.
@@ -354,7 +357,7 @@ The steps to remove the Beta feature would be:
 | 1.30    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
 | 1.31    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
 | 1.32    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
-| 1.33    | -     | **Feature implementation and feature tracking information may be removed from code** |
+| 1.33    | -     | **`if featureGate enabled { // implement feature }` code may be removed at this step** |
 
 (Features that are deleted before reaching Beta do not require n-3 compatibility
 support since we don't support compatibility version for alpha features)
