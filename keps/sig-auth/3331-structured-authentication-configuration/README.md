@@ -697,8 +697,10 @@ not the minimum required version (v1.29), the feature will not be available.
 <<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
 ## Open Questions
 
+The following questions are still open and need to be addressed or rejected or deferred before the KEP is marked as GA.
+
 - should we have any revocation mechanism?
-  => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
+  => use revocation endpoint if it is in the discovery document?
   => related issue https://github.com/kubernetes/kubernetes/issues/71151
 - should audit annotations be set on validation failure?
 - decide what error should be returned if CEL eval fails at runtime
@@ -815,10 +817,11 @@ New metrics:
 - `apiserver_authentication_config_controller_automatic_reload_failures_total` - This metric will be incremented when the API server fails to reload the configuration file.
 - `apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds` - This metric will be updated every time the API server reloads the configuration file.
 - `apiserver_authentication_config_controller_automatic_reload_success_total` - This metric will be incremented every time the API server successfully reloads the configuration file.
+- `apiserver_authentication_config_controller_automatic_reload_last_config_hash` - This metric will be set to the hash of the loaded configuration file after a successful reload.
 - `apiserver_authentication_latency_seconds` - This metric will be used to monitor the time it takes to Authenticate token. This will only be set for token authentication requests for matching issuer.
-- `apiserver_authentication_last_jwks_fetch_timestamp_seconds` - This metric will be updated every time the API server makes a request to the JWKS endpoint.
-- `apiserver_authentication_last_jwks_fetch_success_timestamp_seconds` - This metric will be updated every time the API server successfully fetches the keys from the JWKS endpoint. This metric will contain the hash of the keyset.
-  - We will use https://pkg.go.dev/hash/fnv#New64 to hash the keyset and store it in the metric.
+- `apiserver_authentication_jwks_fetch_last_timestamp_seconds` - This metric will be updated every time the API server makes a request to the JWKS endpoint.
+- `apiserver_authentication_jwks_fetch_last_keyset_hash` - This metric will be set to the hash of the keyset fetched from the JWKS endpoint after successfully fetching the keyset.
+  - We will use https://pkg.go.dev/hash/fnv#New64 to hash the keyset.
 - `apiserver_authentication_jwt_authenticator_provider_status_timestamp_seconds` - This metric will indicate the status of the JWT authenticator provider.
 
 ###### How can an operator determine if the feature is in use by workloads?
