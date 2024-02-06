@@ -3,7 +3,7 @@ kep-number: 4443
 authors:
   - "@danielvegamyhre"
 owning-sig: sig-apps
-status: provisional
+status: implementable
 creation-date: 2024-02-05
 reviewers:
   - "@ahg-g"
@@ -14,6 +14,7 @@ approvers:
 
 see-also:
   - "https://github.com/kubernetes-sigs/jobset/pull/381"
+  - "https://github.com/kubernetes/enhancements/pull/3374"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
