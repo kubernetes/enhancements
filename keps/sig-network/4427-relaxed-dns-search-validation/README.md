@@ -193,20 +193,31 @@ when the gate is enabled or disabled.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
+We need to ensure that once there's an underscore, changes to the object will continue to pass validation even after the gate is off.
+The test cases will cover behavior when the gate is on and when the gate is off, and will also cover transitioning from on to off
+with a value that contains an underscore.
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+- Gate On
+  - New value
+    - Underscore (expect validation to pass)
+    - No Underscore (expect validation to pass)
+  - Existing value
+    - Underscore (expect validation to pass)
+    - No Underscore (expect validation to pass)
+- Gate Off
+  - New value
+    - Underscore (expect validation to fail)
+    - No Underscore (expect validation to pass)
+  - Existing value
+    - Underscore (expect validation to pass)
+    - No Underscore (expect validation to pass)
+- Ratcheting
+   - Turn gate on, write search string with underscore, turn gate off, change unrelated property on the object and verify that it passes validation, remove search value with the underscore, verify that saving a search string with an underscore is now prevented
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
+In addition to the Pod itself, each integration test should be repeated with objects that contain a pod spec template:
+-	Deployment
+-	ReplicaSet
+-	Job
 
 ##### e2e tests
 
@@ -286,8 +297,8 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-No, there is no change to default behavior.
-This is a change to validation.
+Yes, there is a change to validation when the feature is enabled.
+The change is managed through the racheting process described in the Proposal section.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -365,7 +376,7 @@ would indicate the feature is in use.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-N/A. This is a validation change.
+If they are able to save an object with a DNS string containing an underscore, then the feature is working.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
