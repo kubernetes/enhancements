@@ -1,5 +1,7 @@
 kep-number: 2400
 alpha:
   approver: "@deads2k"
-beta:
+beta1:
+  approver: "@deads2k"
+beta2:
   approver: "@deads2k"
