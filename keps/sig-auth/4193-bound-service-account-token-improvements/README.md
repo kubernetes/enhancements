@@ -45,14 +45,14 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -219,7 +219,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -232,16 +232,33 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
+`pkg/registry/core/serviceaccount/storage`:
+* Coverage before (`release-1.28`): `k8s.io/kubernetes/pkg/registry/core/serviceaccount/storage      8.354s  coverage: 10.7% of statements`
+* Coverage after: `k8s.io/kubernetes/pkg/registry/core/serviceaccount/storage      8.394s  coverage: 8.7% of statements`
+* Test ensuring audit annotations are added to audit events for the `serviceaccounts/<name>/token` subresource.
+* Tests verifying it's possible to bind a token to a Node object.
+* Tests ensuring tokens bound to pod objects also embed associated node metadata.
+* NOTE: the majority of this file is untested with *unit tests* (instead, using integration tests). [#121515](https://github.com/kubernetes/kubernetes/issues/121515).
+
 `staging/src/k8s.io/apiserver/pkg/authentication/serviceaccount`:
+* Coverage before (`release-1.28`): `k8s.io/apiserver/pkg/authentication/serviceaccount      0.567s  coverage: 60.8% of statements`
+* Coverage after: `k8s.io/apiserver/pkg/authentication/serviceaccount      0.569s  coverage: 70.1% of statements`
 * Test ensuring that service account info (JTI, node name and UID) is correctly extracted from a presented JWT.
 * Tests to ensure the information is NOT extracted when the feature gate is disabled.
 
 `pkg/serviceaccount`:
+* Coverage before (`release-1.28`): `k8s.io/kubernetes/pkg/serviceaccount    0.755s  coverage: 72.4% of statements`
+* Coverage after: `k8s.io/kubernetes/pkg/serviceaccount    0.786s  coverage: 72.7% of statements`
 * Extending tests to ensure Node info is embedded into extended claims (name and uid)
 * Tests to ensure `ID`/`JTI` field is always set to a random UUID.
 * Tests to ensure the info embedded on a JWT is extracted from the token and into the ServiceAccountInfo when
   a token is validated.
 * Tests to ensure the information is NOT embedded or extracted when the feature gate is disabled.
+
+`staging/src/k8s.io/kubectl/pkg/cmd/create`:
+* Coverage before (`release-1.28`): `k8s.io/kubectl/pkg/cmd/create   0.995s  coverage: 55.1% of statements`
+* Coverage after: `k8s.io/kubectl/pkg/cmd/create   0.949s  coverage: 55.2% of statements`
+* Add tests ensuring it's possible to request a token that is bound to a Node object (gated by environment variable during alpha)
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -370,8 +387,12 @@ you need any help or guidance.
 * `ServiceAccountTokenNodeBindingValidation` feature flag will toggle the apiserver validating Node claims in node bound service account tokens.
 * `ServiceAccountTokenNodeBinding` feature flag will toggle allowing service account tokens to be bound to Node objects.
 
-The `ServiceAccountTokenNodeBindingValidation` feature will graduate to beta one release earlier than `ServiceAccountTokenNodeBinding`
-to ensure a safe rollback from version N+1 to N (more info below in rollback considerations section).
+The `ServiceAccountTokenNodeBindingValidation` feature will graduate to beta in version v1.30, a release earlier than `ServiceAccountTokenNodeBinding`
+to ensure a safe rollback from version v1.31 to v1.30 (more info below in rollback considerations section).
+
+The `ServiceAccountTokenNodeBinding` feature gate must only be enabled once the `ServiceAccountTokenNodeBindingValidation` feature has been enabled.
+Disabling the `ServiceAccountTokenNodeBindingValidation` feature whilst keeping `ServiceAccountTokenNodeBinding` would allow tokens that are expected to
+be bound to the lifetime of a particular Node to validate even if that Node no longer exists.
 
 All other feature flags can be disabled without any unexpected adverse affects or coordination required.
 
@@ -424,7 +445,8 @@ The `ServiceAccountTokenNodeBindingValidation` feature gate should be enabled an
 any server.
 
 The `ServiceAccountTokenNodeBindingValidation` will be defaulted to on one release **before** `ServiceAccountTokenNodeBinding`
-to account for this.
+to account for this. Concretely, `ServiceAccountTokenNodeBindingValidation` will be enabled by default in v1.30 and
+`ServiceAccountTokenNodeBinding` will be enabled by default in v1.31.
 
 This should not have any issues/affect during upgrades.
 Rollback is done by removing/disabling the feature gate(s).
@@ -441,6 +463,10 @@ To help avoid this, the feature will be graduated in two phases:
 * Secondly, graduating the issuance of explicitly Node bound tokens
 
 This allows for a safe rollback in which the same security expectations are enforced once a token has been issued.
+
+If a user explicitly *disables* `ServiceAccountTokenNodeBindingValidation` but keeps `ServiceAccountTokenNodeBinding` enabled,
+the node claims in the issued tokens will not be properly validated. This configuration will be explicitly denied by the
+kube-apiserver and will cause it to exit on startup.
 
 ###### What specific metrics should inform a rollback?
 
@@ -603,7 +629,19 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+After observing an issue (e.g. uptick in denied authentication requests or a significant shift in any metrics added for this KEP),
+kube-apiserver logs from the authenticator may be used to debug.
+
+Additionally, manually attempting to exercise the affected codepaths would surface information that'd aid debugging.
+For example, attempting to issue a node bound token, or attempting to authenticate to the apiserver using a node bound token.
+
 ## Implementation History
+
+* KEP marked implementable and merged for the v1.29 release
+* KEP implemented in an alpha state for v1.29
+* Renamed audit annotation used for the `serviceaccounts/<name>/token` endpoint to be clearer: https://github.com/kubernetes/kubernetes/pull/123098
+* Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
+* `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
