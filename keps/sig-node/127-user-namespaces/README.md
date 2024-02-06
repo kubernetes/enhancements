@@ -288,6 +288,43 @@ message Mount {
 }
 ```
 
+The CRI runtime reports what runtime handlers have support for user
+namespaces through the `StatusResponse` message, that gains a new
+field `runtime_handlers`:
+
+```
+message StatusResponse {
+    // Status of the Runtime.
+    RuntimeStatus status = 1;
+    // Info is extra information of the Runtime. The key could be arbitrary string, and
+    // value should be in json format. The information could include anything useful for
+    // debug, e.g. plugins used by the container runtime.
+    // It should only be returned non-empty when Verbose is true.
+    map<string, string> info = 2;
+
+    // Runtime handlers.
+    repeated RuntimeHandler runtime_handlers = 3;
+}
+```
+
+Where RuntimeHandler is defined as below:
+
+```
+message RuntimeHandlerFeatures {
+    // supports_user_namespaces is set to true if the runtime handler supports
+    // user namespaces.
+    bool supports_user_namespaces = 1;
+}
+
+message RuntimeHandler {
+    // Name must be unique in StatusResponse.
+    // An empty string denotes the default handler.
+    string name = 1;
+    // Supported features.
+    RuntimeHandlerFeatures features = 2;
+}
+```
+
 ### Support for pods
 
 Make pods work with user namespaces. This is activated via the
@@ -593,6 +630,7 @@ use container runtime versions that have the needed changes.
 
 - Gather and address feedback from the community
 - Be able to configure UID/GID ranges to use for pods
+- This feature is not supported on Windows.
 - Get review from VM container runtimes maintainers (not blocker, as VM runtimes should just ignore
   the field, but nice to have)
 
@@ -602,6 +640,20 @@ use container runtime versions that have the needed changes.
 - Fully integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
 
 ### Upgrade / Downgrade Strategy
+
+Existing pods will still work as intended, as the new field is missing there.
+
+Upgrade will not change any current behaviors.
+
+When the new functionality wasn't yet used, downgrade will not be affected.
+
+On downgrade, when the functionality was used, the pods created with
+user namespaces that are running will continue to run with user
+namespaces. Pods will need to be re-created to stop using the user
+namespace.
+
+Versions of Kubernetes that doesn't have this feature implemented will
+ignore the new field `pod.spec.hostUsers`.
 
 ### Version Skew Strategy
 
@@ -635,11 +687,13 @@ doesn't create them. The runtime can detect this situation as the `user` field
 in the `NamespaceOption` will be seen as nil, [thanks to
 protobuf][proto3-defaults]. We already tested this with real code.
 
-Old runtime and new kubelet: containers are created without userns. As the
-`user` field of the `NamespaceOption` message is not part of the runtime
-protofiles, that part is ignored by the runtime and pods are created using the
-host userns.
+Old runtime and new kubelet: the runtime won't report that it supports
+user namespaces through the `StatusResponse` message, so the kubelet
+will detect it and return an error if a pod with user namespaces is
+created.
 
+We added unit tests for the feature gate disabled, and integration
+tests for the feature gate enabled and disabled.
 
 [proto3-defaults]: https://developers.google.com/protocol-buffers/docs/proto3#default
 
@@ -763,15 +817,14 @@ This section must be completed when targeting beta to a release.
 
 The rollout is just a feature flag on the kubelet and the kube-apiserver.
 
-If one API server is upgraded while others aren't, the pod will be accepted (if the apiserver is >=
-1.25). If it is scheduled to a node that the kubelet has the feature flag activated and the node
-meets the requirements to use user namespaces, then the pod will be created with the namespace. If
-it is scheduled to a node that has the feature disabled, it will be created without the user
-namespace.
+If one APIserver is upgraded while other's aren't and you are talking to a not upgraded the pod
+will be accepted (if the apiserver is >= 1.25). If it is scheduled to a node that the kubelet has
+the feature flag activated and the node meets the requirements to use user namespaces, then the
+pod will be created with the namespace. If it is scheduled to a node that has the feature disabled,
+it will be created without the user namespace.
 
 On a rollback, pods created while the feature was active (created with user namespaces) will have to
-be restarted to be re-created without user namespaces. Just a re-creation of the pod will do the
-trick.
+be re-created without user namespaces.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -788,7 +841,9 @@ will rollout across nodes.
 On Kubernetes side, the kubelet should start correctly.
 
 On the node runtime side, a pod created with pod.spec.hostUsers=false should be on RUNNING state if
-all node requirements are met.
+all node requirements are met. If the CRI runtime or the handler do not support the feature, the kubelet
+returns an error.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
@@ -796,16 +851,21 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Yes.
+Yes, we tested it locally using `./hack/local-up-cluster.sh`.
 
-We tested to enable the feature flag, create a deployment with pod.spec.hostUsers=false, and then disable
-the feature flag and restart the kubelet and kube-apiserver.
+We tested enabling the feature flag, created a deployment with pod.spec.hostUsers=false, and then disabled
+the feature flag and restarted the kubelet and kube-apiserver.
 
 After that, we deleted the deployment pods (not the deployment object), the pods were re-created
 without user namespaces just fine, without any modification needed on the deployment yaml.
 
 We then enabled the feature flag on the kubelet and kube-apiserver, and deleted the deployment pod.
 This re-created caused the pod to be re-created, this time with user namespaces enabled again.
+
+To validate it, it is necessary to exec into a container in the pod and run the command `cat /proc/self/uid_map`.
+When running in a user namespace the output is different than `0 0 4294967295` as it happens when running without
+a user namespace.
+
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -839,10 +899,9 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Check if any pod has the pod.spec.hostUsers field set to false and is on RUNNING state on a node
-that meets all the requirements.
+If the runtime doesn't support user namespaces an error is returned by the kubelet.
 
-There are step-by-step examples in the Kubernetes documentation too.
+There are step-by-step examples in the Kubernetes documentation too: https://kubernetes.io/docs/tasks/configure-pod-container/user-namespaces/
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -860,7 +919,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field:
 - [x] Other (treat as last resort)
   - Details: check pods with pod.spec.hostUsers field set to false, and see if they are in RUNNING
-    state.
+    state. Exec into a container and run `cat /proc/self/uid_map` to verify that the mappings are different
+    than the mappings on the host.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1373,9 +1433,9 @@ instead of cluster-wide/cluster-scoped.
 
 Some use cases for longer mappings include:
 
-- running a container tool inside a Pod, where that container tool wants to use a UID range.
-- running an application inside a Pod where the application uses UIDs
-  above 65535 by default.
+There are no known use cases for longer mappings that we know of. The 16bit range (0-65535) is what
+is assumed by all POSIX tools that we are aware of. If the need arises, longer mapping can be
+considered in a future KEP.
 
 ### Allow runtimes to pick the mapping
 
