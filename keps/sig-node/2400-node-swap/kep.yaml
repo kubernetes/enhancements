@@ -22,7 +22,7 @@ approvers:
   - "@dchen1107"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta2
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -32,8 +32,7 @@ latest-milestone: "v1.30"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.22"
-  beta: "v1.29"
-  beta2: "v1.30"
+  beta: "v1.30"
   stable: "TBD"
 
 # The following PRR answers are required at alpha release
