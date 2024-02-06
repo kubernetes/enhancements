@@ -340,7 +340,7 @@ Scheduling of new Pods is affected.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No - unit and integration tests will be added.
+No - we've only done the manual testing as described at [Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested).
 
 ### Rollout, Upgrade and Rollback Planning
 
