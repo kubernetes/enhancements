@@ -154,17 +154,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes to extend the Job API by adding an optional `Reason` field to `PodFailurePolicyRule`, which if specified, would be included as the reason in the `JobFailed` condition upon Job failure triggered by a `PodFailurePolicy`.
+This KEP proposes to extend the Job API by adding an optional `SetConditionReason` field to `PodFailurePolicyRule`, which if specified, would be included as the reason in the `JobFailed` condition upon Job failure triggered by a `PodFailurePolicy`.
 
 ## Motivation
 
 Higher level APIs, such as [JobSet](https://sigs.k8s.io/jobset), use the Job API as a building block for orchestrating large, distributed workloads.
 These higher level APIs need to be able to distinguish between different types of Job failures in order to make informed decisions about how to react
 to them. Currently, no mechanism exists in the Job API to propagate granular failure reason information (e.g., container exit codes) up to be 
-programmatically consumed by higher level software managing Jobs. A `PodFailurePolicy` can be configured to add a `Reason` of `PodFailurePolicy` to
-the `JobFailed` condition added to the Job when it fails, but different pod failure policies targeting different container exit codes all use the
-same `Reason` of `PodFailurePolicy`. This prevents higher level APIs like JobSet from distinguishing them and being able to take different actions
-depending on the type of Job failure that occurred.
+programmatically consumed by higher level software managing Jobs. A `PodFailurePolicy` can be configured to add a condition reason of `PodFailurePolicy`
+to the `JobFailed` condition added to the Job when it fails, but different pod failure policies targeting different container exit codes all use the
+same condition reason of `PodFailurePolicy`. This prevents higher level APIs like JobSet from distinguishing them and being able to take different
+actions depending on the type of Job failure that occurred.
 
 For a concrete use case, see the JobSet [Configurable Failury Policy KEP](https://github.com/kubernetes-sigs/jobset/pull/381) which illuminated the need for more granular pod failure policy reasons.
 
@@ -181,12 +181,12 @@ and make progress.
 
 ## Proposal
 
-The proposal is to add an optional `Reason` field to the `PodFailurePolicyRule`. 
+The proposal is to add an optional `SetConditionReason` field to the `PodFailurePolicyRule`. 
 If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L542) the Job
 controller uses when a PodFailurePolicy triggers a Job failure.
 
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `Reason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
+controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
 to the Job.
 
 ### User Stories (Optional)
@@ -215,6 +215,9 @@ a failed state.
 When a Job fails due to a pod failing with exit code 3, I want my job management software to to restart the Job.
 
 **Example JobSet with a Pod Failure Policy configuration for this use case**:
+
+Note: spec.replicatedJobs.template.spec.podFailurePolicy
+
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
@@ -230,13 +233,13 @@ spec:
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode2
+      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].reason
     # If Job fails due to a pod failing with exit code 3, restart that Job.
     - action: RestartJob
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode3
+      - ExitCode3 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[1].reason
     maxRestarts: 10
   replicatedJobs:
   - name: simulations
@@ -254,13 +257,13 @@ spec:
               containerName: main
               operator: In
               values: [2]
-            reason: "ExitCode2"
+            reason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
           - action: FailJob
             onExitCodes:
               containerName: main
               operator: In
               values: [3]
-            reason: "ExitCode3"
+            reason: "ExitCode3" # Matches Reason defined in .spec.failurePolicy.rules[1].onJobFailureReasons[0]
         template:
           spec:
             restartPolicy: Never
@@ -268,41 +271,6 @@ spec:
             - name: main
               image: python:3.10
               command: ["..."]
-```
-
-**Alternative example: single Job with a Pod Failure Policy configuration for this use case**:
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: simulation
-spec:
-  parallelism: 1
-  completions: 1
-  backoffLimit: 0
-  # If a pod fails with exit code 2 or 3, fail the Job, using the user-defined reason.
-  podFailurePolicy:
-    rules:
-    - action: FailJob
-      onExitCodes:
-        containerName: main
-        operator: In
-        values: [2]
-      reason: "ExitCode2"
-    - action: FailJob
-      onExitCodes:
-        containerName: main
-        operator: In
-        values: [3]
-      reason: "ExitCode3"
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-      - name: main
-        image: python:3.10
-        command: ["..."]
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -333,11 +301,17 @@ I don't see any notable risks for this feature.
 
 ## Design Details
 
+#### Defaulting
 If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L542) the Job
 controller uses when a PodFailurePolicy triggers a Job failure.
 
+#### Validation
+- We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)).
+- We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://sourcegraph.com/github.com/kubernetes/kubernetes@862ff187baad9373d59d19e5d736dcda1e25e90d/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L543-553). 
+
+#### Business logic
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `Reason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
+controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
 to the Job.
 
 ### Test Plan
@@ -397,8 +371,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 <!-- - <test>: <link to test coverage> -->
 - When feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
-matching PodFailurePolicyRule with the `Reason` field defined, check that the `JobFailed`
-condition has the user-specified `Reason` set on it correctly.
+matching PodFailurePolicyRule with the `SetConditionReason` field defined, check that the `JobFailed`
+condition has the user-specified `SetConditionReason` set on it correctly.
 
 ##### e2e tests
 
@@ -502,7 +476,7 @@ config.
 When a user downgrades from a k8s version that supports this field to one that does
 not support this field:
 - for existing Jobs, this new field will be ignored by the Job controller,
-resulting in the `Reason` being set to the previous default of `PodFailurePolicy`
+resulting in the condition reason being set to the previous default of `PodFailurePolicy`
 for any Job failures triggered by a pod failure policy.
 - for new Jobs, the kube-apiserver would remove this field when the Job is submitted.
 
@@ -815,8 +789,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-If the optional `Reason` field is specified, the podFailurePolicy object size will increase by 1 byte per
-character in the `Reason` string.
+If the optional `SetConditionReason` field is specified, the podFailurePolicy object size will increase by 1 byte per
+character in the `SetConditionReason` string.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -908,7 +882,7 @@ None
 
 ## Alternatives
 
-Rather than having the user specify a custom `Reason`, which will require validation and an additional step
+Rather than having the user specify a custom reason via the proposed `SetConditionReason` field, which will require validation and an additional step
 in the user-experience, instead the Job controller could automatically generate reasons, using a determnistic
 format which depends on if the podFailurePolicy was triggered by the `onPodConditions` or `onContainerExitCodes`.
 
@@ -916,7 +890,7 @@ For example, in the case of container exit codes, we could append the container 
 the default reason (e.g., `PodFailurePolicy-ExitCode3`). For `onPodConditions`, it could be the pod condition
 type and status joined together (e.g., `PodFailurePolicy-{type}-{status}`). However, this limits flexibility
 for the user, and locks us in to supporting this concrete, specific behavior, rather than the more generic
-behavior resulting from the optional `Reason` field set by the user.
+behavior resulting from the optional `SetConditionReason` field set by the user.
 
 ## Infrastructure Needed (Optional)
 
