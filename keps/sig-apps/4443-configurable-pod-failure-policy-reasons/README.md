@@ -85,9 +85,13 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+    - [Defaulting](#defaulting)
+    - [Validation](#validation)
+    - [Business logic](#business-logic)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -181,7 +185,9 @@ and make progress.
 
 ## Proposal
 
-The proposal is to add an optional `SetConditionReason` field to the `PodFailurePolicyRule`. 
+The proposal is to add an optional `SetConditionReason` field to the `PodFailurePolicyRule` that is used
+to set the `Reason` field on the `JobFailed` condition when a Job fails because of a pod failure policy rule match.
+
 If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L542) the Job
 controller uses when a PodFailurePolicy triggers a Job failure.
 
@@ -199,6 +205,53 @@ bogged down.
 -->
 
 #### Story 1
+As a user, I am using a JobSet to manage a group of jobs, and I want to be able to decide whether to fail the
+JobSet or not, based on the exact container exit code that caused a child job failure.
+
+**Example JobSet for this use case**:
+
+```yaml
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: fail-jobset-example
+spec:
+  failurePolicy:
+    rules:
+    # If Job fails due to a pod failing with exit code 2, fail the JobSet immediately, without attempting any restarts.
+    - action: FailJobSet
+      targetReplicatedJobs:
+      - workers
+      onJobFailureReasons:
+      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].setConditionReason
+    maxRestarts: 10
+  replicatedJobs:
+  - name: workers
+    replicas: 10
+    template:
+      spec:
+        parallelism: 1
+        completions: 1
+        backoffLimit: 0
+        # If a pod fails with exit code 2, fail the job with the user-defined reason.
+        podFailurePolicy:
+          rules:
+          - action: FailJob
+            onExitCodes:
+              containerName: main
+              operator: In
+              values: [2]
+            setConditionReason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
+        template:
+          spec:
+            restartPolicy: Never
+            containers:
+            - name: main
+              image: python:3.10
+              command: ["..."]
+```
+
+#### Story 2
 
 As a user, I am using a JobSet to manage a group of jobs, each running a HPC simulation.
 Each job runs a simulation with different random initial parameters. When a simulation ends, the
@@ -214,9 +267,7 @@ a failed state.
 
 When a Job fails due to a pod failing with exit code 3, I want my job management software to to restart the Job.
 
-**Example JobSet with a Pod Failure Policy configuration for this use case**:
-
-Note: spec.replicatedJobs.template.spec.podFailurePolicy
+**Example JobSet for this use case**:
 
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
@@ -233,13 +284,13 @@ spec:
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].reason
+      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].setConditionReason
     # If Job fails due to a pod failing with exit code 3, restart that Job.
     - action: RestartJob
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode3 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[1].reason
+      - ExitCode3 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[1].setConditionReason
     maxRestarts: 10
   replicatedJobs:
   - name: simulations
@@ -257,13 +308,13 @@ spec:
               containerName: main
               operator: In
               values: [2]
-            reason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
+            setConditionReason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
           - action: FailJob
             onExitCodes:
               containerName: main
               operator: In
               values: [3]
-            reason: "ExitCode3" # Matches Reason defined in .spec.failurePolicy.rules[1].onJobFailureReasons[0]
+            setConditionReason: "ExitCode3" # Matches Reason defined in .spec.failurePolicy.rules[1].onJobFailureReasons[0]
         template:
           spec:
             restartPolicy: Never
@@ -350,7 +401,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/controller/job`: `02/05/2024` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/controller/job`: `02/05/2024` - `91.5%`
 
 ##### Integration tests
 
@@ -387,6 +438,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 <!-- - <test>: <link to test coverage> -->
+We will a test case similar to the integration test case:
+
+- When the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
+matching PodFailurePolicyRule with the `SetConditionReason` field defined, check that the `JobFailed`
+condition has the user-specified `SetConditionReason` set on it correctly.
 
 ### Graduation Criteria
 

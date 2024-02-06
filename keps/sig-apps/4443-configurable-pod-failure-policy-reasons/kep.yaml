@@ -1,4 +1,4 @@
-title: KEP Template
+title: Configurable Job failure reason for PodFailurePolicyRule
 kep-number: 4443
 authors:
   - "@danielvegamyhre"
@@ -10,7 +10,6 @@ reviewers:
   - "@kannon92"
 approvers:
   - "@alculquicondor"
-  - "@msau42"
 
 see-also:
   - "https://github.com/kubernetes-sigs/jobset/pull/381"
