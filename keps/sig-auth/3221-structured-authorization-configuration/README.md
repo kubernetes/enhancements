@@ -481,7 +481,7 @@ total invocation counts across the following labels.
 - `name`
 - `code` {"incomplete_request", "bad_response"}
 
-3. `apiserver_authorization_webhook_evaluations_duration_seconds`
+3. `apiserver_authorization_webhook_duration_seconds`
 
 This is a Histogram metric that will track the total round trip time of the requests to the webhook.
 
@@ -499,10 +499,15 @@ Labels {along with possible values}:
 - `name`
 - `code` {"incomplete_request", "bad_response"}
 
-5. `apiserver_authorization_configuration_reload_last_timestamp_seconds`
+5. `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds`
 
-This Gauge metric will record last time in seconds when an authorization reload was performed.
-- `status` {success, fail}
+This Gauge metric will record last time in seconds when an authorization reload was performed, partitioned by apiserver_id_hash.
+- `apiserver_id_hash`
+
+6. `apiserver_authorization_config_controller_automatic_reload_failures_total` and `apiserver_authorization_config_controller_automatic_reload_success_total`
+
+These Counter metrics record the total number of reload successes and failures, partitioned by API server apiserver_id_hash.
+- `apiserver_id_hash`
 
 ### Test Plan
 
@@ -644,7 +649,8 @@ Not applicable.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD.
+No. There is no data stored for this feature which persists between upgrade / downgrade,
+or between enable / disable. The feature is purely an API server configuration option.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -820,7 +826,8 @@ For each of them, fill in the following information by copying the below templat
 - [x] 2023-06-15 - KEP Accepted as implementable
 - [x] 2023-07-05 - Implementation started
 - [x] 2023-09-27 - Update KEP according to actual state
-- [ ] 2023-12-DD First release (1.29) when feature available
+- [x] 2023-12-15 - First release (1.29) when feature available
+- [x] 2024-01-29 - Targeting beta in 1.30
 
 ## Drawbacks
 
