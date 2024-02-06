@@ -20,9 +20,11 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [Pre-GA follow-up](#pre-ga-follow-up)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Open Questions](#open-questions)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -124,17 +126,6 @@ with the existing OIDC flags, so we will provide documentation for migrating fro
 
 ### Configuration file
 
-TODO:
-
-- should we have any revocation mechanism?
-  => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
-  => related issue https://github.com/kubernetes/kubernetes/issues/71151
-- distributed claims with fancier resolution requirements (such as access tokens as input)
-- implementation detail: we should probably parse the `iss` claim out once
-- should audit annotations be set on validation failure?
-- decide what error should be returned if CEL eval fails at runtime
-  `500 Internal Sever Error` seem appropriate but authentication can only do `401`
-
 The main part of this proposal is a configuration file. It contains an array of providers:
 
 ```yaml
@@ -172,10 +163,6 @@ jwt:
 ```
 
 The minimum valid payload from a JWT is (`aud` may be a `string`):
-
-TODO:
-are `iat` and `nbf` required?
-is `sub` required or is the requirement to just have some username field?
 
 ```json
 {
@@ -392,7 +379,6 @@ type JWTAuthenticator struct {
         // Claim must be a string or string array claim.
         // Expression must produce a string or string array value.
         // "", [], missing, and null values are treated as having no groups.
-        // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
         // For input claim:
         // {
         //     "claims": {
@@ -413,7 +399,6 @@ type JWTAuthenticator struct {
         // uid represents an option for the uid attribute.
         // Claim must be a singular string claim.
         // Expression must produce a string value.
-        // TODO: this is net new, should it just be expression?
         // +optional
         UID ClaimOrExpression `json:"uid,omitempty"`
         // extra represents an option for the extra attribute.
@@ -433,8 +418,6 @@ type JWTAuthenticator struct {
         // If the value is empty, the extra mapping will not be present.
         //
         // possible future way to pull multiple extra values out via expression.
-        // TODO: confirm cel comprehensions/mapping is powerful enough to transform
-        // the input claims into a filtered / transformed map[string][]string output):
         // # mutually exclusive with key/valueExpression
         //     keyAndValueExpression: '{"key":"string-value", "key2": ["value1","value2"]}'
         //
@@ -464,7 +447,9 @@ type JWTAuthenticator struct {
         // +optional
         Claim string `json:"claim"`
 
-        // TODO: think about what happens if the claim is absent or the wrong type
+        // expression represents the expression which will be evaluated by CEL.
+        // Either claim or expression must be set.
+        // +optional
         Expression string `json:"expression"`
     }
 
@@ -541,8 +526,6 @@ type JWTAuthenticator struct {
     ```
 
     - For claim names containing `.`, we can reference using `claims["foo.bar"]`
-    - TODO: can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
-       - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
 
 ### CEL
 
@@ -557,13 +540,6 @@ type JWTAuthenticator struct {
     * [Extension libraries](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiserver/pkg/cel/library/libraries.go#L26)
     * [Base environment](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go#L83)
   * The encoding library needs to be added to the environment since it's currently not used. Doing so will help keep CEL consistent across the API.
-* Caching will be used to prevent having to execute the CEL expressions on every request.
-    - TODO decide what the behavior of the token cache will be on config reload
-    - TODO should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
-      this requires awareness of key rotation to implement safely
-* TODO: decide how to safe guard access to fields that might not exist or stop existing at any moment.
-  * Using `has()` to guard access to fields.
-  * Could we do some kind of defaulting for fields that don't exist?
 
 > Notes from PR review (jpbetz):
 >
@@ -680,8 +656,15 @@ providers such as Okta, Azure AD, etc:
 - Add metrics
 - Support > 1 JWT authenticator and > 1 audiences
 - Enable automatic reload of the configuration
+  - If there is a failure in the new configuration, the old configuration will remain active.
+  - Typo in issuer URL will not be detected since an issuer is explicitly allowed to be offline when an API server is starting up to allow for self-hosted IDPs.
 - Add tests
   - Tests for automatic reload of the configuration
+
+#### Pre-GA follow-up
+
+- With automatic reload of configuration, typo in issuer URL will not be detected since an issuer is explicitly allowed to be offline when an API server is starting up to allow for self-hosted IDPs. We need
+  to come-up with an approach to make this more robust.
 
 #### GA
 
@@ -710,6 +693,47 @@ unset the `--authentication-config` flag and restore the `--oidc-*` flags to con
 
 This is an API server only change and does not affect other components. If the API server is
 not the minimum required version (v1.29), the feature will not be available.
+
+<<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
+## Open Questions
+
+- should we have any revocation mechanism?
+  => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
+  => related issue https://github.com/kubernetes/kubernetes/issues/71151
+- should audit annotations be set on validation failure?
+- decide what error should be returned if CEL eval fails at runtime
+  `500 Internal Sever Error` seem appropriate but authentication can only do `401`
+- distributed claims with fancier resolution requirements (such as access tokens as input)
+  - This will be considered for getting distributed claims working with CEL
+- implementation detail: we should probably parse the `iss` claim out once
+- are `iat` and `nbf` required?
+- is `sub` required or is the requirement to just have some username field?
+- confirm cel comprehensions/mapping is powerful enough to transform the input claims into a filtered / transformed `map[string][]string` output for extra
+
+    For distributed claims:
+
+    ```json
+        claims = {
+          "foo":"bar",
+          "foo.bar": "...",
+          "true": "...",
+          "_claim_names": {
+            "groups": "group_source"
+           },
+           "_claim_sources": {
+            "group_source": {"endpoint": "https://example.com/claim_source"}
+           }
+        }
+    ```
+
+- can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
+  - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
+- Decide behavior of the token cache on config reload
+  - Should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
+    - this requires awareness of key rotation to implement safely
+- For CEL expressions, do we want to safe guard access to fields that might not exist or stop existing at any moment?
+  - Using `has()` to guard access to fields.
+  - Could we do some kind of defaulting for fields that don't exist?
 
 ## Production Readiness Review Questionnaire
 
