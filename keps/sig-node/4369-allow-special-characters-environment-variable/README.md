@@ -169,10 +169,12 @@ These tests will be added:
 
 - Solicit feedback from the Alpha.
 - Ensure tests are stable and passing.
+- Add monitor for pods that fail due to using enhancements.
 
 #### GA
 
-- No issues reported during two releases.
+- Ensure that the time range of the beta version can cover the version skew of all components.
+- Add troubleshooting details on how to deal with incompatible kubelet/CRI implementations based on issues found in beta releases.
 
 ### Upgrade / Downgrade Strategy
 
@@ -240,7 +242,7 @@ No.
 
 ### Monitoring Requirements
 
-- N/A
+- We will investigate in the beta version how to monitor kubelet/CRI implementations could fail on pods using this enhancement.
 
 ### Dependencies
 

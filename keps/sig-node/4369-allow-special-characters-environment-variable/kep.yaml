@@ -5,12 +5,11 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2023-12-21
 reviewers:
   - "@liggitt"
   - "@thockin"
-  - TBD
 approvers:
   - "@liggitt"
   - "@thockin"
@@ -29,6 +28,8 @@ latest-milestone: "v1.30"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.30"
+  beta: "v1.32"
+  stable: "v1.36"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
