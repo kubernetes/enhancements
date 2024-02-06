@@ -8,8 +8,9 @@ creation-date: 2024-01-26
 reviewers:
   - "@ahg-g"
   - "@kannon92"
-approvers:
   - "@alculquicondor"
+approvers:
+  - "@soltysh"
 
 see-also:
   - "https://github.com/kubernetes-sigs/jobset/pull/381"
