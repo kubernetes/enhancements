@@ -6,9 +6,9 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-scheduler
-status: provisional
+status: implementable
 creation-date: 2024-01-25
-last-updated: 2024-01-25
+last-updated: 2024-02-02
 reviewers:
   - "@mrunalp"      # overall
   - "@ahg-g"        # SIG Scheduling
