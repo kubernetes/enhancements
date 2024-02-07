@@ -162,9 +162,11 @@ This KEP proposes to extend the Job API by adding an optional `SetConditionReaso
 
 ## Motivation
 
-Higher level APIs, such as [JobSet](https://sigs.k8s.io/jobset), use the Job API as a building block for orchestrating large, distributed workloads.
-These higher level APIs need to be able to distinguish between different types of Job failures in order to make informed decisions about how to react
-to them. Currently, no mechanism exists in the Job API to propagate granular failure reason information (e.g., container exit codes) up to be 
+Higher level K8s APIs are built via a composition of features, using primitive K8S APIs as building blocks to implement more advanced features.
+These higher level APIs using the Job API as a building block need to be able to distinguish between different types of Job failures in order to
+make informed decisions about how to react to these failures.
+
+Currently, no mechanism exists in the Job API to propagate granular failure reason information (e.g., container exit codes) up to be 
 programmatically consumed by higher level software managing Jobs. A `PodFailurePolicy` can be configured to add a condition reason of `PodFailurePolicy`
 to the `JobFailed` condition added to the Job when it fails, but different pod failure policies targeting different container exit codes all use the
 same condition reason of `PodFailurePolicy`. This prevents higher level APIs like JobSet from distinguishing them and being able to take different
@@ -351,11 +353,12 @@ I don't see any notable risks for this feature.
 ## Design Details
 
 #### Defaulting
-If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L542) the Job
+If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555) the Job
 controller uses when a PodFailurePolicy triggers a Job failure.
 
 #### Validation
 - We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)).
+We will also validate the user-defined Reason is less than 
 - We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://sourcegraph.com/github.com/kubernetes/kubernetes@862ff187baad9373d59d19e5d736dcda1e25e90d/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L543-553). 
 
 #### Business logic
@@ -824,7 +827,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-No, just a new string field on an existing API type.
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
