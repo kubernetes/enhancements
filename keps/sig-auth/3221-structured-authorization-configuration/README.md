@@ -624,17 +624,15 @@ the scenarios.
 
 ### Upgrade / Downgrade Strategy
 
-While the feature is in Alpha, there is no change if cluster administrators want to
-keep on using command line flags.
+There is no change if cluster administrators want to keep on using command line flags.
 
-When the feature goes to Beta/GA or the cluster administrators want to configure
-authorizers using a config file, they need to make sure the config file exists before
-upgrading the cluster. Similarly when downgrading clusters, they would need to add
-the flags back to their bootstrap mechanism.
+If the cluster administrators wants to configure authorizers using a config file,
+they need to make sure the config file exists before upgrading the cluster.
+When downgrading clusters, they would need to switch their invocation back to use flags.
 
 ### Version Skew Strategy
 
-Not applicable.
+Not applicable, authorizers are configured per API server.
 
 ## Production Readiness Review Questionnaire
 
@@ -646,6 +644,8 @@ Not applicable.
   - Feature gate name: `StructuredAuthorizationConfiguration`
   - Components depending on the feature gate:
         - kube-apiserver
+- [x] Other
+  - `kube-apiserver` command-line flag: `--authorization-config`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -673,8 +673,6 @@ command line flags should return an error.
 
 ### Rollout, Upgrade and Rollback Planning
 
-> Note: This section is required when targeting Beta to a release.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 A rollout can fail when the authorization configuration file being passed doesn't
@@ -700,16 +698,6 @@ or between enable / disable. The feature is purely an API server configuration o
 No.
 
 ### Monitoring Requirements
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-> Note: To be elaborated more during Beta graduation since this section
-must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -773,8 +761,6 @@ None
 
 ### Scalability
 
-> Note: This section is good-to-have for Alpha.
-
 ###### Will enabling / using this feature result in any new API calls?
 
 No. No additional calls will be made to the Kubernetes API Server.
@@ -798,7 +784,7 @@ cluster administrator defines multiple webhooks.
 
 **Note**: This is a result of the intended feature.
 If multiple webhooks are defined and one or more of them are unreachable, the
-request latency would get a hit but this is upto the configuration made by the
+request latency would get a hit but this is up to the configuration made by the
 user. The feature implementation itself doesn't introduce any change to the
 existing SLIs/SLOs.
 
@@ -825,20 +811,6 @@ be dispatched to a webhook, there would be a performance improvement due to lowe
 number of network calls.
 
 ### Troubleshooting
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
-> Note: To be elaborated more during Beta graduation since this section
-must be completed when targeting beta to a release.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
