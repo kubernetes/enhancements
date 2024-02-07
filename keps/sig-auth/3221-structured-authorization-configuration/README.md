@@ -630,6 +630,15 @@ If the cluster administrators wants to configure authorizers using a config file
 they need to make sure the config file exists before upgrading the cluster.
 When downgrading clusters, they would need to switch their invocation back to use flags.
 
+In clusters with multiple API servers, rippling out authorization configuration changes
+using a rolling strategy is recommended, verifying the change is effective and functional
+on one API server before proceeding to the next API server.
+
+The recommended strategy to switch from command line flags to a config file is to:
+
+1. Switch from command line flags to a config file that expresses an identical configuration
+2. Once all servers are successfully operating with the config file, roll out config modifications
+
 ### Version Skew Strategy
 
 Not applicable, authorizers are configured per API server.
