@@ -619,6 +619,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2023.06.06: This KEP is ready for review.
 - 2023.06.09: API design is updated.
 - 2023.10.03: API design is updated.
+- 2024.02.07: API is finalized for the alpha stage.
 
 ## Drawbacks
 
