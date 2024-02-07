@@ -5,6 +5,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+- [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -91,6 +92,10 @@ Resource Allocation (DRA) based implementation.
 
 * Allow Device Plugin authors to forward device requests to CRI runtimes as a CRI field.
 * Allow Device Plugin authors to use CDI to define the modifications required for containerised environments.
+
+## Proposal
+
+We propose a mechanism for device plugin authors to specify devices using Container Device Interface (CDI) names. The names of the requested devices are passed down as CRI fields to CRI runtimes which are ultimately responsible for making the requested devices accessible from a container.
 
 ## Design Details
 
@@ -205,7 +210,7 @@ plugins are not expected to break.
   - Components depending on the feature gate: kubelet
 - [x] Pass CDI devices to the kubelet over the new field in the device plugin API
   - Will enabling / disabling the feature require downtime of the control
-    plane? 
+    plane?
     No.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
@@ -236,7 +241,7 @@ when the feature is enabled, and silently ignored if the feature is disabled.
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 The failure of the kubelet would mean that fields from new device allocations
-will not be processed. 
+will not be processed.
 
 However, CDI device themselves are only interpereted at container start.
 Existing containers that were started with support for CDI devices will not be
