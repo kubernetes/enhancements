@@ -188,11 +188,11 @@ For pod failure policies to be able communicate different failure types to highe
 The proposal is to add an optional `SetConditionReason` field to the `PodFailurePolicyRule` that is used
 to set the `Reason` field on the `JobFailed` condition when a Job fails because of a pod failure policy rule match.
 
-If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L542) the Job
+If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/staging/src/k8s.io/api/batch/v1/types.go#L542) the Job
 controller uses when a PodFailurePolicy triggers a Job failure.
 
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
+controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) added
 to the Job.
 
 ### User Stories (Optional)
@@ -346,8 +346,9 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-
-I don't see any notable risks for this feature.
+There is a risk to making a field that was previously exclusively managed by the controller,
+to now being configurable by the user. However, as described in the validation section below,
+we are validating against malformed/invalid inputs.
 
 
 ## Design Details
@@ -358,16 +359,18 @@ controller uses when a PodFailurePolicy triggers a Job failure.
 
 #### Validation
 - We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)). We will also validate the user-defined Reason is less than 128 characters.
-- We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://sourcegraph.com/github.com/kubernetes/kubernetes@862ff187baad9373d59d19e5d736dcda1e25e90d/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L543-553). 
+- We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
 
 #### Business logic
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://sourcegraph.com/github.com/kubernetes/kubernetes@6a4e93e776a35d14a61244185c848c3b5832621c/-/blob/pkg/controller/job/job_controller.go?L816) added
+controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) added
 to the Job.
 
-### Test Plan
+Note: If the PodFailurePolicy feature gate is disabled, but the `PodFailurePolicyReason` feature gate is enabled, there will be 
+no adverse effect and neither feature will actually be used, since the only place the proposed new field `SetConditionReason` will be
+used is inside of a [code block](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) protected by the PodFailurePolicy feature gate.
 
-This feature can be tested via unit tests. We don't need integration tests or e2e tests for this.
+### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
