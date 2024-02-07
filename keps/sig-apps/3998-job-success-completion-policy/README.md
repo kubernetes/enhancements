@@ -28,6 +28,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Optional Second Alpha](#optional-second-alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -415,18 +416,21 @@ to implement this enhancement.
 - Feature implemented behind the `JobSuccessPolicy` feature gate.
 - Unit and integration tests passed as designed in [TestPlan](#test-plan).
 
-#### Beta
+#### Optional Second Alpha
 
-- E2E tests passed as designed in [TestPlan](#test-plan).
-- Added a new reasons to the existing `job_finished_total` metric in [Monitoring Requirements](#monitoring-requirements).
-- Feature is enabled by default.
-- Address all issues reported by users.
 - Decided whether we introduce a `whenCriterionAchived=continue` and `whenCriterionAchived=continueWithRecreations`.
 Please see the [Possibility for the lingering pods to continue running after the job meets the successPolicy](#possibility-for-the-lingering-pods-to-continue-running-after-the-job-meets-the-successpolicy)
 section for discussion points.
 - Decided whether we introduce a new CronJob concurrentPolicy, `ForbidUntilJobSuccessful`.
 Please see the [Possibility for introducing a new CronJob concurrentPolicy, "ForbidUntilJobSuccessful"](#possibility-for-introducing-a-new-cronjob-concurrentpolicy-forbiduntiljobsuccessful).
 section for more details.
+
+#### Beta
+
+- E2E tests passed as designed in [TestPlan](#test-plan).
+- Added a new reasons to the existing `job_finished_total` metric in [Monitoring Requirements](#monitoring-requirements).
+- Feature is enabled by default.
+- Address all issues reported by users.
 - Decided whether we introduce a configurable reason for the `SuccessCriteriaMet` condition.
 Please see the [Possibility for the configurable reason for the "SuccessCriteriaMet" condition](#possibility-for-the-configurable-reason-for-the-successcriteriamet-condition). 
 
