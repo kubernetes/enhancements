@@ -476,29 +476,42 @@ Labels {along with possible values}:
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
-This will be incremented on round-trip of an authorization webhook. It will track
-total invocation counts across the following labels.
+This will be incremented on round-trip of an authorization webhook.
+It will track total invocation counts across the following labels.
 
-- `name`
-- `code` {"incomplete_request", "bad_response"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `code` {canceled, timeout, error, ok}
+  - `canceled`: the call invoking the webhook request was canceled
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
+  - `ok`: the webhook response completed and was well-formed
 
 3. `apiserver_authorization_webhook_duration_seconds`
 
 This is a Histogram metric that will track the total round trip time of the requests to the webhook.
 
 Labels {along with possible values}:
-- `name`
-- `code` {"incomplete_request", "bad_response", "ok"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `code` {canceled, timeout, error, ok}
+  - `canceled`: the call invoking the webhook request was canceled
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
+  - `ok`: the webhook response completed and was well-formed
 
 4. `apiserver_authorization_webhook_evaluations_fail_open_total`
 
-This metric will be incremented when a webhook returns `code != errAuthzWebhookOKCode` and
-decision on error is not set to `deny`.
+This metric will be incremented when a webhook request times out or
+returns an invalid response, and the failurePolicy is set to `NoOpinion`.
 
 Labels {along with possible values}:
 
-- `name`
-- `code` {"incomplete_request", "bad_response"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `code` {timeout, error}
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
 
 5. `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds`
 
