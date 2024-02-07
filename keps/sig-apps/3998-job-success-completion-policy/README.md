@@ -494,7 +494,7 @@ only for running Jobs and don't update `.status.conditions` for already finished
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, we'll add them during alpha.
+TODO
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -513,7 +513,7 @@ specifically the reason.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No.
+TODO
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
