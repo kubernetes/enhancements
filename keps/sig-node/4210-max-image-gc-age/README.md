@@ -208,12 +208,14 @@ Additional tests will be added to this file to cover the garbage collection e2e.
 
 - Configuration field added to the Kubelet (disabled by default)
 - Feature supported by Kubelet Image Manager
-- Unit tests and e2e tests added
+- Unit tests
 - Add a metric `kubelet_image_garbage_collected_total` which tracks the number of images the kubelet is GC'ing through any mechanism.
 
 #### Beta
 
-- Gather feedback from users
+- Add e2e tests
+- Document `kubelet_image_garbage_collected_total` (a step missed in alpha)
+- Add "reason" field to `kubelet_image_garbage_collected_total` to allow distinguishing between GC reasons (space based or time based).
 
 #### GA
 
@@ -276,8 +278,8 @@ removed, so no running workloads can be affected.
 
 ###### What specific metrics should inform a rollback?
 
-- `kubelet_image_garbage_collected_total` metric drastically (100x) increasing, indicating thrashing of the GC manager and
-  images being pulled.
+- `kubelet_image_garbage_collected_total` metric drastically (100x) increasing, with the "reason" field being "age",
+indicating thrashing of the GC manager and images being pulled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -292,7 +294,7 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 - Verify the Kubelet Configuration with the Kubelet's configz endpoint
-- Monitor the `kubelet_image_garbage_collected_total`, and expect a slight increase.
+- Monitor the `kubelet_image_garbage_collected_total`, and expect some images are removed for reason "age"
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -302,7 +304,6 @@ No.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 - The eventual default value should increase the average `kubelet_image_garbage_collected_total` by no more than 10x
-    - TODO: On what clusters?
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -370,6 +371,7 @@ No
 
 
 2023-09-18: KEP opened, targeted at Alpha
+2024-01-22: KEP updated to Beta
 
 ## Drawbacks
 
