@@ -3,6 +3,7 @@ kep-number: 961
 authors:
   - "@krmayankk"
   - "@kerthcet"
+  - "@knelasevero"
 owning-sig: sig-apps
 participating-sigs: []
 status: implementable
@@ -25,12 +26,12 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.28"
+latest-milestone: "v1.30"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.24"
-  beta: "v1.28"
+  beta: "v1.30"
   stable: TBD
 
 # The following PRR answers are required at alpha release
@@ -44,4 +45,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - rolling-update-duration-seconds
+  - kube_statefulset_spec_strategy_rollingupdate_max_unavailable

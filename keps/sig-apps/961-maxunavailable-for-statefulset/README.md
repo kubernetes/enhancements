@@ -351,7 +351,7 @@ Choice 2 always offers maxUnavailable number of Pods in Terminating state. This 
 pods terminating out of order. This will always lead to the fastest rollouts. The maximum difference in the ordinals which are Terminating out of Order, can be more than maxUnavailable.
 
 Choice 3 always guarantees than no two pods are ever Terminating out of order. It sometimes does that,
-at the cost of not being able to Terminate maxUnavailable pods. The implementationg for this might be
+at the cost of not being able to Terminate maxUnavailable pods. The implementation for this might be
 complicated.
 
 Choice 4 provides a choice to the users and hence takes the guessing out of the picture on what they
@@ -360,70 +360,79 @@ will expect. Implementing Choice 4 using PMP would be the easiest.
 #### Implementation
 
 The alpha release we are going with Choice 4 with support for both PMP=Parallel and PMP=OrderedReady.
-For PMP=Parallel, we will use Choice 2
-For PMP=OrderedReady, we will use Choice 3 to ensure we can support ordering guarantees while also
-making sure the rolling updates are fast.
+For PMP=Parallel, we will use Choice 2. 
+For PMP=OrderedReady, the plan for alpha was to go with Choice 3 to ensure we can support ordering guarantees while also
+making sure the rolling updates are fast, but for simplicity Choice 1 was implemented instead.
+
+We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isRunningAndAvailable`, fixing https://github.com/kubernetes/kubernetes/issues/112307.
 
 
-https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset/stateful_set_control.go#L504
+https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L740
 ```go
 ...
-	 // we compute the minimum ordinal of the target sequence for a destructive update based on the strategy.
-        updateMin := 0
-	maxUnavailable := 1
-        if set.Spec.UpdateStrategy.RollingUpdate != nil {
-                updateMin = int(*set.Spec.UpdateStrategy.RollingUpdate.Partition)
+    // we compute the minimum ordinal of the target sequence for a destructive update based on the strategy.
+    updateMin := 0
+    maxUnavailable := 1
+    if set.Spec.UpdateStrategy.RollingUpdate != nil {
+      updateMin = int(*set.Spec.UpdateStrategy.RollingUpdate.Partition)
 
-		// NEW CODE HERE
-		maxUnavailable, err = intstrutil.GetValueFromIntOrPercent(intstrutil.ValueOrDefault(set.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, intstrutil.FromInt(1)), int(replicaCount), false)
-		if err != nil {
-			return &status, err
-		}
-	}
+      // if the feature was enabled and then later disabled, MaxUnavailable may have a value
+      // more than 1. Ignore the passed in value and Use maxUnavailable as 1 to enforce
+      // expected behavior when feature gate is not enabled.
+      var err error
+      maxUnavailable, err = getStatefulSetMaxUnavailable(set.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, replicaCount)
+      if err != nil {
+        return &status, err
+      }
+    }
 
-	var unavailablePods []string
-	// we terminate the Pod with the largest ordinal that does not match the update revision.
-	for target := len(replicas) - 1; target >= updateMin; target-- {
+    // Collect all targets in the range between getStartOrdinal(set) and getEndOrdinal(set). Count any targets in that range
+    // that are unhealthy i.e. terminated or not running and ready as unavailable). Select the
+    // (MaxUnavailable - Unavailable) Pods, in order with respect to their ordinal for termination. Delete
+    // those pods and count the successful deletions. Update the status with the correct number of deletions.
+    unavailablePods := 0
+    for target := len(replicas) - 1; target >= 0; target-- {
+    //////////////////// 
+    ////////////////////
+    // New Check here //
+    //////////////////// 
+    ////////////////////
+    if !isRunningAndAvailable(replicas[target], set.Spec.MinReadySeconds) || isTerminating(replicas[target]) {
+        unavailablePods++
+      }
+    }
 
-		// delete the Pod if it is not already terminating and does not match the update revision.
-		if getPodRevision(replicas[target]) != updateRevision.Name && !isTerminating(replicas[target]) {
-			klog.V(2).Infof("StatefulSet %s/%s terminating Pod %s for update",
-				set.Namespace,
-				set.Name,
-				replicas[target].Name)
-			if err := ssc.podControl.DeleteStatefulPod(set, replicas[target]); err != nil {
-				return &status, err
-			}
+    if unavailablePods >= maxUnavailable {
+      logger.V(2).Info("StatefulSet found unavailablePods, more than or equal to allowed maxUnavailable",
+        "statefulSet", klog.KObj(set),
+        "unavailablePods", unavailablePods,
+        "maxUnavailable", maxUnavailable)
+      return &status, nil
+    }
 
-			// After deleting a Pod, dont Return From Here Yet.
-			// We might have maxUnavailable greater than 1
-			status.CurrentReplicas--
-		}
+    // Now we need to delete MaxUnavailable- unavailablePods
+    // start deleting one by one starting from the highest ordinal first
+    podsToDelete := maxUnavailable - unavailablePods
 
-		// wait for unhealthy Pods on update
-		if !isHealthy(replicas[target]) {
-			// If this Pod is unhealthy regardless of revision, count it in
-			// unavailable pods
-			unavailablePods = append(unavailablePods, replicas[target].Name)
-			klog.V(4).Infof(
-				"StatefulSet %s/%s is waiting for Pod %s to update",
-				set.Namespace,
-				set.Name,
-				replicas[target].Name)
-		}
+    deletedPods := 0
+    for target := len(replicas) - 1; target >= updateMin && deletedPods < podsToDelete; target-- {
 
-		// NEW CODE HERE
-		// If at anytime, total number of unavailable Pods exceeds maxUnavailable,
-		// we stop deleting more Pods for Update
-		if len(unavailablePods) >= maxUnavailable {
-			klog.V(4).Infof(
-				"StatefulSet %s/%s is waiting for unavailable Pods %v to update, max Allowed to Update Simultaneously %v",
-				set.Namespace,
-				set.Name,
-				unavailablePods,
-				maxUnavilable)
-			return &status, nil
-		}
+      // delete the Pod if it is healthy and the revision doesnt match the target
+      if getPodRevision(replicas[target]) != updateRevision.Name && !isTerminating(replicas[target]) {
+        // delete the Pod if it is healthy and the revision doesnt match the target
+        logger.V(2).Info("StatefulSet terminating Pod for update",
+          "statefulSet", klog.KObj(set),
+          "pod", klog.KObj(replicas[target]))
+        if err := ssc.podControl.DeleteStatefulPod(set, replicas[target]); err != nil {
+          if !errors.IsNotFound(err) {
+            return &status, err
+          }
+        }
+        deletedPods++
+        status.CurrentReplicas--
+      }
+    }
+    return &status, nil
 
 	}
 ...
@@ -431,9 +440,12 @@ https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset
 
 #### Metrics
 
-We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable):
+Similar to what we have for deployments, we can add a new metric named `kube_statefulset_spec_strategy_rollingupdate_max_unavailable` which just lets users know the maximum number of unavailable replicas during a rolling update of a StatefulSet. This would be add to kube-state-metrics.
 
-We already have a check for that, and for now we are just firing a log entry at [pkg/controller/statefulset/stateful_set_control.go#L646](https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L767). Here we could fire the new metric increasing the count for statefulset_unavailability_violation, with labels including the StatefulSet namespace, statefulset_name, and a reason. Reason here being `exceededMaxUnavailable`.
+<!-- need to decide if we keep and can use statefulset_unavailability_violation -->
+<!-- We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable):
+
+We already have a check for that, and for now we are just firing a log entry at [pkg/controller/statefulset/stateful_set_control.go#L767](https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L767). Here we could fire the new metric increasing the count for statefulset_unavailability_violation, with labels including the StatefulSet namespace, statefulset_name, and a reason. Reason here being `exceededMaxUnavailable`. -->
 
 
 ### Test Plan
@@ -495,7 +507,6 @@ Testcases:
 
 New testcases being added:
 
-- New metric `rolling-update-duration-seconds` should calculate time correctly.
 - Feature enablement/disablement test
 
 Coverage:
@@ -516,9 +527,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Controller tests in `pkg/controller/statefulset` cover all cases. Since pod statuses
-are faked in integration tests, simulating rolling update is difficult. We're opting
-for e2e tests instead.
+- `test/integration/statefulset`: we'll add a test to verify that the number of pods brought down each
+time is equal to configured maxUnavailable.
 
 ##### e2e tests
 
@@ -532,8 +542,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `test/integration/statefulset`: we'll add a test to verify that the number of pods brought down each
-time is equal to configured maxUnavailable.
+- `test/e2e/apps/statefulset.go`: 
+    - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used.
+    - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a 
+StatefulSet setting `minReadySeconds` and `updateStrategy.rollingUpdate.maxUnavailable` and checking for a correct rollout specially when scaling down.
+
 
 ## Graduation Criteria
 
@@ -686,11 +699,11 @@ No, the default behavior remains the same.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, you can disable the feature-gate manually once it's in Beta.
+Yes, you can disable the feature-gate manually once it's in Beta, this will affect StatefulSets that are in the middle of a rollout when the feature gets disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again. [Even if this is a new field, it only gets cleared if it was not set before (if it was nil). So if it is set it continues to exist and is enforced.](https://github.com/kubernetes/kubernetes/blob/bb67eb5bd237334d6d0343aa382b351002653404/pkg/registry/apps/statefulset/strategy.go#L120-L137)
+If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again. [Even if this is a new field, it only gets cleared if it was not set before (if it was nil). So if it is set it continues to exist and is enforced.](https://github.com/kubernetes/kubernetes/blob/bb67eb5bd237334d6d0343aa382b351002653404/pkg/registry/apps/statefulset/strategy.go#L120-L137). This will affect StatefulSets that are in the middle of a rollout when the feature gets re-enabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -726,16 +739,32 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-The impact on StatefulSets during feature enablement and rollback depends on various factors:
+The rollout or rollback of the `maxUnavailable` feature for StatefulSets primarily affects how updates are managed, aiming to minimize disruptions. However, several scenarios could lead to potential issues:
 
-1. In a High-Availability (HA) cluster with mixed feature gate settings across API servers:
-   - For existing StatefulSets undergoing a rolling update, the behavior will be determined by the statefulset controller based on the API server that processed the original request. If the StatefulSet was created or updated by an API server with the feature enabled, it will use the `maxUnavailable` setting. Conversely, if the StatefulSet interacts with an API server where the feature is disabled, the `maxUnavailable` field will be ignored, and the StatefulSet will behave as if the feature is not enabled.
-   - For new StatefulSets, the behavior will depend on whether the creating API server has the feature gate enabled. If the feature gate is disabled on the API server handling the request, the StatefulSet will default to updating one pod at a time.
+Incorrect `maxUnavailable` Configurations: Setting `maxUnavailable` too high or too low could lead to service disruptions or slow update processes, respectively.
 
-2. During a rolling update of a StatefulSet with the feature enabled:
-   - If the feature gate is disabled in the midst of the rolling update, the behavior of the StatefulSet will shift to the default rolling update mechanism (updating one pod at a time). Existing pods that were terminated as part of the rolling update when the feature was enabled will continue their termination process. However, the creation of new pods will adhere to the default rolling update strategy, potentially leading to a slower update process if `maxUnavailable` was originally set to a value greater than 1.
+Feature Flag Consistency Across Control Plane: Inconsistencies in applying the feature flag MaxUnavailableStatefulSet across the control plane components, especially in HA clusters, can lead to unpredictable behaviors. The impact varies based on the combination of the feature flag state (on/off) for kube-apiserver and kube-controller-manager:
 
-To summarize, the impact on running StatefulSets during feature enablement and rollback is primarily observed in the rolling update behavior. StatefulSets that begin a rolling update with the feature enabled will utilize the `maxUnavailable` setting until a change in the feature gate status is detected, after which the behavior will revert to the default update strategy.
+1. Feature Enabled on kube-apiserver and Disabled on kube-controller-manager:
+
+- The maxUnavailable setting is accepted by the API server but ignored by the controller. This could lead to slower rollouts than expected because the controller doesn't act on the provided `maxUnavailable` values.
+
+2. Feature Disabled on kube-apiserver and Enabled on kube-controller-manager:
+
+- Attempts to use `maxUnavailable` in StatefulSet specifications will be rejected by the API server. Users won't be able to leverage the feature even though the controller is capable of interpreting it.
+
+3. Feature Enabled on Both kube-apiserver and kube-controller-manager:
+
+- This is the ideal scenario where the feature works as intended, allowing users to specify `maxUnavailable` for controlled updates.
+
+4. Feature Disabled on Both kube-apiserver and kube-controller-manager:
+
+- StatefulSet updates revert to the default Kubernetes behavior, ignoring any `maxUnavailable` settings even if previously specified.
+
+In scenarios 1 and 2, running workloads could be impacted due to the mismatch in feature flag settings. For instance, expected rolling update strategies might not be applied, potentially affecting application availability or update speed.
+
+To mitigate these risks, it's crucial to ensure consistent feature flag settings across all control plane components during rollout and to be prepared to adjust configurations based on observed behavior. Monitoring the progress and outcomes of StatefulSet updates closely during the initial adoption phase is recommended to quickly identify and resolve any issues.
+
 
 ###### What specific metrics should inform a rollback?
 
@@ -744,16 +773,42 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Metric Name: statefulset_unavailability_violation
+Administrators should monitor the following metrics to assess the need for a rollback:
 
-Description: This metric counts the number of times a StatefulSet exceeds its maxUnavailable threshold during a rolling update. This metric increases whenever a StatefulSet is processed and it's observed that spec.replicas - status.readyReplicas > maxUnavailable. The metric is labeled with namespace, statefulset, and a reason label, where reason could be exceededMaxUnavailable. This provides a clear indication of which StatefulSets are not complying with the defined maxUnavailable constraint, allowing for quick identification and remediation.
-
-Usage: Administrators and SREs can use this metric to monitor and alert on StatefulSet configurations that violate the maxUnavailable constraint. This metric is particularly useful for ensuring that the rolling updates are proceeding as expected and that no unexpected unavailability is occurring. This metric can be aggregated across multiple clusters for large-scale monitoring.
-
+- kube_statefulset_spec_strategy_rollingupdate_max_unavailable: This metric reflects the configured maxUnavailable value for StatefulSets. Significant deviations from expected values during updates, or if the actual unavailable pod count consistently exceeds this configuration, may indicate misconfigurations or issues with feature behavior.
+- StatefulSet Update Progress: Observing the stability and speed of StatefulSet rollouts relative to the maxUnavailable setting. Unusually slow updates or increased pod unavailability beyond the configured threshold could signal problems.
+- Cluster Stability Metrics: Key indicators of cluster health, such as increased error rates in control plane components or higher pod restart rates, post-feature adoption, can also guide the decision to rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No, but it will be tested manually before merging the PR.
+A manual test was performed, as follows:
+
+1. Create a cluster in 1.23.
+2. Upgrade to 1.24.
+3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
+4. Verify a rollout and check if only 3 pods are unavailable at a time ([currently with a bug if podManagementPolicy is set to Parallel](https://github.com/kubernetes/kubernetes/issues/112307))
+5. Downgrade to 1.23.
+6. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1
+7. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
+8. Upgrade to 1.24.
+9. Verify that the rollout has default behavior of only having one pod unavailable at a time
+   Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
+
+TODO:
+A manual test will be performed, as follows:
+
+1. Create a cluster in 1.29.
+2. Upgrade to 1.30.
+3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
+4. Verify a rollout and check if only 3 pods are unavailable at a time
+5. Check if rollout is also fine with podManagementPolicy set to Parallel
+4. Downgrade to 1.29.
+6. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1 (MaxUnavailableStatefulSet feature gate disabled by default).
+7. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
+8. Upgrade to 1.30.
+9. Verify that the rollout has default behavior of only having one pod unavailable at a time
+   Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -773,10 +828,8 @@ kubectl get statefulsets -o yaml | grep maxUnavailable
 
 ###### How can someone using this feature know that it is working for their instance?
 
-With feature enabled, set the `maxUnavailable` great than 1, and pay attention to the rolling update pods at a time,
-it should equal to the `maxUnavailable`.
-Or refer to the `rolling-update-duration-seconds`, it can give some indicators generally. Like when setting the `maxUnavailable`
-greater than 1, then the duration should descend.
+<!-- need to decide if I can use statefulset_unavailability_violation here -->
+Users can verify the maxUnavailable feature is working for their StatefulSets by observing the behavior of their application during rolling updates. Specifically, they should monitor the update progress of StatefulSets against the maxUnavailable value they have configured (). This can be done by tracking the number of pods that are unavailable at any given time during the update process and ensuring it does not exceed the specified maxUnavailable limit.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -795,8 +848,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Less than 0.5% of rolling updates should experience unavailability violations where the number of unavailable pods exceeds the maxUnavailable limit over a rolling 30-day window.
-
+Startup latency of schedulable stateful pods should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -805,8 +857,21 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: statefulset_unavailability_violation
-  - Components exposing the metric: kube-controller-manager
+    - Metric name: `workqueue_depth`
+      - Scope: Measures the current depth of the work queue for StatefulSet update operations.
+      - Components exposing the metric: `kube-controller-manager`
+    - Metric name: `workqueue_adds_total`
+      - Scope: Counts the total number of StatefulSet update operations added to the work queue.
+      - Components exposing the metric: `kube-controller-manager`
+    - Metric name: `workqueue_queue_duration_seconds`
+      - Scope: Observes the time StatefulSet update operations spend in the work queue before being processed.
+      - Components exposing the metric: `kube-controller-manager`
+    - Metric name: `workqueue_work_duration_seconds`
+      - Scope: Observes the time taken to process StatefulSet update operations from the work queue.
+      - Components exposing the metric: `kube-controller-manager`
+    <!-- need to decide on keeping statefulset_unavailability_violation -->
+    <!-- - Metric name: statefulset_unavailability_violation
+    - Components exposing the metric: kube-controller-manager -->
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -864,13 +929,19 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-Generalized Max Unavailable Threshold Violations
 
-- The number of unavailable pods during a rolling update exceeds the specified maxUnavailable limit for many Stateful Sets.
-  - Detection: Monitor statefulset_unavailability_violation metric; a significant increase in this metric indicates the failure mode.
-  - Mitigations: Investigate the cause of excess unavailability and take corrective actions, such as adjusting the maxUnavailable parameter or troubleshooting problematic pods.
-  - Diagnostics: Increase logging verbosity and examine logs for messages indicating why pods are not becoming ready or why more pods than expected are being terminated.
-  - Testing: Implement e2e tests that simulate scenarios where pods fail to become ready and verify that the maxUnavailable limit is not exceeded.
+- Incorrect Handling of minReadySeconds During StatefulSet Updates with Parallel Pod Management
+  - Detection: 
+    - Monitor the status.availableReplicas of the StatefulSet during rolling updates. A significant drop below the expected number of available replicas, considering the maxUnavailable setting, could indicate the issue.
+    - Review StatefulSet events or controller logs for rapid succession of pod updates without adherence to minReadySeconds, which could confirm that the delay is not being respected.
+  - Mitigations:
+    - Temporarily adjust the podManagementPolicy to OrderedReady as a workaround to ensure minReadySeconds is respected during updates, though this may slow down the rollout process.
+    - If feasible, review and adjust minReadySeconds and maxUnavailable settings to mitigate the impact until a fix is applied.
+    - Upgrade your cluster to 1.30, where this feature is promoted to beta, and the issue is fixed.
+  - Diagnostics:
+    - Enable detailed logging for the StatefulSet controller to capture the sequence and timing of pod updates during a rollout.
+    - Look for patterns or log entries indicating that a new pod update is initiated before the minReadySeconds period has elapsed for the previously updated pod.
+  - Testing: e2e tests for this issue will be added as part of this promotion.
 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -883,7 +954,7 @@ Generalized Max Unavailable Threshold Violations
 
 ## Drawbacks
 
-It's an opt-in feature so you can choose to use it or not, then no drawbacks I can think of.
+It can lead to increased application unavailability/outage during rollouts when this feature is enabled.
 
 ## Alternatives
 
