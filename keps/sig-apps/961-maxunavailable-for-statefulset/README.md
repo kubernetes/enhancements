@@ -320,15 +320,15 @@ partition. Which means all Pods with an ordinal that is greater than or equal to
 updated when the StatefulSet’s .spec.template is updated. Lets say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
   are the possible behavior choices we have:-
 
-  1. Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). Once they are both running and ready, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
+  1. Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). Once they are both running and available, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
 will remain untouched due the partition. In this choice, the number of pods terminating is not always
-maxUnavailable, but sometimes less than that. For e.g. if pod with ordinal 3 is running and ready but 4 is not, we still wait for 4 to be running and ready before moving on to 2. This implementation avoids
+maxUnavailable, but sometimes less than that. For e.g. if pod with ordinal 3 is running and available but 4 is not, we still wait for 4 to be running and available before moving on to 2. This implementation avoids
 out of order Terminations of pods.
-  2. Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When any of 4 or 3 are running and ready, pods with ordinal 2 will start Terminating. This could violate
-ordering guarantees, since if 3 is running and ready, then both 4 and 2 are terminating at the same
-time out of order. If 4 is running and ready, then both 3 and 2 are Terminating at the same time and no ordering guarantees are violated. This implementation, guarantees, that always there are maxUnavailable number of Pods Terminating except the last batch.
-  3. Pod with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When 4 is running and ready, 2 will start Terminating. At this time both 2 and 3 are terminating. If 3 is
-running and ready before 4, 2 wont start Terminating to preserve ordering semantics. So at this time,
+  2. Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When any of 4 or 3 are running and available, pods with ordinal 2 will start Terminating. This could violate
+ordering guarantees, since if 3 is running and available, then both 4 and 2 are terminating at the same
+time out of order. If 4 is running and available, then both 3 and 2 are Terminating at the same time and no ordering guarantees are violated. This implementation, guarantees, that always there are maxUnavailable number of Pods Terminating except the last batch.
+  3. Pod with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When 4 is running and available, 2 will start Terminating. At this time both 2 and 3 are terminating. If 3 is
+running and available before 4, 2 wont start Terminating to preserve ordering semantics. So at this time,
 only 1 is unavailable although we requested 2.
   4. Introduce a field in Rolling Update, which decides whether we want maxUnavailable with ordering or without ordering guarantees. Depending on what the user wants, this Choice can either choose behavior 1 or 3 if ordering guarantees are needed or choose behavior 2 if they dont care. To simplify this further
 PodManagementPolicy today supports `OrderedReady` or `Parallel`. The `Parallel` mode only supports scale up and tear down of StatefulSets and currently doesnt apply to Rolling Updates. So instead of coming up
@@ -387,7 +387,7 @@ https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e0
     }
 
     // Collect all targets in the range between getStartOrdinal(set) and getEndOrdinal(set). Count any targets in that range
-    // that are unhealthy i.e. terminated or not running and ready as unavailable). Select the
+    // that are unhealthy i.e. terminated or not running and available as unavailable). Select the
     // (MaxUnavailable - Unavailable) Pods, in order with respect to their ordinal for termination. Delete
     // those pods and count the successful deletions. Update the status with the correct number of deletions.
     unavailablePods := 0
