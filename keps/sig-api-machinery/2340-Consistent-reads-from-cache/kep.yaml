@@ -22,11 +22,12 @@ see-also:
   -  "/keps/sig-api-machinery/3157-watch-list"
 replaces:
 superseded-by:
-stage: alpha
-latest-milestone: "v1.28"
+stage: beta
+latest-milestone: "v1.30"
 milestone:
   alpha: "v1.28"
+  beta: "v1.30"
 feature-gates:
-- name: WatchCacheConsistentReads
+- name: ConsistentListFromCache
   components:
   - kube-apiserver
