@@ -324,9 +324,15 @@ and the job-controller terminates the lingering pods. At that time, `JobSuccessP
 Note that when the job meets one of successPolicies, other successPolicies are ignored.
 
 Finally, once all pods have terminated, the job-controller adds a `Complete` condition to `.status.conditions`.
+If any successPolicy isn't set, the job-controller adds an only `Complete` condition to the Job after the Job finished.
 
-If any successPolicy isn't set, the job-controller adds both a `SuccessCriteriaMet` and a `Complete` conditions to the Job
-after the job finished.
+Furthermore, the behavior of `FailureTarget` and `SuccessCriteriaMet` is similar in that the Job with this condition triggers the termination of lingering pods;
+after all pods are terminated, the terminal condition (`Failed` or `Complete`) is added:
+
+- `FailureTarget` is added to the Job matched with FailurePolicy with `action=FailJob` and triggers the termination of the lingering pods.
+Then, after the lingering pods are terminated, the `Failed` condition is added to the Job.
+- `SuccessCriterionMet` is added to the Job matched with SuccessPolicy and triggers the termination of lingering pods. 
+Then, after the lingering pods are terminated, the `Complete` condition is added to the Job.
 
 ### Transition of "status.conditions"
 
