@@ -303,7 +303,12 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+`k8s.io/test/integration/sig-auth/svcacct_test.go`
+- [TestServiceAccountTokenCreate_bound to a service account and pod](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L247)
+- [TestServiceAccountTokenCreate_bound to service account and a pod with an assigned nodeName that does not exist](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L415)
+- [TestServiceAccountTokenCreate_bound to service account and a pod with an assigned nodeName](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L416)
+- [TestServiceAccountTokenCreate_fails to bind to a Node if the feature gate is disabled](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L418)
+- [TestServiceAccountTokenCreate_bound to service account and node](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L448)
 
 ##### e2e tests
 
@@ -484,6 +489,52 @@ New metrics that can be used to identify if the feature is in use:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30):**
+
+*Without* the feature gate enabled, issued service account tokens *will not* have their `jti` field set to a random UUID,
+and the audit log will not persist the issued credential identifier when issuing a token.
+
+*With* the feature gate enabled, issued service accounts will set the `jti` field to a random UUID.
+Additionally, the audit event recorded when issuing a new token will have a new annotation added (`authentication.k8s.io/issued-credential-id`).
+As a service account's JTI field is used to infer the credential identifier, which forms part of a users `ExtraInfo`,
+audit events generated using this newly issued token will also include this JTI (persisted as `authentication.k8s.io/credential-id`).
+
+If the feature is *disabled* and a token is presented that includes a credential identifier, **it will still be persisted into the audit log**
+as part of the UserInfo in the audit event.
+
+As none of these fields are actually used for validating/verifying a token is valid, enabling & disabling the feature
+does not cause any adverse side effects.
+
+**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30) feature:**
+
+*Without* the feature gate enabled, service account tokens that have been bound to Node objects will not have their
+node reference claims validated (to ensure the referenced node exists).
+
+*With* the feature gate enabled, if a token has a `node` claim contained within it, it'll be validated to ensure the
+corresponding Node object actually exists.
+
+Disabling this feature will therefore *relax* the security posture of the cluster in an unexpected way, as tokens that
+may have been previously invalid (because their corresponding Node does not exist) may become valid again.
+
+Node bound tokens may only be issued if the `ServiceAccountTokenNodeBinding` feature is enabled, and it is not possible
+to enable `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation` being enabled too.
+
+This is further mitigated by graduating the `ServiceAccountTokenNodeBindingValidation` feature one release **earlier**
+than `ServiceAccountTokenNodeBinding`.
+
+Tokens that are bound to objects other than Nodes are unaffected.
+
+**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30):**
+
+*Without* the feature gate enabled, tokens that are bound to Pod objects will not include information about the Node
+that the pod is scheduled/assigned to.
+
+*With* the feature enabled, newly minted tokens that are bound to Pod objects will include metadata about the Node, namely
+the Node's name and UID.
+
+These fields are **not validated** and therefore disabling the feature after enabling it will not cause any adverse side-effects.
+
+``
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
