@@ -44,7 +44,7 @@ and accommodate advanced functionalities and potential areas for expansion.
 - Design a cool looking t-shirt
 - Provide Kubernetes APIs for the creation, configuration and management of interfaces
 - Provide documentation, examples, troubleshooting and FAQ's for KNI.
-- Establish feature parity with current CNI [ADD, DEL]
+- KNI should provide the API's required to establish feature parity with current CNI [ADD, DEL]
 - Handle support levels like Gateway API (e.g. "core" and "extended")
 - Handle implementation-specific use cases through extension points
 - Decouple the Pod and Node Network setup
