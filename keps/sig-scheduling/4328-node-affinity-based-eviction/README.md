@@ -67,7 +67,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This KEP aims to introduce node-affinity-based eviction.
 In this KEP, we will introduce a new nodeAffinity type: `requiredDuringSchedulingRequiredDuringExecution`.
 A new controller called `node-affinity-eviction` will be added to the controller-manager. 
-This controller will monitor changes in node labels and evict pods when their `requiredDuringSchedulingRequiredDuringExecution` node affinity is no longer met.
+This controller will monitor changes in node labels, and evict pods `tolerationSeconds` after their `requiredDuringSchedulingRequiredDuringExecution` node affinity is no longer met, 
 
 ## Motivation
 
@@ -114,8 +114,13 @@ However, the impact won't be significant due to the limitation on the number of 
 
 Introducing a new type of NodeAffinity:
 ```go
+type RequiredExecutionTerm struct {
+	Required          NodeSelectorTerm
+	TolerationSeconds *int64
+}
+
 type NodeAffinity struct {
-	RequiredDuringSchedulingRequiredDuringExecution *NodeSelector `json:"requiredDuringSchedulingRequiredDuringExecution,omitempty"`
+	RequiredDuringSchedulingRequiredDuringExecution []RequiredExecutionTerm
 }
 ```
 
@@ -124,7 +129,10 @@ Add a controller called `node-affinity-eviction`
 The controller do the following things:
 
 - Listening to the changes of node labels
-- Iterating over all pods assigned to the node, checks the NodeAffinity field, if `RequiredDuringSchedulingRequiredDuringExecution` exists, checks if the selector still met to the new node label. If not, evict the pod.
+- Iterating over all pods assigned to the node, checks the NodeAffinity field, if `RequiredDuringSchedulingRequiredDuringExecution` exists, checks if `RequiredExecutionTerm` still match the new node. 
+- If `RequiredDuringSchedulingRequiredDuringExecution` is no loger met:
+  - If `tolerationSeconds` is set, delete the pod after the minimum `toleranceSeconds` of all unmatched terms.
+  - If `tolerationSeconds` is not set, delete the pod immediately.
 - It will add a DisruptionTarget condition with corresponding reason and message for the pod.
 - It will use client-go to delete the pod directly. 
 - It does not respect your configured PodDisruptionBudget.
