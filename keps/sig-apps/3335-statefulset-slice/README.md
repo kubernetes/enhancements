@@ -391,7 +391,7 @@ In the main control loop, StatefulSet will attempt to create pod replicas `[k, N
 *   When scaling down pods: If ordinal `j` exists but is not in range `[k, N+k-1]`), pod `j` will be terminated.
 **RollingUpdate Partition Changes**
 
-Since `ordinals.start` changes the offset of the replica ordinals, this affects the `partition` field used for RollingUpdate. As `partition` specifies an ordinal index, the partition field must be in the range `[k, N+k-1]`, to be valid.
+Since `ordinals.start` changes the offset of the replica ordinals, this affects the `partition` field used for RollingUpdate. As `partition` specifies an ordinal index, the partition field must be in the range `[k, N+k-1]`, to be valid. 
 
 ### Test Plan
 
