@@ -12,7 +12,7 @@
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [No support JobSuccessPolicy for the NonIndexed Job](#no-support-jobsuccesspolicy-for-the-nonindexed-job)
-    - [Different between &quot;complete&quot; and &quot;successCriteriaMet&quot;](#different-between-complete-and-successcriteriamet)
+    - [Difference between &quot;complete&quot; and &quot;successCriteriaMet&quot;](#difference-between-complete-and-successcriteriamet)
     - [The CronJob concurrentPolicy is not affected by JobSuccessPolicy](#the-cronjob-concurrentpolicy-is-not-affected-by-jobsuccesspolicy)
     - [Status never switches from &quot;SuccessCriteriaMet&quot; to &quot;Failed&quot;](#status-never-switches-from-successcriteriamet-to-failed)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -191,8 +191,8 @@ spec:
 
 As I described in [Non-Goals](#non-goals), we don't support the SuccessPolicy for the job with `NonIndexed` mode.
 
-#### Different between "complete" and "successCriteriaMet"
-The similar job conditions, `Complete` and `SuccessCriteriaMet`, are different in the following:
+#### Difference between "complete" and "successCriteriaMet"
+The similar job conditions, `Complete` and `SuccessCriteriaMet`, are different in the following ways:
 
 - `Complete` means that all pods completed, not failed.
 - `SuccessCriteriaMet` means that the job meets at least one of successPolicies.
@@ -212,7 +212,7 @@ which depends on the Job API.
 
 So, the status can never switch from `SucessCriterionMet` to `Failed`.
 Additionally, once the job has `SuccessCriteriaMet=true` condition, the job definitely ends with `Complete=true` condition
-even if the lingering pods could potentially meet the terminating policies.
+even if the lingering pods could potentially meet the failure policies.
 
 ### Risks and Mitigations
 
