@@ -421,9 +421,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 <!-- - <test>: <link to test coverage> -->
-- When feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
+- Test that when the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
 matching PodFailurePolicyRule with the `SetConditionReason` field defined, check that the `JobFailed`
 condition has the user-specified `SetConditionReason` set on it correctly.
+
+- Test that when the feature flag is off, but when it was previously enabled, there is an existing Job
+which already had the `JobFailed` condition reason set by the new `SetConditionReason` field, that the
+Job controller does not overwrite the reason to `PodFailurePolicy`, and that it remains set to the
+user-defined `SetConditionReason`.
 
 ##### e2e tests
 
