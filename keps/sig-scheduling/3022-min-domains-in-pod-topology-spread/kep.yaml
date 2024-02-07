@@ -14,12 +14,13 @@ reviewers:
 approvers:
   - "@alculquicondor"
   - "@Huang-Wei"
-stage: beta
-latest-milestone: "v1.25"
+stage: stable
+latest-milestone: "v1.30"
 milestone:
   alpha: "v1.24"
   beta: "v1.25"
-disable-supported: true
+  stable: "v1.30"
+disable-supported: false
 feature-gates:
   - name: MinDomainsInPodTopologySpread
     components:
