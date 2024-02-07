@@ -16,9 +16,12 @@
 - [Design Details](#design-details)
   - [APIs to move](#apis-to-move)
     - [We will move following <a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go">APIs</a> in-tree:](#we-will-move-following-apis-in-tree)
-    - [[Undecided] Changes while we move above APIs in-tree:](#undecided-changes-while-we-move-above-apis-in-tree)
+    - [Changes while we move above APIs in-tree:](#changes-while-we-move-above-apis-in-tree)
   - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller">Controller</a> to move](#controller-to-move)
     - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator">Migrator Controller</a>](#migrator-controller)
+  - [Approach](#approach)
+    - [Garbage Collection Cache](#garbage-collection-cache)
+  - [Rejected Alternative](#rejected-alternative)
     - [Streaming List](#streaming-list)
   - [RBAC for SVM](#rbac-for-svm)
   - [Test Plan](#test-plan)
@@ -125,65 +128,113 @@ As an end user using encryption at rest, whenever the key change is detected we 
     // StorageVersionMigration represents a migration of stored data to the latest
     // storage version.
     type StorageVersionMigration struct {
-        metav1.TypeMeta `json:",inline"`
-        // +optional
-        metav1.ObjectMeta `json:"metadata,omitempty"`
-        // Specification of the migration.
-        // +optional
-        Spec StorageVersionMigrationSpec `json:"spec,omitempty"`
-        // Status of the migration.
-        // +optional
-        Status StorageVersionMigrationStatus `json:"status,omitempty"`
+      metav1.TypeMeta `json:",inline"`
+      // Standard object metadata.
+      // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+      // +optional
+      metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+      // Specification of the migration.
+      // +optional
+      Spec StorageVersionMigrationSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+      // Status of the migration.
+      // +optional
+      Status StorageVersionMigrationStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
     }
 
     // Spec of the storage version migration.
     type StorageVersionMigrationSpec struct {
-        // The resource that is being migrated from. The migrator sends requests to
-        // the endpoint serving the resource.
-        // Immutable.
-        OriginResource GroupVersionResource `json:"resource"`
-        // The token used in the list options to get the next chunk of objects
-        // to migrate. When the .status.conditions indicates the migration is
-        // "Running", users can use this token to check the progress of the
-        // migration.
-        // +optional
-        ContinueToken string `json:"continueToken,omitempty"`
-        // The storage version hash to avoid races.
-        StorageVersionHash string `json:"storageVersionHash,omitempty"`
+      // The resource that is being migrated. The migrator sends requests to
+      // the endpoint serving the resource.
+      // Immutable.
+      Resource GroupVersionResource `json:"resource" protobuf:"bytes,1,opt,name=resource"`
+      // The token used in the list options to get the next chunk of objects
+      // to migrate. When the .status.conditions indicates the migration is
+      // "Running", users can use this token to check the progress of the
+      // migration.
+      // +optional
+      ContinueToken string `json:"continueToken,omitempty" protobuf:"bytes,2,opt,name=continueToken"`
+      // TODO: consider recording the storage version hash when the migration
+      // is created. It can avoid races.
     }
 
     // The names of the group, the version, and the resource.
     type GroupVersionResource struct {
-        // The name of the group.
-        Group string `json:"group,omitempty"`
-        // The name of the version.
-        Version string `json:"version,omitempty"`
-        // The name of the resource.
-        Resource string `json:"resource,omitempty"`
+      // The name of the group.
+      Group string `json:"group,omitempty" protobuf:"bytes,1,opt,name=group"`
+      // The name of the version.
+      Version string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
+      // The name of the resource.
+      Resource string `json:"resource,omitempty" protobuf:"bytes,3,opt,name=resource"`
     }
-    
+
+    type MigrationConditionType string
+
+    const (
+      // Indicates that the migration is running.
+      MigrationRunning MigrationConditionType = "Running"
+      // Indicates that the migration has completed successfully.
+      MigrationSucceeded MigrationConditionType = "Succeeded"
+      // Indicates that the migration has failed.
+      MigrationFailed MigrationConditionType = "Failed"
+    )
+
+    // Describes the state of a migration at a certain point.
+    type MigrationCondition struct {
+      // Type of the condition.
+      Type MigrationConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=MigrationConditionType"`
+      // Status of the condition, one of True, False, Unknown.
+      Status corev1.ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status,casttype=k8s.io/api/core/v1.ConditionStatus"`
+      // The last time this condition was updated.
+      // +optional
+      LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty" protobuf:"bytes,3,opt,name=lastUpdateTime"`
+      // The reason for the condition's last transition.
+      // +optional
+      Reason string `json:"reason,omitempty" protobuf:"bytes,4,opt,name=reason"`
+      // A human readable message indicating details about the transition.
+      // +optional
+      Message string `json:"message,omitempty" protobuf:"bytes,5,opt,name=message"`
+    }
+
     // Status of the storage version migration.
     type StorageVersionMigrationStatus struct {
-        // The latest available observations of the migration's current state.
-        // +optional
-        // +patchMergeKey=type
-        // +patchStrategy=merge
-        Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+      // The latest available observations of the migration's current state.
+      // +patchMergeKey=type
+      // +patchStrategy=merge
+      // +listType=map
+      // +listMapKey=type
+      // +optional
+      Conditions []MigrationCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+      // ResourceVersion to compare with the GC cache for performing the migration.
+      // This is the current resource version of given group, version and resource when
+	  // kube-controller-manager first observes this StorageVersionMigration resource.
+      ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,2,opt,name=resourceVersion"`
+      // LastMigratedResourceNameHash is use to pick up migration from where it left off in case of failure.
+      LastMigratedResourceNameHash string `json:"lastMigratedResourceNameHash,omitempty" protobuf:"bytes,3,opt,name=lastMigratedResourceNameHash"`
     }
+
+    // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+    // +k8s:prerelease-lifecycle-gen:introduced=1.30
 
     // StorageVersionMigrationList is a collection of storage version migrations.
     type StorageVersionMigrationList struct {
-        metav1.TypeMeta `json:",inline"`
-        // +optional
-        metav1.ListMeta `json:"metadata,omitempty"`
-        // Items is the list of StorageVersionMigration
-        Items []StorageVersionMigration `json:"items"`
+      metav1.TypeMeta `json:",inline"`
+
+      // Standard list metadata
+      // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+      // +optional
+      metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+      // Items is the list of StorageVersionMigration
+      // +patchMergeKey=type
+      // +patchStrategy=merge
+      // +listType=map
+      // +listMapKey=type
+      Items []StorageVersionMigration `json:"items" listType:"map" listMapKey:"type" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=items"`
     }
     ```
 
 - APIs in-tree will be _converted to `built-in types`_ from CRD.
 
-#### [Undecided] Changes while we move above APIs in-tree:
+#### Changes while we move above APIs in-tree:
 To avoid any conflicts with the Storage Version Migrators running out of tree, we will change the _`group`_ from `migration.k8s.io` to `storagemigration.k8s.io`.
 
 The final APIs that will be moved in-tree are:
@@ -195,6 +246,11 @@ Currently, the Storage Version Migrator comprises two controllers: the `Trigger`
 
 When transitioning the Storage Version Migrator in-tree, we will exclusively move the Migrator controller as a component of KCM. The creation of the Migration resource will be deferred to the user, instead of being triggered automatically.
 
+### Approach
+#### Garbage Collection Cache
+Kube Controller Manager's garbage collection cache contains the name and namespace for all resources, providing a suitable dataset for the migration process. This approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing). _We will use this approach for the Alpha release_.
+
+### Rejected Alternative
 #### Streaming List
 Currently, the Migrator controller uses the `chunked List` method to retrieve the list of resources from the API server and subsequently perform storage migrations as needed. However, chunked lists are [resource-intensive]((https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/3157-watch-list/README.md#motivation)) and can lead to a significant overload on the API server, potentially resulting in it being terminated due to out-of-memory (OOM) issues. To address this concern, we have proposed the adoption of an Alpha feature introduced in Kubernetes _v1.27_, known as [`Streaming List`](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists).
 
@@ -325,16 +381,22 @@ total:                                                                          
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
+- Move apis in-tree under new group while keeping schema same as out-of-tree CRD.
+- Controller will use Garbage Collection Cache to carry out the migration.
+- Resolve potential kube-apiserver OOMs and cascading failure issues that may occur due to the use of paginated lists by using KCM's GC cache.
 
 #### Beta
 
-- Resolve potential kube-apiserver OOMs and cascading failure issues that may occur due to the use of paginated lists.
 - Feature is enabled by default
 - All of the above documented tests are complete
+- Leader election to make sure new controller can work with both CRD and in-tree APIs.
+- Using Garbage Collection Cache means using RV as an integer to validate the freshness of the cache. Approval from SigArch is required on this RV semantics.
 
 ### Upgrade / Downgrade Strategy
+The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
 
 ### Version Skew Strategy
+The feature will be enabled by the feature gate `StorageVersionMigrator` on both the _api-server_ and the _kube-controller-manager_. This gate must be set for both components during installation. Otherwise, since the kube-controller-manager is allowed to be one version lower than the api-server, it won't be able to process any StorageVersionMigration resources created by the API server.
 
 ## Production Readiness Review Questionnaire
 
@@ -431,7 +493,7 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes. Creation of the Migration Request which creates `StorageVersionMigration` resource. 
+Yes. Creation of the Migration Request which _creates_ `StorageVersionMigration` resource. Additionally, there will be `List` requests made for resource types that need to be migrated. Moreover, an `Update` request will be generated for each resource of the specified type to perform the migration.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
