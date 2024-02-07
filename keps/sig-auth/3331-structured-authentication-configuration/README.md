@@ -814,9 +814,8 @@ No.
 
 New metrics:
 
-- `apiserver_authentication_config_controller_automatic_reload_failures_total` - This metric will be incremented when the API server fails to reload the configuration file.
 - `apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds` - This metric will be updated every time the API server reloads the configuration file.
-- `apiserver_authentication_config_controller_automatic_reload_success_total` - This metric will be incremented every time the API server successfully reloads the configuration file.
+- `apiserver_authentication_config_controller_automatic_reloads_total` - This metric will be incremented every time the API server reloads the configuration file partitioned by status (success/failure).
 - `apiserver_authentication_config_controller_automatic_reload_last_config_hash` - This metric will be set to the hash of the loaded configuration file after a successful reload.
 - `apiserver_authentication_latency_seconds` - This metric will be used to monitor the time it takes to Authenticate token. This will only be set for token authentication requests for matching issuer.
 - `apiserver_authentication_jwks_fetch_last_timestamp_seconds` - This metric will be updated every time the API server makes a request to the JWKS endpoint.
