@@ -27,6 +27,12 @@ feature-gates:
       - kube-apiserver
 disable-supported: true
 metrics:
-- apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds
-- apiserver_authorization_config_controller_automatic_reload_success_total{apiserver_id_hash}
-- apiserver_authorization_config_controller_automatic_reload_failures_total{apiserver_id_hash}
+- apiserver_authorization_decisions_total{type, name, decision}
+- apiserver_authorization_webhook_duration_seconds{name, result}
+- apiserver_authorization_webhook_evaluations_total{name, result}
+- apiserver_authorization_webhook_evaluations_fail_open_total{name, result}
+- apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds{apiserver_id_hash, status}
+- apiserver_authorization_config_controller_automatic_reloads_total{apiserver_id_hash, status}
+- apiserver_authorization_match_condition_evaluation_errors_total{type, name}
+- apiserver_authorization_match_condition_exclusions_total{type, name}
+- apiserver_authorization_match_condition_evaluation_seconds{type, name}
