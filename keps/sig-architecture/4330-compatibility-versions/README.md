@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API Compatibility Versioning](#api-compatibility-versioning)
   - [Discovery](#discovery)
+  - [Version introspection](#version-introspection)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -267,6 +268,10 @@ Kubernetes components (apiservers, controller managers, schedulers) will offer a
 `--compatibility-version` flag that can be set to any of the previous three
 minor versions. If unset, the compatibility version defaults to the `<major.minor>`
 version of the binary version.
+
+If the `--compatibility-version` is set to a version outside of the supported version
+range (N..N-3), the binary will exit and report an invalid flag value error telling
+the user what versions are allowed.
 
 The kubelet is out of scope for this enhancement. Note that the kubelet already
 supports N-3 version skew with the kube-apiserver.
@@ -545,6 +550,29 @@ Also note that we that show information about unavailable features in discovery
 today. We introduce fields into APIs for disabled-by-default features and make
 no attempt to hide those fields in discovery.
 
+### Version introspection
+
+The `/version` endpoint will be augmented to report binary version when this feature
+is enabled. Note that this changes default behavior by always including a new field
+in `/version` responses.  E.g.
+
+```json
+{
+  "major": "1",
+  "minor": "30",
+  "binaryMajor": "1",
+  "binaryMinor": "32",
+  "compatibility": "29",
+  "gitVersion": "v1.30.0",
+  "gitCommit": "<something>",
+  "gitTreeState": "clean",
+  "buildDate": "2024-03-30T06:36:32Z",
+  "goVersion": "go1.21.something",
+  "compiler": "gc",
+  "platform": "linux/arm64"
+}
+```
+
 ### User Stories (Optional)
 
 <!--
@@ -622,7 +650,8 @@ While a hard shutdown of a process is likely worse than the disease, exposing so
 Possible mitigations:
 
 - Clients send version numbers in request headers. Servers use this to detect
-  out-of-allowance skew. Servers then surface this to cluster administrators.
+  out-of-allowance skew. Servers then surface this to cluster administrators
+  through a metric.
 - Components register identity leases (apiserver already does this)
   https://github.com/kubernetes/enhancements/pull/4356 proposes doing it for
   controller managers. Components include their version information in the
@@ -741,6 +770,8 @@ We intend to have this up and running for Beta
 
 - Initial cross-branch e2e tests completed and enabled
 - Compatibility version support for N-3 minor versions
+- Clients send version number and servers report out-of-allowance skew to a metric
+  (Leveraging work from KEP-4355 if possible)
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -875,17 +906,22 @@ This section must be completed when targeting alpha to a release.
 
 ###### Does enabling the feature change any default behavior?
 
-No. Only when the feature gate is enabled AND `--compatibility-version` is set
-does behavior change.
+Yes, `/version` will respond with `binaryMajor` and `binaryMinor` fields.
+This addition of fields should be handled by clients in a backward compatible
+way, and is a relatively safe change.
+
+No other default behavior is changed. Only when the feature gate is enabled AND
+`--compatibility-version` is set does other behavior change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Once disabled, the component ignores any `--compatibility-version` value
-and operates normally at the current binary version.
+Yes. Note that when `--compatibility-version` flags is defined, the feature flag
+must be turned on (when feature is in Alpha). So to disable the feature, the
+flag must also be removed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Behavior is as expected, `--compatibility-version` is again applied.
+Behavior is as expected, `--compatibility-version` may be set again.
 
 ###### Are there any tests for feature enablement/disablement?
 
