@@ -45,14 +45,14 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -148,7 +148,10 @@ When a TokenRequest is being issued/fulfilled, we will modify the issuing code t
 can be later used to trace the requests that a specific issued token has made to the apiserver via the audit log.
 
 This will require changing the JWT issuing code to actually generate this UUID, as well as extending the code around the
-audit log to have it record this information into audit entries.
+audit log to have it record this information into audit entries when a token is issued (via the `authentication.k8s.io/issued-credential-id` audit annotation).
+
+As this UUID will be embedded as part of a user's ExtraInfo, it'll automatically be persisted into audit events for all
+requests made using a token that embeds a credential identifier (as `authentication.k8s.io/credential-id`).
 
 ### User Stories (Optional)
 
@@ -164,10 +167,10 @@ The node assertion can be checked to ensure the host identity matches the node a
 Bob is an administrator of a cluster and has noticed some strange request patterns from an unknown service account.
 
 Bob would like to understand who initially issued/authorised this token to be issued. To do so, Bob looks up the JTI
-of the token making the suspicious requests by looking inside the audit log entries for these suspect requests.
+of the token making the suspicious requests by looking inside the audit log entries at user's ExtraInfo for these suspect requests.
 
 This JTI is then used for a further audit log lookup - namely, looking for the TokenRequest `create` call which contains
-the audit annotation with key `authentication.kubernetes.io/token-identifier` and the value set to that of the suspect token.
+the audit annotation with key `authentication.kubernetes.io/issued-credential-id` and the value set to that of the suspect token.
 
 This allows Bob to determine precisely who made the original request for this token, and (depending on the 'chain'
 above this token), allows Bob to recursively perform this lookup to find all involved parties that led to this token
@@ -216,7 +219,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -229,16 +232,33 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
+`pkg/registry/core/serviceaccount/storage`:
+* Coverage before (`release-1.28`): `k8s.io/kubernetes/pkg/registry/core/serviceaccount/storage      8.354s  coverage: 10.7% of statements`
+* Coverage after: `k8s.io/kubernetes/pkg/registry/core/serviceaccount/storage      8.394s  coverage: 8.7% of statements`
+* Test ensuring audit annotations are added to audit events for the `serviceaccounts/<name>/token` subresource.
+* Tests verifying it's possible to bind a token to a Node object.
+* Tests ensuring tokens bound to pod objects also embed associated node metadata.
+* NOTE: the majority of this file is untested with *unit tests* (instead, using integration tests). [#121515](https://github.com/kubernetes/kubernetes/issues/121515).
+
 `staging/src/k8s.io/apiserver/pkg/authentication/serviceaccount`:
+* Coverage before (`release-1.28`): `k8s.io/apiserver/pkg/authentication/serviceaccount      0.567s  coverage: 60.8% of statements`
+* Coverage after: `k8s.io/apiserver/pkg/authentication/serviceaccount      0.569s  coverage: 70.1% of statements`
 * Test ensuring that service account info (JTI, node name and UID) is correctly extracted from a presented JWT.
 * Tests to ensure the information is NOT extracted when the feature gate is disabled.
 
 `pkg/serviceaccount`:
+* Coverage before (`release-1.28`): `k8s.io/kubernetes/pkg/serviceaccount    0.755s  coverage: 72.4% of statements`
+* Coverage after: `k8s.io/kubernetes/pkg/serviceaccount    0.786s  coverage: 72.7% of statements`
 * Extending tests to ensure Node info is embedded into extended claims (name and uid)
 * Tests to ensure `ID`/`JTI` field is always set to a random UUID.
 * Tests to ensure the info embedded on a JWT is extracted from the token and into the ServiceAccountInfo when
   a token is validated.
 * Tests to ensure the information is NOT embedded or extracted when the feature gate is disabled.
+
+`staging/src/k8s.io/kubectl/pkg/cmd/create`:
+* Coverage before (`release-1.28`): `k8s.io/kubectl/pkg/cmd/create   0.995s  coverage: 55.1% of statements`
+* Coverage after: `k8s.io/kubectl/pkg/cmd/create   0.949s  coverage: 55.2% of statements`
+* Add tests ensuring it's possible to request a token that is bound to a Node object (gated by environment variable during alpha)
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -283,7 +303,12 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+`k8s.io/test/integration/sig-auth/svcacct_test.go`
+- [TestServiceAccountTokenCreate_bound to a service account and pod](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L247)
+- [TestServiceAccountTokenCreate_bound to service account and a pod with an assigned nodeName that does not exist](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L415)
+- [TestServiceAccountTokenCreate_bound to service account and a pod with an assigned nodeName](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L416)
+- [TestServiceAccountTokenCreate_fails to bind to a Node if the feature gate is disabled](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L418)
+- [TestServiceAccountTokenCreate_bound to service account and node](https://github.com/kubernetes/kubernetes/blob/release-1.29/test/integration/auth/svcaccttoken_test.go#L448)
 
 ##### e2e tests
 
@@ -304,7 +329,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 #### Beta
 
 - Decide what the default of the new flag should be
+  - Decision: this flag was not added during alpha, and MAY be added post-beta, but will definitely default to **off**.
+  - This does not need to block promotion of ServiceAccountTokenPodNodeInfo feature as a result.
 - Decide if using an audit annotation is the correct approach
+  - Decision: audit annotation is the correct approach as this is only for `serviceaccounts/<name>/token` requests, not all
+  - Renaming audit annotation to `authentication.kubernetes.io/issued-credential-id` to disambiguate from `authentication.kubernetes.io/credential-id` in user's ExtraInfo
 - Docs around the SA JWT schema (this does not exist today)
 
 #### GA
@@ -360,9 +389,17 @@ you need any help or guidance.
 
 * `ServiceAccountTokenJTI` feature flag will toggle including JTI information in tokens, as well as recording JTIs in the audit log / the SA user info.
 * `ServiceAccountTokenPodNodeInfo` feature flag will toggle including node info associated with pods in tokens.
+* `ServiceAccountTokenNodeBindingValidation` feature flag will toggle the apiserver validating Node claims in node bound service account tokens.
 * `ServiceAccountTokenNodeBinding` feature flag will toggle allowing service account tokens to be bound to Node objects.
 
-Both of these feature flags can be disabled without any unexpected adverse affects or coordination required.
+The `ServiceAccountTokenNodeBindingValidation` feature will graduate to beta in version v1.30, a release earlier than `ServiceAccountTokenNodeBinding`
+to ensure a safe rollback from version v1.31 to v1.30 (more info below in rollback considerations section).
+
+The `ServiceAccountTokenNodeBinding` feature gate must only be enabled once the `ServiceAccountTokenNodeBindingValidation` feature has been enabled.
+Disabling the `ServiceAccountTokenNodeBindingValidation` feature whilst keeping `ServiceAccountTokenNodeBinding` would allow tokens that are expected to
+be bound to the lifetime of a particular Node to validate even if that Node no longer exists.
+
+All other feature flags can be disabled without any unexpected adverse affects or coordination required.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -413,7 +450,8 @@ The `ServiceAccountTokenNodeBindingValidation` feature gate should be enabled an
 any server.
 
 The `ServiceAccountTokenNodeBindingValidation` will be defaulted to on one release **before** `ServiceAccountTokenNodeBinding`
-to account for this.
+to account for this. Concretely, `ServiceAccountTokenNodeBindingValidation` will be enabled by default in v1.30 and
+`ServiceAccountTokenNodeBinding` will be enabled by default in v1.31.
 
 This should not have any issues/affect during upgrades.
 Rollback is done by removing/disabling the feature gate(s).
@@ -431,6 +469,10 @@ To help avoid this, the feature will be graduated in two phases:
 
 This allows for a safe rollback in which the same security expectations are enforced once a token has been issued.
 
+If a user explicitly *disables* `ServiceAccountTokenNodeBindingValidation` but keeps `ServiceAccountTokenNodeBinding` enabled,
+the node claims in the issued tokens will not be properly validated. This configuration will be explicitly denied by the
+kube-apiserver and will cause it to exit on startup.
+
 ###### What specific metrics should inform a rollback?
 
 * `authentication_attempts`
@@ -447,6 +489,52 @@ New metrics that can be used to identify if the feature is in use:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30):**
+
+*Without* the feature gate enabled, issued service account tokens *will not* have their `jti` field set to a random UUID,
+and the audit log will not persist the issued credential identifier when issuing a token.
+
+*With* the feature gate enabled, issued service accounts will set the `jti` field to a random UUID.
+Additionally, the audit event recorded when issuing a new token will have a new annotation added (`authentication.k8s.io/issued-credential-id`).
+As a service account's JTI field is used to infer the credential identifier, which forms part of a users `ExtraInfo`,
+audit events generated using this newly issued token will also include this JTI (persisted as `authentication.k8s.io/credential-id`).
+
+If the feature is *disabled* and a token is presented that includes a credential identifier, **it will still be persisted into the audit log**
+as part of the UserInfo in the audit event.
+
+As none of these fields are actually used for validating/verifying a token is valid, enabling & disabling the feature
+does not cause any adverse side effects.
+
+**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30) feature:**
+
+*Without* the feature gate enabled, service account tokens that have been bound to Node objects will not have their
+node reference claims validated (to ensure the referenced node exists).
+
+*With* the feature gate enabled, if a token has a `node` claim contained within it, it'll be validated to ensure the
+corresponding Node object actually exists.
+
+Disabling this feature will therefore *relax* the security posture of the cluster in an unexpected way, as tokens that
+may have been previously invalid (because their corresponding Node does not exist) may become valid again.
+
+Node bound tokens may only be issued if the `ServiceAccountTokenNodeBinding` feature is enabled, and it is not possible
+to enable `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation` being enabled too.
+
+This is further mitigated by graduating the `ServiceAccountTokenNodeBindingValidation` feature one release **earlier**
+than `ServiceAccountTokenNodeBinding`.
+
+Tokens that are bound to objects other than Nodes are unaffected.
+
+**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30):**
+
+*Without* the feature gate enabled, tokens that are bound to Pod objects will not include information about the Node
+that the pod is scheduled/assigned to.
+
+*With* the feature enabled, newly minted tokens that are bound to Pod objects will include metadata about the Node, namely
+the Node's name and UID.
+
+These fields are **not validated** and therefore disabling the feature after enabling it will not cause any adverse side-effects.
+
+``
 <!--
 Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
@@ -592,7 +680,19 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+After observing an issue (e.g. uptick in denied authentication requests or a significant shift in any metrics added for this KEP),
+kube-apiserver logs from the authenticator may be used to debug.
+
+Additionally, manually attempting to exercise the affected codepaths would surface information that'd aid debugging.
+For example, attempting to issue a node bound token, or attempting to authenticate to the apiserver using a node bound token.
+
 ## Implementation History
+
+* KEP marked implementable and merged for the v1.29 release
+* KEP implemented in an alpha state for v1.29
+* Renamed audit annotation used for the `serviceaccounts/<name>/token` endpoint to be clearer: https://github.com/kubernetes/kubernetes/pull/123098
+* Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
+* `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
