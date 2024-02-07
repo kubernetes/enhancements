@@ -501,13 +501,15 @@ Labels {along with possible values}:
 
 5. `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds`
 
-This Gauge metric will record last time in seconds when an authorization reload was performed, partitioned by apiserver_id_hash.
+This Gauge metric will record last time in seconds when an authorization reload was performed, partitioned by apiserver_id_hash and status.
 - `apiserver_id_hash`
+- `status` (`success` or `failure`)
 
-6. `apiserver_authorization_config_controller_automatic_reload_failures_total` and `apiserver_authorization_config_controller_automatic_reload_success_total`
+6. `apiserver_authorization_config_controller_automatic_reloads_total`
 
-These Counter metrics record the total number of reload successes and failures, partitioned by API server apiserver_id_hash.
+This Counter metric records the total number of reload successes and failures, partitioned by API server apiserver_id_hash and status.
 - `apiserver_id_hash`
+- `status` (`success` or `failure`)
 
 ### Test Plan
 

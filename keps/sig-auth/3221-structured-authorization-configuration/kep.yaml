@@ -28,5 +28,4 @@ feature-gates:
 disable-supported: true
 metrics:
 - apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds
-- apiserver_authorization_config_controller_automatic_reload_success_total{apiserver_id_hash}
-- apiserver_authorization_config_controller_automatic_reload_failures_total{apiserver_id_hash}
+- apiserver_authorization_config_controller_automatic_reloads_total{apiserver_id_hash, type}
