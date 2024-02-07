@@ -512,6 +512,36 @@ This Counter metric records the total number of reload successes and failures, p
 - `apiserver_id_hash`
 - `status` (`success` or `failure`)
 
+7. `apiserver_authorization_match_condition_evaluation_errors_total`
+
+This will be incremented when an authorization webhook encounters a match condition error.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+
+8. `apiserver_authorization_match_condition_exclusions_total`
+
+This will be incremented when an authorization webhook is skipped because match conditions exclude it.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+
+9. `apiserver_authorization_match_condition_evaluation_seconds`
+
+Authorization match condition evaluation time in seconds.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
