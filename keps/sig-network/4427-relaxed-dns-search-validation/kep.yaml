@@ -3,7 +3,7 @@ kep-number: 4427
 authors:
   - "@sethev"
 owning-sig: sig-network
-status: provisional
+status: implementable
 creation-date: 2024-01-22
 reviewers:
   - "@danwinship"
