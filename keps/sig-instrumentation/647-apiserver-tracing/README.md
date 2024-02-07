@@ -361,6 +361,11 @@ _This section must be completed when targeting beta graduation to a release._
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+This feature will likely be useful for determining why scalability SLOs are not being met, as tracing can
+provide detailed latency information as described above. If tracing is suspected as the reason for SLOs not
+meeting SLOs, it can be disabled without impacting other functionality by not setting the
+`--opentelemetry-config-file` flag.
+
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
