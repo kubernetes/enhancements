@@ -818,19 +818,16 @@ No effect.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
+- Configuration file cannot be loaded at server start
+  - Detection: API server process exits
+  - Mitigation: Revert to previous success invocation or configuration
+  - Diagnostics: Configuration validation errors are logged at default verbosity.
+  - Testing: Configuration file loading and validation is unit tested
+- Configuration file cannot be reloaded while server is running
+  - Detection: `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds` metric
+    indicates the `failure` status timestamp is most recent.
+  - Mitigation: Revert to previous success invocation or configuration
+  - Diagnostics: Configuration validation errors are logged at default verbosity.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
