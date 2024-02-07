@@ -1,101 +1,41 @@
-<!--
-
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-3331: Structured Authentication Config
 
 <!-- toc -->
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Configuration file](#configuration-file)
-    - [CEL](#cel)
-    - [Flags](#flags)
-    - [Test Plan](#test-plan)
-        - [Prerequisite testing updates](#prerequisite-testing-updates)
-        - [Unit tests](#unit-tests)
-        - [Integration tests](#integration-tests)
-        - [e2e tests](#e2e-tests)
-    - [Graduation Criteria](#graduation-criteria)
-      - [Alpha](#alpha)
-      - [Beta](#beta)
-      - [GA](#ga)
-      - [Deprecation](#deprecation)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring Requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
-  - [Infrastructure Needed](#infrastructure-needed)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Configuration file](#configuration-file)
+  - [CEL](#cel)
+  - [Flags](#flags)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Pre-GA follow-up](#pre-ga-follow-up)
+    - [GA](#ga)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Open Questions](#open-questions)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -133,7 +73,7 @@ Initially, only a `jwt` configuration will be supported, which will serve as the
 OIDC authenticator.  OIDC authentication is an important part of Kubernetes, yet it has limitations in its current state.
 Below we will discuss that limitation and propose solutions.
 
-# Motivation
+## Motivation
 
 Structured config for OIDC authentication: noted in various contexts over the past few years. We want to migrate
 away from a flag-based config that is growing without bounds to a proper versioned config format. This would allow us to
@@ -186,17 +126,6 @@ with the existing OIDC flags, so we will provide documentation for migrating fro
 
 ### Configuration file
 
-TODO:
-
-- should we have any revocation mechanism?
-  => use revocation endpoint if it is in the discovery document? (lets decide what we want here before beta)
-  => related issue https://github.com/kubernetes/kubernetes/issues/71151
-- distributed claims with fancier resolution requirements (such as access tokens as input)
-- implementation detail: we should probably parse the `iss` claim out once
-- should audit annotations be set on validation failure?
-- decide what error should be returned if CEL eval fails at runtime
-  `500 Internal Sever Error` seem appropriate but authentication can only do `401`
-
 The main part of this proposal is a configuration file. It contains an array of providers:
 
 ```yaml
@@ -234,10 +163,6 @@ jwt:
 ```
 
 The minimum valid payload from a JWT is (`aud` may be a `string`):
-
-TODO:
-are `iat` and `nbf` required?
-is `sub` required or is the requirement to just have some username field?
 
 ```json
 {
@@ -454,7 +379,6 @@ type JWTAuthenticator struct {
         // Claim must be a string or string array claim.
         // Expression must produce a string or string array value.
         // "", [], missing, and null values are treated as having no groups.
-        // TODO: investigate if you could make a single expression to construct groups from multiple claims. If not, maybe []PrefixedClaimOrExpression?
         // For input claim:
         // {
         //     "claims": {
@@ -475,7 +399,6 @@ type JWTAuthenticator struct {
         // uid represents an option for the uid attribute.
         // Claim must be a singular string claim.
         // Expression must produce a string value.
-        // TODO: this is net new, should it just be expression?
         // +optional
         UID ClaimOrExpression `json:"uid,omitempty"`
         // extra represents an option for the extra attribute.
@@ -495,8 +418,6 @@ type JWTAuthenticator struct {
         // If the value is empty, the extra mapping will not be present.
         //
         // possible future way to pull multiple extra values out via expression.
-        // TODO: confirm cel comprehensions/mapping is powerful enough to transform
-        // the input claims into a filtered / transformed map[string][]string output):
         // # mutually exclusive with key/valueExpression
         //     keyAndValueExpression: '{"key":"string-value", "key2": ["value1","value2"]}'
         //
@@ -526,7 +447,9 @@ type JWTAuthenticator struct {
         // +optional
         Claim string `json:"claim"`
 
-        // TODO: think about what happens if the claim is absent or the wrong type
+        // expression represents the expression which will be evaluated by CEL.
+        // Either claim or expression must be set.
+        // +optional
         Expression string `json:"expression"`
     }
 
@@ -583,7 +506,7 @@ type JWTAuthenticator struct {
     uid: "119abc"
     groups: ["admin", "user"]
     extra:
-      client_name: kubernetes
+      client_name: ["kubernetes"]
     ```
 
     For distributed claims:
@@ -603,13 +526,11 @@ type JWTAuthenticator struct {
     ```
 
     - For claim names containing `.`, we can reference using `claims["foo.bar"]`
-    - TODO: can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
-       - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
 
 ### CEL
 
 * CEL runtime should be compiled only once if structured authentication config option is enabled.
-* There will be a maximum allowed CEL expression cost per authenticator (no limit on total authenticators is required due to the issuer uniqueness requirement).
+* The API server trusts the CEL expressions provided in the authentication configuration file to be safe and cost-effective. As a result, the API server will not set a maximum CEL expression cost per authenticator.
 * One variable will be available to use in `claimValidationRules` and `claimMappings`:
   * `claims` for JWT claims (payload)
 * One variable will be available to use in `userValidationRules`:
@@ -619,15 +540,6 @@ type JWTAuthenticator struct {
     * [Extension libraries](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiserver/pkg/cel/library/libraries.go#L26)
     * [Base environment](https://github.com/kubernetes/kubernetes/blob/5fe3563ad7e04d5470368aa821f42f131d3bd8fc/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go#L83)
   * The encoding library needs to be added to the environment since it's currently not used. Doing so will help keep CEL consistent across the API.
-* Benchmarks are required to see how different CEL expressions affects authentication time.
-  * There will be a upper bound of 5s for the CEL expression evaluation.
-* Caching will be used to prevent having to execute the CEL expressions on every request.
-    - TODO decide what the behavior of the token cache will be on config reload
-    - TODO should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
-      this requires awareness of key rotation to implement safely
-* TODO: decide how to safe guard access to fields that might not exist or stop existing at any moment.
-  * Using `has()` to guard access to fields.
-  * Could we do some kind of defaulting for fields that don't exist?
 
 > Notes from PR review (jpbetz):
 >
@@ -707,7 +619,6 @@ Integration tests will cover parts of the new feature set as well:
 - Automatic config reload
 - Multiple authenticators
 
-
 ##### e2e tests
 
 <!--
@@ -739,49 +650,92 @@ providers such as Okta, Azure AD, etc:
 
 #### Beta
 
-- Gather feedback
 - Complete benchmarks
+  -  Benchmarks are required to see how different CEL expressions affects authentication time.
+     -  There will be a upper bound of 5s for the CEL expression evaluation. We will use the `apiserver_authentication_latency_seconds` metric to monitor this.
 - Add metrics
-- Initial e2e test with an external provider completed and enabled
+- Support > 1 JWT authenticator and > 1 audiences
+- Enable automatic reload of the configuration
+  - If there is a failure in the new configuration, the old configuration will remain active.
+  - Typo in issuer URL will not be detected since an issuer is explicitly allowed to be offline when an API server is starting up to allow for self-hosted IDPs.
+- Add tests
+  - Tests for automatic reload of the configuration
+
+#### Pre-GA follow-up
+
+- With automatic reload of configuration, typo in issuer URL will not be detected since an issuer is explicitly allowed to be offline when an API server is starting up to allow for self-hosted IDPs. We need
+  to come-up with an approach to make this more robust.
 
 #### GA
 
+- Gather feedback
 - Add a full documentation with examples for the most popular providers, e.g., Okta, Dex, Auth0
 - Migration guide
-- Deprecation warnings for non-structured OIDC provider configuration
-
-#### Deprecation
-
-kube-apiserver `--oidc-*` flags require deprecation warnings on the stable release of the feature.
+- e2e test with an external provider completed and enabled
+- Get distributed claims working with CEL
+- Decide if we want to support egress selection configuration and how to do so
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+While the feature is in Alpha, there is no change if cluster administrators want to
+keep on using command line flags.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+When the feature goes to Beta/GA or the cluster administrators want to configure
+jwt authenticators using the configuration file, they need to make sure:
+
+1. The configuration file is available on the API server and the `--authentication-config` flag is set.
+2. No `--oidc-*` flags are set.
+
+When downgrading from the structured configuration to the flag-based configuration, they need to
+unset the `--authentication-config` flag and restore the `--oidc-*` flags to configure the JWT authenticator.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+This is an API server only change and does not affect other components. If the API server is
+not the minimum required version (v1.29), the feature will not be available.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+<<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
+## Open Questions
+
+The following questions are still open and need to be addressed or rejected or deferred before the KEP is marked as GA.
+
+- should we have any revocation mechanism?
+  => use revocation endpoint if it is in the discovery document?
+  => related issue https://github.com/kubernetes/kubernetes/issues/71151
+- should audit annotations be set on validation failure?
+- decide what error should be returned if CEL eval fails at runtime
+  `500 Internal Sever Error` seem appropriate but authentication can only do `401`
+- distributed claims with fancier resolution requirements (such as access tokens as input)
+  - This will be considered for getting distributed claims working with CEL
+- implementation detail: we should probably parse the `iss` claim out once
+- are `iat` and `nbf` required?
+- is `sub` required or is the requirement to just have some username field?
+- confirm cel comprehensions/mapping is powerful enough to transform the input claims into a filtered / transformed `map[string][]string` output for extra
+
+    For distributed claims:
+
+    ```json
+        claims = {
+          "foo":"bar",
+          "foo.bar": "...",
+          "true": "...",
+          "_claim_names": {
+            "groups": "group_source"
+           },
+           "_claim_sources": {
+            "group_source": {"endpoint": "https://example.com/claim_source"}
+           }
+        }
+    ```
+
+- can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
+  - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
+- Decide behavior of the token cache on config reload
+  - Should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
+    - this requires awareness of key rotation to implement safely
+- For CEL expressions, do we want to safe guard access to fields that might not exist or stop existing at any moment?
+  - Using `has()` to guard access to fields.
+  - Could we do some kind of defaulting for fields that don't exist?
 
 ## Production Readiness Review Questionnaire
 
@@ -794,6 +748,8 @@ enhancement:
   - Components depending on the feature gate:
     - kube-apiserver
 
+**Alpha**
+
 ```go
 FeatureSpec{
   Default: false,
@@ -802,9 +758,20 @@ FeatureSpec{
 }
 ```
 
+**Beta**
+
+```go
+FeatureSpec{
+  Default: true,
+  LockToDefault: false,
+  PreRelease: featuregate.Beta,
+}
+```
+
 ###### Does enabling the feature change any default behavior?
 
-No.
+No. `AuthenticationConfiguration`is new in the v1.29 release. Furthermore, even with the feature enabled by default, the user needs to
+explicitly set the `--authentication-config` flag to use the structured configuration.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -833,26 +800,29 @@ Possible consequences are:
 
 ###### What specific metrics should inform a rollback?
 
-TODO
+- `apiserver_authentication_config_controller_automatic_reload_failures_total` - This metric will be incremented when the API server fails to reload the configuration file.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO
+This will be covered by integration tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TODO
+No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
+New metrics:
 
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-TBA
+- `apiserver_authentication_config_controller_automatic_reload_failures_total` - This metric will be incremented when the API server fails to reload the configuration file.
+- `apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds` - This metric will be updated every time the API server reloads the configuration file.
+- `apiserver_authentication_config_controller_automatic_reload_success_total` - This metric will be incremented every time the API server successfully reloads the configuration file.
+- `apiserver_authentication_config_controller_automatic_reload_last_config_hash` - This metric will be set to the hash of the loaded configuration file after a successful reload.
+- `apiserver_authentication_latency_seconds` - This metric will be used to monitor the time it takes to Authenticate token. This will only be set for token authentication requests for matching issuer.
+- `apiserver_authentication_jwks_fetch_last_timestamp_seconds` - This metric will be updated every time the API server makes a request to the JWKS endpoint.
+- `apiserver_authentication_jwks_fetch_last_keyset_hash` - This metric will be set to the hash of the keyset fetched from the JWKS endpoint after successfully fetching the keyset.
+  - We will use https://pkg.go.dev/hash/fnv#New64 to hash the keyset.
+- `apiserver_authentication_jwt_authenticator_provider_status_timestamp_seconds` - This metric will indicate the status of the JWT authenticator provider.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -862,15 +832,6 @@ TBA
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
 Metrics
 
 - Last successful load of the file
@@ -879,21 +840,6 @@ Metrics
 - Authentication metrics should include which JWT authenticator was used
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
 
 SLOs for actual requests should not change in any way compared to the flag-based OIDC configuration.
 
@@ -908,7 +854,7 @@ SLOs for actual requests should not change in any way compared to the flag-based
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-TBA.
+None other than what we are planning to add as part of the feature.
 
 ### Dependencies
 
@@ -942,31 +888,18 @@ It can affect authentication time, but the actual latency depends on a provider 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+No. There would be very minimal addition to the memory used by the API Server and
+number of log entries written to the disk.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
-
-TBA.
+We do plan on watching config changes and dynamically updating the authenticators. This involves re-parsing the CEL expressions
+and re-fetching public keys. This is expected to be a low frequency operation. We will perform benchmarks for this.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
+No.
 
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
-
-TBA.
+We do plan on watching config changes and dynamically updating the authenticators. This is expected to be a low frequency operation
+and will be done carefully to avoid any resource exhaustion.
 
 ### Troubleshooting
 
@@ -976,37 +909,20 @@ This feature is a part of authentication flow. It does not rely on etcd, but str
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 The same failure modes and diagnostics as for the non-structured OIDC provider are applicable here.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+The same steps as for the flag-based OIDC provider are applicable here.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
-TBA.
+- [x] 2022-06-22 - Provisional KEP introduced
+- [x] 2023-06-13 - KEP Accepted as implementable
+- [x] 2023-09-05 - Alpha implementation merged https://github.com/kubernetes/kubernetes/pull/119142
+- [x] 2023-10-31 - CEL support for authentication configuration merged https://github.com/kubernetes/kubernetes/pull/121078 
+- [x] 2023-12-13 - First release (1.29) when feature available
+- [x] 2024-01-31 - Targeting beta in 1.30
 
 ## Drawbacks
 
@@ -1024,9 +940,3 @@ wanted to support skipping exp/iat/nbf.
 ## Infrastructure Needed
 
 Tests against real infra like Azure AD, Okta, etc.
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->

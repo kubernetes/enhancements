@@ -11,8 +11,8 @@ approvers:
 - "@liggitt"
 creation-date: "2022-06-02"
 status: implementable
-stage: alpha
-latest-milestone: "v1.29"
+stage: beta
+latest-milestone: "v1.30"
 milestone:
   alpha: "v1.29"
   beta: "v1.30"
@@ -23,4 +23,11 @@ feature-gates:
   - kube-apiserver
 disable-supported: true
 metrics:
-- "TODO"
+- apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds{status, apiserver_id_hash}
+- apiserver_authentication_config_controller_automatic_reload_last_config_hash{apiserver_id_hash}
+- apiserver_authentication_config_controller_automatic_reload_success_total{apiserver_id_hash}
+- apiserver_authentication_config_controller_automatic_reload_failures_total{apiserver_id_hash}
+- apiserver_authentication_latency_seconds{apiserver_id_hash,jwt_issuer_hash}
+- apiserver_authentication_jwks_fetch_last_timestamp_seconds{apiserver_id_hash,jwt_issuer_hash,status}
+- apiserver_authentication_jwks_fetch_last_keyset_hash{apiserver_id_hash,jwt_issuer_hash}
+- apiserver_authentication_jwt_authenticator_provider_status_timestamp_seconds{apiserver_id_hash,jwt_issuer_hash,status}
