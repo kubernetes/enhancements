@@ -810,6 +810,10 @@ For use-cases where the CEL filters would pre-filter requests even before the ne
 be dispatched to a webhook, there would be a performance improvement due to lower
 number of network calls.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature exists only in the API server.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
