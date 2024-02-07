@@ -715,6 +715,10 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+The success rate of image pulls should remain the same with a parallel image pull limit set, compared to without it. For example,
+if a cluster admin has set an SLO of 99% of image pulls should succeed, then setting the parallel image pull limit should not lower
+the success rate to below 99%.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
