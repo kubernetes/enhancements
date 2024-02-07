@@ -480,11 +480,11 @@ It will track total invocation counts across the following labels.
 
 - `name` {<authorizer_name>}
   - value matches the configuration `name` field
-- `code` {canceled, timeout, error, ok}
+- `result` {canceled, timeout, error, success}
   - `canceled`: the call invoking the webhook request was canceled
   - `timeout`: the webhook request timed out
   - `error`: the webhook response completed and was invalid
-  - `ok`: the webhook response completed and was well-formed
+  - `success`: the webhook response completed and was well-formed
 
 3. `apiserver_authorization_webhook_duration_seconds`
 
@@ -493,11 +493,11 @@ This is a Histogram metric that will track the total round trip time of the requ
 Labels {along with possible values}:
 - `name` {<authorizer_name>}
   - value matches the configuration `name` field
-- `code` {canceled, timeout, error, ok}
+- `result` {canceled, timeout, error, success}
   - `canceled`: the call invoking the webhook request was canceled
   - `timeout`: the webhook request timed out
   - `error`: the webhook response completed and was invalid
-  - `ok`: the webhook response completed and was well-formed
+  - `success`: the webhook response completed and was well-formed
 
 4. `apiserver_authorization_webhook_evaluations_fail_open_total`
 
@@ -508,7 +508,7 @@ Labels {along with possible values}:
 
 - `name` {<authorizer_name>}
   - value matches the configuration `name` field
-- `code` {timeout, error}
+- `result` {timeout, error}
   - `timeout`: the webhook request timed out
   - `error`: the webhook response completed and was invalid
 
