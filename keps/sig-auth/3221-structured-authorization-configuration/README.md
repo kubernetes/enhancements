@@ -460,18 +460,19 @@ while the feature is in alpha and beta.
 
 ### Monitoring
 
-We will add the following 4 metrics:
+We will add the following metrics:
 
 1. `apiserver_authorization_decisions_total`
 
-This will be incremented on round-trip of an authorizer. It will track total
-authorization decision invocations across the following labels.
+This will be incremented when an authorizer makes a terminal decision (allow or deny).
+It will track total authorization decision invocations across the following labels.
 
 Labels {along with possible values}:
-- `mode` {<authorizer_name>} # when authorizer is a webhook, prepend `webhook_`
+- `type` {<authorizer_type>}
+  - value matches the configuration `type` field, e.g. `RBAC`, `ABAC`, `Node`, `Webhook`
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field, e.g. `rbac`, `node`, `abac`, `<webhook name>`
 - `decision` {Allow, Deny}
-
-**Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook_<name>`.
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
