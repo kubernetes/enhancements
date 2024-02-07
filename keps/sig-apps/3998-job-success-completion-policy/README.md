@@ -460,8 +460,7 @@ This feature is limited to control plane.
 
 Note that, the kube-apiserver can be in the N+1 skew version relative to the
 kube-controller-manager as described [here](https://kubernetes.io/releases/version-skew-policy/#kube-controller-manager-kube-scheduler-and-cloud-controller-manager).
-In that case, the Job controller operates on the version of the Job object that
-already supports the new Job API.
+If it's enabled, jobs with SuccessPolicy set will have it respected. Otherwise, it will be ignored by the job controller.
 
 ## Production Readiness Review Questionnaire
 
