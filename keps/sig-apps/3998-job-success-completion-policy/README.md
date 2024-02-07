@@ -47,7 +47,7 @@
   - [Hold succeededIndexes as []int typed in successPolicy](#hold-succeededindexes-as-int-typed-in-successpolicy)
   - [Acceptable percentage of total succeeded indexes in the succeededCount field](#acceptable-percentage-of-total-succeeded-indexes-in-the-succeededcount-field)
   - [Match succeededIndexes using CEL](#match-succeededindexes-using-cel)
-  - [Use JobSet instead of Indexes Job](#use-jobset-instead-of-indexes-job)
+  - [Use JobSet instead of Indexed Job](#use-jobset-instead-of-indexed-job)
   - [Possibility for the lingering pods to continue running after the job meets the successPolicy](#possibility-for-the-lingering-pods-to-continue-running-after-the-job-meets-the-successpolicy)
     - [Additional Story](#additional-story)
     - [Job API](#job-api-1)
@@ -223,7 +223,7 @@ we probably can not evaluate the SuccessPolicy correctly.
 
 - If we allow to set unlimited size of the value in `.spec.successPolicy.criteria.succeededIndexes`,
 we have a risk similar to [KEP-3850: Backoff Limits Per Index For Indexed Jobs](https://github.com/kubernetes/enhancements/tree/76dcd4f342cc0388feb085e685d4cc018ebe1dc9/keps/sig-apps/3850-backoff-limits-per-index-for-indexed-jobs#risks-and-mitigations).
-So, we limit the size of `succeededIndexes` to 64Ki.
+So, we limit the size of `succeededIndexes` to 64KiB.
 
 ## Design Details
 
@@ -559,6 +559,9 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
+Yes, if the Job meets the SuccessPolicy,
+the job-controller must make an additional API call to update the condition with `SuccessCriteriaMet`.
+
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -583,7 +586,9 @@ No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No.
+Yes, the job-controller will consume more CPU and memory to compute the set of indexes from the `succeededIndexes`. 
+Especially, if there are many of them (approaching the maximum size of them, 64KiB), 
+the consumed resources might be non-negligible.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -702,7 +707,7 @@ type SuccessPolicyCriterion struct {
 }
 ```
 
-### Use JobSet instead of Indexes Job
+### Use JobSet instead of Indexed Job
 
 The [JobSet](https://github.com/kubernetes-sigs/jobset) is a custom resource for managing a group of Job as a unit.
 
