@@ -65,6 +65,7 @@ runtimes including kubevirt. This could eliminate the high and low level runtime
 - Eliminate the need to exec binaries and replace with gRPC
 - Make troubleshooting easier by having logs accessible via kubectl logs
 - Improve network pod startup time
+- Provide the ability to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
 
 ### Non-Goals
 
