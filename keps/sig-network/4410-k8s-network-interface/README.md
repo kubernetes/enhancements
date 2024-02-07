@@ -41,20 +41,31 @@ and accommodate advanced functionalities and potential areas for expansion.
 
 ### Goals
 
-1. Design a cool looking t-shirt
-2. Provide Kubernetes APIs for the creation, configuration and management of networks (e.g. `Pod` networks)
-3. Provide documentation, examples, troubleshooting and FAQ's for KNI.
-4. Establish feature parity with current CNI [ADD, DEL]
-5. Handle support levels like Gateway API (e.g. "core" and "extended")
-6. Handle implementation-specific use cases through extension points
-7. Decouple the Pod and Node Network setup
-8. Simplify/enable triggering garbage collection to ensure no resources are left behind
-9. Provide the ability to identify the IP address family without parsing the value (such as a field)
-10. Provide as much backwards-compatibility with CNI as is feasible
-11. Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
-12. If feasible, provide API awareness of Pod network namespaces (e.g. interface names)
-13. Provide support for Kata and other virtualized runtimes
-14. Provide a reference implementation
+- Design a cool looking t-shirt
+- Provide Kubernetes APIs for the creation, configuration and management of interfaces
+- Provide documentation, examples, troubleshooting and FAQ's for KNI.
+- KNI should provide the API's required to establish feature parity with current CNI [ADD, DEL]
+- Handle support levels like Gateway API (e.g. "core" and "extended")
+- Handle implementation-specific use cases through extension points
+- Decouple the Pod and Node Network setup
+- Provide garbage collection to ensure no resources created during pod setup such as Linux bridges, ebpf programs, 
+allocated IP addresses are left behind after pod deletion
+- Improve the current IP handling for pods (PodIP) to be handle multiple IP addresses and 
+a field to identify the IP address family (IPV4 vs IPV6)
+- Provide backwards compatibility for the existing CNI approach and migration a path to fully adopt KNI
+- Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
+- If feasible, provide API awareness of Pod network namespaces (e.g. interface names)
+- Provide a uniform approach for network setup/teardown for both virtualized (kata) and non-virtualized (runc) 
+runtimes including kubevirt. This could eliminate the high and low level runtimes from the networking path
+- Provide a reference implementation of the KNI network runtime
+- Provide the ability to have all the dependencies packaged in the container image (no more CNI binaries in the host file system)
+..- No more downloading CNI binaries via initContainers/Mounting /etc/cni/net.d or /opt/cni/bin
+- Provide the ability to use native k8s resources for configuration such as a ConfigMap's instead of configuration files in host file system
+- Provide an API to indicate network readiness for the node (no more files on disk)
+- Eliminate the need to exec binaries and replace with gRPC
+- Make troubleshooting easier by having logs accessible via kubectl logs
+- Improve network pod startup time
+- Provide the ability to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
 
 ### Non-Goals
 
