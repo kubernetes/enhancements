@@ -24,7 +24,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.29)](#alpha-129)
-    - [Future Alpha versions](#future-alpha-versions)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -612,12 +611,10 @@ the scenarios.
 - Add feature flag for gating usage
 - Unit tests and Integration tests to be written
 
-#### Future Alpha versions
-
-- Revisit on the items mentioned in Non-Goals and see if any needs to be implemented
-
 #### Beta
 
+- Observability and metrics complete
+- File reloading functionality complete
 - Address user reviews and iterate (if needed, keep in Alpha until changes stabilize)
 - Feature flag will be turned on by default
 
