@@ -357,8 +357,7 @@ If unset, it will default to `PodFailurePolicy`, which is the current [reason](h
 controller uses when a PodFailurePolicy triggers a Job failure.
 
 #### Validation
-- We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)).
-We will also validate the user-defined Reason is less than 
+- We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)). We will also validate the user-defined Reason is less than 128 characters.
 - We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://sourcegraph.com/github.com/kubernetes/kubernetes@862ff187baad9373d59d19e5d736dcda1e25e90d/-/blob/staging/src/k8s.io/api/batch/v1/types.go?L543-553). 
 
 #### Business logic
