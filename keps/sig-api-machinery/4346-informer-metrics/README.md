@@ -446,8 +446,11 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
-When the informers and reflectors are stopped, ensure the reference metrics will be removed.
+We will have extensive integration testing of the union code in the
+`test/integration/metrics` package.
+
+- When enabling `InformerMetrics` feature gate, ensure the metrics will be exposed. Ensure the metrics subsystem/label/granularity is correct.
+- When the informers and reflectors are stopped, ensure the reference metrics will be removed.
 
 ##### e2e tests
 
