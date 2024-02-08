@@ -1107,19 +1107,34 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
+WIP: investigating status items
+Using external snapshotter as ref: https://github.com/kubernetes-csi/external-snapshotter/blob/533a2ee13a39cc4e568fb9181bdac4c2a7d03bd6/client/apis/volumesnapshot/v1/types.go#L131-L191
+
 - Bucket
   - [ ] Events
-    - Event Reason: `Bucket provisioning 'bucket-name' failed`
-    - TODO: capture more Events
+    - FailedCreateBucket - Report when COSI fails to create a bucket, with error message
+	  - FailedDeleteBucket - Report when COSI fails to delete a bucket, with error message
   - [ ] API .status
-    - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`)
-    - TODO: investigate more
+    - [x] BucketReady bool
+    - [ ] ErrorMessage string
+    - [x] BucketID string
+- BucketClaim
+  - [ ] Events
+    - FailedCreateBucket - Report when COSI fails to create bucket for BC, with error message
+	  - FailedDeleteBucket - Report when COSI fails to delete bucket for BC, with error message
+  - [ ] API .status
+    - [x] BucketReady bool
+    - [ ] ErrorMessage string
+    - [x] BucketName string
 - BucketAccess
   - [ ] Events
-    - Event Reason: `BucketAccess provisioning 'bucket-access-name' failed`
-    - TODO: capture more Events
+    - WaitingForBucket - Report when COSI cannot grant access because bucket does not yet exist
+    - FailedGrantAccess - Report when COSI fails to grant access to a bucket, with error message
+    - FailedRevokeAccess - Report when COSI fails to revoke access to a bucket, with error message
   - [ ] API .status
-    - Condition `PodReady=False "Error: secrets 'bucket-secret' not found"`)
+    - [x] AccessGranted bool
+    - [ ] ErrorMessage string
+    - [x] AccountID string
     - TODO: investigate more
 - BucketClass
   - Does not have events or status
