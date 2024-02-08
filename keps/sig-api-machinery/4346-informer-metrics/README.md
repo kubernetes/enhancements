@@ -250,7 +250,7 @@ bogged down.
 -->
 
 #### Story 1
-Client-go informer create a RingGrowing `pendingNotifications` for every eventHandler. This RingGrowing will grow, but never shrink. An informer has some eventHandlers, it is hard to distinguish which `pendingNotifications` linked to a lot of object. The `pendingNotifications` metrics  will help developers to distinguish which eventHandler is slow.
+Client-go informer create a RingGrowing `pendingNotifications` for every eventHandler. This RingGrowing will grow, but never shrink. An informer has some eventHandlers, it is hard to distinguish which `pendingNotifications` linked to a lot of objects. The `pendingNotifications` metric will help developers distinguish the slow eventHandler.
 
 #### Story 2
 Users want to know how many times the reflector performes list action.
