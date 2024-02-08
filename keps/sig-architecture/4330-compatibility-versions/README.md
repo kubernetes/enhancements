@@ -84,23 +84,27 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Component Flags](#component-flags)
+    - [<code>--emulation-version</code>](#)
+    - [<code>--min-compatibility-version</code>](#-1)
   - [Changes to Feature Gates](#changes-to-feature-gates)
     - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
-  - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [Validation ratcheting](#validation-ratcheting)
+    - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
-  - [API Compatibility Versioning](#api-compatibility-versioning)
+  - [API availability](#api-availability)
+  - [API Field availability](#api-field-availability)
   - [Discovery](#discovery)
   - [Version introspection](#version-introspection)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Risk: Increased cost in test due to the need to test changes against the e2e tests of multiple release branches](#risk-increased-cost-in-test-due-to-the-need-to-test-changes-against-the-e2e-tests-of-multiple-release-branches)
     - [Risk: Increased maintenance burden on Kubernetes maintainers](#risk-increased-maintenance-burden-on-kubernetes-maintainers)
-    - [Risk: Unintended and out-of-allowance compatibility skew](#risk-unintended-and-out-of-allowance-compatibility-skew)
+    - [Risk: Unintended and out-of-allowance version skew](#risk-unintended-and-out-of-allowance-version-skew)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -169,21 +173,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We intend to introduce a "compatibility version" option to Kubernetes control
-plane components to make upgrades safer by increasing the granularity of steps
-available to cluster administrators. The "compatibility version" is distinct from
-the binary version of a Kubernetes component, and can be used to emulate the
-behavior (APIs, features, ...) of a prior Kubernetes release version.
+We intend to introduce a version compatibility and emulation options to
+Kubernetes control plane components to make upgrades safer by increasing the
+granularity of steps available to cluster administrators. We will introduce
+`--emulation-version` flag to emulate the behavior (APIs, features, ...) of a
+prior Kubernetes release version. We will also introduce a
+`--min-compatibility-version` flag to control which prior versions of Kubernetes
+a control plane component is compatible with (in terms of APIs, features, ...)
+and can be rolled back to.
 
-"Compatibility version" is not a bug-for-bug compatibility model. It specifically
-controls which APIs, feature gates, configs and flags are enabled to match
-that of a previous release version.
-
-The [Version skew policy](https://kubernetes.io/releases/version-skew-policy/)
-will apply to compatibility versions, not binary versions, allowing binary
+When a emulation version is provided, the [Version skew policy](https://kubernetes.io/releases/version-skew-policy/)
+will apply to the emulation version instead of the binary version, allowing binary
 versions to be skipped when performing skip version upgrades, so long the
-upgrade transitions incrementally through compatibility versions according
-to the supported version skew constraints.
+upgrade transitions incrementally through emulation versions according to the
+supported version skew constraints.
 
 ## Motivation
 
@@ -192,7 +195,7 @@ it is more rigorous about how we step through a Kubernetes control-plane
 upgrade, introducing potentially corrupting data (i.e. data only present in N+1
 and not in N) only in later stages of the upgrade process.
 
-For example, upgrading from Kubernetes 1.30 to 1.31 while keeping the compatibility
+For example, upgrading from Kubernetes 1.30 to 1.31 while keeping the emulation
 version at 1.30 would enable a cluster administrator to validate that the new
 Kubernetes binary version is working as desired before exposing any feature changes
 introduced in 1.31 to cluster users, and without writing and data to storage at
@@ -205,30 +208,26 @@ achieved failure) and (2) failures are more easily auto-reverted by upgrade
 orchestration as we are taking smaller and more incremental steps forward,
 which means there is less to “undo” on a failure condition.
 
-In alpha we intend to support a `1.n`..`1.{n-1}` compatibility version range
-for a binary version of `1.n`.
-
-In beta, we intend to extend that to `1.n`..`1.{n-3}` so that it would be possible
-to skip binary versions while still performing a stepwise upgrade of Kubernetes
-control-plane. For example:
+that it would be possible to skip binary versions while still performing a
+stepwise upgrade of Kubernetes control-plane. For example:
 
 - (starting point) binary-version 1.28 (compat-version 1.28)
-- upgrade binary-version to 1.31 (compat-version stays at 1.28 - this is our skip-level binary upgrade)
-- keep binary-version 1.31 while upgrading compat-version to 1.29 (stepwise upgrade of compatibility)
-- keep binary-version 1.31 while upgrading compat-version to 1.30 (stepwise upgrade of compatibility)
-- keep binary-version 1.31 while upgrading compat-version to 1.31 (stepwise upgrade of compatibility)
+- upgrade binary-version to 1.31 (emulation-version stays at 1.28 - this is our skip-level binary upgrade)
+- keep binary-version 1.31 while upgrading emulation-version to 1.29 (stepwise upgrade of emulation version)
+- keep binary-version 1.31 while upgrading emulation-version to 1.30 (stepwise upgrade of emulation version)
+- keep binary-version 1.31 while upgrading emulation-version to 1.31 (stepwise upgrade of emulation version)
 
-Benefits to upgrading binary version independent of compatibility version:
+Benefits to upgrading binary version independent of emulation version:
 
-- A skip-version binary upgrade that transitions through compat versions has
+- A skip-version binary upgrade that transitions through emulation versions has
   higher probability of bugs in those intermediate binary versions already being
   fixed.
 - During an upgrade, it is possible upgrade the new binary version while the
-  compatibility version is fixed (e.g. `binaryVersion: 1.28` -> `{binaryVersion: 1.29, compatVersion: 1.28}`).
+  emulation version is fixed (e.g. `binaryVersion: 1.28` -> `{binaryVersion: 1.29, emulationVersion: 1.28}`).
   This allow differences in the binary (bugs fixed or introduced, performance
   changes, ...) to be introduced into a cluster and verified safe before
   allowing access to the new APIs and features new version. Once the binary
-  version has been deamed safe, the compatibility version can then be upgraded.
+  version has been deamed safe, the emulation version can then be upgraded.
 - Any upgrade system that successfully detects failures between upgrade steps
   can report which upgrade step failed. This makes it easier to diagnose the
   failures, because there are fewer possible causes of the failure. (There's a
@@ -240,27 +239,48 @@ Benefits to upgrading binary version independent of compatibility version:
   addressed before proceeding to subsequent steps. These failures can be
   addressed without the disruption and "noise" from failures in subsequent
   steps.
-- A compatibility version rollback can be performed without changing binary
-  version.
+- A emulation version rollback can be performed without changing binary version.
 
+A dedicated `--min-compatibility-version` flag provides direct control of when
+deprecated features are removed from the API.  If the `--min-compatibility-version`
+is kept at a fixed version number during a binary version or emulation version
+upgrade, the cluster admin is guaranteed no features will be removed, reducing
+the risk of the upgrade step.
+
+Also, `--min-compatibility-version` can be used to provide a wider skew range
+between components.
+
+Lastly, a `--min-compatibility-version` can be set to the binary version
+for new clusters being used for green field projects, providing immediate
+access to the latest Kubernetes features without the need to wait an additional
+release for features to settle in as is typically needed for rollback support.
 
 ### Goals
 
-- Introduce the metadata necessary to configure features/APIs/storage-versions/CEL
-  features to match the behavior of an older Kubernetes release version
-- A Kubernetes binary with compatibility version set to N, will pass the
+- Introduce the metadata necessary to configure features/APIs/storage-versions/validation rules
+  to match the behavior of an older Kubernetes release version
+- A Kubernetes binary with emulation version set to N, will pass the
   conformance and e2e tests from Kubernetes release version N.
-- A Kubernetes binary with compatibility version set to N does not enable any
+- A Kubernetes binary with emulation version set to N does not enable any
   changes (storage versions, CEL feature, features) that would prevent it
   from being rolled back to N-1.
-- The most recent Kubernetes version supports compatibility version being set to
-  the full range of supported versions (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
+- The most recent Kubernetes version supports emulation version being set to
+  the full range of supported versions.
+  - In alpha we intend to support:
+    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
+  - In beta, we intend to extend support to:
+    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
+    - `--min-compatibility-version` to `binaryMinorVersion`..`binaryMinorVersion-1`
 
 ### Non-Goals
 
-- Support compatibility version for Alpha features.  Alpha feature are not
-  designed to be upgradable, so we will not allow alpha features to be used in
-  conjunction with compatibility version.
+- Support `--emulation-version` for Alpha features.  Alpha feature are not
+  designed to be upgradable, so we will not allow alpha features to be enabled when
+  `--emulation-version` is set.
+- `--min-compatibility-version` will only applies to Beta and GA features. Only
+  Alpha features available in the current binary version will be available for enablement
+  and are allowed to change in behavior across releases in ways that are incompatible
+  with previous versions.
 - Changes to Cluster API/kubeadm/KIND/minikube to absorb the compatibility versions
   will be addressed separate from this KEP
 
@@ -268,22 +288,33 @@ Benefits to upgrading binary version independent of compatibility version:
 
 ### Component Flags
 
-Kubernetes components (apiservers, controller managers, schedulers) will offer a
-`--compatibility-version` flag that can be set to any of the previous three
-minor versions. If unset, the compatibility version defaults to the `<major.minor>`
-version of the binary version.
+#### `--emulation-version`
 
-If the `--compatibility-version` is set to a version outside of the supported
-version range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`), the binary will
-exit and report an invalid flag value error telling the user what versions are
-allowed.
+- Defaults to `binaryVersion` (matching current behavior)
+- Must be <= `binaryVersion`
+- Must not be lower than the supported range of minor versions (see graduation
+  criteria for ranges). If below the supported version range the binary will
+  exit and report an invalid flag value error telling the user what versions are
+  allowed.
+- Is not a bug-for-bug compatibility model. It specifically controls which APIs,
+  feature gates, configs and flags are enabled to match that of a previous
+  release version.
 
-Adding `--compatibility-version` kubelet is out of scope for this enhancement.
+Adding `--emulation-version` to kubelet is out of scope for this enhancement.
 But we do need to define how kubelet skew behaves when the kube-apiserver has
-`--compatibility-version` set. Our general rule is that we want to define skew
-using compatibility versions when they are in use. So not only must a kubelet
+`--emulation-version` set. Our general rule is that we want to define skew
+using emulation versions when they are in use. So not only must a kubelet
 version be <= the kube-apiserver binary version, it must also be <= the
-`--compatibility-version` of the kube-apiserver.
+`--emulation-version` of the kube-apiserver.
+
+#### `--min-compatibility-version`
+
+- Defaults to `binaryVersion-1` (matching current behavior)
+- Must be <= `--emulation-version`
+- Must not be lower than the supported range of minor versions (see graduation
+  criteria for ranges). If below the supported version range the binary will
+  exit and report an invalid flag value error telling the user what versions are
+  allowed.
 
 ### Changes to Feature Gates
 
@@ -307,22 +338,42 @@ map[Feature]VersionedSpecs{
 		}
 ```
 
-When a component starts, feature gates will be compared against the
-compatibility version to determine which features to enable to match the set of
-features that where enabled for the Kubernetes version the compatibility version
-is set to.
+Features with compatibility implications (like a new API field or relaxing
+validation to allow a new enum value) could include that in their feature-gate
+spec:
+
+```go
+map[Feature]VersionedSpecs{
+		featureA: VersionedSpecs{
+			  {Version: mustParseVersion("1.28"), MinCompatibilityVersion: mustParseVersion("1.28"), ...},Alpha},
+			  {Version: mustParseVersion("1.29"), MinCompatibilityVersion: mustParseVersion("1.28"), ...},Beta},
+			  {Version: mustParseVersion("1.30"), MinCompatibilityVersion: mustParseVersion("1.28"), ...},
+		},
+```
+
+And features using a gate to guard a behavior change with compatibility
+implications that isn't really going through the feature lifecycle could set the
+feature version and the min compatibility version to the same thing:
+
+```go
+relaxValidationFeatureA: VersionedSpecs{
+    {Version: mustParseVersion("1.30"), MinCompatibilityVersion: mustParseVersion("1.30"), Default: true, ...},
+},
+```
+
+When a component starts, feature gates `VersionedSpecs` will be compared against
+the emulation and compatibility version to determine which features to enable.
 
 #### Feature Gate Lifecycles
 
-`--feature-gates` must behave the same as it did for the Kubernetes
-version the compatibility version is set to. I.e. it must be possible to use
-`--feature-gates` to disable features that were beta, and enable feature that
-were alpha in the Kubernetes version the compatibility version is set to. One
-important implication of this requirement is that feature gating must be kept in
-the Kubenetes codebase until a feature has reached GA (or been removed) for supported
-compatibility version range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
+`--feature-gates` must behave the same as it did for the Kubernetes version the
+emulation and compatibility versions are set to. For example, it must be
+possible to use `--feature-gates` to disable features that were beta at the
+emulation version. One important implication of this requirement is that feature
+gating must be kept in the Kubenetes codebase after a feature has reached GA (or
+been removed) to support the emulation and compatibility version ranges.
 
-For example, a feature that is promoted once per release would look something like:
+A feature that is promoted once per release would look something like:
 
 ```go
 map[Feature]VersionedSpecs{
@@ -346,7 +397,7 @@ The lifecycle of the feature would be:
 | 1.31    | GA    | **Feature implementation becomes part of normal code. `if featureGate enabled { // implement feature }` code may be removed at this step** |
 
 All feature gating and tracking must remain in code through 1.30 for
-compatibility version support (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
+emulation version support range (see graduation criteria for ranges we plan to support).
 
 For a Beta feature that is removed, e.g.:
 
@@ -373,13 +424,13 @@ The steps to remove the Beta feature would be:
 | 1.32    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
 | 1.33    | -     | **`if featureGate enabled { // implement feature }` code may be removed at this step** |
 
-(Features that are deleted before reaching Beta do not require compatibility version
-support since we don't support compatibility version for alpha features)
+(Features that are deleted before reaching Beta do not require emulation version
+support since we don't support emulation version for alpha features)
 
 Note that this respects a 1yr deprecation policy.
 
 All feature gating and tracking must remain in code through 1.32 for
-compatibility version support range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
+emulation version support range see (see graduation criteria for ranges we plan to support).
 
 #### Feature gating changes
 
@@ -414,12 +465,13 @@ is added in 1.29, the feature developer is expected to gate the functionality by
 E.g.:
 
 ```go
-if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() <= "1.28" {implementation 1}
-if feature_gate.Enabled(FeatureA) && feature_gate.CompatibilityVersion() >= "1.29" {implementation 2}
+if feature_gate.Enabled(FeatureA) && feature_gate.EmulationVersion() <= "1.28" {implementation 1}
+if feature_gate.Enabled(FeatureA) && feature_gate.EmulationVersion() >= "1.29" {implementation 2}
 ```
 
 A better way might be to define a `featureOptions` struct constructed based on the the feature gate, and have the `featureOptions` control the main code flow, so that the main code is version agnostic. 
 E.g.:
+
 ```go
 // in kube_features.go
 const (
@@ -453,14 +505,14 @@ func newFeatureOptions(featureGate FeatureGate) featureOptions {
   if featureGate.Enabled(FeatureA) {
     opts.AEnabled = true
   }
-  if featureGate.CompatibilityVersion() > "1.29" {
+  if featureGate.EmulationVersion() > "1.29" {
     opts.AHasCapabilityZ = true
   }
 
   if featureGate.Enabled(FeatureB) {
     opts.BEnabled = true
   }
-  if featureGate.CompatibilityVersion() > "1.28" {
+  if featureGate.EmulationVersion() > "1.28" {
     opts.BHandler = newHandler
   } else {
     opts.BHandler = oldHandler
@@ -486,7 +538,18 @@ func ClientFunction() {
 
 ```
 
-### CEL Environment Compatibility Versioning
+### Validation ratcheting
+
+All validationg ratcheting needs to account for compatibility version.
+
+If code to support ratcheting is introduced in 1.30, then new values needing the
+ratcheting may only be written if the compatibility version >= 1.30.
+Since we require emulation version >= compatibility version, the emulation version
+must also be 1.30 or greater.
+
+#### CEL Environment Compatibility Versioning
+
+CEL compatibility versioning is a special case of validation ratcheting.
 
 CEL environments already [support a compatibility
 version](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45).
@@ -505,18 +568,6 @@ constant](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f
 and instead always pass in N-1 of the compatibility version introduced by this
 enhancement as the CEL compatibility version.
 
-### Validation ratcheting
-
-Any validationg ratcheting needs to account for compatibility version.
-
-For example, if a validation is widened (tolerates values not previously
-allowed) at minor version N, then if the compatibility version is set to minor
-version N-1, widened values must be allowed for already stored field values, but
-not allowed for writes that change the field value.
-
-The above "CEL Environment Compatibility Versioning" is actually a special
-case of this requirement.
-
 ### StorageVersion Compatibility Versioning
 
 StorageVersions specify what version an apiserver uses to write resources to etcd
@@ -533,43 +584,39 @@ them to find a list of all GVRs supported by every binary version in the window.
 The storage version of each group-resource is the newest 
 (using kube-aware version sorting) version found in that list for that group-resource.
 
-### API Compatibility Versioning
+### API availability
 
 Similar to feature flags, all APIs group-versions declarations will be modified
 to track which Kubernetes version the API group-versions are introduced (or
 removed) at.
 
 GA APIs should match the exact set of APIs enabled in GA for the Kubernetes version
-the compatibility version is set to.
+the emulation version is set to.
 
 All Beta APIs (both off-by-default and on-by-default, if any of those
 still exist) need to behave exactly as they did for the Kubernetes version
-the compatibility version is set to. I.e. `--runtime-config=api/<version>` needs
+the emulation version is set to. I.e. `--runtime-config=api/<version>` needs
 to be able to turn on APIs exactly like it did for each Kubernetes version that
-compatibility version can be set to.
+emulation version can be set to.
 
-Alpha APIs may not be enabled in conjunction with compatibility version.
+Alpha APIs may not be enabled in conjunction with emulation version.
+
+### API Field availability
+
+API fields that were introduced after the emulation version will **not** be
+pruned. Ideally they would be, but we already show information about unavailable
+fields in the API today like disabled-by-default features (Alphas mostly) and
+make no attempt to hide those fields in discovery.
+
+We consider pruning fields based on emulation version useful future work that
+would benefit multiple aspects of how APIs are served, so while we're not taking
+on the effort in this KEP, we are interested in seeing this improved.
 
 ### Discovery
 
-Discovery will [enable](https://github.com/kubernetes/kubernetes/blob/7080b51ee92f67623757534f3462d8ae862ef6fe/staging/src/k8s.io/apiserver/pkg/util/openapi/enablement.go#L32) the group versions matching the compatibility version.
+Discovery will [enable](https://github.com/kubernetes/kubernetes/blob/7080b51ee92f67623757534f3462d8ae862ef6fe/staging/src/k8s.io/apiserver/pkg/util/openapi/enablement.go#L32) the group versions matching the emulation version.
 
-API fields that were introduced after the compatibility version will **not** be
-pruned. There is a tradoff here:
-
-- If we keep the fields in the API, we leak information about fields that were
-  introduced in Kubernetes versions newer than the compatibility version.
-- If we remove the fields, we have an inconsistency between discovery and the
-  implementation, because the server implementation is aware of the field, and
-  may include it in responses (e.g. via defaulting).
-
-Note that even though we are deciding to include fields that were introduced
-after the compatibility version in discovery, new fields are always feature
-gated, so the fields will not settable and may not impact default behavior.
-
-Also note that we that show information about unavailable features in discovery
-today. We introduce fields into APIs for disabled-by-default features and make
-no attempt to hide those fields in discovery.
+The API fields include will match what is described in the "API Fields" section.
 
 ### Version introspection
 
@@ -611,10 +658,10 @@ the health of the cluster between each step.
 
 - For each control plane component, in the [recommended
   order](https://kubernetes.io/releases/version-skew-policy/):
-  - Upgrades binary to `kubernetes-1.31.5` but sets `--compatibility-version=1.30`
+  - Upgrades binary to `kubernetes-1.31.5` but sets `--emulation-version=1.30`
   - Verifies that the cluster is healthy
 - Next, for each control plane component:
-  - Sets `--compatibility-version=1.31`
+  - Sets `--emulation-version=1.31`
   - Verifies that the cluster is healthy
 
 #### Story 2
@@ -626,12 +673,24 @@ depend on the feature.
 
 - For each control plane component, in the [recommended
   order](https://kubernetes.io/releases/version-skew-policy/):
-  - Cluster admin restarts the component with `--compatibility-version=1.30` set
-  - 
+  - Cluster admin restarts the component with `--emulation-version=1.30` set
 
 This avoids having to rollback the binary version.  Once the workload is fixed, the
-cluster administrator can remove the `--compatibility-version` to roll the cluster
+cluster administrator can remove the `--emulation-version` to roll the cluster
 forward again.
+
+#### Story 3
+
+A cluster administrator creating a new Kubernetes cluster for a development of a
+new project and wishes to make use of the latest available features.
+
+- Cluster admin starts all cluster components with a `1.30` binary version and
+  sets `--min-compatibility-version=1.30` as well.
+
+Because the cluster admin has no need to rollback, setting
+`--min-compatibility-version=1.30` can be used to indicate that they do not
+require any feature availability delay to support a compatibility range
+and benefit from access to all the latest available features.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -654,7 +713,7 @@ Why we think this is manageable:
 
 - We already author features to be gated. The only change here is include
   enough information about features so that they can be selectively enabled/disabled
-  based on compatibility version.
+  based on emulation version.
 - We already manually deprecate/remove features. This change will instead
   leave features in code longer, and require feature gates to track at which
   verion a feature is deprecated/removed.  The total maintenance work is
@@ -662,9 +721,9 @@ Why we think this is manageable:
 - Some maintenance becomes simpler as the additional version data about
   features makes them easier to reason about and keep track of.
 
-#### Risk: Unintended and out-of-allowance compatibility skew
+#### Risk: Unintended and out-of-allowance version skew
 
-From @deads2k: "I see an additional risk of unintended and out-of-allowance compatibility skew between binaries. A kube-apiserver and kube-controller-manager contract is still +/-1 (as far as I see here). This compatibility level, especially across three versions, makes it more likely for accidental mismatches.
+From @deads2k: "I see an additional risk of unintended and out-of-allowance version skew between binaries. A kube-apiserver and kube-controller-manager contract is still +/-1 (as far as I see here). Compatibility and emulation versions, especially across three versions, makes it more likely for accidental mismatches.
 
 While a hard shutdown of a process is likely worse than the disease, exposing some sort of externally trackable signal for cluster-admins and describing how to use it could significantly mitigate the problem."
 
@@ -739,15 +798,15 @@ For Alpha, we will fill this out as we implement.
 
 ##### Integration tests
 
-For Alpha we will add integration test to ensure `--compatibility-version` behaves expected according to the following grid:
+For Alpha we will add integration test to ensure `--emulation-version` behaves expected according to the following grid:
 
-**Transition**|**N-1 Behavior**|**N Behavior**|**Expect when compatibility-version=N-1**|**Expect when compatibility-version=N (or is unset)**
+**Transition**|**N-1 Behavior**|**N Behavior**|**Expect when emulation-version=N-1**|**Expect when emulation-version=N (or is unset)**
 -----|-----|-----|-----|-----
-Alpha feature introduced|-|off-by-default|feature does not exist, feature gate may not be set|alpha features may not be used in conjunction with compatibility version
+Alpha feature introduced|-|off-by-default|feature does not exist, feature gate may not be set|alpha features may not be used in conjunction with emulation version
 Alpha feature graduated to Beta|off-by-default|on-by-default|feature enabled only when `--feature-gates=<feature>=true`|feature enabled unless `--feature-gates=<feature>=false`
 Beta feature graduated to GA|on-by-default|on|feature enabled unless `--feature-gates=<feature>=false`|feature always enabled, feature gate may not be set
 Beta feature removed|on-by-default|-|feature enabled unless `--feature-gates=<feature>=false`|feature does not exist
-Alpha API introduced|-|off-by-default|API does not exist|alpha APIs may not be used in conjunction with compatibility version
+Alpha API introduced|-|off-by-default|API does not exist|alpha APIs may not be used in conjunction with emulation version
 Beta API graduated to GA|off-by-default|on|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1` available
 Beta API removed|off-by-default|-|API available only when `--runtime-config=api/v1beta1=true`|API `api/v1beta1` does not exist
 on-by-default Beta API removed|on-by-default|-|API available unless `--runtime-config=api/v1beta1=false`|API `api/v1beta1` does not exist
@@ -756,10 +815,10 @@ new CEL function|-|function in StoredExpressions CEL environment|CEL function do
 introduced CEL function|function in StoredExpressions CEL environment|function in NewExpressions CEL environment|Resources already containing CEL expression can be evaluated|CEL expression can be written to resources and can be evaluted from storage
 
 - Other cases we will test are:
-  - `--compatibility-version=<N-2>` - fails flag validation, binary exits
-  - `--compatibility-version=<N+1>` - fails flag validation, binary exits
-  - we only allow data into new API fields once they existed in the previous release, this needs to account for compatibility version
-  - we only relax validation after the previous release tolerates it, this needs to account for compatibility version
+  - `--emulation-version=<N-2>` - fails flag validation, binary exits
+  - `--emulation-version=<N+1>` - fails flag validation, binary exits
+  - we only allow data into new API fields once they existed in the previous release, this needs to account for emulation version
+  - we only relax validation after the previous release tolerates it, this needs to account for emulation version
 
 ##### e2e tests
 
@@ -774,7 +833,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 For e2e testing, we intend to run e2e tests from the N-1 minor version of kubernetes
-against the version being tested with --compatibility-version set to the N-1 minor versions.
+against the version being tested with --emulation-version set to the N-1 minor versions.
 
 This is a new kind of testing-- it requires running the tests from a release branch against
 the the branch being tested (either master or another release branch).
@@ -786,12 +845,13 @@ We intend to have this up and running for Beta
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Compatibility version support for N-1 minor versions
+- Emulation version support for N-1 minor versions
 - Integration tests completed and enabled
 
 #### Beta
 
 - Initial cross-branch e2e tests completed and enabled
+- Emulation version support for N-3 minor versions
 - Compatibility version support for N-3 minor versions
 - Clients send version number and servers report out-of-allowance skew to a metric
   (Leveraging work from KEP-4355 if possible)
@@ -929,22 +989,21 @@ This section must be completed when targeting alpha to a release.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, `/version` will respond with `binaryMajor` and `binaryMinor` fields.
+Yes, `/version` will respond with `binary{Major,Minor}` and `minCompatibility{Major,Minor}` fields.
 This addition of fields should be handled by clients in a backward compatible
 way, and is a relatively safe change.
 
-No other default behavior is changed. Only when the feature gate is enabled AND
-`--compatibility-version` is set does other behavior change.
+No other default behavior is changed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Note that when `--compatibility-version` flags is defined, the feature flag
+Yes. Note that when `--emulation-version` flags is defined, the feature flag
 must be turned on (when feature is in Alpha). So to disable the feature, the
 flag must also be removed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Behavior is as expected, `--compatibility-version` may be set again.
+Behavior is as expected, `--emulation-version` may be set again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1239,3 +1298,4 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
