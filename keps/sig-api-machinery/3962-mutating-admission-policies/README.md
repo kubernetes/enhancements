@@ -224,7 +224,7 @@ spec:
   failurePolicy: Fail
   reinvocationPolicy: IfNeeded
   mutations:
-    - patchType: "ApplyConfiguration" // "ApplyConfiguration", "JSONPatch" supported. Default to "ApplyConfiguration"
+    - patchType: "ApplyConfiguration" // "ApplyConfiguration", "JSONPatch" supported. 
       mutation: >
         Object{
           spec: Object.spec{
@@ -241,7 +241,7 @@ spec:
         }
 ```
 The field `mergeStrategy` is used to specify which strategy is used for the mutation.
-Supported values include "ApplyConfiguration", "JSONPatch". It will default to "ApplyConfiguration" if not specified.
+Supported values include "ApplyConfiguration", "JSONPatch". 
 The "ApplyConfiguration" strategy will prevent user from manipulating atomic list. 
 For any mutation requires modification on atomic list, "JSONPatch" strategy is needed.
 
