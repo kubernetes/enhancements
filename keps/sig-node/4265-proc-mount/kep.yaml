@@ -1,0 +1,37 @@
+title: Add ProcMount option
+kep-number: 4265
+authors:
+  - "@haircommander"
+owning-sig: sig-node
+participating-sigs:
+  - sig-auth
+status: implementable
+creation-date: 2018-05-07
+reviewers:
+approvers:
+  - "@mrunalp"
+
+replaces:
+  - "https://github.com/kubernetes/community/pull/1934/"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.30"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.12"
+  beta: "v1.30"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ProcMountType
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics:
