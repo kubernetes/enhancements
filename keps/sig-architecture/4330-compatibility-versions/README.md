@@ -84,8 +84,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Component Flags](#component-flags)
-    - [<code>--emulation-version</code>](#)
-    - [<code>--min-compatibility-version</code>](#-1)
+    - [--emulation-version](#--emulation-version)
+    - [--min-compatibility-version](#--min-compatibility-version)
   - [Changes to Feature Gates](#changes-to-feature-gates)
     - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
@@ -173,7 +173,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We intend to introduce a version compatibility and emulation options to
+We intend to introduce version compatibility and emulation options to
 Kubernetes control plane components to make upgrades safer by increasing the
 granularity of steps available to cluster administrators. We will introduce
 `--emulation-version` flag to emulate the behavior (APIs, features, ...) of a
@@ -288,7 +288,7 @@ release for features to settle in as is typically needed for rollback support.
 
 ### Component Flags
 
-#### `--emulation-version`
+#### --emulation-version
 
 - Defaults to `binaryVersion` (matching current behavior)
 - Must be <= `binaryVersion`
@@ -307,7 +307,7 @@ using emulation versions when they are in use. So not only must a kubelet
 version be <= the kube-apiserver binary version, it must also be <= the
 `--emulation-version` of the kube-apiserver.
 
-#### `--min-compatibility-version`
+#### --min-compatibility-version
 
 - Defaults to `binaryVersion-1` (matching current behavior)
 - Must be <= `--emulation-version`
