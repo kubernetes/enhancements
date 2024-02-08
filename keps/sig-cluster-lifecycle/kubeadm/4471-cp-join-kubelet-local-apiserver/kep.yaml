@@ -1,0 +1,19 @@
+title: Make a control-plane's kubelet point to the local API Server on kubeadm join
+kep-number: 4471
+authors:
+  - "@chrischdi"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+status: implementable
+creation-date: 2024-2-1
+reviewers:
+  - "@neolit123"
+  - "@SataQiu"
+  - "@pacoxu"
+approvers:
+  - "@neolit123"
+  - "@SataQiu"
+  - "@pacoxu"
+latest-milestone: "0.0"
+stage: "alpha"
