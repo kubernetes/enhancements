@@ -88,6 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
   - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
+  - [Validation ratcheting](#validation-ratcheting)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API Compatibility Versioning](#api-compatibility-versioning)
   - [Discovery](#discovery)
@@ -204,9 +205,12 @@ achieved failure) and (2) failures are more easily auto-reverted by upgrade
 orchestration as we are taking smaller and more incremental steps forward,
 which means there is less to “undo” on a failure condition.
 
-In beta, we intend to introduce support for greater compatibility version skew
-(specifically, N-3) so that it would be possible to skip binary versions while
-still performing a stepwise upgrade of Kubernetes control-plane. For example:
+In alpha we intend to support a `1.n`..`1.{n-1}` compatibility version range
+for a binary version of `1.n`.
+
+In beta, we intend to extend that to `1.n`..`1.{n-3}` so that it would be possible
+to skip binary versions while still performing a stepwise upgrade of Kubernetes
+control-plane. For example:
 
 - (starting point) binary-version 1.28 (compat-version 1.28)
 - upgrade binary-version to 1.31 (compat-version stays at 1.28 - this is our skip-level binary upgrade)
@@ -250,7 +254,7 @@ Benefits to upgrading binary version independent of compatibility version:
   changes (storage versions, CEL feature, features) that would prevent it
   from being rolled back to N-1.
 - The most recent Kubernetes version supports compatibility version being set to
-  the full range of supported versions (N..N-3).
+  the full range of supported versions (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
 
 ### Non-Goals
 
@@ -269,12 +273,17 @@ Kubernetes components (apiservers, controller managers, schedulers) will offer a
 minor versions. If unset, the compatibility version defaults to the `<major.minor>`
 version of the binary version.
 
-If the `--compatibility-version` is set to a version outside of the supported version
-range (N..N-3), the binary will exit and report an invalid flag value error telling
-the user what versions are allowed.
+If the `--compatibility-version` is set to a version outside of the supported
+version range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`), the binary will
+exit and report an invalid flag value error telling the user what versions are
+allowed.
 
-The kubelet is out of scope for this enhancement. Note that the kubelet already
-supports N-3 version skew with the kube-apiserver.
+Adding `--compatibility-version` kubelet is out of scope for this enhancement.
+But we do need to define how kubelet skew behaves when the kube-apiserver has
+`--compatibility-version` set. Our general rule is that we want to define skew
+using compatibility versions when they are in use. So not only must a kubelet
+version be <= the kube-apiserver binary version, it must also be <= the
+`--compatibility-version` of the kube-apiserver.
 
 ### Changes to Feature Gates
 
@@ -310,8 +319,8 @@ version the compatibility version is set to. I.e. it must be possible to use
 `--feature-gates` to disable features that were beta, and enable feature that
 were alpha in the Kubernetes version the compatibility version is set to. One
 important implication of this requirement is that feature gating must be kept in
-the Kubenetes codebase until a feature has reached GA (or been removed) for N-3
-releases.
+the Kubenetes codebase until a feature has reached GA (or been removed) for supported
+compatibility version range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
 
 For example, a feature that is promoted once per release would look something like:
 
@@ -336,8 +345,8 @@ The lifecycle of the feature would be:
 | 1.30    | GA    | Alpha: 1.26, Beta: 1.27 (on-by-default), GA: 1.28 |
 | 1.31    | GA    | **Feature implementation becomes part of normal code. `if featureGate enabled { // implement feature }` code may be removed at this step** |
 
-All feature gating and tracking must remain in code through 1.30 for N-3
-compatibility version support.
+All feature gating and tracking must remain in code through 1.30 for
+compatibility version support (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
 
 For a Beta feature that is removed, e.g.:
 
@@ -364,13 +373,13 @@ The steps to remove the Beta feature would be:
 | 1.32    | -     | Beta: 1.26, Deprecated: 1.27, Removed: 1.31       |
 | 1.33    | -     | **`if featureGate enabled { // implement feature }` code may be removed at this step** |
 
-(Features that are deleted before reaching Beta do not require n-3 compatibility
+(Features that are deleted before reaching Beta do not require compatibility version
 support since we don't support compatibility version for alpha features)
 
 Note that this respects a 1yr deprecation policy.
 
-All feature gating and tracking must remain in code through 1.32 for N-3
-compatibility version support.
+All feature gating and tracking must remain in code through 1.32 for
+compatibility version support range (alpha: `1.n`..`1.{n-1}`, beta: `1.n`..`1.{n-3}`).
 
 #### Feature gating changes
 
@@ -495,6 +504,18 @@ The only change we must make for this enhancement is to remove the
 constant](https://github.com/kubernetes/kubernetes/blob/7fe31be11fbe9b44af262d5f5cffb1e73648aa96/staging/src/k8s.io/apiserver/pkg/cel/environment/base.go#L45)
 and instead always pass in N-1 of the compatibility version introduced by this
 enhancement as the CEL compatibility version.
+
+### Validation ratcheting
+
+Any validationg ratcheting needs to account for compatibility version.
+
+For example, if a validation is widened (tolerates values not previously
+allowed) at minor version N, then if the compatibility version is set to minor
+version N-1, widened values must be allowed for already stored field values, but
+not allowed for writes that change the field value.
+
+The above "CEL Environment Compatibility Versioning" is actually a special
+case of this requirement.
 
 ### StorageVersion Compatibility Versioning
 
@@ -734,9 +755,11 @@ API Storage version changed|v1beta1|v1|Resources stored as v1beta1|Resources sto
 new CEL function|-|function in StoredExpressions CEL environment|CEL function does not exist|Resources already containing CEL expression can be evaluated
 introduced CEL function|function in StoredExpressions CEL environment|function in NewExpressions CEL environment|Resources already containing CEL expression can be evaluated|CEL expression can be written to resources and can be evaluted from storage
 
-- The other edge cases we will test are:
+- Other cases we will test are:
   - `--compatibility-version=<N-2>` - fails flag validation, binary exits
   - `--compatibility-version=<N+1>` - fails flag validation, binary exits
+  - we only allow data into new API fields once they existed in the previous release, this needs to account for compatibility version
+  - we only relax validation after the previous release tolerates it, this needs to account for compatibility version
 
 ##### e2e tests
 
