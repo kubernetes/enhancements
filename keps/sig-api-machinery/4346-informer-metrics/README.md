@@ -237,8 +237,8 @@ nitty-gritty.
 
 - Introduce the informer metrics struct `informerMetrics` contains queue/eventHandler metrics
 - Introduce the informer metrics provider interface `informerMetricsProvider`, implement in `k8s.io/component-base/metrics`
-- Add an environment to enable informer metrics
 - Revert the deleted `reflectorMetrics`
+- Add a feature gate `InformerMetrics` to enable informer/reflector metrics
 
 ### User Stories (Optional)
 
