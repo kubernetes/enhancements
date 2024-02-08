@@ -246,8 +246,9 @@ spec:
 ```
 The field `patchType` is used to specify which strategy is used for the mutation.
 Supported values include "ApplyConfiguration", "JSONPatch". 
-The "ApplyConfiguration" strategy will prevent user from manipulating atomic list. 
-For any mutation requires modification on atomic list, "JSONPatch" strategy is needed.
+The "ApplyConfiguration" strategy will prevent user from performing ambiguous action like manipulating atomic list. 
+The detailed definition of ambiguous action should be reviewed before beta.
+For any mutation requires modification regarding with ambiguous action, "JSONPatch" strategy is needed.
 
 Note: 
 - "JSONPatch" should be supported before the feature going to beta
