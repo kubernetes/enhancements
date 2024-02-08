@@ -733,7 +733,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-No. But, the tests to confirm the behavior on switching the feature gate will be added by beta. ([issue](https://github.com/kubernetes/kubernetes/issues/115467))
+No. But, the tests to confirm the behavior on switching the feature gate will be added by beta. ([issue](https://github.com/kubernetes/kubernetes/issues/123189))
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -767,12 +767,14 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- The container resource metric takes much longer time compared to other metrics.
-which can be monitored via the 1st metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
-- Increase the overall performance of HPA controller 
-which can be monitored via the 2nd metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
-- Many error occurrence on the container resource metrics
-which can be monitored via the 3rd metrics described in [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service) section.
+- `reconciliation_duration_seconds`: The time(seconds) that the HPA controller takes to reconcile once.
+  - You should rollback if you see an increase in the overall performance of HPA controller 
+- `metric_computation_duration_seconds{metric_type=ContainerResource}`: The time(seconds) that the HPA controller takes to calculate one metric.
+  - You should rollback if you see the container resource metric takes much longer time compared to other metrics.
+- `reconciliations_total{error=internal}`: Number of internal errors in reconciliation of HPA controller.
+  - You should rollback if you see many error occurrence on the reconciliation.
+- `metric_computation_total{error=internal,{metric_type=ContainerResource}`: Number of internal errors in the calculation of `type: ContainerResource`.
+  - You should rollback if you see many error occurrence on the container resource metrics
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -782,7 +784,6 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet.
 But, as described in [Are there any tests for feature enablement/disablement?](#Are-there-any-tests-for-feature-enablement/disablement?), the tests to confirm the behavior on switching the feature gate will be added. ([issue](https://github.com/kubernetes/kubernetes/issues/115467))
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -826,7 +827,6 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] Events
   - `SuccessfulRescale` event with `memory/cpu/etc resource utilization (percentage of request) above/below target`
-    - Note that we cannot know if this reason is due to the `Resource` metric or `ContainerResource` in the current implementation. We'll change this reason for `ContainerResource` to `memory/cpu/etc container resource utilization (percentage of request) above/below target` so that we can distinguish.
 - [x] API .status
   - When something wrong with the container metrics, `ScalingActive` condition will be false with `FailedGetContainerResourceMetric` reason.
 
@@ -861,14 +861,11 @@ Pick one more of these and delete the rest.
   - Details:
 -->
 
-HPA controller have no metrics in it now. 
-The following metrics will be implemented by beta. ([issue](https://github.com/kubernetes/kubernetes/issues/115639))
-1. How long does each metric type take to compute the ideal replica num.
-  - so that users can confirm the container resource metric doesn't take long time compared to other metrics.
-2. How long does the HPA controller take to complete reconcile one HPA object.
-  - so that users can confirm the container resource metric doesn't increse the whole time of scaling.
-3. Provide the metric to show error occurrence for each metric.
-  - so that users can confirm no much error occurrence on the container resource metric.
+- [x] Metrics
+  - `metric_computation_duration_seconds`: The time(seconds) that the HPA controller takes to calculate one metric.
+  - `metric_computation_total`: Number of metric computations.
+  - `reconciliations_total`: Number of reconciliation of HPA controller.
+  - `reconciliation_duration_seconds`: The time(seconds) that the HPA controller takes to reconcile once.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1050,6 +1047,10 @@ For each of them, fill in the following information by copying the below templat
   - Testing: https://github.com/kubernetes/kubernetes/blob/0e3818e02760afa8ed0bea74c6973f605ca4683c/pkg/controller/podautoscaler/replica_calculator_test.go#L451
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `metric_computation_duration_seconds` or `reconciliation_duration_seconds` to see which metric encountered the latency issue.
+And, if it is a latency problem only specific in `type: ContainerResource`, 
+you can opt-out this feature by removing the `type: ContainerResource` metric from HPA(s).
 
 ## Implementation History
 
