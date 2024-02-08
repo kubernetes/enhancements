@@ -13,9 +13,9 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 
 milestone:
   alpha: "v1.29"
