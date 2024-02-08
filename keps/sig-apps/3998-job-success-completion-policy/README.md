@@ -701,7 +701,9 @@ only for running Jobs and don't update `.status.conditions` for already finished
 
 ###### Are there any tests for feature enablement/disablement?
 
-TODO
+Yes, we will add the following flow integration tests for the new APIs from the alpha stage:
+
+- enablement -> disablement -> re-enablement
 
 ### Rollout, Upgrade and Rollback Planning
 
