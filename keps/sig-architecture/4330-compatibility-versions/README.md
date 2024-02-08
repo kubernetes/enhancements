@@ -86,6 +86,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Component Flags](#component-flags)
     - [--emulation-version](#--emulation-version)
     - [--min-compatibility-version](#--min-compatibility-version)
+  - [Skew](#skew)
   - [Changes to Feature Gates](#changes-to-feature-gates)
     - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
@@ -175,18 +176,24 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 We intend to introduce version compatibility and emulation options to
 Kubernetes control plane components to make upgrades safer by increasing the
-granularity of steps available to cluster administrators. We will introduce
-`--emulation-version` flag to emulate the behavior (APIs, features, ...) of a
-prior Kubernetes release version. We will also introduce a
-`--min-compatibility-version` flag to control which prior versions of Kubernetes
-a control plane component is compatible with (in terms of APIs, features, ...)
-and can be rolled back to.
+granularity of steps available to cluster administrators. 
 
-When a emulation version is provided, the [Version skew policy](https://kubernetes.io/releases/version-skew-policy/)
-will apply to the emulation version instead of the binary version, allowing binary
-versions to be skipped when performing skip version upgrades, so long the
-upgrade transitions incrementally through emulation versions according to the
-supported version skew constraints.
+We will introduce a `--emulation-version` flag to emulate the capabiliites
+(APIs, features, ...) of a prior Kubernetes release version. When used, the
+capabilities available will match the emulated version. Any capabilities present
+in the binary version that were introduced after the emulation version will be
+unavailable and any capabilities removed after the emulation version will be
+available. This enables a binary version to emulate the behavior of a previous
+version with sufficient fidelity that interoperability with other system
+components can be defined in terms of the emulated version. 
+
+We will also introduce a `--min-compatibility-version` flag to control the
+minimum version a control plane component is compatible with (in terms of
+storage versions, validation rules, ...). When used, the component tolerates
+workloads that expect the behavior of the specified minimum compatibility
+version, component skew ranges extend based on the minimum compatibility
+version, and rollbacks can be performed back to the specified minimum
+compatibility version.
 
 ## Motivation
 
@@ -208,7 +215,7 @@ achieved failure) and (2) failures are more easily auto-reverted by upgrade
 orchestration as we are taking smaller and more incremental steps forward,
 which means there is less to “undo” on a failure condition.
 
-that it would be possible to skip binary versions while still performing a
+It also becomes possible to skip binary versions while still performing a
 stepwise upgrade of Kubernetes control-plane. For example:
 
 - (starting point) binary-version 1.28 (compat-version 1.28)
@@ -239,7 +246,7 @@ Benefits to upgrading binary version independent of emulation version:
   addressed before proceeding to subsequent steps. These failures can be
   addressed without the disruption and "noise" from failures in subsequent
   steps.
-- A emulation version rollback can be performed without changing binary version.
+- An emulation version rollback can be performed without changing binary version.
 
 A dedicated `--min-compatibility-version` flag provides direct control of when
 deprecated features are removed from the API.  If the `--min-compatibility-version`
@@ -277,7 +284,7 @@ release for features to settle in as is typically needed for rollback support.
 - Support `--emulation-version` for Alpha features.  Alpha feature are not
   designed to be upgradable, so we will not allow alpha features to be enabled when
   `--emulation-version` is set.
-- `--min-compatibility-version` will only applies to Beta and GA features. Only
+- `--min-compatibility-version` will only apply to Beta and GA features. Only
   Alpha features available in the current binary version will be available for enablement
   and are allowed to change in behavior across releases in ways that are incompatible
   with previous versions.
@@ -315,6 +322,23 @@ version be <= the kube-apiserver binary version, it must also be <= the
   criteria for ranges). If below the supported version range the binary will
   exit and report an invalid flag value error telling the user what versions are
   allowed.
+
+### Skew
+
+The [Version skew policy](https://kubernetes.io/releases/version-skew-policy/)
+rules be defined in terms of compatibility and emulation versions:
+
+- kube-controller-manager, kube-scheduler, and cloud-controller-manager:
+  - Previously: `1.{binaryMinorVersion-1}`..`{binaryVersion}`
+  - With this enhancement: `{minCompatibilityVersion}..{emulationVersion}`
+
+- kube-proxy, kubelet:
+  - Previously: `1.{binaryMinorVersion-3}`..`{binaryVersion}`
+  - With this enhancement: `{minCompatibilityVersion-2}..{emulationVersion}`
+
+- kubectl:
+  - Previously: `1.{binaryMinorVersion-1}`..`{binaryVersion+1}`
+  - With this enhancement: `{minCompatibilityVersion-1}..{emulationVersion+1}`
 
 ### Changes to Feature Gates
 
@@ -366,12 +390,12 @@ the emulation and compatibility version to determine which features to enable.
 
 #### Feature Gate Lifecycles
 
-`--feature-gates` must behave the same as it did for the Kubernetes version the
-emulation and compatibility versions are set to. For example, it must be
-possible to use `--feature-gates` to disable features that were beta at the
-emulation version. One important implication of this requirement is that feature
-gating must be kept in the Kubenetes codebase after a feature has reached GA (or
-been removed) to support the emulation and compatibility version ranges.
+`--feature-gates` must behave the same as it did for the emulation version. For
+example, it must be possible to use `--feature-gates` to disable features that
+were beta at the emulation version. One important implication of this
+requirement is that feature gating must be kept in the Kubenetes codebase after
+a feature has reached GA (or been removed) to support the emulation and
+compatibility version ranges.
 
 A feature that is promoted once per release would look something like:
 
@@ -997,13 +1021,14 @@ No other default behavior is changed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Note that when `--emulation-version` flags is defined, the feature flag
-must be turned on (when feature is in Alpha). So to disable the feature, the
-flag must also be removed.
+Yes. Note that when the `--emulation-version` or `--min-compatibility-version` flags is
+set, the feature flag must be turned on (when feature is in Alpha). So to
+disable the feature, the flag must also be removed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Behavior is as expected, `--emulation-version` may be set again.
+Behavior is as expected, `--emulation-version` or `--min-compatibility-version`
+may be set again.
 
 ###### Are there any tests for feature enablement/disablement?
 
