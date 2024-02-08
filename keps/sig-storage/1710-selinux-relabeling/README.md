@@ -592,8 +592,9 @@ _This section must be completed when targeting beta graduation to a release._
 
   - [x] Metrics
     - All `errors_total` metrics below cover real errors when a Pod can't start.
-      It applies to `ReadWriteOncePod` volumes when only `SELinuxMountReadWriteOncePod` feature gate is enabled or all volumes when `SELinuxMount` feature gate is enabled.
-    - All `warnings_total` metrics below cover **future** errors that would appear if `SELinuxMount` feature gate would be enabled.
+      - It applies to `ReadWriteOncePod` volumes when only `SELinuxMountReadWriteOncePod` feature gate is enabled.
+      - It applies to all volumes when both `ReadWriteOncePod` and `SELinuxMount` feature gate is enabled.
+    - All `warnings_total` metrics below are reported when only `SELinuxMountReadWriteOncePod` feature gate is enabled and shows **future** errors that would appear after both `SELinuxMountReadWriteOncePod` and `SELinuxMount` feature gates are enabled.
       This will be evaluated in Phase 2.
     - 1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux context for a container.
         This indicates an error converting SELinux context into SELinux label by github.com/opencontainers/selinux/go-selinux library.
