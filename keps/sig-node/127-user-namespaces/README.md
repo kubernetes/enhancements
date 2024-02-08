@@ -39,6 +39,8 @@
       - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Kubelet and Kube-apiserver skew](#kubelet-and-kube-apiserver-skew)
+    - [Kubelet and container runtime skews](#kubelet-and-container-runtime-skews)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -612,7 +614,7 @@ use container runtime versions that have the needed changes.
 
 ##### critests
 
-- For Alpha, the feature is tested for containerd and CRI-O in cri-tools repo using critest to
+- For Beta, the feature is tested for containerd and CRI-O in cri-tools repo using critest to
   make sure the specified user namespace configuration is honored.
 
 - <test>: <link to test coverage>
@@ -630,6 +632,9 @@ use container runtime versions that have the needed changes.
 
 - Gather and address feedback from the community
 - Be able to configure UID/GID ranges to use for pods
+- Add unit tests that exercise the feature gate switch (see section "Are there
+  any tests for feature enablement/disablement?")
+- Add cri-tools test
 - This feature is not supported on Windows.
 - Get review from VM container runtimes maintainers (not blocker, as VM runtimes should just ignore
   the field, but nice to have)
@@ -669,6 +674,26 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+#### Kubelet and Kube-apiserver skew
+
+The apiserver and kubelet feature gate enablement work fine in any combination:
+
+1. If the apiserver has the feature gate enabled and the kubelet doesn't, then the pod will show
+   that field and the kubelet will ignore it. Then, the pod is created without user namespaces.
+2. If the apiserver has the feature gate disabled and the kubelet enabled, the pod won't show this
+   field and therefore the kubelet won't act on a field that isn't shown. The pod is created without
+   user namespaces.
+
+The kubelet can still create pods with user namespaces if static-pods are configured with
+pod.spec.hostUsers and has the feature gate enabled.
+
+If the kube-apiserver doesn't support the feature at all (< 1.25), a pod with userns will be
+rejected.
+
+If the kubelet doesn't support the feature (< 1.25), it will ignore the pod.spec.hostUsers field.
+
+#### Kubelet and container runtime skews
 
 Some definitions first:
 - New kubelet: kubelet with CRI proto files that includes the changes proposed in
@@ -794,6 +819,9 @@ We will also unit test that, if pods were created with the new field
 pod.specHostUsers, then if the featuregate is disabled all works as expected (no
 user namespace is used).
 
+We will add tests exercising the `switch` of feature gate itself (what happens
+if I disable a feature gate after having objects written with the new field)
+
 <!--
 The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
@@ -815,16 +843,18 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The rollout is just a feature flag on the kubelet and the kube-apiserver.
+If one APIserver is upgraded while other's aren't and you are talking to a not
+upgraded one, the pod will be accepted (if the apiserver is >= 1.25, rejected if
+< 1.25).
 
-If one APIserver is upgraded while other's aren't and you are talking to a not upgraded the pod
-will be accepted (if the apiserver is >= 1.25). If it is scheduled to a node that the kubelet has
-the feature flag activated and the node meets the requirements to use user namespaces, then the
-pod will be created with the namespace. If it is scheduled to a node that has the feature disabled,
-it will be created without the user namespace.
+If it is scheduled to a node where the kubelet has the feature flag activated
+and the node meets the requirements to use user namespaces, then the pod will be
+created with the namespace. If it is scheduled to a node that has the feature
+disabled, it will be created without the user namespace.
 
-On a rollback, pods created while the feature was active (created with user namespaces) will have to
-be re-created without user namespaces.
+On a rollback, pods created while the feature was active (created with user
+namespaces) will have to be re-created to run without user namespaces. If those
+weren't recreated, they will continue to run in a user namespace.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -841,8 +871,24 @@ will rollout across nodes.
 On Kubernetes side, the kubelet should start correctly.
 
 On the node runtime side, a pod created with pod.spec.hostUsers=false should be on RUNNING state if
-all node requirements are met. If the CRI runtime or the handler do not support the feature, the kubelet
-returns an error.
+all node requirements are met. If the CRI runtime or the handler do not support the feature, the
+kubelet returns an error.
+
+When a pod hits this error returned by the kubelet, the status in `kubectl` is shown as
+`ContainerCreating` and the pod events shows:
+
+```
+  Warning  FailedCreatePodSandBox  12s (x23 over 5m6s)  kubelet            Failed to create pod sandbox: user namespaces is not supported by the runtime
+```
+
+The following kubelet metrics are useful to check:
+ - `kubelet_running_pods`: Shows the actual number of pods running
+ - `kubelet_desired_pods`: The number of pods the kubelet is _trying_ to run
+
+If these metrics are very different, it means there are desired pods that can't be set to running.
+If that is the case, checking the pod events to see if they are failing for user namespaces reasons
+(like the errors shown in this KEP) is advised, in which case it is recommended to rollback or
+disable the feature gate.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -899,7 +945,7 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-If the runtime doesn't support user namespaces an error is returned by the kubelet.
+If the runtime doesn't support user namespaces an error is returned by the kubelet and the pod cannot be created.
 
 There are step-by-step examples in the Kubernetes documentation too: https://kubernetes.io/docs/tasks/configure-pod-container/user-namespaces/
 
@@ -1201,7 +1247,8 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
     levels that could help debug the issue?
     Not required until feature graduated to beta.
 
-        The error is returned on pod-creation, no need to search for logs.
+        The Kubelet will get an error from the runtime and will propagate it to the pod (visible on
+        the pod events).
 
         The idmap mount is created by the OCI runtime, not at the kubelet layer. At the kubelet layer, this
         is just another OCI runtime error.
@@ -1231,7 +1278,8 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
   - Detection: How can it be detected via metrics? Stated another way:
     how can an operator troubleshoot without logging into a master or worker node?
 
-        Errors are returned on pod creation, directly to the user. No need to use metrics.
+        Errors are returned on pod creation, directly to the user (visible on the pod events). No
+        need to use metrics.
 
         See the pod events, it should contain something like:
 
@@ -1249,7 +1297,7 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
     levels that could help debug the issue?
     Not required until feature graduated to beta.
 
-        No extra logs, the error is returned to the user.
+        No extra logs, the error is returned to the user (visible in the pod events).
 
   - Testing: Are there any tests for failure mode? If not, describe why.
 
@@ -1262,8 +1310,8 @@ writing to this file.
   - Detection: How can it be detected via metrics? Stated another way:
     how can an operator troubleshoot without logging into a master or worker node?
 
-        Errors are returned to the operation failed (like pod creation), no need to see metrics nor
-        logs.
+        Errors are returned to the operation failed (like pod creation, visible on the pod events),
+        no need to see metrics nor logs.
 
         Errors are returned to the either on:
          * Kubelet initialization: the initialization fails if the feature gate is active and there is a
