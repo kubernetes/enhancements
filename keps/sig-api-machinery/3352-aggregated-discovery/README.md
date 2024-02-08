@@ -126,26 +126,26 @@ released. -->
 Items marked with (R) are required *prior to targeting to a milestone
 / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP
+- [x] (R) Enhancement issue in release milestone, which links to KEP
       dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as
+- [x] (R) KEP approvers have approved the KEP status as
       `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG
       Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance
         Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake
         free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA
         Endpoints](https://github.com/kubernetes/community/pull/1806)
         must be hit by [Conformance
         Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in
       [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents,
@@ -179,7 +179,6 @@ Both in this section and below, follow the guidelines of the
 length, to make it easier for reviewers to cite specific portions, and
 to minimize diff churn on updates.
 -->
-
 
 The operations that a Kubernetes API server supports are reported
 through a collection of small documents partitioned by group-version.
@@ -341,6 +340,9 @@ will request for the aggregated discovery v2 type, aggregated
 discovery v2beta1 type, and unaggregated v1 type in that order. The
 server will return the first option that is supported.
 
+Refer to the Version Skew Strategy section for more information on how backwards compatibility
+is maintained by both the client and server when the types are promoted from v2beta1 to v2.
+
 ### API
 
 The contents of this endpoint will be an `APIGroupDiscoveryList`,
@@ -354,7 +356,7 @@ current API will be representable in the new API.
 The endpoint will also publish an ETag calculated based on a hash of
 the data for clients.
 
-These types will live in the `apidiscovery/v2beta1` group version.
+These types will live in the `apidiscovery/v2` group version.
 
 This is what the new API will look like.
 
@@ -541,7 +543,10 @@ This can inform certain test coverage improvements that we want to do
 before extending the production code to implement this enhancement.
 -->
 
-This will be implemented in a new package in kube-aggregator.
+- k8s.io/apiserver/pkg/endpoints/discovery/aggregated: 77.4 
+  - Note that the `fake.go` file has no unit test coverage as it is a utility designed to be used by integration tests. The rest of the files in the package have 90+ coverage.
+- k8s.io/kube-aggregator/pkg/apiserver/handler_discovery.go: 82.2
+- k8s.io/client-go/discovery/aggregated_discovery.go: 96.8
 
 ##### Integration tests
 
@@ -553,8 +558,8 @@ For Beta and GA, add links to added tests together with links to
 k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html -->
 
-For alpha, integration tests will be added to exercise the new
-aggregated discovery code path.
+Integration tests
+- [test/integration/apiserver/discovery/discovery_test.go](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&width=5&include-filter-by-regex=discovery)
 
 ##### e2e tests
 
@@ -569,8 +574,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA
 graduation criteria. -->
 
-For alpha, tests will be added to exercise the new aggregated
-discovery code path for kubectl, both on the server and client side.
+e2e tests
+- [test/e2e/apimachinery/aggregated_discovery.go](https://testgrid.k8s.io/sig-release-master-blocking#gce-cos-master-default&width=5&include-filter-by-regex=discovery)
 
 ### Graduation Criteria
 
@@ -620,7 +625,11 @@ main focus will be on kubectl and golang clients.
 
 #### GA
 
-- TBD
+- Existing bugs are fixed:
+  - AggregatedDiscovery controller does not purge old APIServices from cache ([Issue](https://github.com/kubernetes/kubernetes/issues/115301))
+  - Aggregated Discovery doesn't show aggregated apiservices as Stale before initial health check ([Issue](https://github.com/kubernetes/kubernetes/issues/115303))
+- New API type `apidiscovery.k8s.io/v2` is introduced
+- e2e and conformance tests
 
 **Note:** Generally we also wait at least two releases between beta
 and GA/stable, because there's no opportunity for user feedback, or
@@ -633,6 +642,7 @@ include [conformance tests].**
 
 #### Deprecation
 
+Once Aggregated Discovery v2 types are GA, v2beta1 types will be deprecated and removed after 3 releases.
 
 ### Upgrade / Downgrade Strategy
 
@@ -640,6 +650,31 @@ Aggregated discovery will be behind a feature gate. It is an in-memory
 feature and upgrade/downgrade is not a problem.
 
 ### Version Skew Strategy
+
+When moving from beta to GA, we will introduce a new API group version `apidiscovery.k8s.io/v2`.
+
+All clients v1.26 to v1.29 will only request for the beta API group version `apidiscovery.k8s.io/v2beta1`.
+
+To accommodate skew between the client and server (older client and newer server), the server will serve both v2 and v2beta1 versions based on the client request headers. The API server will continue to support v2beta1 until its removal in Kubernetes v1.33.
+
+To accommodate skew between an older server and newer client, starting in v1.30,
+client-go will request for both v2 and v2beta1 by sending a list of group versions
+requested (in order from v2, v2beta1, unaggregated) and the server will return the
+first group version that matches. Concretely, this is done using `Accept` headers with a single request.
+
+```
+Accept: application/json;as=APIGroupDiscoveryList;v=v2;g=apidiscovery.k8s.io,application/json;as=APIGroupDiscoveryList;v=v2beta1;g=apidiscovery.k8s.io,application/json
+```
+
+In the case of older servers, the server will only
+be able to match v2beta1. The client will support both v2 and v2beta1. This allows a
+newer client to communicate with an older server that supports only the beta version.
+Other clients should follow the same convention to support version skew, though a client
+that is only capable of processing v2 is sufficient if it only communicates with v1.30+ servers.
+Otherwise, the client will need to be ready to tolerate a 406 Not Acceptable response and handle
+the error appropriately.
+
+If there is no skew and both server and client are v1.30+, clients will still request for v2 and v2beta1, and the server will match the first group version and return v2.
 
 ## Production Readiness Review Questionnaire
 
@@ -839,6 +874,10 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in
 the next question. -->
 
+Aggregated Discovery falls under a non-streaming read-only API call which is defined under the Kubernetes API call latency
+[SLI/SLO](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md).
+The number in the SLO are a good bound for Aggregated Discovery (p99 < 1s).
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!-- Pick one more of these and delete the rest. -->
@@ -970,6 +1009,10 @@ large cases, again with respect to the [supported limits].
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 <!-- This section must be completed when targeting beta to a release.
@@ -1002,6 +1045,15 @@ the below template:
     - Testing: Are there any tests for failure mode? If not, describe
 why. -->
 
+-  Aggregated API Server is unavailable:
+  -  Detection: An Aggregated API Server that is unavailable will return Stale as the DiscoveryFreshness.
+      A prolonged period of staleness could indicate that the aggregated apiserver is unavailable.
+  - Mitigations: If the aggregated apiserver is not reacheable, it will not be part of the resources available.
+    Restarting the pod or checking for any misconfigurations could be a valid next step.
+  - Diagnostics: Missing the (v3) log line: `DiscoveryManager: successfully downloaded discovery/legacy discovery for <apiservice>`
+  - Testing: We test for unreacheable aggregated apiservers returning Stale, but an aggregated apiserver could
+    be unavailable for a wide variety of reasons that would require further diagnosis.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 The feature can be rolled back by setting the AggregatedDiscoveryEndpoint feature flag to false.
@@ -1020,6 +1072,10 @@ this section. Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general
   availability
 - when the KEP was retired or superseded -->
+
+- v1.26: Aggregated Discovery KEP is merged and moves to alpha
+- v1.27: Aggregated Discovery moves to beta
+- v1.30: Aggregated Discovery moves to stable
 
 ## Drawbacks
 
