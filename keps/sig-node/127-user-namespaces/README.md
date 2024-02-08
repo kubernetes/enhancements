@@ -19,6 +19,7 @@
   - [Pod.spec changes](#podspec-changes)
   - [CRI changes](#cri-changes)
   - [Support for pods](#support-for-pods)
+    - [Configuration of ranges](#configuration-of-ranges)
   - [Handling of volumes](#handling-of-volumes)
     - [Example of how idmap mounts work](#example-of-how-idmap-mounts-work)
       - [Example without idmap mounts](#example-without-idmap-mounts)
@@ -39,6 +40,8 @@
       - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Kubelet and Kube-apiserver skew](#kubelet-and-kube-apiserver-skew)
+    - [Kubelet and container runtime skews](#kubelet-and-container-runtime-skews)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -51,7 +54,7 @@
 - [Alternatives](#alternatives)
   - [Don't use idmap mounts and rely chown all the files correctly](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
   - [64k mappings?](#64k-mappings)
-  - [Allow runtimes to pick the mapping?](#allow-runtimes-to-pick-the-mapping)
+  - [Allow runtimes to pick the mapping](#allow-runtimes-to-pick-the-mapping)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -126,8 +129,8 @@ Here we use UIDs, but the same applies for GIDs.
   inside the container to different IDs in the host. In particular, mapping root
   inside the container to unprivileged user and group IDs in the node.
 - Increase pod to pod isolation by allowing to use non-overlapping mappings
-  (UIDs/GIDs) whenever possible. IOW, if two containers runs as user X, they run
-  as different UIDs in the node and therefore are more isolated than today.
+  (UIDs/GIDs) whenever possible. In other words: if two containers runs as user
+  X, they run as different UIDs in the node and therefore are more isolated than today.
 - Allow pods to have capabilities (e.g. `CAP_SYS_ADMIN`) that are only valid in
   the pod (not valid in the host).
 - Benefit from the security hardening that user namespaces provide against some
@@ -288,10 +291,47 @@ message Mount {
 }
 ```
 
+The CRI runtime reports what runtime handlers have support for user
+namespaces through the `StatusResponse` message, that gains a new
+field `runtime_handlers`:
+
+```
+message StatusResponse {
+    // Status of the Runtime.
+    RuntimeStatus status = 1;
+    // Info is extra information of the Runtime. The key could be arbitrary string, and
+    // value should be in json format. The information could include anything useful for
+    // debug, e.g. plugins used by the container runtime.
+    // It should only be returned non-empty when Verbose is true.
+    map<string, string> info = 2;
+
+    // Runtime handlers.
+    repeated RuntimeHandler runtime_handlers = 3;
+}
+```
+
+Where RuntimeHandler is defined as below:
+
+```
+message RuntimeHandlerFeatures {
+    // supports_user_namespaces is set to true if the runtime handler supports
+    // user namespaces.
+    bool supports_user_namespaces = 1;
+}
+
+message RuntimeHandler {
+    // Name must be unique in StatusResponse.
+    // An empty string denotes the default handler.
+    string name = 1;
+    // Supported features.
+    RuntimeHandlerFeatures features = 2;
+}
+```
+
 ### Support for pods
 
 Make pods work with user namespaces. This is activated via the
-bool `pod.spec.HostUsers`.
+bool `pod.spec.hostUsers`.
 
 The mapping length will be 65536, mapping the range 0-65535 to the pod. This wide
 range makes sure most workloads will work fine. Additionally, we don't need to
@@ -316,10 +356,21 @@ The picked range will be stored under a file named `userns` in the pod folder
 (by default it is usually located in `/var/lib/kubelet/pods/$POD/userns`). This
 way, the Kubelet can read all the allocated mappings if it restarts.
 
-During alpha, to make sure we don't exhaust the host UID namespace, we will
-limit the number of pods using user namespaces to `min(maxPods, 1024)`. This
-leaves us plenty of host UID space free and this limits is probably never hit in
-practice. See the [Unresolved section](#unresolved) for more details on this.
+#### Configuration of ranges
+
+If no configuration is present, the kubelet will use a sane default:
+
+ * `0-65535`: reserved for the host processes and files
+ * `65536-<65536 * maxPods>`: reserved for pods
+
+The kubelet will detect if a configuration is present by using the `getsubids` binary. It will query
+for ranges allocated to the "kubelet" user.
+
+If the kubelet user doesn't exist or `getsubids` is not installed, the kubelet will use the sane
+default aforementioned. On any other cases, it will return an error.
+
+By using `getsubids` we make sure the kubelet interacts fine with other programs in the host that
+also allocate ranges for user namespaces (be it /etc/subuid or centralized systems as freeIPA).
 
 ### Handling of volumes
 
@@ -366,7 +417,7 @@ what we expect, the kubelet needs to chown the file to a UID that is mapped into
 the pod's userns (e.g. UID 65536 in this example), as that is what root inside
 the container is mapped to in the user namespace.
 
-We tried this before, but several limitations were hit. See the 
+We tried this before, but several limitations were hit. See the
 [alternatives section](#dont-use-idmap-mounts-and-rely-chown-all-the-files-correctly)
 for more details on the limitations we hit.
 
@@ -392,7 +443,7 @@ If the pod wants to read who is the owner of file `/vol/configmap/foo`, now it
 will see the owner is root inside the container. This is due to the IDs
 transformations that the idmap mount does for us.
 
-In other words, we can make sure the pod can read files instead of chowning them
+In other words: we can make sure the pod can read files instead of chowning them
 all using the host IDs the pod is mapped to, by just using an idmap mount that
 has the same mapping that we use for the pod user namespace.
 
@@ -449,7 +500,7 @@ something else to this list:
 - What about windows or VM container runtimes, that don't use linux namespaces?
   We need a review from windows maintainers once we have a more clear proposal.
   We can then adjust the needed details, we don't expect the changes (if any) to be big.
-  IOW, in my head this looks like this: we merge this KEP in provisional state if
+  In my head this looks like this: we merge this KEP in provisional state if
   we agree on the high level idea, with @giuseppe we do a PoC so we can fill-in
   more details to the KEP (like CRI changes, changes to container runtimes, how to
   configure kubelet ranges, etc.), and then the Windows folks can review and we
@@ -572,7 +623,7 @@ use container runtime versions that have the needed changes.
 
 ##### critests
 
-- For Alpha, the feature is tested for containerd and CRI-O in cri-tools repo using critest to
+- For Beta, the feature is tested for containerd and CRI-O in cri-tools repo using critest to
   make sure the specified user namespace configuration is honored.
 
 - <test>: <link to test coverage>
@@ -588,14 +639,14 @@ use container runtime versions that have the needed changes.
 
 ##### Beta
 
-- Make plans on whether, when, and how to enable by default
-
-###### Open Questions
-
-- Should we reconsider making the mappings smaller by default?
-- Should we allow any way for users to for "more" IDs mapped? If yes, how many more and how?
-- Should we allow the user to ask for specific mappings?
-- Get review from VM container runtimes maintainers
+- Gather and address feedback from the community
+- Be able to configure UID/GID ranges to use for pods
+- Add unit tests that exercise the feature gate switch (see section "Are there
+  any tests for feature enablement/disablement?")
+- Add cri-tools test
+- This feature is not supported on Windows.
+- Get review from VM container runtimes maintainers (not blocker, as VM runtimes should just ignore
+  the field, but nice to have)
 
 ##### GA
 
@@ -603,6 +654,20 @@ use container runtime versions that have the needed changes.
 - Fully integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
 
 ### Upgrade / Downgrade Strategy
+
+Existing pods will still work as intended, as the new field is missing there.
+
+Upgrade will not change any current behaviors.
+
+When the new functionality wasn't yet used, downgrade will not be affected.
+
+On downgrade, when the functionality was used, the pods created with
+user namespaces that are running will continue to run with user
+namespaces. Pods will need to be re-created to stop using the user
+namespace.
+
+Versions of Kubernetes that doesn't have this feature implemented will
+ignore the new field `pod.spec.hostUsers`.
 
 ### Version Skew Strategy
 
@@ -618,6 +683,27 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+#### Kubelet and Kube-apiserver skew
+
+The apiserver and kubelet feature gate enablement work fine in any combination:
+
+1. If the apiserver has the feature gate enabled and the kubelet doesn't, then the pod will show
+   that field and the kubelet will reject it (see more details about how it is rejected on section
+   "What specific metrics should inform a rollback?").
+2. If the apiserver has the feature gate disabled and the kubelet enabled, the pod won't show this
+   field and therefore the kubelet won't act on a field that isn't shown. The pod is created without
+   user namespaces.
+
+The kubelet can still create pods with user namespaces if static-pods are configured with
+pod.spec.hostUsers and has the feature gate enabled.
+
+If the kube-apiserver doesn't support the feature at all (< 1.25), the unknown field will be dropped and
+the pod will be created without a userns.
+
+If the kubelet doesn't support the feature (< 1.25), it will ignore the pod.spec.hostUsers field.
+
+#### Kubelet and container runtime skews
 
 Some definitions first:
 - New kubelet: kubelet with CRI proto files that includes the changes proposed in
@@ -636,11 +722,13 @@ doesn't create them. The runtime can detect this situation as the `user` field
 in the `NamespaceOption` will be seen as nil, [thanks to
 protobuf][proto3-defaults]. We already tested this with real code.
 
-Old runtime and new kubelet: containers are created without userns. As the
-`user` field of the `NamespaceOption` message is not part of the runtime
-protofiles, that part is ignored by the runtime and pods are created using the
-host userns.
+Old runtime and new kubelet: the runtime won't report that it supports
+user namespaces through the `StatusResponse` message, so the kubelet
+will detect it and return an error if a pod with user namespaces is
+created.
 
+We added unit tests for the feature gate disabled, and integration
+tests for the feature gate enabled and disabled.
 
 [proto3-defaults]: https://developers.google.com/protocol-buffers/docs/proto3#default
 
@@ -687,7 +775,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: UserNamespacesStatelessPodsSupport
+  - Feature gate name: UserNamespacesSupport
   - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
@@ -734,12 +822,15 @@ Pods will have to be re-created to use the feature.
 
 We will add.
 
-We will test for when the field pod.spec.HostUsers is set to true, false
+We will test for when the field pod.spec.hostUsers is set to true, false
 and not set. All of this with and without the feature gate enabled.
 
 We will also unit test that, if pods were created with the new field
 pod.specHostUsers, then if the featuregate is disabled all works as expected (no
 user namespace is used).
+
+We will add tests exercising the `switch` of feature gate itself (what happens
+if I disable a feature gate after having objects written with the new field)
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -762,6 +853,20 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+If one APIserver is upgraded while other's aren't and you are talking to a not
+upgraded one, the pod will be accepted (if the apiserver is >= 1.25, rejected if
+< 1.25).
+
+If it is scheduled to a node where the kubelet has the feature flag activated
+and the node meets the requirements to use user namespaces, then the pod will be
+created with the namespace. If it is scheduled to a node that has the feature
+disabled, it will be rejected (see more details about how it is rejected on
+section "What specific metrics should inform a rollback?").
+
+On a rollback, pods created while the feature was active (created with user
+namespaces) will have to be re-created to run without user namespaces. If those
+weren't recreated, they will continue to run in a user namespace.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -774,12 +879,49 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
+On Kubernetes side, the kubelet should start correctly.
+
+On the node runtime side, a pod created with pod.spec.hostUsers=false should be on RUNNING state if
+all node requirements are met. If the CRI runtime or the handler do not support the feature, the
+kubelet returns an error.
+
+When a pod hits this error returned by the kubelet, the status in `kubectl` is shown as
+`ContainerCreating` and the pod events shows:
+
+```
+  Warning  FailedCreatePodSandBox  12s (x23 over 5m6s)  kubelet            Failed to create pod sandbox: user namespaces is not supported by the runtime
+```
+
+The following kubelet metrics are useful to check:
+ - `kubelet_running_pods`: Shows the actual number of pods running
+ - `kubelet_desired_pods`: The number of pods the kubelet is _trying_ to run
+
+If these metrics are very different, it means there are desired pods that can't be set to running.
+If that is the case, checking the pod events to see if they are failing for user namespaces reasons
+(like the errors shown in this KEP) is advised, in which case it is recommended to rollback or
+disable the feature gate.
+
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Yes, we tested it locally using `./hack/local-up-cluster.sh`.
+
+We tested enabling the feature flag, created a deployment with pod.spec.hostUsers=false, and then disabled
+the feature flag and restarted the kubelet and kube-apiserver.
+
+After that, we deleted the deployment pods (not the deployment object), the pods were re-created
+without user namespaces just fine, without any modification needed on the deployment yaml.
+
+We then enabled the feature flag on the kubelet and kube-apiserver, and deleted the deployment pod.
+This re-created caused the pod to be re-created, this time with user namespaces enabled again.
+
+To validate it, it is necessary to exec into a container in the pod and run the command `cat /proc/self/uid_map`.
+When running in a user namespace the output is different than `0 0 4294967295` as it happens when running without
+a user namespace.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -789,6 +931,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
+No.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
@@ -804,6 +947,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+Check if any pod has the pod.spec.hostUsers field set to false.
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -811,6 +955,10 @@ logs or events for this purpose.
 -->
 
 ###### How can someone using this feature know that it is working for their instance?
+
+If the runtime doesn't support user namespaces an error is returned by the kubelet and the pod cannot be created.
+
+There are step-by-step examples in the Kubernetes documentation too: https://kubernetes.io/docs/tasks/configure-pod-container/user-namespaces/
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -822,14 +970,22 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+  - Condition name:
+  - Other field:
+- [x] Other (treat as last resort)
+  - Details: check pods with pod.spec.hostUsers field set to false, and see if they are in RUNNING
+    state. Exec into a container and run `cat /proc/self/uid_map` to verify that the mappings are different
+    than the mappings on the host.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+If a node meets all the requirements, there should be no change to existing SLO/SLIs.
+
+If a container runtime wants to support old kernels, it can have a performance impact, though. For
+more details, see the question:
+    "Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?"
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -848,6 +1004,7 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+No new SLI needed for this feature.
 <!--
 Pick one more of these and delete the rest.
 -->
@@ -861,6 +1018,17 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
+No.
+
+This feature is using yet another namespace when creating a pod. If the pod creation fails (by
+an error on the kubelet or returned by the container runtime), a clear error is returned to the
+user. The feedback on this is very direct to the user actions.
+
+A metric like "errors returned in pods with user namespaces enabled" can be very noisy, as the error
+can be completely unrelated (image pull secret errors, configmap referenced and not defined, any
+other container runtime error, etc.). We can't see any metric that can be helpful, as the user has a
+very direct feedback already.
+
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
@@ -873,6 +1041,19 @@ This section must be completed when targeting beta to a release.
 -->
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+Yes:
+
+- [CRI version]
+  - Usage description: CRI changes done in k8s 1.27 are needed
+    - Impact of its outage on the feature: minimal, feature will be ignored by runtimes using an
+      older version (e.g. containerd 1.6) or will return an error (e.g containerd 1.7).
+    - Impact of its degraded performance or high-error rates on the feature: N/A.
+
+- [Linux kernel]
+  - Usage description: Linux 6.3 or higher
+    - Impact of its outage on the feature: pod creation with hostUsers=false will return an error.
+    - Impact of its degraded performance or high-error rates on the feature: N/A.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -1026,9 +1207,8 @@ and validate the declared limits?
 
 The kubelet is spliting the host UID/GID space for different pods, to use for
 their user namespace mapping. The design allows for 65k pods per node, and the
-resource is limited in the alpha phase to the min between maxPods per node
-kubelet setting and 1024. This guarantees we are not inadvertly exhausting the
-resource.
+resource is limited to maxPods per node (currently maxPods defaults to 110, it
+is unlikely we will reach 65k).
 
 For container runtimes, they might use more disk space or inodes to chown the
 rootfs. This is if they chose to support this feature without relying on new
@@ -1055,7 +1235,144 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No changes to current kubelet behaviors. The feature only uses kubelet-local information.
+
 ###### What are other known failure modes?
+
+- Some filesystem used by the pod doesn't support idmap mounts on the kernel used.
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        See the pod events, it fails with:
+
+    	  Warning  Failed     2s (x2 over 4s)  kubelet, 127.0.0.1  Error: failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: failed to fulfil mount request: failed to set MOUNT_ATTR_IDMAP on /var/lib/kubelet/pods/f037a704-742c-40fe-8dbf-17ed9225c4df/volumes/kubernetes.io~empty-dir/hugepage: invalid argument (maybe the source filesystem doesn't support idmap mounts on this kernel?): unknown
+
+        Note the "maybe the source filesystem doesn't support idmap mounts on this kernel?" part.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.hostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The Kubelet will get an error from the runtime and will propagate it to the pod (visible on
+        the pod events).
+
+        The idmap mount is created by the OCI runtime, not at the kubelet layer. At the kubelet layer, this
+        is just another OCI runtime error.
+
+        The container runtime logs will show something as shown before:
+
+            OCI runtime create failed: runc create failed: unable to start container process: error during container init: failed to fulfil mount request: failed to set MOUNT_ATTR_IDMAP on /var/lib/kubelet/pods/f037a704-742c-40fe-8dbf-17ed9225c4df/volumes/kubernetes.io~empty-dir/hugepage: invalid argument (maybe the source filesystem doesn't support idmap mounts on this kernel?): unknown
+
+        This is for runc, crun shows a [very similar error](https://github.com/containers/crun/pull/1382/files#diff-a260cc17fa708d3dc67330596e9d277d05601f8c48621a67379f7e0fb097fbb6R4089).
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        There are tests in low level container runtimes.
+
+        Testing this at the Kubernetes level is hard to do. We need to choose a file-system that doesn't
+        support idmap mounts today, but that might not be the case after a kernel upgrade, as the new
+        kernel might support idmap mounts for that file-system. Is very easy to create flaky tests for this
+        at the Kubernetes layer.
+
+        The low level container runtimes, that are the ones to do the idmap mount, have unit tests for this
+        and return a clear error.
+
+
+
+- Error allocating IDs for a pod user namespace
+
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        Errors are returned on pod creation, directly to the user (visible on the pod events). No
+        need to use metrics.
+
+        See the pod events, it should contain something like:
+
+          Warning  FailedCreatePodSandBox  3s    kubelet            Failed to create pod sandbox: can't allocate user namespace: could not find an empty slot to allocate a user namespace
+
+        We can add a metric for this on general, but as any pod creation that fails has this direct
+        feedback to the user, we don't think it is needed.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.hostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        No extra logs, the error is returned to the user (visible in the pod events).
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        Yes, there are unit tests for this at the pkg/kubelet/userns package.
+
+- Error to save/read pod mappings file.
+The kubelet records the mappings used for a pod in a file. There can be an error while reading or
+writing to this file.
+
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        Errors are returned to the operation failed (like pod creation, visible on the pod events),
+        no need to see metrics nor logs.
+
+        Errors are returned to the either on:
+         * Kubelet initialization: the initialization fails if the feature gate is active and there is a
+           fatal error while reading the pod's mapping file.
+         * Pod creation: an error is returned to the user (shown in the pod events) if there is an error to
+           read or write to this file.
+
+        We can add a metric for this, but as the errors have very direct feedback (kubelet init
+        fails with a clear error or a pod creation fails with a clear error), we don't think it is needed.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Remove the pod.spec.hostUsers field or disable the feature gate.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The most likely reason why this can fail is if the kernel doesn't support idmapped mounts.  In this
+        case the error reported from the OCI runtime is clear enough, both the runc and crun OCI runtimes were
+        instrumented to return a clear error message.
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        There are extensive unit tests on the function that parses the file content.
+        There are no tests for failures to read or write the file, the code-paths just return the errors
+        in those cases.
+
+- Error getting the kubelet IDs range configuration
+  - Detection: How can it be detected via metrics? Stated another way:
+    how can an operator troubleshoot without logging into a master or worker node?
+
+        In this case the kubelet will fail to start with a clear error message.
+
+  - Mitigations: What can be done to stop the bleeding, especially for already
+    running user workloads?
+
+        Disable the user namespace support via the feature flag, or fix the configuration.
+
+  - Diagnostics: What are the useful log messages and their required logging
+    levels that could help debug the issue?
+    Not required until feature graduated to beta.
+
+        The Kubelet will fail to start with a clear error message stating that it could not
+        retrieve the range of IDs to use for the user namespaces.
+
+  - Testing: Are there any tests for failure mode? If not, describe why.
+
+        It is part of the system configuration.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1074,9 +1391,10 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
-2016: First iterations of this KEP, but code never landed upstream.
-Kubernetes 1.25: Support for stateless pods merged (alpha)
-Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
+- 2016: First iterations of this KEP, but code never landed upstream.
+- Kubernetes 1.25: Support for stateless pods merged (alpha)
+- Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
+- Kubernetes 1.28: Support for stateful pods, renamed feature gate (alpha)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
@@ -1158,24 +1476,38 @@ KEPs can explore this path if they so want to.
 
 ### 64k mappings?
 
-We will start with mappings of 64K. Tim Hockin, however, has expressed
-concerns. See more info on [this Github discussion](https://github.com/kubernetes/enhancements/pull/3065#discussion_r781676224)
-SergeyKanzhelev [suggested a nice alternative](https://github.com/kubernetes/enhancements/pull/3065#discussion_r807408134),
-to limit the number of pods so we guarantee enough spare host UIDs in case we
-need them for the future. There is no final decision yet on how to handle this.
-For now we will limit the number of pods, so the wide mapping is not
-problematic, but [there are downsides to this too](https://github.com/kubernetes/enhancements/pull/3065#discussion_r812806223)
+We discussed using shorter or even allowing for longer mappings in the past. The decision is to use
+64k mappings (IDs from 0-65535 are mapped/valid in the pod).
 
-For stateless pods this is of course not an issue.
+The reasons to consider smaller mappings were valid only before idmap mounts was merged into the
+kernel. However, idmap mounts is merged for some years now and we require it, making those reasons
+void.
 
-### Allow runtimes to pick the mapping?
+The issues without idmap mounts in previous iterations of this KEP, is that the IDs assigned to a
+pod had to be unique for every pod in the cluster, easily reaching a limit when the cluster is "big
+enough" and the UID space runs out.  However, with idmap mounts the IDs assigned to a pod just needs
+to be unique within the node (and with 64k ranges we have 64k pods possible in the node, so not
+really an issue). In other words: by using idmap mounts, we changed the IDs limit to be node-scoped
+instead of cluster-wide/cluster-scoped.
+
+Some use cases for longer mappings include:
+
+There are no known use cases for longer mappings that we know of. The 16bit range (0-65535) is what
+is assumed by all POSIX tools that we are aware of. If the need arises, longer mapping can be
+considered in a future KEP.
+
+### Allow runtimes to pick the mapping
 
 Tim suggested that we might want to allow the container runtimes to choose the
 mapping and have different runtimes pick different mappings. While KEP authors
 disagree on this, we still need to discuss it and settle on something.  This was
 [raised here](https://github.com/kubernetes/enhancements/pull/3065#discussion_r798760382)
 
-This is not a blocker for the KEP, but it is something that can be changed later on.
+Furthermore, the reasons mentioned by Tim Hockin (some nodes having CRIO, some others having containerd,
+etc.) are handled correctly now. Different nodes can use different container runtimes, if a custom
+range needs to be used by the kubelet, that can be configured per-node.
+
+Therefore, this old concerned is now resolved.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
