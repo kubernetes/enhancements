@@ -92,7 +92,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Background: API Server and Kubelet <code>UpgradeAwareProxy</code>](#background-api-server-and-kubelet-upgradeawareproxy)
   - [Proposal: <code>kubectl</code> WebSocket Executor and Fallback Executor](#proposal-kubectl-websocket-executor-and-fallback-executor)
   - [Proposal: New <code>RemoteCommand</code> Sub-Protocol Version - <code>v5.channel.k8s.io</code>](#proposal-new-remotecommand-sub-protocol-version---v5channelk8sio)
-  - [Proposal: API Server <code>StreamTranslatorProxy</code>](#proposal-api-server-streamtranslatorproxy)
+  - [Proposal: API Server RemoteCommand <code>StreamTranslatorProxy</code>](#proposal-api-server-remotecommand-streamtranslatorproxy)
+  - [Background: <code>PortForward</code> Subprotocol](#background-portforward-subprotocol)
+  - [Proposal: New <code>PortForward</code> Subprotocol Version - <code>v2.portforward.k8s.io</code>](#proposal-new-portforward-subprotocol-version---v2portforwardk8sio)
+  - [Proposal: API Server PortForward <code>StreamTranslatorProxy</code>](#proposal-api-server-portforward-streamtranslatorproxy)
   - [Pre-GA: Kubelet <code>StreamTranslatorProxy</code>](#pre-ga-kubelet-streamtranslatorproxy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -101,10 +104,17 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+      - [v1.29 RemoteCommand Subprotocol (exec, cp, and attach)](#v129-remotecommand-subprotocol-exec-cp-and-attach)
+      - [v1.30 PortForward Subprotocol (port-forward)](#v130-portforward-subprotocol-port-forward)
     - [Beta](#beta)
+      - [v1.30 RemoteCommand Subprotocol (exec, cp, and attach)](#v130-remotecommand-subprotocol-exec-cp-and-attach)
+      - [v1.31 PortForward Subprotocol (port-forward)](#v131-portforward-subprotocol-port-forward)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [RemoteCommand Subprotocol](#remotecommand-subprotocol)
+    - [PortForward Subprotocol](#portforward-subprotocol)
+    - [Version Skew within the Control Plane and Nodes](#version-skew-within-the-control-plane-and-nodes)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -147,7 +157,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -185,7 +195,7 @@ Some Kubernetes clients need to communicate with the API Server using a bi-direc
 streaming protocol, instead of the standard HTTP request/response mechanism. A streaming
 protocol provides the ability to read and write arbitrary data messages between the
 client and server, instead of providing a single response to a client request.
-For example, the commands `kubectl exec` and `kubectl attach`
+For example, the commands `kubectl exec`, `kubectl attach`, and `kubectl port-forward`
 both benefit from a bi-directional streaming protocol (`kubectl cp` is build on top
 of `kubectl exec` primitives so it utilizes streaming as well). Currently,
 the bi-directional streaming solution for these `kubectl` commands is SPDY/3.1. For
@@ -221,8 +231,8 @@ know that this has succeeded?
 -->
 
 1. Transition the bi-directional streaming protocol from SPDY/3.1 to WebSockets for
-`kubectl exec`, `kubectl attach`, and `kubectl cp` for the communication leg
-between `kubectl` and the API Server.
+`kubectl exec`, `kubectl attach`, `kubectl cp`, and `kubectl port-forward` for the
+communication leg between `kubectl` and the API Server.
 
 2. Extend the WebSockets communication leg from the API Server to Kubelet. After this
 extension, WebSockets streaming will occur between `kubectl` and Kubelet (proxied
@@ -300,7 +310,38 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- TBD
+- Risk: Security
+
+A possible security vulnerability might occur when a potential upgraded connection
+is redirected to other API endpoints.
+
+  - Mitigation: Upgraded connections are disallowed from redirecting.
+
+- Risk: Overloaded Concurrency
+
+PortForward subrequests (e.g. `curl http://localhost:8080/index.html` after the connection
+upgrade) can occur concurrently over the the upgraded streaming connection, and these
+subrequests can be long-lasting. Each of these subrequests creates two streams (an
+error stream and a data stream) over the connection, and there are four goroutines spawned
+to service this subrequest and its associated streams. After the completion of the
+subrequest, the associated resources are reclaimed.
+
+  - Mitigation: Throttling the number of concurrent subrequests will limit the
+    number of concurrent streams and the number of concurrent goroutines on the
+    API Server. This throttling will ensure the server does not get overloaded.
+    If we need to the reduce number of concurrent goroutines even further we can
+	explore goroutine pools so that the number of goroutines will grow sublinearly
+	with the number of subrequests and streams.
+
+- Risk: Performance
+
+When transitioning from the SPDY streaming protocol to WebSockets, there may be a
+performance degradation. In order to implement the WebSocket streaming functionality
+that SPDY already implements, it is necessary for additional headers to be prepended
+to the WebSocket data package.
+
+  - Mitigation: Performance testing to ensure the WebSockets implementation is not
+    noticeably slower than the current SPDY streaming implementation.
 
 ## Design Details
 
@@ -326,7 +367,7 @@ could look like:
 
 **HTTP Request**
 ```
-POST /api/v1/…/pods/nginx/exec?command=<CMD>... HTTP/1.1
+GET /api/v1/…/pods/nginx/exec?command=<CMD>... HTTP/1.1
 Connection: Upgrade
 Upgrade: SPDY/3.1
 X-Stream-Protocol-Version: v4.channel.k8s.io
@@ -412,7 +453,7 @@ currently arises when sending data over the STDIN stream, and it is more fully d
 in the following issue: [exec over web sockets protocol is flawed](https://github.com/kubernetes/kubernetes/issues/89899).
 A new RemoteCommand version (`v5.channel.k8s.io`) adds this `CLOSE` signal.
 
-### Proposal: API Server `StreamTranslatorProxy`
+### Proposal: API Server RemoteCommand `StreamTranslatorProxy`
 
 ![Stream Translator Proxy](./stream-translator-proxy-2.png)
 
@@ -425,6 +466,122 @@ delegate to the `StreamTranslatorProxy` instead of the `UpgradeAwareProxy`. This
 translation proxy terminates the WebSocket connection, and it de-multiplexes the
 various streams in order to pass the data on to a SPDY connection, which continues
 upstream (to Kubelet and eventually the container runtime).
+
+### Background: `PortForward` Subprotocol
+
+The following steps articulate the difference betweeen a **request** for an
+upgraded streaming connection, and the following **subrequests** which are made
+over the upgraded connection.
+
+1. `kubectl port-forward` makes a **request** to the server upgrading to a SPDY streaming
+connection.
+2. An arbitrary number of subsequent (and possibly concurrent) **subrequests** can be made over
+this previously established connection. Example: `curl http://localhost:8080/index.html`.
+3. Each of these **subrequests** creates two streams over the connection (a uni-directional
+error stream and a bi-directional data stream) between the client and the container runtime.
+4. The resources associated with the **subrequest** are reclaimed once the **subrequest**
+is completed.
+
+The `PortForward` subprotocol is used to implement `kubectl port-forward`, and it differs
+from the `RemoteCommand` subprotocol in how the multiple streams within the single upgraded
+connection are created. The `RemoteCommand` subprotocol statically creates streams (e.g
+STDIN, STDOUT, etc.) when the connection is created. But the `PortForward` subprotocol
+dynamically creates two streams (a bi-directional data stream and a unidirectional error
+stream) for each subsequent portforward subrequest. These streams are removed when the subrequest
+is complete. The connection, however, continues to exist until it is manually stopped
+(with a signal). For example, the following portforward command creates the upgraded
+connection, but without any streams, listening on the local port 8080:
+```
+$ kubectl port-forward nginx 8080:80
+```
+Once the upgraded, streaming connection is created, portforward subrequests are handled
+by dynamically creating a data and error stream in another goroutine, forwarding the
+data to the remote port on the target. In this example, the HTTP subrequest is forwarded
+over the data stream from the local port 8080 to the nginx container listening on port
+80:
+```
+$ curl http://localhost:8080/index.html
+```
+The nginx HTTP response is returned over the same data stream. Once the subrequest is
+complete, both streams are closed and removed.
+
+### Proposal: New `PortForward` Subprotocol Version - `v2.portforward.k8s.io`
+
+In order to implement `PortForward` over WebSockets, we propose the client attempt to
+upgrade the connection to WebSockets with a new `v2.portforward.k8s.io` subprotocol
+version. This new version will implement stream functionality over WebSockets
+which currently exists in SPDY but not WebSockets. Specifically, the WebSockets streams
+will implement:
+
+1. StreamCreate signal: A signal to the other WebSockets endpoint that a
+stream has been created. This communication will also contain the headers used to
+create the stream.
+2. StreamClose signal: A signal to the other WebSockets endpoint that the stream
+has been half-closed, and will not allow any further writing on the stream from
+the closed end.
+3. Larger stream identifier space: In order to accommodate numerous concurrent
+streams from many posssible portforward subrequests, we will need a large stream
+identifier space. It appears that SPDY implements 2^31 possible stream identifiers
+and we will provide four bytes for the WebSockets stream identifier to match SPDY.
+The size of these four bytes should not be material, since the size of the
+WebSockets buffer is much larger (32KB). But if we need to reduce the size of
+the stream identifier, we can use a `varint` instead of a `uint32`.
+
+The WebSockets stream functionality will be implemented by encoding and decoding
+stream headers within the WebSockets data message. The stream header struct will
+look like:
+```
+// wsStreamHeader contains the data at the beginning of a websocket binary message.
+type wsStreamHeader struct {
+	MessageType byte   // Create, Close, or Data
+	StreamID    uint32 // or varint if we need to optimize
+    // Headers are only included in a Create message type. Well-known keys are:
+	// 1. StreamType: DataStream or ErrorStream.
+	// 2. RequestID: A unique identifier for the subrequest.
+	// 3. Port: The remote port the stream is forwarding data to.
+    Headers     http.Header
+}
+```
+
+### Proposal: API Server PortForward `StreamTranslatorProxy`
+
+![PortForward Stream Translator Proxy](./portforward-stream-translator-proxy.png)
+
+Updated steps detailing **requests** and **subrequests** for the proposed `StreamTranslatorProxy`.
+
+1. `kubectl port-forward` makes a **request** to the API Server to upgrade to a WebSockets
+streaming connection. At the API Server, the WebSockets connection is upgraded and terminated,
+while a legacy SPDY connection is created upstream to the container runtime.
+2. An arbitrary number of subsequent (and possibly concurrent) client **subrequests** can be made over
+this previously established WebSockets connection. Example: `curl http://localhost:8080/index.html`.
+3. Each of these **subrequests** creates two streams over the connection (a uni-directional
+error stream and a bi-directional data stream) between the client and the API Server.
+4. The API Server in turn creates a one-to-one correspondence between the WebSockets streams
+and upstream SPDY streams. The WebSocket streams are connected to SPDY streams by goroutines
+copying data between them. So each **subrequest** spawns four goroutines to service the two
+streams (one for the **subrequest** itself, as well as three to copy stream data in each
+direction).
+5. All the resources associated with the **subrequest** are reclaimed once the **subrequest**
+is completed.
+
+Similar to `RemoteCommand`, `PortForward` will also have a `StreamTranslatorProxy`
+within the API server to route data from WebSocket streams onto upstream, legacy
+SPDY streams. The new portforward `StreamTranslatorProxy` will handle requests
+for WebSockets connection upgrades with a `v2.portforward.k8s.io` header. The
+portforward `StreamTranslatorProxy` will initially attempt to create an upstream
+SPDY connection to the Kubelet using the legacy `v1.portforward.k8s.io` header.
+If successful, the `StreamTranslatorProxy` will create a server-side WebSockets
+connection, returning `101 Switching Protocols` to the WebSockets client. The
+server-side WebSockets connection will handle the `StreamCreate` and `StreamClose`
+signals, as well as de-multiplexing WebSocket streams using the passed stream
+identifier. Upon receiving a `StreamCreate` signal on the server-side of the
+WebSockets connection, a WebSocket stream will be created and queued onto a
+stream create channel. On the other end of the channel, the `StreamTranslatorProxy`
+will create a SPDY stream to associate with the WebSockets stream, using headers
+from the WebSockets stream. And if both portforward request streams have been
+created (data and error), then streaming will commence between the WebSockets
+and SPDY streams. Upon completion, the streams will be closed and removed. The
+`StreamClose` signal will be used to determine if the streaming has completed.
 
 ### Pre-GA: Kubelet `StreamTranslatorProxy`
 
@@ -621,6 +778,8 @@ in back-to-back releases.
 
 #### Alpha
 
+##### v1.29 RemoteCommand Subprotocol (exec, cp, and attach)
+
 - Implement the alpha version of the `RemoteCommand` subprotocol, and surface the new
   `kubectl exec`, `kubectl cp`, and `kubectl attach` behind a `kubectl` environment
   variable which is **OFF** by default.
@@ -632,16 +791,38 @@ in back-to-back releases.
 - Existing `exec`, `cp`, and `attach` integration tests continue to work.
 - Existing `exec`, `cp`, and `attach` e2e tests continue to work.
 
+##### v1.30 PortForward Subprotocol (port-forward)
+
+- Implement the alpha version of the `PortForward` subprotocol, and surface the new
+  `kubectl port-forward` behind the `kubectl`  environment variable KUBECTL_PORT_FORWARD_WEBSOCKETS
+  which is **OFF** by default.
+- FallbackDialer is completed and functional behind the `kubectl` environment variable
+  KUBECTL_PORT_FORWARD which if **OFF** by default. The FallbackDialer executes legacy
+  SPDY `port-forward` if the server does not support the new WebSockets functionality.
+- PortForward `StreamTranslatorProxy` successfully added and integrated, living
+  behind the API Server feature flag `PortForwardWebsockets` which is **OFF** by default.
+
 #### Beta
+
+##### v1.30 RemoteCommand Subprotocol (exec, cp, and attach)
 
 - Additional `exec`, `cp`, and `attach` unit tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` integration tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` e2e tests completed and enabled.
 
+##### v1.31 PortForward Subprotocol (port-forward)
+
+- Additional `port-forward` unit tests completed and enabled.
+- Additional `port-forward` integration tests completed and enabled.
+- Additional `port-forward` e2e tests completed and enabled.
+
 #### GA
 
 - Conformance tests for `RemoteCommand` completed and enabled.
 - Conformance tests for `RemoteCommand` have been stable and
+  non-flaky for two weeks.
+- Conformance tests for `PortForward` completed and enabled.
+- Conformance tests for `PortForward` have been stable and
   non-flaky for two weeks.
 - Extend the WebSockets communication leg from the API Server to Kubelet.
 
@@ -671,14 +852,16 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
 
 This feature needs to take into account the following version skew scenarios:
+
+#### RemoteCommand Subprotocol
 
 1. A newer WebSockets enabled `kubectl` communicating with an older API Server that
 does not support the newer `StreamTranslator` proxy.
@@ -696,6 +879,33 @@ supports the newer `StreamTranslator` proxy.
 The legacy `kubectl` will successfully request an upgrade for `SPDY/RemoteCommand - V4`,
 just as it has for the last several years.
 
+#### PortForward Subprotocol
+
+1. A newer WebSockets enabled `kubectl` communicating with an older API Server that
+does not support the newer PortForward `StreamTranslator` proxy.
+
+In this case, the initial upgrade request for `PortForward` WebSockets will
+fail, because the `WebSockets` upgrade request `v2.portforward.k8s.io` will be proxied
+to the current container runtime which only supports version `v1.portforward.k8s.io`.
+Upon receiving this upgrade failure, the portforward client will fallback to the
+legacy SPDY `v1.portforward.k8s.io`. In this fallback case, the PortForward streaming
+functionality in this case will work exactly as it has for the last several years.
+
+2. A legacy non-WebSockets enabled `kubectl` communicating with a newer API Server that
+supports the newer PortForward `StreamTranslator` proxy.
+
+The `kubectl port-forward` will successfully request an upgrade for legacy
+`SPDY/PortForward - V1`, just as it has for the last several years.
+
+#### Version Skew within the Control Plane and Nodes
+
+These proposals do not modify intra-cluster version skew behavior. The entire reason
+for the current `StreamTranslatorProxy` design is to ensure no modifications
+to communication within the Control Plane. The `StreamTranslatorProxy` can update
+streaming between the client and the API Server, but it is designed to provide legacy
+SPDY streaming from the API Server to the other components within the ControlPlane.
+Once this `StreamTranslatorProxy` is moved to the kubelet, we will have to address
+the possibility of intra-cluster version skew.
 
 ## Production Readiness Review Questionnaire
 
@@ -740,8 +950,11 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name(s): KUBECTL_REMOTE_COMMAND_WEBSOCKETS, ClientRemoteCommandWebsockets
-  - Components depending on the feature gate: kubectl, API Server
+  - Feature gate name(s) for RemoteCommand Subprotocol:
+  KUBECTL_REMOTE_COMMAND_WEBSOCKETS, TranslateStreamCloseWebsocketRequests
+  - Feature gate name(s) for PortForward Subprotocol:
+  KUBECTL_PORT_FORWARD_WEBSOCKETS, PortForwardWebsockets
+- Components depending on the feature gate: kubectl, API Server
 
 ###### Does enabling the feature change any default behavior?
 
@@ -750,13 +963,20 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Enabling the feature gate on the API Server will allow the streaming mechanism
-to be WebSockets instead of SPDY for communication between `kubectl` and the API
-Server. The `kubectl` client must also have the KUBECTL_REMOTE_COMMAND_WEBSOCKETS
-environment variable set to **ON**, so it will request the newer WebSockets streaming
-feature. These modifications, however, will be transparent to the user unless the
-`kubectl`/API Server communication is communicating through an intermediary such
-as a proxy (which is the whole reason for the feature).
+For each of the two streaming subprotocols: `RemoteCommand` (such as `/exec` and
+`/attach` APIs) and `PortForward` (for `/portforward`), enabling the respective
+feature gate on the API Server will allow the streaming mechanism to be WebSockets
+instead of SPDY for communication between `kubectl` and the API Server. Additionally,
+the `kubectl` client must also have the KUBECTL_REMOTE_COMMAND_WEBSOCKETS environment
+variable set to **ON** for `exec`, `cp`, and `attach` commands. While the
+KUBECTL_PORT_FORWARD_WEBSOCKETS environment variable must be set to **ON** for
+`port-forward` command. These modifications, however, will be transparent to the
+user unless the `kubectl`/API Server communication is communicating through an
+intermediary such as a proxy (which is the whole reason for the feature).
+
+**NOTE** These two sets of feature flags are currently at different maturity levels.
+As of v1.30, `RemoteCommand` feature flags are **enabled** by default (Beta), while
+`PortFoward` features flags are **disabled** by default (Alpha).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -771,9 +991,9 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-The feature can be disabled for a single user by setting the `kubectl` environment
-variable associated with the feature to **OFF**. Or the feature can be turned off
-for all `kubectl` users communicating with a cluster by turning off the feature flag
+The features can be disabled for a single user by setting the `kubectl` environment
+variable associated with the feature to **OFF**. Or the features can be turned off
+for all `kubectl` users communicating with a cluster by turning off the feature flags
 for the API Server.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -806,8 +1026,6 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 This section must be completed when targeting beta to a release.
 -->
 
-- TBD (complete for beta)
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -823,7 +1041,9 @@ will rollout across nodes.
 For highly-available clusters with different versions of API Servers, there
 should not be any impact on this feature. The bi-directional streaming protocol
 (either SPDY or WebSockets) is only proxied through one instance of the API Server,
-which does not change throughout the entirety of the `kubectl` command.
+which does not change throughout the entirety of the `kubectl` command. And if an
+API Server does not support the new WebSockets functionality, `kubectl` will fall
+back to legacy SPDY streaming.
 
 ###### What specific metrics should inform a rollback?
 
@@ -833,7 +1053,7 @@ that might indicate a serious problem?
 -->
 
 The most straightforward signal indicating a problem for the feature is failures
-for `kubectl exec, cp, attach` commands.
+for `kubectl exec, cp, attach, and port-forward` commands.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -843,7 +1063,12 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-- TBD (complete for beta)
+- For upgrade and rollback, both version skew scenarios were successfully tested. So
+  if, during upgrade or rollback, one of the API servers does not support the new WebSockets
+  functionality, the client will successfully fallback to the legacy SPDY streaming.
+
+- The specified upgrade->downgrade->upgrade path was **not** tested, since there is no
+  persisted state. For that reason, this particular scenario is **not applicable**.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -862,8 +1087,6 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-- TBD (complete for beta)
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -872,8 +1095,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-- TBD (complete for beta)
-
+- An operator can detect if the WebSocket functionality is enabled by checking
+  either the `num_ws_remote_command_v5_total[success]` metric for `RemoteCommand` or
+  the `num_ws_port_forward_v2_total[success]` metric for `PortForward`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -888,9 +1112,14 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [X] Other (treat as last resort)
   - Details:
-    - `kubectl exec -v=7 <POD|CONTAINER> -- date`
-	- One of the request headers will be `K8s-Websocket-Protocol: stream-translate`
+    - RemoteCommand: `kubectl exec -v=7 <POD|CONTAINER> -- date`
+	- RemoteCommand: One of the output log lines will be
+	`...websocket.go:137] The subprotocol is v5.channel.k8s.io`
 	if using the new WebSockets streaming.
+	- PortForward: `kubectl port-forward -v=7 <SERVICE|DEPLOYMENT|POD> <LOCAL_PORT:REMOTE_PORT>`
+	- PortForward: One of the output log lines will be
+	`...websocket-dialer.go:91] negotiated protocol: v2.portforward.k8s.io`
+	if websockets is enabled for port forwarding.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -909,6 +1138,20 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+At a high level, we are aiming for an SLO which is the same as the current SPDY
+streaming SLO. Turning on WebSockets streaming between the `kubectl` client and
+the API Server should not noticeably degrade streaming performance compared to
+the current SPDY implementation. But since we do not have numbers for our current
+SPDY streaming implementation, these SLO's are necessarily educated estimates.
+
+- 99.9% of initial HTTP connections eventually succeed in upgrading to a streaming
+  connection (i.e. `101 Switching Protocols` as the HTTP response).
+
+- 99.9% of streaming connections complete without writing to the error channel.
+  Each of the streaming subprotocols, `RemoteCommand` and `PortForward`, create
+  a separate error channel to communicate problems while streaming. But a normally
+  successful streaming command should **NOT** need to use these channels.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -916,8 +1159,17 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: TBD (complete for beta)
-  - Components exposing the metric: kube-apiserver
+  - Metric name: `num_ws_remote_command_v5_total` with `type` dimension containing
+    enum values `success` and `failure`. Counts the total number of times the API
+	Server witnessed a WebSocket/V5 RemoteCommand connection upgrade attempt (either
+	`success` or `failure`).
+  - Components exposing the metric: API Server
+
+  - Metric name: `num_ws_port_forward_v2_total` with `type` dimension containing
+    enum values `success` and `failure`. Counts the total number of times the API
+	Server witnessed a WebSocket/V2 PortForward connection upgrade attempt (either
+	`success` or `failure`).
+  - Components exposing the metric: API Server
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -926,7 +1178,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-- TBD (complete for beta)
+N/A
 
 ### Dependencies
 
@@ -934,7 +1186,8 @@ implementation difficulties, etc.).
 This section must be completed when targeting beta to a release.
 -->
 
-- TBD (complete for beta)
+- Gorilla/WebSockets library: The new WebSockets streaming functionality imports the
+  Gorilla/WebSockets library.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -1066,9 +1319,9 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 
-`kubectl exec, cp, attach` commands spawn container runtime processes, so there is
-the danger of node resource exhaustion. This feature, however, does not change the
-current legacy mechanism for how these container runtime processes execute or
+`kubectl exec, cp, attach, and port-forward` commands spawn container runtime processes,
+so there is the danger of node resource exhaustion. This feature, however, does not
+change the current legacy mechanism for how these container runtime processes execute or
 communicate, except for the communication leg between `kubectl` and the API Server.
 There should be no more risk of node resource exhaustion than already exists.
 
@@ -1087,7 +1340,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-- TBD (complete for beta)
+- This feature fails when the API server is unavailable. The WebSocket streaming
+  is proxied through the API server. If the API server is unavailable, streaming
+  functionality does not work (this applies to the legacy SPDY streaming as well,
+  so there is no detectable difference in this scenario).
 
 ###### What are other known failure modes?
 
@@ -1104,9 +1360,143 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-- TBD (complete for beta)
+- Failure Mode: Proxy or Gateway that does not support SPDY or WebSockets.
+  SPDY had been deprecated for since 2015, and not all proxies support
+  WebSockets. If the intermediary does not support either streaming protocol
+  it will not be possible to run the `kubectl` streaming commands.
+    - Detection: The `kubectl` streaming command will return a connection error.
+	  The error returned to the client will be from the proxy or gateway; not from
+	  the API Server (since the communication never reaches the API Server).
+    - Mitigations: None
+	- Diagnostics: N/A
+    - Testing: N/A
+
+- Failure Mode: Overloaded API Server from too many concurrent streaming commands.
+    - Detection: The streaming commands will show increased latency and timeout errors.
+	  The streaming commands could also hang after initiation on the client.
+    - Mitigations: The mitigations for this phenomenon are described in detail in
+	  the [Risks and Mitigations](#risks-and-mitigations) section. But a simple
+	  way for a user to mitigate this problem would be to reduce the number of concurrent
+	  streaming command from clients.
+	- Diagnostics: API Server `/healthz` and `/metrics` monitoring.
+    - Testing: Manual stress tests of `kubectl` streaming commands through shell
+	  scripts which initiate numerous concurrent streaming commmands.
+
+- Failure Mode: Increased network latency between the client and the API Server causes
+  problems with streaming commands.
+    - Detection: The client streaming commands will lag, timeout, and possibly block.
+    - Mitigations: Mitigating this problem would require fixing the problematic network
+	  connection.
+    - Diagnostics: Adding extra logging from the `kubectl` streaming commands will
+	  show the timings for individual streaming request/responses. For example:
+	    `$ kubectl exec -v=7 ...`
+      will produce logging which shows response times, like:
+	    `... Response Status: 101 Switching Protocols in 20 milliseconds`
+      Also, API Server `/healthz` and `/metrics` monitoring will produces output
+	  demonstrating increased response times and increased timeouts.
+    - Testing: Manual stress tests which simulate a bad network connection by
+	  randomly dropping streamed packets.
+
+- Failure Mode: API Server that does not support the new WebSockets functionality
+  or the the feature flags are not enabled. If `kubectl` supports new WebSockets
+  functionality, but the API Server does not, we automatically fall back to
+  legacy SPDY streaming.
+    - Detection: The fallback functionality is automatic. But if the user wanted
+	  to see if this fallback was occurring, the user could add the `-v=7` flag
+	  to the `kubectl` command. The output logging would display the initial
+	  WebSockets connection upgrade attempt and failure, and the subsequent SPDY
+	  completion of the command.
+    - Mitigations: The mitigation (fallback to legacy SPDY) is automatic.
+	- Diagnostics: We have suggested metrics to measure the number of fallbacks.
+	  the metrics `num_ws_remote_command_v5_total[failure]` as well as
+	  `num_ws_port_forward_v2_total[failure]` will measure the number of fallbacks.
+    - Testing: We have implemented tests for both the `FallbackWebSocketExecutor`
+	  (for `RemoteCommand`), and the `FallbackDialer` (for `PortForward`).
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Step 1: Turn off the `kubectl` feature gate, and check the SLO afterwards.
+
+For `kubectl exec, kubectl cp, and kubectl attach`:
+
+```
+$ unset KUBECTL_REMOTE_COMMAND_WEBSOCKETS
+# Run simple exec command with higher verbosity to see relevant logging.
+# Look for successful connection upgrade with response 101 Switching Protocols.
+# Example: $ kubectl exec -v=7 <TARGET> -- date
+#
+$ kubectl exec -v=7 nginx -- date
+...
+I0206 02:22:40.500200 3666799 round_trippers.go:463] POST https://127.0.0.1:37243/api/v1/namespaces/default/pods/nginx/exec?command=date&container=nginx&stderr=true&stdout=true
+...
+I0206 02:22:40.521184 3666799 round_trippers.go:574] Response Status: 101 Switching Protocols in 20 milliseconds
+...
+Tue Feb  6 02:22:40 UTC 2024
+```
+
+For `kubectl port-forward`:
+
+```
+$ unset KUBECTL_PORT_FORWARD_WEBSOCKETS
+# Run simple port-forward command against webserving pod/deployment/service
+# with higher verbosity to see relevant logging. Look for successful connection
+# upgrade with response 101 Switching Protocols.
+# Example: $ kubectl port-forward -v=7 <TARGET> <LOCAL_PORT>:<REMOTE_PORT>
+#
+$ kubectl port-forward -v=7 nginx 8080:80
+...
+I0206 02:28:04.352912 3669354 round_trippers.go:463] POST https://127.0.0.1:37243/api/v1/namespaces/default/pods/nginx/portforward
+...
+I0206 02:28:04.372175 3669354 round_trippers.go:574] Response Status: 101 Switching Protocols in 19 milliseconds
+Forwarding from 127.0.0.1:8080 -> 80
+Forwarding from [::1]:8080 -> 80
+I0206 02:28:04.372540 3669354 portforward.go:309] Before listener.Accept()...
+I0206 02:28:04.372586 3669354 portforward.go:309] Before listener.Accept()...
+...
+
+# In another terminal, print out index.html served from TARGET after request forwarded.
+# Example: $ curl http://localhost:<LOCAL_PORT>/index.html
+#
+$ curl http://localhost:8080/index.html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+...
+```
+
+- Step 2: For a more thorough possible fix, restart the API server with the
+  cluster feature gate turned off. Check the SLO after restart.
+
+While there are many ways to start a Kubernetes cluster, I will detail how to modify
+the cluster feature flags for this WebSockets functionality using `kubeadm` or `kind`
+and cluster configuration files.
+
+Example:
+
+```
+$ kind create cluster --config cluster-config.yaml --name <NAME> --image <IMAGE>
+```
+
+or
+
+```
+$ kubeadm init --config cluster-config.yaml
+```
+
+where the `cluster-config.yaml` looks like:
+
+```
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  # Enables/Disables WebSockets for RemoteCommand (e.g. exec, cp, attach)
+  "TranslateStreamCloseWebsocketRequests": false
+  # Enables/Disables WebSockets for PortForwar (e.g. port-forward)
+  "PortForwardWebsockets": true
+...
+```
+
 
 ## Implementation History
 
@@ -1121,7 +1511,11 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- First Kubernetes release where initial version of KEP available: v1.29
+- First Kubernetes release with initial version of KEP available: v1.29
+- RemoteCommand over WebSockets shipped as alpha: v1.29
+- RemoteCommand over WebSockets shipped as beta: v1.30
+- First Kubernetes release where PortForward over WebSockets described in KEP: v1.30
+- PortForward over WebSockets shipped as alpha: v1.30
 
 ## Drawbacks
 
