@@ -507,10 +507,25 @@ _This section must be completed when targeting alpha to a release._
   feature, can it break the existing applications?).
 
   Yes, it can be disabled / rolled back.
-  Corresponding API fields get cleared and Kubernetes uses previous SELinux label handling.
-  If the feature gate is enabled/disabled in kubelet without draining the node, volumes mounted by the previous kubelet are still mounted with the same mount option and thus may / may not have `-o context=` mount option.
-  I.e. the disabled / enabled feature affects only newly started Pods.
-  Kubelet can umount volumes mounted by the previous kubelet as usual.
+
+  * When `SELinuxMountReadWriteOncePod` feature gate is disabled, corresponding
+    API fields get cleared and Kubernetes uses previous SELinux label handling.
+    If the feature gate is enabled/disabled in kubelet without draining the node,
+    volumes mounted by the previous kubelet are still mounted with the same
+    mount option and thus may / may not have `-o context=` mount option.
+    Disabled `SELinuxMountReadWriteOncePod` automatically disables
+    `SELinuxMount` feature gate.
+  * When `SELinuxMount` feature gate is disabled and
+    `SELinuxMountReadWriteOncePod` enabled, kubelet will handle SELinux mounts
+    only for RWOP volumes. Similarly to previous case, RWO / RWX volumes mounted by the
+    previous kubelet may be still mounted with `-o context` mount option.
+
+  In both cases, the disabled / enabled feature affects only newly started Pods.
+  A new kubelet can still umount volumes mounted by the previous kubelet as
+  usual.
+
+  To prevent any issues during enabling / disabling any of the feature gates
+  or kubelet upgrade, we recommended draining the node before the change.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -539,6 +554,11 @@ _This section must be completed when targeting beta graduation to a release._
 
   `volume_manager_selinux_volume_context_mismatch_errors_total` show that Pods
   that were potentially running before upgrade can't work now.
+
+  When `SELinuxMount` feature gate goes alpha, the metric will have
+  a label with volume access mode, so a cluster admin can tell if
+  disabling `SELinuxMount` is enough or if `SELinuxMountReadWriteOncePod`
+  must be disabled too.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
@@ -572,8 +592,9 @@ _This section must be completed when targeting beta graduation to a release._
 
   - [x] Metrics
     - All `errors_total` metrics below cover real errors when a Pod can't start.
-      It applies to `ReadWriteOncePod` volumes.
-    - All `warnings_total` metrics below cover **future** errors that would appear if this feature was extended to all volumes.
+      - It applies to `ReadWriteOncePod` volumes when only `SELinuxMountReadWriteOncePod` feature gate is enabled.
+      - It applies to all volumes when both `ReadWriteOncePod` and `SELinuxMount` feature gate is enabled.
+    - All `warnings_total` metrics below are reported when only `SELinuxMountReadWriteOncePod` feature gate is enabled and shows **future** errors that would appear after both `SELinuxMountReadWriteOncePod` and `SELinuxMount` feature gates are enabled.
       This will be evaluated in Phase 2.
     - 1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux context for a container.
         This indicates an error converting SELinux context into SELinux label by github.com/opencontainers/selinux/go-selinux library.
@@ -586,7 +607,7 @@ _This section must be completed when targeting beta graduation to a release._
          Before this feature, both pods would start, but only one such pod could access the volume.
          With this feature, one of the Pods won't even start.
     - `pod_start_sli_duration_seconds`: Duration in seconds to start a pod, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch.
-      This is aleady existing metric, it should not be worse than before this KEP, because CRI does not need to relabel (some) volume mounts.
+      This is already existing metric, it should not be worse than before this KEP, because CRI does not need to relabel (some) volume mounts.
     - Components exposing the metric: kubelet
 
   - [ ] Other (treat as last resort)
@@ -668,6 +689,17 @@ previous answers based on experience in the field._
   No. Kubelet already has a cache of desired / existing mounts, we need to add
   a string with SELinux context to each one, which should be negligible.
 
+* **Can enabling / using this feature result in resource exhaustion of some node
+  resources (PIDs, sockets, inodes, etc.)?**
+
+  Not in Kubernetes.
+
+  A CSI driver may need to use a specific mount option to allow mounting the
+  same volume with different SELinux context on the same node, which may have
+  negative impact on memory, CPU or sockets. For example, NFS may require
+  `nosharecache` mount option that disables sharing of caches between mounts of
+  the same volume.
+
 ### Troubleshooting
 
 Troubleshooting section serves the `Playbook` role as of now. We may consider
@@ -718,6 +750,7 @@ _This section must be completed when targeting beta graduation to a release._
 * 1.30: `SELinuxMountReadWriteOncePod` still beta, SELinuxMount (early) alpha.
   * Implement bare minimum of `SELinuxMount` for experiments, including:
     * Extend SELinux mount to all volume access modes.
+    * Add label with volume access mode to `volume_manager_selinux_volume_context_mismatch_errors_total` and similar metrics. 
     * Implement aforementioned kubelet admission to reject Pods that use a volume that is already mounted with a different SELinux context.
       This admission was useless with RWOP volumes, because kubelet already rejects Pods that use a RWOP volume that's used by another Pod.
 
