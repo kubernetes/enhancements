@@ -194,7 +194,7 @@ As I described in [Non-Goals](#non-goals), we don't support the SuccessPolicy fo
 #### Difference between "complete" and "successCriteriaMet"
 The similar job conditions, `Complete` and `SuccessCriteriaMet`, are different in the following ways:
 
-- `Complete` means that all pods completed, not failed.
+- `Complete` means that all pods completed and either all of them were successful or the Job already had `SuccessCriteriaMet=true`.
 - `SuccessCriteriaMet` means that the job meets at least one of successPolicies.
 
 So, the job could have both conditions, `Complete` and `SuccessCriteriaMet`.
