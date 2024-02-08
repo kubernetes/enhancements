@@ -501,7 +501,7 @@ If we reactivate the feature after a rollback, the outcome remains unchanged. Cu
 
 ###### Are there any tests for feature enablement/disablement?
 
-A dedicated e2e test will validate the preservation of the default behavior when the feature gate is turned off or when the feature is unused. This will be conducted through two distinct test scenarios.
+A dedicated e2e test will validate the preservation of the default behavior when the feature gate is turned off, when the feature is unused, when `pread-physical-cpus-preferred` turns off but `CPUManagerPolicyAlphaOptions` is disabled. This will be conducted through three distinct test scenarios.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -666,7 +666,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-This applies to any machines with hyper-threading enabled.
+No. It doesn't rely on other Kubernetes components.
 
 ### Scalability
 
