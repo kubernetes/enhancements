@@ -13,7 +13,6 @@
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
-    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -21,8 +20,6 @@
     - [<code>Default</code>](#default)
     - [<code>Close</code>](#close)
   - [Changes within kube-proxy](#changes-within-kube-proxy)
-  - [Status Reporting](#status-reporting)
-    - [Condition usage by other implementations](#condition-usage-by-other-implementations)
   - [Choice of field name](#choice-of-field-name)
   - [Intersection with internal/externalTrafficPolicy](#intersection-with-internalexternaltrafficpolicy)
   - [Test Plan](#test-plan)
@@ -34,6 +31,10 @@
     - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Possible future expansions](#possible-future-expansions)
+  - [Status Reporting](#status-reporting)
+    - [Condition usage by other implementations](#condition-usage-by-other-implementations)
+  - [Implementation specific heuristics](#implementation-specific-heuristics)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -218,10 +219,6 @@ Implementations SHOULD support the standard values. While some flexibility in
 interpretation is permitted, implementations should aim to align their behavior
 with the described intent of these preferences as closely as possible.
 
-Implementations may support additional routing heuristics using values of the
-form `<domain>/<heuristicName>`. Heuristics without a domain prefix will be
-reserved for potential future standardization.
-
 NOTE: Implementations reserve the right to refine the behavior associated with
   any heuristic, including standard heuristics. This means the behavior enabled
   by values such as `Default` or `Close` might evolve over time, and some
@@ -267,16 +264,6 @@ NOTE: Implementations reserve the right to refine the behavior associated with
   configurations with greater confidence regardless of the underlying Kubernetes
   implementation. This simplifies their deployment process and reduces the
   complexity of managing cross-cluster applications.
-
-#### Story 4
-* **Requirement:** I have some other precise preferences for how traffic should
-  be routed, and I know that my chosen implementation supports the desired
-  preference. 
-* **Solution:** Set `routingPreference: <domain>/<heuristicName>` (where
-  `<domain>` and `<heuristicName>` are provided by your implementation).
-* **Effect:** The Kubernetes implementation will apply the specified routing
-  heuristic. It's important to note that the precise behavior of
-  implementation-specific heuristics might vary.
 
 ### Notes/Constraints/Caveats
 
@@ -374,49 +361,6 @@ NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
   with partial hints. The reason for this requirement is the same one highlighted in [KEP-2433 Topology
   Aware
   Hints](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2433-topology-aware-hints/README.md#kube-proxy), i.e. _"This is to provide safer transitions between enabled and disabled states. Without this fallback, endpoints could easily get overloaded as hints were being added or removed from some EndpointSlices but had not yet propagated to all of them."_
-
-### Status Reporting
-
-To provide clear status updates about the routing preferences to the user, the
-EndpointSlice controller (which is acting as the control plane) will update the
-Service status with the following conditions (inspired by Gateway API conditions)
-
-* RoutingPreferenceAccepted
-  * **Type:** `RoutingPreferenceAccepted` 
-  * **Description:** 
-    * Indicates whether a control plane component recognized and successfully
-      parsed the `routingPreference` value. A `False` status typically suggests
-      a configuration issue (e.g., an unsupported or malformed preference).
-    * The EndpointSlice controller will set this status to `True` if it
-      recognizes the `routingPreference` value as one it explicitly supports. 
-
-* RoutingPreferenceProgrammed
-  * **Type:**  `RoutingPreferenceProgrammed`
-  * **Description:** 
-    * This condition indicates whether they `routingPreference` has generated
-      some configuration that is assumed to be ready soon in the underlying data
-      plane.
-    * The EndpointSlice controller will set this status to `True` if it
-      successfully populated the EndpointSlice hints based on the
-      `routingPreference`.
-
-Note that the EndpointSlice controller and kube-proxy implementation does not
-currently provide a condition denoting acknowledgment from the dataplane. In the
-future when this is possible, another condition like the following could be
-used:
-
-* RoutingPreferenceHonored
-  * **Type:** `RoutingPreferenceHonored`
-  * **Description:** Confirms that the dataplane has received the hints,
-    acknowledged them, and configured itself accordingly.
-
-#### Condition usage by other implementations
-
-Other implementations supporting `routingPreference` **should** adopt a domain
-prefixing strategy for their condition types. This means prefixing condition
-types with a domain string (e.g., `my.domain.io/RoutingPreferenceAccepted`) to
-prevent conflicts when multiple control planes (like the default EndpointSlice
-controller) are present.
 
 <<[UNRESOLVED Name for the field is being discussed]>>
 
@@ -593,6 +537,71 @@ Version skews should naturally get handled as per the following behaviour.
   3. **Only `service.kubernetes.io/topology-mode` is set:** Same as scenario 1,
      because if `routingPreference` is not set, kube-proxy would think it's set
      to the `Default` value.
+
+## Possible future expansions
+
+Based on user feedback, we **may** consider adding support for the following in
+future iterations.
+
+### Status Reporting
+
+To provide clear status updates about the routing preferences to the user, the
+EndpointSlice controller (which is acting as the control plane) will update the
+Service status with the following conditions (inspired by Gateway API conditions)
+
+* RoutingPreferenceAccepted
+  * **Type:** `RoutingPreferenceAccepted` 
+  * **Description:** 
+    * Indicates whether a control plane component recognized and successfully
+      parsed the `routingPreference` value. A `False` status typically suggests
+      a configuration issue (e.g., an unsupported or malformed preference).
+    * The EndpointSlice controller will set this status to `True` if it
+      recognizes the `routingPreference` value as one it explicitly supports. 
+
+* RoutingPreferenceProgrammed
+  * **Type:**  `RoutingPreferenceProgrammed`
+  * **Description:** 
+    * This condition indicates whether they `routingPreference` has generated
+      some configuration that is assumed to be ready soon in the underlying data
+      plane.
+    * The EndpointSlice controller will set this status to `True` if it
+      successfully populated the EndpointSlice hints based on the
+      `routingPreference`.
+
+Note that the EndpointSlice controller and kube-proxy implementation does not
+currently provide a condition denoting acknowledgment from the dataplane. In the
+future when this is possible, another condition like the following could be
+used:
+
+* RoutingPreferenceHonored
+  * **Type:** `RoutingPreferenceHonored`
+  * **Description:** Confirms that the dataplane has received the hints,
+    acknowledged them, and configured itself accordingly.
+
+#### Condition usage by other implementations
+
+Other implementations supporting `routingPreference` **should** adopt a domain
+prefixing strategy for their condition types. This means prefixing condition
+types with a domain string (e.g., `my.domain.io/RoutingPreferenceAccepted`) to
+prevent conflicts when multiple control planes (like the default EndpointSlice
+controller) are present.
+
+### Implementation specific heuristics
+
+Implementations may support additional routing heuristics using values of the
+form `<domain>/<heuristicName>`. Heuristics without a domain prefix will be
+reserved for potential future standardization.
+
+This can enable supporting the following user story:
+
+* **Requirement:** I have some other precise preferences for how traffic should
+  be routed, and I know that my chosen implementation supports the desired
+  preference. 
+* **Solution:** Set `routingPreference: <domain>/<heuristicName>` (where
+  `<domain>` and `<heuristicName>` are provided by your implementation).
+* **Effect:** The Kubernetes implementation will apply the specified routing
+  heuristic. It's important to note that the precise behavior of
+  implementation-specific heuristics might vary.
 
 ## Production Readiness Review Questionnaire
 
