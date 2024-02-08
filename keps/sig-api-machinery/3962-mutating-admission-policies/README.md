@@ -240,7 +240,7 @@ spec:
           }
         }
 ```
-The field `mergeStrategy` is used to specify which strategy is used for the mutation.
+The field `patchType` is used to specify which strategy is used for the mutation.
 Supported values include "ApplyConfiguration", "JSONPatch". 
 The "ApplyConfiguration" strategy will prevent user from manipulating atomic list. 
 For any mutation requires modification on atomic list, "JSONPatch" strategy is needed.
