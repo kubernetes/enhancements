@@ -680,7 +680,8 @@ enhancement:
 The apiserver and kubelet feature gate enablement work fine in any combination:
 
 1. If the apiserver has the feature gate enabled and the kubelet doesn't, then the pod will show
-   that field and the kubelet will ignore it. Then, the pod is created without user namespaces.
+   that field and the kubelet will reject it (see more details about how it is rejected on section
+   "What specific metrics should inform a rollback?").
 2. If the apiserver has the feature gate disabled and the kubelet enabled, the pod won't show this
    field and therefore the kubelet won't act on a field that isn't shown. The pod is created without
    user namespaces.
@@ -688,8 +689,8 @@ The apiserver and kubelet feature gate enablement work fine in any combination:
 The kubelet can still create pods with user namespaces if static-pods are configured with
 pod.spec.hostUsers and has the feature gate enabled.
 
-If the kube-apiserver doesn't support the feature at all (< 1.25), a pod with userns will be
-rejected.
+If the kube-apiserver doesn't support the feature at all (< 1.25), the unknown field will be dropped and
+the pod will be created without a userns.
 
 If the kubelet doesn't support the feature (< 1.25), it will ignore the pod.spec.hostUsers field.
 
@@ -850,7 +851,8 @@ upgraded one, the pod will be accepted (if the apiserver is >= 1.25, rejected if
 If it is scheduled to a node where the kubelet has the feature flag activated
 and the node meets the requirements to use user namespaces, then the pod will be
 created with the namespace. If it is scheduled to a node that has the feature
-disabled, it will be created without the user namespace.
+disabled, it will be rejected (see more details about how it is rejected on
+section "What specific metrics should inform a rollback?").
 
 On a rollback, pods created while the feature was active (created with user
 namespaces) will have to be re-created to run without user namespaces. If those
