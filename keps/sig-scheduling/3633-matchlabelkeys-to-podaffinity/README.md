@@ -734,7 +734,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-No. But, the tests to confirm the behavior on switching the feature gate will be added.
+No. But, the tests to confirm the behavior on switching the feature gate will be added,
+https://github.com/kubernetes/kubernetes/issues/123156.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -770,8 +771,12 @@ that might indicate a serious problem?
 
 - A spike on metric `schedule_attempts_total{result="error|unschedulable"}` when pods using this feature are added.
 
-No need to check latency of the scheduler because the scheduler doesn't get changed at all for this feature.
-The only possibility is the bug in the Pod creation process in kube-apiserver and it results in some unintended scheduling.
+The only possibility of the bug is in the Pod creation process in kube-apiserver and it results in some unintended scheduling.
+
+Also, the scheduler's latency may also get increased 
+because of the additional calculation for the label selector made from `matchLabelKeys`/`mismatchLabelKeys`.
+But, it should be tiny increase because the scheduler doesn't get changed at all for this feature,
+and using `matchLabelKeys`/`mismatchLabelKeys` just equals to adding some Pods with additional label selectors to the cluster.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
