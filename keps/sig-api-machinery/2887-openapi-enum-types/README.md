@@ -484,7 +484,9 @@ there should be integration and e2e tests that validate present of enum fields.
 
 #### Stable
 
- - OpenAPI-level validation of enum types in built-in types removed in favor of that provided by the schema. 
+ - Built-in types that are tagged with enum are validated by Declarative Validation
+   (see [KEP-4153](https://kep.k8s.io/4153))
+ - Verify that this feature does not cause known breakage related to Declarative Validation.
 
 ### Upgrade / Downgrade Strategy
 Enable/disable the OpenAPIEnum feature gate.
