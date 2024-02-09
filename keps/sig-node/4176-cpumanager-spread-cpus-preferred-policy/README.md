@@ -197,7 +197,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Introduce a new CPU Manager Static Policy that spreads hyper threads across physical cores without considering NUMA.
+- Introduce a new CPU Manager Static Policy that spreads CPUs across physical cores without considering NUMA.
 - Enhance application performance by taking advantage of L2 Cache.
 
 ## Non-Goals
