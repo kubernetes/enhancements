@@ -59,7 +59,7 @@ should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
 
-# KEP-4176: A new Static Policy to spread Hyperthreads across physical CPUs to better utilize CPU Cache
+# KEP-4176: A new static policy to prefer allocating cores from different CPUs on the same socket
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
