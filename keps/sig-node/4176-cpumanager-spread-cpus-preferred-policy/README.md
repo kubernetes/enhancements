@@ -208,7 +208,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We propose to add a new `CPUManager` policy option called `spread-physical-cpus-preferred` to the static CPUManager policy. When enabled, this will trigger the CPUManager to try to allocate CPUs across physical nodes as much as possible.
+We propose to add a new `CPUManager` policy option called `distribute-cpus-across-cores` to the static CPUManager policy. When enabled, this will trigger the CPUManager to try to allocate CPUs across physical cores as much as possible. It will not prohibit a CPU from being allocated on a core that already has a CPU allocated, but it will only resort to doing so once there is no other option.
 
 ### User Stories (Optional)
 
