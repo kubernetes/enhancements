@@ -80,9 +80,8 @@ tags, and then generate with `hack/update-toc.sh`.
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1 Bytedance Database Performance Optimization](#story-1-bytedance-database-performance-optimization)

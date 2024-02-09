@@ -7,7 +7,7 @@ authors:
   - "@LastNight1997"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: "2023-09-04"
 reviewers:
   - "@ffromani"
