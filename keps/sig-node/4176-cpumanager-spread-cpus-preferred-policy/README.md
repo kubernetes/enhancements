@@ -221,7 +221,7 @@ bogged down.
 
 #### Story 1 Bytedance Database Performance Optimization
 
-We're running DB instances in Kubernetes and adopt default static policy in the past. While, we notice that the performance of DB instances is not stable. If an instance is under pressure, in original way, it was allocated two cpus from same physical core. However, an important pattern we notice is not always all instances are busy. After exploration, we find that the CPU cache is one bottleneck, once we spread hyper threads across physical cores, the busy instance can leverage more CPU cache and performance is improved a lot.
+We're running DB instances in Kubernetes and adopt default static policy in the past. While, we notice that the performance of DB instances is not stable. If an instance is under pressure, in original way, it was allocated two CPUs from same physical core. However, an important pattern we notice is not always all instances are busy. After exploration, we find that the CPU cache is one bottleneck, once we allocate CPUs across physical cores, the busy instance can leverage more CPU cache and performance is improved a lot.
 
 #### Story 2
 
