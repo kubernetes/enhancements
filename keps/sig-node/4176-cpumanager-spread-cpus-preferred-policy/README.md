@@ -200,7 +200,7 @@ know that this has succeeded?
 - Introduce a new CPU Manager Static Policy that spreads hyper threads across physical cores without considering NUMA.
 - Enhance application performance by taking advantage of L2 Cache.
 
-### Non-Goals
+## Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
