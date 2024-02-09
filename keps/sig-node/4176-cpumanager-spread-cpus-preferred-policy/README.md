@@ -175,7 +175,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-In this KEP, we propose a new CPU Manager Static Policy Option called `distribute-cores-across-cpus` to prefer allocating cores from different physical CPUs on the same socket. This new policy is analogous to the `distribute-cpus-across-numa` policy option in that it proposes to *spread* cores allocations out, rather than pack them together. The main difference being that this new policy spreads individual core allocations across CPUs, whereas the existing policy spreads them across NUMA nodes. Such a policy is useful, for example, if an application wants to avoid being a noisy neighbor with itself, but still take advantage of the L2 cache by running its application threads on the same socket.
+In this KEP, we propose a new CPU Manager Static Policy Option called `distribute-cpus-across-cores` to prefer allocating CPUs from different physical cores on the same socket. This new policy is analogous to the `distribute-cpus-across-numa` policy option in that it proposes to *spread* CPU allocations out, rather than pack them together. The main difference being that this new policy spreads individual CPU allocations across cores, whereas the existing policy spreads them across NUMA nodes. Such a policy is useful, for example, if an application wants to avoid being a noisy neighbor with itself, but still take advantage of the L2 cache by running its threads on the same socket.
 
 ## Goals
 
