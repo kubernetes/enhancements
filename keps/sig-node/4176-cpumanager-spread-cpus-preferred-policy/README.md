@@ -207,7 +207,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- This proposal does not aim to modify the existing CPU Manager Core Binding Policies. It focuses solely on introducing a new policy for spreading hyper threads across physical cores.
+- This proposal does not aim to modify the existing CPU Manager Core Binding Policies. It focuses solely on introducing a new policy for spreading CPUs across physical cores.
 - It does not address other resource allocation or management aspects within Kubernetes.
 
 
