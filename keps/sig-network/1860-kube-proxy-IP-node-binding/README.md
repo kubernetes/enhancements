@@ -191,18 +191,19 @@ Yes. It is tested by `TestUpdateServiceLoadBalancerStatus` in pkg/registry/core/
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-A rollout can fail in case the value of `ipMode` had been set to "Proxy" on a service
-and running workloads consuming this service fails to reach it because of some 
-extra hop, or some misconfiguration on the LoadBalancer. 
+A rollout can fail in case the new API is supported and consumed by CCM, 
+but not all nodes get kube-proxy updated, so part of the workloads on a node will 
+start sending the traffic to a LoadBalancer, while the others may still have the 
+loadbalancer IP configured on a node interface.
 
-A rollback can fail in case kube-proxy is not able to detect a rollback and re-add
-the LoadBalancer address back to the interface.
+In case of a rollback, kube-proxy will also rollback to the default behavior, re-adding
+the LoadBalancer interface. This can fail for workloads that may be already relying
+on the new behavior (eg. sending traffic to the LoadBalancer expecting some additional
+features, like PROXY and TLS Termination as per the Motivations section).
 
 ###### What specific metrics should inform a rollback?
 
-Workloads consuming a service configured to use the new `ipMode` and that starts
-to fail to reach the service, or an increase on the requests time are metrics that 
-should inform a rollback
+N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -216,20 +217,19 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-As this is a low level operation, to check if it is working an operator should:
-* Verify a service of type=LoadBalancer and this feature enabled
-* Check and confirm that the IPs set on `.status.loadBalancer.ingress.ip` are not set
-on any interface
+Checking if the field `.status.loadBalancer.ingress.ipMode` is set to `Proxy`
 
 ###### How can someone using this feature know that it is working for their instance?
 
-- [ ] Events
-  - Event Reason:
 - [X] API .status
   - Condition name:
   - Other field: `.status.loadBalancer.ingress.ipMode` not null
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other:
+  - Details: To detect if the traffic is being directed to the LoadBalancer and not 
+    directly to another node, the user will need to rely on the LoadBalancer logs, 
+    and the destination workload logs to check if the traffic is coming from one Pod
+    to the other or from the LoadBalancer.
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -238,13 +238,13 @@ type LoadBalancer and the feature enabled.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [X] Other (treat as last resort)
-  - Details: Workload/Application instrumentation containing the error rate and 
-  latency of calls against other services on this cluster
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+* On kube-proxy, a metric containing the count of IP programming vs service type would be useful
+to determine if the feature is being used, and if there is any drift between nodes
+  * TBD: Should this metric be implemented?
 
 ### Dependencies
 
@@ -252,13 +252,12 @@ N/A
 
 - cloud controller manager /  LoadBalancer controller
   - LoadBalancer controller should set the right .status field for `ipMode`
-    - In case of this feature outage, the traffic may still be routed using the `VIP` mode
-- kube-proxy
-  - Network interface IP addressprogramming
-    - In case of this feature outage, network interfaces on the node may still keep 
-    adding the LoadBalancer IP, that may cause wrong traffic routing
-    - This dependency doesn't happen on clusters that uses CNI that replaces kube-proxy. 
-    The CNIs should implement this feature their own, in this case.
+    - In case of this feature outage nothing happens, as LoadBalancers will be 
+    already out of sync with services in case of CCM being crashed
+- kube-proxy or other Service Proxy that implements this feature
+  - Network interface IP address programming
+    - In case of this feature outage, the user will get the same result/behavior as 
+    if the `ipMode` field has not been set.
 
 ### Scalability
 
@@ -274,13 +273,11 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-- API call type - Patch
-- Estimated throughput - 1 per service creation/reconciliation
-- originating component - cloud controller manager / LoadBalancer controller
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
