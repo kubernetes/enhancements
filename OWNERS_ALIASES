@@ -225,4 +225,8 @@ aliases:
   provider-vmware:
     - cantbewong
     - frapposelli
+  sig-node-tech-leads:
+    - dchen1107
+    - derekwaynecarr
+    - mrunalp
 ## END CUSTOM CONTENT
