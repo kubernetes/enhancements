@@ -10,7 +10,7 @@ owning-sig: sig-architecture
 participating-sigs:
   - sig-api-machinery
   - wg-lts
-status: provisional
+status: implementable
 creation-date: 2023-12-01
 reviewers:
   - "@deads2k"
