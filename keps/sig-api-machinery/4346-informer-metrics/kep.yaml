@@ -7,9 +7,12 @@ participating-sigs: []
 status: provisional
 creation-date: 2023-11-27
 reviewers:
-  - TBD
+  - "@deads2k"
+  - "@logicalhan"
+  - "@aojea"
+  - "@dgrisonnet"
 approvers:
-  - TBD
+  - "@deads2k"
 
 see-also: []
 replaces: []
