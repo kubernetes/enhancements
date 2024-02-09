@@ -177,21 +177,7 @@ updates.
 
 In this KEP, we propose a new CPU Manager Static Policy Option called `distribute-cores-across-cpus` to prefer allocating cores from different physical CPUs on the same socket. This new policy is analogous to the `distribute-cpus-across-numa` policy option in that it proposes to *spread* cores allocations out, rather than pack them together. The main difference being that this new policy spreads individual core allocations across CPUs, whereas the existing policy spreads them across NUMA nodes. Such a policy is useful, for example, if an application wants to avoid being a noisy neighbor with itself, but still take advantage of the L2 cache by running its application threads on the same socket.
 
-## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
-`full-pcpus-only` was introduced to resolve the problem that different containers sharing the same physical cores which leads noisy neighbor issue. `distribute-cpus-across-numa` distributed cpus across NUMA to make sure no single worker suffers from NUMA effects more than any other, improving the overall performance of these types of applications. These two and default behavior can not meet the requirement of some applications which need to take advantage of L2 Cache. In that case, we need to spread hyper threads across physical cores, while NUMA is not a important factor. In such cases, the assumption is that the single physical core with two applications won't be always busy. So we can take advantage of CPU Cache to improve the performance of these applications. Otherwise, it still have the noisy neighbor issue.
-
-
-### Goals
+## Goals
 
 <!--
 List the specific goals of the KEP. What is it trying to achieve? How will we
