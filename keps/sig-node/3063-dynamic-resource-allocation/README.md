@@ -104,11 +104,14 @@ SIG Architecture for cross-cutting KEPs).
     - [core](#core)
   - [kube-controller-manager](#kube-controller-manager)
   - [kube-scheduler](#kube-scheduler)
+    - [EventsToRegister](#eventstoregister)
+    - [PreEnqueue](#preenqueue)
     - [Pre-filter](#pre-filter)
     - [Filter](#filter)
     - [Post-filter](#post-filter)
     - [Pre-score](#pre-score)
     - [Reserve](#reserve)
+    - [PreBind](#prebind)
     - [Unreserve](#unreserve)
   - [Cluster Autoscaler](#cluster-autoscaler)
   - [kubelet](#kubelet)
@@ -138,12 +141,18 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Semantic Parameters instead of PodSchedulingContext](#semantic-parameters-instead-of-podschedulingcontext)
   - [ResourceClaimTemplate](#resourceclaimtemplate)
   - [Reusing volume support as-is](#reusing-volume-support-as-is)
   - [Extend volume support](#extend-volume-support)
   - [Extend Device Plugins](#extend-device-plugins)
   - [Webhooks instead of ResourceClaim updates](#webhooks-instead-of-resourceclaim-updates)
   - [ResourceDriver](#resourcedriver)
+  - [Complex sharing of ResourceClaim](#complex-sharing-of-resourceclaim)
+  - [Improving scheduling performance](#improving-scheduling-performance)
+    - [Optimize for network-attached resources](#optimize-for-network-attached-resources)
+    - [Moving blocking API calls into goroutines](#moving-blocking-api-calls-into-goroutines)
+    - [RPC calls instead of <code>PodSchedulingContext</code>](#rpc-calls-instead-of-podschedulingcontext)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -655,8 +664,8 @@ allocation also may turn out to be insufficient. Some risks are:
 - Network-attached resources may have additional constraints that are not
   captured yet (like limited number of nodes that they can be attached to).
 
-- Cluster autoscaling will not work as expected unless the autoscaler and
-  resource drivers get extended to support it.
+- Cluster autoscaling will not work as expected unless the DRA driver
+  uses [semantic parameters](https://github.com/kubernetes/enhancements/issues/4381).
 
 All of these risks will have to be evaluated by gathering feedback from users
 and resource driver developers.
@@ -721,8 +730,8 @@ For a resource driver the following components are needed:
 - *Resource kubelet plugin*: a component which cooperates with kubelet to prepare
   the usage of the resource on a node.
 
-An utility library for resource drivers will be developed outside of Kubernetes
-and does not have to be used by drivers, therefore it is not described further
+A [utility library](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation) for resource drivers was developed.
+It does not have to be used by drivers, therefore it is not described further
 in this KEP.
 
 ### State and communication
@@ -961,14 +970,6 @@ arbitrarily. Some combinations are more useful than others:
 ```
 
 ### Coordinating resource allocation through the scheduler
-
-<<[UNRESOLVED pohly]>>
-The entire scheduling section is tentative. Key opens:
-- Support arbitrary combinations of user- vs. Kubernetes-managed ResourceClaims
-  and immediate vs. late allocation?
-  https://github.com/kubernetes/enhancements/pull/3064#discussion_r901948474
-<<[/UNRESOLVED]>>
-
 
 For immediate allocation, scheduling Pods is simple because the
 resource is already allocated and determines the nodes on which the
@@ -1399,16 +1400,6 @@ type AllocationResult struct {
 	// than one consumer at a time.
 	// +optional
 	Shareable bool
-
-	<<[UNRESOLVED pohly]>>
-	We will have to discuss use cases and real resource drivers that
-	support sharing before deciding on a) which limit is useful and
-	b) whether we need a different API that supports an unlimited
-	number of users.
-
-	Any solution that handles reservations differently will have to
-	be very careful about race conditions.
-	<<[/UNRESOLVED]>>
 }
 
 // AllocationResultResourceHandlesMaxSize represents the maximum number of
@@ -1829,7 +1820,38 @@ notices this, the current scheduling attempt for the pod must stop and the pod
 needs to be put back into the work queue. It then gets retried whenever a
 ResourceClaim gets added or modified.
 
-The following extension points are implemented in the new claim plugin:
+The following extension points are implemented in the new claim plugin. Except
+for some unlikely edge cases (see below) there are no API calls during the main
+scheduling cycle. Instead, the plugin collects information and updates the
+cluster in the separate goroutine which invokes PreBind.
+
+
+#### EventsToRegister
+
+This registers all cluster events that might make an unschedulable pod
+schedulable, like creating a claim that the pod needs or finishing the
+allocation of a claim.
+
+[Queuing hints](https://github.com/kubernetes/enhancements/issues/4247) are
+supported. These are callbacks that can limit the effect of a cluster event to
+specific pods. For example, allocating a claim only makes those pods
+scheduleable which reference the claim. There is no need to try scheduling a pod
+which waits for some other claim. Hints are also used to trigger the next
+scheduling cycle for a pod immediately when some expected and require event
+like "drivers have provided information" occurs, instead of forcing the pod to
+go through the backoff queue and the usually 5 second long delay associated
+with that.
+
+Queuing hints are an optional feature of the scheduler, with (as of Kubernetes
+1.29) their own `SchedulerQueueingHints` feature gate that defaults to
+off. When turned off, performance of scheduling pods with resource claims is
+slower compared to a cluster configuration where they are turned on.
+
+#### PreEnqueue
+
+This checks whether all claims referenced by a pod exist. If they don't,
+scheduling the pod has to wait until the kube-controller-manager or user create
+the claims.
 
 #### Pre-filter
 
@@ -1889,6 +1911,12 @@ At the moment, the claim plugin has no information that might enable it to
 prioritize which resource to deallocate first. Future extensions of this KEP
 might attempt to improve this.
 
+This is currently using blocking API calls. It's quite rare because this
+situation can only arise when there are multiple claims per pod and allocation
+for one of them fails despite all drivers agreeing that a node should be
+suitable, or when reusing a claim for multiple pods (not a common use case) and
+the original node became unusable for the next pod.
+
 #### Pre-score
 
 This is passed a list of nodes that have passed filtering by the claim
@@ -1919,9 +1947,21 @@ of its ResourceClaims. The driver can and should already have added
 the Pod when specifically allocating the claim for it, so it may
 be possible to skip this update.
 
+All the PodSchedulingContext and ResourceClaim updates are recorded in the
+plugin state. They will be written to the cluster during PreBind.
+
 If some resources are not allocated yet or reserving an allocated resource
 fails, the scheduling attempt needs to be aborted and retried at a later time
-or when the statuses change.
+or when the statuses change. The Reserve call itself never fails. If resources
+are not currently available, that information is recorded in the plugin state
+and will cause the PreBind call to fail instead.
+
+#### PreBind
+
+This is called in a separate goroutine. The plugin now checks all the
+information gathered earlier and updates the cluster accordingly. If some
+claims are not allocated or not reserved, PreBind fails and the pod must be
+retried.
 
 #### Unreserve
 
@@ -1941,86 +1981,30 @@ but eventually one of them will. Not giving up the reservations would lead to a
 permanent deadlock that somehow would have to be detected and resolved to make
 progress.
 
+Unreserve is called in two scenarios:
+- In the main goroutine when scheduling a pod has failed: in that case the plugin's
+  Reserve call hasn't actually changed the claim status yet, so there is nothing
+  that needs to be rolled back.
+- After binding has failed: this runs in a goroutine, so reverting the
+  `claim.status.reservedFor` with a blocking call is acceptable.
+
 ### Cluster Autoscaler
 
 When [Cluster
 Autoscaler](https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler#cluster-autoscaler)
-encounters a pod that uses a resource claim, the autoscaler needs assistance by
-the resource driver for that claim to make the right decisions. Without that
-assistance, the autoscaler might scale up the wrong node group (resource is
-provided by nodes in another group) or scale up unnecessarily (resource is
-network-attached and adding nodes won't help).
+encounters a pod that uses a resource claim for node-local resources, it needs
+to understand the parameters for the claim and available capacity in order
+to simulate the effect of allocating claims as part of scheduling and of
+creating or removing nodes.
 
-At the start of a scale up or scale down cycle, autoscaler takes a snapshot of
-the current cluster state. Then autoscaler determines whether a real or
-fictional node fits a pod by calling the pre-filter and filter extension points
-of scheduler plugins. If a pod fits a node, the snapshot is updated by calling
-[NodeInfo.AddPod](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/framework/types.go#L620-L623). This
-influences further checks for other pending pods.
+This is not possible with opaque parameters as described in this KEP. If a DRA
+driver developer wants to support Cluster Autoscaler, they have to use semantic
+parameters. Semantic parameters are an extension of this KEP that is defined in
+[KEP #4381](https://github.com/kubernetes/enhancements/issues/4381).
 
-To support the custom allocation logic that a vendor uses for its resources,
-the autoscaler needs an extension mechanism similar to the [scheduler
-extender](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/framework/extender.go#L24-L72). The
-existing scheduler extender API has to be extended to include methods that
-would only get called by the autoscaler, like starting a cycle. Instead of
-adding these methods to the scheduler framework, autoscaler can define its own
-interface that inherits from the framework:
-
-```
-import "k8s.io/pkg/scheduler/framework"
-
-type Extender interface {
-    framework.Extender
-
-    // NodeSelected gets called when the autoscaler determined that
-    // a pod should run on a node.
-    NodeSelected(pod *v1.Pod, node *v1.Node) error
-
-    // NodeReady gets called by the autoscaler to check whether
-    // a new node is fully initialized.
-    NodeReady(nodeName string) (bool, error)
-}
-```
-
-The underlying implementation can either be compiled into a custom autoscaler
-binary by cloud provider who controls the entire cluster or use HTTP similar to
-the [HTTP
-extender](https://github.com/kubernetes/kubernetes/blob/7e3c98fd303359cb9f79dfc691da733a6ca2a6e3/pkg/scheduler/extender.go#L41-L53).
-As an initial step, configuring such HTTP webhooks for different resource
-drivers can be added to the configuration file defined by the `--cloud-config`
-configuration file with a common field that gets added in all cloud provider
-configs or a new `--config` parameter can be added. Later, dynamically
-discovering deployed webhooks can be added through an autoscaler CRD.
-
-In contrast to the in-tree HTTP extender implementation, the one for autoscaler
-must be session oriented: when creating the extender for a cycle, a new "start"
-verb needs to be invoked. When this is called in a resource driver controller
-webhook, it needs to take a snapshot of the relevant state and return a session
-ID. This session ID must be included in all following HTTP invocations as a
-"session" header. Ensuring that a "stop" verb gets called reliably would
-complicate the autoscaler. Instead, the webhook should support a small number
-of recent session and garbage-collect older ones.
-
-The existing `extenderv1.ExtenderArgs` and `extenderv1.ExtenderFilterResult`
-API can be used for the "filter" operation. The extender can be added to the
-list of active scheduler plugins because it implements the plugin interface.
-Because filter operations may involve fictional nodes, the full `Node` objects
-instead of just the node names must be passed. For fictional nodes, the
-resource driver must determine based on labels which resources it can provide
-on such a node. New APIs are needed for `NodeSelected` and `NodeReady`.
-
-`NodeReady` is needed to solve one particular problem: when a new node first
-starts up, it may be ready to run pods, but the pod from a resource driver's
-DaemonSet may still be starting up. If the resource driver controller needs
-information from such a pod, then it will not be able to filter
-correctly. Similar to how extended resources are handled, the autoscaler then
-first needs to wait until the extender also considers the node to be ready.
-
-Such extenders completely replace the generic scheduler resource plugin. The
-generic plugin would be able to filter out nodes based on already allocated
-resources. But because it is stateless, it would not handle the use count
-restrictions correctly when multiple pods are pending and reference the same
-resource.
+Semantic parameters are not necessary for network-attached resources because
+adding or removing nodes doesn't change their availability and thus Cluster
+Autoscaler does not need to understand their parameters.
 
 ### kubelet
 
@@ -2426,13 +2410,23 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-The existing integration tests for kube-scheduler and kubelet will get extended
-to cover scenarios involving dynamic resources. A new integration test will get
-added for the dynamic resource controller.
+The existing [integration tests for kube-scheduler which measure
+performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
+were extended to also [cover
+DRA](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/config/performance-config.yaml#L717-L779)
+and to runs as [correctness
+tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
+as part of the normal Kubernetes "integration" jobs. That also covers [the
+dynamic resource
+controller](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/util.go#L135-L139).
+
+kubelet were extended to cover scenarios involving dynamic resources.
 
 For beta:
 
-- <test>: <link to test coverage>
+- kube-scheduler, kube-controller-manager: http://perf-dash.k8s.io/#/, [`k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf`](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
+- kubelet: ...
+
 
 ##### e2e tests
 
@@ -2447,12 +2441,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 End-to-end testing depends on a working resource driver and a container runtime
-with CDI support. A mock driver will be developed in parallel to developing the
-code in Kubernetes, but as it will depend on the new APIs, we have to get those
-merged first.
+with CDI support. A [test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
+was developed in parallel to developing the
+code in Kubernetes.
 
-Such a mock driver could be as simple as taking parameters from ResourceClass
-and ResourceClaim and turning them into environment variables that then get
+That test driver simply takes parameters from ResourceClass
+and ResourceClaim and turns them into environment variables that then get
 checked inside containers. Tests for different behavior of an driver in various
 scenarios can be simulated by running the control-plane part of it in the E2E
 test itself. For interaction with kubelet, proxying of the gRPC interface can
@@ -2465,20 +2459,19 @@ All tests that don't involve actually running a Pod can become part of
 conformance testing. Those tests that run Pods cannot be because CDI support in
 runtimes is not required.
 
-Once we have end-to-end tests, at least two Prow jobs will be defined:
-- A pre-merge job that will be required and run only for the in-tree code of
-  this KEP (`optional: false`, `run_if_changed` set, `always_run: false`).
-- A periodic job that runs the same tests to determine stability and detect
-  unexpected regressions.
-
 For beta:
-- <test>: <link to test coverage>
+- pre-merge with kind (optional, triggered for code which has an impact on DRA): https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-kind-dra
+- periodic with kind: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra
+- pre-merge with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-node-dra
+- periodic with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-node-e2e-crio-dra
 
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
 
-- Implement integration with Cluster Autoscaler
+- In normal scenarios, scheduling pods with claims must not block scheduling of
+  other pods by doing blocking API calls
+- Implement integration with Cluster Autoscaler through semantic parameters
 - Gather feedback from developers and surveys
 - Positive acknowledgment from 3 would-be implementors of a resource driver,
   from a diversity of companies or projects
@@ -2602,15 +2595,23 @@ There will be pods which have a non-empty PodSpec.ResourceClaims field and Resou
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 For kube-controller-manager, metrics similar to the generic ephemeral volume
-controller will be added:
+controller [were added](https://github.com/kubernetes/kubernetes/blob/163553bbe0a6746e7719380e187085cf5441dfde/pkg/controller/resourceclaim/metrics/metrics.go#L32-L47):
 
 - [X] Metrics
   - Metric name: `resource_controller_create_total`
   - Metric name: `resource_controller_create_failures_total`
   - Metric name: `workqueue` with `name="resource_claim"`
 
-For kube-scheduler and kubelet, the existing metrics for handling Pods will be
-used.
+For kube-scheduler and kubelet, existing metrics for handling Pods already
+cover most aspects. For example, in the scheduler the
+["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/6f5fa2eb2f4dc731243b00f7e781e95589b5621f/pkg/scheduler/metrics/metrics.go#L200-L206)
+metric will call out pods that are currently unschedulable because of the
+`DynamicResources` plugin.
+
+For the communication between scheduler and controller, the apiserver metrics
+about API calls (e.g. `request_total`, `request_duration_seconds`) for the
+`podschedulingcontexts` and `resourceclaims` resources provide insights into
+the amount of requests and how long they are taking.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
@@ -2729,7 +2730,65 @@ already received all the relevant updates (Pod, ResourceClaim, etc.).
 
 ###### What are other known failure modes?
 
-To be added for beta.
+- DRA driver does not or cannot allocate a resource claim.
+
+  - Detection: The primary mechanism is through vendors-provided monitoring for
+    their driver. That monitor needs to include health of the driver, availability
+    of the underlying resource, etc. The common helper code for DRA drivers
+    posts events for a ResourceClaim when an allocation attempt fails.
+
+    When pods fail to get scheduled, kube-scheduler reports that through events
+    and pod status. For DRA, that includes "waiting for resource driver to
+    provide information" (node not selected yet) and "waiting for resource
+    driver to allocate resource" (node has been selected). The
+    ["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/9fca4ec44afad4775c877971036b436eef1a1759/pkg/scheduler/metrics/metrics.go#L200-L206)
+    metric will have pods counted under the "dynamicresources" plugin label.
+
+    To troubleshoot, "kubectl describe" can be used on (in this order) Pod,
+    ResourceClaim, PodSchedulingContext.
+
+  - Mitigations: This depends on the vendor of the DRA driver.
+
+  - Diagnostics: In kube-scheduler, -v=4 enables simple progress reporting
+    in the "dynamicresources" plugin. -v=5 provides more information about
+    each plugin method. The special status results mentioned above also get
+    logged.
+
+  - Testing: E2E testing covers various scenarios that involve waiting
+    for a DRA driver. This also simulates partial allocation of node-local
+    resources in one driver and then failing to allocate the remaining
+    resources in another driver (the "need to deallocate" fallback).
+
+- A Pod gets scheduled without allocating resources.
+
+  - Detection: The Pod either fails to start (when kubelet has DRA
+    enabled) or gets started without the resources (when kubelet doesn't
+    have DRA enabled), which then will fail in an application specific
+    way.
+
+  - Mitigations: DRA must get enabled properly in kubelet and kube-controller-manager.
+    Then kube-controller-manager will try to allocate and reserve resources for
+    already scheduled pods. To prevent this from happening for new pods, DRA
+    must get enabled in kube-scheduler.
+
+  - Diagnostics: kubelet will log pods without allocated resources as errors
+    and emit events for them.
+
+  - Testing: An E2E test covers the expected behavior of kubelet and
+    kube-controller-manager by creating a pod with `spec.nodeName` already set.
+
+- A DRA driver kubelet plugin fails to prepare resources.
+
+  - Detection: The Pod fails to start after being scheduled.
+
+  - Mitigations: This depends on the specific DRA driver and has to be documented
+    by vendors.
+
+  - Diagnostics: kubelet will log pods with such errors and emit events for them.
+
+  - Testing: An E2E test covers the expected retry mechanism in kubelet when
+    `NodePrepareResources` fails intermittently.
+
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -2746,20 +2805,20 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-To be added for beta.
+Performance depends on a large extend on how individual DRA drivers are
+implemented. Vendors will have to provide their own SLOs and troubleshooting
+instructions.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- Kubernetes 1.25: KEP accepted as "implementable".
+- Kubernetes 1.26: Code merged as "alpha".
+- Kubernetes 1.27: API breaks (batching of NodePrepareResource in kubelet API,
+  AllocationResult in ResourceClaim status can provide results for multiple
+  drivers).
+- Kubernetes 1.28: API break (ResourceClaim names for claims created from
+  a template are generated instead of deterministic), scheduler performance
+  enhancements (no more backoff delays).
 
 ## Drawbacks
 
@@ -2768,6 +2827,19 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### Semantic Parameters instead of PodSchedulingContext
+
+When a DRA driver uses semantic parameters, there is no need for a DRA driver controller
+which allocates the claim
+and no need for communication between scheduler and such a controller. The
+PodSchedulingContext object and the associated support in the scheduler then
+aren't needed. Once semantic parameters are mature enough and confirmed to be
+sufficient for DRA drivers, it might become possible to remove the
+PodSchedulingContext API from this KEP.
+
+It might still be needed for other drivers and use cases, which then can be
+discussed in a new KEP which focuses specifically on those use cases.
 
 ### ResourceClaimTemplate
 
@@ -2894,6 +2966,52 @@ type ResourceDriverFeature struct {
 }
 ```
 
+### Complex sharing of ResourceClaim
+
+At the moment, the allocation result marks as a claim as either "shareable" by
+an unlimited number of consumers or "not shareable". More complex scenarios
+might be useful like "may be shared by a certain number of consumers", but so
+far such use cases have not come up yet. If they do, the `AllocationResult` can
+be extended with new fields as defined by a follow-up KEP.
+
+### Improving scheduling performance
+
+Some enhancements are possible which haven't been implemented yet because it is
+unclear how important they would be in practice. All of the following ideas
+could still be added later as they don't conflict with the underlying design,
+either as part of this KEP or in follow-up KEPs.
+
+#### Optimize for network-attached resources
+
+When a network-attached resource is available on all nodes in a cluster, the
+driver will never mark any nodes as unsuitable. If all claims for a pod fall
+into that category, the scheduler a) does not need to wait for information and
+b) does not need to publish "potential nodes".
+
+The `ResourceClass` could be extended with a `AvailableForNodes
+*core.NodeSelector`. This can be a selector that matches all nodes or a
+subset. Either way, if a potential node matches this selector, the scheduler
+knows that claims using this class can be allocated and can do the optimization
+outlined above.
+
+#### Moving blocking API calls into goroutines
+
+This [is being
+discussed](https://github.com/kubernetes/kubernetes/issues/120502) and has been
+[partially
+implemented](https://github.com/kubernetes/kubernetes/pull/120963). That
+implementation made the scheduler framework more complex, so [the
+conclusion](https://kubernetes.slack.com/archives/C09TP78DV/p1696307377064469?thread_ts=1696246271.825109&cid=C09TP78DV)
+was that using blocking calls is the lesser evil until user feedback indicates
+that improvements are really needed.
+
+#### RPC calls instead of `PodSchedulingContext`
+
+The current design is not making it a hard requirement that admins change the
+scheduler configuration to enable communication between scheduler and DRA
+drivers. For scenarios where admins and vendors are willing to invest more
+effort and doing so would provide performance benefits, a communication path
+similar to scheduler extenders could be added.
 
 ## Infrastructure Needed
 
