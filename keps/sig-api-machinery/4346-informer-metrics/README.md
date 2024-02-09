@@ -237,8 +237,8 @@ nitty-gritty.
 
 - Introduce the informer metrics struct `informerMetrics` contains queue/eventHandler metrics
 - Introduce the informer metrics provider interface `informerMetricsProvider`, implement in `k8s.io/component-base/metrics`
-- Add an environment to enable informer metrics
 - Revert the deleted `reflectorMetrics`
+- Add a feature gate `InformerMetrics` to enable informer/reflector metrics
 
 ### User Stories (Optional)
 
@@ -361,20 +361,19 @@ Each reflector metrics contains 3 counter, 4 summary and 1 gauge.
 ```
 type reflectorMetrics struct {
 	numberOfLists       CounterMetric
-	listDuration        SummaryMetric
-	numberOfItemsInList SummaryMetric
+	listDuration        HistogramMetric
+	numberOfItemsInList HistogramMetric
 
 	numberOfWatches      CounterMetric
 	numberOfShortWatches CounterMetric
-	watchDuration        SummaryMetric
-	numberOfItemsInWatch SummaryMetric
+	watchDuration        HistogramMetric
+	numberOfItemsInWatch HistogramMetric
 
 	lastResourceVersion GaugeMetric
 }
 ```
-According to kubernetes/kubernetes#73587, the memory leak is caused by summary. Every summary contains `AgeBuckets`of buckets which contains an array with 500 quantile.Sample. Reduce summary `ageBuckets` to mitigate memory usage. 
+According to kubernetes/kubernetes#73587, the memory leak is caused by summary. It'd be better to use histograms instead. HistogramMetrics are aggregatable and it will reduce memory usage.
 
-The listDuration/numberOfItemsInList/watchDuration/numberOfItemsInWatch will not `Observe` very frequently. According to [prometheus client](https://github.com/prometheus/client_golang/commit/15c9ded5a3b7ae08886e51ba26a97270ca23fecd#diff-4c7dc681b10f8e28a3d6a8cfd115c37cc473e6fc9b0949bd6b41eaedbdead438R132), it is enough to set `ageBuckets` to 1.
 
 ### Remove Metrics 
 When the informers and reflectors stopped, the reference metrics will be removed.
@@ -446,8 +445,11 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
-When the informers and reflectors are stopped, ensure the reference metrics will be removed.
+We will have extensive integration testing of the union code in the
+`test/integration/metrics` package.
+
+- When enabling `InformerMetrics` feature gate, ensure the metrics will be exposed. Ensure the metrics subsystem/label/granularity is correct.
+- When the informers and reflectors are stopped, ensure the reference metrics will be removed.
 
 ##### e2e tests
 
