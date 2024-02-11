@@ -428,6 +428,9 @@ extending the production code to implement this enhancement.
 
 - `<package>`: `<date>` - `<test coverage>`
 
+- Unit tests to ensure that the metrics output meets expectations.
+- Unit tests to ensure that the metrics deletion is functioning properly.
+
 ##### Integration tests
 
 <!--
@@ -529,6 +532,21 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature gate flag
+- Add related integration and unit tests to ensure functionality and make sure there is no memory leak in 
+existing behavior
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Work on feedback and add additional tests as needed
+
+#### GA
+
+- Decision on GA will be made based on beta feedback
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -542,6 +560,8 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+N/A
 
 ### Version Skew Strategy
 
@@ -602,16 +622,10 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
+- [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: InformerMetrics
   - Components depending on the feature gate: 
     - components via client-go library
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -655,7 +669,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-For now, there is no tests for feature enablement/disablement. The unit tests will be added.
+For now, there is no tests for feature enablement/disablement. The unit / integration tests will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -713,6 +727,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+- [x] Informer / Reflector (e.g., `lists_total`, `watches_total`) metrics returned by the operator are populated
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -724,13 +740,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
+- [X] Other (treat as last resort)
   - Details:
+    - The following metrics are available when `InformerMetrics` is enabled:
+      - lists_total
+      - watches_total
+      - last_resource_version
+      - etc.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -749,18 +765,19 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+The feature gate will increase memory usage. The memory usage should not continuously grow.
+The informerMetrics / eventHandlerMetrics / reflectorMetrics memory consumption is in a stable state.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name: Memory usage
   - [Optional] Aggregation method:
   - Components exposing the metric: Operating System/golang pprof
-- [ ] Other (treat as last resort)
-  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -768,6 +785,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Not at the moment.
 
 ### Dependencies
 
