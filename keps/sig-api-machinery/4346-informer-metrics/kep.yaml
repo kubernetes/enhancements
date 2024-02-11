@@ -4,7 +4,7 @@ authors:
   - "@chenk008"
 owning-sig: api-machinery
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2023-11-27
 reviewers:
   - "@deads2k"
