@@ -976,6 +976,14 @@ a low number of ClusterTrustBundle objects that does not scale with the number
 of nodes or workloads in the cluster, although individual ClusterTrustBundle
 objects could be large.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+When a user specifies a ClusterTrustBundle projected volume source, this places several files and links within the projected volume (one main file, but the atomic update package also places symlinked folders with versioned copies of the file).
+
+On Linux, each projected volume is an independent tmpfs filesystem, so this is unlikely to lead to overall exhaustion of inodes on the node.
+
+On Windows, "tmpfs" volumes appear to be translated to plain folders in the host filesystem, so there may be a risk of exhausting some node-wide filesystem resource.  However, this would still require the user to create many pods, each with thousands or more projected volume sources.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
