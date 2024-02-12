@@ -19,7 +19,8 @@
 
 ## Summary
 
-This proposal is to design and implement the KNI [Kubernetes Networking Interface] or better known as Kubernetes Networking reImagined. KNI will create a Network resource and provide an API that will provide network status, availability, how to attach a pod to a network, detach the pod from the network and update a pods network.  
+KNI or Kubernetes Networking Interface, is an effort to take a second look at Kubernetes networking and evaluate what are the pain points, and what can we improve. At its core, KNI will be a foundational network API specific for Kubernetes that will provide flexibility and extensibility to solve basic and the most advanced and opinionated networking use cases.  
+ 
 
 ## Motivation
 
