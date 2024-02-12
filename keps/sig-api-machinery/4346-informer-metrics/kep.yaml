@@ -2,7 +2,7 @@ title: Add Informer Metrics
 kep-number: 4346
 authors:
   - "@chenk008"
-owning-sig: api-machinery
+owning-sig: sig-api-machinery
 participating-sigs: []
 status: implementable
 creation-date: 2023-11-27
