@@ -233,8 +233,8 @@ Checking if the field `.status.loadBalancer.ingress.ipMode` is set to `Proxy`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-No increase of error rate when a workload of a cluster is targeting a service of 
-type LoadBalancer and the feature enabled.
+The quality of service for clouds using this feature is the same as the existing 
+quality of service for clouds that don't need this feature
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 

@@ -14,9 +14,9 @@ approvers:
   - "@thockin"
   - "@andrewsykim"
 
-stage: "alpha"
+stage: "beta"
 
-latest-milestone: "v1.29"
+latest-milestone: "v1.30"
 
 milestone:
   alpha: "v1.29"
