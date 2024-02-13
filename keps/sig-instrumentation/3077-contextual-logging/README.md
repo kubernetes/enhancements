@@ -1063,6 +1063,10 @@ become slightly worse.
 Initial micro benchmarking shows that function call overhead increases. This is
 not expected to be measurable during realistic workloads.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
