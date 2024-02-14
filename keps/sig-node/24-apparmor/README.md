@@ -616,6 +616,12 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. AppArmor profiles are managed outside of Kubernetes, and without this feature enabled the
+runtime default AppArmor profile is still enforced on non-privileged containers (for AppArmor
+enabled hosts).
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
