@@ -173,7 +173,7 @@ These tests will be added:
 
 #### GA
 
-- Ensure that the time range of the beta version can cover the version skew of all components.
+- Ensure that the time range from Alpha to GA version can cover the version skew of all components.
 - Add troubleshooting details on how to deal with incompatible kubelet/CRI implementations based on issues found in beta releases.
 
 ### Upgrade / Downgrade Strategy
