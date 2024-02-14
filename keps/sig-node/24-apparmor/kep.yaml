@@ -15,9 +15,9 @@ creation-date: 2020-01-10
 reviewers:
   - "@liggitt"
   - "@pjbgf"
-  - "@dchen1107"
+  - "@sftim"
+  - "@SergeyKanzhelev"
 approvers:
-  - "@liggitt"
   - "@dchen1107"
 see-also:
   - "/keps/sig-node/135-seccomp/README.md"
