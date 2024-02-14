@@ -191,14 +191,13 @@ Yes. It is tested by `TestUpdateServiceLoadBalancerStatus` in pkg/registry/core/
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-A rollout can fail in case the new API is supported and consumed by CCM, 
-but not all nodes get kube-proxy updated, so part of the workloads on a node will 
-start sending the traffic to a LoadBalancer, while the others may still have the 
-loadbalancer IP configured on a node interface.
+As the rollout will enable a feature not being used yet, there is no possible failure
+scenario as this feature will then need to be also enabled by the cloud provider on
+the services resources.
 
-In case of a rollback, kube-proxy will also rollback to the default behavior, re-adding
-the LoadBalancer interface. This can fail for workloads that may be already relying
-on the new behavior (eg. sending traffic to the LoadBalancer expecting some additional
+In case of a rollback, kube-proxy will also rollback to the default behavior, switching 
+back to VIP mode. This can fail for workloads that may be already relying on the 
+new behavior (eg. sending traffic to the LoadBalancer expecting some additional
 features, like PROXY and TLS Termination as per the Motivations section).
 
 ###### What specific metrics should inform a rollback?
@@ -217,7 +216,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Checking if the field `.status.loadBalancer.ingress.ipMode` is set to `Proxy`
+If the LB IP works correctly from pods, then the feature is working
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -251,13 +250,10 @@ to determine if the feature is being used, and if there is any drift between nod
 ###### Does this feature depend on any specific services running in the cluster?
 
 - cloud controller manager /  LoadBalancer controller
-  - LoadBalancer controller should set the right .status field for `ipMode`
-    - In case of this feature outage nothing happens, as LoadBalancers will be 
-    already out of sync with services in case of CCM being crashed
+  - If there is an outage of the cloud controller manager, the result is the same 
+  as if this feature wasn't in use; the LoadBalancers will get out of sync with Services
 - kube-proxy or other Service Proxy that implements this feature
-  - Network interface IP address programming
-    - In case of this feature outage, the user will get the same result/behavior as 
-    if the `ipMode` field has not been set.
+  - If there is a service proxy outage, the result is the same as if this feature wasn't in use
 
 ### Scalability
 
