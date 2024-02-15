@@ -38,27 +38,28 @@ The community may ask for more features, as we are taking a bold approach to rei
 ### Goals
 
 - Design a cool looking t-shirt
-- Provide Kubernetes APIs for the creation, configuration and management of interfaces
+- Provide a RPC for the Attachment and Detachment of interface[s] for a Pod
+- Provide a RPC for the Querying of Pod network information (interfaces, network namespace path, ip addresses, routes, ...)
+- Provide a RPC to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
+- Provide a RPC to indicate network readiness for the node (no more CNI network configuration files in host file system)
+- Provide a RPC to provide the user the ability to query what networks are on a node
+- KNI should provide the RPC's required to establish feature parity with current CNI [ADD, DEL]
 - Provide documentation, examples, troubleshooting and FAQ's for KNI.
-- KNI should provide the API's required to establish feature parity with current CNI [ADD, DEL]
 - Decouple the Pod and Node Network setup
 - Provide garbage collection to ensure no resources created during pod setup such as Linux bridges, ebpf programs, 
 allocated IP addresses are left behind after pod deletion
 - Improve the current IP handling for pods (PodIP) to be handle multiple IP addresses and 
 a field to identify the IP address family (IPV4 vs IPV6)
 - Provide backwards compatibility for the existing CNI approach and migration a path to fully adopt KNI
-- If feasible, provide API awareness of Pod network namespaces (e.g. interface names)
 - Provide a uniform approach for network setup/teardown for both virtualized (kata) and non-virtualized (runc) 
 runtimes including kubevirt. This could eliminate the high and low level runtimes from the networking path
 - Provide a reference implementation of the KNI network runtime
 - Provide the ability to have all the dependencies packaged in the container image (no more CNI binaries in the host file system)
 ..- No more downloading CNI binaries via initContainers/Mounting /etc/cni/net.d or /opt/cni/bin
 - Provide the ability to use native k8s resources for configuration such as a ConfigMap's instead of configuration files in host file system
-- Provide an API to indicate network readiness for the node (no more CNI network configuration files in host file system)
 - Eliminate the need to exec binaries and replace with gRPC
-- Make troubleshooting easier by having logs accessible via kubectl logs
+- Make troubleshooting easier by having network runtime logs accessible via kubectl logs
 - Improve network pod startup time
-- Provide an API to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
 
 ### Non-Goals
 
