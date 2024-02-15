@@ -3,6 +3,9 @@
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
+- [Diagrams](#diagrams)
+  - [Proposed API Summary](#proposed-api-summary)
+  - [With RBAC for Illustration](#with-rbac-for-illustration)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
@@ -97,6 +100,76 @@ to enable cross-namespace data sources.
 This KEP proposes building that overall idea of referential authorization
 directly into Kubernetes. This will build on the original idea of ReferenceGrant
 but add additional capabilities along the way.
+
+## Diagrams
+
+### Proposed API Summary
+This roughly illustrates how the proposed APIs are connected:
+
+```mermaid
+classDiagram
+    ClusterReferenceConsumer <.. ClusterReferenceGrant : When From + To + For match
+    ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
+
+    class ClusterReferenceConsumer{
+        Subject Subject
+        From GroupResource
+        To GroupResource
+        For string
+    }
+    class ClusterReferenceGrant{
+        From GroupVersionResourcePath
+        To GroupResource
+        For string
+    }
+    class ReferenceGrant{
+        From GroupResource
+        To GroupResourceAndNames
+        For string
+    }
+```
+
+### With RBAC for Illustration
+Although we will not be generating RBAC as part of this work, it may help to
+illustrate how we could generate RBAC to show how these resources translate to
+authorization.
+
+```mermaid
+classDiagram
+    ClusterReferenceConsumer <.. ClusterReferenceGrant : When From + To + For match
+    ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
+    ClusterReferenceGrant ..> Role : Names from Local References Matching Pattern
+    ReferenceGrant ..> Role : Names from List in "To"
+    ClusterReferenceConsumer <.. RoleBinding : Connects Roles Match From + To + For to Subject
+    RoleBinding <.. Role : Connects All Consumers Matching From + To + For
+
+    class ClusterReferenceConsumer{
+        Subject Subject
+        From GroupResource
+        To GroupResource
+        For string
+    }
+    class ClusterReferenceGrant{
+        From GroupVersionResourcePath
+        To GroupResource
+        For string
+    }
+    class ReferenceGrant{
+        From GroupResource
+        To GroupResourceAndNames
+        For string
+    }
+    class RoleBinding{
+        Subjects []Subject
+        RoleRefs []RoleRef
+    }
+    class Role{
+        APIGroups []string
+        Resources []string
+        ResourceNames []string
+        Verbs []string
+    }
+```
 
 ## Motivation
 
