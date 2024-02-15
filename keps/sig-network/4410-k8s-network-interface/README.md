@@ -43,6 +43,7 @@ The community may ask for more features, as we are taking a bold approach to rei
 - Provide a RPC to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
 - Provide a RPC to indicate network readiness for the node (no more CNI network configuration files in host file system)
 - Provide a RPC to provide the user the ability to query what networks are on a node
+- Consolidate K8s networking to a single layer without involving the container/oci runtimes
 - KNI should provide the RPC's required to establish feature parity with current CNI [ADD, DEL]
 - Provide documentation, examples, troubleshooting and FAQ's for KNI.
 - Decouple the Pod and Node Network setup
