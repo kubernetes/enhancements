@@ -21,8 +21,8 @@
 
 KNI or Kubernetes Networking Interface, is an effort to take a second look at Kubernetes networking and evaluate what are the pain points, and what can we improve. At its core, KNI will be a foundational network API specific for Kubernetes that will provide flexibility and extensibility to solve basic and the most advanced and opinionated networking use cases.  
  
-
 ## Motivation
+
 Kubernetes networking is an area of complexity and multiple layers which has created several challenges and areas of improvement. These challenges include deployment of the CNI plugins, troubleshooting networking issues and development of new functionality. 
 
 Currently networking happens in three layers of the stack, Kubernetes itself by means of kube-proxy or another controller based solution, the container runtime with network namespace creation and CNI plugins and the OCI runtime which does additional network setup for kernel isolated pods. All of this communication happens through non network specific APIs which to the reader of the code makes it hard to determine where ‘networking’ is happening. Having networking in several layers presents an issue when needing to troubleshoot issues as one needs to check several areas and some cannot be done via kubectl logs such as the CNI execution logs. This becomes more of an effort as multiple uncoordinated processes are making changes to the same resource, the network namespace of either the root or pod. The KNI aims at reducing the complexity by consolidating the networking into a single layer and having a uniform process for both namespaced and kernel isolated pods through a gRPC API. Leveraging gRPC will allow users the ability to migrate away from the current execution model that the CNI currently leverages.   
@@ -35,38 +35,18 @@ KNI aims to help the community and other proposals in the Kubernetes ecosystem. 
 
 The community may ask for more features, as we are taking a bold approach to reimagining Kubernetes networking by reducing the amount of layers involved in networking. We should prioritize feature parity with the current CNI model and then capture future work. KNI aims to be the foundational network api that is specific for Kubernetes and should make troubleshooting easier, deploying more friendly and innovate faster while reducing the need to make changes to core Kubernetes. 
 
-
-Kubernetes networking has traditionally been challenging to understand for users
-interacting with the Kubernetes API, and there has been considerable flexibility
-in how Container Network Interfaces (CNIs) set up networking within clusters.
-This has resulted in a scenario where things like pod networking (including pod
-to pod networking) is opaque to users, with different implementations taking
-markedly different approaches. This fragmentation has spread networking across
-all layers of the stack which include k8s components like kube-proxy, netpol agents,
-container runtime with CNI plugins and low level runtimes like kata and issues
-with the API have negatively impacted adoption in sectors such as telecommunications.
-Our goal is to transform Kubernetes networking by making networks and their components
-actual resources within the Kubernetes API. This will allow for the development
-of shared functionalities and their integration into the API. We anticipate that
-this new approach will enhance support for areas that are currently struggling,
-facilitate the development and promotion of common features, and better define
-and accommodate advanced functionalities and potential areas for expansion.
-
 ### Goals
 
 - Design a cool looking t-shirt
 - Provide Kubernetes APIs for the creation, configuration and management of interfaces
 - Provide documentation, examples, troubleshooting and FAQ's for KNI.
 - KNI should provide the API's required to establish feature parity with current CNI [ADD, DEL]
-- Handle support levels like Gateway API (e.g. "core" and "extended")
-- Handle implementation-specific use cases through extension points
 - Decouple the Pod and Node Network setup
 - Provide garbage collection to ensure no resources created during pod setup such as Linux bridges, ebpf programs, 
 allocated IP addresses are left behind after pod deletion
 - Improve the current IP handling for pods (PodIP) to be handle multiple IP addresses and 
 a field to identify the IP address family (IPV4 vs IPV6)
 - Provide backwards compatibility for the existing CNI approach and migration a path to fully adopt KNI
-- Guarantee the network is setup and in a healthy state before containers are started (ephemeral, init, regular)
 - If feasible, provide API awareness of Pod network namespaces (e.g. interface names)
 - Provide a uniform approach for network setup/teardown for both virtualized (kata) and non-virtualized (runc) 
 runtimes including kubevirt. This could eliminate the high and low level runtimes from the networking path
@@ -74,11 +54,11 @@ runtimes including kubevirt. This could eliminate the high and low level runtime
 - Provide the ability to have all the dependencies packaged in the container image (no more CNI binaries in the host file system)
 ..- No more downloading CNI binaries via initContainers/Mounting /etc/cni/net.d or /opt/cni/bin
 - Provide the ability to use native k8s resources for configuration such as a ConfigMap's instead of configuration files in host file system
-- Provide an API to indicate network readiness for the node (no more files on disk)
+- Provide an API to indicate network readiness for the node (no more CNI network configuration files in host file system)
 - Eliminate the need to exec binaries and replace with gRPC
 - Make troubleshooting easier by having logs accessible via kubectl logs
 - Improve network pod startup time
-- Provide the ability to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
+- Provide an API to prevent additional scheduling of pods if IPAM is out of IP addresses without evicting running pods
 
 ### Non-Goals
 
@@ -93,26 +73,13 @@ The proposal of this KEP is to design and implement the KNI-API and make necessa
 
 We are constantly adding these user stories, please join the community sync to discuss. 
 
-#### Story 1
-
-As a cluster operator, I need the ability to determine my network(s) is ready so that my pods come up with a working network.
-
-#### Story 2
-
-As a cluster operator, I need the ability to determine what networks are available on my node so that upstream components can ensure the pod is scheduled on the appropriate node. 
-
-#### Story 3
-
-As a Kubernetes developer, I need the ability to have extension points for pod network setup, teardown and update so that I can support future Kubernetes networking features with either reducing the changes to core kubernetes or eliminating them
-
-#### Story 4
-
-As a tool which manages eBPF programs on a Kubernetes cluster (bpfman,
-inspektorgadget), I would like to be able to see the network interfaces of a
-`Pod` via the Kubernetes API so that I can attach TC/XDP network programs to
-those interfaces based on knowing the Pod name.
-
 ### Notes/Constraints/Caveats
+
+## Constraints
+
+1. Guarantee the pod interface is setup and in a healthy state before containers are started (ephemeral, init, regular)
+
+## Notes
 
 Additional Information/Diagrams: https://docs.google.com/document/d/1Gz7iNtJNMI-zKJhaOcI3aflPCx3etJ01JMxzbtvruKk/edit?usp=sharing
 
@@ -120,7 +87,4 @@ Changes to the pod specification will require hard evidence.
 
 The specifics of "Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
 
-We should consider the trade offs to using a Native K8s Network object or CRD's.
-Using a native object would allow passing a slice of network type to AttachNetwork
-
-Since the network runtime can be run separated from the container runtime, you can package everything into a pod and not need to have binaries on disk. This allows the CNI plugins to be isolated in the pod and the pod will never need to mount /opt/cni/bin or /etc/cni/net.d. This offers a potentially more ability to control execution. Keep in mind CNI is the implementation however when this is used chaining is still available. 
+Since the network runtime can be run separated from the container runtime, you can package everything into a pod and not need to have binaries on disk. This allows the CNI plugins to be isolated in the pod and the pod will never need to mount /opt/cni/bin or /etc/cni/net.d. This offers a potentially more ability to control execution. Keep in mind CNI is the implementation however when this is used chaining is still available.
