@@ -1116,7 +1116,7 @@ Using external snapshotter as ref: https://github.com/kubernetes-csi/external-sn
 	  - FailedDeleteBucket - Report when COSI fails to delete a bucket, with error message
   - [ ] API .status
     - [x] BucketReady bool
-    - [ ] ErrorMessage string
+    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
     - [x] BucketID string
 - BucketClaim
   - [ ] Events
@@ -1124,7 +1124,7 @@ Using external snapshotter as ref: https://github.com/kubernetes-csi/external-sn
 	  - FailedDeleteBucket - Report when COSI fails to delete bucket for BC, with error message
   - [ ] API .status
     - [x] BucketReady bool
-    - [ ] ErrorMessage string
+    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
     - [x] BucketName string
 - BucketAccess
   - [ ] Events
@@ -1133,9 +1133,8 @@ Using external snapshotter as ref: https://github.com/kubernetes-csi/external-sn
     - FailedRevokeAccess - Report when COSI fails to revoke access to a bucket, with error message
   - [ ] API .status
     - [x] AccessGranted bool
-    - [ ] ErrorMessage string
+    - [ ] ErrorMessage string - last error message; cleared when provisioning is successful
     - [x] AccountID string
-    - TODO: investigate more
 - BucketClass
   - Does not have events or status
 - BucketAccessClass
@@ -1143,6 +1142,11 @@ Using external snapshotter as ref: https://github.com/kubernetes-csi/external-sn
 - COSI Controller
   - Does not have events or status; it will add events and status to CRs
   - Logs will be sufficient for deeper info
+- COSI Provisioner Sidecar
+  - Does not have events or status; it will add events and status to CRs
+  - Logs will be sufficient for deeper info
+
+TODO: provide examples of errors
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1167,10 +1171,66 @@ question.
 Pick one more of these and delete the rest.
 -->
 
+Goal: implement metrics defined by sig-storage for volumes:
+https://github.com/kubernetes/design-proposals-archive/blob/main/storage/volume-metrics.md
+
+CSI Lib utils reference:
+https://github.com/kubernetes-csi/csi-lib-utils/blob/master/metrics/metrics_test.go
+
+DISCUSS: should we use `storage_operation...`, or should we rename to `cosi_operation...`?
+
 - [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - [ ] `cosi_operation_total_seconds`
+    - Type: Histogram
+      - Histogram Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'  (note: same as external snapshotter )
+    - Reported by: COSI Controller
+    - Definition: COSI operation end-to-end duration in number of seconds. For example, the duration
+      from when a BucketClaim resource is created until BucketClaim has `Status.BucketReady=true`.
+    - Labels:
+      - `driver_name` - name of COSI driver the operation runs against
+      - `resource_kind` - Bucket, BucketClaim, BucketAccess
+      - `operation` - Create, Delete
+    - Calculation note: (DISCUSS: is this right?)
+      - Create:
+        - Time delta between the resource's meta.creationTimestamp and when Status.XReady=true is successfully applied
+      - Delete:
+        - Time delta between the resource's meta.deletionTimestamp and when the resource's finalizer is successfully removed
+  - [ ] `cosi_operation_count`
+    - Type: Counter
+    - Reported by: COSI Controller
+    - Definition: Total number of reconciliations conducted by the snapshot controller that result
+      in status changes.
+    - Labels:
+      - `driver_name` - name of COSI driver the operation runs against
+      - `resource_kind` - Bucket, BucketClaim, BucketAccess
+      - `operation` - Create, Delete
+      - `status` - Ready, Waiting, Failed
+      - DISCUSS: We could output status as BucketReady, AccessGranted, FailedCreateBucket,
+        FailedGrantAccess, FailedDeleteBucket, FailedRevokeAccess, WaitingForBucket, but the
+        operation is already included in these statuses, which makes 'operation' less useful; it also
+        makes it harder to filter across all kinds like: `resource_kind=<any>, operation=Create, status=Failed`.
+  - [ ] `cosi_sidecar_operation_duration_seconds`
+    - Type: Histogram
+      - Histogram buckets: TBD
+    - Reported by: COSI provisioner sidecar
+    - Definition: Total number of seconds spent by the controller on a gRPC operation from end to end
+    - Labels:
+      - `driver_name` - name of the COSI driver the operation runs against
+      - `method_name` - gRPC operation name (e.g., `DriverCreateBucket`, `DriverGetInfo`)
+      - `grpc_status_code` (e.g., "OK", "InvalidArgument")
+  - [ ] `cosi_sidecar_operation_errors_total`
+    - Type: Counter
+    - Definition: Total number of errors returned from a gPRC operation
+    - Reported by: COSI provisioner sidecar
+    - Labels:
+      - `driver_name` - name of the COSI driver the operation runs against
+      - `method_name` - gRPC operation name (e.g., `DriverCreateBucket`, `DriverGetInfo`)
+    - DISCUSS: should we instead (or additionally) add a `cosi_sidecar_operation` metric that
+      reports all operations and not just errors?
+
+
+  - TODO:  any other metrics? total buckets, accesses, claims, etc?
+
 - [ ] Other (treat as last resort)
   - Details:
 
