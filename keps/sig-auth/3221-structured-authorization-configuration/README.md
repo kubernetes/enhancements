@@ -471,7 +471,7 @@ Labels {along with possible values}:
   - value matches the configuration `type` field, e.g. `RBAC`, `ABAC`, `Node`, `Webhook`
 - `name` {<authorizer_name>}
   - value matches the configuration `name` field, e.g. `rbac`, `node`, `abac`, `<webhook name>`
-- `decision` {Allow, Deny}
+- `decision` {allowed, denied}
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
