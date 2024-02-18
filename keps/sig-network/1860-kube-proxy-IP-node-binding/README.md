@@ -208,7 +208,60 @@ of a required rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No.
+Because this is a feature that depends on CCM/LoadBalancer controller, and none yet 
+implements it, the scenario is simulated with the upgrade/downgrade/upgrade path being
+enabling and disabling the feature flag, and doing the changes on services status subresources.
+
+There is a LoadBalancer running on the environment (metallb) that is responsible for doing the proper 
+LB ip allocation and announcement, but the rest of the test is related to kube-proxy programming
+or not the iptables rules based on this enablement/disablement path
+
+* Initial scenario
+  * Started with a v1.29 cluster with the feature flag enabled
+  * Created 3 Deployments:
+    * web1 - Will be using the new feature
+    * web2 - Will NOT be using the new feature
+    * client -  "the client"
+  * Created the loadbalancer for the two web services. By default both LBs are with the default `VIP` value
+```yaml
+status:
+  loadBalancer:
+    ingress:
+    - ip: 172.18.255.200
+      ipMode: VIP
+```
+  * With the feature flag enabled but no change on the service resources, tested and both
+web deployments were accessible
+    * Verified that the iptables rule for both LBs exists on all nodes
+* Testing the feature ("upgrade")
+  * Changed the `ipMode` from first LoadBalancer to `Proxy`
+    * Verified that the iptables rule for the second LB still exists, while the first one didn't
+  * Because the LoadBalancer of the first service is not aware of this new implementation (metallb), it is 
+  not accessible anymore from the client Pod
+  * The second service, which `ipMode` is `VIP` is still accessible from the Pods
+* Disable the feature flag ("downgrade")
+  * Edit kube-apiserver manifest and disable the feature flag
+  * Edit kube-proxy configmap, disable the feature and restart kube-proxy Pods
+  * Confirmed that both iptables rules are present, even if the `ipMode` field was still 
+  set as `Proxy`, confirming the feature is disabled. Both accesses are working
+
+Additionally, an apiserver and kube-proxy upgrade test was executed as the following:
+* Created a KinD cluster with v1.28
+* Created the same deployments and services as bellow
+  * Both loadbalancer are accessible
+* Upgraded apiserver and kube-proxy to v1.29, and enabled the feature flag
+* Set `ipMode` as `Proxy` on one of the services and execute the same tests as above
+  * Observed the expected behavior of iptables rule for the changed service 
+  not being created
+  * Observed that the access of the changed service was not accessible anymore, as
+  expected
+* Disable feature flag 
+* Rollback kube-apiserver and kube-proxy to v1.28
+* Verified that both services are working correctly on v1.28
+* Upgraded again to v1.29, keeping the feature flag disabled
+  * Both loadbalancers worked as expected, the field is still present on 
+  the changed service.
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
