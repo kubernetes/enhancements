@@ -202,7 +202,9 @@ features, like PROXY and TLS Termination as per the Motivations section).
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+If using kube-proxy, looking at metrics `sync_proxy_rules_duration_seconds` and 
+`sync_proxy_rules_last_timestamp_seconds` may help identifying problems and indications
+of a required rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -243,7 +245,6 @@ N/A
 
 * On kube-proxy, a metric containing the count of IP programming vs service type would be useful
 to determine if the feature is being used, and if there is any drift between nodes
-  * TBD: Should this metric be implemented?
 
 ### Dependencies
 
