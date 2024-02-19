@@ -189,138 +189,125 @@ Yes. It is tested by `TestUpdateServiceLoadBalancerStatus` in pkg/registry/core/
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+As the rollout will enable a feature not being used yet, there is no possible failure
+scenario as this feature will then need to be also enabled by the cloud provider on
+the services resources.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+In case of a rollback, kube-proxy will also rollback to the default behavior, switching 
+back to VIP mode. This can fail for workloads that may be already relying on the 
+new behavior (eg. sending traffic to the LoadBalancer expecting some additional
+features, like PROXY and TLS Termination as per the Motivations section).
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+If using kube-proxy, looking at metrics `sync_proxy_rules_duration_seconds` and 
+`sync_proxy_rules_last_timestamp_seconds` may help identifying problems and indications
+of a required rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Because this is a feature that depends on CCM/LoadBalancer controller, and none yet 
+implements it, the scenario is simulated with the upgrade/downgrade/upgrade path being
+enabling and disabling the feature flag, and doing the changes on services status subresources.
+
+There is a LoadBalancer running on the environment (metallb) that is responsible for doing the proper 
+LB ip allocation and announcement, but the rest of the test is related to kube-proxy programming
+or not the iptables rules based on this enablement/disablement path
+
+* Initial scenario
+  * Started with a v1.29 cluster with the feature flag enabled
+  * Created 3 Deployments:
+    * web1 - Will be using the new feature
+    * web2 - Will NOT be using the new feature
+    * client -  "the client"
+  * Created the loadbalancer for the two web services. By default both LBs are with the default `VIP` value
+```yaml
+status:
+  loadBalancer:
+    ingress:
+    - ip: 172.18.255.200
+      ipMode: VIP
+```
+  * With the feature flag enabled but no change on the service resources, tested and both
+web deployments were accessible
+    * Verified that the iptables rule for both LBs exists on all nodes
+* Testing the feature ("upgrade")
+  * Changed the `ipMode` from first LoadBalancer to `Proxy`
+    * Verified that the iptables rule for the second LB still exists, while the first one didn't
+  * Because the LoadBalancer of the first service is not aware of this new implementation (metallb), it is 
+  not accessible anymore from the client Pod
+  * The second service, which `ipMode` is `VIP` is still accessible from the Pods
+* Disable the feature flag ("downgrade")
+  * Edit kube-apiserver manifest and disable the feature flag
+  * Edit kube-proxy configmap, disable the feature and restart kube-proxy Pods
+  * Confirmed that both iptables rules are present, even if the `ipMode` field was still 
+  set as `Proxy`, confirming the feature is disabled. Both accesses are working
+
+Additionally, an apiserver and kube-proxy upgrade test was executed as the following:
+* Created a KinD cluster with v1.28
+* Created the same deployments and services as bellow
+  * Both loadbalancer are accessible
+* Upgraded apiserver and kube-proxy to v1.29, and enabled the feature flag
+* Set `ipMode` as `Proxy` on one of the services and execute the same tests as above
+  * Observed the expected behavior of iptables rule for the changed service 
+  not being created
+  * Observed that the access of the changed service was not accessible anymore, as
+  expected
+* Disable feature flag 
+* Rollback kube-apiserver and kube-proxy to v1.28
+* Verified that both services are working correctly on v1.28
+* Upgraded again to v1.29, keeping the feature flag disabled
+  * Both loadbalancers worked as expected, the field is still present on 
+  the changed service.
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+If the LB IP works correctly from pods, then the feature is working
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
+- [X] API .status
   - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Other field: `.status.loadBalancer.ingress.ipMode` not null
+- [X] Other:
+  - Details: To detect if the traffic is being directed to the LoadBalancer and not 
+    directly to another node, the user will need to rely on the LoadBalancer logs, 
+    and the destination workload logs to check if the traffic is coming from one Pod
+    to the other or from the LoadBalancer.
+
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+The quality of service for clouds using this feature is the same as the existing 
+quality of service for clouds that don't need this feature
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+* On kube-proxy, a metric containing the count of IP programming vs service type would be useful
+to determine if the feature is being used, and if there is any drift between nodes
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+- cloud controller manager /  LoadBalancer controller
+  - If there is an outage of the cloud controller manager, the result is the same 
+  as if this feature wasn't in use; the LoadBalancers will get out of sync with Services
+- kube-proxy or other Service Proxy that implements this feature
+  - If there is a service proxy outage, the result is the same as if this feature wasn't in use
 
 ### Scalability
 
@@ -336,79 +323,34 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+- API type: v1/Service
+- Estimated increase size: new string field. Supported options at this time are max 6 characters (`Proxy`)
+- Estimated amount of new objects: 0
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+No.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No
 
 ### Troubleshooting
 
@@ -425,19 +367,14 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Same for any loadbalancer/cloud controller manager, the new IP and the new status will not be 
+set.
+
+kube-proxy reacts on the IP status, so the service LoadBalancer IP and configuration will be pending.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+N/A
