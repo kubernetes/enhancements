@@ -833,8 +833,7 @@ No, there's no need.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-The command will move from `kubectl alpha debug` to `kubectl debug`. If the
-user has a kubectl plugin named "debug", it will be masked.
+No
 
 ### Monitoring Requirements
 
