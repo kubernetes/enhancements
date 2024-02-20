@@ -49,6 +49,7 @@
   - [Change container runtime](#change-container-runtime)
   - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
   - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
+  - [Implement kubelet admission](#implement-kubelet-admission)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -351,7 +352,6 @@ Apart from the obvious API change and behavior described above, kubelet + volume
   * Reconciler must check also SELinux context used to mount a volume (both mounted devices and volumes) before considering what operation to take on a volume (`MountVolume` or `UnmountVolume`/`UnmountDevice` or nothing).
     It must throw proper error message telling that a Pod can't start because its volume is used by another Pod with a different SELinux context.
     * This is a good point to capture any metrics proposed below.
-  * Kubelet will reject Pods that use a volume that is already mounted with a different SELinux context during pod admission.
 * Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
@@ -409,8 +409,6 @@ Due to change of Kubernetes behavior, we will implement the feature only for cas
   Such volumes can be used only in a single pod and two pods can't ever conflict when using it.
 - Collect metrics of how many other pods would fail because they use a RWO/RWX volume that's used by a pod with different SELinux context on the same node.
   TBD: create Info level alert ("please consider re-architecting your app not to share volumes this way and/or report it to sig-storage")?
-- During Pod admission, only bump a metric that a Pod would be rejected when it uses already mounted volume, but with a different SELinux context.
-  - Note that there already is Pod admission check that rejects Pods that use a already used `ReadWriteOncePod` PV.
 This phase can go Beta (be enabled by default) or even GA without breaking anything.
 
 #### Phase 2
@@ -418,7 +416,6 @@ Based on Phase 1 results:
 - Extend the implementation to all volumes, i.e. to in-line volumes and PVCs with any access mode.
 - Bump severity of the alert to Warning.
 - Announce the behavior change and deprecate the old behavior.
-- Enable the Pod admission.
 
 If Phase 1 shows that too many applications would be broken, then go GA only with Phase 1, i.e. `ReadWriteOncePod` PVCs.
 Even that will help users to avoid recursive relabeling of volumes if their application can use `ReadWriteOncePod` PVCs.
@@ -751,8 +748,6 @@ _This section must be completed when targeting beta graduation to a release._
   * Implement bare minimum of `SELinuxMount` for experiments, including:
     * Extend SELinux mount to all volume access modes.
     * Add label with volume access mode to `volume_manager_selinux_volume_context_mismatch_errors_total` and similar metrics. 
-    * Implement aforementioned kubelet admission to reject Pods that use a volume that is already mounted with a different SELinux context.
-      This admission was useless with RWOP volumes, because kubelet already rejects Pods that use a RWOP volume that's used by another Pod.
 
 ## Drawbacks [optional]
 
@@ -820,3 +815,29 @@ At the same time, `FSGroupChangePolicy: OnRootMismatch` may not be desirable for
 where various files on the volume may get random owners.
 
 With a single `VolumeChangePolicy`, user has to fall back to `Recursive` policy and SELinux labels would be unnecessarily changed.
+
+### Implement kubelet admission
+
+It's not really an alternative, but it's worth mentioning that we originally proposed to implement kubelet admission for Pods with SELinux contexts.
+
+Kubelet _could_ reject a Pod that uses a volume with a different SELinux context than the volume is currently mounted with on the node, right during Pod admission.
+Such a Pod would end in `Failed` state with appropriate message, and it would never reach kubelet internal states (e.g. DSW, ASW, MountDevice, SetUp, etc.).
+
+We thought it would send a clear message to the user that such a pod can't start, and why.
+During implementation and testing it has shown that it's very noisy. Consider this experiment:
+
+1. User runs a single-replica Deployment with no SELinux context set. The Deployment uses a single volume. The Deployment runs a Pod A on Node 1.
+1. User edits the Deployment and sets the SELinux context of the Pod, because they want to benefit from `SELinuxMount` feature.
+1. Deployment / ReplicaSet controllers start a new Pod B with the new SELinux context.
+1. Scheduler (accidentally?) puts Pod B to Node 1, where Pod A still runs.
+1. Kubelet rejects the new Pod, because the volume is already mounted without any SELinux context, while the new Pod wants a specific one.
+1. Deployment / ReplicaSet controllers start another Pod with the new SELinux context. Scheduler puts it to Node 1 again.
+1. Kubelet rejects the Pod again. This loop can continue forever, as longs as the scheduler picks Node 1 and Pod A still runs there.
+
+I got hundreds Pods just created and rejected in a minute or so. While it sends a clear message to the user that something is wrong, it's just too noisy for the API server.
+
+**As result, we decided to remove pod admission in kubelet from this KEP.**
+
+Expected behavior without Pod admission is that kubelet admits the Pod B and eventually its volumes reach DSW.
+The Pod B will be `ContainerCreating` until Pod A terminates and the volume can be mounted with the right SELinux context.
+The same behavior was already implemented for `ReadWriteOncePod` AccessMode.
