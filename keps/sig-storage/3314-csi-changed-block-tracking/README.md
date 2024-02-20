@@ -1245,6 +1245,17 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+If the `external-snapshot-metadata` sidecar is added to an older CSI driver that
+doesn't implement the CBT feature, the sidecar returns a gRPC `UNIMPLEMENTED`
+[status code][3] (HTTP 501) to the backup application.
+
+The snapshot metadata components support the v1 snapshot objects (VolumeSnapshot,
+VolumeSnapshotContent, VolumeSnapshotClass etc.), starting with snapshot
+controller v7.0. There are no plans to support earlier beta and alpha versions of
+the snapshot objects.
+
+This enhancement focuses only on the control plane with no effects on the kubelet.
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -1509,6 +1520,20 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+- API call type (e.g. PATCH pods):
+  - GET VolumeSnapshot, VolumeSnapshotContent, VolumeSnapshotClass, SnapshotMetadataService
+  - CREATE TokenRequest, TokenReview, SubjectAccessReview, SnapshotMetadataService
+- estimated throughput: one object of each kind, per request
+- originating component(s) (e.g. Kubelet, Feature-X-controller):
+  - user's backup application
+  - snapshot metadata sidecar
+- components listing and/or watching resources they didn't before: N/A
+- API calls that may be triggered by changes of some Kubernetes resources
+  (e.g. update of object X triggers new updates of object Y): N/A. All API calls
+are initiated by the user's backup application
+- periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.): N/A
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1518,6 +1543,11 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+- API type: SnapshotMetadataService
+- Supported number of objects per cluster: One object for every CSI driver that
+supports CBT
+- Supported number of objects per namespace (for namespace-scoped objects): N/A
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1525,6 +1555,9 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+The CSI driver plugin will call the cloud provider's CBT API to retrieve the CBT
+snapshot metadata.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1534,6 +1567,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Existing API objects will not be affected.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1654,3 +1689,4 @@ SIG to get the process for these resources started right away.
 [0]: https://github.com/kubernetes/enhancements/pull/3367
 [1]: https://github.com/kubernetes/enhancements/pull/3367#pullrequestreview-1133441329
 [2]: https://github.com/PrasadG193/external-snapshot-metadata/blob/c8da6e4ed6a206bcc68c55a1592c8f321f21cae4/cmd/client/main.go
+[3]: https://github.com/googleapis/googleapis/blob/254e61ae3eb7ce8660c7cd3f15c8d30f1f46bfd3/google/rpc/code.proto#L162
