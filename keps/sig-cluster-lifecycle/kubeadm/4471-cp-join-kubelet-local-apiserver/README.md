@@ -380,10 +380,11 @@ to a new phase `ControlPlaneJoinEtcdPhase` and added between the `KubeletStartPh
 
 Actions to preserve the old behavior when the feature gate is disabled:
 
-- There should be no duplication of code, instead the relevant shared code parts should be moved
-  to private functions so both phases could execute them, depending on the feature gate.
-- The new phases should be implemented as lightweight as possible and make use of the private functions.
-- The phases `KubeletStartPhase` and `ControlPlaneJoinPhase` should behave as before and run the above introduced private functions.
+- The new phases `ControlPlaneJoinEtcdPhase` and `KubeletWaitBootstrapPhase` should define a `RunIf` function to ensure
+  they do not run when the feature gate is disabled.
+- The phases `KubeletStartPhase` and `ControlPlaneJoinPhase` should behave as before if the feature gate is disabled.
+- There should be no duplication of code, instead the `Run` functions of the new phases should
+  get called from the old location if the feature gate is disabled.
 - Nothing should be done during the new phases `ControlPlaneJoinEtcdPhase` and `KubeletWaitBootstrapPhase`.
 - Add a description to the new phases which explain their functionality and explicitly mark them as `EXPERIMENTAL`.
 
