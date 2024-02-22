@@ -67,19 +67,27 @@ SIG Architecture for cross-cutting KEPs).
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Component Identity Leases](#component-identity-leases)
+  - [Component Lease Candidates](#component-lease-candidates)
   - [Coordinated Election Controller](#coordinated-election-controller)
   - [Coordinated Lease Lock](#coordinated-lease-lock)
+  - [Renewal Interval and Performance](#renewal-interval-and-performance)
+  - [Strategy](#strategy)
+    - [Alternative for Strategy](#alternative-for-strategy)
+      - [Creating a new LeaseConfiguration resource](#creating-a-new-leaseconfiguration-resource)
+      - [YAML/CLI configuration on the kube-apiserver](#yamlcli-configuration-on-the-kube-apiserver)
+      - [Strategy propagated from LeaseCandidate](#strategy-propagated-from-leasecandidate)
   - [Enabling on a component](#enabling-on-a-component)
   - [Migrations](#migrations)
+  - [API](#api)
   - [Comparison of leader election](#comparison-of-leader-election)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Risk: Amount of writes performed by leader election increases substantially](#risk-amount-of-writes-performed-by-leader-election-increases-substantially)
-    - [Risk: lease watches increase apiserver load substantially](#risk-lease-watches-increase-apiserver-load-substantially)
+    - [Risk: lease candidate watches increase apiserver load substantially](#risk-lease-candidate-watches-increase-apiserver-load-substantially)
     - [Risk: We have to &quot;start over&quot; and build confidence in a new leader election algorithm](#risk-we-have-to-start-over-and-build-confidence-in-a-new-leader-election-algorithm)
     - [Risk: How is the election controller elected?](#risk-how-is-the-election-controller-elected)
     - [Risk: What if the election controller fails to elect a leader?](#risk-what-if-the-election-controller-fails-to-elect-a-leader)
@@ -90,6 +98,7 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,7 +116,8 @@ SIG Architecture for cross-cutting KEPs).
     - [Running the coordinated leader election controller in KCM](#running-the-coordinated-leader-election-controller-in-kcm)
     - [Running the coordinated leader election controller in a new container](#running-the-coordinated-leader-election-controller-in-a-new-container)
   - [Component instances pick a leader without a coordinator](#component-instances-pick-a-leader-without-a-coordinator)
-  - [Component instances pick a leader without identity leases or a coordinator](#component-instances-pick-a-leader-without-identity-leases-or-a-coordinator)
+  - [Component instances pick a leader without lease candidates or a coordinator](#component-instances-pick-a-leader-without-lease-candidates-or-a-coordinator)
+  - [Algorithm configurability](#algorithm-configurability)
 - [Future Work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -131,11 +141,11 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone /
 release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in
   [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and
   SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance
@@ -146,8 +156,8 @@ release*.
     Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
     [Conformance
     Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
   publication to [kubernetes.io]
@@ -225,7 +235,7 @@ Leader elected components:
 The control plane:
 
 - Can safely canary components and nodes at the new version for an extended
-  period of time, or to pause an upgrade at any step durning an upgrade. This
+  period of time, or to pause an upgrade at any step during an upgrade. This
   enhancement, combined with
   [UVIP](../4020-unknown-version-interoperability-proxy) helps achieve this.
   
@@ -238,49 +248,51 @@ The control plane:
 
 - Offer an opt-in leader election mechanism to:
   - Elect the candidate with the oldest version available.
-  - Provide a way to preempt the current leader.
+  - Provide a way to preempt the current leader on the upcoming expiry of the term.
   - Reuse the existing lease mechanism as much as possible.
 
-### Component Identity Leases
+### Component Lease Candidates
 
-Components will create identity leases similar to those used by apiserver
-identity, e.g.:
+Components will create lease candidates similar to those used by apiserver
+identity. Some key differences are certain fields like `LeaseTransitions` and `HolderIdentity` are removed.
+See the API section for the full API.
+
+ e.g.:
 
 ```yaml
 apiVersion: coordination.k8s.io/v1
-kind: Lease
+kind: LeaseCandidate
 metadata:
-  annotations:
-    coordination.k8s.io/binary-version: "1.29"
-    coordination.k8s.io/can-lead-leases: kube-system/some-custom-controller
-    coordination.k8s.io/compatibility-version: "1.29"
+  labels:
+    binary-version: "1.29"
+    compatibility-version: "1.29"
   name: some-custom-controller-0001A
   namespace: kube-system
 spec:
-  holderIdentity: some-custom-controller-0001A
-  leaseDurationSeconds: 10
+  canLeadLease: kube-system/some-custom-controller
+  leaseDurationSeconds: 300
   renewTime: "2023-12-05T02:33:08.685777Z"
 ```
 
-A component identity lease announces candidacy for leadership by including
-`coordination.k8s.io/can-lead-leases` it is identity lease. If the lease
-expires, the component is considered unavailable for leader election purposes.
+A component "lease candidate" announces candidacy for leadership by specifying
+`spec.canLeadLease` in its lease candidate lease. If the LeaseCandidate object expires, the
+component is considered unavailable for leader election purposes. "Expires" is defined more clearly in the Renewal Interval section.
 
 ### Coordinated Election Controller
 
-A new Coordinated Election Controller will reconcile component Leader Leases
-(primary resource) and Identity Leases (secondary resource, changes trigger
+A new Coordinated Election Controller will reconcile component leader `Lease`s
+(primary resource) and Lease Candidate Leases (secondary resource, changes trigger
 reconciliation of related leader leases).
 
 Coordinated Election Controller reconciliation loop:
 
 - If no leader lease exists for a components:
-  - Elect leader from candidates by preparing a freshly renewed lease with:
+  - Elect leader from candidates by preparing a freshly renewed `Lease` with:
     - `spec.holderIdentity` set to the identity of the elected leader
     - `coordination.k8s.io/elected-by: leader-election-controller` (to make
       lease types easy to disambiguate)
 - If there is a better candidate than current leader:
-  - Sets `coordination.k8s.io/end-of-term: true` on the leader lease, signaling
+  - Sets `endofterm: true` on the leader `Lease`, signaling
     that the leader should stop renewing the lease and yield leadership
 
 ```mermaid
@@ -326,25 +338,97 @@ option.
 A new `resourceLock` type of `coordinatedleases`, and `CoordinatedLeaseLock`
 implementation of `resourcelock.Interface` will be added to client-go that:
 
-- Creates Identity Lease when ready to be Leader - Renews identity lease
-	periodically
+- Creates LeaseCandidate Lease when ready to be Leader
+- Renews LeaseCandidate lease infrequently (once every 300 seconds)
+- Watches its LeaseCandidate lease for the `coordination.k8s.io/pending-ack` annotation and updates to remove it. When the annotation is removed, the `renewTime` is subsequently updated.
+
 - Watches Leader Lease, waiting to be elected leader by the Coordinated Election
   Controller
 - When it becomes leader:
   - Perform role of active component instance
   - Renew leader lease periodically
-  - Stop renewing if lease is marked `coordination.k8s.io/end-of-term: true`
+  - Stop renewing if lease is marked `spec.endOfTerm: true`
 - If leader lease expires:
   - Shutdown (yielding leadership) and restart as a candidate component instance
 
 ```mermaid
 flowchart TD
-    A[Started] -->|Create Identity Lease| B
+    A[Started] -->|Create LeaseCandidate Lease| B
     B[Candidate] --> |Elected| C[Leader]
     C --> |Renew Leader Lease| C
     C -->|End of Term / Leader Lease Expired| D[Shutdown]
     D[Shutdown] -.-> |Restart| A
 ```
+
+### Renewal Interval and Performance
+The leader lease will have renewal interval and duration (2s and 15s). This is similar to the renewal interval of the current leader lease.
+
+For component leases, keeping a short renewal interval will add many unnecessary writes to the apiserver.
+The component leases renewal interval will default to 5 mins.
+
+When the leader lease is marked as end of term or available, the coordinated leader election controller will
+add an annotation to all component lease candidate objects (`coordination.k8s.io/pending-ack`) and wait up to 5 seconds.
+During that time, components must update their component lease to remove the annotation.
+The leader election controller will then pick the leader based on its criteria from the set of component leases that have ack'd the request.
+
+### Strategy
+
+There are cases where a user may want to change the leader election algorithm
+and this can be done via the `spec.Strategy` field in a Lease.
+
+The `Strategy` field signals to the coordinated leader election controller the
+appropriate algorithm to use when selecting leaders.
+
+We will allow the Coordinated Leader Election controller to create a Lease
+without a holder. The `Lease` may be updated by a third party to the desired
+`spec.Strategy`. The strategy will always default to
+`MinimumCompatibilityVersion`. 
+
+#### Alternative for Strategy
+
+##### Creating a new LeaseConfiguration resource
+
+We can create a new resource `LeaseConfiguration` to set up the defaults for
+`Strategy` and other configurations extensible in the future. This is a very
+clean approach that allows users to change the strategy at will without needing
+to recompile/restart anything. The main drawback is the introduction of a new
+resource and more complexity in leader election logic and watching.
+
+```yaml
+kind: LeaseConfiguration
+spec:
+  targetLease: "kube-system/kube-controller-manager"
+  strategy: "MinimumCompatibilityVersion"
+```
+
+##### YAML/CLI configuration on the kube-apiserver
+
+We can also populate the default by directly setting up the CLE controller to ingest the proper defaults.
+For instance, ingesting a YAML configuration in the form of a list of KV pairs of `lease:strategy` pairs will allow the CLE controller to directly determine the `Strategy` used for each component. This has the added benefit of requiring no API changes as it is optional whether to include the strategy in the `Lease` object.
+
+The drawback of this method is that elevated permissions are needed to configure the kube-apiserver. In addition, an apiserver restart may be needed when the `Strategy` needs to be changed.
+
+##### Strategy propagated from LeaseCandidate
+
+One other alternative is that Strategy could be an option specified by a
+`LeaseCandidate` object, in most cases the controller responsible renewing the
+`LeaseCandidate` lease. The value for the strategy between different
+`LeaseCandidate` objects leading the same `Lease` should be the same, but during
+mixed version states, there is a possibility that they may differ. We will use a
+consensus protocol that favors the algorithm with the highest priority. The
+priority is a fixed list that is predetermined. For now, this is
+`NoCoordination` > `MinimumCompatibilityVersion`. For example, if three
+`LeaseCandidate` objects exist and two objects select
+`MinimumCompatibilityVersion` while the third selects `NoCoordination`,
+`NoCoordination` will take precedent and the coordinated leader election
+controller will use `NoCoordination` as the election strategy. The final
+strategy used will be written to the `Lease` object when the CLE controller
+creates the `Lease` for a suitable leader. This has the benefit of providing
+better debugging information and allows short circuiting of an election if the
+set of candidates and selected strategy is the same as before.
+
+The obvious drawback is the need for a consensus protocol and extra information
+in the `LeaseCandidate` object that may be unnecessary.
 
 ### Enabling on a component
 
@@ -360,12 +444,12 @@ Coordinated Leader Election (or vis-versa).
 During the upgrade, a mix of components will be running both election
 approaches. When the leader lease expires, there are a couple possibilities:
 
-- A controller instance using Lease Based Leader Election claims the leader
+- A controller instance using `Lease`-based leader election claims the leader
   lease
 - The coordinated election controller picks a leader, from the components that
-  have written identity leases, and claims the lease on the leader's behalf
+  have written LeaseCandidate leases, and claims the lease on the leader's behalf
 
-Both possibilities have acceptable outcomes during the migration-- a component
+Both possibilities have acceptable outcomes during the migration: a component
 is elected leader, and once elected, remains leader so long as it keeps the
 lease renewed. The elected leader might not be the leader that Coordinated
 Leader Election would pick, but this is no worse than how leader election works
@@ -381,6 +465,88 @@ annotations anyway, so this isn't strictly needed, but it would reduce writes
 from the coordinated election controller to leases that were claimed by
 component instances not using Coordinated Leader Election
 
+### API
+
+The lease lock API will be extended with a new field for election preference, denoted as an enum for strategies for Coordinated Leader Election.
+
+```go
+
+type CoordinatedLeaseStrategy string
+
+// CoordinatedLeaseStrategy defines the strategy for picking the leader for coordinated leader election.
+const (
+  OldestCompatibilityVersion CoordinatedStrategy = "OldestCompatibilityVersion"
+  NoCoordination CoordinatedStrategy = "NoCoordination"
+)
+
+type LeaseSpec struct {
+	// Strategy indicates the strategy for picking the leader for coordinated leader election
+  // This is filled in from LeaseCandidate.Spec.Strategy or defaulted to NoCoordinationStrategy
+  // if the leader was not elected by the CLE controller.
+	Strategy CoordinatedLeaseStrategy `json:"strategy,omitempty" protobuf:"string,6,opt,name=strategy"`
+
+	// EndofTerm signals to a lease holder that the lease should not be
+	// renewed because a better candidate is available.
+	EndOfTerm bool `json:"endOfTerm,omitempty" protobuf:"boolean,7,opt,name=endOfTerm"`
+
+	// EXISTING FIELDS BELOW
+
+	// holderIdentity contains the identity of the holder of a current lease.
+	// +optional
+	HolderIdentity *string `json:"holderIdentity,omitempty" protobuf:"bytes,1,opt,name=holderIdentity"`
+	// leaseDurationSeconds is a duration that candidates for a lease need
+	// to wait to force acquire it. This is measure against time of last
+	// observed renewTime.
+	// +optional
+	LeaseDurationSeconds *int32 `json:"leaseDurationSeconds,omitempty" protobuf:"varint,2,opt,name=leaseDurationSeconds"`
+	// acquireTime is a time when the current lease was acquired.
+	// +optional
+	AcquireTime *metav1.MicroTime `json:"acquireTime,omitempty" protobuf:"bytes,3,opt,name=acquireTime"`
+	// renewTime is a time when the current holder of a lease has last
+	// updated the lease.
+	// +optional
+	RenewTime *metav1.MicroTime `json:"renewTime,omitempty" protobuf:"bytes,4,opt,name=renewTime"`
+	// leaseTransitions is the number of transitions of a lease between
+	// holders.
+	// +optional
+	LeaseTransitions *int32 `json:"leaseTransitions,omitempty" protobuf:"varint,5,opt,name=leaseTransitions"`
+}
+```
+
+For the LeaseCandidate leases, a new lease will be created
+
+```go
+type LeaseCandidateSpec struct {
+  // The fields BinaryVersion and CompatibilityVersion will be mandatory labels instead of fields in the spec
+
+	// CanLeadLease is in the format <namespace>/<name>, indicating the namespace and name of the lease that the candidate may lead
+	CanLeadLease string
+
+	// Strategy indicates the preferred strategy for the coordinated leader election controller to use.
+	Strategy CoordinatedLeaseStrategy `json:"strategy,omitempty" protobuf:"string,6,opt,name=strategy"`
+
+	// FIELDS DUPLICATED FROM LEASE
+
+	// leaseDurationSeconds is a duration that candidates for a lease need
+	// to wait to force acquire it. This is measure against time of last
+	// observed renewTime.
+	// +optional
+	LeaseDurationSeconds *int32 `json:"leaseDurationSeconds,omitempty" protobuf:"varint,2,opt,name=leaseDurationSeconds"`
+	// renewTime is a time when the current holder of a lease has last
+	// updated the lease.
+	// +optional
+	RenewTime *metav1.MicroTime `json:"renewTime,omitempty" protobuf:"bytes,4,opt,name=renewTime"`
+}
+```
+
+Each LeaseCandidate lease may only lead one lock. If the same component wishes to lead many leases,
+a separate LeaseCandidate lease will be required for each lock.
+
+If the `LeaseCandidate` objects do not agree on a value for the Strategy, we will have an ordering priority.
+For instance, we define `NewestCompatibilityVersion` > `OldestCompatibilityVersion`. This means that if
+a subset of candidates have `OldestCompatibilityVersion` and and subset have `NewestCompatibilityVersion`,
+coordinated leader election will pick `NewestCompatibilityVersion`. In order for `OldestCompatibilityVersion` to be used,
+all `LeaseCandidate` objects must publish the same `Strategy`.
 
 ### Comparison of leader election
 
@@ -402,7 +568,7 @@ expecting version skew to be respected.
 - When the first and second nodes are upgraded, any components that were leaders
   will typically lose the lease during the node downtime
   - If one happens to retain its lease, it will be preempted by the coordinated
-    election controller after it updates its identity lease with new version
+    election controller after it updates its LeaseCandidate lease with new version
     information
 - When the third node is upgraded, all components will be at the new version and
   one will be elected
@@ -414,12 +580,20 @@ expecting version skew to be respected.
 
 - When the first node is rolled back, any components that were leaders will
   typically loose the lease during the node downtime
-- Once one of the components updates its identity lease with new version
+- Once one of the components updates its LeaseCandidate lease with new version
   information, the coordinated election controller will preempt the current
   leader so that this lower version component becomes leader.
 - When the remaining two nodes can rollback, the first node will typically
   remain leader, but if a new election occurs, the available older version
   components will be elected.
+
+#### Story 3
+
+A cluster administrator may want more fine grain control over a control plane's upgrade.
+
+- When one node is upgraded they may wish to canary the components on that
+  node and switch the leader to the new compatibility version immediately.
+- This can be accomplished by changing the `Strategy` field in a lease object.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -434,7 +608,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Risk: Amount of writes performed by leader election increases substantially
 
-This enhancement introduces an identity lease for each instance of each
+This enhancement introduces a LeaseCandidate lease for each instance of each
 component.
 
 Example:
@@ -442,7 +616,7 @@ Example:
 - HA cluster with 3 control plane nodes
 - 3 elected components (kube-controller-manager, schedule,
   cloud-controller-manager) per control plane node
-- 9 identity leases are created and renewed by the components
+- 9 LeaseCandidate leases are created and renewed by the components
 
 Introducing this feature is roughtly equivalent to adding the same lease load as
 adding 9 nodes to a kubernetes cluster.
@@ -454,13 +628,13 @@ nodes, API Server Identity adds 3 leases.
 This risk can be migitated by scale testing and, if needed, extending the lease
 duration and renewal times to reduce writes/s.
 
-#### Risk: lease watches increase apiserver load substantially
+#### Risk: lease candidate watches increase apiserver load substantially
 
 The [Unknown Version Interoperability Proxy (UVIP)
 enhancement](../4020-unknown-version-interoperability-proxy) also adds lease
 watches on [API Server Identity](../1965-kube-apiserver-identity) leases in the
-kube-system namespace. This enhancement would increase the expected number of
-resources being watched from ~3 (for UVIP) to ~12.
+kube-system namespace. This enhancement does not touch the number of lease resources
+being watched, but adds 3 resources being watched for `LeaseCandidate` per component.
 
 #### Risk: We have to "start over" and build confidence in a new leader election algorithm
 
@@ -538,10 +712,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `staging/src/k8s.io/client-go/tools/leaderelection`: `TODO` - `client-go
-  coordinated leader election tests`
+- `staging/src/k8s.io/client-go/tools/leaderelection`: 76.8
 - `pkg/controller/leaderelection`: `TODO` - `new controller tests`
-- `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
 
@@ -560,8 +732,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- `test/integration/coordinatedleaderelection`: TODO
-- <test>: <link to test coverage>
+- `test/integration/apiserver/coordinatedleaderelection`: New file
 
 ##### e2e tests
 
@@ -575,8 +746,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `test/e2e/apimachinery/coordinatedleaderelection.go`: TODO
-- <test>: <link to test coverage>
+- `test/e2e/apimachinery/coordinatedleaderelection.go`: New file
 
 ### Graduation Criteria
 
@@ -641,6 +811,10 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+#### Alpha
+- Feature implemented behind a feature flag
+- The strategy `MinimumCompatibilityVersionStrategy` is implemented
 
 ### Upgrade / Downgrade Strategy
 
@@ -723,8 +897,9 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+  - Feature gate name: CoordinatedLeaderElection
   - Components depending on the feature gate:
+    - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
 - [ ] Other
@@ -1116,8 +1291,8 @@ to avoid.
 
 Instead of running in KCM, the coordinated leader election controller could be
 run in a new container (eg: `kube-coordinated-leader-election`). There will be a
-large memory footprint with this approach and adding a new component to the
-control plane could change our Kubernetes architecture in an undesirable way.
+slightly larger memory footprint with this approach and adding a new component to the
+control plane changes our Kubernetes control plane topology in an undesirable way.
 
 ### Component instances pick a leader without a coordinator
 
@@ -1125,7 +1300,7 @@ control plane could change our Kubernetes architecture in an undesirable way.
    coordinator picks the leader:
   - Components race to claim the lease
   - If a component claims the lease, the first thing it does is check the
-    identity leases to see if there is a better leader
+    lease candidates to see if there is a better leader
   - If it finds a better lease, it assigns the lease to that component instead
     of itself
 
@@ -1133,12 +1308,10 @@ Pros:
   - No coordinated election controller
 
 Cons: 
-
-  - All component instances must watch the identity leases
-  - All components must have the code to decide which component is the best
+  - All leader elected components must have the code to decide which component is the best
     leader
 
-### Component instances pick a leader without identity leases or a coordinator
+### Component instances pick a leader without lease candidates or a coordinator
 
 - The candidates communicate through the lease to agree on the leader
   - Leases have "Election" and "Term" states
@@ -1154,7 +1327,7 @@ Cons:
 Pros:
 
 - No coordinated election controller
-- No identity leases
+- No lease candidates
 
 Cons:
 
@@ -1162,6 +1335,22 @@ Cons:
   algorithm cannot not be fixed by only upgrading kubernetes..  all controllers
   in the ecosystem with the bug must upgrade client-go and release to be fixed.
 - More difficult to change/customize the criteria for which candidate is best. 
+
+### Algorithm configurability
+
+We've opted for a static fixed algorithm that looks at three things, continuing
+down the list of comparisons if there is a tiebreaker.
+
+- min(binary version)
+- min(compatibility version)
+- min(lease candidate name)
+
+The goal of the KEP is to make the leader predictable during a cluster upgrade where
+leader elected components and apiservers may have mixed versions. This will make
+all states of a Kubernetes control plane upgrade adhere to the version skew policy.
+
+An alternative is to make the leader election algorithm configurable either via flags
+or a configuration file.
 
 ## Future Work
 
