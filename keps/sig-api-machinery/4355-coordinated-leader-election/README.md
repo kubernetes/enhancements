@@ -70,6 +70,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Component Identity Leases](#component-identity-leases)
   - [Coordinated Election Controller](#coordinated-election-controller)
   - [Coordinated Lease Lock](#coordinated-lease-lock)
+  - [Renewal Interval and Performance](#renewal-interval-and-performance)
   - [Enabling on a component](#enabling-on-a-component)
   - [Migrations](#migrations)
   - [Comparison of leader election](#comparison-of-leader-election)
@@ -326,8 +327,9 @@ option.
 A new `resourceLock` type of `coordinatedleases`, and `CoordinatedLeaseLock`
 implementation of `resourcelock.Interface` will be added to client-go that:
 
-- Creates Identity Lease when ready to be Leader - Renews identity lease
-	periodically
+- Creates Identity Lease when ready to be Leader
+- Renews identity lease periodically
+- Watches its identity lease for the `coordination.k8s.io/pending-ack` annotation and updates to remove it
 - Watches Leader Lease, waiting to be elected leader by the Coordinated Election
   Controller
 - When it becomes leader:
@@ -345,6 +347,15 @@ flowchart TD
     C -->|End of Term / Leader Lease Expired| D[Shutdown]
     D[Shutdown] -.-> |Restart| A
 ```
+
+### Renewal Interval and Performance
+The leader lease will have similar renewal interval and duration (2s and 15s).
+
+For component leases, keeping a short renewal interval will add many unnecessary writes to the apiserver.
+The component leases renewal interval will default to 30s.
+
+When the leader lease is marked as end of term or available, the coordinated leader election controller will
+add an annotation to all component leases `coordination.k8s.io/pending-ack` and wait up to 5 seconds. During that time, components must update their component lease to remove the annotation. The leader election controller will then pick the leader based on its criteria from the set of component leases that have ack'd the request.
 
 ### Enabling on a component
 
