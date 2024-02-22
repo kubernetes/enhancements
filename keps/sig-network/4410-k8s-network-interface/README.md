@@ -90,3 +90,39 @@ Changes to the pod specification will require hard evidence.
 The specifics of "Network Readiness" is an implementation detail. We need to provide this RPC to the user. 
 
 Since the network runtime can be run separated from the container runtime, you can package everything into a pod and not need to have binaries on disk. This allows the CNI plugins to be isolated in the pod and the pod will never need to mount /opt/cni/bin or /etc/cni/net.d. This offers a potentially more ability to control execution. Keep in mind CNI is the implementation however when this is used chaining is still available.
+
+## Ongoing Considerations
+
+### KNI Implementations PULL instead of PUSH?
+
+The original KNI POC provides a gRPC API for callbacks which (in the POC) are
+added to the Kubelet during `Pod` tasks to callout to the KNI implementation to
+get `Pod` networking configured. This is pretty straightforward, and the
+initial POC actually showed very good performance characteristics, but it has
+a couple of potential downsides:
+
+1. the synchronous nature of callbacks makes it harder to avoid deadlocks
+2. in some extremely heavy use cases with lots of `Pods` rapidly deploying and
+   tearing down, this could be a potential scalability bottleneck.
+
+Additionally, we intend to create Kubernetes APIs for networks and their
+configurations, which means that the Kubelet and other component would operate
+as something of a middleman consuming Kubernetes APIs via watch mechanisms and
+converting them to gRPC calls, and then being responsible for the status,
+e.t.c.
+
+As such we've been actively considering whether it might make sense for at
+least some of the functionality in KNI (such as domain/namespace
+creation/deletion, and then interface attachment/detachment) be done by the KNI
+directly via the KNI Kubernetes APIs.
+
+For a simplified example a KNI implementation might watch `Pods` and wait for
+kubelet to reach a state (via the status) where it indicates its ready to hand
+off for network setup. The KNI implementation does it's work, and then updates
+the `Pod` indicating the network setup is complete and the `Pods` containers
+are then created.
+
+There are downsides to this approach as well, one in particularly being that it
+makes the provision of hookpoints for the KNI a lot more complicated for the
+implementations. For now we've added this to our ongoing considerations section
+as something to come back to, discuss and review.
