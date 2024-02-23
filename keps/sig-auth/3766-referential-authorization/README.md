@@ -61,7 +61,7 @@
 - [Alternatives](#alternatives)
   - [Implement a revised ReferenceGrant as a CustomResourceDefinition](#implement-a-revised-referencegrant-as-a-customresourcedefinition)
   - [Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant](#every-api-that-wants-to-support-cross-namespace-references-maintains-its-own-equivalent-to-referencegrant)
-  - [Use CEL to define ClusterReferencePattern, rather than JSONPath](#use-cel-to-define-clusterreferencepattern-rather-than-jsonpath)
+  - [Use CEL to define ClusterReferenceGrant, rather than JSONPath](#use-cel-to-define-clusterreferencegrant-rather-than-jsonpath)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -222,7 +222,7 @@ rules are applied in such a coarse manner.
 Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
 
 1. **ClusterReferenceGrant:** This resource grants access to resources by
-   following references within the same namespace. For example, a `gateway-tls`
+   following references within the same namespace. For example, a `gateways`
    ClusterReferenceGrant would grant access to Gateway controllers for
    same-namespace references from Gateways to TLS Secrets. API developers would
    bundle these resources with their APIs.
@@ -230,8 +230,8 @@ Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
    something like a RBAC Subject) to (Cluster)ReferenceGrants. For example, a
    Gateway controller that used a ServiceAccount for auth, would
    include a ClusterReferenceConsumer tying that ServiceAccount to references
-   from "Gateways" to "Secrets" for "tls". This would link that consumer to any
-   (Cluster)ReferenceGrants with the same `from`, `to`, and `for` values.
+   from "Gateways" to "Secrets" for "tls-serving". This would link that consumer
+   to any (Cluster)ReferenceGrants with the same `from`, `to`, and `for` values.
 3. **ReferenceGrant:** This resource authorizes specific instances of
    cross-namespace references. For example, if an owner of a `acme-cert` Secret
    in namespace `foo` wants to allow a TLS reference to that Secret from a
@@ -332,24 +332,58 @@ following guidelines to be rules to apply to **ALL** implementations of the API:
 #### Gateway API Cross-Namespace Secret Reference
 
 Authors of APIs can bundle ClusterReferenceGrants with their API definitions
-for any references they expect to be common. For example, Gateway API could
-bundle the following ClusterReferenceGrant to authorize same-namespace
-references from Gateways to Secrets for "tls".
+for any references they expect to be common.
+API's can opt-in to partition references by class names.
+Classes are a normalization of the IngressClass, GatewayClass, StorageClass
+pattern. The ClusterReferenceGrant only needs to extract class names -- no
+knowledge of the specialized IngressClass/GatewayClass/StorageClass API is
+needed.
+References and classes across multiple API versions are supported.
+
+For example, Gateway API could bundle the following ClusterReferenceGrant to 
+authorize same-namespace references from Gateways to Secrets for "tls-serving"
+as well as same-namespace references from Gateways to Secrets and ConfigMaps for "tls-client-validation".
+Gateways are partitioned by GatewayClass. Access to references of a particular
+gatewayClassName should only be given to ClusterReferenceConsumers pertaining to
+that class.
+Proposed fields from GEP-91 are added to the v1 version, but not v1beta1.
 
 ```yaml
 kind: ClusterReferenceGrant
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
-  name: gateway-tls
+  name: gateways
 from:
   group: gateway.networking.k8s.io
   resource: gateways
-  version: v1
-  path: ".spec.listeners[*].tls.certificateRefs[*]"
-to:
-  group: ""
-  resource: secrets
-for: tls
+versions:
+  - version: v1
+    classPath: ".spec.gatewayClassName"
+    references:
+      - path: "$.spec.listeners[*].tls.certificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
+        to:
+          group: ""
+          resource: secrets
+        for: tls-serving
+      - path: "$.spec.listeners[*].tls.clientValidation.caCertificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
+        to:
+          group: ""
+          resource: secrets
+        for: tls-client-validation
+      - path: "$.spec.listeners[*].tls.clientValidation.caCertificateRefs[[?(@.group=='' && @.kind=='ConfigMap')].name"
+        to:
+          group: ""
+          resource: configmaps
+        for: tls-client-validation
+  - version: v1beta1
+    classPath: ".spec.gatewayClassName"
+    references:
+      - path: "$.spec.listeners[*].tls.certificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
+        # Kubernetes JSONPath doesn't actually support this kind of compound boolean filter expression
+        to:
+          group: ""
+          resource: secrets
+        for: tls-serving
 ```
 
 Implementations of APIs can bundle ClusterReferenceConsumer resources as part of
@@ -357,6 +391,9 @@ their deployment. This resource links a subject (likely the ServiceAccount
 used by the controller) to matching (Cluster)ReferenceGrants. The subject of
 this ClusterReferenceConsumer will receive authorization for any
 (Cluster)ReferenceGrant with matching `from`, `to`, and `for` values.
+If the ClusterReferenceGrant is also partitioning by class, the class name
+retrieved from the `classPath` will also need to be contained within the matching 
+ClusterReferenceConsumer `classNames` list.
 
 ```yaml
 kind: ClusterReferenceConsumer
@@ -367,19 +404,36 @@ subject:
   kind: ServiceAccount
   name: contour
   namespace: contour-system
-from:
-  group: gateway.networking.k8s.io
-  resource: gateways
-to:
-  group: ""
-  resource: secrets
-for: tls
+classNames:
+  - contour # one install of contour only uses one GatewayClass
+references:
+  - from:
+      group: gateway.networking.k8s.io
+      resource: gateways
+    to:
+      group: ""
+      resource: secrets
+    for: tls-serving
+  - from:
+      group: gateway.networking.k8s.io
+      resource: gateways
+    to:
+      group: ""
+      resource: secrets
+    for: tls-client-validation
+  - from:
+      group: gateway.networking.k8s.io
+      resource: gateways
+    to:
+      group: ""
+      resource: configmaps
+    for: tls-client-validation
 ```
 
 Finally, users can use ReferenceGrant to authorize specific cross-namespace
 references. For example, the following ReferenceGrant authorizes references from
 Gateways in the `prod` namespace to the `acme-tls` Secret in the `prod-tls`
-namespace:
+namespace for `tls-serving`:
 
 ```yaml
 kind: ReferenceGrant
@@ -396,7 +450,29 @@ to:
   resource: secrets
   names:
   - acme-tls
-for: tls
+for: tls-serving
+```
+
+An additional ReferenceGrant is needed to also authorizes references from
+Gateways in the `prod` namespace to the `aperture-science-ca-cert` ConfigMap
+in the `prod-tls` namespace for `tls-client-validation`:
+
+```yaml
+kind: ReferenceGrant
+apiVersion: reference.authorization.k8s.io/v1alpha1
+metadata:
+  name: prod-gateways
+  namespace: prod-tls
+from:
+  group: gateway.networking.k8s.io
+  resource: gateways
+  namespace: prod
+to:
+  group: ""
+  resource: configmaps
+  names:
+  - aperture-science-ca-cert
+for: tls-client-validation
 ```
 
 ### Existing ReferenceGrant Usage Examples
@@ -505,28 +581,39 @@ rejected".
 #### ClusterReferenceConsumer
 
 ```golang
-// Subject refers to the subject that is a consumer of the referenced
-// pattern(s).
+// ClusterReferenceConsumer identifies a consumer of a type of reference. For
+// example, a consumer may support references from Gateways to Secrets for tls-serving.
 type ClusterReferenceConsumer struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
     // Subject refers to the subject that is a consumer of the referenced
     // pattern(s).
-    Subject Subject       `json:"subject"`
+    Subject Subject `json:"subject"`
 
+    // ClassNames is an optional list of applicable classes for this Consumer if
+    // the "From" API is partitioned by class
+    ClassNames []string `json:"classNames,omitempty"`
+
+    // References describe all of the resources a consumer may refer to
+    References []ConsumerReference `json:"references"`
+}
+
+// ConsumerReference describes from which originating GroupResource to which
+// target GroupResource a reference is for and for what purpose
+type ConsumerReference struct {
     // From refers to the group and resource that these references originate from.
-    From    GroupResource `json:"from"`
+    From GroupResource `json:"from"`
 
     // To refers to the group and resource that these references target.
-    To      GroupResource `json:"to"`
+    To GroupResource `json:"to"`
 
     // For refers to the purpose of this reference. (Cluster)ReferenceGrants
     // matching the From, To, and For of this resource will be authorized for
     // the Subject of this resource.
     //
     // This value must be a valid DNS label as defined per RFC-1035.
-    For     string        `json:"for"`
+    For string `json:"for"`
 }
 
 // Subject is a copy of RBAC Subject that excludes APIGroup.
@@ -547,33 +634,46 @@ type Subject struct {
 #### ClusterReferenceGrant
 
 ```golang
-// ClusterReferenceGrant authorizes same-namespace references matching the
-// specified pattern.
+// ClusterReferenceGrant identifies a common form of referencing pattern. This
+// can then be used with ReferenceGrants to selectively allow references.
 type ClusterReferenceGrant struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    // From refers to the group, resource, and pthat that these references
-    // originate from.
-    From    GroupVersionResourcePath `json:"from"`
+	// From refers to the group and resource that these references originate
+	// from.
+	From GroupResource `json:"from"`
 
-    // To refers to the group and resource that these references target.
-    To      GroupResource `json:"to"`
-
-    // For refers to the purpose of this reference. Subjects of
-    // ClusterReferenceConsumers will be authorized to follow references matching
-    // the From, To, and For of this resource.
-    //
-    // This value must be a valid DNS label as defined per RFC-1035.
-    For     string        `json:"for"`
+	// Versions describes how references and class partitions are defined for
+	// the "From" API. Each Version string must be unique.
+	Versions []VersionedReferencePaths `json:"versions"`
 }
 
-type GroupVersionResourcePath struct {
-    Group    string `json:"group"`
-    Resource string `json:"resource"`
-    Version  string `json:"version"`
-    // JSONPath is the JSONPath which this reference may come from.
-    JSONPath string `json:"jsonPath"`
+type VersionedReferencePaths struct {
+	Version string `json:"version"`
+
+	// ClassPath optionally refers to a field within an API that partitions it
+	// on className.
+	// It is an optional way to partition API access to consumers by their
+	// applicable classNames.
+	ClassPath string `json:"classPath,omitempty"`
+
+	References []ReferencePath `json:"references"`
+}
+
+type ReferencePath struct {
+	// Path in the "From" API where referenced names come from.
+	Path string `json:"path"`
+
+	// GroupResource for the target names from the Path
+	To GroupResource `json:"to"`
+
+	// For refers to the purpose of this reference. Subjects of
+	// ClusterReferenceConsumers will be authorized to follow references
+	// matching the From, To, and For of this resource.
+	//
+	// This value must be a valid DNS label as defined per RFC-1035.
+	For string `json:"for"`
 }
 ```
 
@@ -659,8 +759,46 @@ moving ReferenceGrant to the new API group, just notes to save discussion time.
 * Clarify that the expected operating model for implementations expects them to
   have broad, read access to both ReferenceGrant and the specific `To` Kinds they
   support, and then self-limit to only _use_ the relevant ones.
+* Determine if strings used in `For` are completely separate from verbs.
+* Decide if supporting verbs such as `[create, update, delete]` make sense.
+* Decide if supporting virtual verbs such as `[forward, scale, dance]` make sense.
+  We already have `For` which has a similar function.
+* Decide whether to expose/hide the API based on the API server feature flag
+  and/or authorizer config.
+* Decide how cross-namespace ReferenceGrants join target resources to their
+  originating reference. One way of accomplishing this is to extract the
+  namespace alongside the name of a target reference when reconciling 
+  ClusterReferenceGrants, then pair those with a matching ReferenceGrant. A 
+  trade-off of this approach is that it makes ReferenceGrants
+  dependent on ClusterReferenceGrants. The alternative is that the subject of a ClusterReferenceConsumer is authorized for the granted object regardless of 
+  whether there is actually a cross-namespace reference.
 * Decide whether to formally add `*` as a special value for Namespace, to mean
   "all namespaces".
+* Decide whether to formally add `*` as a special value for classNames, to mean
+  "all classNames". Should access to a class-partitioned API be open or closed 
+  for a ClusterReferenceConsumer that lists no classNames? Software authors, API
+  owners, and cluster admins all own different pieces of the config here. An 
+  optional field that fails open can easily be missed by a cluster admin. An  
+  opt-in wildcard can become canonical in practice.
+* Adding classNames burdens cluster admins with synchronizing their classNames 
+  between their IngressClasses, GatewayClasses, StorageClasses, etc.
+  IngressClass and GatewayClass already have a `spec.controller` and
+  `spec.controllerName` field. StorageClass has a `provisioner` field.
+  There is an opportunity here to have ClusterReferenceConsumers select into
+  these class types by their controller/provisioner name.
+  It requires API owners to define how to extract which of classNames pair up 
+  with which controller/provisioner names.
+  The benefit is that ClusterReferenceConsumers can specify a more canonical
+  controllerName field, leaving all of the declarations of classNames contained
+  within their specialized IngressClass/GatewayClass/StorageClass API.
+  This extra layer of indirection reduces config toil and duplication, but is
+  arguably more incomprehensible.
+* Our current implementation of JSONPath does not support compound, boolean
+  filters -- or accessing the root of an object `$` within a filter expression.
+  These features are useful for matching against a kind/resource + group and 
+  comparing a reference's namespace against the originating resource's namespace.
+  CEL has been proposed to be used here in place of JSONPath, and may be able to
+  meet both of these needs.
 
 ### Test Plan
 
@@ -735,9 +873,10 @@ N/A
 
 ### Version Skew Strategy
 
-Version skew is a bit different here. Although we will provide a shared library
-for implementing this API, this will only be used by third-party controllers,
-not built-in components.
+ClusterReferenceGrant describes resolving fields from multiple versions other
+API's. The ClusterReferenceGrant controller will need to use the most preferred
+API version available. API Authors may update their ClusterReferenceGrants with
+version skew between the resources of their group.
 
 There will be some implementations that support both the API defined by Gateway
 API and this API. Since these resources are entirely additive and can be
@@ -1067,7 +1206,7 @@ stable API, and other software can assume it will remain available.
 ### Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant
 This would be a confusing mess, we should avoid this at all costs.
 
-### Use CEL to define ClusterReferencePattern, rather than JSONPath
+### Use CEL to define ClusterReferenceGrant, rather than JSONPath
 This could be a reasonable path and potential future addition, but Kubernetes
 users are currently more familiar with JSONPath as it is exposed in prominent
 places such as kubectl.

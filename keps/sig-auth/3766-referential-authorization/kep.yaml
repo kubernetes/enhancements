@@ -2,6 +2,7 @@ title: Referential Authorization
 kep-number: 3766
 authors:
   - "@robscott"
+  - "@stealthybox"
   - "@youngnick"
 owning-sig: sig-auth
 participating-sigs:
