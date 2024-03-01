@@ -59,10 +59,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -86,12 +86,21 @@ container from a file.
 ## Motivation
 
 Kubernetes provides existing mechanisms for setting environment variables within
-containers using ConfigMap and Secret resources. However, these methods
-necessitate additional API calls. If a user wishes to populate environment
-variables directly from a file, a workaround requiring the execution of the
-`source <envfile>` command within the primary container is necessary. This
-approach is unsuitable in cases where the user cannot modify the container image
-or execute commands within it.
+containers using ConfigMap and Secret resources. However, these mechanisms have
+a few drawbacks in following use-cases:
+
+1. An `initContainer` creates some configuration that needs to be consumed as an
+   environment variable by the main container. Existing mechanisms necessitate
+   additional ConfigMap or Secret API calls.
+
+2. when each k8s Node is initialized with an environment file that is used by
+   Pods running on that node, k8s can provide a mechanism to instantiate env
+   vars from this file.
+
+3. The user is using a container offered by a vendor that requires configurating
+   environment variables (for eg, license key, one-time secret tokens). They can
+   use an `initContainer` to fetch this info into a file and the main container
+   can consume.
 
 The syntactic enhancement proposed in this KEP offers a simplified method for
 populating environment variables directly from files. This change would
@@ -107,10 +116,17 @@ streamline the process for users.
 
 #### Story 1
 
-The user wants to define container environment variables from a file. It can
-generate an env file using an `initContainer` or mount from the host. The
-container can then use the env file to define its environment variables. In the
-example below, the Pod's output includes `CONFIG_VAR=HELLO`.
+The user is using a container offered by a vendors that requires configuring
+env vars. [Some
+vendors](https://developer.hashicorp.com/vault/docs/platform/k8s/injector/examples#environment-variable-example)
+have to couple their app with Kubernetes to allow setting env vars in their
+container.
+
+Instead, k8s can provide a new mechanism that will be used to instantiate
+env vars from the specified file. The user can generate an env file using an
+`initContainer`. The container can then use the `fileRef` field to reference
+the file from which it should initialize the env vars. In the example below,
+the Pod's output includes `CONFIG_VAR=HELLO`.
 
 ```
 apiVersion: v1
@@ -121,20 +137,18 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo CONFIG_VAR="HELLO" > /config.env']
+    command: ['sh', '-c', 'echo CONFIG_VAR="HELLO" > /etc/config/config.env']
     volumeMounts:
     - name: data
-      mountPath: /
+      mountPath: /etc/config
   containers:
   - name: use-envfile
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
     envFrom:
     - fileRef:
-        path: /config.env
-    volumeMounts:
-    - name: data
-      mountPath: /
+        path: config.env
+        volumeName: data
   restartPolicy: Never
   volumes:
   - name: data
@@ -143,11 +157,20 @@ spec:
 
 #### Story 2
 
-The user wants to define container environment variables based on values from
-an env file. It can generate an env file using an `initContainer` or mount from
-the host. The container can then use the env file to define its environment
-variables. In the example below, the Pod's output includes `SPECIAL_VAR=HELLO`.
+Each k8s Node is instantiated with an env file that contains information about
+the Node (for eg, instance type, failure zones). The user would like to
+provide some of the information in this file to the vendor's container via
+env vars. For example, consider that each node has the following env file:
 
+```
+CONFIG_VAR=HELLO
+CONFIG_VAR_A=WORLD
+...
+```
+
+The user can use the `fileKeyRef` field to select a subset of these env vars
+that it wants to provide to the app. In this case, the Pod's output includes
+`CONFIG_VAR=HELLO`
 
 ```
 apiVersion: v1
@@ -155,30 +178,21 @@ kind: Pod
 metadata:
   name: dapi-test-pod
 spec:
-  initContainers:
-  - name: setup-envfile
-    image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo CONFIG_VAR="HELLO" > /config.env']
-    volumeMounts:
-    - name: data
-      mountPath: /
   containers:
   - name: use-envfile
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
     env:
-    - name: SPECIAL_VAR
+    - name: CONFIG_VAR
       valueFrom:
         fileKeyRef:
-          path: /config.env
+          path: node.env
+          volumeName: data
           key: CONFIG_VAR
-    volumeMounts:
-    - name: data
-      mountPath: /
   restartPolicy: Never
   volumes:
   - name: data
-    emptyDir: {}
+    hostPath: /etc/config
 ```
 
 ## Design Details
@@ -190,49 +204,52 @@ that can be set for an individual container.
 ### Pod API
 
 `FileEnvSource` field will allow the users to populate environment variables
-from the specified file. `Path` field should point to the file in key-value
-format on the container filesystem.
+from the specified file. The user can specify a file using `VolumeName` and
+`Path` fields. The `VolumeName` field specifies the volume mount that contains
+the file and `Path` is the relative path in this volume mount filesystem.
 
 ```
 type EnvFromSource struct {
     ...
     // The file to select from
     // +optional
-    FileRef *FileEnvSource `json:"fileRef,omitempty" protobuf:"bytes,2,opt,name=fileRef"`
+    FileRef *FileEnvSource `json:"fileRef,omitempty" protobuf:"bytes,3,opt,name=fileRef"`
     ...
 }
 
 type FileEnvSource struct {
-    // The file path to select from.
-    Path string `json:",inline" protobuf:"bytes,1,opt,name=path"`
+    // The name of the volume mount containing the env file.
+    VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
+    // The relative file path inside the volume mount to select from.
+    Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
     // Specify whether the file must exist.
     // +optional
-    Optional *bool `json:"optional,omitempty" protobuf:"varint,2,opt,name=optional"`
+    Optional *bool `json:"optional,omitempty" protobuf:"varint,3,opt,name=optional"`
 }
 ```
 
 `FileKeySelector` field will allow the users to select the value for environment
-variable from the specified key in the file. `Path`field should point to the
-file in key-value format on the container filesystem. `Key` should be one of the
-keys in the specified file.
+variable from the specified key in the file.
 
 ```
 type EnvVarSource struct {
     ...
     // Selects a key of the env file.
     // +optional
-    FileKeyRef *FileKeySelector `json:"fileKeyRef,omitempty" protobuf:"bytes,4,opt,name=fileKeyRef"`
+    FileKeyRef *FileKeySelector `json:"fileKeyRef,omitempty" protobuf:"bytes,5,opt,name=fileKeyRef"`
     ...
 }
 
 type FileKeySelector struct {
-    // The file path to select from.
-    Path string `json:",inline" protobuf:"bytes,1,opt,name=path"`
+    // The name of the volume mount containing the env file.
+    VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
+    // The relative file path inside the volume mount to select from.
+    Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
     // The key of the env file to select from.  Must be a valid key.
-    Key string `json:"key" protobuf:"bytes,2,opt,name=key"`
+    Key string `json:"key" protobuf:"bytes,3,opt,name=key"`
     // Specify whether the file or its key must be defined
     // +optional
-    Optional *bool `json:"optional,omitempty" protobuf:"varint,3,opt,name=optional"`
+    Optional *bool `json:"optional,omitempty" protobuf:"varint,4,opt,name=optional"`
 }
 ```
 
@@ -244,10 +261,12 @@ outcome once this KEP is implemented.
 
 |Scenario| API Server Result | Kubelet Result |
 |--------|-------------------|----------------|
-|1. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
-|2. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
-|3. Either the filepath or key specified in `FileKeySleector` field does not exist | Pod created | Container fails to start and error message in event.|
-|4. Either the filepath or key specified in `FileKeySleector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
+|1. The volumeName specified in `FileEnvSource` or `FileKeySelector` field does not exist | Pod creation fails with an error |  |
+|2. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
+|3. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
+|4. Either the filepath or key specified in `FileKeySleector` field does not exist | Pod created | Container fails to start and error message in event.|
+|5. Either the filepath or key specified in `FileKeySleector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
+|6. The specified file is not a parsable env file. | Pod created | Container fails to start and error message in event.|
 
 
 ### Test Plan
