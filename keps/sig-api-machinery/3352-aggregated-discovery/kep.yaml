@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-cli
-status: implementable
+status: implemented
 creation-date: 2022-06-07
 reviewers:
   - "@apelisse"
