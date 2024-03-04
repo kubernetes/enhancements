@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4322: Inventory Cluster API
+# KEP-4322: ClusterProfile API
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -195,7 +195,7 @@ cluster inventory. However, with the growing number of users managing
 multiple clusters and deploying applications across them, projects like
 Open Cluster Management (OCM), Karmada, Clusternet, and Fleet Manager
 have emerged. This document introduces a proposal for a new universal
-inventory cluster API. The objective is to establish a shared interface
+ClusterProfile API. The objective is to establish a shared interface
 for cluster inventory, defining a standard for status reporting while
 allowing for multiple implementations.
 
@@ -220,7 +220,7 @@ solutions, we believe that it is critical to devise a common API where
 applications, toolsets, and human operators can easily discover clusters
 under management.
 
-By adopting this new inventory cluster API, consumers no longer need to
+By adopting this new ClusterProfile API, consumers no longer need to
 concern themselves with the implementation details of various projects.
 Instead, they can leverage a foundational API for multi-cluster
 management. Examples of consumers includes:
@@ -229,13 +229,13 @@ management. Examples of consumers includes:
   distributing application/workload to multiple clusters. The scheduling
   can be based on certain cluster properties, e.g. cloud the cluster
   resides in, resources a cluster provides, or latency to some external
-  endpoints. A common inventory cluster API will give schedulers a
+  endpoints. A common ClusterProfile API will give schedulers a
   standard to reason about clusters and help to foster the growth of
   this area.
 * GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
   concept by themselves or understand cluster API from each different
-  cluster management project. A common inventory cluster API can provide
+  cluster management project. A common ClusterProfile API can provide
   a thin compatible layer for different projects.
 * Operation tools or customized external consumers: this API gives a
   common way for different clouds and vendors to define clusters,
@@ -250,7 +250,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Establish a standardized inventory cluster API to represent clusters.
+* Establish a standardized ClusterProfile API to represent clusters.
 * Lay the groundwork for multi-cluster tooling by providing a
   foundational component.
 * Accommodate multiple implementations to encourage flexibility and
@@ -300,21 +300,21 @@ the API proposed by this KEP aims to
 
 ### Terminology
 
-- **Cluster Manager**: An entity that creates the inventory cluster API 
+- **Cluster Manager**: An entity that creates the ClusterProfile API
   object per member cluster, and keeps their status up-to-date. Each
   cluster manager SHOULD be identified with a unique name. Each cluster
-  inventory resource SHOULD be managed by only one cluster manager. Examples
+  profile resource SHOULD be managed by only one cluster manager. Examples
   of cluster manager are projects like OCM, Karmada, Clusternet or Azure
   fleet manager.
 
-- **Inventory Cluster Consumer**: the person running the cluster managers
+- **ClusterProfile API Consumer**: the person running the cluster managers
   or the person developing extensions for cluster managers for the purpose of
   workload distribution, operation management etc.
 
 - **Member Cluster**: A kubernetes cluster that is managed by the cluster
   manager. A cluster manager SHOULD have sufficient permission to access
   the member cluster to fetch the information so it can update the status
-  of the inventory cluster API resource.
+  of the ClusterProfile API resource.
 
 ### User Stories (Optional)
 
@@ -521,7 +521,7 @@ Predefined condition types:
 
 ```yaml
 apiVersion: multicluster.x-k8s.io/v1alpha1
-kind: InventoryCluster
+kind: ClusterProfile
 metadata:
  name: generated-cluster-name
  labels:
@@ -640,7 +640,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - The API should expose access information including but not limited to:
   - APIServer endpoint url of the member cluster.
   - Credential with limited access to the member cluster.
-- At least two providers and one consumer using inventory cluster API.
+- At least two providers and one consumer using ClusterProfile API.
 
 #### GA
 
@@ -1002,6 +1002,21 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+We also considered the possibility of extending the existing Cluster API's
+[Cluster](https://github.com/kubernetes-sigs/cluster-api/blob/v1.6.2/api/v1beta1/cluster_types.go#L39)
+resource to accommodate our needs for describing clusters within a multi-cluster
+environment. However, this approach was ruled out due to the Cluster API's primary
+focus on cluster lifecycle management. Its tight coupling with cluster provisioning
+processes made it less suitable for scenarios where clusters are either provisioned
+through different methods or already exist. Furthermore, another distinction is the
+nature of the information each API conveys: the Cluster API's Cluster resource
+outlines the desired state of the cluster. In contrast, the new API is intended to
+reflect the actual state of the cluster, more similar to the Cluster.status in the
+Cluster API, but with a broader scope and intended for use in a multi-cluster context.
+This distinction also extends to the ownership of the resources; the Cluster API's
+Cluster is primarily owned by platform administrators focused on provisioning clusters,
+whereas the new API is designed to be owned by the cluster manager that created the
+cluster it represents.
 
 ## Infrastructure Needed (Optional)
 
