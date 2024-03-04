@@ -1,4 +1,4 @@
-# KEP-4368: Support managed-by label for Jobs
+# KEP-4368: Support managedBy field for Jobs
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -11,25 +11,25 @@
     - [Story 1](#story-1)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Prior work](#prior-work)
-    - [Graduating directly to Beta](#graduating-directly-to-beta)
-    - [Can the label be mutable?](#can-the-label-be-mutable)
+    - [Can the field be mutable?](#can-the-field-be-mutable)
     - [Use for MultiKueue](#use-for-multikueue)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Ecosystem fragmentation due to forks](#ecosystem-fragmentation-due-to-forks)
-    - [Two controllers running at the same time on old version](#two-controllers-running-at-the-same-time-on-old-version)
+    - [Two controllers running when feature is disabled](#two-controllers-running-when-feature-is-disabled)
     - [Debuggability](#debuggability)
     - [Custom controllers not compatible with API assumptions by CronJob](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob)
 - [Design Details](#design-details)
     - [API](#api)
     - [Implementation overview](#implementation-overview)
     - [Job status validation](#job-status-validation)
-    - [Label mutability](#label-mutability)
+    - [Mutability](#mutability)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
     - [Deprecation](#deprecation)
@@ -48,18 +48,19 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Reserved controller name value](#reserved-controller-name-value)
-  - [Defaulting of the manage-by label for newly created jobs](#defaulting-of-the-manage-by-label-for-newly-created-jobs)
-  - [Alternative names (scopes)](#alternative-names-scopes)
+  - [Defaulting of the for newly created jobs](#defaulting-of-the-for-newly-created-jobs)
+  - [Alternative names for field](#alternative-names-for-field)
+  - [Managed-by label](#managed-by-label)
+  - [Alternative names for label (scopes)](#alternative-names-for-label-scopes)
     - [Generic kubernetes.io/managed-by](#generic-kubernetesiomanaged-by)
     - [Job-prefixed job.kubernetes.io/managed-by](#job-prefixed-jobkubernetesiomanaged-by)
   - [Alternative mechanisms to mirror the Job status](#alternative-mechanisms-to-mirror-the-job-status)
     - [mirrored-by label](#mirrored-by-label)
-    - [.spec.controllerName](#speccontrollername)
     - [Class-based approach](#class-based-approach)
     - [Annotation](#annotation)
   - [Custom wrapping CRD](#custom-wrapping-crd)
   - [Use the spec.suspend field](#use-the-specsuspend-field)
-  - [Using label selectors](#using-label-selectors)
+  - [Using field selectors](#using-field-selectors)
   - [Alternative ideas to improve debuggability](#alternative-ideas-to-improve-debuggability)
     - [Condition to indicate Job is skipped](#condition-to-indicate-job-is-skipped)
     - [Event indicating the Job is skipped](#event-indicating-the-job-is-skipped)
@@ -110,7 +111,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We support the "managed-by" label as a lightweight mechanism to delegate the Job
+We support the "managedBy" field as a lightweight mechanism to delegate the Job
 synchronization to an external controller.
 
 ## Motivation
@@ -139,7 +140,7 @@ controller, and delegate the status synchronization to the Kueue controller.
 
 ## Proposal
 
-The proposal is to support the "managed-by" label (full name: `batch.kubernetes.io/managed-by`)
+The proposal is to support the "managedBy" field in the Job spec
 to indicate the only controller responsible for the Job object synchronization.
 
 ### User Stories (Optional)
@@ -172,7 +173,7 @@ mirror Job within the cluster.
 #### Prior work
 
 This approach of allowing another controller to mirror information between APIs
-is already supported with the "managed-by" label used by
+is already supported with the "managedBy" label used by
 EndpointSlices ([`endpointslice.kubernetes.io/managed-by`](https://github.com/kubernetes/kubernetes/blob/5104e6566135e05b0b46eea1c068a07388c78044/staging/src/k8s.io/api/discovery/v1/well_known_labels.go#L27), see also in [KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/0752-endpointslices#endpointslice-api))
 and IPAddresses ([`ipaddress.kubernetes.io/managed-by`](https://github.com/kubernetes/kubernetes/blob/5104e6566135e05b0b46eea1c068a07388c78044/staging/src/k8s.io/api/networking/v1alpha1/well_known_labels.go#L32)).
 
@@ -180,33 +181,20 @@ Note that, the reserved label values for the built-in controllers have the `k8s.
 suffix, i.e.: `endpointslicemirroring-controller.k8s.io` and `ipallocator.k8s.io`,
 for the EndpointSlices, and IPAddresses, respectively.
 
-#### Graduating directly to Beta
+#### Can the field be mutable?
 
-The implementation is simple (see [Design details](#design-details)), short-circuit the
-`syncJob` invocation. Also, since the feature is just label-based, there is
-technically no need to go via Alpha in order to ensure that all
-kube-apiserver instances (in HA setup, see [here](https://kubernetes.io/releases/version-skew-policy/#supported-version-skew))
-recognize the new API, as in case of new fields. A similar approach was used
-to graduate the
-[Pod Index Label for StatefulSets and Indexed Jobs](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/4017-pod-index-label)
-feature with similar characteristics.
-
-Finally, we would like to have the feature soak without unnecessary delay.
-
-#### Can the label be mutable?
-
-There is a potential risk of leaking pods, if the value of the label is changed.
+There is a potential risk of leaking pods, if the value is changed.
 For example, assume there is a running Job, which is reconciled by the Job
 controller, and has some pods created.
-Then, if the label is switched to the mirroring Kueue controller (which by
+Then, if the value is switched to the mirroring Kueue controller (which by
 itself does not manage pods). Then, the pods are leaking and remain running.
 
 In order to avoid the risk of pods leaking between the controllers when changing
-value of the "managed-by" label, we make the label immutable (allow to be added
+value, we make it immutable (allow to be added
 on Job creation, but fail requests trying to update its value, see also
-[label mutability](#label-mutability)).
+[mutability](#mutability)).
 
-However, the question remains if we can make the label mutable when the job is
+However, the question remains if we can make the field mutable when the job is
 stopped, similarly, as we do with the `AllowMutableSchedulingDirectives` flag
 which guards mutability of the Job's pod template labels.
 
@@ -215,16 +203,16 @@ a blocker.
 
 It would also complicate debuggability of the feature.
 
-We decide to keep the label immutable, at least for [Beta](#beta), we will
-re-evaluate the decision for [GA](#ga).
+We decide to keep the field immutable, at least for [Alpha](#alpha), we will
+re-evaluate the decision for [Beta](#beta).
 
 #### Use for MultiKueue
 
-The "managed-by" label is going to be added by a dedicated MultiKueue webhook
+The "managedBy" field is going to be added by a dedicated MultiKueue webhook
 for Jobs created by users, and the Jobs remain suspended until ready to run.
 Once the job is ready to run its mirror copy is created on a selected worker
 cluster. Note that the mirror copy differs from the Job on the management cluster
-as it does not have the "managed-by" label (removed), and will have different
+as it does not have the "managedBy" field (removed), and will have different
 UIDs.
 
 When the job is running it is unsuspended (both on the management and the worker
@@ -254,18 +242,19 @@ control plane can disable job controller by passing `--controllers=-job,*` in th
 Second, we believe that users who had the need to fork the Job controller
 already introduced dedicated Job CRDs for their needs.
 
-#### Two controllers running at the same time on old version
+#### Two controllers running when feature is disabled
 
-It is possible that one configures MultiKueue (or another project) with an
-older version of k8s which does not support the label yet. In that case
-two controllers might start running and compete with Job status updates at the
-same time.
+It is possible that one creates jobs with "managedBy" field on kubernetes version
+which enables the feature, then downgrades to the alpha version which disables
+the feature gate. In that case the field remains present on the job and two
+controllers (the built-in, and external controller) might start running and
+compete with Job status updates at the same time.
 
 Note that an analogous situation may happen when the version of Kubernetes
-already supports the label, but the feature gate is disabled in `kube-controller-manager`.
+already supports the field, but the feature gate is disabled in `kube-controller-manager`.
 
-To mitigate this risk we warn about it in Kueue documentation, to use this label
-only against newer versions of Kubernetes.
+To mitigate this risk we warn about it in Kueue documentation, to remove the
+jobs using this field before downgrade or disablement of the feature gate.
 
 Finally, this risk will fade away with time as the new versions of
 Kubernetes support it.
@@ -273,7 +262,7 @@ Kubernetes support it.
 #### Debuggability
 
 With this mechanism new failure modes can occur. For example, a user may make
-a typo in the label value, or the cluster administrator may not install the
+a typo in the field value, or the cluster administrator may not install the
 custom controller (like MultiKueue) on that cluster.
 
 In such cases the user may not observe any progress by the job for a long time
@@ -320,18 +309,28 @@ Job has the `Complete` condition before using `CompletionTime`
 #### API
 
 ```golang
-const (
+type JobSpec struct {
   ...
-	// LabelManagedBy is used to indicate the controller or entity that manages
-	// an Job.
-	LabelManagedBy = "batch.kubernetes.io/managed-by"
-)
+	// ManagedBy field indicates the controller that manages a Job. The k8s Job
+	// controller reconciles jobs which don't have this field at all or the field
+	// value is the reserved string `kubernetes.io/job-controller`, but skips
+	// reconciling Jobs with a custom value for this field.
+	// The value must be a valid domain-prefixed path (e.g. acme.io/foo) -
+	// all characters before the first "/" must be a valid subdomain as defined
+	// by RFC 1123. All characters trailing the first "/" must be valid HTTP Path
+	// characters as defined by RFC 3986. The value cannot exceed 64 characters.
+	//
+	// This field is alpha-level. The job controller accepts setting the field
+	// when the feature gate JobManagedBy is enabled (disabled by default).
+	// +optional
+	ManagedBy *string
+}
 ```
 
 #### Implementation overview
 
-We skip synchronization of the Jobs with the "managed-by" label, if it has any
-different value than `job-controller.k8s.io`. When the synchronization is skipped,
+We skip synchronization of the Jobs with the "managedBy" field, if it has any
+different value than `kubernetes.io/job-controller`. When the synchronization is skipped,
 the name of the controller managing the Job object is logged.
 
 We leave the particular place at which the synchronization is skipped as
@@ -344,7 +343,7 @@ Note that, if we skip inside `enqueueSyncJobInternal` we may save on some memory
 needed to needlessly enqueue the Job keys.
 
 There is no validation for the values of the field beyond that of standard
-permitted label values.
+permitted field values.
 
 #### Job status validation
 
@@ -359,10 +358,14 @@ Additionally, we verify the following:
 - the `completedIndexes` and `failedIndexes` fields are non-nil only when `.spec.completionMode: Indexed`
 - the format of the `completedIndexes` and `failedIndexes` fields (but tolerate corrupted values if already present)
 
-#### Label mutability
+We may come up with more validation rules during the implementation phase.
+The API comments to the Job status API fields will be updated to make the contract
+clear.
 
-We keep the label immutable. See also the discussion in
-[Can the label be mutable?](#can-the-label-be-mutable).
+#### Mutability
+
+We keep the field immutable. See also the discussion in
+[Can the field be mutable?](#can-the-field-be-mutable).
 
 ### Test Plan
 
@@ -380,26 +383,26 @@ to implement this enhancement.
 - `pkg/apis/batch/v1`: `2023-12-20` - `29.3%` (mostly generated code)
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the "managed-by" label equal to `job-controller.k8s.io` when the feature is enabled
-- the Job controller reconciles jobs without the "managed-by" label when the feature is enabled
-- the Job controller does not reconcile jobs with custom value of the "managed-by" label when the feature is enabled
-- the Job controller reconciles jobs with custom "managed-by" label when the feature gate is disabled
-- verify the label is immutable, both when the job is suspended or unsuspended; when the feature is enabled
-- enablement / disablement of the feature after the Job (with custom "managed-by" label) is created
+- the Job controller reconciles jobs with the "managedBy" field equal to `kubernetes.io/job-controller` when the feature is enabled
+- the Job controller reconciles jobs without the "managedBy" field when the feature is enabled
+- the Job controller does not reconcile jobs with custom value of the "managedBy" field when the feature is enabled
+- the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
+- verify the field is immutable, both when the job is suspended or unsuspended; when the feature is enabled
+- enablement / disablement of the feature after the Job (with custom "managedBy" field) is created
 - verify the new Job Status API validation rules (see [here](#job-status-validation))
 
 ##### Integration tests
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the "managed-by" label equal to `job-controller.k8s.io`
-- the Job controller reconciles jobs without the "managed-by" label
-- the Job controller does not reconcile a job with any other value of the "managed-by" label. In particular:
+- the Job controller reconciles jobs with the "managedBy" field equal to `kubernetes.io/job-controller`
+- the Job controller reconciles jobs without the "managedBy" field
+- the Job controller does not reconcile a job with any other value of the "managedBy" field. In particular:
   - it does not reset the status for a Job with `.spec.suspend=false`,
   - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
-- the Job controller reconciles jobs with custom "managed-by" label when the feature gate is disabled
-- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managed-by" is created
-- the `job_by_external_controller_total` metric is not incremented for a new Job without "managed-by" or with default value
-- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managed-by")
+- the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
+- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created
+- the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value
+- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy")
 
 During the implementation more scenarios might be covered.
 
@@ -409,25 +412,32 @@ The feature does not depend on kubelet, so the functionality can be fully
 covered with unit & integration tests.
 
 We propose a single e2e test for the following scenario:
-- the Job controller does not reconcile a job with any other value of the "managed-by" label. In particular,
+- the Job controller does not reconcile a job with any other value of the "managedBy" field. In particular,
   it does not reset the status for an unsuspended Job.
 
 ### Graduation Criteria
 
+#### Alpha
+
+- skip synchronization of jobs when the "managedBy" field does not exist, or equals `kubernetes.io/job-controller`
+- unit and integration
+- implement the additional Job status validation (see [here](#job-status-validation)); also update the comments to the
+  API fields affected by the new validation rules
+- make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
+- The feature flag disabled by default
+
 #### Beta
 
-- skip synchronization of jobs when the "managed-by" label does not exist, or equals `job-controller.k8s.io`
-- unit, integration and e2e tests
+- e2e tests
 - implement the `job_by_external_controller_total` metric
-- implement the additional Job status validation (see [here](#job-status-validation))
-- make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
+- verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
 
 #### GA
 
 - Address reviews and bug reports from Beta users
 - Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
-- Re-evaluate the support for mutability of the label
+- Re-evaluate the support for mutability of the field
 - Asses the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
 - Lock the feature gate
 
@@ -441,18 +451,18 @@ We propose a single e2e test for the following scenario:
 
 An upgrade to a version which supports this feature does not require any
 additional configuration changes. This feature is opt-in at the Job-level, so
-to use it users need to add the "managed-by" label to their Jobs.
+to use it users need to add the "managedBy" field to their Jobs.
 
 #### Downgrade
 
 A downgrade to a version which does not support this feature (1.29 and below)
 does not require any additional configuration changes. All jobs, including these
-that specified a custom value for "managed-by", will be handled in the default
+that specified a custom value for "managedBy", will be handled in the default
 way by the Job controller. However, this introduces the risk of
 [two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
 
 In order to prepare the risk the admins may want to make sure the custom controllers
-using the "managed-by" labels are disabled before the downgrade.
+using the "managedBy" field are disabled before the downgrade.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -472,14 +482,14 @@ This feature is limited to control plane, so the version skew with kubelet does
 not matter.
 
 In case kube-apiserver is running in HA mode, and the versions are skewed, then
-the old version of kube-apiserver may let the label get mutated, if the feature
+the old version of kube-apiserver may let the field get mutated, if the feature
 is not supported on the old version.
 
 In case the version of the kube-controller-manager leader is skewed (old), the
-built-in Job controller would reconcile the Jobs with custom "managed-by" labels,
+built-in Job controller would reconcile the Jobs with custom "managedBy" field,
 running into the risk of
 [two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
-It is recommended the users don't create jobs with custom "managed-by" label
+It is recommended the users don't create jobs with custom "managedBy" field
 during an ongoing upgrade.
 
 <!--
@@ -538,7 +548,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `JobManagedByLabel`
+  - Feature gate name: `JobManagedBy`
   - Components depending on the feature gate: `kube-apiserver`, `kube-controller-manager`
 - [ ] Other
   - Describe the mechanism:
@@ -561,7 +571,7 @@ automations, so be extremely careful here.
 Yes.
 
 However, when the feature is disabled and there are Jobs external controllers by
-using "managed-by" label there is a risk of
+using "managedBy" field there is a risk of
 [two controller running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
 Thus, it is recommended administrators make sure there are no Jobs using external
 controllers before rollback.
@@ -618,33 +628,33 @@ will rollout across nodes.
 -->
 
 The rollout will not impact already running workloads, unless they set the
-"managed-by" label to a custom value, but this would require a prior intentional
+"managedBy" field to a custom value, but this would require a prior intentional
 action.
 
 ###### What specific metrics should inform a rollback?
 
 A substantial increase in the `apiserver_request_total[code=409, resource=job, group=batch]`,
-while there are jobs with the custom "managed-by" label, can be indicative of
+while there are jobs with the custom "managedBy" field, can be indicative of
 the built-in job controller stepping onto another controller, causing conflicts.
 This can be further investigate per-job by checking the `.metadata.managedFields.manager`
 being flipped between two owners.
 
-The feature is opt-in so in case of such problems the custom "managed-by" label
+The feature is opt-in so in case of such problems the custom "managedBy" field
 should not be used.
 
 Also, an admin could check if the value of the `job_by_external_controller_total`
 matches the expectations. For example, if the value of the metric does not increase
-when new jobs are being added with a custom "managed-by" label, it might be
+when new jobs are being added with a custom "managedBy" field, it might be
 indicative that the feature is not working correctly.
 
 A substantial increase in `kube_cronjob_status_active` after upgrade may suggest
 that the Jobs are not making progress. Additionally, if the non-progressing
-Jobs use custom "managed-by" label, then rollback of the feature might be
+Jobs use custom "managedBy" field, then rollback of the feature might be
 justified to make the CronJobs run, by letting the built-in Job controller
 handle the Jobs.
 
 A substantial drop in the `job_sync_duration_seconds`, while the number of
-jobs with the custom "managed-by" label is low, could be indicative of the
+jobs with the custom "managedBy" field is low, could be indicative of the
 Job controller skipping reconciliation of jobs it should reconcile. This could
 be further investigated per-job by looking at the timestamp of changes in
 `.metadata.managedFields.time`, and owners in `.metadata.managedFields.manager`.
@@ -664,11 +674,11 @@ are missing a bunch of machinery and tooling and can't do that now.
 The Upgrade->downgrade->upgrade testing will be done manually prior to release
 as Beta, with the following steps:
 
-1. Start the cluster with the `JobManagedByLabel` enabled for api server and control-plane.
+1. Start the cluster with the `JobManagedBy` enabled for api server and control-plane.
 
 Then, create two-long running Jobs:
-- `job-managed` with custom value of the `managed-by` label
-- `job-regular` without the `managed-by` label
+- `job-managed` with custom value of the "managedBy" field
+- `job-regular` without the "managedBy" field
 
 Then, verify that:
 - the `job-managed` does not get status updates from built-in controller. Update the status manually and observe it is not reset by the built-in controller.
@@ -712,10 +722,10 @@ logs or events for this purpose.
 -->
 
 Check the `job_by_external_controller_total` metric. If the value is non-zero
-for a label, it means there were Jobs using the custom controller created, so
+for a field, it means there were Jobs using the custom controller created, so
 the feature is in use.
 
-For a specific Job in question, check if the Job has the "managed-by" label.
+For a specific Job in question, check if the Job has the "managedBy" field.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -730,10 +740,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason:
-- [X] API .metadata
+- [x] API .spec
   - Condition name:
   - Other field:
-    - `.metadata.labels['batch.kubernetes.io/managed-by']` for Jobs
+    - `.spec.managedBy` for Jobs
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -765,10 +775,10 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric name:
-    - `job_by_external_controller_total` (new), with the `controllerName` label
-corresponding to the custom value of the "managed-by" label. The metric is
+    - `job_by_external_controller_total` (new), with the `controller_name` label
+corresponding to the custom value of the "managedBy" field. The metric is
 incremented by the built-in Job controller on each ADDED Job event,
-corresponding to a Job with custom value of the "managed-by" label.
+corresponding to a Job with custom value of the "managedBy" field.
 This metric can be helpful to determine the health of a job and its controller
 in combination with already existing metrics (see below).
     - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
@@ -868,8 +878,8 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No, unless a custom value of the "managed-by" label is set. In the worst case
-scenario this can be 93B (30 for the key, and 63 for the value).
+No, unless a custom value of the "managedBy" field is set. In the worst case
+scenario this is 9 bytes for the field name and 63 for the value.
 
 <!--
 Describe them, providing:
@@ -983,7 +993,7 @@ Why should this KEP _not_ be implemented?
 
 ### Reserved controller name value
 
-We could also use just `job-controller` for the reserved value of the label
+We could also use just `job-controller` for the reserved value of the field
 (without the k8s suffix).
 
 **Reasons for discarding/deferring**
@@ -991,20 +1001,53 @@ We could also use just `job-controller` for the reserved value of the label
 In the [prior work](#prior-work) the names end with `k8s.io` for the built-in
 kubernetes controllers.
 
-### Defaulting of the manage-by label for newly created jobs
+### Defaulting of the for newly created jobs
 
-We could default the label in the `PrepareForCreate` function in `strategy.go`
+We could default the field in the `PrepareForCreate` function in `strategy.go`
 for newly created jobs.
 
 **Reasons for discarding/deferring**
 
-We anyway need to support jobs without the label to be synchronized by the
+We anyway need to support jobs without the field to be synchronized by the
 Job controller for many releases before we can ensure that all the jobs have it.
 
-An additional case for jobs without the label does not increase the
+An additional case for jobs without the field does not increase the
 complexity significantly.
 
-### Alternative names (scopes)
+### Alternative names for field
+
+Alternative names we considered:
+- `controllerName`
+- `controlledBy`
+
+**Reasons for discarding/deferring**
+
+The use of "controller" in the field name may be confused with the owning
+controller (indicated by the OwnerReference). For a batch Job this might be
+CronJob.
+
+Choosing "managedBy" as the name we are also closer to the "managed-by" label
+used in the [prior work](#prior-work).
+
+### Managed-by label
+
+We also considered the label `batch.kubernetes.io/managed-by`, which was planned
+originally for this KEP.
+
+**Reasons for discarding/deferring**
+
+- no clear indication if supported, on old versions of k8s users would add the
+  label, the external controller is likely to try to sync the Job, so is the
+  built-in controller. With the field old k8s will reject the request.
+- The risk of [two controllers running at the same time](#two-controllers-running-when-feature-is-disabled)
+  is limited to disabling the feature or downgrade, requiring admin action.
+  With label this was possible if one created the Job on an old k8s version.
+- worse discoverability of this functionality would be worse, compared to the field.
+
+Users don't know what the allowed values of the field are. The values are not
+validated anyway.
+
+### Alternative names for label (scopes)
 
 #### Generic kubernetes.io/managed-by
 
@@ -1052,27 +1095,12 @@ purpose of mirroring only. No controllers with custom logic are supported.
 
 This is wishful thinking, the users would still be free to use other custom controllers for Job API.
 
-#### .spec.controllerName
-
-Explicit field.
-
-**Reasons for discarding/deferring**
-
-Longer soak time. Also, the mechanism will be harder to adopt by other Job CRD
-projects with which Kueue integrates, so effectively we would need to have
-multiple mechanisms in the ecosystem.
-
-Users don't know what the allowed values of the field are. The values are not
-validated anyway.
-
 #### Class-based approach
 
 The idea is that there is an interim object which allows to specify also parameters
 of the custom controllers.
 
 **Reasons for discarding/deferring**
-
-Longer soak time.
 
 Also, the mechanism will be significantly harder to adopt by other Job CRD
 projects with which Kueue integrates, so effectively we would need to have
@@ -1089,7 +1117,7 @@ Annotations have more relaxed validation for values.
 
 This would not be consistent with the [prior work](#prior-work).
 
-The ability to filter jobs by the label is likely useful by users to identify
+The ability to filter jobs by the label or field is likely useful by users to identify
 jobs using custom controllers, for example by `kubectl get jobs -lbatch.kubernetes.io/managed-by=custom-controller`.
 
 ### Custom wrapping CRD
@@ -1144,9 +1172,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Using label selectors
+### Using field selectors
 
-We consider using label selectors by the Job controller to identify the subset
+We consider using field selectors by the Job controller to identify the subset
 of jobs it should watch. This could result in smaller memory usage.
 
 **Reasons for discarding/deferring**
@@ -1154,14 +1182,14 @@ of jobs it should watch. This could result in smaller memory usage.
 First, We use shared-informers (so that all core k8s controllers see all objects), then
 we cannot make the memory saving this way.
 
-Second, there is no "OR" logic in label selectors, however, the built-in Job
+Second, there is no "OR" logic in selectors, however, the built-in Job
 controller needs to sync jobs in two cases:
-1. old jobs without the label
-2. new jobs with the label equal to `job-controller.k8s.io`
+1. old jobs without the field
+2. new jobs with the field equal to `kubernetes.io/job-controller`
 
 This means we would need to go via a difficult process of ensuring all jobs
-have the label, or listen on events from two informers. In any case, the use of
-label-selectors is significantly more complicated than the skip `if` inside the
+have the field, or listen on events from two informers. In any case, the use of
+field-selectors is significantly more complicated than the skip `if` inside the
 `syncJob`, and does not allow for big memory gain.
 
 ### Alternative ideas to improve debuggability
@@ -1174,7 +1202,7 @@ skipped by the built-in controller.
 
 **Reasons for discarding/deferring**
 
-- Since the Job label is immutable, then the usability of the condition is limited,
+- Since the Job field is immutable, then the usability of the condition is limited,
 because the timestamp of the other fields will not bring extra debugging value.
 - Conceptually, we want to give full ownership of the Job object to the other
 job controller, objects mutated by two controllers could actually make debugging
