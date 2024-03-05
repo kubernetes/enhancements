@@ -514,6 +514,7 @@ in back-to-back releases.
 - Gather feedback from developers and surveys.
 - Environment variable is enabled by default and feature can be disabled explicitly.
 - Integration tests are implemented and enabled.
+- YAML formatted custom profile support is added
 
 #### GA
 
