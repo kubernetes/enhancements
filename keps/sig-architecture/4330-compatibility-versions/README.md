@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Changes to Feature Gates](#changes-to-feature-gates)
     - [Feature Gate Lifecycles](#feature-gate-lifecycles)
     - [Feature gating changes](#feature-gating-changes)
+  - [Compatibility versioning between components and modules](#compatibility-versioning-between-components-and-modules)
   - [Validation ratcheting](#validation-ratcheting)
     - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
@@ -218,7 +219,7 @@ which means there is less to “undo” on a failure condition.
 It also becomes possible to skip binary versions while still performing a
 stepwise upgrade of Kubernetes control-plane. For example:
 
-- (starting point) binary-version 1.28 (compat-version 1.28)
+- (starting point) binary-version 1.28 (emulation-version 1.28)
 - upgrade binary-version to 1.31 (emulation-version stays at 1.28 - this is our skip-level binary upgrade)
 - keep binary-version 1.31 while upgrading emulation-version to 1.29 (stepwise upgrade of emulation version)
 - keep binary-version 1.31 while upgrading emulation-version to 1.30 (stepwise upgrade of emulation version)
@@ -561,6 +562,81 @@ func ClientFunction() {
 }
 
 ```
+
+### Compatibility versioning between components and modules
+
+`client-go`, `apiserver` and `apiextensions-apiserver` are examples of modules
+that contain feature gates. These modules are composed into components like the
+`kube-apiserver`. When `--emulate-version` is provided to `kube-apiserver`, these
+modules will also need to be configured to emulate the behavior of a that
+version.
+
+While Kubneretes components like the `kube-apiserver` are composed of Kubernetes
+modules that share the same emulation version, user developed components have
+their own version numbering and may depend on a mix of Kubernetes and
+non-Kubernetes modules. In these cases, a mapping between versions will be
+required to implement emulation versioning. For example:
+
+```
+my-aggregated-apiserver:
+	Flags: --emulate-version=1.1
+	Effective version mapping:
+			my-aggregated-apiserver v1.2-> k8s.io/apiserver v1.29
+			my-aggregated-apiserver v1.1 -> k8s.io/apiserver v1.28
+```
+
+In this example, the mapping ensures that the `apiserver` module uses an
+emulation version of `1.28` to align with the my-aggregated-apiserver of `1.1`.
+
+When a modules depends on other modules (such as the `apiserver` depending on
+`client-go`), the emulation version should be propagated to the modules it
+depends on (via additional mapping).
+
+In some cases, version conflicts will need to be resolved.  As a simple example,
+an aggregated apiserver might depend directly both `client-go` and `apiserver`. Since
+`apiserver` also depends on `client-go`, if the aggregated apiserver attempts
+to map `client-go` and `apiserver` to different emulation versions, it will
+conflicts with `apiserver`'s attempt to map `client-go` to the same version.
+The simplest conflict resolution option would be to detect such configurations
+and report an error during component startup.
+
+Because the `apiserver` module also manages API enablement and storage version
+selection, an aggregated API server that defines it's own APIs would need to
+also configure the `apiserver` to know what compatibility versions to use when
+enabling APIs. For example:
+
+```
+my-aggregated-apiserver:
+	Flags: --emulate-version=1.3
+	APIs:
+     goodBatchJob v1beta1: Introduced: 1.0, Removed: 1.3
+		 goodBatchJob v1: Introduced 1.2
+     betterBatchJob v1beta1: Introduced: 1.4
+	Effective version mapping:
+      my-aggregated-apiserver v1.4-> k8s.io/apiserver v1.30
+      my-aggregated-apiserver v1.3-> k8s.io/apiserver v1.29
+			my-aggregated-apiserver v1.2-> k8s.io/apiserver v1.29
+			my-aggregated-apiserver v1.1 -> k8s.io/apiserver v1.28
+```
+
+In this example, the `apiserver` module must use `1.3`, the emulation version of
+`my-aggregated-apiserver`, for API enablement and storage version selection
+while also being configured to emulate `v1.29`, for feature gate enabelement,
+according to the version mapping.
+
+To facilitate the management and configuration of emulation versioning between
+components, a utility library will be introduced.
+
+Utility library goals:
+
+- Provide a uniform way for components to opt-in to compatibility version flags
+  (`--emulate-version`, ...) and validate them.
+- Provide a way to register mappings between components.
+- Detect and fail early on mis-configuration.
+- Provide a simple way for component and module code to access compatibility
+  version information. The compatibility version information should be
+  computed from the compatibility version flags and mappings to provide each
+  module and component with the correct version to use.
 
 ### Validation ratcheting
 
