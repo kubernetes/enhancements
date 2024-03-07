@@ -430,6 +430,8 @@ We propose a single e2e test for the following scenario:
 
 - e2e tests
 - implement the `job_by_external_controller_total` metric
+- address all known inconsistencies between validation and the Job controller behavior,
+  in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775)
 - verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
 
@@ -971,6 +973,7 @@ N/A.
 ## Implementation History
 
 - 2023-12.20 - First version of the KEP
+- 2024-03-05 - Merged implementation PR [Support for the Job managedBy field (alpha)](https://github.com/kubernetes/kubernetes/pull/123273)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
