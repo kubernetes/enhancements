@@ -300,18 +300,26 @@ const (
 )
 ```
 
-Moreover, we validate the following constraints for the `rules`:
-- whether each criterion have at least one of the `succeededIndexes` or `succeededCount` specified.
-- whether the specified indexes in the `succeededIndexes` and
-  the number of indexes in the `succeededCount` don't exceed the value of `completions`.
-- whether `Indexed` is specified in the `completionMode` field.
-- whether the size of `succeededIndexes` is under 64Ki.
-- whether the `succeededIndexes` field has a valid format.
-- whether the `succeededCount` field has an absolute number.
-- whether the rules haven't changed.
-- whether the successPolicies meet the `succeededCount <= |succeededIndexes|`, 
-where `|succeededIndexes|` means the number of indexes in the `succeededIndexes`. 
-
+Moreover, we validate the following constraints for the `rules` and `status.conditions`:
+- `rules`
+  - whether each criterion have at least one of the `succeededIndexes` or `succeededCount` specified.
+  - whether the specified indexes in the `succeededIndexes` and
+    the number of indexes in the `succeededCount` don't exceed the value of `completions`.
+  - whether `Indexed` is specified in the `completionMode` field.
+  - whether the size of `succeededIndexes` is under 64Ki.
+  - whether the `succeededIndexes` field has a valid format.
+  - whether the `succeededCount` field has an absolute number.
+  - whether the rules haven't changed.
+  - whether the successPolicies meet the `succeededCount <= |succeededIndexes|`, 
+  where `|succeededIndexes|` means the number of indexes in the `succeededIndexes`.
+- `status.conditions`
+  - whether the `SuccessCriteriaMet` condition isn't removed when the Job is updated.
+  - whether the `SuccessCriteriaMet` condition isn't added after the Job already has only `Complete` condition.
+  - whether the `SuccessCriteriaMet` condition isn't added to NonIndexed Job.
+  - whether the Job doesn't have both `Failed` and `SuccessCriteriaMet` conditions.
+  - whether the Job doesn't have both `FailureTarget` and `SuccessCriteriaMet` conditions.
+  - whether the Job without SuccessPolicy doesn't have `SuccessCriteriaMet` condition.
+  - whether the Job with SuccessPolicy doesn't have only `Complete` condition. The Job with SuccessPolicy need to have both `SuccessCriteriaMet` and `Complete` conditions.
 
 ### Evaluation
 
@@ -835,7 +843,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2023.06.09: API design is updated.
 - 2023.10.03: API design is updated.
 - 2024.02.07: API is finalized for the alpha stage.
-- 2024.03.05: "Criteria" is replaced with "Rules".
+- 2024.03.09: "Criteria" is replaced with "Rules".
 
 ## Drawbacks
 
