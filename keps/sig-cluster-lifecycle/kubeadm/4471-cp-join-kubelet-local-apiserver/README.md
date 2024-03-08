@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Caveats](#caveats)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Risk: Duration for joining a control-plane node may change](#risk-duration-for-joining-a-control-plane-node-may-change)
+    - [Risk: control-plane node stability](#risk-control-plane-node-stability)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -316,6 +317,16 @@ Joining a node is an asynchronous task which consists of multiple steps where ku
 It is possible to hit timeouts when waiting for the kubelet to succeed.
 This proposal also changes the order of operations done by the kubelet and may change the time required for single steps where kubeadm waits for the kubelet.
 At the end the existing time boundaries required for joining a control plane node using kubeadm should not change.
+
+#### Risk: control-plane node stability
+
+Having the kubelet of a control-plane node pointing directly to the local kube-apiserver only may cause some stability issues.
+E.g. when the local kube-apiserver is not functional, then the local kubelet won't be able to report its status back to the kube-apiserver and will become `NotReady`.
+
+To mitigate this, a user could adjust the kubeconfig for the kubelet to point to the load balanced API Server after all components got upgraded.
+
+As alternative, kubeadm's configuration in v1beta4 could get an option which makes kubeadm change the endpoint back to the load balanced endpoint after the kubelet bootstrapped itself.
+However this could still lead to violations to the skew policy.
 
 ## Design Details
 
