@@ -36,7 +36,6 @@
       - [Status Conditions](#status-conditions)
       - [Provider](#provider)
       - [Enabled](#enabled)
-      - [IPAM](#ipam)
       - [InUse state](#inuse-state)
       - [Mutability](#mutability)
       - [Lifecycle](#lifecycle)
@@ -60,11 +59,8 @@
     - [Active validations](#active-validations)
     - [Auto-population](#auto-population)
     - [Status](#status)
-    - [DRA integration (alternative)](#dra-integration-alternative)
   - [API server changes](#api-server-changes)
   - [Scheduler changes](#scheduler-changes)
-  - [Endpointslice controller changes](#endpointslice-controller-changes)
-  - [Kubelet changes](#kubelet-changes)
   - [CRI changes](#cri-changes)
     - [Pod Creation](#pod-creation)
     - [Pod Status](#pod-status)
@@ -80,6 +76,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [DRA integration](#dra-integration)
 <!-- /toc -->
 
 ## Summary
@@ -118,7 +115,8 @@ defining the new model in a backwards compatible way.
 
 ### Non-Goals
 
-Define the CNI implementation.
+* Define the CNI implementation.
+* To interfere with routing inside the pod.
 
 ## Proposal
 
@@ -134,7 +132,8 @@ PodNetwork.
 #### Application developer
 
 **Application developer** is the consumer of PodNetwork via referencing them in
-their workloads. Application developers usually will not create or remove the
+those workloads that need access to a network other than the Cluster Default
+PodNetwork. Application developers usually will not create or remove the
 PodNetwork on their own.
 
 ### Terminology
@@ -232,7 +231,7 @@ basis, simultaneously preserving all other Pod networking configuration the same
 across those Pods.
 
 <p align="center">
-  <img src="mn-story-10.png?raw=true" alt="multi-network story 10 per-pod connection differentiation"/>
+  <img src="mn-story-10.png?raw=true" alt="multi-network story 8 per-pod connection differentiation"/>
 </p>
 
 ### Requirements
@@ -275,7 +274,7 @@ connectivity between different PodNetworks.
 defined by the PodNetwork implementation.
 
 #### Phase II (access control, downward API)
-16. Pods access to PodNetwork is controlled via RBAC configuration.
+16. Provide access control to a specific PodNetwork for Pods.
 17. Implementation-agnostic PodNetwork Interface information (e.g. PodNetowrk
 name, IP address, etc.) for each attachment will be exposed to runtime Pod (via 
 e.g. environment variables, downward API etc.).
@@ -358,8 +357,6 @@ or a controller, shall the network respect isolation or not, should all be the
 decision of implementation. We want to provide an API handle for the rest of the
 core or extended objects in Kubernetes.
 1. *PodNetworks* may have overlapping subnets across them.
-1. This enhancement is fully backward compatible and does not require any
-additional configuration from existing deployments to continue functioning.
 
 *PodNetwork* object is described as follows:
 ```go
@@ -396,15 +393,17 @@ type PodNetworkSpec struct {
         ParametersRefs []ParametersRef `json:"parametersRefs,omitempty"`
 
         // Provider specifies the provider implementing this PodNetwork.
+        // Has to be in domain-prefixed string identifier form (like `acme.io/foo`)
         //
         // +kubebuilder:validation:MinLength=1
         // +kubebuilder:validation:MaxLength=253
+        // +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\/[A-Za-z0-9\/\-._~%!$&'()*+,;=:]+$`
         // +optional
         Provider string `json:"provider,omitempty"`
 }
 
-// ParametersRef points to a custom resource containing additional
-// parameters for thePodNetwork.
+// ParametersRef points to a resource containing additional
+// parameters for the PodNetwork.
 type ParametersRef struct {
         // Group is the API group of k8s resource e.g. k8s.cni.cncf.io
         Group string `json:"group"`
@@ -479,15 +478,36 @@ status:
     lastTransitionTime: "2022-11-17T18:38:01Z"
     status: "True"
     type: ParamsReady
+---
+# example of parameters CR (not in-scope for this KEP)
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: parametersA
+spec:
+  config: '{
+   "cniVersion":"0.3.0",
+   "name": "macvlan",
+   "plugins":[
+      {
+         "type":"macvlan",
+         "master":"enp1",
+         "ipam":{
+            "type":"whereabouts",
+            "range":"1.1.1.0/24"
+         }
+      }
+   ]
+}'
 ```
 ##### Status Conditions
 The PodNetwork object will use following conditions:
 * **Ready** - indicates that the PodNetwork object is correct (validated) and
-all other conditions are set to “true”. This condition will switch back to
-“false” if ParamsReady condition is “false”. Pods cannot be attached to a
-PodNetwork that is not Ready. This condition does not indicate readiness of
-specific PodNetwork on a per Node-basis. Following are the error reasons for
-this condition:
+the ParamsReady conditions (if present) is set to “true”. This condition will
+switch back to “false” if ParamsReady condition is “false”. Pods cannot be
+attached to a PodNetwork that is not Ready. This condition does not indicate
+readiness of specific PodNetwork on a per Node-basis. Following are the error
+reasons for this condition:
 
 | Reason name              | Description                                                                                                                      |
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------|
@@ -505,16 +525,17 @@ specific. When multiple references are provided in the “parametersRefs” fiel
 it is implementation responsibility to provide accurate status for all the listed
 objects using this one condition.
 
-The conditions life-cycle will be handled by the PodNetwork controller described
-below.
+The Ready condition life-cycle will be handled by the PodNetwork controller
+described below.
 
 ##### Provider
 The provider field gives the ability to uniquely identify what implementation
 (provider) is going to handle specific instances of PodNetwork objects. The value
-has to be in the form of an url. It is the implementer’s decision on how this field
-is going to be leveraged. They will decide how they behave when this field is
-empty and what specific value they are going to respect. This will dictate if a
-specific implementation can co-exist with other ones in the same cluster.
+has to be in the form of domain-prefixed string identifier (e.g. acme.io/foo).
+It is the implementer’s decision on how this field is going to be leveraged.
+They will decide how they behave when this field is empty and what specific
+value they are going to respect. This will dictate if a specific implementation
+can co-exist with other ones in the same cluster.
 
 We have considered using classes (similar to GatewayClass etc.), but we do not
 expect any extra action for a PodNetwork to take place for specific implementation.
@@ -527,10 +548,6 @@ field for that purpose.
 The Enabled field is created to allow proper migration from an existing PodNetwork.
 When set to false no new Pods can be attached to that PodNetwork.
 
-##### IPAM
-In this design we will not provide any specification for IPAM handling for
-PodNetworks. This will be specified in the following phases.
-
 ##### InUse state
 The PodNetwork object can be referenced by at least one Pod or
 PodNetworkAttachment. When this is the case, the PodNetwork cannot be deleted.
@@ -539,20 +556,23 @@ When identifying Pods using PodNetwork for this purpose, the controller will
 filter out Pods that are in Succeeded or Failed state.
 
 ##### Mutability
-The PodNetwork object will be immutable, except for the *Enabled* field.
+The PodNetwork object's spec section will be immutable, except for the *Enabled*
+field.
 
 ##### Lifecycle
 A PodNetwork will be in following phases:
 1. **Created** - when the user just created the object and it does not have any
-conditions.
-2. **NotReady** - when PodNetwork’s Ready condition is false. Pods can reference
-such a PodNetwork, but will be in Pending state until the PodNetwork becomes Ready.
+conditions. Pods can reference such a PodNetwork, but will be in Pending state
+until the PodNetwork becomes Ready.
+2. **NotReady** - when PodNetwork’s Ready condition is false. This happens as
+well when the user sets the Enabled field to false. Pods can reference such a
+PodNetwork, but will be in Pending state until the PodNetwork becomes Ready.
+Existing Pods behaviour that are attached to a PodNetwork that become NotReady
+is defined by the implementation.
 3. **Ready** - when validation of the PodNetwork succeeded and Ready condition
 is set to true. Here Pods can start attaching to a PodNetwork.
 4. **InUse** - when there is a Pod or PodNetworkAttachment that references a
 given PodNetwork. PodNetwork deletion is blocked by a finalizer when InUse.
-5. **Disabled** - when the user sets the Enabled field to false. We will mark
-such PodNetwork NotReady, and no new Pods will be able to attach to such PodNetwork.
 
 ##### Validations
 We will introduce following validations for this object:
@@ -630,7 +650,7 @@ spec:
   parametersRefs:
   - group: k8s.cni.cncf.io
     kind: podParams
-    name: parametersA
+    name: attachparameters
     namespace: default
 status:
   conditions:
@@ -642,10 +662,27 @@ status:
     lastTransitionTime: "2022-11-17T18:38:01Z"
     status: "True"
     type: ParamsReady
+---
+# example of parameters CR (not in-scope for this KEP)
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: PodParams
+metadata:
+  name: attachparameters
+spec:
+  ingressRate: 100
+  egressRate: 100
+  macRequest: "ff:ff:ff:ff:ff:ff"
 ```
 ##### Status Conditions
-The PodNetworkAttachment will follow a similar life cycle as the PodNetwork object. One change will be a new error reason for Ready condition:
-* **Ready** - indicates that the PodNetworkAttachment object is correct (validated) and ParamsReady condition is set to “true”, including the referenced PodNetwork’s Ready condition. This condition will switch back to “false” if any of the above conditions change to “false”. Pods cannot be attached to a PodNetworkAttachment that is not Ready. This condition does not indicate readiness of specific PodNetworkAttachment on a specific Node. Following are the error reasons for this condition:
+The PodNetworkAttachment will follow a similar life cycle as the PodNetwork
+object. One change will be a new error reason for Ready condition:
+* **Ready** - indicates that the PodNetworkAttachment object is correct
+(validated) and ParamsReady condition is set to “true”, including the referenced
+PodNetwork’s Ready condition. This condition will switch back to “false” if any
+of the above conditions change to “false”. Pods cannot be attached to a
+PodNetworkAttachment that is not Ready. This condition does not indicate
+readiness of specific PodNetworkAttachment on a specific Node. Following are the
+error reasons for this condition:
 
 | Reason name        | Description                                                                                                                            |
 |--------------------|----------------------------------------------------------------------------------------------------------------------------------------|
@@ -657,12 +694,12 @@ The conditions life-cycle will be handled by the PodNetwork controller described
 ##### InUse indicator
 The PodNetworkAttachment object can be referenced by at least one Pod. When this
 is the case, the PodNetworkAttachment cannot be deleted. This will be maintained
-by the PodNetwork Controller and enforced via a finalizer.\
+by the PodNetwork Controller and enforced via a finalizer.
 When identifying Pods using PodNetworkAttachment for this purpose, the controller
 will filter out Pods that are in Succeeded or Failed state.
 
 ##### Mutability
-The PodNetworkAttachment object will be immutable.
+The PodNetworkAttachment object's spec section will be immutable.
 The API server will provide the admission control for that.
 
 ##### Lifecycle
@@ -688,7 +725,7 @@ This validation will be performed in the API server.
 The relation of the new objects to Pod and between each other is described in
 this diagram:
 <p align="center">
-  <img src="obj-reletion.png?raw=true" alt="introduced objects relationship"/>
+  <img src="obj-relation.png?raw=true" alt="introduced objects relationship"/>
 </p>
 
 The arrows define which object references what object. Additionally:
@@ -716,14 +753,12 @@ Namespace)
 * All Pods not referencing any PodNetwork will connect to the “default” PodNetwork
 * This PodNetwork will be named “default”
 * The “default” PodNetwork must be available on all nodes
-* Until it is created, all kubelets will report “Default PodNetwork not found”
-for their respective Nodes.
 
 #### Availability
 Considering “default” PodNetwork is critical for cluster functionality, we will
 provide special handling for it when it is being deleted. On deletion events,
 we will recreate it, so that it never has the deletionTimestamp field set. This
-is going to be handled by the API server.
+is going to be handled by the PodNetwork controller described below.
 
 In case “default” PodNetwork references any additional params in ParametersRef
 field, the implementer is responsible for those objects' availability.
@@ -731,24 +766,31 @@ field, the implementer is responsible for those objects' availability.
 
 #### Automatic creation
 The PodNetwork controller will automatically create the “default” PodNetwork.
-The values set in it will be determined by the arguments passed to KCM.
+This is the exact object:
+```yaml
+apiVersion: v1
+kind: PodNetwork
+metadata:
+  name: default
+spec:
+  enabled: true
+```
 
 #### Manual creation
 We will introduce a new flag to KCM named **disable-default-podnetwork-creation**
 that will disable the automatic creation of the “default” PodNetwork. When
 specified, the Cluster Operator will be required to create the “default”
-PodNetwork. Until it is created, all kubelets will report “Default PodNetwork
-not found” for their respective Nodes.
+PodNetwork.
 
 #### Network Migration
 This Phase will not implement the “default” PodNetwork migration procedure. It
 will arrive in a later time with a next phase. Following is the initial idea how
-it could work.\
+it could work.
 To change the configuration of Default PodNetwork, we will expose a new field in
 the Node spec object called overrideDefaultPodNetwork. This field will allow you
 to change what is the default PodNetwork on a per-Node basis. This field will be
 mutable. When kubelet is going to report the presence of the Default PodNetwork,
-it will first look at this field, and then fallback to the “default” name.\
+it will first look at this field, and then fallback to the “default” name.
 For the migration process, the installer will have to set that field to the new
 PodNetwork, and when the “default” PodNetwork is no longer “InUse”, it can be
 deleted and replaced with a new version. At this point the installer will have
@@ -778,24 +820,25 @@ type PodSpec struct {
 [...]
         // Networks is a list of PodNetworks that will be attached to the Pod.
         //
-        // +kubebuilder:default=[{podNetworkName: “default”}]
+        // +kubebuilder:default=[{name: “default”}]
         // +optional
         Networks []Network `json:"networks,omitempty"`
 }
 
 // Network defines what PodNetwork to attach to the Pod.
 type Network struct {
-        // PodNetworkName is name of PodNetwork to attach
-        // Only one of: [PodNetworkName, PodNetworkAttachmentName] can be set
+        // Name is name of PodNetwork to attach
+        // Only one of: [Name, AttachmentName] can be set
         //
         // +optional
-        PodNetworkName string `json:"podNetworkName,omitempty"`
+        Name string `json:"name,omitempty"`
 
-        // PodNetworkAttachmentName is name of PodNetwork to attach
-        // Only one of: [PodNetworkName, PodNetworkAttachmentName] can be set
+        // AttachmentName is name of PodNetworkAttachment (in the pod's namespace)
+        // to attach.
+        // Only one of: [Name, AttachmentName] can be set
         //
         // +optional
-        PodNetworkAttachmentName string `json:"podNetworkAttachmentName,omitempty"`
+        AttachmentName string `json:"attachmentName,omitempty"`
 
         // InterfaceName is the network interface name inside the Pod for this attachment.
         // This field functionality is dependent on the implementation and its support
@@ -805,21 +848,13 @@ type Network struct {
         // +optional
         InterfaceName string `json:"interfaceName,omitempty"`
 
-        // IsDefaultGW4 is a flag indicating this PodNetwork will hold the IPv4 Default
+        // IsDefaultGW is a flag indicating this PodNetwork will hold the Default
         // Gateway inside the Pod. Only one Network can have this flag set to True.
         // This field functionality is dependent on the implementation and its support
         // for it.
         //
         // +optional
-        IsDefaultGW4 bool `json:"isDefaultGW4,omitempty"`
-
-        // IsDefaultGW6 is a flag indicating this PodNetwork will hold the IPv6 Default
-        // Gateway inside the Pod. Only one Network can have this flag set to True.
-        // This field functionality is dependent on the implementation and its support
-        // for it.
-        //
-        // +optional
-        IsDefaultGW6 bool `json:"isDefaultGW6,omitempty"`
+        IsDefaultGW bool `json:"isDefaultGW,omitempty"`
 }
 ```
 
@@ -829,8 +864,7 @@ alongside the current Pod spec checks. These errors will be provided to the user
 immediately when they try to create Pod.
 This will include:
 * Ensure a single Pod references a given PodNetwork only 1 time
-* IsDefaultGW4 and IsDefaultGW6 uniqueness for “true” value across multiple
-“Network” objects
+* IsDefaultGW uniqueness for “true” value across multiple “Network” objects
 * InterfaceName uniqueness across multiple “Network” objects
 * InterfaceName naming constraints for Linux and Windows
 * Ensure Network objects are not specified when hostNetwork field is set
@@ -841,7 +875,7 @@ changed in future when we will discuss them.
 
 #### Active validations
 Beside the above (static validations), we will perform additional active
-validations, inside the  scheduler, that require queries for other objects
+validations, inside the scheduler, that require queries for other objects
 (e.g. PodNetwork). These errors will be presented as Pod Events, and the Pod
 will be kept in Pending state until the issues are resolved. We will do the
 following validation:
@@ -863,31 +897,41 @@ PodNetwork explicitly.
 
 #### Status
 All the IP addresses for attached PodNetworks will be present in the
-Pod.PodStatus.PodIPs list. To properly identify which IP belongs to what
-PodNetwork, we will expand the PodIP struct to include the name of PodNetwork
-the specific IP belongs to. This list will allow only 1 IP address per family
-(v4, v6) per PodNetwork. The Pod.PodStatus.PodIP behavior will not change.
-Proposed changes below:
+Pod.PodStatus.Networks list. This will be a list reflecting the spec section.
+For compatibility, this list will allow only 1 IP address per family
+(v4, v6) per PodNetwork. The `Pod.PodStatus.PodIP` and `Pod.PodStatus.PodIPs`
+behavior will not change. Proposed changes below:
 ```go
-// IP address information for entries in the (plural) PodIPs field.
-// Each entry includes:
-//
-//      IP: An IP address allocated to the pod.
-//      PodNetworkName: Name of the PodNetwork the IP belongs to.
-//      InterfaceName: Name of the network interface inside the Pod.
-type PodIP struct {
+// PodStatus represents information about the status of a pod. Status may trail the actual
+// state of a system, especially if the node that hosts the pod cannot contact the control
+// plane.
+type PodStatus struct {
+[...]
+        // Networks is a list of PodNetworks that are attached to the Pod.
+        //
+        // +optional
+        Networks []NetworkStatus `json:"networks,omitempty"`
+}
+
+// NetworkStatus provides the status of specific PodNetwork in a Pod.
+type NetworkStatus struct {
+        // Name is name of PodNetwork
+        Name string `json:"name"`
+
+        // InterfaceName is the network interface name inside the Pod for this attachment.
+        // Examples: eth1 or net1
+        //
+        // +optional
+        InterfaceName string `json:"interfaceName"`
+
         // ip is an IP address (IPv4 or IPv6) assigned to the pod
-        IP string `json:"ip,omitempty" protobuf:"bytes,1,opt,name=ip"`
+        IP string `json:"ip,omitempty"`
 
-        // PodNetworkName is name of the PodNetwork the IP belongs to
+        // IsDefaultGW is a flag indicating that the interface with this IP
+        // inside the Pod holds the Default Gateway.
         //
         // +optional
-        PodNetworkName string `json:"podNetwork"`
-
-        // InterfaceName is name of the network interface used for this attachment
-        //
-        // +optional
-        InterfaceName string `json:"interfaceName",omitempty`
+        IsDefaultGW bool `json:"isDefaultGW,omitempty"`
 }
 ```
 Example:
@@ -899,37 +943,35 @@ metadata:
 spec:
 [...]
   networks:
-  - podNetwork: default
+  - name: default
     interfaceName: eth0
-    isDefaultGW4: true
-  - podNetwork: dataplane1
+    isDefaultGW: true
+  - name: dataplane1
     interfaceName: net1
-  - podNetworkAttachmentName: my-interface-fast
+  - attachmentName: my-interface-fast-net
     interfaceName: net2
 status:
 [...]
   podIP: 192.168.5.54
   podIPs:
   - ip: 192.168.5.54
-    podNetwork: default
+  networks:
+  - name: default
+    ip: 192.168.5.54
     interfaceName: eth0
-  - ip: 10.0.0.20
-    podNetwork: dataplane1
+    isDefaultGW: true
+  - name: dataplane1
     interfaceName: net1
-  - ip: 2011::233
-    podNetwork: my-interface-fast
+    ip: 10.0.0.20
+  - name: fast-net
     interfaceName: net2
+    ip: 2011::233
 ```
 The above status is expected to be populated by kubelet, but this can only happen
 after CRI provides support for the new Pod API. Because of that, initially
 kubelet will behave as it does today, without updating the additional fields.
 Until CRI catches up, the PodNetwork providers will be able to update that field
 on their own.
-
-#### DRA integration (alternative)
-We have discussed, as an alternative model, usage of the DRA API, and concluded
-that using it will be less clear for the user, compared to the explicit
-PodNetwork model, proposed above.
 
 ### API server changes
 These are the changes for the API server covered by this design:
@@ -939,24 +981,12 @@ These are the changes for the API server covered by this design:
 
 ### Scheduler changes
 These are the changes we will do in Pod scheduler:
-* Provide active Pod spec validation
+* Provide active Pod spec validation described [above](#active-validations)
 
 When one of the multi-network validation fails, scheduler will follow the current
 “failure” path for Pod:
 * set PodScheduled condition (of the Pod) to False with appropriate error message
 * send Pod Event with same error message
-
-### Endpointslice controller changes
-Considering changes to Pod.PodStatus.PodIPs list, we must ensure that the
-controller is using the correct IPs when creating the endpoints. We will ensure
-that only IPs for "defautl" PodNetwork will be used.
-
-### Kubelet changes
-We will introduce an additional check for kubelet readiness for networking.
-Today kubelet does this verification via CRI that checks CNI config presence.
-We will add a “default” PodNetwork presence check to this flow. Until such a
-PodNetwork is not created, kubelet will keep the Ready condition in “False”
-with “default PodNetwork not found in API” error message.
 
 ### CRI changes
 Considering the main input argument for kubelet when it interacts with CRI is
@@ -1110,5 +1140,12 @@ N/A
 
 ## Alternatives
 
-We will not define a unified API, and this capability will live on as just an addon
-to Kubernetes.
+### DRA integration
+We have discussed, as an alternative model, usage of the DRA API, and concluded
+that using it will be less clear for the user, compared to the explicit
+PodNetwork model, proposed above. DRA introduces Claim objects and references in
+the Pod which this KEP introduces in similar pattern. DRA would have to be able
+to properly handle "default" PodNetwork and be always specified in the Pod spec.
+Then that will get mixed with the default use cases that DRA is addressing,
+which might get confusing.
+
