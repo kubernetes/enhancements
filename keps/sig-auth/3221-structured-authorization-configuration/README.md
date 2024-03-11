@@ -109,7 +109,7 @@ within the new file structure
 Add a configuration format having specific precedence order and defined failure modes for configuring authorizer chain. See [Design Details](#design-details) for more details.
 
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - name: system-webhook
@@ -170,7 +170,7 @@ Note: The above are hypothetical for now since there has been no decision on
 protection rules for system CRDs. The below example is only for demonstration
 purposes.
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - type: Webhook
@@ -211,7 +211,7 @@ separate webhooks, leading to more predictable outcomes.
 
 The below example is only for demonstration purposes.
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - name: system-crd-protector
@@ -312,17 +312,18 @@ reloader would pick up the changes. There would be a minutes order of delay.
 The configuration would be validated at startup and the API server will fail to
 start if the configuration is invalid.
 
-The API server will periodically reload the configuration at a specific time
-interval. If it or any of referenced files change, and the new configuration
-passes validation, then the new configuration will be used for the Authorizer
-chain. The reloader will also check if the webhook is healthy, thereby
-preventing any typo/misconfiguration with the Webhook resulting in bad
-Authorizer config. If healthcheck on the webhook failed, the last known good
+The API server will periodically reload the configuration when an observed file 
+event occurs or a 1 minute poll is encountered. All non-webhook authorizer types 
+are required to remain unchanged in the file on reload. Reload must not add or 
+remove Node or RBAC authorizers. They can be reordered, but cannot be added or 
+removed. If the new configuration passes validation, then the new configuration 
+will be used for the Authorizer chain. The reloader will also check if the webhook 
+is healthy, thereby preventing any typo/misconfiguration with the Webhook resulting 
+in bad Authorizer config. If healthcheck on the webhook failed, the last known good
 config will be used. In the next iteration of reload, if webhook is found to be
 healthy, the new config will be used. Logging and metrics would be used to
 signal success/failure of a config reload so that cluster admins can have
-observability over this process. Reload must not add or remove Node or RBAC
-authorizers. They can be reordered, but cannot be added or removed.
+observability over this process.
 
 The proposed structure is illustrated below:
 
@@ -330,7 +331,7 @@ The proposed structure is illustrated below:
 values.
 
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - type: Webhook
@@ -346,7 +347,7 @@ authorizers:
       # Same as setting `--authorization-webhook-cache-authorized-ttl` flag
       # Default: 5m0s
       authorizedTTL: 30s
-      # The duration to cache 'authorized' responses from the webhook
+      # The duration to cache 'unauthorized' responses from the webhook
       # authorizer.
       # Same as setting `--authorization-webhook-cache-unauthorized-ttl` flag
       # Default: 30s
