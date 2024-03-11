@@ -288,7 +288,7 @@ type SuccessPolicyRule struct {
 	// When specified it needs to be a positive integer.
 	//
 	// +optional
-	SucceededCount *int
+	SucceededCount *int32
 }
 ...
 
