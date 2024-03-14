@@ -15,6 +15,7 @@
   - [Updating StorageVersion](#updating-storageversion)
   - [Garbage collection](#garbage-collection)
   - [CRDs](#crds)
+    - [Limitations](#limitations)
   - [Aggregated API servers](#aggregated-api-servers)
 - [Consuming the StorageVersion API](#consuming-the-storageversion-api)
 - [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
@@ -346,6 +347,14 @@ correct order.
 
 [enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
 [filter]:#updating-storageversion
+
+#### Limitations
+
+When a storageversion of a CRD is updated, we will ensure that all new CR writes wait for the storageversion update to finish, before serving them. This implies that we will take a write outage for the duration of the storageversion update. We will allow this for the following reasons:
+1. blocking CR writes till the SV update is finished is in-line with how we handle requests for built-in resources
+2. if we allow both old and new handler to serve CR writes for the duration of a storageversion update (so that CR writes are served continuously), it would mean that we are ok with intentionally allowing outdated CRD handlers(using old CRD versions) to serve new writes which is incorrect. Ex: in the case when an old CRD handler doesnt not understand the new versions that have been written to etcd.
+
+We prefer to take a write-outage in this case instead of (incorrectly) serving new writes with old handlers for an extended period of time (in the case the storageversion update takes long).
 
 ### Aggregated API servers
 
