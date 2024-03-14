@@ -15,6 +15,7 @@
   - [Updating StorageVersion](#updating-storageversion)
   - [Garbage collection](#garbage-collection)
   - [CRDs](#crds)
+    - [Agreements](#agreements)
     - [Limitations](#limitations)
   - [Aggregated API servers](#aggregated-api-servers)
 - [Consuming the StorageVersion API](#consuming-the-storageversion-api)
@@ -347,6 +348,19 @@ correct order.
 
 [enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
 [filter]:#updating-storageversion
+
+#### Agreements
+
+1. Storageversion updates will be triggered by CRD create and update watch events
+2. We will perform async updates of storageversions such that we do not block writes of other unrelated APIs(for ex, crdA writes waiting for update of crdB's storageversion). These requests should be handled asynchronously
+3. We will block a storageversion update until the teardown of prev storage is finished
+   1. this means we will wait to update storageversion of a CRD until
+      1. old storage of the same CRD is deleted
+      2. pending CR writes using old storageversion of the same CRD are completed
+   2. We will do this to prevent publishing a newer storageversion while a pending CR write is still in progress. Otherwise, if the pending CR write finishes writing the CR using an old version, the storageversion API would not reflect that and the object will remain in etcd, encoded in an old version forever 
+4. We will block new CR writes for a CRD until we have published its latest storageversion. This is discussed more in the [limitations] section
+
+[limitations]:#Limitations 
 
 #### Limitations
 
