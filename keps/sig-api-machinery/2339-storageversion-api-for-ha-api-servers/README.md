@@ -15,6 +15,7 @@
   - [Updating StorageVersion](#updating-storageversion)
   - [Garbage collection](#garbage-collection)
   - [CRDs](#crds)
+    - [Limitations](#limitations)
   - [Aggregated API servers](#aggregated-api-servers)
 - [Consuming the StorageVersion API](#consuming-the-storageversion-api)
 - [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
@@ -346,6 +347,17 @@ correct order.
 
 [enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
 [filter]:#updating-storageversion
+
+#### Limitations
+
+When a storageversion of a CRD is updated, we will ensure that all new CR writes:
+1. wait for the latest storageversion to be published
+1. wait for the CRD handler to be replaced
+
+This implies that we will take a write outage for the duration of the storageversion update. We will allow this for the following reasons:
+1. blocking CR writes till the SV update is finished is in-line with how we handle requests for built-in resources
+2. if we update the CRD handler to the new handler **before** a storageversion update completes, we risk a server crash - and objects maybe written in new version but storageversion API would not reflect that
+3. if we allow old CRD handler to serve CR writes for the duration of a storageversion update, it would mean that we are intentionally allowing outdated CRD handlers(using old CRD versions) to serve new writes which is incorrect. Ex: in the case when an old CRD handler does not understand the new versions that have been written to etcd by other servers. This will result in read errors on data persisted in new storage versions by other servers. We prefer to take a write-outage in this case instead of (incorrectly) serving new writes with old handlers for an extended period of time (in the case the storageversion update takes long).
 
 ### Aggregated API servers
 
