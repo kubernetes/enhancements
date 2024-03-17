@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [new API changes](#new-api-changes)
   - [ScaleUpFailed](#scaleupfailed)
+    - [How we implement <code>TriggeredScaleUp</code> in the cluster autoscaler](#how-we-implement--in-the-cluster-autoscaler)
   - [PreemptionFalied](#preemptionfalied)
   - [What if are both specified in <code>FallbackCriterion</code>?](#what-if-are-both-specified-in-)
   - [Test Plan](#test-plan)
@@ -377,6 +378,26 @@ which creates new Node for Pod typically by the cluster autoscaler.
 2. The cluster autoscaler finds those unschedulable Pod(s) but cannot create Nodes because of stockouts.
 3. The cluster autoscaler adds `TriggeredScaleUp: false`. 
 4. The scheduler notices `TriggeredScaleUp: false` on Pod and schedules that Pod while falling back to `ScheduleAnyway` on Pod Topology Spread.
+
+#### How we implement `TriggeredScaleUp` in the cluster autoscaler
+
+Basically, we just put `TriggeredScaleUp: false` for Pods in [status.ScaleUpStatus.PodsRemainUnschedulable](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/processors/status/scale_up_status_processor.go#L37) every [reconciliation (RunOnce)](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/core/static_autoscaler.go#L296).
+
+This `status.ScaleUpStatus.PodsRemainUnschedulable` contains Pods that the cluster autoscaler [simulates](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/core/scaleup/orchestrator/orchestrator.go#L536) the scheduling process for and determines that Pods wouldn't be schedulable in any node group. 
+
+So, for a simple example, 
+if a Pod has 64 cpu request, but no node group can satisfy 64 cpu requirement,
+the Pod would be in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `TriggeredScaleUp: false`.
+
+A complicated scenario could also be covered by this way;
+supposing a Pod has 64 cpu request and only a node group can satisfy 64 cpu requirement,
+but the node group is running out of instances at the moment.
+In this case, the first reconciliation selects the node group to make the Pod schedulable,
+but the node group size increase request would be rejected by the cloud provider because of the stockout.
+The node group is then considered to be non-safe for a while,
+and the next reconciliation happens without taking the failed node group into account.
+As said, there's no other node group that can satisfy 64 cpu requirement,
+and then the Pod would be finally in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `TriggeredScaleUp: false`.
 
 ### PreemptionFalied
 
