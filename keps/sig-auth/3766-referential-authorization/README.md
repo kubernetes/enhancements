@@ -108,24 +108,24 @@ This roughly illustrates how the proposed APIs are connected:
 
 ```mermaid
 classDiagram
-    ClusterReferenceConsumer <.. ReferenceStrategy : When From + To + For match
-    ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
+    ClusterReferenceConsumer <.. ReferenceStrategy : When Origin + Target + Purpose match
+    ClusterReferenceConsumer <.. ReferenceGrant : When Origin + Target + Purpose match
 
     class ClusterReferenceConsumer{
         Subject Subject
-        From GroupResource
-        To GroupResource
-        For string
+        Origin GroupResource
+        Target GroupResource
+        Purpose string
     }
     class ReferenceStrategy{
-        From GroupVersionResourcePath
-        To GroupResource
-        For string
+        Origin GroupVersionResourcePath
+        Target GroupResource
+        Purpose string
     }
     class ReferenceGrant{
-        From GroupResource
-        To GroupResourceAndNames
-        For string
+        Origin GroupResource
+        Target GroupResourceAndNames
+        Purpose string
     }
 ```
 
@@ -136,28 +136,28 @@ authorization.
 
 ```mermaid
 classDiagram
-    ClusterReferenceConsumer <.. ReferenceStrategy : When From + To + For match
-    ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
-    ReferenceStrategy ..> Role : Names from Local References Matching Pattern
-    ReferenceGrant ..> Role : Names from List in "To"
-    ClusterReferenceConsumer <.. RoleBinding : Connects Roles Match From + To + For to Subject
-    RoleBinding <.. Role : Connects All Consumers Matching From + To + For
+    ClusterReferenceConsumer <.. ReferenceStrategy : When Origin + Target + Purpose match
+    ClusterReferenceConsumer <.. ReferenceGrant : When Origin + Target + Purpose match
+    ReferenceStrategy ..> Role : Names originating from Local References Matching Pattern
+    ReferenceGrant ..> Role : Names from List in "Target"
+    ClusterReferenceConsumer <.. RoleBinding : Connects Roles Match Origin + Target + Purpose to Subject
+    RoleBinding <.. Role : Connects All Consumers Matching Origin + Target + Purpose
 
     class ClusterReferenceConsumer{
         Subject Subject
-        From GroupResource
-        To GroupResource
-        For string
+        Origin GroupResource
+        Target GroupResource
+        Purpose string
     }
     class ReferenceStrategy{
-        From GroupVersionResourcePath
-        To GroupResource
-        For string
+        Origin GroupVersionResourcePath
+        Target GroupResource
+        Purpose string
     }
     class ReferenceGrant{
-        From GroupResource
-        To GroupResourceAndNames
-        For string
+        Origin GroupResource
+        Target GroupResourceAndNames
+        Purpose string
     }
     class RoleBinding{
         Subjects []Subject
@@ -205,7 +205,7 @@ rules are applied in such a coarse manner.
     resources they are implementing.
   * Building a more generic approach that will enable generic controllers and
     authorizers to implement this API without prior knowledge of resources that
-    references are from or to.
+    references are origin or target.
 * Clearly define how ReferenceGrant should be used, including both current use
   cases and guidance for future use cases.
 * Implement a library to ensure that ReferenceGrant is implemented consistently
@@ -214,8 +214,8 @@ rules are applied in such a coarse manner.
 ### Non-Goals
 
 * Advanced capabilities like label selectors and the ability to allow references
-  from any namespace are likely reasonable future extensions of this API but are
-  intentionally out of scope for the initial work.
+  originating from any namespace are likely reasonable future extensions of this
+  API but are intentionally out of scope for the initial work.
 
 ## Proposal
 
@@ -231,7 +231,7 @@ Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
    Gateway controller that used a ServiceAccount for auth, would
    include a ClusterReferenceConsumer tying that ServiceAccount to references
    from "Gateways" to "Secrets" for "tls-serving". This would link that consumer
-   to any ReferenceGrants with the same `from`, `to`, and `for` values.
+   to any ReferenceGrants with the same `origin`, `target`, and `purpose` values.
 3. **ReferenceGrant:** This resource authorizes specific instances of
    cross-namespace references. For example, if an owner of a `acme-cert` Secret
    in namespace `foo` wants to allow a TLS reference to that Secret from a
@@ -251,7 +251,7 @@ but the controller would still need to perform separate checks to ensure that
 a ReferenceGrant had allowed a specific reference.
 
 Because this relies on each individual controller to implement the logic,
-it is possible that implementations may become inconsistent. To avoid that,
+it is possible that implementations may become inconsistent. Target avoid that,
 we'll provide a standard library for implementing ReferenceGrant. We'll
 also strongly recommend that every API that relies on ReferenceGrant
 includes robust conformance tests covering this functionality. Existing
@@ -273,9 +273,9 @@ authorization.
 
 When thinking about ReferenceGrant, it is important to remember that it does not
 do anything by itself. It *Grants* the *possibility* of making a *Reference*
-across namespaces. It's intended that _another resource_ (that is, the `from`
+across namespaces. It's intended that _another resource_ (that is, the `origin`
 resource) complete the handshake by creating a reference to the referent
-resource (the `to` resource).
+resource (the `target` resource).
 
 #### ReferenceGrant authors must have sufficient access
 
@@ -331,16 +331,18 @@ following guidelines to be rules to apply to **ALL** implementations of the API:
 
 #### Gateway API Cross-Namespace Secret Reference
 
-Authors of APIs can bundle ReferenceStrategies with their API definitions
+Authors of APIs can bundle ReferenceStrategy with their API definitions
 for any references they expect to be common.
 API's can opt-in to partition references by class names.
 Classes are a normalization of the IngressClass, GatewayClass, StorageClass
 pattern. The ReferenceStrategy only needs to extract class names -- no
 knowledge of the specialized IngressClass/GatewayClass/StorageClass API is
 needed.
+Any similar string field in an API that can contain Kubernetes-style names can
+be used as a classPath.
 References and classes across multiple API versions are supported.
 
-For example, Gateway API could bundle the following ReferenceStrategy to 
+Purpose example, Gateway API could bundle the following ReferenceStrategy to 
 authorize same-namespace references from Gateways to Secrets for "tls-serving"
 as well as same-namespace references from Gateways to Secrets and ConfigMaps for "tls-client-validation".
 Gateways are partitioned by GatewayClass. Access to references of a particular
@@ -353,7 +355,7 @@ kind: ReferenceStrategy
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: gateways
-from:
+origin:
   group: gateway.networking.k8s.io
   resource: gateways
 versions:
@@ -361,36 +363,36 @@ versions:
     classPath: ".spec.gatewayClassName"
     references:
       - path: "$.spec.listeners[*].tls.certificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
-        to:
+        target:
           group: ""
           resource: secrets
-        for: tls-serving
+        purpose: tls-serving
       - path: "$.spec.listeners[*].tls.clientValidation.caCertificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
-        to:
+        target:
           group: ""
           resource: secrets
-        for: tls-client-validation
+        purpose: tls-client-validation
       - path: "$.spec.listeners[*].tls.clientValidation.caCertificateRefs[[?(@.group=='' && @.kind=='ConfigMap')].name"
-        to:
+        target:
           group: ""
           resource: configmaps
-        for: tls-client-validation
+        purpose: tls-client-validation
   - version: v1beta1
     classPath: ".spec.gatewayClassName"
     references:
       - path: "$.spec.listeners[*].tls.certificateRefs[[?(@.group=='' && @.kind=='Secret')].name"
         # Kubernetes JSONPath doesn't actually support this kind of compound boolean filter expression
-        to:
+        target:
           group: ""
           resource: secrets
-        for: tls-serving
+        purpose: tls-serving
 ```
 
 Implementations of APIs can bundle ClusterReferenceConsumer resources as part of
 their deployment. This resource links a subject (likely the ServiceAccount
 used by the controller) to matching ReferenceGrants. The subject of
 this ClusterReferenceConsumer will receive authorization for any
-ReferenceGrant with matching `from`, `to`, and `for` values.
+ReferenceGrant with matching `origin`, `target`, and `purpose` values.
 If the ReferenceStrategy is also partitioning by class, the class name
 retrieved from the `classPath` will also need to be contained within the matching 
 ClusterReferenceConsumer `classNames` list.
@@ -407,27 +409,27 @@ subject:
 classNames:
   - contour # one install of contour only uses one GatewayClass
 references:
-  - from:
+  - origin:
       group: gateway.networking.k8s.io
       resource: gateways
-    to:
+    target:
       group: ""
       resource: secrets
-    for: tls-serving
-  - from:
+    purpose: tls-serving
+  - origin:
       group: gateway.networking.k8s.io
       resource: gateways
-    to:
+    target:
       group: ""
       resource: secrets
-    for: tls-client-validation
-  - from:
+    purpose: tls-client-validation
+  - origin:
       group: gateway.networking.k8s.io
       resource: gateways
-    to:
+    target:
       group: ""
       resource: configmaps
-    for: tls-client-validation
+    purpose: tls-client-validation
 ```
 
 Finally, users can use ReferenceGrant to authorize specific cross-namespace
@@ -441,16 +443,16 @@ apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: prod-gateways
   namespace: prod-tls
-from:
+origin:
   group: gateway.networking.k8s.io
   resource: gateways
   namespace: prod
-to:
+target:
   group: ""
   resource: secrets
   names:
   - acme-tls
-for: tls-serving
+purpose: tls-serving
 ```
 
 An additional ReferenceGrant is needed to also authorizes references from
@@ -463,16 +465,16 @@ apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: prod-gateways
   namespace: prod-tls
-from:
+origin:
   group: gateway.networking.k8s.io
   resource: gateways
   namespace: prod
-to:
+target:
   group: ""
   resource: configmaps
   names:
   - aperture-science-ca-cert
-for: tls-client-validation
+purpose: tls-client-validation
 ```
 
 ### Existing ReferenceGrant Usage Examples
@@ -511,11 +513,11 @@ metadata:
   name: allow-baz-httproutes
   namespace: quux
 spec:
-  from:
+  origin:
   - group: gateway.networking.k8s.io
     kind: HTTPRoute
     namespace: baz
-  to:
+  target:
   - group: ""
     kind: Service
 ```
@@ -563,10 +565,10 @@ metadata:
   name: allow-prod-pvc
   namespace: prod
 spec:
-  from:
+  origin:
   - kind: PersistentVolumeClaim
     namespace: dev
-  to:
+  target:
   - group: snapshot.storage.k8s.io
     kind: VolumeSnapshot
     name: new-snapshot-demo
@@ -592,7 +594,7 @@ type ClusterReferenceConsumer struct {
     Subject Subject `json:"subject"`
 
     // ClassNames is an optional list of applicable classes for this Consumer if
-    // the "From" API is partitioned by class
+    // the "Origin" API is partitioned by class
     ClassNames []string `json:"classNames,omitempty"`
 
     // References describe all of the resources a consumer may refer to
@@ -602,18 +604,18 @@ type ClusterReferenceConsumer struct {
 // ConsumerReference describes from which originating GroupResource to which
 // target GroupResource a reference is for and for what purpose
 type ConsumerReference struct {
-    // From refers to the group and resource that these references originate from.
-    From GroupResource `json:"from"`
+    // Origin refers to the group and resource that these references originate from.
+    Origin GroupResource `json:"origin"`
 
-    // To refers to the group and resource that these references target.
-    To GroupResource `json:"to"`
+    // Target refers to the group and resource that these references target.
+    Target GroupResource `json:"target"`
 
-    // For refers to the purpose of this reference. ReferenceGrants
-    // matching the From, To, and For of this resource will be authorized for
+    // Purpose refers to the purpose of this reference. ReferenceGrants
+    // matching the Origin, Target, and Purpose of this resource will be authorized for
     // the Subject of this resource.
     //
     // This value must be a valid DNS label as defined per RFC-1035.
-    For string `json:"for"`
+    Purpose string `json:"purpose"`
 }
 
 // Subject is a copy of RBAC Subject that excludes APIGroup.
@@ -640,12 +642,12 @@ type ReferenceStrategy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// From refers to the group and resource that these references originate
+	// Origin refers to the group and resource that these references originate
 	// from.
-	From GroupResource `json:"from"`
+	Origin GroupResource `json:"origin"`
 
 	// Versions describes how references and class partitions are defined for
-	// the "From" API. Each Version string must be unique.
+	// the "Origin" API. Each Version string must be unique.
 	Versions []VersionedReferencePaths `json:"versions"`
 }
 
@@ -662,18 +664,18 @@ type VersionedReferencePaths struct {
 }
 
 type ReferencePath struct {
-	// Path in the "From" API where referenced names come from.
+	// Path in the "Origin" API where referenced names come from.
 	Path string `json:"path"`
 
 	// GroupResource for the target names from the Path
-	To GroupResource `json:"to"`
+	Target GroupResource `json:"target"`
 
-	// For refers to the purpose of this reference. Subjects of
+	// Purpose refers to the purpose of this reference. Subjects of
 	// ClusterReferenceConsumers will be authorized to follow references
-	// matching the From, To, and For of this resource.
+	// matching the Origin, Target, and Purpose of this resource.
 	//
 	// This value must be a valid DNS label as defined per RFC-1035.
-	For string `json:"for"`
+	Purpose string `json:"purpose"`
 }
 ```
 
@@ -687,24 +689,24 @@ type ReferenceGrant struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    // From refers to the group and resource that these references originate from.
-    From    GroupResource `json:"from"`
+    // Origin refers to the group and resource that these references originate from.
+    Origin    GroupResource `json:"origin"`
 
-    // To refers to the group, resource, and names that these references can
+    // Target refers to the group, resource, and names that these references can
     // target.
-    To      ReferenceGrantTo `json:"to"`
+    Target      ReferenceGrantTarget `json:"target"`
 
-    // For refers to the purpose of this reference. Subjects of
+    // Purpose refers to the purpose of this reference. Subjects of
     // ClusterReferenceConsumers will be authorized to follow references
-    // matching the From, To, and For of this resource.
+    // matching the Origin, Target, and Purpose of this resource.
     //
     // This value must be a valid DNS label as defined per RFC-1035.
-    For     string        `json:"for"`
+    Purpose     string        `json:"purpose"`
 }
 
-// ReferenceGrantTo describes what group, resource, and names are allowed as
+// ReferenceGrantTarget describes what group, resource, and names are allowed as
 // targets of the references.
-type ReferenceGrantTo struct {
+type ReferenceGrantTarget struct {
     // Group is the group of the referents.
     Group string `json:"group"`
 
@@ -738,6 +740,21 @@ decision :)
 For reference, there was an [earlier
 discussion](https://groups.google.com/g/kubernetes-api-reviewers/c/ldmrXXQC4G4)
 on the kubernetes-api-reviewers mailing list that's also relevant to this.
+
+Comments from @stealthybox:
+
+- "from/to/for" was very difficult to write docstrings for and talk about:
+  ex: "Create an informer for the `to` resource-group"
+- "from/to/for" fails the grep test because these words are very common for expressing common ideas. 
+  ex: "The From field species the `from` resource-group from which references can be expected to come from"
+
+@liggitt suggested using ReferencingResource and ReferencedResource. Other contributors mentioned these aren't great when considering dyslexia. It would probably be better to have words that use different letters. When I tried these sugggestions in code, it became hard to abbreviate them.
+
+Source and Destination have certain unintended connotations.
+
+We are going to try to use the nouns: Origin/Target/Purpose.
+There may be better suggestions for these field names.
+Let's see how these feel -- we can still change them.
 <<[/UNRESOLVED]>>
 
 ### Outstanding questions and clarifications
@@ -751,18 +768,18 @@ Also note that we don't consider any of these blockers for the general _idea_ of
 moving ReferenceGrant to the new API group, just notes to save discussion time.
 
 * Clarify that an implementation is required to reconcile ReferenceGrant for
-  specific `To` Kinds.
+  specific `Target` Kinds.
 * Corollary for future work, define how controllers interact. Is it a problem if
   multiple controllers consume the same ReferenceGrant?
 * Similar to the Gateway API version of ReferenceGrant, controllers will
   indicate status on the _referring_ resources, not on ReferenceGrant itself.
 * Clarify that the expected operating model for implementations expects them to
-  have broad, read access to both ReferenceGrant and the specific `To` Kinds they
+  have broad, read access to both ReferenceGrant and the specific `Target` Kinds they
   support, and then self-limit to only _use_ the relevant ones.
-* Determine if strings used in `For` are completely separate from verbs.
+* Determine if strings used in `Purpose` are completely separate from verbs.
 * Decide if supporting verbs such as `[create, update, delete]` make sense.
 * Decide if supporting virtual verbs such as `[forward, scale, dance]` make sense.
-  We already have `For` which has a similar function.
+  We already have `Purpose` which has a similar function.
 * Decide whether to expose/hide the API based on the API server feature flag
   and/or authorizer config.
 * Decide how cross-namespace ReferenceGrants join target resources to their
@@ -825,7 +842,7 @@ following:
 * A reference to a Namespace that exists and a Resource that doesn't exist
 * A reference to a Namespace and Resource that exists but a ReferenceGrant
   allowing the reference does not exist
-* Multiple entries in both from and to entries within a ReferenceGrant
+* Multiple entries in both origin and target entries within a ReferenceGrant
 * A ReferenceGrant that allows references to kinds of resources that do not
   exist
 * Multiple ReferenceGrants with partially overlapping grants
@@ -834,9 +851,9 @@ following:
 * A ReferenceGrant that includes overlapping grants for the same namespace both
   with and without the resource name specified
 * A reference that has not been allowed by any ReferenceGrants
-* A ReferenceGrant that is ineffective due to the wrong `from.namespace` value
-* A ReferenceGrant that is ineffective due to the wrong `from.group` value
-* A ReferenceGrant that is ineffective due to the wrong `from.resource` value
+* A ReferenceGrant that is ineffective due to the wrong `origin.namespace` value
+* A ReferenceGrant that is ineffective due to the wrong `origin.group` value
+* A ReferenceGrant that is ineffective due to the wrong `origin.resource` value
 * A ReferenceGrant that is ineffective due to the wrong `to.group` value
 * A ReferenceGrant that is ineffective due to the wrong `to.resource` value
 * A ReferenceGrant that is ineffective due to the wrong `to.name` value
@@ -873,7 +890,7 @@ N/A
 
 ### Version Skew Strategy
 
-ReferenceStrategy describes resolving fields from multiple versions other
+ReferenceStrategy describes resolving fields from multiple versions of other
 API's. The ReferenceStrategy controller will need to use the most preferred
 API version available. API Authors may update their ReferenceStrategies with
 version skew between the resources of their group.
@@ -904,7 +921,7 @@ Previous Discussions:
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086020464
 * https://github.com/kubernetes/enhancements/pull/3767#discussion_r1086012665
 
-We already allow "Name" to be optional in `To`, effectively resulting in
+We already allow "Name" to be optional in `Target`, effectively resulting in
 wildcard behavior. Should we expand that to allow any of the following?
 
 1. References to any group or resource
@@ -942,7 +959,7 @@ As a potential middleground, we could explore a solution that left
 room for namespace selectors without actually including them. For example:
 
 ```go
-type ReferenceGrantFrom struct {
+type ReferenceGrantOrigin struct {
   //...
   Peer ReferenceGrantPeer
 }
@@ -961,7 +978,7 @@ really want:
 ```go
 type ReferenceGrant struct {
     // ...
-    From ReferenceGrantPeer
+    Origin ReferenceGrantPeer
 }
 
 type ReferenceGrantPeer struct {
