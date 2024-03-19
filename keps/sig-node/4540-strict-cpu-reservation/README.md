@@ -7,10 +7,6 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -19,6 +15,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -63,12 +62,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options(#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
 These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
 The three policy options that already exist are `full-pcpus-only`(#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327).
-With this KEP, a new `CPUManager` policy option is introduced which ensures that reservedSystemCPUs are reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
+With this KEP, a new `CPUManager` policy option is introduced which ensures that reservedSystemCPUs are strictly reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
 
 
 ## Motivation
 
-The static policy is used to reduce latency or improve performance. If you want to move system daemons or interrupt processing to dedicated cores, the oblivious way is use the reservedSystemCPUs option. But in current implementation this isolation is implemented only for guaranteed pods not for burstable and best-effort pods.
+The static policy is used to reduce latency or improve performance. If you want to move system daemons or interrupt processing to dedicated cores, the obvious way is use the reservedSystemCPUs option. But in current implementation this isolation is implemented only for guaranteed pods not for burstable and best-effort pods.
 Admission is only comparing the cpu requests against the allocatable cpus. Since the cpu limit are higher than the request, it allows burstable and best-effort pods to use up the capacity of reservedSystemCPUs option and cause the OS/Systemd services to starve in real life deployments.
 
 ### Goals
@@ -92,6 +91,9 @@ When `strict-cpu-reservation` is enabled as a policy option, we remove the reser
 
 Feature impact can be illustrated as following: 
 
+With the following Kubelet configuration:
+
+```yaml
 kind: KubeletConfiguration
 apiVersion: kubelet.config.k8s.io/v1beta1
 featureGates:
@@ -101,14 +103,19 @@ cpuManagerPolicy: static
 cpuManagerPolicyOptions:
   strict-cpu-reservation: "true"
 reservedSystemCPUs: "0,1,40,41,20,21,60,61"
+```
 
 When `strict-cpu-reservation` is disabled:
-cat /var/lib/kubelet/cpu\_manager\_state
+```console
+# cat /var/lib/kubelet/cpu\_manager\_state
 {"policyName":"static","defaultCpuSet":"0-79","checksum":1241370203}
+```
 
 When `strict-cpu-reservation` is enabled:
-cat /var/lib/kubelet/cpu\_manager\_state
+```console
+# cat /var/lib/kubelet/cpu\_manager\_state
 {"policyName":"static","defaultCpuSet":"2-19,22-39,42-59,62-79","checksum":3758876046}
+```
 
 ### Test Plan
 
@@ -125,44 +132,21 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-- These cases will be added in the existing integration tests:
-  - Feature gate enable/disable tests
-  - `strict-cpu-reservation` policy option works as expected when policy option is enabled.
-
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/policy_static.go`: `03-18-2024` - `91.1`
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+- These cases will be added in the existing integration tests:
+  - Feature gate enable/disable tests
+  - `strict-cpu-reservation` policy option works as expected.
+  - `strict-cpu-reservation` policy option works with existing polity options.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+- These cases will be added in the existing e2e tests:
+  - Feature gate enable/disable tests
+  - `strict-cpu-reservation` policy option works as expected.
+  - `strict-cpu-reservation` policy option works with existing polity options.
 
 ### Graduation Criteria
 
@@ -194,7 +178,7 @@ No changes needed
 
 ### Feature Enablement and Rollback
 
-The /var/lib/kubelet/cpu_manager_state needs be removed when changing the value of `strict-cpu-reservation`.
+The /var/lib/kubelet/cpu\_manager\_state needs be removed when changing the value of `strict-cpu-reservation`.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -206,7 +190,7 @@ The /var/lib/kubelet/cpu_manager_state needs be removed when changing the value 
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
-        Yes -- remove /var/lib/kubelet/cpu_manager_state and restart kubelet is required.
+        Yes -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
 
 
 ###### Does enabling the feature change any default behavior?
@@ -217,7 +201,7 @@ The feature is only enabled when all following conditions are met:
 1. The `CPUManagerPolicyAlphaOptions` feature gate must be enabled
 2. The `static` `CPUManager` policy must be selected
 3. The new `strict-cpu-reservation` policy option must be selected
-4. The reservedSystemCPUs is not empty
+4. The `reservedSystemCPUs` is not empty
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -231,6 +215,8 @@ Yes, the feature can be disabled by either:
 The feature will be enabled regardless it is enabled for the first time or not.
 
 ###### Are there any tests for feature enablement/disablement?
+
+- A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -282,17 +268,18 @@ Inspect the kubelet configuration -- check the presence of the feature gate and 
 Inspect the cgroup/cpuset configuration of burstable and best-effort pods -- check the reserved cores are not used by them.
 
 Below is an example when Cgroup v1 is used:
-cat /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod50ca196f\_866c\_4070\_844a\_16d466b957ae.slice/cri-containerd-b511f2ad6e959a0a369578d335c8f0c3f01a2108c9157bce8d239a8d8d6a0d64.scope/cpuset.cpus
+```console
+# cat /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod50ca196f\_866c\_4070\_844a\_16d466b957ae.slice/cri-containerd-b511f2ad6e959a0a369578d335c8f0c3f01a2108c9157bce8d239a8d8d6a0d64.scope/cpuset.cpus
 2-19,22-39,42-59,62-79 
+```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-There are no specific SLOs for this feature.
 This feature to protect infrastructure services, when they are restricted to run on limited number of CPU cores, from bursty workloads.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-None
+Run `top -H` to observe reservedSystemCPUs are used by system daemons and interrupt processing only.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -341,14 +328,22 @@ No
 Incease kubelet log level and check kubelet log for errors.
 
 Below is how to check kubelet log when it runs as a systemd service:
+```console
 journalctl _SYSTEMD_INVOCATION_ID=`systemctl show -p InvocationID --value kubelet.service`
+```
 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+There is no impact on this node local feature.
+
 ###### What are other known failure modes?
 
+There is no known failure mode since this feature changes available CPU core for burstable and best-effort pods only.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+You can safely disable the feature.
 
 ## Implementation History
 
@@ -357,3 +352,5 @@ journalctl _SYSTEMD_INVOCATION_ID=`systemctl show -p InvocationID --value kubele
 ## Drawbacks
 
 ## Alternatives
+
+## Infrastructure Needed (Optional)
