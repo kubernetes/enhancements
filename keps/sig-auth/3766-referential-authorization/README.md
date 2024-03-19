@@ -26,7 +26,7 @@
     - [PersistentVolumeClaim using cross namespace data source](#persistentvolumeclaim-using-cross-namespace-data-source)
   - [API Spec](#api-spec)
     - [ClusterReferenceConsumer](#clusterreferenceconsumer)
-    - [ClusterReferenceGrant](#clusterreferencegrant)
+    - [ReferenceStrategy](#referencestrategy)
     - [ReferenceGrant](#referencegrant)
   - [Outstanding questions and clarifications](#outstanding-questions-and-clarifications)
   - [Test Plan](#test-plan)
@@ -61,7 +61,7 @@
 - [Alternatives](#alternatives)
   - [Implement a revised ReferenceGrant as a CustomResourceDefinition](#implement-a-revised-referencegrant-as-a-customresourcedefinition)
   - [Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant](#every-api-that-wants-to-support-cross-namespace-references-maintains-its-own-equivalent-to-referencegrant)
-  - [Use CEL to define ClusterReferenceGrant, rather than JSONPath](#use-cel-to-define-clusterreferencegrant-rather-than-jsonpath)
+  - [Use CEL to define ReferenceStrategy, rather than JSONPath](#use-cel-to-define-referencestrategy-rather-than-jsonpath)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -108,7 +108,7 @@ This roughly illustrates how the proposed APIs are connected:
 
 ```mermaid
 classDiagram
-    ClusterReferenceConsumer <.. ClusterReferenceGrant : When From + To + For match
+    ClusterReferenceConsumer <.. ReferenceStrategy : When From + To + For match
     ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
 
     class ClusterReferenceConsumer{
@@ -117,7 +117,7 @@ classDiagram
         To GroupResource
         For string
     }
-    class ClusterReferenceGrant{
+    class ReferenceStrategy{
         From GroupVersionResourcePath
         To GroupResource
         For string
@@ -136,9 +136,9 @@ authorization.
 
 ```mermaid
 classDiagram
-    ClusterReferenceConsumer <.. ClusterReferenceGrant : When From + To + For match
+    ClusterReferenceConsumer <.. ReferenceStrategy : When From + To + For match
     ClusterReferenceConsumer <.. ReferenceGrant : When From + To + For match
-    ClusterReferenceGrant ..> Role : Names from Local References Matching Pattern
+    ReferenceStrategy ..> Role : Names from Local References Matching Pattern
     ReferenceGrant ..> Role : Names from List in "To"
     ClusterReferenceConsumer <.. RoleBinding : Connects Roles Match From + To + For to Subject
     RoleBinding <.. Role : Connects All Consumers Matching From + To + For
@@ -149,7 +149,7 @@ classDiagram
         To GroupResource
         For string
     }
-    class ClusterReferenceGrant{
+    class ReferenceStrategy{
         From GroupVersionResourcePath
         To GroupResource
         For string
@@ -221,17 +221,17 @@ rules are applied in such a coarse manner.
 
 Create 3 new API types in a new `reference.authorization.k8s.io` API Group:
 
-1. **ClusterReferenceGrant:** This resource grants access to resources by
+1. **ReferenceStrategy:** This resource grants access to resources by
    following references within the same namespace. For example, a `gateways`
-   ClusterReferenceGrant would grant access to Gateway controllers for
+   ReferenceStrategy would grant access to Gateway controllers for
    same-namespace references from Gateways to TLS Secrets. API developers would
    bundle these resources with their APIs.
 2. **ClusterReferenceConsumer:** This resource links a consumer (defined by
-   something like a RBAC Subject) to (Cluster)ReferenceGrants. For example, a
+   something like a RBAC Subject) to ReferenceGrants. For example, a
    Gateway controller that used a ServiceAccount for auth, would
    include a ClusterReferenceConsumer tying that ServiceAccount to references
    from "Gateways" to "Secrets" for "tls-serving". This would link that consumer
-   to any (Cluster)ReferenceGrants with the same `from`, `to`, and `for` values.
+   to any ReferenceGrants with the same `from`, `to`, and `for` values.
 3. **ReferenceGrant:** This resource authorizes specific instances of
    cross-namespace references. For example, if an owner of a `acme-cert` Secret
    in namespace `foo` wants to allow a TLS reference to that Secret from a
@@ -331,16 +331,16 @@ following guidelines to be rules to apply to **ALL** implementations of the API:
 
 #### Gateway API Cross-Namespace Secret Reference
 
-Authors of APIs can bundle ClusterReferenceGrants with their API definitions
+Authors of APIs can bundle ReferenceStrategies with their API definitions
 for any references they expect to be common.
 API's can opt-in to partition references by class names.
 Classes are a normalization of the IngressClass, GatewayClass, StorageClass
-pattern. The ClusterReferenceGrant only needs to extract class names -- no
+pattern. The ReferenceStrategy only needs to extract class names -- no
 knowledge of the specialized IngressClass/GatewayClass/StorageClass API is
 needed.
 References and classes across multiple API versions are supported.
 
-For example, Gateway API could bundle the following ClusterReferenceGrant to 
+For example, Gateway API could bundle the following ReferenceStrategy to 
 authorize same-namespace references from Gateways to Secrets for "tls-serving"
 as well as same-namespace references from Gateways to Secrets and ConfigMaps for "tls-client-validation".
 Gateways are partitioned by GatewayClass. Access to references of a particular
@@ -349,7 +349,7 @@ that class.
 Proposed fields from GEP-91 are added to the v1 version, but not v1beta1.
 
 ```yaml
-kind: ClusterReferenceGrant
+kind: ReferenceStrategy
 apiVersion: reference.authorization.k8s.io/v1alpha1
 metadata:
   name: gateways
@@ -388,10 +388,10 @@ versions:
 
 Implementations of APIs can bundle ClusterReferenceConsumer resources as part of
 their deployment. This resource links a subject (likely the ServiceAccount
-used by the controller) to matching (Cluster)ReferenceGrants. The subject of
+used by the controller) to matching ReferenceGrants. The subject of
 this ClusterReferenceConsumer will receive authorization for any
-(Cluster)ReferenceGrant with matching `from`, `to`, and `for` values.
-If the ClusterReferenceGrant is also partitioning by class, the class name
+ReferenceGrant with matching `from`, `to`, and `for` values.
+If the ReferenceStrategy is also partitioning by class, the class name
 retrieved from the `classPath` will also need to be contained within the matching 
 ClusterReferenceConsumer `classNames` list.
 
@@ -608,7 +608,7 @@ type ConsumerReference struct {
     // To refers to the group and resource that these references target.
     To GroupResource `json:"to"`
 
-    // For refers to the purpose of this reference. (Cluster)ReferenceGrants
+    // For refers to the purpose of this reference. ReferenceGrants
     // matching the From, To, and For of this resource will be authorized for
     // the Subject of this resource.
     //
@@ -631,12 +631,12 @@ type Subject struct {
 }
 ```
 
-#### ClusterReferenceGrant
+#### ReferenceStrategy
 
 ```golang
-// ClusterReferenceGrant identifies a common form of referencing pattern. This
+// ReferenceStrategy identifies a common form of referencing pattern. This
 // can then be used with ReferenceGrants to selectively allow references.
-type ClusterReferenceGrant struct {
+type ReferenceStrategy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -768,9 +768,9 @@ moving ReferenceGrant to the new API group, just notes to save discussion time.
 * Decide how cross-namespace ReferenceGrants join target resources to their
   originating reference. One way of accomplishing this is to extract the
   namespace alongside the name of a target reference when reconciling 
-  ClusterReferenceGrants, then pair those with a matching ReferenceGrant. A 
+  ReferenceStrategies, then pair those with a matching ReferenceGrant. A 
   trade-off of this approach is that it makes ReferenceGrants
-  dependent on ClusterReferenceGrants. The alternative is that the subject of a ClusterReferenceConsumer is authorized for the granted object regardless of 
+  dependent on ReferenceStrategies. The alternative is that the subject of a ClusterReferenceConsumer is authorized for the granted object regardless of 
   whether there is actually a cross-namespace reference.
 * Decide whether to formally add `*` as a special value for Namespace, to mean
   "all namespaces".
@@ -873,9 +873,9 @@ N/A
 
 ### Version Skew Strategy
 
-ClusterReferenceGrant describes resolving fields from multiple versions other
-API's. The ClusterReferenceGrant controller will need to use the most preferred
-API version available. API Authors may update their ClusterReferenceGrants with
+ReferenceStrategy describes resolving fields from multiple versions other
+API's. The ReferenceStrategy controller will need to use the most preferred
+API version available. API Authors may update their ReferenceStrategies with
 version skew between the resources of their group.
 
 There will be some implementations that support both the API defined by Gateway
@@ -1130,7 +1130,7 @@ API Type: ClusterReferenceConsumer
 Supported Number of Objects per Cluster: 100
 Supported Number of Objects per Namespace: N/A
 
-API Type: ClusterReferenceGrant
+API Type: ReferenceStrategy
 Supported Number of Objects per Cluster: 100
 Supported Number of Objects per Namespace: N/A
 
@@ -1206,7 +1206,7 @@ stable API, and other software can assume it will remain available.
 ### Every API that wants to support cross-namespace references maintains its own equivalent to ReferenceGrant
 This would be a confusing mess, we should avoid this at all costs.
 
-### Use CEL to define ClusterReferenceGrant, rather than JSONPath
+### Use CEL to define ReferenceStrategy, rather than JSONPath
 This could be a reasonable path and potential future addition, but Kubernetes
 users are currently more familiar with JSONPath as it is exposed in prominent
 places such as kubectl.
