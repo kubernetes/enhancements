@@ -267,6 +267,7 @@ outcome once this KEP is implemented.
 |4. Either the filepath or key specified in `FileKeySleector` field does not exist | Pod created | Container fails to start and error message in event.|
 |5. Either the filepath or key specified in `FileKeySleector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
 |6. The specified file is not a parsable env file. | Pod created | Container fails to start and error message in event.|
+|7. The specified file contains invalid env var names. | Pod created | Container starts but invalid env vars are skipped and reported in the events.|
 
 
 ### Test Plan
