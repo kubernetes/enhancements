@@ -7,6 +7,9 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -59,9 +62,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options(#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
+Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options (#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
 These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
-The three policy options that already exist are `full-pcpus-only`(#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327).
+The three policy options that already exist are `full-pcpus-only` (#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327).
 With this KEP, a new `CPUManager` policy option is introduced which ensures that reservedSystemCPUs are strictly reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
 
 
@@ -80,16 +83,37 @@ Admission is only comparing the cpu requests against the allocatable cpus. Since
 We propose to add a new `CPUManager` policy option called `strict-cpu-reservation` to the `static` policy of `CPUManager`.
 With this policy option, we remove the reserved cores from the list of all available cores at the stage of calculation DefaultCPUSet. As a result, burstable and best-effort containers are launched with a cpuset in which the reserved cores are excluded. 
 
+### User Stories (Optional)
+
+#### Story 1
+System daemons and interrupt processing are there to serve all processes including guaranteed workloads; they needs be isolated from bursty workloads.
+
+#### Story 2
+Isolating system daemons and interrupt processing is especially critical in all-in-one deployments where workloads are placed on combined master+worker(+HCI storage) nodes.
+
 ### Risks and Mitigations
 
 The risks of adding this new feature are quite low.
-It is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyAlphaOptions` feature gate (which is disabled by default).
+
+The feature is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyAlphaOptions` feature gate (which is disabled by default).
+
+When the feature is enabled, the size of the shared pool is reduced by that pod eviction may rise. This can be illustrated as follows:
+
+When `strict-cpu-reservation` is disabled:
+Total CPU cores (80) = Exclusively allocated (20) + Shared (60)
+
+When `strict-cpu-reservation` is disabled:
+Total CPU cores (80) = Exclusively allocated (20) + Reserved (8) + Shared (52)
+
+You want to make sure infrastructure pods are deployed with priorityClassName set to system-node-critical for their stability.
+
+Additionally, to avoid excessive eviction due to wrong dimensioning, this feature requires the number of reserved cores not exceeding half of the total cores.
 
 ## Design Details
 
 When `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the list of all available cores at the stage of calculation DefaultCPUSet.
 
-Feature impact can be illustrated as following: 
+Feature impact can be illustrated as following:
 
 With the following Kubelet configuration:
 
