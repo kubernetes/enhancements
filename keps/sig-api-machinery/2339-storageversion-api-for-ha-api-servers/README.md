@@ -353,7 +353,7 @@ correct order.
 
 1. Storageversion updates will be triggered by CRD create and update watch events
 2. We will perform async updates of storageversions such that we do not block writes of other unrelated APIs(for ex, crdA writes waiting for update of crdB's storageversion). These requests should be handled asynchronously
-3. We will block a storageversion update until the teardown of prev storage is finished
+3. We will block a storageversion update until the teardown of prev CRD storage is finished. If reconciliation finds storageversions requiring update and it detects that the CRD storage has already been updated, the storageversion can be updated immediately
    1. this means we will wait to update storageversion of a CRD until
       1. old storage of the same CRD is deleted
       2. pending CR writes using old storageversion of the same CRD are completed
