@@ -351,7 +351,9 @@ correct order.
 
 #### Agreements
 
-1. Storageversion updates will be triggered by CRD create and update watch events
+1. Storageversion updates will be triggered in the following scenarios:
+   1. when a CRD create or update request is received - to reconcile storageversion with the requested CRD changes
+   2. when the apiserver is started - to ensure that we always reconcile storageversions with the current state of CRDs (in case of server restarts)
 2. We will perform async updates of storageversions such that we do not block writes of other unrelated APIs(for ex, crdA writes waiting for update of crdB's storageversion). These requests should be handled asynchronously
 3. We will block a storageversion update until the teardown of prev CRD storage is finished. If reconciliation finds storageversions requiring update and it detects that the CRD storage has already been updated, the storageversion can be updated immediately
    1. this means we will wait to update storageversion of a CRD until
@@ -368,10 +370,17 @@ When a storageversion of a CRD is updated, we will ensure that all new CR writes
 1. wait for the latest storageversion to be published
 1. wait for the CRD handler to be replaced
 
-This implies that we will take a write outage for the duration of the storageversion update. We will allow this for the following reasons:
+Because we will be reconciling storageversions in 2 places:
+1. whenever a CRD write is received 
+2. whenever the apiserver restarts
+
+it implies that we will take a write outage on CR write requests for the duration of the storageversion update in both the above cases. If the storagaversion update times out and we have retried the update a certain number of times, we will fail the storageversion update and consequently, fail the blocked CR writes.
+
+
+We will allow this for the following reasons:
 1. blocking CR writes till the SV update is finished is in-line with how we handle requests for built-in resources
-2. if we update the CRD handler to the new handler **before** a storageversion update completes, we risk a server crash - and objects maybe written in new version but storageversion API would not reflect that
-3. if we allow old CRD handler to serve CR writes for the duration of a storageversion update, it would mean that we are intentionally allowing outdated CRD handlers(using old CRD versions) to serve new writes which is incorrect. Ex: in the case when an old CRD handler does not understand the new versions that have been written to etcd by other servers. This will result in read errors on data persisted in new storage versions by other servers. We prefer to take a write-outage in this case instead of (incorrectly) serving new writes with old handlers for an extended period of time (in the case the storageversion update takes long).
+2. if we update the CRD handler to the new handler and let it serve new CR writes **before** a storageversion update completes, we risk a server crash - and objects maybe written in new version but storageversion API would not reflect that. To address this, in the event of apiserver restarts, we will always fully reconcile the storageversions with the available CRDs before serving any CR writes 
+3. if we allow old CRD handler to serve CR writes till the storageversions are reconciled as a background job, it would mean that we are intentionally allowing outdated CRD handlers(using old CRD versions) to serve new writes which is incorrect. Ex: in the case when an old CRD handler does not understand the new versions that have been written to etcd by other servers. This will result in read errors on data persisted in new storage versions by other servers. We prefer to take a write-outage in this case instead of (incorrectly) serving new writes with old handlers for an extended period of time (in the case the storageversion update takes long).
 
 ### Aggregated API servers
 
