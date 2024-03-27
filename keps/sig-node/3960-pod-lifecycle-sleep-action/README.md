@@ -461,4 +461,4 @@ N/A
 
 ## Alternatives
 
-Another way to run `sleep` in a container is to use `exec` command in `preStop hook` like `command: ["/bin/sh","-c","sleep 20"]`. However this requires a sleep binariy in the image. We should offer sleep as a first-class thing.
+Another way to run `sleep` in a container is to use `exec` command in `preStop hook` like `command: ["/bin/sh","-c","sleep 20"]`. However, this requires a sleep binary in the image. We should offer sleep as a first-class thing.
