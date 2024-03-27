@@ -374,13 +374,13 @@ At least one container engine implemented the corresponding CRI APIs:
 In Kubernetes:
 
 - [x] No major bugs reported in the previous cycle
-- [ ] Enable the feature per default
-- [ ] Add separate sub-resource permission to control permissions
+- [x] Enable the feature per default
+- [x] Add separate sub-resource permission to control permissions
   at <https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/server/auth.go#L101-L108>
-- [ ] Add necessary metrics as described in the PRR sections and update the KEP with the metrics
+- [x] Add necessary metrics as described in the PRR sections and update the KEP with the metrics
   names once they exist
-  - [ ] Add CRI metrics
-  - [ ] Add kubelet metrics (this already exist under the name `checkpoint`)
+  - [x] Add CRI metrics (this already exists via `kubelet_runtime_operations_errors_total`)
+  - [x] Add kubelet metrics (this already exists under the name `checkpoint`)
     <https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/server/server.go#L442>
 
 #### Beta to GA Graduation
@@ -388,12 +388,12 @@ In Kubernetes:
 CRI-O as well as containerd have to have implemented the corresponding CRI APIs:
 
 - [x] CRI-O
-- [ ] containerd (<https://github.com/containerd/containerd/pull/6965>)
+- [x] containerd (<https://github.com/containerd/containerd/pull/6965>)
 
 Ensure that e2e tests are working with
 
 - [x] CRI-O
-- [ ] containerd (<https://github.com/containerd/containerd/pull/6965>)
+- [x] containerd (<https://github.com/containerd/containerd/pull/6965>)
 
 ### Upgrade / Downgrade Strategy
 
@@ -457,8 +457,8 @@ request will fail.
 
 ###### What specific metrics should inform a rollback?
 
-CRI metrics will be added to track checkpointing failures to inform a rollback
-decision.
+It is possible to query the number of failed checkpoint operations using the
+*kubelet* metrics API endpoint `kubelet_runtime_operations_errors_total`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
