@@ -73,7 +73,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Communicating allocation to the DRA driver](#communicating-allocation-to-the-dra-driver)
 - [Design Details](#design-details)
   - [ResourceClass extension](#resourceclass-extension)
-  - [NodeResourceSlice](#noderesourceslice)
+  - [ResourceSlice](#resourceslice)
   - [ResourceClaimParameters](#resourceclaimparameters)
   - [ResourceClassParameters](#resourceclassparameters)
   - [ResourceHandle extension](#resourcehandle-extension)
@@ -182,7 +182,7 @@ communication with DRA drivers.
 At a high-level, this extension takes the following form:
 
 * DRA drivers publish their available resources in the form of a
-  `NodeResourceSlice` object on a node-by-node basis according to one or more of the
+  `ResourceSlice` object on a node-by-node basis according to one or more of the
   builtin "structured models" known to Kubernetes. This object is stored in the
   API server and available to the scheduler (or Cluster Autoscaler) to query
   when a resource request comes in later on.
@@ -198,9 +198,9 @@ At a high-level, this extension takes the following form:
   vendor-specific claim parameters into a canonical form (i.e. a generic
   `ResourceClaimParameters` object in the `resource.k8s.io` API group) which
   the scheduler (or Cluster Autoscaler) can evaluate against the
-  `NodeResourceSlice` of any candidate nodes without knowing exactly what is
+  `ResourceSlice` of any candidate nodes without knowing exactly what is
   being requested. They then use this information to help decide which node to
-  schedule a pod on (as well as allocate resources from its `NodeResourceSlice`
+  schedule a pod on (as well as allocate resources from its `ResourceSlice`
   in the process).
 
 * Once a node is chosen and the allocation decisions made, the scheduler will
@@ -262,32 +262,32 @@ example, a cloud provider controller could populate this based upon information
 from the cloud provider API.
 
 In the kubelet case, each kubelet publishes kubelet publishes a set of
-`NodeResourceSlice` objects to the API server with content provided by the
+`ResourceSlice` objects to the API server with content provided by the
 corresponding DRA drivers running on its node. Access control through the node
 authorizer ensures that the kubelet running on one node is not allowed to
-create or modify `NodeResourceSlices` belonging to another node. A `nodeName`
-field in each `NodeResourceSlice` object is used to determine which objects are
+create or modify `ResourceSlices` belonging to another node. A `nodeName`
+field in each `ResourceSlice` object is used to determine which objects are
 managed by which kubelet.
 
-**NOTE:**  `NodeResourceSlices` are published separately for each driver, using
+**NOTE:**  `ResourceSlices` are published separately for each driver, using
 whatever version of the `resource.k8s.io` API is supported by the kubelet. That
 same version is then also used in the gRPC interface between the kubelet and
 the DRA drivers providing content for those objects. It might be possible to
 support version skew (= keeping kubelet at an older version than the control
 plane and the DRA drivers) in the future, but currently this is out of scope.
 
-Embedded inside each `NodeResourceSlice` is the representation of the resources
+Embedded inside each `ResourceSlice` is the representation of the resources
 managed by a driver according to a specific "structured model". In the example
-seen below, the structured model in use is called `namedResourcesWithAttributes`:
+seen below, the structured model in use is called `namedResources`:
 
 ```yaml
-kind: NodeResourceSlice
+kind: ResourceSlice
 apiVersion: resource.k8s.io/v1alpha2
 ...
 spec:
   nodeName: worker-1
   driverName: cards.dra.example.com
-  namedResourcesWithAttributes:
+  namedResources:
     ...
 ```
 
@@ -299,34 +299,34 @@ attributes attached to it.
 If a driver wanted to use a different structured model to represent its resources,
 a new structured model would need to be defined inside Kuberenetes, and a field
 would need to be added to this struct at the same level as
-`namedResourcesWithAttributes`. Driver implementors would then have the option
+`namedResources`. Driver implementors would then have the option
 to set this new field instead.
 
 **Note:** If a new model is added to the schema but clients are not updated,
 they'll encounter an object with no information from any known structured model
-when they serialize into their known version of a `NodeResourceSlice`. This
+when they serialize into their known version of a `ResourceSlice`. This
 tells them that they cannot handle the object because the API has been extended.
 
 Drivers can use different structured models by publishing multiple
-`NodeResourceSlice` objects, as long as each model represents a distinct set of
+`ResourceSlice` objects, as long as each model represents a distinct set of
 resources. Whether the information about resources of one particular structured
-model must fit into one NodeResourceSlice object (or be distributed across
+model must fit into one ResourceSlice object (or be distributed across
 many) depends on how that particular structured model describes its resources. In
 all cases, the size of each object is a hard limit and one must take this into
-account when designing a structured model and preparing NodeResourceSlice objects
+account when designing a structured model and preparing ResourceSlice objects
 for it.
 
 Below is an example of a driver that provides two discrete GPU cards using the
-`namedResourcesWithAttributes` model described above:
+`namedResources` model described above:
 
 ```yaml
-kind: NodeResourceSlice
+kind: ResourceSlice
 apiVersion: resource.k8s.io/v1alpha2
 ...
 spec:
   nodeName: worker-1
   driverName: cards.dra.example.com
-  namedResourcesWithAttributes:
+  namedResources:
   - name: gpu-0
     attributes:
     - name: UUID
@@ -370,7 +370,7 @@ of-scope for now.
 
 **Note:** If a driver needs to reduce resource capacity, then there is a risk
 that a claim gets allocated using that capacity while the kubelet is updating a
-`NodeResourceSlice`. The implementations of structured models must handle
+`ResourceSlice`. The implementations of structured models must handle
 scenarios where more resources are allocated than available. The kubelet plugin
 of a DRA driver ***must*** double-check that the allocated resources are still
 available when NodePrepareResource is called. If not, the pod cannot start until
@@ -450,18 +450,20 @@ vendorParameters:
     sharing:
       strategy: TimeSliced
 
-requests:
+driverRequests:
 - driverName: cards.dra.example.com
-  namedResourcesWithAttributes:
-    required:
-    # Selectors are CEL expressions with access to the attributes of the named resource
-    # that is being checked for a match. Each entry here is a request for one resource.
-    - selector: |-
-        attributes["runtimeVersion"] >= "v12.0.0" && attributes["memory"] >= "32Gi"
+  requests:
+  # Each entry here is a request for one resource.
+  - namedresources:
+      # Selectors are CEL expressions with access to the attributes of the named resource
+      # that is being checked for a match.
+      selector: |-
+        attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
+        attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
 ```
 
 The meaning is that the selector expression must evaluate to true for a
-particular named resource in `namedResourcesWithAttributes`.
+particular named resource in `namedResources`.
 
 Future extensions could be added to support partioning of resources as well as a
 express constraints that must be satisfied *between* any selected resources. For
@@ -499,7 +501,7 @@ vendorParameters:
 
 filters:
 - driverName: cards.dra.example.com
-  namedResourcesWithAttributes:
+  namedResources:
     selector: |-
       attributes["memory"] <= "16Gi"
 ```
@@ -542,7 +544,7 @@ vendorClaimParameters:
       strategy: TimeSliced
 
 nodeName: worker-1
-namedResourcesWithAttributes:
+namedResources:
   resources:
   - gpu-1
 ```
@@ -560,13 +562,13 @@ type ResourceClass struct {
 
     // If (and only if) allocation of claims using this class is handled
     // via structured parameters, then StructuredParameters must be set to true.
-    StructuredParameters bool
+    StructuredParameters *bool
 }
 ```
 
-### NodeResourceSlice
+### ResourceSlice
 
-For each node, one or more NodeResourceSlice objects get created. The kubelet
+For each node, one or more ResourceSlice objects get created. The kubelet
 publishes them with the node as the owner, so they get deleted when a node goes
 down and then gets removed.
 
@@ -575,19 +577,30 @@ server-side-apply (SSA) simpler. Patching individual list elements is not
 needed and there is a single owner (kubelet).
 
 ```go
-// NodeResourceSlice provides information about available
+// ResourceSlice provides information about available
 // resources on individual nodes.
-type NodeResourceSlice struct {
+type ResourceSlice struct {
     metav1.TypeMeta
     // Standard object metadata
-    // +optional
     metav1.ObjectMeta
 
-    Spec NodeResourceSliceSpec
+    // NodeName identifies the node which provides the resources
+    // if they are local to a node.
+    //
+    // A field selector can be used to list only ResourceSlice
+    // objects with a certain node name.
+    NodeName string
+
+    // DriverName identifies the DRA driver providing the capacity information.
+    // A field selector can be used to list only ResourceSlice
+    // objects with a certain driver name.
+    DriverName string
+
+    ResourceModel
 }
 ```
 
-There is only a spec for a NodeResourceSlice at the moment. It holds the
+The ResourceSlice object holds the
 information about available resources. A status is not strictly needed because
 the information in the allocated claim statuses is sufficient to determine
 which of those resources are reserved for claims.
@@ -602,54 +615,78 @@ node because they would be required to set a reservation before proceeding with
 the allocation. It also enables detecting inconsistencies and taking actions to
 fix those, like deleting pods which use a deleted claim.
 
+At the moment, there is a single structured model. To enable adding alternative
+models in the future, one-of-many structs are used. If a component encounters
+such a struct with no known field set, it knows that it cannot handle the
+struct because some newer, unsupported model is used:
+
 ```go
-type NodeResourceSliceSpec {
-    // NodeName identifies the node where the capacity is available.
-    // A field selector can be used to list only NodeResources
-    // objects with a certain node name.
-    NodeName string
+// ResourceModel must have one and only one field set.
+type ResourceModel struct {
+    // NamedResources describes available resources using the named resources model.
+    NamedResources *NamedResourcesResources
+}
+```
 
-    // DriverName identifies the DRA driver providing the capacity information.
-    // A field selector can be used to list only NodeResources
-    // objects with a certain driver name.
-    DriverName string
+The "named resources" model lists individual resource instances and their
+attributes:
 
-    NodeResourceModel // inline, field names must not conflict with the ones above
+```go
+// NamedResourcesResources is used in NodeResourceModel.
+type NamedResourcesResources struct {
+    // The list of all individual resources instances currently available.
+    Instances []NamedResourcesInstance
 }
 
-// NodeResourceModel must have one and only one field set.
-type NodeResourceModel struct {
-    NamedResourcesWithAttributes *NamedResourcesWithAttributes
-}
-
-type NamedResourcesWithAttributes struct {
-    Name  string
-    Attributes []Attribute
-}
-
-type Attribute struct {
+// NamedResourcesInstance represents one individual hardware instance that can be selected based
+// on its attributes.
+type NamedResourcesInstance struct {
+    // Name is unique identifier among all resource instances managed by
+    // the driver on the node. It must be a DNS subdomain.
     Name string
-    AttributeValue // inline, field names must not conflict
+
+    // Attributes defines the attributes of this resource instance.
+    // The name of each attribute must be unique.
+    Attributes []NamedResourcesAttribute
 }
 
-// AttributeValue must have one and only one field set.
-type AttributeValue {
-    Quantity    *resource.Quantity
-    Bool        *bool
-    Int         *int64
-    IntSlice    *[]int64
-    String      *string
-    StringSlice *[]string
-    Version     *SemVersion
+// NamedResourcesAttribute is a combination of an attribute name and its value.
+type NamedResourcesAttribute struct {
+    // Name is unique identifier among all resource instances managed by
+    // the driver on the node. It must be a DNS subdomain.
+    Name string
+
+    NamedResourcesAttributeValue
 }
 
-// A wrapper around https://pkg.go.dev/github.com/blang/semver/v4#Version which
-// is encoded as a string. During decoding, it validates that the string
-// can be parsed using tolerant parsing (currently trims spaces, removes a "v" prefix,
-// adds a 0 patch number to versions with only major and minor components specified,
-// and removes leading 0s).
-type SemVersion {
-   semverv4.Version
+// NamedResourcesAttributeValue must have one and only one field set.
+type NamedResourcesAttributeValue struct {
+    // QuantityValue is a quantity.
+    QuantityValue *resource.Quantity
+    // BoolValue is a true/false value.
+    BoolValue *bool
+    // IntValue is a 64-bit integer.
+    IntValue *int64
+    // IntSliceValue is an array of 64-bit integers.
+    IntSliceValue *NamedResourcesIntSlice
+    // StringValue is a string.
+    StringValue *string
+    // StringSliceValue is an array of strings.
+    StringSliceValue *NamedResourcesStringSlice
+    // VersionValue is a semantic version according to semver.org spec 2.0.0.
+    VersionValue *string
+}
+
+// NamedResourcesIntSlice contains a slice of 64-bit integers.
+type NamedResourcesIntSlice struct {
+    // Ints is the slice of 64-bit integers.
+    Ints []int64
+}
+
+// NamedResourcesStringSlice contains a slice of strings.
+type NamedResourcesStringSlice struct {
+    // Strings is the slice of strings.
+    Strings []string
 }
 ```
 
@@ -660,8 +697,10 @@ combining different names with that separator to form an ID is valid.
 ### ResourceClaimParameters
 
 ```go
+// ResourceClaimParameters defines resource requests for a ResourceClaim in an
+// in-tree format understood by Kubernetes.
 type ResourceClaimParameters struct {
-    metav1.TypeMeta `json:",inline"`
+    metav1.TypeMeta
     // Standard object metadata
     metav1.ObjectMeta
 
@@ -675,51 +714,79 @@ type ResourceClaimParameters struct {
     // by multiple consumers at the same time.
     Shareable bool
 
-    // Requests describes all resources that are needed for the allocated claim.
-    // A single claim may use resources coming from different drivers.
+    // DriverRequests describes all resources that are needed for the
+    // allocated claim. A single claim may use resources coming from
+    // different drivers. For each driver, this array has at most one
+    // entry which then may have one or more per-driver requests.
+    //
+    // May be empty, in which case the claim can always be allocated.
+    DriverRequests []DriverRequests
+}
+
+// DriverRequests describes all resources that are needed from one particular driver.
+type DriverRequests struct {
+    // DriverName is the name used by the DRA driver kubelet plugin.
+    DriverName string
+
+    // VendorParameters are arbitrary setup parameters for all requests of the
+    // claim. They are ignored while allocating the claim.
+    VendorParameters runtime.Object
+
+    // Requests describes all resources that are needed from the driver.
     Requests []ResourceRequest
 }
 
 // ResourceRequest is a request for resources from one particular driver.
 type ResourceRequest struct {
-    DriverName string
-    ResourceRequestModel // inline, fields must not conflict
+    // VendorParameters are arbitrary setup parameters for the requested
+    // resource. They are ignored while allocating a claim.
+    VendorParameters runtime.Object
+
+    ResourceRequestModel
 }
 
 // ResourceRequestModel must have one and only one field set.
 type ResourceRequestModel struct {
-    NamedResourcesWithAttributes *NamedResourcesWithAttributesRequest
+    // NamedResources describes a request for resources with the named resources model.
+    NamedResources *NamedResourcesRequest
 }
 
-type NamedResourcesWithAttributesRequest struct {
+// NamedResourcesRequest is used in ResourceRequestModel.
+type NamedResourcesRequest struct {
     // Selector is a CEL expression which must evaluate to true if a
-    // resource is suitable. The language is as defined in
+    // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
     //
-    // In addition, for each supported attribute value type there
-    // is a map that resolves to the corresponding value of the
-    // instance under evaluation.
+    // In addition, for each type NamedResourcesin AttributeValue there is a map that
+    // resolves to the corresponding value of the instance under evaluation.
+    // For example:
+    //
+    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
+    //    attributes.stringslice["b"].isSorted()
     Selector string
-}
-
-type NamedResourcesWithAttributesRequests struct {
-    Required []NamedResourcesWithAttributes
 }
 ```
 
 ### ResourceClassParameters
 
 ```go
+// ResourceClassParameters defines resource requests for a ResourceClass in an
+// in-tree format understood by Kubernetes.
 type ResourceClassParameters struct {
-    metav1.TypeMeta `json:",inline"`
+    metav1.TypeMeta
     // Standard object metadata
     metav1.ObjectMeta
 
     // If this object was created from some other resource, then this links
     // back to that resource. This field is used to find the in-tree representation
-    // of the claim parameters when the parameter reference of the claim refers
+    // of the class parameters when the parameter reference of the class refers
     // to some unknown type.
     GeneratedFrom *ResourceClassParametersReference
+
+    // VendorParameters are arbitrary setup parameters for all claims using
+    // this class. They are ignored while allocating the claim. There must
+    // not be more than one entry per driver.
+    VendorParameters []VendorParameters
 
     // Filters describes additional contraints that must be met when using the class.
     Filters []ResourceFilter
@@ -727,21 +794,37 @@ type ResourceClassParameters struct {
 
 // ResourceFilter is a filter for resources from one particular driver.
 type ResourceFilter struct {
+    // DriverName is the name used by the DRA driver kubelet plugin.
     DriverName string
-    ResourceFilterModel // inline, fields must not conflict
+
+    ResourceFilterModel
 }
 
 // ResourceFilterModel must have one and only one field set.
 type ResourceFilterModel struct {
-    NamedResourcesWithAttributes *NamedResourcesWithAttributesFilter
+    // NamedResources describes a resource filter using the named resources model.
+    NamedResources *NamedResourcesFilter
 }
 
-type NamedResourcesWithAttributesFilter struct {
-    // Selector is a selector like the one in NamedResourcesWithAttributesRequest. It must be
-    // true for a resource instance to be suitable for a claim using the class.
+// NamedResourcesFilter is used in ResourceFilterModel.
+type NamedResourcesFilter struct {
+    // Selector is a CEL expression which must evaluate to true if a
+    // resource instance is suitable. The language is as defined in
+    // https://kubernetes.io/docs/reference/using-api/cel/
+    //
+    // In addition, for each type NamedResourcesin AttributeValue there is a map that
+    // resolves to the corresponding value of the instance under evaluation.
+    // For example:
+    //
+    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
+    //    attributes.stringslice["b"].isSorted()
     Selector string
 }
 ```
+
+NamedResourcesFilter and NamedResourcesRequest currently have the same
+content. Despite that, they are defined as separate structs because that might
+change in the future.
 
 ### ResourceHandle extension
 
@@ -749,6 +832,7 @@ The ResourceHandle is embedded inside the claim status. When using structured pa
 a new field must get populated instead of the opaque driver data.
 
 ```go
+// ResourceHandle holds opaque resource data for processing by a specific kubelet plugin.
 type ResourceHandle struct {
     // DriverName specifies the name of the resource driver whose kubelet
     // plugin should be invoked to process this ResourceHandle's data once it
@@ -766,59 +850,67 @@ type ResourceHandle struct {
     // The maximum size of this field is 16KiB. This may get increased in the
     // future, but not reduced.
     // +optional
-    Data *string
+    Data string
 
     // If StructuredData is set, then it needs to be used instead of Data.
     StructuredData *StructuredResourceHandle
 }
 
+// StructuredResourceHandle is the in-tree representation of the allocation result.
 type StructuredResourceHandle struct {
-    // VendorClassParameters are the parameters from the time that the claim
-    // was allocated. They can be arbitrary setup parameters that are
-    // ignore by the counter controller.
-    VendorClassParameters *runtime.RawExtension
+    // VendorClassParameters are the per-claim configuration parameters
+    // from the resource class at the time that the claim was allocated.
+    VendorClassParameters runtime.Object
 
-    // VendorClaimParameters are the parameters from the time that the claim was
-    // allocated. Some of the fields were used by the counter controller to
-    // allocated resources, others can be arbitrary setup parameters.
-    VendorClaimParameters *runtime.RawExtension
+    // VendorClaimParameters are the per-claim configuration parameters
+    // from the resource claim parameters at the time that the claim was
+    // allocated.
+    VendorClaimParameters runtime.Object
 
-   	// NodeName is the name of the node providing the necessary resources.
-    // This mirrors the AllocationResult.AvailableOnNodes with a simpler
-    // type.
-    //
-    // The driver name is the one stored in ResourceHandle.
+    // NodeName is the name of the node providing the necessary resources
+    // if the resources are local to a node.
     NodeName string
 
-    AllocationResultModel // inline, fields must not conflict
+    // Results lists all allocated driver resources.
+    Results []DriverAllocationResult
+}
+
+// DriverAllocationResult contains vendor parameters and the allocation result for
+// one request.
+type DriverAllocationResult struct {
+    // VendorRequestParameters are the per-request configuration parameters
+    // from the time that the claim was allocated.
+    VendorRequestParameters runtime.Object
+
+    AllocationResultModel
 }
 
 // AllocationResultModel must have one and only one field set.
 type AllocationResultModel struct {
-    NamedResourcesWithAttributes *NamedResourcesWithAttributesResult
+    // NamedResources describes the allocation result when using the named resources model.
+    NamedResources *NamedResourcesAllocationResult
 }
 
-type NamedResourcesWithAttributesResult struct {
-    Resources []AllocatedResource
-}
-
-type AllocatedResource struct {
-   ID string // A concatenation with / of the individual names.
+// NamedResourcesAllocationResult is used in AllocationResultModel.
+type NamedResourcesAllocationResult struct {
+    // Name is the name of the selected resource instance.
+    Name string
 }
 ```
 
 ### Implementation of structured models
 
-In the Go types above, all structs starting with `NamedResourcesWithAttributes`
-are part of that structured model. In practice, organizing those inside their own
-Go package and then importing that package in the definition of the
-resource.k8s.io API will result in a cleaner separation at the source code
-level. It has no impact on the resulting Kubernetes API.
+In the Go types above, all structs starting with `NamedResources` are part of
+that structured model. Code generators (more specifically, the applyconfig
+generator) assume that all Go types of an API are defined in the same Go
+package. If it wasn't for that, defining those structs in their own package
+without the `NamedResources` prefix would be possible and make the Go code
+cleaner without affecting the Kubernetes API.
 
 ### Scheduling + Allocation
 
 The dynamic resource scheduler plugin handles the common fields of
-NodeResourceSlice, ResourceClaimParameters and StructuredResourceHandle. For the
+ResourceSlice, ResourceClaimParameters and StructuredResourceHandle. For the
 structured model fields it calls out to code that is associated with the
 corresponding model.
 
