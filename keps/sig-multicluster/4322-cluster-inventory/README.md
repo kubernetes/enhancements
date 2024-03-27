@@ -1002,6 +1002,21 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+We also considered the possibility of extending the existing Cluster API's
+[Cluster](https://github.com/kubernetes-sigs/cluster-api/blob/v1.6.2/api/v1beta1/cluster_types.go#L39)
+resource to accommodate our needs for describing clusters within a multi-cluster
+environment. However, this approach was ruled out due to the Cluster API's primary
+focus on cluster lifecycle management. Its tight coupling with cluster provisioning
+processes made it less suitable for scenarios where clusters are either provisioned
+through different methods or already exist. Furthermore, another distinction is the
+nature of the information each API conveys: the Cluster API's Cluster resource
+outlines the desired state of the cluster. In contrast, the new API is intended to
+reflect the actual state of the cluster, more similar to the Cluster.status in the
+Cluster API, but with a broader scope and intended for use in a multi-cluster context.
+This distinction also extends to the ownership of the resources; the Cluster API's
+Cluster is primarily owned by platform administrators focused on provisioning clusters,
+whereas the new API is designed to be owned by the cluster manager that created the
+cluster it represents.
 
 ## Infrastructure Needed (Optional)
 
