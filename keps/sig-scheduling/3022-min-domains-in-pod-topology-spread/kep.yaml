@@ -24,4 +24,5 @@ disable-supported: false
 feature-gates:
   - name: MinDomainsInPodTopologySpread
     components:
+      - kube-apiserver
       - kube-scheduler
