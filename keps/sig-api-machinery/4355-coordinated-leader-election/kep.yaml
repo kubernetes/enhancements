@@ -1,0 +1,36 @@
+title: Coordinated Leader Election
+kep-number: 4355
+authors:
+  - "@jpbetz"
+  - "@jefftree"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-cluster-lifecycle
+status: provisional
+creation-date: 2023-14-05
+reviewers:
+  - "@logicalhan"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+see-also:
+  - "keps/sig-api-machinery/1965-kube-apiserver-identity"
+stage: alpha
+latest-milestone: "v1.30"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.30"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CoordinatedLeaderElection
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
