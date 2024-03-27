@@ -157,10 +157,10 @@ This test case has been added to the existing `e2e_node` tests:
   - DevicePlugin can make a CDI device accessible in a container
 
 Links to test grid:
-- https://testgrid.k8s.io/sig-node-containerd#e2e-cos-device-plugin-gpu
+- https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cdi-device-plugins
 
 Links to k8s-triage for tests:
-- https://storage.googleapis.com/k8s-triage/index.html?test=DevicePlugin
+- https://storage.googleapis.com/k8s-triage/index.html?job=ci-crio-cdi-device-plugins
 
 ### Graduation Criteria
 
