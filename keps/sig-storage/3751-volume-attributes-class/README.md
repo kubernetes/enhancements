@@ -439,31 +439,28 @@ Operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernete
 
 While a VolumeAttributesClass is referenced by any PVC, we will prevent the object from being deleted by adding a finalizer([reference](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/admission/storage/storageobjectinuseprotection/admission.go)). 
 
-The VACObjectInUseProtection admission controller sets the finalizer on all VolumeAttributesClasses. VACProtectionController removes the finalizer when it's not referenced. This prevents users from deleting a VolumeAttributesClass that's used by a PVC.
+The **vac_finalizer_controller** sets/removes the finalizer on all VolumeAttributesClasses. This prevents users from deleting a VolumeAttributesClass that's used by a PVC. The vac_finalizer_controller will maintain a cache of a map of VolumeAttributesClass to the list of PVCs that are using the VolumeAttributesClass.
 
 There are a few conditions that will trigger add/remove pvc finalizers in the VolumeAttributesClass:
 
-
 1. PVC created with a VolumeAttributesClass
-
-    The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PVC will enter the INPROGRESS state because we do not want to impose ordering on object creation
+    The **vac_finalizer_controller**:
+    * If the VolumeAttributesClassName is nil or empty, the VolumeAttributesClass will not be added to the vac_finalizer_controller cache
+    * Check if the VolumeAttributesClass exists. If not, the VolumeAttributesClass will not be added to the vac_finalizer_controller cache
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none 
 2. PVC created with a VolumeAttributesClass being deleted
-    The **VACObjectInUseProtection admission controller**:
+    The **vac_finalizer_controller**:
     * Check VolumeAttributesClass is being deleted and PVC creation failed
 3. PVC updated to a different VolumeAttributesClass
-    * The **VACProtectionController** will remove PVC finalizer in previous VolumeAttributesClass if after listing all the PVCs and confirmed that this PVC is the last one that is consuming the previous VolumeAttributesClass
-
-    The **VACObjectInUseProtection admission controller**:
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the vac_finalizer_controller cache
     * Check if the new VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the new VolumeAttributesClass if there is none 
 4. PVC updated to a different VolumeAttributesClass that is being deleted
-    The **VACObjectInUseProtection admission controller**:
+    The **vac_finalizer_controller**:
     * Check VolumeAttributesClass is being deleted and PVC update failed
 5. PVC has a VolumeAttributesClass and this PVC is deleted
-    * The **VACProtectionController** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs and confirm that this PVC is the last one that is consuming the VolumeAttributesClass
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the informer(a cache of VolumeAttributesClass) **only**
 6. Delete a VolumeAttributesClass while there is **kubernetes.io/vac-protection** finalizer associated with this VolumeAttributesClass
     * Deletion will not return an error but it will add a deletionTimestamp and wait for the finalizer being removed, then remove the VolumeAttributesClass
 7. Delete a VolumeAttributesClass without any finalizers
@@ -472,12 +469,28 @@ There are a few conditions that will trigger add/remove pvc finalizers in the Vo
 For unbound PVs referencing a VAC:
 
 1. Unbound PV created with a VolumeAttributesClass
-    The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PV will enter the INPROGRESS state because we do not want to impose ordering on object creation
+    The **vac_finalizer_controller**:
+    * If the VolumeAttributesClassName is nil or empty, the VolumeAttributesClass will not be added to the vac_finalizer_controller cache
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none
 2. PV has a VolumeAttributesClass and this PV is deleted
-    * The **VACProtectionController** will remove finalizer in the VolumeAttributesClass only if after listing all the PVs and confirm that this PV is the last one that is consuming the VolumeAttributesClass
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the informer(a cache of VolumeAttributesClass) **only**
+
+Only the **vac_finalizer_controller** will remove finalizers on VolumeAttributesClass. If the **vac_finalizer_controller** fails at the step of removing finalizer even there is no PVC/PV using the VolumeAttributesClass anymore, the **vac_finalizer_controller** should retry the deletion as a separate go routine.
+
+The vac_finalizer_controller will use only informers and therefore it may remove the finalizer too early. One scenario is:
+
+1. There is a VolumeAttributesClass that is not used by any PVC. This VolumeAttributesClass is synced to all informers (external-provisioner, external-resizer, KCM)
+2. At the same time:
+  * User creates a PVC that uses this VolumeAttributesClass
+  * Another user deletes the VolumeAttributesClass
+3. VolumeAttributesClass deletion event with DeletionTimestamp reaches vac_finalizer_controller. Because the PVC creation event has not yet reached KCM informers, the controller lets the VolumeAttributesClass to be deleted by removing the finalizer. PVC creation event reaches the external-provisioner, before VolumeAttributesClass update. The external-provisioner will try to provision a new volume using the VolumeAttributesClass that will get deleted soon.
+  * If the external-provisioner gets the VolumeAttributesClass before deletion in the informer, the provisioning will succeed
+  * Otherwise the external-prosivioner will fail the provisioning
+
+Solving this scenario properly requires to Get/List requests to the API server, which will cause performance issue in larger cluster similar to the existing PVC protection controller - [related issue](https://github.com/kubernetes/kubernetes/issues/109282).
+
+Since finalizer is more of a best effort instead of accuracy to prevent users making mistakes. The cluster admin can still force add/delete finalizers to the VAC when needed.
 
 #### Create VolumeAttributesClass
 
