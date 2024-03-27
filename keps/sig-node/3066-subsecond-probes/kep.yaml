@@ -1,0 +1,37 @@
+title: Subsecond Probes
+kep-number: 3066
+authors:
+  - "@mikebrow"
+  - "@psschwei"
+  - "@MHBauer"
+owning-sig: sig-node
+participating-sigs:
+  - sig-network
+status: implementable
+creation-date: 2021-11-30
+reviewers:
+  - "@mrunalp"
+  - "@adisky"
+  - "@aojea"
+  - "@SergeyKanzhelev"
+approvers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+see-also:
+  - TBD taking suggestions to many to list and be useful?
+replaces:
+  - TBD net add
+stage: alpha
+latest-milestone: "v1.29"
+milestone:
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.31"
+feature-gates:
+  - name: SubSecondProbes
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+metrics:
+  - "N/A"
