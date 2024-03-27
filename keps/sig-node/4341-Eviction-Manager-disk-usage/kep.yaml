@@ -1,0 +1,27 @@
+title: Eviction Manager should check disk usage of dead containers
+kep-number: 4341
+authors:
+  - "@vaibhav2107"
+owning-sig: sig-node
+participating-sigs:
+status: provisional
+creation-date: 2023-11-20
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+
+stage: 
+
+
+latest-milestone: 
+
+
+milestone:
+  alpha: 
+  beta: 
+  stable: 
+
+
+metrics:
