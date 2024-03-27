@@ -40,6 +40,7 @@
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Intentional Omissions](#intentional-omissions)
+  - [Object.Metadata sub-resource](#we-need-an-object.metadata-sub-resource)
   - [Wildcard Selectors?](#wildcard-selectors)
     - [Rationale](#rationale)
     - [Context](#context)
@@ -907,6 +908,26 @@ provide tooling to simplify this process.
 This KEP is already large in scope, so it is intentionally leaving some features
 out of scope. These are discussed below. In some cases these may be added in the
 future if needed.
+
+### We need an Object.Metadata sub-resource
+Controllers often have create/update/patch on the resources they control.
+This is too much access.
+Most controllers only need access to update resource status, ownerRefs, and
+finalizers.
+A controller being able to update the .spec field of a resource is usually
+unnessecary and creates a situation in which the controller can control its own
+inputs.
+In the case of a compromised controller user, an attacker could potentially
+create or update new resources that subsequently provide referential access to
+additional resources.
+The attacker must know or guess the names and namespaces of potential resources,
+but this is still a privilege escalation path.
+
+We already have status sub-resources for status updates.
+However, ownerRefs and finalizaers are stored in the metadata.
+We should have a metadata sub-resource, so that more granular controller access
+can be specified.
+This should be handled in a separate KEP.
 
 ### Wildcard Selectors?
 
