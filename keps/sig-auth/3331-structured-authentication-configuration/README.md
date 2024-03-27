@@ -129,7 +129,7 @@ with the existing OIDC flags, so we will provide documentation for migrating fro
 The main part of this proposal is a configuration file. It contains an array of providers:
 
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthenticationConfiguration
 jwt:
 - issuer:
@@ -162,18 +162,13 @@ jwt:
     message: groups cannot used reserved system: prefix
 ```
 
-The minimum valid payload from a JWT is (`aud` may be a `string`):
-
-```json
+The minimum valid JWT payload must contain the following claims:
+```yaml
 {
-  "iss": "https://example.com",
-  "sub": "001",
-  "aud": [
-    "cluster-a"
-  ],
-  "exp": 1684274031,
-  "iat": 1684270431,
-  "nbf": 1684270431
+  "iss": "https://example.com",   // must match the issuer.url
+  "aud": ["my-app"],              // at least one of the entries in issuer.audiences must match the "aud" claim in presented JWTs.
+  "exp": 1234567890,              // token expiration as Unix time (the number of seconds elapsed since January 1, 1970 UTC)
+  "<username-claim>": "user"      // this is the username claim configured in the claimMappings.username.claim or claimMappings.username.expression
 }
 ```
 
@@ -254,35 +249,43 @@ type JWTAuthenticator struct {
 
 ```go
     type Issuer struct {
-        // url points to the issuer URL in a format https://url/path.
+        // url points to the issuer URL in a format https://url or https://url/path.
         // This must match the "iss" claim in the presented JWT, and the issuer returned from discovery.
         // Same value as the --oidc-issuer-url flag.
-        // Used to fetch discovery information unless overridden by discoveryURL.
-        // Required to be unique.
+        // Discovery information is fetched from "{url}/.well-known/openid-configuration" unless overridden by discoveryURL.
+        // Required to be unique across all JWT authenticators.
         // Note that egress selection configuration is not used for this network connection.
         // TODO: decide if we want to support egress selection configuration and how to do so.
         URL string `json:"url"`
 
-        // discoveryURL if specified, overrides the URL used to fetch discovery information.
+       	// discoveryURL, if specified, overrides the URL used to fetch discovery
+        // information instead of using "{url}/.well-known/openid-configuration".
+        // The exact value specified is used, so "/.well-known/openid-configuration"
+        // must be included in discoveryURL if needed.
+        //
+        // The "issuer" field in the fetched discovery information must match the "issuer.url" field
+        // in the AuthenticationConfiguration and will be used to validate the "iss" claim in the presented JWT.
         // This is for scenarios where the well-known and jwks endpoints are hosted at a different
         // location than the issuer (such as locally in the cluster).
-        // Format must be https://url/path.
         //
         // Example:
-        // A discovery url that is exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'.
+        // A discovery url that is exposed using kubernetes service 'oidc' in namespace 'oidc-namespace'
+        // and discovery information is available at '/.well-known/openid-configuration'.
+        // discoveryURL: "https://oidc.oidc-namespace/.well-known/openid-configuration"
         // certificateAuthority is used to verify the TLS connection and the hostname on the leaf certificate
         // must be set to 'oidc.oidc-namespace'.
         //
-        // curl https://oidc.oidc-namespace (.discoveryURL field)
+        // curl https://oidc.oidc-namespace/.well-known/openid-configuration (.discoveryURL field)
         // {
         //     issuer: "https://oidc.example.com" (.url field)
         // }
         //
-        // Required to be unique.
+        // discoveryURL must be different from url.
+        // Required to be unique across all JWT authenticators.
         // Note that egress selection configuration is not used for this network connection.
         // TODO: decide if we want to support egress selection configuration and how to do so.
         // +optional
-        DiscoveryURL *string `json:"discoveryURL,omitempty"`
+        DiscoveryURL string `json:"discoveryURL,omitempty"`
 
         // certificateAuthority contains PEM-encoded certificate authority certificates
         // used to validate the connection when fetching discovery information.
@@ -373,6 +376,10 @@ type JWTAuthenticator struct {
         //     (2) if userName.prefix = "" and userName.claim != "email", prefix will be "<issuer.url>#"
         //     (3) if userName.expression is set instead, result of expression is used as-is without any implicit prefix
         // (1) and (2) ensure backward compatibility with the --oidc-username-claim and --oidc-username-prefix flags
+        // If username.expression uses 'claims.email', then 'claims.email_verified' must be used in
+        // username.expression or extra[*].valueExpression or claimValidationRules[*].expression.
+        // An example claim validation rule expression that matches the validation automatically
+        // applied when username.claim is set to 'email' is 'claims.?email_verified.orValue(true)'.
         // +required
         Username PrefixedClaimOrExpression `json:"username"`
         // groups represents an option for the groups attribute.
@@ -817,7 +824,7 @@ New metrics:
 - `apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds` - This metric will be updated every time the API server reloads the configuration file.
 - `apiserver_authentication_config_controller_automatic_reloads_total` - This metric will be incremented every time the API server reloads the configuration file partitioned by status (success/failure).
 - `apiserver_authentication_config_controller_automatic_reload_last_config_hash` - This metric will be set to the hash of the loaded configuration file after a successful reload.
-- `apiserver_authentication_latency_seconds` - This metric will be used to monitor the time it takes to Authenticate token. This will only be set for token authentication requests for matching issuer.
+- `apiserver_authentication_jwt_authenticator_latency_seconds` - This metric will be used to monitor the time it takes to Authenticate token. This will only be set for token authentication requests for matching issuer.
 - `apiserver_authentication_jwks_fetch_last_timestamp_seconds` - This metric will be updated every time the API server makes a request to the JWKS endpoint.
 - `apiserver_authentication_jwks_fetch_last_keyset_hash` - This metric will be set to the hash of the keyset fetched from the JWKS endpoint after successfully fetching the keyset.
   - We will use https://pkg.go.dev/hash/fnv#New64 to hash the keyset.
