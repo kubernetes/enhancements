@@ -1,0 +1,42 @@
+title: Configurable Job failure reason for PodFailurePolicyRule
+kep-number: 4443
+authors:
+  - "@danielvegamyhre"
+owning-sig: sig-apps
+status: implementable
+creation-date: 2024-02-05
+reviewers:
+  - "@ahg-g"
+  - "@kannon92"
+  - "@alculquicondor"
+approvers:
+  - "@soltysh"
+
+see-also:
+  - "https://github.com/kubernetes-sigs/jobset/pull/381"
+  - "https://github.com/kubernetes/enhancements/pull/3374"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.30"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.30"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodFailurePolicyReason
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+# # The following PRR answers are required at beta release
+# metrics:
+#   - my_feature_metric
