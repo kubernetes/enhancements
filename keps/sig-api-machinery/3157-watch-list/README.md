@@ -101,6 +101,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [Post-GA](#post-ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -678,14 +679,20 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   Whether it is safe to use the RequestWatchProgress API call 
   or if the experimental-watch-progress-notify-interval flag has been set.
   Knowing etcd configuration will be used to automatically disable the streaming feature.
+- Use WatchProgressRequester to request progress notifications directly from etcd.
+  This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
+  and will reduce the overall latency for watchlist requests.
 
 #### GA
-- Consider using WatchProgressRequester to request progress notifications directly from etcd.
-  This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
-  and could reduce the overall latency for watchlist requests.
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
   the `storage/cacher` to use streaming directly from etcd 
   (This will also allow us to [remove](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/client-go/tools/cache/reflector.go#L110) the `reflector.UseWatchList` field).
+
+#### Post-GA
+- Make  **list** calls expensive in APF. 
+  Once all supported releases have the streaming list enabled by default (client-go, control plane components)
+  and the feature itself is locked to its default value, we can increase the cost of regular list requests in APF. 
+  This ensures that the fallback mechanism, which switches back to the standard list when streaming has issues, will not be affected.
 
 <!--
 **Note:** *Not required until targeted at a release.*
