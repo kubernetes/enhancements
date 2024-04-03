@@ -196,10 +196,11 @@ aliases:
     - mrbobbytables
     - palnabarun
   prod-readiness-approvers:
-    - johnbelamaric
     - deads2k
-    - wojtek-t
+    - johnbelamaric
     - jpbetz
+    - soltysh
+    - wojtek-t
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
