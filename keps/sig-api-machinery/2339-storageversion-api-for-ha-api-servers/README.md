@@ -353,9 +353,9 @@ correct order.
 
 1. Storageversion updates will be triggered in the following scenarios:
    1. when a CRD create or update request is received - to reconcile storageversion with the requested CRD changes
-   2. when the apiserver is started - to ensure that we always reconcile storageversions with the current state of CRDs (in case of server restarts)
+   2. when the apiserver is started - to ensure that we always reconcile storageversions with the current state of CRDs (in case of server restarts when a CRD udpate was made, but server crashed before the storageversion could be updated.)
 2. We will perform async updates of storageversions such that we do not block writes of other unrelated APIs(for ex, crdA writes waiting for update of crdB's storageversion). These requests should be handled asynchronously
-3. We will block a storageversion update until the teardown of prev CRD storage is finished. If reconciliation finds storageversions requiring update and it detects that the CRD storage has already been updated, the storageversion can be updated immediately
+3. We will block a storageversion update until the teardown of prev CRD storage is finished. If reconciliation finds storageversions requiring update and it detects that the CRD storage has already been updated, and there are no teardowns of old storages in progress, the storageversion can be updated immediately
    1. this means we will wait to update storageversion of a CRD until
       1. old storage of the same CRD is deleted
       2. pending CR writes using old storageversion of the same CRD are completed
