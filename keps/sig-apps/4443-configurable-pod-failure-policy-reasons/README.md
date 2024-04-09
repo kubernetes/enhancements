@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4443: Configurable PodFailurePolicy Reason
+# KEP-4443: More granular Job failure reasons for PodFailurePolicyRule
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -158,7 +158,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes to extend the Job API by adding an optional `SetConditionReason` field to `PodFailurePolicyRule`, which if specified, would be included as the reason in the `JobFailed` condition upon Job failure triggered by a `PodFailurePolicy`.
+This KEP proposes to extend the Job API by adding an optional `Name` field to `PodFailurePolicyRule`. If unset, it would default to the index of
+the rule in the `podFailurePolicy.rules` slice. 
+
+When a pod failure policy rule triggers a Job failure, the rule name would be appended as a suffix to the `JobFailed` condition reason, in the
+format: `PodFailurePolicy_{ruleName}`.
 
 ## Motivation
 
@@ -185,15 +189,14 @@ For pod failure policies to be able communicate different failure types to highe
 
 ## Proposal
 
-The proposal is to add an optional `SetConditionReason` field to the `PodFailurePolicyRule` that is used
-to set the `Reason` field on the `JobFailed` condition when a Job fails because of a pod failure policy rule match.
-
-If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/staging/src/k8s.io/api/batch/v1/types.go#L542) the Job
-controller uses when a PodFailurePolicy triggers a Job failure.
+The proposal is to add an optional `Name` field to the `PodFailurePolicyRule`, allowing the user
+to define a name for a pod failure policy rule. If unset, it will default to the index of the 
+`PodFailurePolicyRule` in the `PodFailurePolicy.Rules` slice.
 
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) added
-to the Job.
+controller will append the name of the pod failure policy rule which triggered the failure
+to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816)
+reason. The exact format of the JobFailed condition reason will be `PodFailurePolicy-{ruleName}`.
 
 ### User Stories (Optional)
 
@@ -223,7 +226,7 @@ spec:
       targetReplicatedJobs:
       - workers
       onJobFailureReasons:
-      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].setConditionReason
+      - PodFailurePolicy_ExitCode2 # Job failure reason format: PodFailurePolicy_{ruleName}
     maxRestarts: 10
   replicatedJobs:
   - name: workers
@@ -236,12 +239,12 @@ spec:
         # If a pod fails with exit code 2, fail the job with the user-defined reason.
         podFailurePolicy:
           rules:
-          - action: FailJob
+          - name: "ExitCode2"  # Will be added as a suffix to the reason "PodFailurePolicy" condition reason.
+            action: FailJob
             onExitCodes:
               containerName: main
               operator: In
               values: [2]
-            setConditionReason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
         template:
           spec:
             restartPolicy: Never
@@ -284,13 +287,13 @@ spec:
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode2 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[0].setConditionReason
+      - PodFailurePolicy_ExitCode2  # Job failure reason format: PodFailurePolicy_{ruleName}
     # If Job fails due to a pod failing with exit code 3, restart that Job.
     - action: RestartJob
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - ExitCode3 # Matches Reason defined in .spec.replicatedJobs[0].template.spec.podFailurePolicy.rules[1].setConditionReason
+      - PodFailurePolicy_ExitCode3  # Job failure reason format: PodFailurePolicy_{ruleName}
     maxRestarts: 10
   replicatedJobs:
   - name: simulations
@@ -300,21 +303,21 @@ spec:
         parallelism: 1
         completions: 1
         backoffLimit: 0
-        # If a pod fails with exit code 2 or 3, fail the Job, using the user-defined reason.
+        # Pod failure policy rules, the names of which are referenced in the JobSet failure policy.
         podFailurePolicy:
           rules:
-          - action: FailJob
+          - name: ExitCode2
+            action: FailJob
             onExitCodes:
               containerName: main
               operator: In
               values: [2]
-            setConditionReason: "ExitCode2"  # Matches Reason defined in .spec.failurePolicy.rules[0].onJobFailureReasons[0]
-          - action: FailJob
+          - name: ExitCode3
+            action: FailJob
             onExitCodes:
               containerName: main
               operator: In
               values: [3]
-            setConditionReason: "ExitCode3" # Matches Reason defined in .spec.failurePolicy.rules[1].onJobFailureReasons[0]
         template:
           spec:
             restartPolicy: Never
@@ -354,20 +357,19 @@ we are validating against malformed/invalid inputs.
 ## Design Details
 
 #### Defaulting
-If unset, it will default to `PodFailurePolicy`, which is the current [reason](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555) the Job
-controller uses when a PodFailurePolicy triggers a Job failure.
+If unset, the `Name` field will default to the index of the pod failure policy rule in the `Rules` slice.
 
 #### Validation
-- We will validate the user-defined Reason is a valid reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)). We will also validate the user-defined Reason is less than 128 characters.
-- We will also validate the user-defined Reason does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
+- We will validate the name be used as a valid Reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)). We will also validate the user-defined Reason is less than 128 characters.
+- We will also validate the pod failure policy rule does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
 
 #### Business logic
-When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will add the reason defined in the `SetConditionReason` field to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) added
-to the Job.
+When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job controller will
+set the JobFailed condition reason deterministically in the format `PodFailurePolicy_{ruleName}`. This 
+suffix will be added to the condition [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) here.
 
-Note: If the PodFailurePolicy feature gate is disabled, but the `PodFailurePolicyReason` feature gate is enabled, there will be 
-no adverse effect and neither feature will actually be used, since the only place the proposed new field `SetConditionReason` will be
+Note: If the PodFailurePolicy feature gate is disabled, but the `PodFailurePolicyName` feature gate is enabled, there will be 
+no adverse effect and neither feature will actually be used, since the only place the proposed new field `Name` will be
 used is inside of a [code block](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) protected by the PodFailurePolicy feature gate.
 
 ### Test Plan
@@ -592,7 +594,7 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 - Upgrade to k8s version 1.30+
-- Enable feature flag `PodFailurePolicyReason`
+- Enable feature flag `PodFailurePolicyName`
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -607,7 +609,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `PodFailurePolicyReason`
+  - Feature gate name: `PodFailurePolicyName`
   - Components depending on the feature gate:
     - kube-controller-manager
 - [ ] Other
@@ -637,7 +639,7 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes, by disabling the feature flag `PodFailurePolicyReason`.
+Yes, by disabling the feature flag `PodFailurePolicyName`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -665,9 +667,6 @@ We can add unit tests for:
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -853,8 +852,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-If the optional `SetConditionReason` field is specified, the podFailurePolicy object size will increase by 1 byte per
-character in the `SetConditionReason` string.
+If the optional `name` field is specified, the podFailurePolicy object size will increase by 1 byte per
+character in the `name` string.
+Otherwise, if unset, it will default to the index of the rule, and thus increase by 1 byte per digit in
+the index number.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -945,13 +946,18 @@ Major milestones might include:
 None
 
 ## Alternatives
+1. We discussed the idea of having a new optional `PodFailurePolicyRule` field `SetConditionReason`, which will enable
+the user to explicitly set the condition reason they want on the JobFailed condition set on the Job when that pod failure
+policy rule triggers a Job failure. However, ultimately it was decided we didn't want to open up the reason field to be
+explicitly set by the user to any arbitrary value, as this would be tricky to validate, and would diverge from the current
+paradigm of having only machine set reasons which are determined programatically.
 
-Rather than having the user specify a custom reason via the proposed `SetConditionReason` field, which will require validation and an additional step
+2. Rather than having the user specify a custom reason via the proposed `SetConditionReason` field, which will require validation and an additional step
 in the user-experience, instead the Job controller could automatically generate reasons, using a determnistic
 format which depends on if the podFailurePolicy was triggered by the `onPodConditions` or `onContainerExitCodes`.
 
 For example, in the case of container exit codes, we could append the container exit code to
-the default reason (e.g., `PodFailurePolicy-ExitCode3`). For `onPodConditions`, it could be the pod condition
+the default reason (e.g., `PodFailurePolicy-PodFailurePolicy_ExitCode3`). For `onPodConditions`, it could be the pod condition
 type and status joined together (e.g., `PodFailurePolicy-{type}-{status}`). However, this limits flexibility
 for the user, and locks us in to supporting this concrete, specific behavior, rather than the more generic
 behavior resulting from the optional `SetConditionReason` field set by the user.
