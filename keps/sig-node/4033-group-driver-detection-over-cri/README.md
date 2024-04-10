@@ -234,25 +234,38 @@ used. A new RuntimeConfig rpc is added to query the information.
  service RuntimeService {
  ...
 +    // RuntimeConfig returns configuration information of the runtime.
++    // A couple of notes:
++    // - The RuntimeConfigRequest object is not to be confused with the contents of UpdateRuntimeConfigRequest.
++    //   The former is for having runtime tell Kubelet what to do, the latter vice versa.
++    // - It is the expectation of the Kubelet that these fields are static for the lifecycle of the Kubelet.
++    //   The Kubelet will not re-request the RuntimeConfiguration after startup, and CRI implementations should
++    //   avoid updating them without a full node reboot.
 +    rpc RuntimeConfig(RuntimeConfigRequest) returns (RuntimeConfigResponse) {}
  }
  
-+message RuntimeConfigRequestRequest {}
++message RuntimeConfigRequest {}
  
 +message RuntimeConfigResponse {
-+    // Configuration information for Linux-based runtimes. This field contains global
-+    // runtime configuration options that are not specific to runtime handlers.
++    // Configuration information for Linux-based runtimes. This field contains
++    // global runtime configuration options that are not specific to runtime
++    // handlers.
 +    LinuxRuntimeConfiguration linux = 1;
 +}
  
 +message LinuxRuntimeConfiguration {
 +    // Cgroup driver to use
++    // Note: this field should not change for the lifecycle of the Kubelet,
++    // or while there are running containers.
++    // The Kubelet will not re-request this after startup, and will construct the cgroup
++    // hierarchy assuming it is static.
++    // If the runtime wishes to change this value, it must be accompanied by removal of
++    // all pods, and a restart of the Kubelet. The easiest way to do this is with a full node reboot.
 +    CgroupDriver cgroup_driver = 1;
 +}
  
 +enum CgroupDriver {
-+    CGGROUPFS = 0;
-+    SYSTEMD = 1;
++    SYSTEMD = 0;
++    CGROUPFS = 1;
 +}
 ```
 
