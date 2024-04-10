@@ -495,7 +495,7 @@ autoscaler can correctly run the simulation based on the QoS-class resources
 available on the existing node(s) of the node group. However, to support
 scaling of empty node groups needs to be worked on, implementing specific
 mechanisms (e.g. annotations) for each infrastructure provider to inform the
-autoscaler about the QoS-class resources of node groups.
+autoscaler about the QoS-class resources available on node groups.
 
 #### API objects for resources and classes
 
@@ -728,6 +728,10 @@ section below for details about QoS-class resource naming.
 One possible usage-scenario would be pod-level cgroup controls, e.g. cgroup v2
 memory knobs in linux (see
 [KEP-2570: Support Memory QoS with cgroups v2][kep-2570].
+
+QoS-class resources could be used to specify OOM kill behavior of individual
+containers
+(ref [PR for disabling group oom kill](https://github.com/kubernetes/kubernetes/pull/122813)).
 
 Another possible usage could be to allow the user to explicitly specify the
 desired Pod QoS class of the application (instead of implicitly deriving it
