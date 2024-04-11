@@ -576,10 +576,90 @@ If rerun the mutation policy caused object change, the request should be failed
 To validate an object after all mutations are guaranteed complete, we highly recommend to use a validating admission policy to validate the final state of object. 
 
 #### CEL Library Change
-We expect this feature to require minimal changes to the core or the Kubernetes-specific CEL library. 
-However, this feature uses the optional library in a way that the library was not designed to. We acknowledge the risk where not all current or future features of the optional library will be available.
+We expect this feature to require minimal changes to the core `cel-go` library. Purposed changes to the Kubernetes-specific CEL-library are as follows.
 
-We will be evaluating the existing CEL library to see if any specific func should be added for mutation use case.
+Firstly, we will add an object construction library that is aware of the `Object` type, and support conversion from the constructed CEL object to an Unstructured. For example, the CEL expression
+```text
+Object{
+  spec: Object.spec{
+    replicas: 3
+  }
+}
+```
+Can be converted into an object that can be represented as the following Go code.
+```text
+	map[string]any{
+		"spec": map[string]any{
+			"replicas": int64(3),
+		},
+	},
+```
+The constructed object will be validated against its schema at compile time, and the compilation fails if any mismatch happens.
+However, in the first development phrase, the type provider treats every object as if they can contain any fields of any types.
+More specifically, the first-phrase type provider treat every object as if the OpenAPI v3 schema of the object contains only a
+single `AdditionalProperties: true`.
+In the second development phrase, we will add the ability to resolve schemas, and make the type provider properly enforce the schema of
+all objects in question.
+
+Secondly, we will add a pre-processing mechanism to the expression compilation process to catch the fields that are set to `optional.none()`.
+The reason is that, the [optional proposal](https://github.com/google/cel-spec/wiki/proposal-246) defines that,
+a field with a question mark prefix will not be set if its value will be set to `optional.none()`. This is true for both objects and maps. 
+
+More specifically, the syntax de-sugar works as follows.
+```text
+Msg{ ?field: <expr> }
+```
+is equivalent to 
+```text
+<expr>.hasValue() ? Msg{field: <expr>} : Msg{}
+```
+Similarly, for a map,
+```text
+{?key: <expr>}
+```
+is equivalent to
+```text
+<expr>.hasValue() ? {key: <expr>} : {}
+```
+
+As a result of the aforementioned language feature, it is impossible to retrieve the fields that are set to `optional.none()` from the result of evaluation.
+For example,
+```text
+Object{
+  spec: Object.spec{
+    ?replicas: optional.none() 
+  }
+}
+```
+Evaluates to an object that can be represented as
+```text
+	map[string]any{
+		"spec": map[string]any{
+		},
+	},
+```
+Please note the empty `spec` object.
+
+Similarly, for a map,
+```text
+Object{
+  annotations: {
+    ?"foo": "bar"
+  }
+}
+```
+Evaluates to
+```text
+	map[string]any{
+		"annotations": map[string]any{
+		},
+	},
+```
+
+In order to preserve the fields (for objects) or keys (for maps) that are set to `optional.none()`,
+we will add a Kubernetes-specific marco handler that collects removal operations during evaluation.
+The evaluation result conveniently has all optionals removed because of the aforementioned behavior.
+
 A potential candidate would be the hashing function which might be helpful in the recent discussion of controller sharding.
 Ref: https://github.com/timebertt/kubernetes-controller-sharding/blob/main/docs/design.md#the-clusterring-resource-and-sharder-webhook (the kubernetes-controller-sharding project could also eliminate their webhook if we supported this). 
 
