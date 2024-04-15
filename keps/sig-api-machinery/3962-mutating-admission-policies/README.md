@@ -447,7 +447,7 @@ feature to make it possible to express that a value should be unset. For example
 ```cel
 Object{
   spec: Object.spec{
-    ?fieldToRemoveIfPresent: optional.none()
+    fieldToRemoveIfPresent: optional.none()
   }
 }
 ```
@@ -466,7 +466,7 @@ mutations:
                 containers: object.spec.containers{
                     object.spec.containers.filter(c, c.name == "sidecar")
                     .map(c, Object.spec.containers.item{
-                        ?env: optional.none()
+                        env: optional.none()
                     })
                 }
             }
@@ -479,16 +479,16 @@ server side apply merge algorithm is run.
 
 This solves the vast majority of value removal needs. Specifically:
 
-| Schema type | Merge type | Example of how to unset a value                                                  |
-|-------------| -----------|----------------------------------------------------------------------------------|
-| struct      | atomic     | ```Object{ spec: Object.spec{ structField: {?fieldToRemove: optional.none()}}}``` |
-| struct      | granular   | `?fieldToRemove: optional.none()`                                                |
-| map         | atomic     | `mapField: object.spec.mapField.filter(k, k != "keyToRemove")`                   |
-| map         | granular   | `mapField: {?"keyToRemove": optional.none()}`                                    |
-| list        | atomic     | Use `JSONPatch`                                                                  |
-| list        | set        | `setField: object.spec.setField.filter(e, e != "itemToRemove")`                  |
-| list        | map        | See below                                                                        |
-| list        | granular   | See below                                                                        | 
+| Schema type | Merge type | Example of how to unset a value                                                |
+|-------------| -----------|--------------------------------------------------------------------------------|
+| struct      | atomic     | ```Object{ spec: Object.spec{ structField: {fieldToRemove: optional.none()}}}``` |
+| struct      | granular   | `fieldToRemove: optional.none()`                                               |
+| map         | atomic     | `mapField: object.spec.mapField.filter(k, k != "keyToRemove")`                 |
+| map         | granular   | `mapField: {"keyToRemove": optional.none()}`                                   |
+| list        | atomic     | Use `JSONPatch`                                                                |
+| list        | set        | `setField: object.spec.setField.filter(e, e != "itemToRemove")`                |
+| list        | map        | See below                                                                      |
+| list        | granular   | See below                                                                      | 
 
 
 List with "map" merge type:
@@ -588,11 +588,11 @@ Object{
 ```
 Can be converted into an object that can be represented as the following Go code.
 ```text
-	map[string]any{
-		"spec": map[string]any{
-			"replicas": int64(3),
-		},
-	},
+map[string]any{
+    "spec": map[string]any{
+        "replicas": int64(3),
+    },
+},
 ```
 The constructed object will be validated against its schema at compile time, and the compilation fails if any mismatch happens.
 However, in the first development phrase, the type provider treats every object as if they can contain any fields of any types.
@@ -601,10 +601,10 @@ single `AdditionalProperties: true`.
 In the second development phrase, we will add the ability to resolve schemas, and make the type provider properly enforce the schema of
 all objects in question.
 
-Secondly, we will add a pre-processing mechanism to the expression compilation process to catch the fields that are set to `optional.none()`.
-The reason is that, the [optional proposal](https://github.com/google/cel-spec/wiki/proposal-246) defines that,
+Secondly, we will add post-processing to the resulting object to filter out the fields that are set to `optional.none()`.
+In an earlier version of this design, there is a marco expander that intercepts the question mark syntax of the optional library.
+The [optional proposal](https://github.com/google/cel-spec/wiki/proposal-246) defines that,
 a field with a question mark prefix will not be set if its value will be set to `optional.none()`. This is true for both objects and maps. 
-
 More specifically, the syntax de-sugar works as follows.
 ```text
 Msg{ ?field: <expr> }
@@ -633,10 +633,10 @@ Object{
 ```
 Evaluates to an object that can be represented as
 ```text
-	map[string]any{
-		"spec": map[string]any{
-		},
-	},
+map[string]any{
+    "spec": map[string]any{
+    },
+},
 ```
 Please note the empty `spec` object.
 
@@ -650,17 +650,71 @@ Object{
 ```
 Evaluates to
 ```text
-	map[string]any{
-		"annotations": map[string]any{
-		},
-	},
+map[string]any{
+    "annotations": map[string]any{
+    },
+},
 ```
 
-In order to preserve the fields (for objects) or keys (for maps) that are set to `optional.none()`,
-we will add a Kubernetes-specific marco handler that collects removal operations during evaluation.
-The evaluation result conveniently has all optionals removed because of the aforementioned behavior.
+Current design does not use a marco expander. As a result, we cannot continue to use the question mark syntax.
+The fields that are set to `optional.none()` are extracted from the evaluation results
+instead of collected during evaluation. For example, consider the following expression.
 
-A potential candidate would be the hashing function which might be helpful in the recent discussion of controller sharding.
+```text
+Object{
+  spec: Object.spec{
+    ?replicas: optional.none()
+    template: Object.spec.template {
+      spec: Object.spec.template.spec {
+        containers: [Object.spec.template.spec.containers.item {
+          image: "nginx"        
+        }]
+      }
+    }
+  }
+}
+```
+
+It evaluates to
+```text
+map[string]any{
+  "spec": map[string]any{
+    "replicas": /* Pointer to OptionalObject */,
+    "template": map[string]any {
+      "spec": map[string]any {
+        "containers": []map[string]any{
+          {
+            "image": "nginx",
+          }
+        }
+      }
+    }
+  },
+},
+```
+
+The post-processor will then scan and mutate the resulting object, noting which path(s) are set to an empty optional.
+In this example, the post-processor records that `object.spec.replicas` is set to `optional.none()`.
+
+Next, the post-processor removes the Optional object so the result becomes a valid patch for structural merge. The result becomes
+
+```text
+map[string]any{
+  "spec": map[string]any{
+    "template": map[string]any {
+      "spec": map[string]any {
+        "containers": []map[string]any{
+          {
+            "image": "nginx",
+          }
+        }
+      }
+    }
+  },
+},
+```
+
+Another potential candidate to be added to the library is the hashing function which might be helpful in the recent discussion of controller sharding.
 Ref: https://github.com/timebertt/kubernetes-controller-sharding/blob/main/docs/design.md#the-clusterring-resource-and-sharder-webhook (the kubernetes-controller-sharding project could also eliminate their webhook if we supported this). 
 
 In consideration of written expression for deep nested list/map, library which could help with flatten the list or accumulation alike functions might be useful to add.
