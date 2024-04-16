@@ -590,6 +590,7 @@ stateful set controller lives) should be examined and/or restarted.
   - 1.21, KEP created.
   - 1.23, alpha implementation.
   - 1.27, graduation to beta.
+  - 1.31, graduation to stable.
 
 ## Drawbacks
 The StatefulSet field update is required.
