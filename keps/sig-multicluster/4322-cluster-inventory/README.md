@@ -97,6 +97,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Spec](#spec)
     - [Display name](#display-name)
     - [Cluster Manager](#cluster-manager)
+    - [Endpoints and access credentials](#endpoints-and-access-credentials)
+      - [Endpoints](#endpoints)
+      - [Provider](#provider)
+      - [Credential object reference](#credential-object-reference)
   - [Status](#status)
     - [Version](#version)
     - [Properties](#properties)
@@ -466,6 +470,32 @@ In addition, a predefined label with key "x-k8s.io/cluster-manager" needs
 to be added by the cluster manager upon creation. The value of the label
 MUST be the same as the name of the cluster manager. The purpose of this
 label is to make filter clusters from different cluster managers easier.
+
+#### Endpoints and access credentials
+
+Three fields provide the information needed to access the cluster's API endpoint.
+
+##### Endpoints
+
+A list of API endpoints. Having a list allows endpoints to roll over:
+when an endpoint needs to change, the new endpoint is added to the list,
+and when the old endpoint stops being available, it is removed. Clients
+need to try all listed endpoints until they find one which they can
+connect to.
+
+##### Provider
+
+The name of a credential provider. This is a value set by the cluster
+manager identifying how the credential information is supposed to be
+used.
+
+##### Credential object reference
+
+A reference to an external object providing access credentials. This
+object is opaque. It could be a cluster name in environments such as
+GCP where authentication is managed externally, or a secret containing
+certificates and service account information where access is handled
+directly; these examples are not exhaustive.
 
 ### Status
 
