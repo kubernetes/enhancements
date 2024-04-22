@@ -256,12 +256,18 @@ plane controller:
 type ResourceClass struct {
     ...
 
-    // If (and only if) allocation of claims using this class is handled
-    // by the DRA driver, ControlPlaneController must be set to true.
+    // ControllerName defines the name of the dynamic resource driver that is
+    // used for allocation of a ResourceClaim that uses this class. If empty,
+    // structured parameters are used for allocating claims using this class.
+    //
+    // Resource drivers have a unique name in forward domain order
+    // (acme.example.com).
     //
     // This is an alpha field and requires enabling the DRAControlPlaneController
     // feature gate.
-   ControlPlaneController bool
+    //
+    // +optional
+    ControllerName string
 }
 ```
 
@@ -353,6 +359,15 @@ const (
 ```
 type ResourceClaimStatus struct {
     ...
+    // ControllerName is a copy of the driver name from the ResourceClass at
+    // the time when allocation started. It is empty when the claim was
+    // allocated through structured parameters,
+    //
+    // This is an alpha field and requires enabling the DRAControlPlaneController
+    // feature gate.
+    //
+    // +optional
+    ControllerName string
 
     // DeallocationRequested indicates that a ResourceClaim is to be
     // deallocated.

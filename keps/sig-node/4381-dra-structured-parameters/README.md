@@ -447,7 +447,6 @@ apiVersion: core.k8s.io/v1alpha2
 kind: ResourceClass
 metadata:
   name: acme-gpu
-driverName: gpu.example.com
 parametersRef:
   apiGroup: gpu.example.com
   kind: GPUInit
@@ -1332,13 +1331,6 @@ type ResourceClass struct {
     // +optional
     metav1.ObjectMeta
 
-    // DriverName defines the name of the dynamic resource driver that is
-    // used for allocation of a ResourceClaim that uses this class.
-    //
-    // Resource drivers have a unique name in forward domain order
-    // (acme.example.com).
-    DriverName string
-
     // ParametersRef references an arbitrary separate object that may hold
     // parameters that will be used by the driver when allocating a
     // resource that uses this class. A dynamic resource driver can
@@ -1354,6 +1346,14 @@ type ResourceClass struct {
     // Setting this field is optional. If null, all nodes are candidates.
     // +optional
     SuitableNodes *core.NodeSelector
+
+    // DefaultClaimParametersRef is an optional reference to an object that holds parameters
+    // used as default when allocating a claim which references this class. This field is utilized
+    // only when the ParametersRef of the claim is nil. If both ParametersRef
+    // and DefaultClaimParametersRef are nil, the claim requests no resources and thus
+    // can always be allocated.
+    // +optional
+    DefaultClaimParametersRef *ResourceClassParametersReference
 }
 ```
 
@@ -1402,7 +1402,7 @@ type NamedResourcesFilter struct {
     // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
     //
-    // In addition, for each type NamedResourcesin AttributeValue there is a map that
+    // In addition, for each type in NamedResourcesAttributeValue there is a map that
     // resolves to the corresponding value of the instance under evaluation.
     // For example:
     //
@@ -1464,6 +1464,7 @@ type ResourceClaimSpec struct {
     // ResourceClassName references the driver and additional parameters
     // via the name of a ResourceClass that was created as part of the
     // driver deployment.
+    // +optional
     ResourceClassName string
 
     // ParametersRef references a separate object with arbitrary parameters
@@ -1474,15 +1475,26 @@ type ResourceClaimSpec struct {
     // +optional
     ParametersRef *ResourceClaimParametersReference
 }
+```
 
+The `ResourceClassName` field may be left empty. The parameters are sufficient
+to determine which driver needs to provide resources. This leads to some corner cases:
+- Empty `ResourceClassName` and nil `ParametersRef`: this is a claim which requests
+  no resources. Such a claim can always be allocated with an empty result. Allowing
+  this simplifies code generators which dynamically fill in the resource requests
+  because they are allowed to generate an empty claim.
+- Non-empty `ResourceClassName`, nil `ParametersRef`, nil
+  `ResourceClass.DefaultClaimParametersRef`: this is handled the same way, the
+  only difference is that the cluster admin has decided that such claims need
+  no resources by not providing default parameters.
+
+There is no default ResourceClass. If that is desirable, then it can be
+implemented with a mutating and/or admission webhook.
+
+```
 // ResourceClaimStatus tracks whether the resource has been allocated and what
 // the resulting attributes are.
 type ResourceClaimStatus struct {
-    // DriverName is a copy of the driver name from the ResourceClass at
-    // the time when allocation started.
-    // +optional
-    DriverName string
-
     // Allocation is set by the resource driver once a resource or set of
     // resources has been allocated successfully. If this is not specified, the
     // resources have not been allocated yet.
@@ -1567,7 +1579,7 @@ type NamedResourcesRequest struct {
     // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
     //
-    // In addition, for each type NamedResourcesin AttributeValue there is a map that
+    // In addition, for each type in NamedResourcesAttributeValue there is a map that
     // resolves to the corresponding value of the instance under evaluation.
     // For example:
     //
