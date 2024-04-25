@@ -2,10 +2,11 @@ title: Reduction of Secret-based Service Account Tokens
 kep-number: 2799
 authors:
   - "@zshihang"
+  - "@yt2985"
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
-status: implementable
+status: implemented
 creation-date: 2021-06-25
 reviewers:
   - "@liggitt"
