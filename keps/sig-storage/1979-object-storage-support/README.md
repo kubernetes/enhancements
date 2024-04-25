@@ -1167,22 +1167,10 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-Goal: implement metrics defined by sig-storage for volumes:
-https://github.com/kubernetes/design-proposals-archive/blob/main/storage/volume-metrics.md
-
-CSI Lib utils reference:
-https://github.com/kubernetes-csi/csi-lib-utils/blob/master/metrics/metrics_test.go
-
-DISCUSS: should we use `storage_operation...`, or should we rename to `cosi_operation...`?
-
 - [ ] Metrics
   - [ ] `cosi_operation_total_seconds`
     - Type: Histogram
-      - Histogram Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'  (note: same as external snapshotter )
+      - Histogram Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'
     - Reported by: COSI Controller
     - Definition: COSI operation end-to-end duration in number of seconds. For example, the duration
       from when a BucketClaim resource is created until BucketClaim has `Status.BucketReady=true`.
@@ -1190,7 +1178,7 @@ DISCUSS: should we use `storage_operation...`, or should we rename to `cosi_oper
       - `driver_name` - name of COSI driver the operation runs against
       - `resource_kind` - Bucket, BucketClaim, BucketAccess
       - `operation` - Create, Delete
-    - Calculation note: (DISCUSS: is this right?)
+    - Calculation note:
       - Create:
         - Time delta between the resource's meta.creationTimestamp and when Status.XReady=true is successfully applied
       - Delete:
@@ -1211,7 +1199,7 @@ DISCUSS: should we use `storage_operation...`, or should we rename to `cosi_oper
         makes it harder to filter across all kinds like: `resource_kind=<any>, operation=Create, status=Failed`.
   - [ ] `cosi_sidecar_operation_duration_seconds`
     - Type: Histogram
-      - Histogram buckets: TBD
+      - Histogram buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600, '+Inf'
     - Reported by: COSI provisioner sidecar
     - Definition: Total number of seconds spent by the controller on a gRPC operation from end to end
     - Labels:
@@ -1225,11 +1213,9 @@ DISCUSS: should we use `storage_operation...`, or should we rename to `cosi_oper
     - Labels:
       - `driver_name` - name of the COSI driver the operation runs against
       - `method_name` - gRPC operation name (e.g., `DriverCreateBucket`, `DriverGetInfo`)
-    - DISCUSS: should we instead (or additionally) add a `cosi_sidecar_operation` metric that
-      reports all operations and not just errors?
 
 
-  - TODO:  any other metrics? total buckets, accesses, claims, etc?
+  - TODO:  any other metrics? `process_start_time`?
 
 - [ ] Other (treat as last resort)
   - Details:
