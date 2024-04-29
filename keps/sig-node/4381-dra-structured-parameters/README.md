@@ -297,9 +297,9 @@ address limitations of the current approach for the following use cases:
 
 - *Device initialization*: When starting a workload that uses
   an accelerator like an FPGA, I’d like to have the accelerator
-  reconfigured or reprogrammed for the workload before the workload
-  itself starts. For security reasons, workloads should not be able to
-  reconfigure devices directly.
+  reconfigured or reprogrammed without having to deploy my application
+  with full hardware access and/or root privileges. Running applications
+  with less privileges is better for overall security of the cluster.
 
   *Limitation*: Currently, it’s impossible to specify the desired
   device properties that are required for reconfiguring devices.
@@ -315,28 +315,22 @@ address limitations of the current approach for the following use cases:
 
   *Limitation*: Post-stop actions are not supported.
 
-- *Partial allocation*: When deploying a container I’d like to be able
-  to use part of the shareable device inside a container and other
-  containers should be able to use other free resources on the same
-  device.
+- *Partial allocation*: When workloads use only a portion of the device
+  capabilities, devices can be partitioned (e.g. using Nvidia MIG or SR-IOV) to
+  better match workload needs. Sharing the devices in this way can greatly
+  increase HW utilization / reduce costs.
 
-  *Limitation*: For example, newer generations of NVIDIA GPUs have a mode of
-  operation called MIG, that allow them to be sub-divided into a set of
-  mini-GPUs (called MIG devices) with varying amounts of memory and compute
-  resources provided by each. From a hardware-standpoint, configuring a GPU
-  into a set of MIG devices is highly-dynamic and creating a MIG device
-  tailored to the resource needs of a particular application is well
-  supported. However, with the current device plugin API, the only way to make
-  use of this feature is to pre-partition a GPU into a set of MIG devices and
-  advertise them to the kubelet in the same way a full / static GPU is
-  advertised. The user must then pick from this set of pre-partitioned MIG
-  devices instead of having one created for them on the fly based on their
-  particular resource constraints. Without the ability to create MIG devices
-  dynamically (i.e. at the time they are requested) the set of pre-defined MIG
-  devices must be carefully tuned to ensure that GPU resources do not go unused
-  because some of the pre-partioned devices are in low-demand.  It also puts
-  the burden on the user to pick a particular MIG device type, rather than
-  declaring the resource constraints more abstractly.
+- *Limitation*: currently there's no API to request partial device
+  allocation. With the current device plugin API, devices need to be
+  pre-partitioned and advertised in the same way a full / static devices
+  are. User must then select a pre-partitioned device instead of having one
+  created for them on the fly based on their particular resource
+  constraints. Without the ability to create devices dynamically (i.e. at the
+  time they are requested) the set of pre-defined devices must be carefully
+  tuned to ensure that device resources do not go unused because some of the
+  pre-partioned devices are in low-demand. It also puts the burden on the user
+  to pick a particular device type, rather than declaring the resource
+  constraints more abstractly.
 
 - *Optional allocation*: When deploying a workload I’d like to specify
   soft(optional) device requirements. If a device exists and it’s
@@ -873,8 +867,8 @@ parameters differently for reporting resource availability.
 
 This is the result of an attack against the resource driver, either from a
 container which uses a resource exposed by the driver, a compromised kubelet
-which interacts with the plugin, or through a successful attack against the
-node which led to root access.
+which interacts with the plugin, or due to resource driver running on a node
+with a compromised root account.
 
 The resource driver plugin only needs read access to objects described in this
 KEP, so compromising it does not interfere with dynamic resource allocation for
@@ -1160,6 +1154,15 @@ might need to perform additional actions to correctly deallocate
 resources.
 
 ### API
+
+```
+<<[UNRESOLVED @pohly @johnbelamaric]>>
+Before 1.31, we need to re-evaluate the API, including, but not limited to:
+- Do we really need a separate ResourceClaim?
+- Does "Device" instead of "Resource" make the API easier to understand?
+- Avoid separate parameter objects if and when possible.
+<<[/UNRESOLVED]>>
+```
 
 The PodSpec gets extended. To minimize the changes in core/v1, all new types
 get defined in a new resource group. This makes it possible to revise those

@@ -769,11 +769,11 @@ to simulate the effect of allocating claims as part of scheduling and of
 creating or removing nodes.
 
 This is not possible with opaque parameters as described in this KEP. If a DRA
-driver developer wants to support Cluster Autoscaler, they have to use semantic
-parameters. Semantic parameters are an extension of this KEP that is defined in
-[KEP #4381](https://github.com/kubernetes/enhancements/issues/4381).
+driver developer wants to support Cluster Autoscaler, they have to use
+structured parameters as defined in [KEP
+#4381](https://github.com/kubernetes/enhancements/issues/4381).
 
-Semantic parameters are not necessary for network-attached resources because
+Structured parameters are not necessary for network-attached resources because
 adding or removing nodes doesn't change their availability and thus Cluster
 Autoscaler does not need to understand their parameters.
 
@@ -934,7 +934,7 @@ For beta:
 
 - In normal scenarios, scheduling pods with claims must not block scheduling of
   other pods by doing blocking API calls
-- Implement integration with Cluster Autoscaler through semantic parameters
+- Implement integration with Cluster Autoscaler through structured parameters
 - Gather feedback from developers and surveys
 - Positive acknowledgment from 3 would-be implementors of a resource driver,
   from a diversity of companies or projects
