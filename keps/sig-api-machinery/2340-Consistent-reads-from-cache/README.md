@@ -253,6 +253,33 @@ Since falling back to etcd won't work, we should fail the requests and rely on
 rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
 well-behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
 
+In order to mitigate such problems, let's present how the system currently works
+in different cases.
+
+| ResourceVersion | ResourceVersionMatch | Continuation      | Limit         | etcd implementation                     | watchcache implementation                          |
+|-----------------|----------------------|-------------------|---------------|-----------------------------------------|----------------------------------------------------|
+| _unset_         | _unset_              | _unset_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  |
+| _unset_         | _unset_              | _token_           | _unset_ / _N_ | Read request from RV encoded in _token_ | Delegated to etcd                                  |
+| _unset_         | _Exact_              | _unset_ / _token_ | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |
+| _unset_         | _NotOlderThan_       | _unset_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  |
+| _unset_         | _NotOlderThan_       | _token_           | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |
+| _0_             | _unset_              | _unset_           | _unset_ / _N_ | Quorum read request                     | List from cache ignoring _limit_                   |
+| _0_             | _unset_              | _token_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  |
+| _0_             | _Exact_              | _unset_ / _token_ | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |
+| _0_             | _NotOlderThan_       | _unset_           | _unset_ / _N_ | Quorum read request                     | List from cache ignoring _limit_                   |
+| _0_             | _NotOlderThan_       | _token_           | _unset_ / _N_ | Read request from RV encoded in _token_ | Delegated to etcd                                  |
+| _RV_            | _unset_              | _unset_           | _unset_       | Quorum read request                     | Wait for cache synced to _RV_+ and list from cache |
+| _RV_            | _unset_              | _unset_           | _N_           | Read request from RV=_RV_               | Delegated to etcd                                  |
+| _RV_            | _unset_              | _token_           | _unset_ / _N_ | Read request from RV encoded in _token_ | Delegated to etcd                                  |
+| _RV_            | _Exact_              | _unset_           | _unset_ / _N_ | Read request from RV=_RV_               | Delegated to etcd                                  |
+| _RV_            | _Exact_              | _token_           | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |
+| _RV_            | _NotOlderThan_       | _unset_           | _unset_       | Quorum read request + check for _RV_    | Wait for cache synced to _RV_+ and list from cache |
+| _RV_            | _NotOlderThan_       | _unset_           | _N_           | Quorum read request + check for _RV_    | Delegated to etcd                                  |
+| _RV_            | _NotOlderThan_       | _token_           | _unset_/ _N_  | Fails [validation]                      | Fails [validation]                                 |
+
+[validation]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apimachinery/pkg/apis/meta/internalversion/validation/validation.go#L28
+[etcd resolution]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go#L589-L627
+
 For such situations we will provide users with following tools:
 * a dedicated `apiserver_watch_cache_read_wait` metric to detect a problem with
   watch cache.
