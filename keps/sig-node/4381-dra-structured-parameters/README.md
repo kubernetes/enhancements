@@ -258,6 +258,10 @@ At a high-level, DRA with structured parameters takes the following form:
   schedule a pod on (as well as allocate resources from its `ResourceSlice`
   in the process).
 
+* Alternatively, a `ResourceClaim` may also directly reference a
+  `ResourceClaimParameters` object (no vendor-specific type needed) or
+  embed the parameters (simpler).
+
 * Once a node is chosen and the allocation decisions made, the scheduler will
   store the result in the API server as well as update its in-memory model of
   available resources. DRA drivers are responsible for using this allocation
@@ -1334,11 +1338,16 @@ type ResourceClass struct {
     // +optional
     metav1.ObjectMeta
 
+    // Parameters can be given directly instead of referencing a separate
+    // parameter object. Parameters and ParametersRef are mutually exclusive.
+    // +optional
+    Parameters *ResourceClassParametersSpec
+
     // ParametersRef references an arbitrary separate object that may hold
     // parameters that will be used by the driver when allocating a
     // resource that uses this class. A dynamic resource driver can
     // distinguish between parameters stored here and and those stored in
-    // ResourceClaimSpec.
+    // ResourceClaimSpec. Parameters and ParametersRef are mutually exclusive.
     // +optional
     ParametersRef *ResourceClassParametersReference
 
@@ -1376,6 +1385,10 @@ type ResourceClassParameters struct {
     // to some unknown type.
     GeneratedFrom *ResourceClassParametersReference
 
+    ResourceClassParametersSpec
+}
+
+type ResourceClassParametersSpec struct {
     // VendorParameters are arbitrary setup parameters for all claims using
     // this class. They are ignored while allocating the claim. There must
     // not be more than one entry per driver.
@@ -1470,9 +1483,14 @@ type ResourceClaimSpec struct {
     // +optional
     ResourceClassName string
 
+    // Parameters can be given directly instead of referencing a separate
+    // parameter object. Parameters and ParametersRef are mutually exclusive.
+    // +optional
+    Parameters *ResourceClaimParametersSpec
+
     // ParametersRef references a separate object with arbitrary parameters
     // that will be used by the driver when allocating a resource for the
-    // claim.
+    // claim. Parameters and ParametersRef are mutually exclusive.
     //
     // The object must be in the same namespace as the ResourceClaim.
     // +optional
@@ -1482,11 +1500,11 @@ type ResourceClaimSpec struct {
 
 The `ResourceClassName` field may be left empty. The parameters are sufficient
 to determine which driver needs to provide resources. This leads to some corner cases:
-- Empty `ResourceClassName` and nil `ParametersRef`: this is a claim which requests
+- Empty `ResourceClassName` and no parameters: this is a claim which requests
   no resources. Such a claim can always be allocated with an empty result. Allowing
   this simplifies code generators which dynamically fill in the resource requests
   because they are allowed to generate an empty claim.
-- Non-empty `ResourceClassName`, nil `ParametersRef`, nil
+- Non-empty `ResourceClassName`, no parameters, nil
   `ResourceClass.DefaultClaimParametersRef`: this is handled the same way, the
   only difference is that the cluster admin has decided that such claims need
   no resources by not providing default parameters.
@@ -1535,6 +1553,10 @@ type ResourceClaimParameters struct {
     // to some unknown type.
     GeneratedFrom *ResourceClaimParametersReference
 
+    ResourceClaimParametersSpec
+}
+
+type ResourceClaimParametersSpec struct {
     // Shareable indicates whether the allocated claim is meant to be shareable
     // by multiple consumers at the same time.
     Shareable bool
