@@ -366,6 +366,8 @@ inside a container.
 
 - Support node-local resources
 
+- Support network-attached resources when using a single scheduler
+
 - Support claim parameters that are specified in a vendor CRD as
   an alternative to letting users directly specify parameters with
   the in-tree type. This provides a user experience that is similar to
@@ -391,7 +393,7 @@ inside a container.
   Proposal](https://docs.google.com/document/d/1qKiIVs9AMh2Ua5thhtvWqOqW0MSle_RV3lfriO1Aj6U/edit#heading=h.jzfmfdca34kj)
   included such an approach.
 
-* Support network-attached resources
+* Support network-attached resources when using a multiple schedulers
 
 ## Proposal
 
@@ -545,6 +547,12 @@ same version is then also used in the gRPC interface between the kubelet and
 the DRA drivers providing content for those objects. It might be possible to
 support version skew (= keeping kubelet at an older version than the control
 plane and the DRA drivers) in the future, but currently this is out of scope.
+
+For network-attached resources, the DRA driver is responsible for discovering
+available resources and publishing them in ResourceSlice object(s) where
+`nodeSelector` is set. That selector determines which nodes have access to the
+resources in each object. An empty selector can be used for resources that are
+available in the entire cluster.
 
 Embedded inside each `ResourceSlice` is the representation of the resources
 managed by a driver according to a specific "structured model". In the example
@@ -1198,18 +1206,27 @@ needed and there is a single owner (kubelet).
 
 ```go
 // ResourceSlice provides information about available
-// resources on individual nodes.
+// resources on individual nodes or in the cluster.
 type ResourceSlice struct {
     metav1.TypeMeta
     // Standard object metadata
     metav1.ObjectMeta
 
     // NodeName identifies the node which provides the resources
-    // if they are local to a node.
+    // if they are local to a node. NodeName and NodeSelector
+    // are mutually exclusive. One of them must be set.
     //
     // A field selector can be used to list only ResourceSlice
     // objects with a certain node name.
+    // +optional
     NodeName string
+
+    // NodeSelector identifies all nodes that the resources
+    // could be accessed from if they are not local to a node.
+    // NodeName and NodeSelector are mutually exclusive. One of
+    // them must be set.
+    // +optional
+    NodeSelector *v1.NodeSelector
 
     // DriverName identifies the DRA driver providing the capacity information.
     // A field selector can be used to list only ResourceSlice
@@ -1683,6 +1700,22 @@ type AllocationResultModel struct {
     NamedResources *NamedResourcesAllocationResult
 }
 ```
+
+At the moment, the content of the AllocationResult is the source of truth for
+which resources in the cluster are allocated. The assumption is that
+kube-scheduler owns those resources and thus can allocate them for a claim
+without further coordination during a pod scheduling cycle.
+
+For node-local resources, this assumption is reasonable. Running multiple
+schedulers in the cluster which schedule to the same node is already
+problematic because those different schedulers also assume that they own the
+traditional resources of that node (CPU, RAM, extended resources).
+
+For network-attached resources, this assumption is more problematic. There may
+be valid reasons for running multiple schedulers for disjoint node sets. A
+method how such schedulers can safely allocate network-attached resources would
+be a useful future extension. For now, a cluster with network-attached resources
+and multiple schedulers is not a supported use case.
 
 ##### ResourceClaimTemplate
 
