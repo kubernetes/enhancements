@@ -372,6 +372,11 @@ inside a container.
   what has been possible since Kubernetes 1.26. Ideally, users should not notice
   at all that a driver is using structured parameters under the hood.
 
+- Enable abstraction layers for resource requests (= "give me a network SR-IOV,
+  no matter which hardware provides it"). See also the
+  [Resource Class Proposal](https://docs.google.com/document/d/1qKiIVs9AMh2Ua5thhtvWqOqW0MSle_RV3lfriO1Aj6U/edit#heading=h.jzfmfdca34kj)
+  (access is through some Google groups or ask the authors).
+
 ### Non-Goals
 
 * Replace the device plugin API. For resources that fit into its model
@@ -381,15 +386,7 @@ inside a container.
   basis. Because the new API is going to be implemented independently of the
   existing device plugin support, there's little risk of breaking stable APIs.
 
-* Provide an abstraction layer for resource requests, i.e., something like a
-  “I want some kind of GPU”. Users will need to know about specific
-  resource drivers and which parameters they support. Portability of
-  workloads could be added on top of this proposal by introducing the
-  selection of a resource implementation through labels and
-  standardizing those labels and the associated parameters. The
-  [Resource Class
-  Proposal](https://docs.google.com/document/d/1qKiIVs9AMh2Ua5thhtvWqOqW0MSle_RV3lfriO1Aj6U/edit#heading=h.jzfmfdca34kj)
-  included such an approach.
+* Define specific abstraction layers for certain domains
 
 * Support network-attached resources
 
@@ -607,8 +604,10 @@ spec:
       string: 11.1.42
     - name: memory
       quantity: 16Gi
-    - name: productName:
+    - name: productName
       string: ACME T1000 32GB
+    - name: isGPU.gpu.k8s.io
+      bool: true
   - name: gpu-1
     attributes:
     - name: UUID
@@ -619,8 +618,10 @@ spec:
       string: 11.1.42
     - name: memory
       quantity: 32Gi
-    - name: productName:
+    - name: productName
       string: ACME A4-PCIE-40GB
+    - name: isGPU.gpu.k8s.io
+      bool: true
 ```
 
 Where "gpu-0" represents one type of card and "gpu-1" represents another (with
@@ -635,8 +636,9 @@ While this model is still hypothetical, we do imagine real-world models
 attaching attributes to their resources in a similar way. To avoid any future
 conflicts, we plan to reserve any attributes with the ".k8s.io" suffix for
 future use and standardization by Kubernetes. This could be used to describe
-topology across resources from different vendors, for example, but this is out-
-of-scope for now.
+topology across resources from different vendors. Here `isGPU.gpu.k8s.io`
+specifies that the instance is a GPU. This is just fictional example, this KEP
+does not define any standardized attributes.
 
 **Note:** If a driver needs to reduce resource capacity, then there is a risk
 that a claim gets allocated using that capacity while the kubelet is updating a
@@ -697,43 +699,51 @@ generatedFrom:
   apiGroup: dra.example.com
   uid: foobar-uid
 
-vendorParameters:
-  # A vendor can put any kind of object here to pass the configuration
-  # parameters down to the kubelet plugin. In this case, the vendor
-  # driver simply copied the entire CR. It could also be some
-  # separate, smaller configuration type.
-  #
-  # Beware that ResourceClaimParameters have separate RBAC rules than
-  # the vendor CRD, so information included here may get visible
-  # to more users than the original CRD. Both objects are in the same
-  # namespace.
-  kind: CardParameters
-  apiVersion: dra.example.com/v1alpha1
-  metadata:
-    name: my-parameters
-    namespace: user-namespace
-    uid: foobar-uid
-  ...
-  spec:
-    minimumRuntimeVersion: v12.0.0
-    minimumMemory: 32Gi
-    sharing:
-      strategy: TimeSliced
-
-driverRequests:
-- driverName: cards.dra.example.com
-  requests:
-  # Each entry here is a request for one resource.
-  - namedresources:
+requests:
+- vendorParameters:
+    # A vendor can put any kind of object here to pass the configuration
+    # parameters down to the kubelet plugin. In this case, the vendor
+    # driver simply copied the entire CR. It could also be some
+    # separate, smaller configuration type.
+    #
+    # Beware that ResourceClaimParameters have separate RBAC rules than
+    # the vendor CRD, so information included here may get visible
+    # to more users than the original CRD. Both objects are in the same
+    # namespace.
+    kind: CardParameters
+    apiVersion: dra.example.com/v1alpha1
+    metadata:
+      name: my-parameters
+      namespace: user-namespace
+      uid: foobar-uid
+    ...
+    spec:
+      minimumRuntimeVersion: v12.0.0
+      minimumMemory: 32Gi
+      sharing:
+        strategy: TimeSliced
+  # Each entry here is a request for one resource. Entries could have
+  # their own vendor parameters (not shown here).
+  subRequests:
+  - namedResources:
+      driverName: cards.dra.example.com
       # Selectors are CEL expressions with access to the attributes of the named resource
       # that is being checked for a match.
       selector: |-
+        # Attribute names can be fully qualified or shortened when they
+        # have the driver name as suffix.
+        attributes.string.has("UUID.cards.dra.example.com") &&
         attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
         attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
 ```
 
 The meaning is that the selector expression must evaluate to true for a
-particular named resource in `namedResources`.
+particular named resource which has attributes as defined by
+`cards.dra.example.com`, like "runtimeVersion" and "memory". Checking for the
+UUID rules out all instances provided by other drivers and avoids runtime
+errors when looking up "runtimeVersion" =
+"runtimeVersion.cards.dra.example.com" in the attributes of some other driver's
+instance where that attribute is not set.
 
 Future extensions could be added to support partioning of resources as well as a
 express constraints that must be satisfied *between* any selected resources. For
@@ -746,6 +756,26 @@ administrators) could decide to allow users to create and reference
 avoid the translation step shown above, but at the cost of (1) providing per-
 claim configuration parameters for their requested resources, and (2) doing any
 sort of validation on the CEL expressions created by the user.
+
+Separate KEPs could be used to standardize attribute names of resources and
+what resources with those attributes have to provide. With the fictional
+`isGPU.gpu.k8s.io` the following parameters would request "one GPU":
+
+```yaml
+kind: ResourceClaimParameters
+apiVersion: resource.k8s.io/v1alpha2
+
+metadata:
+  name: gpu-request-parameters
+  namespace: user-namespace
+
+requests:
+- subRequests:
+  - namedResources:
+      selector: |-
+        attributes.bool.has("isGPU.gpu.k8s.io") &&
+        attributes.bool["isGPU.gpu.k8s.io"]
+```
 
 Resource class parameters are supported the same way. To ensure that
 permissions can be limited to administrators, there's a separate cluster-scoped
@@ -769,11 +799,11 @@ generatedFrom:
 vendorParameters:
   ...
 
-filters:
-- driverName: cards.dra.example.com
+filter:
   namedResources:
+    driverName: cards.dra.example.com
     selector: |-
-      attributes["memory"] <= "16Gi"
+      attributes.quantity["memory"] <= "16Gi"
 ```
 
 In this example, the additional selector expression limits users of this class
@@ -1272,8 +1302,9 @@ type NamedResourcesInstance struct {
 
 // NamedResourcesAttribute is a combination of an attribute name and its value.
 type NamedResourcesAttribute struct {
-    // Name is unique identifier among all resource instances managed by
-    // the driver on the node. It must be a DNS subdomain.
+    // Name must be a DNS subdomain. If the name contains no dot, the name of
+    // the driver which provides the instance gets added as suffix when
+    // looking up the attribute.
     Name string
 
     NamedResourcesAttributeValue
@@ -1381,16 +1412,8 @@ type ResourceClassParameters struct {
     // not be more than one entry per driver.
     VendorParameters []VendorParameters
 
-    // Filters describes additional contraints that must be met when using the class.
-    Filters []ResourceFilter
-}
-
-// ResourceFilter is a filter for resources from one particular driver.
-type ResourceFilter struct {
-    // DriverName is the name used by the DRA driver kubelet plugin.
-    DriverName string
-
-    ResourceFilterModel
+    // Filter describes additional contraints that must be met when using the class.
+    Filter ResourceFilterModel
 }
 
 // ResourceFilterModel must have one and only one field set.
@@ -1401,16 +1424,29 @@ type ResourceFilterModel struct {
 
 // NamedResourcesFilter is used in ResourceFilterModel.
 type NamedResourcesFilter struct {
+    // DriverName is automatically added as suffix to attribute names
+    // which do not contain a dot already. If all attribute names in
+    // the selector have the full name of the attribute, the driver name
+    // can be left empty.
+    // +optional
+    DriverName string
+
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
     //
     // In addition, for each type in NamedResourcesAttributeValue there is a map that
-    // resolves to the corresponding value of the instance under evaluation.
-    // For example:
+    // resolves to the corresponding value of the instance under evaluation. Unknown
+    // names cause a runtime error. Note that the CEL expression is applied to
+    // *all* available resource instances, regardless of which driver provides it.
+    // The CEL expression must first check that the instance has certain
+    // attributes before using them.
     //
-    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
-    //    attributes.stringslice["b"].isSorted()
+    // For example:
+    //    attributes.quantity.has("a.dra.example.com") &&
+    //    attributes.quantity["a.dra.example.com"].isGreaterThan(quantity("0")) &&
+    //    # No separate check, b.dra.example.com is set whenever a.dra.example.com is,
+    //    attributes.stringslice["b.dra.example.com"].isSorted()
     Selector string
 }
 ```
@@ -1539,29 +1575,24 @@ type ResourceClaimParameters struct {
     // by multiple consumers at the same time.
     Shareable bool
 
-    // DriverRequests describes all resources that are needed for the
-    // allocated claim. A single claim may use resources coming from
-    // different drivers. For each driver, this array has at most one
-    // entry which then may have one or more per-driver requests.
+    // Requests describes all resources that are needed for the
+    // allocated claim.
     //
     // May be empty, in which case the claim can always be allocated.
-    DriverRequests []DriverRequests
+    Requests []Request
 }
 
-// DriverRequests describes all resources that are needed from one particular driver.
-type DriverRequests struct {
-    // DriverName is the name used by the DRA driver kubelet plugin.
-    DriverName string
-
-    // VendorParameters are arbitrary setup parameters for all requests of the
-    // claim. They are ignored while allocating the claim.
+// Request combines several sub-requests with optional vendor-specific setup
+// parameters.
+type Request struct {
+    // VendorParameters are arbitrary setup parameters for all sub-requests.
+    // They are ignored while allocating the claim.
     VendorParameters runtime.Object
 
-    // Requests describes all resources that are needed from the driver.
-    Requests []ResourceRequest
+    SubRequests []ResourceRequest
 }
 
-// ResourceRequest is a request for resources from one particular driver.
+// ResourceRequest is a request for one particular resource.
 type ResourceRequest struct {
     // VendorParameters are arbitrary setup parameters for the requested
     // resource. They are ignored while allocating a claim.
@@ -1578,16 +1609,29 @@ type ResourceRequestModel struct {
 
 // NamedResourcesRequest is used in ResourceRequestModel.
 type NamedResourcesRequest struct {
+    // DriverName is automatically added as suffix to attribute names
+    // which do not contain a dot already. If all attribute names in
+    // the selector have the full name of the attribute, the driver name
+    // can be left empty.
+    // +optional
+    DriverName string
+
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
     //
     // In addition, for each type in NamedResourcesAttributeValue there is a map that
-    // resolves to the corresponding value of the instance under evaluation.
-    // For example:
+    // resolves to the corresponding value of the instance under evaluation. Unknown
+    // names cause a runtime error. Note that the CEL expression is applied to
+    // *all* available resource instances, regardless of which driver provides it.
+    // The CEL expression must first check that the instance has certain
+    // attributes before using them.
     //
-    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
-    //    attributes.stringslice["b"].isSorted()
+    // For example:
+    //    attributes.quantity.has("a.dra.example.com") &&
+    //    attributes.quantity["a.dra.example.com"].isGreaterThan(quantity("0")) &&
+    //    # No separate check, b.dra.example.com is set whenever a.dra.example.com is,
+    //    attributes.stringslice["b.dra.example.com"].isSorted()
     Selector string
 }
 ```
