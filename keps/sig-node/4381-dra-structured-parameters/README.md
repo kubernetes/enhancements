@@ -89,6 +89,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Ephemeral vs. persistent ResourceClaims lifecycle](#ephemeral-vs-persistent-resourceclaims-lifecycle)
   - [Scheduled pods with unallocated or unreserved claims](#scheduled-pods-with-unallocated-or-unreserved-claims)
   - [Handling non graceful node shutdowns](#handling-non-graceful-node-shutdowns)
+  - [Management access](#management-access)
   - [API](#api)
     - [resource.k8s.io](#resourcek8sio)
       - [ResourceSlice](#resourceslice)
@@ -99,6 +100,7 @@ SIG Architecture for cross-cutting KEPs).
       - [ResourceClaimTemplate](#resourceclaimtemplate)
       - [Object references](#object-references)
     - [core](#core)
+      - [Quota](#quota)
   - [kube-controller-manager](#kube-controller-manager)
   - [kube-scheduler](#kube-scheduler)
     - [EventsToRegister](#eventstoregister)
@@ -1153,6 +1155,24 @@ If resources are unprepared when `Deallocate` is called, `Deallocate`
 might need to perform additional actions to correctly deallocate
 resources.
 
+### Management access
+
+A cluster admin or some other more privileged user may want to access a certain
+resource through a new claim and pod while the resource is in use, for example,
+to monitor health or gather statistics.
+
+Normally, resources are allocated exclusively for a claim, so accessing it
+again would be denied. Declaring a claim as "for management access" by setting
+a boolean in the ResourceClaim changes that. Such a claim gets allocated
+without marking the underlying resource as in-use and thus can co-exist with
+other claims that also access the same resource.
+
+It is the responsibility of the user who asks for management access to ensure
+that it's access to that resource does not interfere with real usage. To
+prevent abuse, the default is to deny allocation of management claims. To allow
+that, the namespace must have a [Quota](#quota) object with the
+`AllowManagementAccess` field set to true.
+
 ### API
 
 ```
@@ -1469,6 +1489,13 @@ type ResourceClaimSpec struct {
     // driver deployment.
     // +optional
     ResourceClassName string
+
+    // A claim with ManagementAccess set to true gets allocated without
+    // marking the underlying resource as in-use. This is a privileged
+    // access mode that is only granted when there is a Quota object
+    // in the same namespace as the claim where AllowManagementAccess
+    // is true.
+    ManagementAccess bool
 
     // ParametersRef references a separate object with arbitrary parameters
     // that will be used by the driver when allocating a resource for the
@@ -1891,6 +1918,47 @@ type PodResourceClaimStatus struct {
     // unset, then generating a ResourceClaim was not necessary. The
     // pod.spec.resourceClaims entry can be ignored in this case.
     ResourceClaimName *string
+}
+```
+
+##### Quota
+
+Instead of extending the
+[v1.ResourceQuota](https://pkg.go.dev/k8s.io/api/core/v1#ResourceQuota) type, a
+new type in the `resource.k8s.io` API group is used to control which claims may
+get allocated. This is done for several reasons:
+- ResourceQuota is handled by an admission controller. Parameters for a claim
+  and/or the quota itself may still change before allocation, so the existing
+  code which handles `ResourceQuota` is not a good fit.
+- The ResourceQuota API is geared towards simple, countable resources. We
+  need something that is more complex.
+- Last but not least, adding new fields to the v1 API would have to be done
+  very carefully. A separate type is simpler.
+
+The name of this type is intentionally not `ResourceQuota` to avoid confusion
+with the v1 type. It gets registered without an alias, so `kubectl get
+quota.resource.k8s.io` has to be used to access objects.
+
+At the moment, the type is only used to enable management access. Extending it
+to limit claim allocation based on attributes of the underlying resources may
+follow.
+
+```Go
+// Quota controls whether a ResourceClaim may get allocated.
+// Quota is namespaced and applies to claims within the same namespace.
+type Quota struct {
+    metav1.TypeMeta
+    // Standard object metadata.
+    metav1.ObjectMeta
+
+    Spec QuotaSpec
+}
+
+type QuotaSpec struct {
+    // AllowManagementAccess controls whether claims with ManagementAccess
+    // may be allocated. The default if unset is to deny such access.
+    // +optional
+    AllowManagementAccess *bool
 }
 ```
 
