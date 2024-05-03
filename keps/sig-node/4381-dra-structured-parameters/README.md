@@ -1173,6 +1173,11 @@ prevent abuse, the default is to deny allocation of management claims. To allow
 that, the namespace must have a [Quota](#quota) object with the
 `AllowManagementAccess` field set to true.
 
+This new boolean alone is not sufficient to deploy a daemon set which requests
+and gets access to all resource instances of a certain type on a node. Some way
+to ask for ">= 1 instance" with no upper bound will be needed. This can be
+added together with support for optional allocation.
+
 ### API
 
 ```
