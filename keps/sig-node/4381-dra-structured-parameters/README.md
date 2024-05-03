@@ -110,9 +110,11 @@ SIG Architecture for cross-cutting KEPs).
     - [PreBind](#prebind)
     - [Unreserve](#unreserve)
   - [kubelet](#kubelet)
-    - [Managing resources](#managing-resources)
     - [Communication between kubelet and resource kubelet plugin](#communication-between-kubelet-and-resource-kubelet-plugin)
-      - [NodeListAndWatchResources](#nodelistandwatchresources)
+    - [REST proxy](#rest-proxy)
+      - [Security](#security)
+      - [gRPC API](#grpc-api)
+    - [Managing resources](#managing-resources)
       - [NodePrepareResource](#nodeprepareresource)
       - [NodeUnprepareResources](#nodeunprepareresources)
   - [Simulation with CA](#simulation-with-ca)
@@ -531,20 +533,15 @@ the kubelet, as described below. However, the source of this data may vary; for
 example, a cloud provider controller could populate this based upon information
 from the cloud provider API.
 
-In the kubelet case, each kubelet publishes kubelet publishes a set of
-`ResourceSlice` objects to the API server with content provided by the
-corresponding DRA drivers running on its node. Access control through the node
-authorizer ensures that the kubelet running on one node is not allowed to
-create or modify `ResourceSlices` belonging to another node. A `nodeName`
-field in each `ResourceSlice` object is used to determine which objects are
-managed by which kubelet.
-
-**NOTE:**  `ResourceSlices` are published separately for each driver, using
-whatever version of the `resource.k8s.io` API is supported by the kubelet. That
-same version is then also used in the gRPC interface between the kubelet and
-the DRA drivers providing content for those objects. It might be possible to
-support version skew (= keeping kubelet at an older version than the control
-plane and the DRA drivers) in the future, but currently this is out of scope.
+In the kubelet case, each driver running on a node publishes a set of
+`ResourceSlice` objects to the API server for its own resources.
+These requests are [proxied by kubelet](#kubelet-rest-proxy)
+and thus seen as coming from the kubelet by the apiserver.
+Access control through the node
+authorizer ensures that the drivers running on one node are not allowed to
+create or modify `ResourceSlices` belonging to another node. The `nodeName`
+and `driverName` fields in each `ResourceSlice` object are used to determine which objects are
+managed by which driver instance.
 
 Embedded inside each `ResourceSlice` is the representation of the resources
 managed by a driver according to a specific "structured model". In the example
@@ -931,7 +928,7 @@ Several components must be implemented or modified in Kubernetes:
   ResourceClaim (directly or through a template) and ensure that the
   resource is allocated before the Pod gets scheduled, similar to
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
-- Kubelet must be extended to retrieve information from ResourceClaims
+- Kubelet must be extended to manage ResourceClaims
   and to call a resource kubelet plugin. That plugin returns CDI device ID(s)
   which then must be passed to the container runtime.
 
@@ -1188,13 +1185,13 @@ drivers are expected to be written for Kubernetes.
 
 ##### ResourceSlice
 
-For each node, one or more ResourceSlice objects get created. The kubelet
-publishes them with the node as the owner, so they get deleted when a node goes
+For each node, one or more ResourceSlice objects get created. The drivers
+on a node publish them with the node as the owner, so they get deleted when a node goes
 down and then gets removed.
 
 All list types are atomic because that makes tracking the owner for
 server-side-apply (SSA) simpler. Patching individual list elements is not
-needed and there is a single owner (kubelet).
+needed and there is a single owner.
 
 ```go
 // ResourceSlice provides information about available
@@ -2049,6 +2046,247 @@ Unreserve is called in two scenarios:
 
 ### kubelet
 
+#### Communication between kubelet and resource kubelet plugin
+
+Resource kubelet plugins are discovered through the [kubelet plugin registration
+mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
+new "ResourcePlugin" type will be used in the Type field of the
+[PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
+response to distinguish the plugin from device and CSI plugins.
+
+Under the advertised Unix Domain socket the kubelet plugin provides the
+k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
+[CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
+with “volume” replaced by “resource” and volume specific parts removed.
+
+#### REST proxy
+
+Previously, kubelet retrieved ResourceClaims and published ResourceSlices on
+behalf of DRA drivers on the node. The information included in those got passed
+between API server, kubelet, and kubelet plugin using the version of the
+resource.k8s.io used by the kubelet. Combining a kubelet using some older API
+version with a plugin using a new version was not possible because conversion
+of the resource.k8s.io types is only supported in the API server and an old
+kubelet wouldn't know about a new version anyway.
+
+Keeping kubelet at some old release while upgrading the control and DRA drivers
+is desirable and officially supported by Kubernetes. To support the same when
+using DRA, the kubelet now provides a REST proxy via gRPC that can be used by
+drivers to execute HTTP requests against the API server. The drivers determine
+the version of the resource.k8s.io. In those few cases where the kubelet needs
+to access the resource.k8s.io API itself, it does so with a dynamic client.
+
+The alternative to implementing a generic REST proxy would have been to create
+dedicated gRPC APIs for all operations that are needed by a driver. This is a
+larger API and prevents using the normal client-go APIs. The way it is
+implemented now, client-go in the plugin is instantiated with a HTTP
+roundtripper provided by
+k8s.io/dynamic-resource-allocation/restproxy. Implementations of that helper
+code in other languages than Go are possible and may provide similar benefits.
+
+##### Security
+
+Requests originating from a driver will be sent to the API server with
+credentials of the kubelet. This has the advantage that the node authorizer can
+be used to limit access to objects belonging to the node. The downside is that
+a driver might abuse this to access some other resources that kubelet has
+access to, like pods. To prevent this, the REST proxy filters requests by path
+and method and only passes requests through which the driver is meant to have
+access to (ResourceSlice and ResourceClaim). Access to ResourceClaims is further
+limited to read-only access by the node authorizer.
+
+In addition, the REST proxy adds `nodeName` and `driverName` field selectors to
+the header of requests that list ResourceSlice objects. This is mostly for
+convenience because for a PUT of a ResourceSlice, the driver has to be trusted
+to not create an object for some other driver on the node. This cannot be
+checked by the REST proxy because it would have to decode the opaque request
+body.
+
+##### gRPC API
+
+What makes implementation of the REST proxy complicated is that the kubelet
+acts as gRPC client and the plugins as gRPC server. gRPC itself doesn't support
+requests from a server to a client. The REST proxy emulates that change of
+direction by creating a gRPC stream. Each message sent through that stream by
+the plugin represents one REST request. The entire request body is included
+directly. This works because requests are small enough. Each request has a
+unique ID.
+
+The response from the API server is delivered through multiple gRPC calls which
+contain that same unique ID and incrementally provide the response headers and
+the response body data as it comes in from the API server. These methods block
+if the API server delivers data too fast, which in turn slows down the API
+server. Delivery of the data continues until either side closes their end of
+the stream. Long-running requests, like watching a resource, are supported.
+
+This sequence diagram shows the initialization of the different components and
+the execution of one REST request:
+
+```mermaid
+sequenceDiagram
+    participant apiserver
+    box kubelet
+        participant plugins as plugin manager
+        participant manager as DRA manager
+        participant proxy as REST proxy
+        participant proxyreader as REST proxy reader
+    end
+    box DRA driver plugin
+        participant grpc as gRPC server
+        participant roundtripper as REST roundtripper
+        participant restclient as REST client
+    end
+    Note over grpc, roundtripper: handle gRPC via registration socket<br>and plugin socket
+    plugins -->> grpc: pluginregistration.Registration/GetInfo
+    grpc -->> plugins: GetInfo response: PluginInfo{Type:DRAPlugin}
+    plugins -->> grpc: pluginregistration.Registration/NotifyRegistrationStatus
+    grpc -->> plugins: 
+    plugins ->> manager: add plugin
+    Note over roundtripper,restclient: The REST client can<br>be used immediately,<br>but the roundtripper blocks until<br>it has a stream.
+    loop while plugin is registered
+        manager -->> grpc: REST/NodeObject{Name, UID}
+        grpc -->> manager: 
+        manager ->>+ proxy: start
+        %% Strictly speaking, the proxy gets created here (one for each plugin).
+        %% Mermaid cannot model that when using boxes (https://github.com/mermaid-js/mermaid/issues/5023)
+        Note right of proxy: one proxy per plugin
+        proxy -->> roundtripper: REST/Proxy
+        restclient ->> roundtripper: GET /api/...
+        roundtripper -->> proxy: Request{Id:1,Method:GET, ...}
+        Note right of proxy: checks allow list for methods+path,<br>adds field filter (driverName, nodeName)
+        proxy ->>+ proxyreader: start
+        Note right of proxyreader: one per request
+        proxy ->> apiserver: HTTP GET
+        par Response delivery
+            loop while there is response data
+                apiserver ->> proxyreader: write response
+                proxyreader -->> roundtripper: ReplyMessage{ID:1,Header:...,Body:...}
+                roundtripper -->> proxyreader: 
+            end
+        and
+            loop while there is response data
+                roundtripper ->> restclient: Read
+            end
+        end
+        deactivate proxyreader
+        roundtripper -->> proxy: close REST/Proxy stream
+        deactivate proxy
+    end
+```
+
+The corresponding gRPC API is defined in
+`k8s.io/dynamic-resource-allocation/apis/restproxy`:
+
+```
+// REST is the the gRPC service on the side which issues REST requests.
+//
+// Because a gRPC server cannot send requests to its client,
+// a stream gets established by the client where each response
+// is a REST request, which then gets handled by the client.
+service REST {
+  // Proxy is called by the REST proxy to enable sending
+  // REST requests. It gets called again after errors.
+  //
+  // Each stream response is a single REST request. The response
+  // is returned by the proxy through one or more Reply
+  // calls.
+  rpc Proxy (ProxyMessage)
+    returns (stream Request) {}
+
+  // Reply provides part of the response for a REST request.
+  rpc Reply (ReplyMessage)
+    returns (ReplyResponse) {}
+
+  // NodeObject is called as soon as kubelet has information
+  // about its node object. It's not called when used elsewhere.
+  rpc NodeObject(NodeObjectRequest)
+    returns (NodeObjectResponse) {}
+}
+
+message ProxyMessage {
+  // Intentionally empty.
+}
+
+message Request {
+  // Id is used as identifier for all response messages for this
+  // request. It is included in all ReplyMessages for this Request.
+  int64 id = 1;
+
+  string method = 2;
+  string path = 3;
+  string rawQuery = 4;
+  map<string, RESTHeader> header = 5;
+
+  // Body contains the entire request body data.
+  bytes body = 6;
+}
+
+message RESTHeader {
+  repeated string values = 1;
+}
+
+// ReplyMessage is one of many replies that are sent
+// by the proxy for each Request. If the error and/or close are set,
+// then the request has failed and no further replies are going to
+// be sent.
+//
+// The proxy waits for the ReplyResponse before sending the next
+// ReplyMessage. This ensures that the gRPC server receives
+// the body chunks in the right order.
+message ReplyMessage {
+  // Id matches the Id in the Request that this reply belongs to.
+  int64 id = 1;
+
+  // Error is set if and only if executing the request encountered a problem.
+  string error = 2;
+
+  // Close indicates that the end of the body has been reached.
+  bool close = 3;
+
+  // Header contains the response from the REST server. It is
+  // set in all reply messages.
+  ResponseHeader header = 4;
+
+  // BodyOffset is the index of the body data in the overall response body.
+  int64 body_offset = 5;
+
+  // Body contains some of the response body data.
+  // The entire data is provided in chunks in multiple
+  // replies. A reply may provide an error, indicate the
+  // end of the response data, and contain some more data.
+  bytes body = 6;
+}
+
+message ResponseHeader {
+  string status = 1; // e.g. "200 OK"
+  int32 status_code = 2;   // e.g. 200
+  string proto = 3; // e.g. "HTTP/1.0"
+  int32 proto_major = 4;    // e.g. 1
+  int32 proto_minor = 5;   // e.g. 0
+  map<string, RESTHeader> header = 6;
+
+  // ContentLength is the total expect length of the response body.
+  int64 content_length = 7;
+}
+
+message ReplyResponse {
+  // Close is true if the client is not interested in receiving more reply data.
+  bool close = 1;
+}
+
+message NodeObjectRequest {
+    string name = 1;
+    string uid = 2;
+}
+
+message NodeObjectResponse {
+}
+```
+
+Adding `NodeObject` to this gRPC interface was done because it was
+convenient. The information about the node is used by the ResourceSlice
+controller, not the REST proxy itself.
+
 #### Managing resources
 
 kubelet must ensure that resources are ready for use on the node before running
@@ -2068,37 +2306,12 @@ successfully before allowing the pod to be deleted. This ensures that network-at
 for other Pods, including those that might get scheduled to other nodes. It
 also signals that it is safe to deallocate and delete the ResourceClaim.
 
+The kubelet uses a specific version of the resource.k8s.io API for these
+checks. Version skew between kubelet and the control plane is supported as long
+as the apiserver still provides ResourceClaim objects with the version needed
+by the kubelet.
 
 ![kubelet](./kubelet.png)
-
-#### Communication between kubelet and resource kubelet plugin
-
-Resource kubelet plugins are discovered through the [kubelet plugin registration
-mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
-new "ResourcePlugin" type will be used in the Type field of the
-[PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
-response to distinguish the plugin from device and CSI plugins.
-
-Under the advertised Unix Domain socket the kubelet plugin provides the
-k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
-[CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
-with “volume” replaced by “resource” and volume specific parts removed.
-
-##### NodeListAndWatchResources
-
-NodeListAndWatchResources returns a stream of NodeResourcesResponse objects.
-At the start and whenever resource availability changes, the
-plugin must send one such object with all information to the kubelet. The
-kubelet then syncs that information with ResourceSlice objects.
-
-```
-message NodeListAndWatchResourcesRequest {
-}
-
-message NodeListAndWatchResourcesResponse {
-    repeated k8s.io.api.resource.v1alpha2.ResourceModel resources = 1;
-}
-```
 
 ##### NodePrepareResource
 
@@ -2155,20 +2368,16 @@ message Claim {
     // The name of the Resource claim (ResourceClaim.meta.Name)
     // This field is REQUIRED.
     string name = 3;
-    // Resource handle (AllocationResult.ResourceHandles[*].Data)
-    // This field is OPTIONAL.
-    string resource_handle = 4;
-    // Structured parameter resource handle (AllocationResult.ResourceHandles[*].StructuredData).
-    // This field is OPTIONAL. If present, it needs to be used
-    // instead of resource_handle. It will only have a single entry.
-    //
-    // Using "repeated" instead of "optional" is a workaround for https://github.com/gogo/protobuf/issues/713.
-    repeated k8s.io.api.resource.v1alpha2.StructuredResourceHandle structured_resource_handle = 5;
 }
 ```
 
-`resource_handle` and `structured_resource_handle` will be set depending on how
-the claim was allocated. See also KEP #3063.
+The allocation result is intentionally not included here. The content of that
+field is version-dependent. The kubelet would need to discover in which version
+each plugin wants the data, then potentially get the claim multiple times
+because only the apiserver can convert between versions. Instead, each plugin
+is required to get the claim itself using the REST proxy. In the most common
+case of one plugin per claim, that doubles the number of GETs for each claim
+(once by the kubelet, once by the plugin).
 
 ```
 message NodePrepareResourcesResponse {
