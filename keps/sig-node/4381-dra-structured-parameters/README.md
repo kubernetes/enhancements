@@ -1495,6 +1495,8 @@ type ResourceClaimSpec struct {
     // access mode that is only granted when there is a Quota object
     // in the same namespace as the claim where AllowManagementAccess
     // is true.
+    //
+    // This field is immutable after creation.
     ManagementAccess bool
 
     // ParametersRef references a separate object with arbitrary parameters
@@ -1505,6 +1507,18 @@ type ResourceClaimSpec struct {
     // +optional
     ParametersRef *ResourceClaimParametersReference
 }
+```
+
+```
+<<[UNRESOLVED @pohly ]>>
+Storing ManagementAccess only in the spec means that drivers are currently not
+getting to see it. https://github.com/kubernetes/enhancements/pull/4615 is needed to
+address this.
+
+We also need to add a comment to NodePrepareResources about checking whether parallel
+access to the same instance through different claims is allowed. This is a sanity
+check for erronous allocation.
+<<[/UNRESOLVED]>>
 ```
 
 The `ResourceClassName` field may be left empty. The parameters are sufficient
