@@ -110,9 +110,10 @@ SIG Architecture for cross-cutting KEPs).
     - [PreBind](#prebind)
     - [Unreserve](#unreserve)
   - [kubelet](#kubelet)
-    - [Managing resources](#managing-resources)
     - [Communication between kubelet and resource kubelet plugin](#communication-between-kubelet-and-resource-kubelet-plugin)
-      - [NodeListAndWatchResources](#nodelistandwatchresources)
+    - [Version skew](#version-skew)
+    - [Security](#security)
+    - [Managing resources](#managing-resources)
       - [NodePrepareResource](#nodeprepareresource)
       - [NodeUnprepareResources](#nodeunprepareresources)
   - [Simulation with CA](#simulation-with-ca)
@@ -531,20 +532,13 @@ the kubelet, as described below. However, the source of this data may vary; for
 example, a cloud provider controller could populate this based upon information
 from the cloud provider API.
 
-In the kubelet case, each kubelet publishes kubelet publishes a set of
-`ResourceSlice` objects to the API server with content provided by the
-corresponding DRA drivers running on its node. Access control through the node
-authorizer ensures that the kubelet running on one node is not allowed to
-create or modify `ResourceSlices` belonging to another node. A `nodeName`
-field in each `ResourceSlice` object is used to determine which objects are
-managed by which kubelet.
-
-**NOTE:**  `ResourceSlices` are published separately for each driver, using
-whatever version of the `resource.k8s.io` API is supported by the kubelet. That
-same version is then also used in the gRPC interface between the kubelet and
-the DRA drivers providing content for those objects. It might be possible to
-support version skew (= keeping kubelet at an older version than the control
-plane and the DRA drivers) in the future, but currently this is out of scope.
+In the kubelet case, each driver running on a node publishes a set of
+`ResourceSlice` objects to the API server for its own resources, using its
+connection to the apiserver. Access control through a validating admission
+policy can ensure that the drivers running on one node are not allowed to
+create or modify `ResourceSlices` belonging to another node. The `nodeName`
+and `driverName` fields in each `ResourceSlice` object are used to determine which objects are
+managed by which driver instance.
 
 Embedded inside each `ResourceSlice` is the representation of the resources
 managed by a driver according to a specific "structured model". In the example
@@ -931,7 +925,7 @@ Several components must be implemented or modified in Kubernetes:
   ResourceClaim (directly or through a template) and ensure that the
   resource is allocated before the Pod gets scheduled, similar to
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
-- Kubelet must be extended to retrieve information from ResourceClaims
+- Kubelet must be extended to manage ResourceClaims
   and to call a resource kubelet plugin. That plugin returns CDI device ID(s)
   which then must be passed to the container runtime.
 
@@ -1188,13 +1182,13 @@ drivers are expected to be written for Kubernetes.
 
 ##### ResourceSlice
 
-For each node, one or more ResourceSlice objects get created. The kubelet
-publishes them with the node as the owner, so they get deleted when a node goes
+For each node, one or more ResourceSlice objects get created. The drivers
+on a node publish them with the node as the owner, so they get deleted when a node goes
 down and then gets removed.
 
 All list types are atomic because that makes tracking the owner for
 server-side-apply (SSA) simpler. Patching individual list elements is not
-needed and there is a single owner (kubelet).
+needed and there is a single owner.
 
 ```go
 // ResourceSlice provides information about available
@@ -2049,6 +2043,56 @@ Unreserve is called in two scenarios:
 
 ### kubelet
 
+#### Communication between kubelet and resource kubelet plugin
+
+Resource kubelet plugins are discovered through the [kubelet plugin registration
+mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
+new "ResourcePlugin" type will be used in the Type field of the
+[PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
+response to distinguish the plugin from device and CSI plugins.
+
+Under the advertised Unix Domain socket the kubelet plugin provides the
+k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
+[CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
+with “volume” replaced by “resource” and volume specific parts removed.
+
+#### Version skew
+
+Previously, kubelet retrieved ResourceClaims and published ResourceSlices on
+behalf of DRA drivers on the node. The information included in those got passed
+between API server, kubelet, and kubelet plugin using the version of the
+resource.k8s.io used by the kubelet. Combining a kubelet using some older API
+version with a plugin using a new version was not possible because conversion
+of the resource.k8s.io types is only supported in the API server and an old
+kubelet wouldn't know about a new version anyway.
+
+Keeping kubelet at some old release while upgrading the control and DRA drivers
+is desirable and officially supported by Kubernetes. To support the same when
+using DRA, the kubelet now leaves ResourceSlice handling (almost) entirely to
+the plugins. The one exception is that it deletes all ResourceSlices on
+startup. This ensures that no pods depending in DRA get scheduled to the node
+until the required DRA drivers have started up again. It also ensures that
+drivers which don't get started up again at all don't leave stale
+ResourceSlices behind. For the same reasons, the ResourceSlices belonging to a
+driver get removed when the driver unregisters. This access is done with
+whatever resource.k8s.io API version is the latest known to the kubelet. To
+support version skew, support for older API versions must be preserved as far
+back as support for older kubelet releases is desired.
+
+#### Security
+
+The daemonset of a DRA driver must be configured to have a service account
+which grants the following permissions:
+- read/write/patch ResourceSlice
+- read ResourceClaim
+
+Ideally, write access to ResourceSlice should be limited to objects belonging
+to the node. This is possible with a [validating admission
+policy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/). As
+this is not a core feature of the DRA KEP, instructions for how to do that will
+not be included here. Instead, the DRA example driver will provide an example
+and documentation.
+
 #### Managing resources
 
 kubelet must ensure that resources are ready for use on the node before running
@@ -2068,37 +2112,7 @@ successfully before allowing the pod to be deleted. This ensures that network-at
 for other Pods, including those that might get scheduled to other nodes. It
 also signals that it is safe to deallocate and delete the ResourceClaim.
 
-
 ![kubelet](./kubelet.png)
-
-#### Communication between kubelet and resource kubelet plugin
-
-Resource kubelet plugins are discovered through the [kubelet plugin registration
-mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
-new "ResourcePlugin" type will be used in the Type field of the
-[PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
-response to distinguish the plugin from device and CSI plugins.
-
-Under the advertised Unix Domain socket the kubelet plugin provides the
-k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
-[CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
-with “volume” replaced by “resource” and volume specific parts removed.
-
-##### NodeListAndWatchResources
-
-NodeListAndWatchResources returns a stream of NodeResourcesResponse objects.
-At the start and whenever resource availability changes, the
-plugin must send one such object with all information to the kubelet. The
-kubelet then syncs that information with ResourceSlice objects.
-
-```
-message NodeListAndWatchResourcesRequest {
-}
-
-message NodeListAndWatchResourcesResponse {
-    repeated k8s.io.api.resource.v1alpha2.ResourceModel resources = 1;
-}
-```
 
 ##### NodePrepareResource
 
@@ -2106,14 +2120,9 @@ This RPC is called by the kubelet when a Pod that wants to use the specified
 resource is scheduled on a node. The Plugin SHALL assume that this RPC will be
 executed on the node where the resource will be used.
 
-ResourceClaim.meta.Namespace, ResourceClaim.meta.UID, ResourceClaim.Name and
-one of the ResourceHandles from the ResourceClaimStatus.AllocationResult with
-a matching DriverName should be passed to the Plugin as parameters to identify
+ResourceClaim.meta.Namespace, ResourceClaim.meta.UID, ResourceClaim.Name are
+passed to the Plugin as parameters to identify
 the claim and perform resource preparation.
-
-ResourceClaim parameters (namespace, UUID, name) are useful for debugging.
-They enable the Plugin to retrieve the full ResourceClaim object, should it
-ever be needed (normally it shouldn't).
 
 The Plugin SHALL return fully qualified device name[s].
 
@@ -2155,20 +2164,16 @@ message Claim {
     // The name of the Resource claim (ResourceClaim.meta.Name)
     // This field is REQUIRED.
     string name = 3;
-    // Resource handle (AllocationResult.ResourceHandles[*].Data)
-    // This field is OPTIONAL.
-    string resource_handle = 4;
-    // Structured parameter resource handle (AllocationResult.ResourceHandles[*].StructuredData).
-    // This field is OPTIONAL. If present, it needs to be used
-    // instead of resource_handle. It will only have a single entry.
-    //
-    // Using "repeated" instead of "optional" is a workaround for https://github.com/gogo/protobuf/issues/713.
-    repeated k8s.io.api.resource.v1alpha2.StructuredResourceHandle structured_resource_handle = 5;
 }
 ```
 
-`resource_handle` and `structured_resource_handle` will be set depending on how
-the claim was allocated. See also KEP #3063.
+The allocation result is intentionally not included here. The content of that
+field is version-dependent. The kubelet would need to discover in which version
+each plugin wants the data, then potentially get the claim multiple times
+because only the apiserver can convert between versions. Instead, each plugin
+is required to get the claim itself using its own credentials. In the most common
+case of one plugin per claim, that doubles the number of GETs for each claim
+(once by the kubelet, once by the plugin).
 
 ```
 message NodePrepareResourcesResponse {
