@@ -777,6 +777,27 @@ requests:
         attributes.bool["isGPU.gpu.k8s.io"]
 ```
 
+Vendor parameters could be used here, too, but they would have to use a format
+that is supported by all drivers which might provide resources matching this
+request.
+
+```
+<<[UNRESOLVED @pohly @johnbelamaric]>>
+A KEP standardizing certain attributes can also standardize setup
+parameters and add them as a new field that complements the opaque
+`vendorParameters`. However, a scheduler which doesn't know about
+the new field then would silently ignore it.
+
+Do we need a one-of-many around vendorParameters here to avoid that issue?
+
+Shall we perhaps rename to
+requests:
+  setupParameters:
+    vendor:
+      <raw extension>
+<<[/UNRESOLVED]>>
+```
+
 Resource class parameters are supported the same way. To ensure that
 permissions can be limited to administrators, there's a separate cluster-scoped
 ResourceClassParameters type. Instead of individual requests, one additional
