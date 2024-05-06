@@ -75,6 +75,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Publishing node resources](#publishing-node-resources)
   - [Using structured parameters](#using-structured-parameters)
   - [Communicating allocation to the DRA driver](#communicating-allocation-to-the-dra-driver)
+  - [Optional allocation](#optional-allocation)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Feature not used](#feature-not-used)
     - [Compromised node](#compromised-node)
@@ -817,6 +818,42 @@ nodeName: worker-1
 namedResources:
   resources:
   - gpu-1
+```
+
+### Optional allocation
+
+The default used by the examples above is to allocate exactly one named
+resource instance for each request. A range may be specified to request more
+than one or, if this would be acceptable, none at all. Each allocated instance
+will be listed in the allocation result, same as when no range is
+specified. That list may be empty if nothing was allocated.
+
+This example asks for all GPUs with more than 32Gi of memory that are available:
+```
+driverRequests:
+- driverName: cards.dra.example.com
+  requests:
+  # Each entry here is a request for one resource.
+  - namedresources:
+      range:
+        minimum: 1
+      selector: |-
+        attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
+```
+
+This example allows to run a pod with a GPU when one is available and without
+one if not:
+```
+driverRequests:
+- driverName: cards.dra.example.com
+  requests:
+  # Each entry here is a request for one resource.
+  - namedresources:
+      range:
+        minimum: 0
+        maximum: 1
+      selector: |-
+        attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
 ```
 
 ### Risks and Mitigations
@@ -1578,6 +1615,15 @@ type ResourceRequestModel struct {
 
 // NamedResourcesRequest is used in ResourceRequestModel.
 type NamedResourcesRequest struct {
+    // Range defines how many instances are desired. If unset, exactly one
+    // instance must be available. When a range is set, it is possible to
+    // ask for:
+    // - x >= minimum instances (all that are available)
+    // - 0 <= x <= maximum (a certain number, with zero instances acceptable)
+    // - minimum <= 0 <= maximum (within a certain range)
+    // +optional
+    Range *NamedResourcesRange
+
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
@@ -1589,6 +1635,17 @@ type NamedResourcesRequest struct {
     //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
     //    attributes.stringslice["b"].isSorted()
     Selector string
+}
+
+// NamedResourcesRange defines how many instances are desired.
+type NamedResourcesRange struct {
+    // Minimum defines the lower limit. At least this many instances
+    // must be available (x >= minimum). The default if unset is one.
+    Minimum *int
+
+    // Maximum defines the upper limit. At most this many instances
+    // may be allocated (x <= maximum). The default if unset is unlimited.
+    Maximum *int
 }
 ```
 
