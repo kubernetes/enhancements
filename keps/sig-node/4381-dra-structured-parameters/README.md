@@ -95,6 +95,7 @@ SIG Architecture for cross-cutting KEPs).
       - [ResourceClass](#resourceclass)
       - [ResourceClassParameters](#resourceclassparameters)
       - [ResourceClaimParameters](#resourceclaimparameters)
+      - [SetupParameters](#setupparameters)
       - [Allocation result](#allocation-result)
       - [ResourceClaimTemplate](#resourceclaimtemplate)
       - [Object references](#object-references)
@@ -596,6 +597,8 @@ spec:
   namedResources:
   - name: gpu-0
     attributes:
+    - name: type
+      string: GPU # All named resources with this type have the following attributes.
     - name: UUID
       string: GPU-ceea231c-4257-7af7-6726-efcb8fc2ace9
     - name: driverVersion
@@ -610,6 +613,8 @@ spec:
       bool: true
   - name: gpu-1
     attributes:
+    - name: type
+      string: GPU
     - name: UUID
       string: GPU-6aa0af9e-a2be-88c8-d2b3-2240d25318d7
     - name: driverVersion
@@ -664,6 +669,7 @@ metadata:
   uid: foobar-uid
 ...
 spec:
+  numGPUs: 2
   minimumRuntimeVersion: v12.0.0
   minimumMemory: 32Gi
   # "sharing" is a configuration parameter that does not
@@ -699,51 +705,58 @@ generatedFrom:
   apiGroup: dra.example.com
   uid: foobar-uid
 
-requests:
-- vendorParameters:
-    # A vendor can put any kind of object here to pass the configuration
-    # parameters down to the kubelet plugin. In this case, the vendor
-    # driver simply copied the entire CR. It could also be some
-    # separate, smaller configuration type.
-    #
-    # Beware that ResourceClaimParameters have separate RBAC rules than
-    # the vendor CRD, so information included here may get visible
-    # to more users than the original CRD. Both objects are in the same
-    # namespace.
-    kind: CardParameters
-    apiVersion: dra.example.com/v1alpha1
-    metadata:
-      name: my-parameters
-      namespace: user-namespace
-      uid: foobar-uid
-    ...
-    spec:
-      minimumRuntimeVersion: v12.0.0
-      minimumMemory: 32Gi
+# Setup parameters can be provided at two different levels:
+# - for all resources (here)
+# - for a single resource (not shown below)
+#
+# At the moment, only setup parameters defined by a vendor
+# are supported. In-tree definition of common setup parameters
+# might get added in the future.
+setup:
+  vendor:
+  # The driver name specifies which driver the list entry is intended
+  # for. This is a list because a claim might end up using resources
+  # from different drivers.
+  #
+  # A driver could provide an admission webhook to validate its
+  # own parameters when users embed them in a ResourceClaimParameters
+  # object themselves.
+  - driverName: cards.dra.example.com
+    parameters:
+      # Beware that ResourceClaimParameters have separate RBAC rules than
+      # the vendor CRD, so information included here may get visible
+      # to more users than the original CRD. Both objects are in the same
+      # namespace.
+      kind: CardClaimSetup
+      apiVersion: dra.example.com/v1alpha1
       sharing:
         strategy: TimeSliced
-  # Each entry here is a request for one resource. Entries could have
-  # their own vendor parameters (not shown here).
-  subRequests:
-  - namedResources:
-      driverName: cards.dra.example.com
-      # Selectors are CEL expressions with access to the attributes of the named resource
-      # that is being checked for a match.
-      selector: |-
-        # Attribute names can be fully qualified or shortened when they
-        # have the driver name as suffix.
-        attributes.string.has("UUID.cards.dra.example.com") &&
-        attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
-        attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
-```
+
+namedResources:
+- attributeSuffix: cards.dra.example.com
+  selector: |-
+    # Selectors are CEL expressions with access to the attributes of the named resource
+    # that is being checked for a match.
+    #
+    # Attribute names can be fully qualified or shortened when they
+    # are meant to have the attribute suffix defined above.
+    attributes.string.has("type.cards.dra.example.com") &&
+    attributes.string["type.cards.dra.example.com"] == "GPU" &&
+    attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
+    attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
+- attributeSuffix: cards.dra.example.com
+  selector: |-
+    attributes.string.has("type") &&
+    attributes.string["type"] == "GPU" &&
+    attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
+    attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
+``
 
 The meaning is that the selector expression must evaluate to true for a
 particular named resource which has attributes as defined by
 `cards.dra.example.com`, like "runtimeVersion" and "memory". Checking for the
-UUID rules out all instances provided by other drivers and avoids runtime
-errors when looking up "runtimeVersion" =
-"runtimeVersion.cards.dra.example.com" in the attributes of some other driver's
-instance where that attribute is not set.
+type once rules out instances where the "GPU" attributes of the vendor are
+not set. Accessing unset attributes is a runtime error.
 
 Future extensions could be added to support partioning of resources as well as a
 express constraints that must be satisfied *between* any selected resources. For
@@ -769,34 +782,35 @@ metadata:
   name: gpu-request-parameters
   namespace: user-namespace
 
-requests:
-- subRequests:
-  - namedResources:
-      selector: |-
-        attributes.bool.has("isGPU.gpu.k8s.io") &&
-        attributes.bool["isGPU.gpu.k8s.io"]
+- namedResources:
+  - selector: |-
+      attributes.bool.has("isGPU.gpu.k8s.io") &&
+      attributes.bool["isGPU.gpu.k8s.io"]
 ```
 
-Vendor parameters could be used here, too, but they would have to use a format
-that is supported by all drivers which might provide resources matching this
-request.
+Vendor parameters could be used here, too. Here they get set at the level of
+a single resource instance, with different parameters for different vendors:
 
-```
-<<[UNRESOLVED @pohly @johnbelamaric]>>
-A KEP standardizing certain attributes can also standardize setup
-parameters and add them as a new field that complements the opaque
-`vendorParameters`. However, a scheduler which doesn't know about
-the new field then would silently ignore it.
+```yaml
+kind: ResourceClaimParameters
+apiVersion: resource.k8s.io/v1alpha2
 
-Do we need a one-of-many around vendorParameters here to avoid that issue?
+metadata:
+  name: gpu-request-parameters
+  namespace: user-namespace
 
-Shall we perhaps rename to
-requests:
-  setupParameters:
+- namedResources:
+  setup:
     vendor:
-      <raw extension>
-<<[/UNRESOLVED]>>
+    - driverName: cards.dra.example.com
+      parameters: <per-GPU parameters defined by the "cards" vendor>
+    - driverName: cards.someothervendor.example.com
+      parameters: <per-GPU parameters defined by the "someothervendor">
+  - selector: |-
+      attributes.bool.has("isGPU.gpu.k8s.io") &&
+      attributes.bool["isGPU.gpu.k8s.io"]
 ```
+
 
 Resource class parameters are supported the same way. To ensure that
 permissions can be limited to administrators, there's a separate cluster-scoped
@@ -822,17 +836,14 @@ vendorParameters:
 
 filter:
   namedResources:
-    driverName: cards.dra.example.com
+    attributeSuffix: cards.dra.example.com
     selector: |-
+      attributes.quantity.has("memory") &&
       attributes.quantity["memory"] <= "16Gi"
 ```
 
 In this example, the additional selector expression limits users of this class
-to just the cards with less that "16Gi" of memory. Together with limiting the
-number of claims that users are allowed to create for this class (see resource
-quotas in the core KEP) this can ensure that users do not consume too many
-resources. Allowing resource quotas that are based on resource attributes may be
-a useful future enhancement.
+to just the cards with less that "16Gi" of memory.
 
 ### Communicating allocation to the DRA driver
 
@@ -1324,8 +1335,7 @@ type NamedResourcesInstance struct {
 // NamedResourcesAttribute is a combination of an attribute name and its value.
 type NamedResourcesAttribute struct {
     // Name must be a DNS subdomain. If the name contains no dot, the name of
-    // the driver which provides the instance gets added as suffix when
-    // looking up the attribute.
+    // the driver which provides the instance gets added as suffix.
     Name string
 
     NamedResourcesAttributeValue
@@ -1445,12 +1455,11 @@ type ResourceFilterModel struct {
 
 // NamedResourcesFilter is used in ResourceFilterModel.
 type NamedResourcesFilter struct {
-    // DriverName is automatically added as suffix to attribute names
-    // which do not contain a dot already. If all attribute names in
-    // the selector have the full name of the attribute, the driver name
-    // can be left empty.
+    // AttributeSuffix is automatically added as suffix to attribute names
+    // which do not contain a dot already. Using this shorthand makes
+    // CEL expressions shorter, but is not required.
     // +optional
-    DriverName string
+    AttributeSuffix string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1596,28 +1605,9 @@ type ResourceClaimParameters struct {
     // by multiple consumers at the same time.
     Shareable bool
 
-    // Requests describes all resources that are needed for the
-    // allocated claim.
-    //
-    // May be empty, in which case the claim can always be allocated.
-    Requests []Request
-}
-
-// Request combines several sub-requests with optional vendor-specific setup
-// parameters.
-type Request struct {
-    // VendorParameters are arbitrary setup parameters for all sub-requests.
+    // Setup provides optional parameters for configuring all allocated resources.
     // They are ignored while allocating the claim.
-    VendorParameters runtime.Object
-
-    SubRequests []ResourceRequest
-}
-
-// ResourceRequest is a request for one particular resource.
-type ResourceRequest struct {
-    // VendorParameters are arbitrary setup parameters for the requested
-    // resource. They are ignored while allocating a claim.
-    VendorParameters runtime.Object
+    Setup *SetupParameters
 
     ResourceRequestModel
 }
@@ -1625,17 +1615,22 @@ type ResourceRequest struct {
 // ResourceRequestModel must have one and only one field set.
 type ResourceRequestModel struct {
     // NamedResources describes a request for resources with the named resources model.
-    NamedResources *NamedResourcesRequest
+    // The list may be empty, in which case the claim can be allocated without
+    // using any instances.
+    NamedResources *[]NamedResourcesRequest
 }
 
 // NamedResourcesRequest is used in ResourceRequestModel.
 type NamedResourcesRequest struct {
-    // DriverName is automatically added as suffix to attribute names
-    // which do not contain a dot already. If all attribute names in
-    // the selector have the full name of the attribute, the driver name
-    // can be left empty.
+    // Setup provides optional parameters for configuring the instance.
+    // They are ignored while allocating the claim.
+    Setup *SetupParameters
+
+    // AttributeSuffix is automatically added as suffix to attribute names
+    // which do not contain a dot already. Using this shorthand makes
+    // CEL expressions shorter, but is not required.
     // +optional
-    DriverName string
+    AttributeSuffix string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1657,10 +1652,32 @@ type NamedResourcesRequest struct {
 }
 ```
 
-NamedResourcesFilter and NamedResourcesRequest currently have the same
-content. Despite that, they are defined as separate structs because that might
-change in the future.
+##### SetupParameters
 
+SetupParameters is a one-of-many because in-tree setup parameters might get
+defined in the future.
+
+```yaml
+// SetupParameters must have one and only one field set.
+type SetupParameters struct {
+    Vendor *[]VendorSetupParameters
+}
+
+// VendorSetupParameters contains setup parameters per driver.
+type VendorSetupParameters struct {
+    // DriverName is used to determine which kubelet plugin needs
+    // to be passed these setup parameters.
+    //
+    // An admission webhook provided by the vendor could use this
+    // to decide whether it needs to validate them.
+    DriverName string
+
+    // Parameters can contain arbitrary data. It is the
+    // responsibility of the vendor to handle validation and
+    // versioning.
+    Parameters runtime.RawExtension
+}
+```
 
 ##### Allocation result
 
@@ -1719,10 +1736,10 @@ type StructuredResourceHandle struct {
     // from the resource class at the time that the claim was allocated.
     VendorClassParameters runtime.Object
 
-    // VendorClaimParameters are the per-claim configuration parameters
+    // Setup are the per-claim configuration parameters
     // from the resource claim parameters at the time that the claim was
     // allocated.
-    VendorClaimParameters runtime.Object
+    Setup *SetupParameters
 
     // NodeName is the name of the node providing the necessary resources
     // if the resources are local to a node.
