@@ -79,7 +79,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The authorization attributes will be extended to include field selectors and label selectors from
-Get, List, Watch, and Deletecollection.
+List, Watch, and Deletecollection.
 This will allow authorizers to use these selectors when making an authorization decision.
 
 ## Motivation
@@ -91,42 +91,39 @@ In particular, it enables out-of-tree authorizers to experiment with ways to exp
 
 ### Goals
 
-* Add field and label selectors to authorization attributes for Get, List, Watch, and DeleteCollection verbs.
+* Add field and label selectors to authorization attributes for List, Watch, and DeleteCollection verbs.
 * Add field and label selectors to webhook authorization types.
 * Add field and label selectors to SelfSubjectAccessReview (SSAR) and SubjectAccessReview (SAR).
-  <<[UNRESOLVED deads2k, liggitt, aws-Micah: you guys volunteering to deliver this bit? ]>>
 * Update node authorizer to restrict on nodeName field selector.
-  <<[/UNRESOLVED]>>
 
 ### Non-Goals
 
 * Create a generic in-tree authorizer that manages field or label selectors.
+* Expand the audit surface area, since requestURI is already included
+* Expand the admission surface area (admission.Attributes, AdmissionReview, CEL authorizer implementation available to admission) 
+  since admission verbs don't support field/label selectors
+
 
 ## Proposal
 
 List, Watch, and DeleteCollection requests directly have field and label selector options.
-A single-item List or Watch request is remapped to the Get verb, so Get requests can have field and label selectors.
+A single-item List or Watch request is still a list as normal (including selectors), but also includes a name.
 
 ### Authorization Attributes changes
 
 The authorization attributes have easy access to the query parameter field and label selectors.
 To avoid confusion, field and label selectors will not be included in authorization attributes for verbs where the field
 selector has no semantic meaning.
-In practice this means that (for now), only Get, List, Watch, and DeleteCollection have field and label selectors.
-Any authorizer that gets an error from `ParseFieldSelector` or `ParseLabelSelector` may attempt to authorize with the 
-`GetFieldSelector` or `GetLabelSelector` or attempt to authorize without field or label selectors since that will authorize
-using a wider permission (field and label selectors can only reduce access).
+In practice this means that (for now), only List, Watch, and DeleteCollection have field and label selectors.
+SubjectAccessReviews submitted to the kube-apiserver will have the field and label selector attributes removed prior to
+checking authorization.
+Webhook authors: remember that the list of verbs accepting field and label selectors may change over time.
+If the kube-apiserver sends the FieldSelector or LabelSelector to a webhook, the kube-apiserver intends to honor the selector attributes.
+Any authorizer that gets an error from `ParseFieldSelector` or `ParseLabelSelector` may attempt to authorize without
+field or label selectors since that will authorize using a wider permission (field and label selectors can only reduce access).
 
 ```go
 type Attributes interface {
-	// GetFieldSelector returns the query parameter value of the field selector
-	// Remember that only List, Watch, and DeleteCollection (currently) provide 
-	// Remember that field selector formats vary based on the version of the API being used!
-	GetFieldSelector() string
-
-    // GetLabelSelector returns the query parameter value of the label selector
-	GetLabelSelector() string
-
 	// ParseLabelSelector is lazy, thread-safe, and stores the parsed result and error.
 	// It can return an error if the field selector cannot be parsed.
     // Remember that field selector formats vary based on the version of the API being used!
@@ -139,7 +136,7 @@ type Attributes interface {
 
 ### SubjectAccessReview Changes
 
-SubjectAccessReview is use for two purposes:
+SubjectAccessReview is used for two purposes:
 1. Authorization webhook calls from the kube-apiserver to a webhook.
    This usage likely benefits from a serialization with `[]Requirement`.
 2. Authorization checks from a client (often a server process using in-cluster authorization like kube-rbac-proxy)
@@ -155,12 +152,17 @@ type SubjectAccessReviewSpec struct {
 }
 
 // FieldSelectorAttributes indicates a field limited access.
+// For webhooks:
+// The kube-apiserver will never send a request with rawSelector set, but we cannot control what other clients directly send.
 // If rawSelector is empty and requirements are empty, the request is not limited.
-// If rawSelector is present and requirements are empty, the rawSelector should be honored.
+// If rawSelector is present and requirements are empty, the request is not limited.
 // If rawSelector is empty and requirements are present, the requirements should be honored
-// If rawSelector is present and requirements are present, the implementation must describe which (or both) is honored.
-// Remember, the rawSelector may not match the requirements!
-// The kube-apiserver will 
+// If rawSelector is present and requirements are present, the request is invalid.
+// For the kube-apiserver:
+// If rawSelector is empty and requirements are empty, the request is not limited.
+// If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
+// If rawSelector is empty and requirements are present, the requirements should be honored
+// If rawSelector is present and requirements are present, the request is invalid.
 type FieldSelectorAttributes struct {
 	// rawSelector is the serialization of a field selector that would be included in a List query parameter.
 	// Webhook implementations must handle malformed rawSelectors.
@@ -173,6 +175,18 @@ type FieldSelectorAttributes struct {
 	Requirements []FieldSelectorRequirement
 }
 
+// LabelSelectorAttributes indicates a field limited access.
+// For webhooks:
+// The kube-apiserver will never send a request with rawSelector set, but we cannot control what other clients directly send.
+// If rawSelector is empty and requirements are empty, the request is not limited.
+// If rawSelector is present and requirements are empty, the request is not limited.
+// If rawSelector is empty and requirements are present, the requirements should be honored
+// If rawSelector is present and requirements are present, the request is invalid.
+// For the kube-apiserver:
+// If rawSelector is empty and requirements are empty, the request is not limited.
+// If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
+// If rawSelector is empty and requirements are present, the requirements should be honored
+// If rawSelector is present and requirements are present, the request is invalid.
 type LabelSelectorAttributes struct {
 	// rawSelector is the serialization of a field selector that would be included in a List query parameter.
 	// Webhook implementations must handle malformed rawSelectors.
@@ -189,9 +203,7 @@ type FieldSelectorRequirement struct {
 	// key is the label key that the selector applies to.
 	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
 	// operator represents a key's relationship to a set of values.
-	// Valid operators are ==, !=
-	// TODO do we want to represent it in this API as In, NotIn, Exists and DoesNotExist.
-	// TODO we can convert existing field selectors into those operators and would ease future changes for webhooks.
+	// Valid operators are In, NotIn, Exists, DoesNotExist
 	Operator LabelSelectorOperator `json:"operator" protobuf:"bytes,2,opt,name=operator,casttype=LabelSelectorOperator"`
 	// values is an array of string values. If the operator is In or NotIn,
 	// the values array must be non-empty. If the operator is Exists or DoesNotExist,
@@ -223,30 +235,22 @@ Providing the parsed value avoids the need for every consumer to grow a decently
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+1. authorization webhook matchConditions, which evaluates the v1 SubjectAccessReview that would be sent to the webhook: [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/pkg/authorization/cel/compile.go#L197-L205).
+2. v1 / v1beta1 SAR translation function [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook.go#L472-L485)
+3. v1 SubjectAccessReview construction function [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook.go#L198)
+4. cache size decision [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook.go#L440)
+
 
 ### Risks and Mitigations
 
 #### client provides field or label selector to kube-apiserver that does not parse
 
-The kube-apiserver does not parse the selectors until requested.
-This means that if the authorizers somehow use string matching, they may use the rawSelector values to authorize.
+The kube-apiserver may still authorize the request without considering the selectors (system:masters for instance).
 It will be up to the REST handler to accept or reject requests for bad selectors.
-This approach allows an aggregated API server to have extended field and label selector syntax, though we strongly discourage doing so.
-If the authorizer uses the parsed selectors (far more likely), the authorizer should make an explicit choice about what to do.
-Options include
-1. Error on unparseable selector and NoOpinion (continue to next authorizer).
-2. Error on unparseable selector and Fail (do not continue to next authorizer, we know we should have authorized)
-3. Attempt to authorize without the selector information.
-   If the client is authorized without the selector, then Allow since they have broader permission.
-   If the client is not authorized without the selector then either NoOpinion or Fail depending on intent.
-
-I suggest option #3 as generally the best.
+This approach also allows an aggregated API server to have extended field and label selector syntax, though we strongly discourage doing so.
+The kube-apiserver will attempt to authorize without the selector information.
+* If the client is authorized without the selector, then Allow since they have broader permission.
+* If the client is not authorized without the selector then either NoOpinion or Fail depending on intent.
 
 #### client provides field or label selector to kube-apiserver with improper verb
 
@@ -256,11 +260,12 @@ The `ResolveRequestInfo` method will not add field and label selectors to the `r
 in the `authorization.Attributes`, so the spurious selectors are not passed to the authorizer.
 This keeps authorization behavior exactly as it was previously.
 
+SubjectAccessReviews are similarly modified prior to calling the kube-apiserver authorizer.
+
 #### client provides SAR where field rawSelector does not match field requirements.
 
-The results are undefined.  Different webhooks can choose to handle this differently.
-The kube-apiserver will NOT re-parse the field selector and will NOT validate that the rawSelector and requirements match.
-This is because the client is only harming themselves by passing improper input.
+The request is rejected.
+Only one of `rawSelector` and `requirements` can be specified.
 
 ## Design Details
 
@@ -485,9 +490,7 @@ This section must be completed when targeting alpha to a release.
 ###### Does enabling the feature change any default behavior?
 
 Yes.  The kube-apiserver will send field and label selector information to authorization webhooks.
-<<[UNRESOLVED deads2k, liggitt, aws-Micah: you guys volunteering to deliver this bit? ]>>
 The node authorizer will start preventing kubelets from listing pods that are not on their node.
-<<[/UNRESOLVED]>>
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
