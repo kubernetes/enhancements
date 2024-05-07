@@ -705,14 +705,14 @@ generatedFrom:
   apiGroup: dra.example.com
   uid: foobar-uid
 
-# Setup parameters can be provided at two different levels:
-# - for all resources (here)
-# - for a single resource (not shown below)
+# Configuration parameters can be provided at two different levels:
+# - for all resources (this example)
+# - for a single resource (example below)
 #
-# At the moment, only setup parameters defined by a vendor
-# are supported. In-tree definition of common setup parameters
+# At the moment, only configuration parameters defined by a vendor
+# are supported. In-tree definition of common configuration parameters
 # might get added in the future.
-setup:
+config:
   vendor:
   # The driver name specifies which driver the list entry is intended
   # for. This is a list because a claim might end up using resources
@@ -727,7 +727,7 @@ setup:
       # the vendor CRD, so information included here may get visible
       # to more users than the original CRD. Both objects are in the same
       # namespace.
-      kind: CardClaimSetup
+      kind: CardClaimConfiguration
       apiVersion: dra.example.com/v1alpha1
       sharing:
         strategy: TimeSliced
@@ -750,7 +750,7 @@ namedResources:
     # and the existence of attributes doesn't have to be checked.
     attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
     attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
-``
+```
 
 The meaning is that the selector expression must evaluate to true for a
 particular named resource which has attributes as defined by
@@ -782,10 +782,10 @@ metadata:
   name: gpu-request-parameters
   namespace: user-namespace
 
-- namedResources:
-  - selector: |-
-      attributes.bool.has("isGPU.gpu.k8s.io") &&
-      attributes.bool["isGPU.gpu.k8s.io"]
+namedResources:
+- selector: |-
+    attributes.bool.has("isGPU.gpu.k8s.io") &&
+    attributes.bool["isGPU.gpu.k8s.io"]
 ```
 
 Vendor parameters could be used here, too. Here they get set at the level of
@@ -799,16 +799,16 @@ metadata:
   name: gpu-request-parameters
   namespace: user-namespace
 
-- namedResources:
-  setup:
+namedResources:
+- selector: |-
+    attributes.bool.has("isGPU.gpu.k8s.io") &&
+    attributes.bool["isGPU.gpu.k8s.io"]
+  config:
     vendor:
     - driverName: cards.dra.example.com
       parameters: <per-GPU parameters defined by the "cards" vendor>
     - driverName: cards.someothervendor.example.com
       parameters: <per-GPU parameters defined by the "someothervendor">
-  - selector: |-
-      attributes.bool.has("isGPU.gpu.k8s.io") &&
-      attributes.bool["isGPU.gpu.k8s.io"]
 ```
 
 
@@ -1437,10 +1437,10 @@ type ResourceClassParameters struct {
     // to some unknown type.
     GeneratedFrom *ResourceClassParametersReference
 
-    // VendorParameters are arbitrary setup parameters for all claims using
-    // this class. They are ignored while allocating the claim. There must
-    // not be more than one entry per driver.
-    VendorParameters []VendorParameters
+    // Config defines configuration parameters that apply to each claim using this class
+    // and all named resources in those claims. They are ignored while allocating the claim.
+    // +optional
+    Config *ConfigurationParameters
 
     // Filter describes additional contraints that must be met when using the class.
     Filter ResourceFilterModel
@@ -1610,9 +1610,9 @@ type ResourceClaimParameters struct {
     // by multiple consumers at the same time.
     Shareable bool
 
-    // Setup provides optional parameters for configuring all allocated resources.
+    // ClaimConfig defines configuration parameters that apply to the entire claim.
     // They are ignored while allocating the claim.
-    Setup *SetupParameters
+    Config *ConfigurationParameters
 
     ResourceRequestModel
 }
@@ -1627,9 +1627,9 @@ type ResourceRequestModel struct {
 
 // NamedResourcesRequest is used in ResourceRequestModel.
 type NamedResourcesRequest struct {
-    // Setup provides optional parameters for configuring the instance.
-    // They are ignored while allocating the claim.
-    Setup *SetupParameters
+    // Config defines configuration parameters that apply to the requested
+    // instance. They are ignored while allocating the claim.
+    Config *ConfigurationParameters
 
     // DriverName excludes any named resource not provided by this driver.
     // +optional
@@ -1663,19 +1663,19 @@ type NamedResourcesRequest struct {
 }
 ```
 
-##### SetupParameters
+##### ConfigurationParameters
 
-SetupParameters is a one-of-many because in-tree setup parameters might get
+ConfigurationParameters is a one-of-many because in-tree configuration parameters might get
 defined in the future.
 
 ```yaml
-// SetupParameters must have one and only one field set.
-type SetupParameters struct {
-    Vendor *[]VendorSetupParameters
+// ConfigurationParameters must have one and only one field set.
+type ConfigurationParameters struct {
+    Vendor *[]VendorConfigurationParameters
 }
 
-// VendorSetupParameters contains setup parameters per driver.
-type VendorSetupParameters struct {
+// VendorConfigurationParameters contains setup parameters per driver.
+type VendorConfigurationParameters struct {
     // DriverName is used to determine which kubelet plugin needs
     // to be passed these setup parameters.
     //
@@ -1743,14 +1743,18 @@ type ResourceHandle struct {
 
 // StructuredResourceHandle is the in-tree representation of the allocation result.
 type StructuredResourceHandle struct {
-    // VendorClassParameters are the per-claim configuration parameters
+    // AdminConfig are the configuration parameters
     // from the resource class at the time that the claim was allocated.
-    VendorClassParameters runtime.Object
+    //
+    // This only includes parameters that were meant for the driver.
+    AdminConfig *ConfigurationParameters
 
-    // Setup are the per-claim configuration parameters
+    // UserConfig are the per-claim configuration parameters
     // from the resource claim parameters at the time that the claim was
     // allocated.
-    Setup *SetupParameters
+    //
+    // This only includes parameters that were meant for the driver.
+    UserConfig *ConfigurationParameters
 
     // NodeName is the name of the node providing the necessary resources
     // if the resources are local to a node.
@@ -1763,9 +1767,12 @@ type StructuredResourceHandle struct {
 // DriverAllocationResult contains vendor parameters and the allocation result for
 // one request.
 type DriverAllocationResult struct {
-    // VendorRequestParameters are the per-request configuration parameters
-    // from the time that the claim was allocated.
-    VendorRequestParameters runtime.Object
+    // UserConfig are the per-instance configuration parameters
+    // from the resource claim parameters at the time that the claim was
+    // allocated.
+    //
+    // This only includes parameters that were meant for the driver.
+    UserConfig *ConfigurationParameters
 
     AllocationResultModel
 }
