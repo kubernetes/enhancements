@@ -115,8 +115,8 @@ The authorization attributes have easy access to the query parameter field and l
 To avoid confusion, field and label selectors will not be included in authorization attributes for verbs where the field
 selector has no semantic meaning.
 In practice this means that (for now), only List, Watch, and DeleteCollection have field and label selectors.
-SubjectAccessReviews submitted to the kube-apiserver will have the field and label selector attributes removed prior to
-checking authorization.
+SubjectAccessReviews submitted to the kube-apiserver with verbs that do not honor the selectors will have the field and
+label selector attributes removed prior to checking authorization.
 Webhook authors: remember that the list of verbs accepting field and label selectors may change over time.
 If the kube-apiserver sends the FieldSelector or LabelSelector to a webhook, the kube-apiserver intends to honor the selector attributes.
 Any authorizer that gets an error from `ParseFieldSelector` or `ParseLabelSelector` may attempt to authorize without
