@@ -733,21 +733,21 @@ setup:
         strategy: TimeSliced
 
 namedResources:
-- attributeSuffix: cards.dra.example.com
-  selector: |-
+- selector: |-
     # Selectors are CEL expressions with access to the attributes of the named resource
-    # that is being checked for a match.
+    # that is being checked for a match. By default, all named resources are checked,
+    # regardless of which driver provides them.
     #
-    # Attribute names can be fully qualified or shortened when they
-    # are meant to have the attribute suffix defined above.
+    # Attribute names need to be fully qualified.
     attributes.string.has("type.cards.dra.example.com") &&
     attributes.string["type.cards.dra.example.com"] == "GPU" &&
-    attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
-    attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
-- attributeSuffix: cards.dra.example.com
+    attributes.version["runtimeVersion.cards.dra.example.com"].isGreaterThan(semver("12.0.0")) &&
+    attributes.quantity["memory.cards.dra.example.com"].isGreaterThan(quantity("32Gi"))
+- driverName: "cards.dra.example.com"
   selector: |-
-    attributes.string.has("type") &&
-    attributes.string["type"] == "GPU" &&
+    # Matching can be restricted to named resources provided by a specific driver.
+    # In that case, attribute names can be used without the driver name as suffix
+    # and the existence of attributes doesn't have to be checked.
     attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
     attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
 ``
@@ -836,9 +836,8 @@ vendorParameters:
 
 filter:
   namedResources:
-    attributeSuffix: cards.dra.example.com
+    driverName: cards.dra.example.com
     selector: |-
-      attributes.quantity.has("memory") &&
       attributes.quantity["memory"] <= "16Gi"
 ```
 
@@ -1455,11 +1454,9 @@ type ResourceFilterModel struct {
 
 // NamedResourcesFilter is used in ResourceFilterModel.
 type NamedResourcesFilter struct {
-    // AttributeSuffix is automatically added as suffix to attribute names
-    // which do not contain a dot already. Using this shorthand makes
-    // CEL expressions shorter, but is not required.
+    // DriverName excludes any named resource not provided by this driver.
     // +optional
-    AttributeSuffix string
+    DriverName string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1468,8 +1465,8 @@ type NamedResourcesFilter struct {
     // In addition, for each type in NamedResourcesAttributeValue there is a map that
     // resolves to the corresponding value of the instance under evaluation. Unknown
     // names cause a runtime error. Note that the CEL expression is applied to
-    // *all* available resource instances, regardless of which driver provides it.
-    // The CEL expression must first check that the instance has certain
+    // *all* available resource instances by default, regardless of which driver provides it.
+    // In that case. the CEL expression must first check that the instance has certain
     // attributes before using them.
     //
     // For example:
@@ -1477,6 +1474,14 @@ type NamedResourcesFilter struct {
     //    attributes.quantity["a.dra.example.com"].isGreaterThan(quantity("0")) &&
     //    # No separate check, b.dra.example.com is set whenever a.dra.example.com is,
     //    attributes.stringslice["b.dra.example.com"].isSorted()
+    //
+    // If a driver name is set, then such a check is not be needed if all instances
+    // are known to have the attribute. Attributes names don't have to have
+    // the driver name suffix.
+    //
+    // For example:
+    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
+    //    attributes.stringslice["b"].isSorted()
     Selector string
 }
 ```
@@ -1626,11 +1631,9 @@ type NamedResourcesRequest struct {
     // They are ignored while allocating the claim.
     Setup *SetupParameters
 
-    // AttributeSuffix is automatically added as suffix to attribute names
-    // which do not contain a dot already. Using this shorthand makes
-    // CEL expressions shorter, but is not required.
+    // DriverName excludes any named resource not provided by this driver.
     // +optional
-    AttributeSuffix string
+    DriverName string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1639,8 +1642,8 @@ type NamedResourcesRequest struct {
     // In addition, for each type in NamedResourcesAttributeValue there is a map that
     // resolves to the corresponding value of the instance under evaluation. Unknown
     // names cause a runtime error. Note that the CEL expression is applied to
-    // *all* available resource instances, regardless of which driver provides it.
-    // The CEL expression must first check that the instance has certain
+    // *all* available resource instances by default, regardless of which driver provides it.
+    // In that case. the CEL expression must first check that the instance has certain
     // attributes before using them.
     //
     // For example:
@@ -1648,6 +1651,14 @@ type NamedResourcesRequest struct {
     //    attributes.quantity["a.dra.example.com"].isGreaterThan(quantity("0")) &&
     //    # No separate check, b.dra.example.com is set whenever a.dra.example.com is,
     //    attributes.stringslice["b.dra.example.com"].isSorted()
+    //
+    // If a driver name is set, then such a check is not be needed if all instances
+    // are known to have the attribute. Attributes names don't have to have
+    // the driver name suffix.
+    //
+    // For example:
+    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
+    //    attributes.stringslice["b"].isSorted()
     Selector string
 }
 ```
