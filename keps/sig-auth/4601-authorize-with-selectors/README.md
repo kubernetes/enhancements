@@ -134,6 +134,19 @@ type Attributes interface {
     ParseLabelSelector() ([]Requirement, error)
 ```
 
+#### Future-proofing your authentication webhook for future verbs
+
+As of 1.31, the only verbs with field and label selectors are List, Watch, and DeleteCollection.
+<<[UNRESOLVED deads2k, liggitt, jpbetz, sttts: this is a future promise for the kube-apiserver behavior if we add it ]>>
+In the future, the kube-apiserver may add field and label selectors to Create, Update, and Delete.
+<<[/UNRESOLVED]>>
+* For Create, this means that the resource after all mutation is complete (finalObject) must match the field and label selector. 
+* For Update, this means that the finalNewObject and oldObject must match the field and label selector.
+* For Delete, this means that the oldObject must match the field and label selector.
+ 
+We do not expand field and label selectors for Get, because if a client is specifying a selector, they can add a `.metadata.name`
+field selector and use a List to get equivalent functionality.
+
 ### SubjectAccessReview Changes
 
 SubjectAccessReview is used for two purposes:
