@@ -278,6 +278,31 @@ case will change how watchcache implementation will be handling the request.
 | _RV_            | _NotOlderThan_       | _unset_           | _N_           | Quorum read request + check for _RV_    | Delegated to etcd                                  | Deferred |
 | _RV_            | _NotOlderThan_       | _token_           | _unset_/ _N_  | Fails [validation]                      | Fails [validation]                                 |          |
 
+For watch requests both `Continuation` and `Limit` parameters are ignored (we should
+have added validation rules for them in the past), but we have `SendInitialEvents` one.
+The table for watch requests look like the following
+
+| ResourceVersion | ResourceVersionMatch | SendInitialEvents      | etcd implementation                            | watchcache implementation               | changed  |
+|-----------------|----------------------|------------------------|------------------------------------------------|-----------------------------------------|----------|
+| _unset_         | _unset_              | _unset_                | Quorum list + watch stream                     | Delegate to etcd                        | Deferred |
+| _unset_         | _unset_              | false / true           | Fails [validation]                             | Fails [validation]                      |          |
+| _unset_         | _NotOlderThan_       | _unset_                | Fails [validation]                             | Fails [validation]                      |          |
+| _unset_         | _NotOlderThan_       | false                  | Watch stream from etcd RV                      | Read etcd RV. Watch stream from it      |          |
+| _unset_         | _NotOlderThan_       | true                   | Quorum list + watch stream                     | Wait RV > etcd RV. List + watch stream  |          |
+| _unset_         | _Exact_              | _unset_ / false / true | Fails [validation]                             | Fails [validation]                      |          |
+| _0_             | _unset_              | _unset_                | Quorum list + watch stream                     | List + watch stream                     |          |
+| _0_             | _unset_              | false / true           | Fails [validation]                             | Fails [validation]                      |          |
+| _0_             | _NotOlderThan_       | _unset_                | Fails [validation]                             | Fails [validation]                      |          |
+| _0_             | _NotOlderThan_       | false                  | Watch stream from etcd RV                      | Watch stream from current watchcache RV |          |
+| _0_             | _NotOlderThan_       | true                   | Quorum list + watch stream                     | List + watch stream                     |          |
+| _0_             | _Exact_              | _unset_ / false / true | Fails [validation]                             | Fails [validation]                      |          |
+| _RV_            | _unset_              | _unset_                | Watch stream from RV                           | Watch stream from RV                    |          |
+| _RV_            | _unset_              | false / true           | Fails [validation]                             | Fails [validation]                      |          |
+| _RV_            | _NotOlderThan_       | _unset_                | Fails [validation]                             | Fails [validation]                      |          |
+| _RV_            | _NotOlderThan_       | false                  | Check RV > etcd RV. Watch stream from RV       | Watch stream from RV                    |          |
+| _RV_            | _NotOlderThan_       | true                   | Check RV > etcd RV. Quorum list + watch stream | Wait for RV. List + watch stream        |          |
+| _RV_            | _Exact_              | _unset_ / false / true | Fails [validation]                             | Fails [validation]                      |          |
+
 [validation]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apimachinery/pkg/apis/meta/internalversion/validation/validation.go#L28
 [etcd resolution]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go#L589-L627
 
