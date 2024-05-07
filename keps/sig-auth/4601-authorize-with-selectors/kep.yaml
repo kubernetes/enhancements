@@ -1,5 +1,5 @@
-title: KEP Template
-kep-number: NNNN
+title: Authorize with Selectors
+kep-number: 4601
 authors:
   - "@deads2k"
 owning-sig: sig-auth
@@ -8,7 +8,7 @@ status: implementable
 creation-date: 2024-04-26
 reviewers:
   - "@liggitt"
-  - "@aws-micah"
+  - "@micahhausler"
 approvers:
   - "@liggitt"
 
@@ -39,4 +39,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
+  - find-metric-for-failed-authorization

@@ -1,4 +1,4 @@
-# KEP-NNNN: Authorize with Selectors
+# KEP-4601: Authorize with Selectors
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -7,11 +7,17 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Authorization Attributes changes](#authorization-attributes-changes)
+    - [Future-proofing your authentication webhook for future verbs](#future-proofing-your-authentication-webhook-for-future-verbs)
+  - [SubjectAccessReview Changes](#subjectaccessreview-changes)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [As a SAR client, I want to check a request with a field or label selector](#as-a-sar-client-i-want-to-check-a-request-with-a-field-or-label-selector)
+    - [As an authorization webhook author, I want to easily consume the field and label selectors](#as-an-authorization-webhook-author-i-want-to-easily-consume-the-field-and-label-selectors)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [client provides field or label selector to kube-apiserver that does not parse](#client-provides-field-or-label-selector-to-kube-apiserver-that-does-not-parse)
+    - [client provides field or label selector to kube-apiserver with improper verb](#client-provides-field-or-label-selector-to-kube-apiserver-with-improper-verb)
+    - [client provides SAR where field rawSelector does not match field requirements.](#client-provides-sar-where-field-rawselector-does-not-match-field-requirements)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -21,6 +27,8 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [New kube-apiserver, old webhook authorizer](#new-kube-apiserver-old-webhook-authorizer)
+    - [Old kube-apiserver, new in-cluster authorizer (or any SAR client)](#old-kube-apiserver-new-in-cluster-authorizer-or-any-sar-client)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
