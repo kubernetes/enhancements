@@ -182,15 +182,19 @@ type ResourceAttributes struct {
 // FieldSelectorAttributes indicates a field limited access.
 // For webhooks:
 // The kube-apiserver will never send a request with rawSelector set, but we cannot control what other clients directly send.
-// If rawSelector is empty and requirements are empty, the request is not limited.
-// If rawSelector is present and requirements are empty, the request is not limited.
-// If rawSelector is empty and requirements are present, the requirements should be honored
-// If rawSelector is present and requirements are present, the request is invalid.
+// * If rawSelector is empty and requirements are empty, the request is not limited.
+// * If rawSelector is present and requirements are empty, the request is not limited.
+// * If rawSelector is empty and requirements are present, the requirements should be honored
+// * If rawSelector is present and requirements are present, the request is invalid.
+// Webhook authors are encouraged to
+// * ensure rawSelector and requirements are not both set
+// * consider the requirements field if set
+// * not try to parse or consider the rawSelector field if set
 // For the kube-apiserver:
-// If rawSelector is empty and requirements are empty, the request is not limited.
-// If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
-// If rawSelector is empty and requirements are present, the requirements should be honored
-// If rawSelector is present and requirements are present, the request is invalid.
+// * If rawSelector is empty and requirements are empty, the request is not limited.
+// * If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
+// * If rawSelector is empty and requirements are present, the requirements should be honored
+// * If rawSelector is present and requirements are present, the request is invalid.
 type FieldSelectorAttributes struct {
 	// rawSelector is the serialization of a field selector that would be included in a query parameter.
 	// Webhook implementations are encouraged to ignore rawSelector.
@@ -208,15 +212,19 @@ type FieldSelectorAttributes struct {
 // LabelSelectorAttributes indicates a field limited access.
 // For webhooks:
 // The kube-apiserver will never send a request with rawSelector set, but we cannot control what other clients directly send.
-// If rawSelector is empty and requirements are empty, the request is not limited.
-// If rawSelector is present and requirements are empty, the request is not limited.
-// If rawSelector is empty and requirements are present, the requirements should be honored
-// If rawSelector is present and requirements are present, the request is invalid.
+// * If rawSelector is empty and requirements are empty, the request is not limited.
+// * If rawSelector is present and requirements are empty, the request is not limited.
+// * If rawSelector is empty and requirements are present, the requirements should be honored
+// * If rawSelector is present and requirements are present, the request is invalid.
+// Webhook authors are encouraged to
+// * ensure rawSelector and requirements are not both set
+// * consider the requirements field if set
+// * not try to parse or consider the rawSelector field if set
 // For the kube-apiserver:
-// If rawSelector is empty and requirements are empty, the request is not limited.
-// If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
-// If rawSelector is empty and requirements are present, the requirements should be honored
-// If rawSelector is present and requirements are present, the request is invalid.
+// * If rawSelector is empty and requirements are empty, the request is not limited.
+// * If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
+// * If rawSelector is empty and requirements are present, the requirements should be honored
+// * If rawSelector is present and requirements are present, the request is invalid.
 type LabelSelectorAttributes struct {
 	// rawSelector is the serialization of a field selector that would be included in a query parameter.
     // Webhook implementations are encouraged to ignore rawSelector.
