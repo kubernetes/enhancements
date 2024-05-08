@@ -146,10 +146,10 @@ type Attributes interface {
 
 As of 1.31, the only verbs with field and label selectors are List, Watch, and DeleteCollection.
 <<[UNRESOLVED deads2k, liggitt, jpbetz, sttts: this is a future promise for the kube-apiserver behavior if we add it ]>>
-In the future, the kube-apiserver may add field and label selectors to Create, Update, and Delete.
+In the future, the kube-apiserver may add field and label selectors to Create, Update, Patch, and Delete.
 <<[/UNRESOLVED]>>
 * For Create, this means that the resource after all mutation is complete (finalObject) must match the field and label selector. 
-* For Update, this means that the finalNewObject and oldObject must match the field and label selector.
+* For Update/Patch, this means that the finalNewObject and oldObject must match the field and label selector.
 * For Delete, this means that the oldObject must match the field and label selector.
  
 We do not expand field and label selectors for Get, because if a client is specifying a selector, they can add a `.metadata.name`
@@ -166,9 +166,16 @@ SubjectAccessReview is used for two purposes:
 Their needs best met with two different serialization (see user stories)
 
 ```go
+
 type SubjectAccessReviewSpec struct {
+	ResourceAttributes *ResourceAttributes
+}
+
+type ResourceAttributes struct {
+    // If the SubjectAccessReview specified verb,resource tuple does not honor field selection, the fieldSelector is ignored.
 	FieldSelector *FieldSelectorAttributes
-	
+
+    // If the SubjectAccessReview specified verb,resource tuple does not honor label selection, the labelSelector is ignored.
 	LabelSelector *LabelSelectorAttributes
 }
 
@@ -185,14 +192,16 @@ type SubjectAccessReviewSpec struct {
 // If rawSelector is empty and requirements are present, the requirements should be honored
 // If rawSelector is present and requirements are present, the request is invalid.
 type FieldSelectorAttributes struct {
-	// rawSelector is the serialization of a field selector that would be included in a List query parameter.
-	// Webhook implementations must handle malformed rawSelectors.
+	// rawSelector is the serialization of a field selector that would be included in a query parameter.
+	// Webhook implementations are encouraged to ignore rawSelector.
+    // The kube-apiserver's SubjectAccessReview will parse the rawSelector. 
 	RawSelector string
 
-	// requirements is the parsed interpretation of the rawSelector.
+	// requirements is the parsed interpretation of a field selector.
 	// All requirements must be met for a resource instance to match the selector.
-	// The two should match, but recall that clients can craft any kind of request.
-	// Webhook implementations must handle mismatched rawSelector and requirements, but how to handle them is up to the webhook.
+	// Webhook implementations should handle requirements, but how to handle them is up to the webhook.
+	// Since requirements can only limit the request, it is safe to authorize as unlimited request if the requirements
+	// are not understood.
 	Requirements []FieldSelectorRequirement
 }
 
@@ -209,14 +218,16 @@ type FieldSelectorAttributes struct {
 // If rawSelector is empty and requirements are present, the requirements should be honored
 // If rawSelector is present and requirements are present, the request is invalid.
 type LabelSelectorAttributes struct {
-	// rawSelector is the serialization of a field selector that would be included in a List query parameter.
-	// Webhook implementations must handle malformed rawSelectors.
+	// rawSelector is the serialization of a field selector that would be included in a query parameter.
+    // Webhook implementations are encouraged to ignore rawSelector.
+	// The kube-apiserver's SubjectAccessReview will parse the rawSelector. 
 	RawSelector string
 
-    // requirements is the parsed interpretation of the rawSelector.
+    // requirements is the parsed interpretation of a label selector.
     // All requirements must be met for a resource instance to match the selector.
-    // The two should match, but recall that clients can craft any kind of request.
-    // Webhook implementations must handle mismatched rawSelector and requirements, but how to handle them is up to the webhook.
+    // Webhook implementations should handle requirements, but how to handle them is up to the webhook.
+    // Since requirements can only limit the request, it is safe to authorize as unlimited request if the requirements
+    // are not understood.
 	Requirements []metav1.LabelSelectorRequirement
 }
 
@@ -225,6 +236,9 @@ type FieldSelectorRequirement struct {
 	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
 	// operator represents a key's relationship to a set of values.
 	// Valid operators are In, NotIn, Exists, DoesNotExist
+	// The list of operators may grow in the future.
+	// Webhook authors are encouraged to ignore unrecognized operators and assume they don't limit the request.
+	// The semantics of "all requirements are AND'd will not change, so other requirements can continue to be enforced.
 	Operator LabelSelectorOperator `json:"operator" protobuf:"bytes,2,opt,name=operator,casttype=LabelSelectorOperator"`
 	// values is an array of string values. If the operator is In or NotIn,
 	// the values array must be non-empty. If the operator is Exists or DoesNotExist,
