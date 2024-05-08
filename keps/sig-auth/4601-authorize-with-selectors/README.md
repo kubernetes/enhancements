@@ -87,7 +87,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The authorization attributes will be extended to include field selectors and label selectors from
-List, Watch, and Deletecollection.
+List, Watch, and DeleteCollection.
 This will allow authorizers to use these selectors when making an authorization decision.
 
 ## Motivation
@@ -101,7 +101,7 @@ In particular, it enables out-of-tree authorizers to experiment with ways to exp
 
 * Add field and label selectors to authorization attributes for List, Watch, and DeleteCollection verbs.
 * Add field and label selectors to webhook authorization types.
-* Add field and label selectors to SelfSubjectAccessReview (SSAR) and SubjectAccessReview (SAR).
+* Add field and label selectors to SelfSubjectAccessReview (SSAR), SubjectAccessReview (SAR), and LocalSubjectAccessReview.
 * Update node authorizer to restrict on nodeName field selector.
 
 ### Non-Goals
@@ -152,7 +152,7 @@ In the future, the kube-apiserver may add field and label selectors to Create, U
 * For Update/Patch, this means that the finalNewObject and oldObject must match the field and label selector.
 * For Delete, this means that the oldObject must match the field and label selector.
  
-We do not expand field and label selectors for Get, because if a client is specifying a selector, they can add a `.metadata.name`
+We do not allow field and label selectors for Get, because if a client is specifying a selector, they can add a `.metadata.name`
 field selector and use a List to get equivalent functionality.
 
 ### SubjectAccessReview Changes
@@ -278,6 +278,7 @@ Providing the parsed value avoids the need for every consumer to grow a decently
 
 ### Notes/Constraints/Caveats (Optional)
 
+Remember to update these places in existing code:
 1. authorization webhook matchConditions, which evaluates the v1 SubjectAccessReview that would be sent to the webhook: [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/pkg/authorization/cel/compile.go#L197-L205).
 2. v1 / v1beta1 SAR translation function [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook.go#L472-L485)
 3. v1 SubjectAccessReview construction function [ref](https://github.com/kubernetes/kubernetes/blob/bb838fde5bb9df4becb9fd267c84759be9f5400f/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook.go#L198)
