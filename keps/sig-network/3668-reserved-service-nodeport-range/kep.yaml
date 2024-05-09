@@ -4,7 +4,7 @@ authors:
   - "@xuzhenglun"
 owning-sig: sig-network
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2022-11-30
 last-updated: 2023-08-22
 reviewers:
