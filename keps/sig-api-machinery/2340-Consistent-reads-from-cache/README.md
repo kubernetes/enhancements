@@ -49,6 +49,7 @@ read from etcd.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [Per-request override](#per-request-override)
 <!-- /toc -->
 
 ## Summary
@@ -306,36 +307,41 @@ The table for watch requests look like the following
 [validation]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apimachinery/pkg/apis/meta/internalversion/validation/validation.go#L28
 [etcd resolution]: https://github.com/kubernetes/kubernetes/blob/release-1.30/staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go#L589-L627
 
-For such situations we will provide users with following tools:
+As presented in the above tables, the semantics for a given request server from
+etcd and watchcache is a little bit different. It's a consequence of the fact that:
+* etcd design supports only `Exact` semantics - it allows for consistent list
+  from a given resource version (either specific value or "now").
+  The semantics of `NotOlderThan` is implemented as getting consistent list from
+  "now" and checking if it satisfies the condition.
+* watchcache design supports only `NotOlderThan` semantics - it always waits
+  until its resource version is at least as fresh as requested resource version
+  and then returns the result from its current state
+
+For the above reason, sending the same request to etcd and watchcache, especially
+when cluster state is changing, may legitimately return different results.
+
+In order to allow debugging results returned from watchcache in a runnning cluster,
+the only reasonable procedure is:
+* send a request that is served from watchcache
+* send a request setting `ResourceVersionMatch=Exact` and `ResourceVersions` to value
+  returned from the request returned in a previous point
+* compare the two results
+
+The existing API already allows us to achieve it.
+
+To further allow debugging and improve confidence we will provide users with the
+following tools:
 * a dedicated `apiserver_watch_cache_read_wait` metric to detect a problem with
   watch cache.
-* a per-request override to disable watch cache to allow debugging.
+* a `inconsistency detector` that for requests served from watchcache will be able
+  to send a request to etcd (as described above) and compare the results
 
 Metric `apiserver_watch_cache_read_wait` will measure wait time experienced by 
 reads for watch cache to become fresh. If user notices a latency request in
 they can use this metric to confirm that the issue is caused by watch cache.
 
-Per request override should allow user to compare request results without
-impacting other requests or requiring to redeploy whole cluster. The exact
-details of override API will be clarified during API review. In healthy
-situation, using this override should not cause any impact on the response,
-however it might increase resource usage. In our tests cpu load could increase
-tenfold. To prevent abuse access to it should be limited to users with
-`cluster-admin` role, rejecting the request otherwise.
-
-In case of issues with watch cache users can use the `ConsistentListFromCache`
-feature flag to disable the feature or the existing `--watch-cache` flag to
-disable the whole watch cache.
-
-We prefer to provide users an explicit flag and per-request override over an
-automatic fallback. It gives users full control and visibility into how request
-are handled and ensures accurate APF cost estimates. We expect watch being
-starved to happen very rarely, meaning its logic needs to be very simple to
-ensure it works properly. A simple fallback will not bring much benefit over
-what user can do manually. It will just make the harder to understand and
-predict behavior. APF estimates cost just based on request parameters,
-before it is passed to storage. If fallback was based on state of watch cache,
-cost of request would change after the APF decision increasing the risk of overload.
+The `inconsistency detector` will get enabled in our CI to detect issues with
+the introduced mechanism.
 
 ## Design Details
 
@@ -432,7 +438,7 @@ Comparing resource usage and latency with and without consistent list from watch
 
 - Feature is enabled by default.
 - Metric `apiserver_watch_cache_read_wait` is implemented.
-- Per-request watch cache opt-out is implemented.
+- Inconsistency detector is implemented and enabled in CI
 - Deprecate support of etcd v3.3.X, v3.4.24 and v3.5.7
 
 #### GA
@@ -582,7 +588,7 @@ Use per-request override to compare latency when reading from watch cache vs etc
 ## Implementation History
 
 * 1.28 - Alpha
-* 1.30 - Beta
+* 1.31 - Beta
 
 ## Alternatives
 
@@ -601,3 +607,21 @@ Do a dynamic fallback based on watch cache wait time.
 
 - We expect watch being starved to happen very rarely, meaning its logic needs to be very simple to ensure it works properly.
 - Simple fallback will rather not do a better job then just a manual fallback.
+
+### Per-request override
+
+To enable debugging, we considered introducing per-request override to disable
+watchcache to force the request to be served from etcd. This would allow us
+to compare request results without impacting other requests or requiring to
+redeploy the whole cluster. However, as described in the KEP itself, the results
+of the same requests served from watchcache and etcd may legitimately return
+different results. As a result, the proposed debugging mechanism was decided
+to better serve its purpose.
+
+We also considered automatic fallback. However, we expect watch being
+starved to happen very rarely, meaning its logic needs to be very simple to
+ensure it works properly. A simple fallback will not bring much benefit over
+what user can do manually. It will just make the harder to understand and
+predict behavior. APF estimates cost just based on request parameters,
+before it is passed to storage. If fallback was based on state of watch cache,
+cost of request would change after the APF decision increasing the risk of overload.
