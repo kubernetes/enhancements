@@ -732,24 +732,26 @@ config:
       sharing:
         strategy: TimeSliced
 
-namedResources:
-- selector: |-
-    # Selectors are CEL expressions with access to the attributes of the named resource
-    # that is being checked for a match. By default, all named resources are checked,
-    # regardless of which driver provides them.
-    #
-    # Attribute names need to be fully qualified.
-    attributes.string.has("type.cards.dra.example.com") &&
-    attributes.string["type.cards.dra.example.com"] == "GPU" &&
-    attributes.version["runtimeVersion.cards.dra.example.com"].isGreaterThan(semver("12.0.0")) &&
-    attributes.quantity["memory.cards.dra.example.com"].isGreaterThan(quantity("32Gi"))
-- driverName: "cards.dra.example.com"
-  selector: |-
-    # Matching can be restricted to named resources provided by a specific driver.
-    # In that case, attribute names can be used without the driver name as suffix
-    # and the existence of attributes doesn't have to be checked.
-    attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
-    attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
+requests:
+- namedResource:
+    selector: |-
+      # Selectors are CEL expressions with access to the attributes of the named resource
+      # that is being checked for a match. By default, all named resources are checked,
+      # regardless of which driver provides them.
+      #
+      # Attribute names need to be fully qualified.
+      attributes.string.has("type.cards.dra.example.com") &&
+      attributes.string["type.cards.dra.example.com"] == "GPU" &&
+      attributes.version["runtimeVersion.cards.dra.example.com"].isGreaterThan(semver("12.0.0")) &&
+      attributes.quantity["memory.cards.dra.example.com"].isGreaterThan(quantity("32Gi"))
+- namedResource:
+    driverName: "cards.dra.example.com"
+    selector: |-
+      # Matching can be restricted to named resources provided by a specific driver.
+      # In that case, attribute names can be used without the driver name as suffix
+      # and the existence of attributes doesn't have to be checked.
+      attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
+      attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
 ```
 
 The meaning is that the selector expression must evaluate to true for a
@@ -782,10 +784,11 @@ metadata:
   name: gpu-request-parameters
   namespace: user-namespace
 
-namedResources:
-- selector: |-
-    attributes.bool.has("isGPU.gpu.k8s.io") &&
-    attributes.bool["isGPU.gpu.k8s.io"]
+requests:
+- namedResource:
+    selector: |-
+      attributes.bool.has("isGPU.gpu.k8s.io") &&
+      attributes.bool["isGPU.gpu.k8s.io"]
 ```
 
 Vendor parameters could be used here, too. Here they get set at the level of
@@ -799,16 +802,17 @@ metadata:
   name: gpu-request-parameters
   namespace: user-namespace
 
-namedResources:
-- selector: |-
-    attributes.bool.has("isGPU.gpu.k8s.io") &&
-    attributes.bool["isGPU.gpu.k8s.io"]
-  config:
-    vendor:
-    - driverName: cards.dra.example.com
-      parameters: <per-GPU parameters defined by the "cards" vendor>
-    - driverName: cards.someothervendor.example.com
-      parameters: <per-GPU parameters defined by the "someothervendor">
+requests:
+- namedResource:
+    selector: |-
+      attributes.bool.has("isGPU.gpu.k8s.io") &&
+      attributes.bool["isGPU.gpu.k8s.io"]
+    config:
+      vendor:
+      - driverName: cards.dra.example.com
+        parameters: <per-GPU parameters defined by the "cards" vendor>
+      - driverName: cards.someothervendor.example.com
+        parameters: <per-GPU parameters defined by the "someothervendor">
 ```
 
 
@@ -831,8 +835,10 @@ generatedFrom:
   apiGroup: dra.example.com
   uid: foobar-uid
 
-vendorParameters:
-  ...
+config:
+  vendor:
+  - driverName: cards.dra.example.com
+    parameters: <parameters with a type defined by that vendor>
 
 filter:
   namedResources:
@@ -843,6 +849,15 @@ filter:
 
 In this example, the additional selector expression limits users of this class
 to just the cards with less that "16Gi" of memory.
+
+These class parameters are defined so that they select devices from one
+particular vendor. It is also possible to define classes that are independent
+of any particular vendor:
+- `config.vendor` is a list which can contain different entries. Only the entry
+  for the driver which provides the allocated resources gets passed on to
+  that driver.
+- The `driverName` in `filter.namedResources` can be left out and the `selector`
+  can filter based on vendor-neutral attributes.
 
 ### Communicating allocation to the DRA driver
 
@@ -857,27 +872,19 @@ scheduler is simply the list of IDs of the selected named resource:
 
 ```yaml
 # Matches with the StructuredResourceHandle Go type defined below.
-vendorClassParameters:
+adminConfig:
   ...
-vendorClaimParameters:
-  kind: CardParameters
-  apiVersion: dra.example.com/v1alpha1
-  metadata:
-    name: my-parameters
-    namespace: user-namespace
-    uid: foobar-uid
-  ...
-  spec:
-    count: 2
-    minimumRuntimeVersion: v12.0.0
-    minimumMemory: 32Gi
-    sharing:
-      strategy: TimeSliced
+userConfig:
+  vendor:
+    kind: CardClaimConfiguration
+      apiVersion: dra.example.com/v1alpha1
+      sharing:
+        strategy: TimeSliced
 
 nodeName: worker-1
-namedResources:
-  resources:
-  - gpu-1
+results:
+- namedResources:
+    name: gpu-1
 ```
 
 ### Risks and Mitigations
@@ -1443,7 +1450,8 @@ type ResourceClassParameters struct {
     Config *ConfigurationParameters
 
     // Filter describes additional contraints that must be met when using the class.
-    Filter ResourceFilterModel
+    // +optional
+    Filter *ResourceFilterModel
 }
 
 // ResourceFilterModel must have one and only one field set.
@@ -1456,7 +1464,7 @@ type ResourceFilterModel struct {
 type NamedResourcesFilter struct {
     // DriverName excludes any named resource not provided by this driver.
     // +optional
-    DriverName string
+    DriverName *string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1610,7 +1618,7 @@ type ResourceClaimParameters struct {
     // by multiple consumers at the same time.
     Shareable bool
 
-    // ClaimConfig defines configuration parameters that apply to the entire claim.
+    // Config defines configuration parameters that apply to the entire claim.
     // They are ignored while allocating the claim.
     Config *ConfigurationParameters
 
@@ -1633,7 +1641,7 @@ type NamedResourcesRequest struct {
 
     // DriverName excludes any named resource not provided by this driver.
     // +optional
-    DriverName string
+    DriverName *string
 
     // Selector is a CEL expression which must evaluate to true if a
     // resource instance is suitable. The language is as defined in
@@ -1671,13 +1679,13 @@ defined in the future.
 ```yaml
 // ConfigurationParameters must have one and only one field set.
 type ConfigurationParameters struct {
-    Vendor *[]VendorConfigurationParameters
+    Vendor []VendorConfigurationParameters
 }
 
-// VendorConfigurationParameters contains setup parameters per driver.
+// VendorConfigurationParameters contains configuration parameters for a driver.
 type VendorConfigurationParameters struct {
     // DriverName is used to determine which kubelet plugin needs
-    // to be passed these setup parameters.
+    // to be passed these configuration parameters.
     //
     // An admission webhook provided by the vendor could use this
     // to decide whether it needs to validate them.
@@ -1689,6 +1697,13 @@ type VendorConfigurationParameters struct {
     Parameters runtime.RawExtension
 }
 ```
+
+Strictly speaking, a pointer to a slice would be better because it allows
+distinguishing between an unset list and an empty list. Unfortunately the gogo
+protobuf code generator produces incorrect code for that. Treating the empty
+list like "not set" is good enough here because if someone really wants empty
+vendor parameters, they can simply not provide a ConfigurationParameters
+instance.
 
 ##### Allocation result
 
@@ -1745,16 +1760,12 @@ type ResourceHandle struct {
 type StructuredResourceHandle struct {
     // AdminConfig are the configuration parameters
     // from the resource class at the time that the claim was allocated.
-    //
-    // This only includes parameters that were meant for the driver.
-    AdminConfig *ConfigurationParameters
+    AdminConfig *DriverConfigurationParameters
 
     // UserConfig are the per-claim configuration parameters
     // from the resource claim parameters at the time that the claim was
     // allocated.
-    //
-    // This only includes parameters that were meant for the driver.
-    UserConfig *ConfigurationParameters
+    UserConfig *DriverConfigurationParameters
 
     // NodeName is the name of the node providing the necessary resources
     // if the resources are local to a node.
@@ -1770,9 +1781,7 @@ type DriverAllocationResult struct {
     // UserConfig are the per-instance configuration parameters
     // from the resource claim parameters at the time that the claim was
     // allocated.
-    //
-    // This only includes parameters that were meant for the driver.
-    UserConfig *ConfigurationParameters
+    UserConfig *DriverConfigurationParameters
 
     AllocationResultModel
 }
@@ -1782,6 +1791,15 @@ type AllocationResultModel struct {
     // NamedResources describes the allocation result when using the named resources model.
     NamedResources *NamedResourcesAllocationResult
 }
+
+// DriverConfigurationParameters must have one and only one field set.
+//
+// In contrast to VendorConfigurationParameters, the driver name is
+// not included and has to be infered from the context.
+type DriverConfigurationParameters struct {
+	Vendor *runtime.RawExtension
+}
+
 ```
 
 ##### ResourceClaimTemplate
