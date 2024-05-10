@@ -103,12 +103,13 @@ In particular, it enables out-of-tree authorizers to experiment with ways to exp
 * Add field and label selectors to webhook authorization types.
 * Add field and label selectors to SelfSubjectAccessReview (SSAR), SubjectAccessReview (SAR), and LocalSubjectAccessReview.
 * Update node authorizer to restrict on nodeName field selector.
+* Add field and label selectors to CEL authorizer implementation. 
 
 ### Non-Goals
 
 * Create a generic in-tree authorizer that manages field or label selectors.
 * Expand the audit surface area, since requestURI is already included
-* Expand the admission surface area (admission.Attributes, AdmissionReview, CEL authorizer implementation available to admission) 
+* Expand the admission surface area (admission.Attributes, AdmissionReview, available to admission) 
   since admission verbs don't support field/label selectors
 
 
@@ -142,7 +143,7 @@ type Attributes interface {
     ParseLabelSelector() ([]Requirement, error)
 ```
 
-#### Future-proofing your authentication webhook for future verbs
+#### Future-proofing your authorization webhook for future verbs
 
 As of 1.31, the only verbs with field and label selectors are List, Watch, and DeleteCollection.
 <<[UNRESOLVED deads2k, liggitt, jpbetz, sttts: this is a future promise for the kube-apiserver behavior if we add it ]>>
@@ -189,7 +190,9 @@ type ResourceAttributes struct {
 // Webhook authors are encouraged to
 // * ensure rawSelector and requirements are not both set
 // * consider the requirements field if set
-// * not try to parse or consider the rawSelector field if set
+// * not try to parse or consider the rawSelector field if set.
+//   This avoid this is to avoid another CVE-2022-2880 (i.e. getting different systems to agree on how exactly to parse
+//   a query is not something we want), see https://www.oxeye.io/resources/golang-parameter-smuggling-attack for more details.
 // For the kube-apiserver:
 // * If rawSelector is empty and requirements are empty, the request is not limited.
 // * If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
@@ -209,7 +212,7 @@ type FieldSelectorAttributes struct {
 	Requirements []FieldSelectorRequirement
 }
 
-// LabelSelectorAttributes indicates a field limited access.
+// LabelSelectorAttributes indicates a label limited access.
 // For webhooks:
 // The kube-apiserver will never send a request with rawSelector set, but we cannot control what other clients directly send.
 // * If rawSelector is empty and requirements are empty, the request is not limited.
@@ -219,7 +222,9 @@ type FieldSelectorAttributes struct {
 // Webhook authors are encouraged to
 // * ensure rawSelector and requirements are not both set
 // * consider the requirements field if set
-// * not try to parse or consider the rawSelector field if set
+// * not try to parse or consider the rawSelector field if set.
+//   This avoid this is to avoid another CVE-2022-2880 (i.e. getting different systems to agree on how exactly to parse
+//   a query is not something we want), see https://www.oxeye.io/resources/golang-parameter-smuggling-attack for more details.
 // For the kube-apiserver:
 // * If rawSelector is empty and requirements are empty, the request is not limited.
 // * If rawSelector is present and requirements are empty, the rawSelector will be parsed and limited if the parsing succeeds.
@@ -262,6 +267,34 @@ type FieldSelectorRequirement struct {
 
 Importantly, if old webhook authorizers do not honor these new field, they will assume the broadest possible access and fail closed.
 If old in-cluster authorization does not include field and label selectors, the kube-apiserver will assume the broadest possible access and fail closed.
+
+### Node Authorizer Changes
+
+The node authorizer will `node_authorizer.go` to check the `spec.nodeName` for List requests to ensure it matches the
+`nodeName` from its username (`system:node:<nodeName>`).
+Then we will remove the 
+```go
+		// TODO: restrict to pods scheduled on the bound node once field selectors are supported by list/watch authorization
+		rbacv1helpers.NewRule(Read...).Groups(legacyGroup).Resources("pods").RuleOrDie(),
+```
+from `bootstrappolicy/policy.go`.
+
+### CEL Authorizer Changes
+
+While admission isn't supported on List, Watch, or DeleteCollection, it is reasonable to expect that secondary authorization
+checks may desire to use those verbs and leverage the field and label selector capabilities.
+To support this we will two congruent options similar to
+```go
+	"fieldSelector": {
+		cel.MemberOverload("resourcecheck_fieldselector", []*cel.Type{ResourceCheckType, cel.StringType}, ResourceCheckType,
+			cel.BinaryBinding(resourceCheckName))},
+    }
+```
+This will allow usage like `authorizer.group('').resource('pods').fieldSelector('spec.nodeName=foo').check('list').allowed()`.
+The parsing will happen during the call to `allowed` where we track errors and have means of handling them already.
+The `cel/library` authorizer will force errors when `fieldSelector` or `labelSelector` are used for verbs that the kube-apiserver
+does not field and label selection on.
+Causing the failure prior to performing the authorization check allows webhooks to future-proof themselves.
 
 ### User Stories (Optional)
 
