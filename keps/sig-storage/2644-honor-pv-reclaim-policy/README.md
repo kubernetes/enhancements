@@ -264,6 +264,8 @@ The finalizer `kubernetes.io/pv-controller` will not be added on statically prov
 #### E2E tests
 An e2e test to exercise deletion of PV prior to deletion of PVC for a `Bound` PV-PVC pair.
 
+- `test/e2e/storage/csimock/csi_honor_pv_reclaim_policy.go`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling,storage&test=honor%20pv%20reclaim%20policy)
+
 ### Graduation Criteria
 
 #### Alpha
@@ -387,6 +389,7 @@ No.
 ## Implementation History
 
 1.26: Alpha
+1.31: Add e2e tests for the feature and promote to Beta.
 
 ## Drawbacks
 None. The current behavior could be considered as a drawback, the KEP presents the fix to the drawback. The current
