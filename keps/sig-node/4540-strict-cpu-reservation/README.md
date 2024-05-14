@@ -182,6 +182,50 @@ In Node API, we add `exclusive-cpu` in Node Allocatable for Kube-scheduler to co
   ...
 ```
 
+In kube-scheduler, `ExlusiveMilliCPU` is added in scheduler's `Resource` structure and `NodeResourcesFit` plugin is extended to filter out nodes that can not meet pod's exclusive CPU request.
+
+A new item `ExclusiveMilliCPU` is added in the scheduler `Resource` structure:
+
+```
+// Resource is a collection of compute resource.
+type Resource struct {
+        MilliCPU          int64
+        ExclusiveMilliCPU int64    // added
+        Memory            int64
+        EphemeralStorage  int64
+        // We store allowedPodNumber (which is Node.Status.Allocatable.Pods().Value())
+        // explicitly as int, to avoid conversions and improve performance.
+        AllowedPodNumber int
+        // ScalarResources
+        ScalarResources map[v1.ResourceName]int64
+}
+```
+
+A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeResourcesFit` plugin:
+
+```
+        if podRequest.MilliCPU > 0 && podRequest.MilliCPU > (nodeInfo.Allocatable.MilliCPU-nodeInfo.Requested.MilliCPU) {
+                insufficientResources = append(insufficientResources, InsufficientResource{
+                        ResourceName: v1.ResourceCPU,
+                        Reason:       "Insufficient cpu",
+                        Requested:    podRequest.MilliCPU,
+                        Used:         nodeInfo.Requested.MilliCPU,
+                        Capacity:     nodeInfo.Allocatable.MilliCPU,
+                })
+        }
+        if nodeInfo.Allocatable.ExclusiveMilliCPU > 0 {    // added
+                if podRequest.ExclusiveMilliCPU > 0 && podRequest.ExclusiveMilliCPU > (nodeInfo.Allocatable.ExclusiveMilliCPU-nodeInfo.Requested.ExclusiveMilliCPU) {
+                        insufficientResources = append(insufficientResources, InsufficientResource{
+                                ResourceName: v1.ResourceExclusiveCPU,
+                                Reason:       "Insufficient exclusive cpu",
+                                Requested:    podRequest.ExclusiveMilliCPU,
+                                Used:         nodeInfo.Requested.ExclusiveMilliCPU,
+                                Capacity:     nodeInfo.Allocatable.ExclusiveMilliCPU,
+                        })
+                }
+        }
+```
+
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
