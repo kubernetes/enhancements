@@ -41,9 +41,10 @@ to function in-project.
 Minimize and eliminate dual-sourced content except when necessary for Kubernetes
 to function in-project.
 
-**Note:** This KEP defines "in project" to mean projects in the Kubernetes org, 
-which includes the [kubernetes](https://github.com/kubernetes) and 
-[kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
+**Note:** This KEP defines "in project" to mean projects in the Kubernetes organization
+which includes the [kubernetes](https://github.com/kubernetes),
+[kubernetes-sigs](https://github.com/kubernetes-sigs), and [etcd-io](https://github.com/etcd-io)
+repository organizations in GitHub.
 
 ## Introduction
 
