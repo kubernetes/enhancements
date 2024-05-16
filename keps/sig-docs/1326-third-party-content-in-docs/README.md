@@ -17,6 +17,8 @@
       - [Story 5 (actual)](#story-5-actual)
       - [Story 6 (actual)](#story-6-actual)
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+      - [Operating system](#operating-system)
+      - [Intent](#intent)
     - [Risks and Mitigations](#risks-and-mitigations)
   - [Design Details](#design-details)
     - [Graduation Criteria](#graduation-criteria)
@@ -200,6 +202,19 @@ held pending the outcome of this KEP, then later merged.
 As [hyperkube transitions to third-party maintenance](https://github.com/kubernetes/kubeadm/issues/1889), it's unclear how to handle [hyperkube content in the Kubernetes docs](https://github.com/kubernetes/website/search?q=hyperkube&unscoped_q=hyperkube) or re-point related links.
 
 ### Implementation Details/Notes/Constraints
+
+#### Operating system
+
+Kubernetes supports nodes running either Linux or Microsoft Windows. Microsoft Windows
+is not (yet) open source software. Kubernetes docs do not and would not define how to
+operate Microsoft Windows; it is acceptable to document how to set up Kubernetes on a
+Windows node.
+
+Detailed guidance about operating system details not directly related to Kubernetes
+belongs in vendor or other external documentation, regardless of which operating system
+is used.
+
+#### Intent
 
 This KEP originally included language around considering intent of contributors.
 Because intent is effectively impossible to judge (and because contributions
