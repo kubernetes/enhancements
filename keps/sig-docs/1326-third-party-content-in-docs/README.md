@@ -106,37 +106,37 @@ To address its goal, this KEP focuses on the following issue:
 
 ### Non-Goals
 
-1. Outright removal of all content relating to vendors and projects outside the 
+1. Outright removal of all content relating to vendors and projects outside the
    Kubernetes project.
 
 ## Proposal
 
-1. Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
+1. Revise the [content guide](https://k8s.io/docs/contribute/style/content-guide/)
+   to achieve the KEP goal:
 
 - Specify that Kubernetes docs are limited to content required for Kubernetes to
-function in-project. Docs may include third-party OSS content for components that 
-require a third-party solution to function. Docs may include content for 
-other projects in the Kubernetes org, and content from other OSS projects that
-are necessary for Kubernetes to function. Third-party content must be linked 
-whenever possible, rather than duplicated or hosted in k/website.
+  function in-project. Docs may include third-party OSS content for components that
+   require a third-party solution to function. Docs may include content for
+   other projects in the Kubernetes org, and content from other OSS projects that
+   are necessary for Kubernetes to function. Third-party content must be linked
+   whenever possible, rather than duplicated or hosted in k/website.
 
 2. Revise the documentation when the KEP is approved:
 
-- **Third-party content:** Notify stakeholders of all affected content via 
-GitHub issues and via a single message containing a summary of all affected
-content to kubernetes-dev@googlegroups.com that non-conforming content will be 
-removed after 90 days.
+- **Third-party content:** Notify stakeholders of all affected content via
+  GitHub issues and via a single message containing a summary of all affected
+  content to kubernetes-dev@googlegroups.com that non-conforming content will be
+  removed after 90 days.
 
-This limits the impact to out-of-project content and gives current stakeholders 
-approximately one Kubernetes release cycle to migrate 
-third-party content to an alternate platform before removing content from 
-Kubernetes docs.
+  This limits the impact to out-of-project content and gives current stakeholders
+  approximately one Kubernetes release cycle to migrate third-party content to an
+  alternate platform before removing content from Kubernetes docs.
 
 - **Dual-sourced content:** Where sourcing is obvious, replace dual-sourced
-content with links to an authoritative single source. Where sourcing is unclear,
-notify stakeholders via GitHub issues in k/website and via a single message 
-containing a summary of all affected content to kubernetes-dev@googlegroups.com
-that non-conforming content will be removed after 90 days.
+  content with links to an authoritative single source. Where sourcing is unclear,
+  notify stakeholders via GitHub issues in k/website and via a single message 
+  containing a summary of all affected content to kubernetes-dev@googlegroups.com
+  that non-conforming content will be removed after 90 days.
 
 In all cases where content would be removed, provide adequate time for the
 relevant SIG to review changes and notify stakeholders.
@@ -202,7 +202,7 @@ As [hyperkube transitions to third-party maintenance](https://github.com/kuberne
 
 This KEP originally included language around considering intent of contributors.
 Because intent is effectively impossible to judge (and because contributions
-are nearly always made with the best intent), this KEP now specifies that 
+are nearly always made with the best intent), this KEP now specifies that
 third-party content is limited to what's required for in-project functionality.
 
 SIG Docs may add its own guidelines for writing and reviewing ambiguous content.
