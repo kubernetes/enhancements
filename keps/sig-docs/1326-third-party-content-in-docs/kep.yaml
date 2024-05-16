@@ -15,5 +15,7 @@ approvers:
   - "@dims"
 editor: "@zacharysarah"
 creation-date: 2019-10-20
-last-updated: 2019-10-20
-status: provisional
+last-updated: 2024-05-16
+status: implemented
+stage: stable
+latest-milestone: '0.0' # not linked to a release
