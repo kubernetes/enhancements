@@ -29,17 +29,18 @@ release process for website content.
 
 ## Summary
 
-This KEP seeks consensus on how Kubernetes docs handle two types of content:
+This KEP ~seeks to reach consensus on~ defines how Kubernetes docs handle
+two types of content:
 
 1. Content from or about third-party providers ("third-party content")
 
-Minimize and eliminate third-party content except when necessary for Kubernetes 
-to function in-project.
+   _Minimize and eliminate third-party content except when necessary for Kubernetes
+   to function in-project._
 
 2. Content hosted on multiple sites ("dual-sourced content")
 
-Minimize and eliminate dual-sourced content except when necessary for Kubernetes
-to function in-project.
+   _Minimize and eliminate dual-sourced content except when necessary for Kubernetes
+   to function in-project._
 
 **Note:** This KEP defines "in project" to mean projects in the Kubernetes organization
 which includes the [kubernetes](https://github.com/kubernetes),
