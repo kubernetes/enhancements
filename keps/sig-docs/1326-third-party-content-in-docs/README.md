@@ -98,76 +98,7 @@ types of third-party content are appropriate for inclusion in Kubernetes
 documentation; standards for including third-party content; and to create
 consistent policies for docs handle third-party and dual-sourced content.
 
-To address its goal, this KEP focuses on the following issues:
-
-<del>
-
-1. What third party content is appropriate for inclusion in the Kubernetes
-documentation?
-
-Proposed: Third-party content is permitted if it is required for Kubernetes to
-function in-project.
-
-1. Does third party content in sections such as [Getting Started](https://kubernetes.io/docs/setup/)
-in the docs provide sufficient value to the reader that they should remain?
-
-Casual consensus says yes, with one modification:
-- Eliminate the [production environment table](https://kubernetes.io/docs/setup/#production-environment)
-with a link to [certified conformance partners](https://kubernetes.io/partners/#conformance).
-
-1. Is there a list of content pages that are so focused on third party product
-usage that they should be removed or updated from the Kubernetes documentation?
-
-See https://github.com/kubernetes/website/issues/15748.
-
-1. When should the Kubernetes documentation host third party content that isn't
-maintained by a Kubernetes SIG?
-
-As infrequently as possible, with linking preferred to hosting. 
-
-1. How does the Kubernetes project handle third party content that is not kept
-up to date or hosts?
-
-If content isn't refreshed within 180 days, notify stakeholders of 90 days to 
-update content or migrate it elsewhere before removing it. Notification
-specifically includes:
-
-- Mailing an initial list of affected pages to kubernetes-dev@googlegroups.com
-- Announcing the policy change in two Kubernetes community meetings in a row
-- Posting a notification of the policy change on the Kubernetes blog
-- Notifying SIG PR review aliases on GitHub in PRs that remove affected content
-
-1. Can feature owners flag when third party content is *required*, as opposed to
-preferable or common?
-
-Is this capability required for KEP approval?
-
-1. Who decides when to include third-party content?
-
-SIGs responsible for particular features can include third-party content at
-their discretion, preferably by linking to the third party's own documentation.
-
-1. What standard of quality and review must be met before docs include
-third-party content?
-
-Third-party content must be necessary for Kubernetes to function in-project.
-
-1. To what extent should SIG Docs advocate for third-party content providers to 
-host their own content, or decline to host third-party content altogether?
-
-Kubernetes docs publish third-party content only if:
-
-- It's necessary for Kubernetes to function. For example: container runtimes 
-(containerd, CRI-o, Docker), networking policy (CNI plugins), Ingress 
-controllers, and logging.
-
-- It's an applied example of another project in the Kubernetes GitHub org. This
-includes the [kubernetes](https://github.com/kubernetes) and 
-[kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
-
-Third-party content should be linked instead of hosted whenever possible. 
-
-</del>
+To address its goal, this KEP focuses on the following issue:
 
 1. Clearly define what documentation is required so that readers understand
    how to deploy, operate and consume Kubernetes clusters using features from
