@@ -243,15 +243,21 @@ nitty-gritty.
 
 3. Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
    specify how to coordinate the update of PVCs and Pods. Possible values are:
-   - `OnDeleteAsync`: the default value, preserve the current behavior.
-   - `OnDeleteLockStep`: update PVCs first, then update Pods. See below for details.
+   - `OnDelete`: the default value, only update the PVC when the the old PVC is deleted.
+   - `InPlace`: update the PVC in-place if possible. Also includes the `OnDelete` behavior.
 
-4. Collect the status of managed PVCs, and show them in the StatefulSet status.
+4. Introduce a new field in StatefulSet `spec.updateStrategy.rollingUpdate`: `volumeClaimSyncStrategy`
+   to specify how to update PVCs and Pods. Possible values are:
+   - `Async`: the default value, preseve the current behavior.
+   - `LockStep`: update PVCs first, then update Pods. See below for details.
+
+5. Collect the status of managed PVCs, and show them in the StatefulSet status.
 
 ### Updated Reconciliation Logic
 
 How to update PVCs:
-1. If `volumeClaimTemplate` and actual PVC only differ in mutable fields
+1. If `volumeClaimUpdateStrategy` is `InPlace`,
+   and if `volumeClaimTemplate` and actual PVC only differ in mutable fields
    (`spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations` currently),
    update the PVC in-place to the extent possible.
    Do not perform the update that will be rejected by API server, such as
@@ -269,9 +275,9 @@ When to update PVCs:
    [capatible](#what-pvc-is-capatible) with the new `volumeClaimTemplate`.
    If not, update the PVC after old Pod deleted, before creating new pod,
    or if update is not possible:
-   - If `volumeClaimUpdateStrategy` is `OnDeleteLockStep`,
-     wait for the user to delete the old PVC manually before delete the old pod.
-   - If `volumeClaimUpdateStrategy` is `OnDeleteAsync`,
+   - If `volumeClaimSyncStrategy` is `LockStep`,
+     wait for the user to delete/update the old PVC manually before delete the old pod.
+   - If `volumeClaimSyncStrategy` is `Async`,
      the diff is ignored and the pod recreation proceeds.
 
 2. If Pod spec does not change, only mutable fields in `volumeClaimTemplate` differ,
@@ -335,19 +341,19 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-`volumeClaimUpdateStrategy` is introduce to keep capability of current deployed workloads.
+`volumeClaimSyncStrategy` is introduce to keep capability of current deployed workloads.
 StatefulSet currently accepts and uses existing PVCs that is not created by the controller,
 So the `volumeClaimTemplate` and PVC can differ even before this enhancement.
 Some users may choose to keep the PVCs of different replicas different.
 We should not block the Pod updates for them.
 
-If `volumeClaimUpdateStrategy` is `OnDeleteAsync`,
-then if the template and PVC differs other than mutable fields, and it is not deleting,
+If `volumeClaimSyncStrategy` is `Async`,
+then if the template and PVC differs, and the PVC is not being deleted,
 the PVC is not considered as managed by the StatefulSet.
 
 However, a workload may rely on some features provided by a specific PVC,
 So we should provide a way to coordinate the update.
-That's why we also need `OnDeleteLockStep`.
+That's why we also need `LockStep`.
 
 We consider a StatefulSet in stable state if all the managed PVCs are capatible with the current template.
 In a stable state, most operations are possible, and we are not actively fixing something.
@@ -612,9 +618,10 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-If the PVC capacity is smaller than that in the template,
-the PVC will be expanded immediately after the feature is enbled.
-This should be rare, the user must have created the PVC before the StatefulSet for this to happen.
+If `volumeClaimUpdateStrategy` is `OnDelete` and `volumeClaimSyncStrategy` is `Async` (the default values),
+the behavior of StatefulSet controller is almost the same as before.
+Except that if the PVC is deleting when performing rolling update, the controller will wait for the deletion
+before creating the new Pod. This may bring additional delay if the PVC deletion is somehow blocked.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
