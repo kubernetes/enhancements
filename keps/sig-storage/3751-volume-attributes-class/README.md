@@ -62,17 +62,15 @@
   - [Other Solutions:](#other-solutions)
   - [Option 1: First class only Iops and throughput](#option-1-first-class-only-iops-and-throughput)
     - [Kubernetes API](#kubernetes-api-1)
-      - [CSI API](#csi-api-1)
-      - [Pros:](#pros)
-      - [Cons:](#cons)
-    - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
-      - [Pros:](#pros-1)
-      - [Cons:](#cons-1)
-    - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
-    - [CreateVolume](#createvolume)
-    - [ModifyVolume](#modifyvolume)
-      - [Pros:](#pros-2)
-      - [Cons:](#cons-2)
+    - [CSI API](#csi-api-1)
+    - [Pros:](#pros)
+    - [Cons:](#cons)
+  - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
+    - [Pros:](#pros-1)
+    - [Cons:](#cons-1)
+  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
+    - [Pros:](#pros-2)
+    - [Cons:](#cons-2)
   - [Appendix - Current SPs Case Study](#appendix---current-sps-case-study)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -129,7 +127,7 @@ Currently after CreateVolume with provider specific parameters pass in storage c
 ## Proposal
 
 ### Kubernetes API
-We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#bookmark=id.wtvwymf8202g).
+We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#design-details).
 
 The reason why we cannot use StorageClass.parameters is because StorageClass is immutable today. The design is to introduce a VolumeAttributesClass with parameters. Although these parameters are still immutable within a VolumeAttributesClass, the name of VolumeAttributesClass in a PVC can be modified. This allows the parameters representing volume attributes to be updated after a volume is created.
 
@@ -1122,7 +1120,7 @@ requests:
 Add PVC Status field; change ResizeStatus alpha field to AllocatedResourceStatus map.
 
 
-##### CSI API
+#### CSI API
 
 The CSI create request will be extended to add provisioned IO parameters. For volume creation, cloud providers can add iops and throughput field in parameters and process in the csi driver, an example:
 
@@ -1255,18 +1253,18 @@ IO provisioning should have similar issues to resize (except that we have to sol
 For ResourceQuota, we will verify that sum of spec.resources[iops] and spec.resources[throughput] for all PVCs in the Namespace from DSW don't exceed quota, for LimitRanger we check that a modify request does not violate the min and max limits specified in LimitRange for the pvc's namespace.
 
 
-##### Pros:
+#### Pros:
 
 *   Simplify user experience by giving only restricted, well defined controls
 
-##### Cons:
+#### Cons:
 
 
 *   Difficult to get consensus of what is iops/throughput among different storage providers
 *   Not all the storage providers support independently configurable iops/throughput
 
 
-#### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
+### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
 
 The users will set the volume performance parameters directly in the PVC:
 
@@ -1305,19 +1303,19 @@ message ModifyVolumeRequest {
 
 
 
-##### Pros:
+#### Pros:
 
 *   Flexible to fit into all the cloud providers
 *   More flexibility to end users and no cluster administrator needs to be involved(also a con)
 
 
-##### Cons:
+#### Cons:
 
 *   More unpredictable behaviors because it is an opaque map. Compared to the recommended approach that the cluster administrator actually has the control over the values.
 * Not portable across different cloud providers.
 
 
-#### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
+### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
 
 ![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
 
@@ -1341,113 +1339,14 @@ If there is a change in parameters, an event will trigger the following func in 
 func (ctrl *resizeController) updateVolumeAttributesClass(vqc *v1.VolumeAttributesClass) (error, bool) {...}
 ```
 
-Under this operation, it will get all the pvcs consuming the volume Performance class and call expandAndRecover to update the volume Performance parameters. The update the volume Performance parameters will overlap with the following path “**Watching changes in the PVC object**”
+Under this operation, it will get all the pvcs consuming the volume Performance class and call expandAndRecover to update the volume Performance parameters.
 
-
-
-
-
-#### CreateVolume
-
-For creating volume, there are two different ways to configure the related parameters. Only **cluster administrators** should be able to create StorageClass and/or VolumeAttributesClass.
-
-
-
-*   From storage class parameters(existing today):
-
-```
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-sc-example
-provisioner: pd.csi.storage.gke.io
-parameters:
-  ...
-  provisioned-iops-on-create: '10000'
-  provisioned-throughput-on-create: '100MiB/s'
-volumeBindingMode: WaitForFirstConsumer
-```
-
-*   From VolumeAttributesClass(from this KEP)
-
-```
-apiVersion: storage.k8s.io/v1alpha1
-kind: VolumeAttributesClass
-driverName: pd.csi.storage.gke.io
-metadata:
-  name: silver
-parameters:
-  iops: "500"
-  throughput: "50MiB/s"
-```
-
-```
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-gcepd
-provisioner: pd.csi.storage.gke.io
-volumeBindingMode: WaitForFirstConsumer
-```
-
-The driver is responsible for parsing and validating these parameters and making sure duplicate configuration is not allowed. End users will specify  the VolumeAttributesClass in the PVC object:
-
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: test-pv-claim
-spec:
-  storageClassName: csi-sc-example
-  VolumeAttributesClassName: silver
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 64Gi
-```
-
-#### ModifyVolume
-
-![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
-
-Since VolumeAttributesClass is **immutable**, to update the performance parameters, the end user can modify the PVC object to set a different VolumeAttributesClass. If the existing VolumeAttributesClass cannot satisfy the end user’s use case, the end user needs to contact the cluster administrator to create a new VolumeAttributesClass.
-
-**Watching changes in the PVC object**, if the VolumeAttributesClass changes, it will trigger a ModifyVolume call.
-
-```
-apiVersion: storage.k8s.io/v1alpha1
-kind: VolumeAttributesClass
-metadata:
-  name: gold
-parameters:
-  iops: "1000"
-  throughput: "100MiB/s"
-```
-
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: test-pv-claim
-spec:
-  storageClassName: csi-sc-example
-  VolumeAttributesClassName: gold
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 64Gi
-```
-
-Under the modify volume call, it will pass in the `VolumeAttributesClass `object and do the update operation based on the `VolumeAttributesClass` parameters.
-
-##### Pros:
+#### Pros:
 
 *   Provide an automation of updating all PVCs with the new set of performance related parameters 
 
 
-##### Cons:
+#### Cons:
 
 *   Unknown scaling problems for clusters with large numbers of volumes
 *   Partial update failures are difficult to communicate with the overall system
