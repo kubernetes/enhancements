@@ -59,17 +59,17 @@
   - [Other Solutions:](#other-solutions)
   - [Option 1: First class only Iops and throughput](#option-1-first-class-only-iops-and-throughput)
     - [Kubernetes API](#kubernetes-api-1)
-      - [CSI API](#csi-api-1)
-      - [Pros:](#pros)
-      - [Cons:](#cons)
-    - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
-      - [Pros:](#pros-1)
-      - [Cons:](#cons-1)
-    - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
+    - [CSI API](#csi-api-1)
+    - [Pros:](#pros)
+    - [Cons:](#cons)
+  - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
+    - [Pros:](#pros-1)
+    - [Cons:](#cons-1)
+  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
     - [CreateVolume](#createvolume)
     - [ModifyVolume](#modifyvolume)
-      - [Pros:](#pros-2)
-      - [Cons:](#cons-2)
+    - [Pros:](#pros-2)
+    - [Cons:](#cons-2)
   - [Appendix - Current SPs Case Study](#appendix---current-sps-case-study)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -935,7 +935,7 @@ requests:
 Add PVC Status field; change ResizeStatus alpha field to AllocatedResourceStatus map.
 
 
-##### CSI API
+#### CSI API
 
 The CSI create request will be extended to add provisioned IO parameters. For volume creation, cloud providers can add iops and throughput field in parameters and process in the csi driver, an example:
 
@@ -1068,18 +1068,18 @@ IO provisioning should have similar issues to resize (except that we have to sol
 For ResourceQuota, we will verify that sum of spec.resources[iops] and spec.resources[throughput] for all PVCs in the Namespace from DSW don't exceed quota, for LimitRanger we check that a modify request does not violate the min and max limits specified in LimitRange for the pvc's namespace.
 
 
-##### Pros:
+#### Pros:
 
 *   Simplify user experience by giving only restricted, well defined controls
 
-##### Cons:
+#### Cons:
 
 
 *   Difficult to get consensus of what is iops/throughput among different storage providers
 *   Not all the storage providers support independently configurable iops/throughput
 
 
-#### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
+### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
 
 The users will set the volume performance parameters directly in the PVC:
 
@@ -1118,19 +1118,19 @@ message ModifyVolumeRequest {
 
 
 
-##### Pros:
+#### Pros:
 
 *   Flexible to fit into all the cloud providers
 *   More flexibility to end users and no cluster administrator needs to be involved(also a con)
 
 
-##### Cons:
+#### Cons:
 
 *   More unpredictable behaviors because it is an opaque map. Compared to the recommended approach that the cluster administrator actually has the control over the values.
 * Not portable across different cloud providers.
 
 
-#### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
+### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
 
 ![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
 
@@ -1255,12 +1255,12 @@ spec:
 
 Under the modify volume call, it will pass in the `VolumeAttributesClass `object and do the update operation based on the `VolumeAttributesClass` parameters.
 
-##### Pros:
+#### Pros:
 
 *   Provide an automation of updating all PVCs with the new set of performance related parameters 
 
 
-##### Cons:
+#### Cons:
 
 *   Unknown scaling problems for clusters with large numbers of volumes
 *   Partial update failures are difficult to communicate with the overall system
