@@ -289,7 +289,13 @@ When to update PVCs:
 
 ### What PVC is capatible
 
-TODO
+A PVC is capatible with the template if:
+- All the immutable fields match exactly; and
+- `metadata.labels` and `metadata.annotations` of PVC is a superset of the template; and
+- `status.capacity.storage` of PVC is greater than or equal to
+  the `spec.resources.requests.storage` of the template; and
+- `status.currentVolumeAttributesClassName` of PVC is equal to
+  the `spec.volumeAttributesClassName` of the template.
 
 ### Collected PVC Status
 
@@ -368,6 +374,10 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+We can use Server Side Apply to update the PVCs in-place,
+so that we will not interfere with the user's manual changes,
+e.g. to `metadata.labels` and `metadata.annotations`.
 
 ### Test Plan
 
