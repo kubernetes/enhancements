@@ -269,7 +269,11 @@ How to update PVCs:
 2. If it is not possible to make the PVC [capatible](#what-pvc-is-capatible),
    do nothing. But when recreating a Pod and the corresponding PVC is deleting,
    wait for the deletion then create a new PVC with the current template
-   together with the new Pod.
+   together with the new Pod (already implemented).
+<!--
+Tested on Kubernetes v1.28, and I can see this event:
+Warning  FailedCreate         3m58s (x7 over 3m58s)  statefulset-controller  create Pod test-rwop-0 in StatefulSet test-rwop failed error: pvc data-test-rwop-0 is being deleted
+-->
 
 When to update PVCs:
 1. Before recreate the pod, additionally check that the PVC is 
@@ -641,10 +645,9 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No.
 If `volumeClaimUpdateStrategy` is `OnDelete` and `volumeClaimSyncStrategy` is `Async` (the default values),
 the behavior of StatefulSet controller is almost the same as before.
-Except that if the PVC is deleting when performing rolling update, the controller will wait for the deletion
-before creating the new Pod. This may bring additional delay if the PVC deletion is somehow blocked.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
