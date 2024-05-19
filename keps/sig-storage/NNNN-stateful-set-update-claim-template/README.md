@@ -85,6 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2: Migrating Between Storage Providers](#story-2-migrating-between-storage-providers)
     - [Story 3: Migrating Between Different Implementations of the Same Storage Provider](#story-3-migrating-between-different-implementations-of-the-same-storage-provider)
     - [Story 4: Shinking the PV by Re-creating PVC](#story-4-shinking-the-pv-by-re-creating-pvc)
+    - [Story 5: Asymmetric Replicas](#story-5-asymmetric-replicas)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -318,19 +319,41 @@ bogged down.
 
 #### Story 1: Batch Expand Volumes
 
-TODO
+We're running a CI/CD system and the end-to-end automation is desired.
+To expand the volumes managed by a StatefulSet,
+we can just use the same pipeline that we are already using to updating the Pod.
+All the test, review, approval, and rollback process can be reused.
 
 #### Story 2: Migrating Between Storage Providers
 
-TODO
+We decide to switch from home-made local storage to the storage provided by a cloud provider.
+We can not afford any downtime, so we don't want to delete and recreate the StatefulSet.
+Our app can automatically rebuild the data in the new storage from other replicas.
+So we update the `volumeClaimTemplate` of the StatefulSet,
+delete the PVC and Pod of one replica, let the controller re-create them,
+then monitor the rebuild process.
+Once the rebuild completes successfully, we proceed to the next replica.
 
 #### Story 3: Migrating Between Different Implementations of the Same Storage Provider
 
-TODO
+Our storage provider has a new version that provides new features, but can not be upgraded in-place.
+We can prepare some new PersistentVolumes using the new version, but referencing the same disk
+from the provider as the in-use PVs.
+Then the same update process as Story 2 can be used.
+Although the PVCs are recreated, the data is preserved, so no rebuild is needed.
 
 #### Story 4: Shinking the PV by Re-creating PVC
 
-TODO
+After running our app for a while, we optimize the data layout and reduce the required storage size.
+Now we want to shrink the PVs to save cost.
+The same process as Story 2 can be used.
+
+#### Story 5: Asymmetric Replicas
+
+The replicas of our StatefulSet are not identical, so we still want to update
+each PVC manually and separately.
+Possibly we also update the `volumeClaimTemplate` for new replicas,
+but we don't want the controller to interfere with the existing replicas.
 
 ### Notes/Constraints/Caveats (Optional)
 
