@@ -276,25 +276,27 @@ Warning  FailedCreate         3m58s (x7 over 3m58s)  statefulset-controller  cre
 -->
 
 When to update PVCs:
-1. Before recreate the pod, additionally check that the PVC is 
+1. Before advancing `status.updatedReplicas` to the next replica,
+   additionally check that the PVCs of the next replica are 
    [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplate`.
    If not, update the PVC after old Pod deleted, before creating new pod,
    or if update is not possible:
+   <!-- TODO: what if the update to PVC failed? -->
    - If `volumeClaimSyncStrategy` is `LockStep`,
-     wait for the user to delete/update the old PVC manually before delete the old pod.
+     wait for the user to delete/update the old PVC manually.
    - If `volumeClaimSyncStrategy` is `Async`,
-     the diff is ignored and the pod recreation proceeds.
+     the diff is ignored and the normal rolling update proceeds.
 
 2. If Pod spec does not change, only mutable fields in `volumeClaimTemplate` differ,
    The PVCs should be updated just like Pods would. A replica is considered ready
    if all its volumes are compatible with the new `volumeClaimTemplate`.
-   `.spec.ordinals` and `.spec.updateStrategy.rollingUpdate.partition` are also respected.
+   `spec.ordinals` and `spec.updateStrategy.rollingUpdate.partition` are also respected.
    e.g.:
-   - If `.spec.updateStrategy.type` is `RollingUpdate`,
+   - If `spec.updateStrategy.type` is `RollingUpdate`,
      update the PVCs in the order from the largest ordinal to the smallest.
      Only proceed to the next ordinal when all the PVCs of the previous ordinal
      are compatible with the new `volumeClaimTemplate`.
-   - If `.spec.updateStrategy.type` is `OnDelete`,
+   - If `spec.updateStrategy.type` is `OnDelete`,
      Only update the PVC when the Pod is deleted.
 
 
@@ -320,7 +322,6 @@ For each PVC in the template:
 Some fields in the `status` are also updated to reflect the staus of the PVCs:
 - readyReplicas: in addition to pods, also consider the PVCs status. A PVC is not ready if:
   - `volumeClaimUpdateStrategy` is `InPlace` and the PVC is updating;
-  - `volumeClaimSyncStrategy` is `LockStep` and the PVC is not compatible with the template;
 - availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
@@ -417,14 +418,6 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-When the `volumeClaimSyncStrategy` is set to `LockStep`, keeping PVCs that are
-incompatible with the template is dangerous. This will block the Pod from being
-recreated, and the workload will be unavailable if some Pods are evicted.
-We should document this clearly and report the replica as not ready in the status
-to warn the user.
-this should only happen when the user manually updates the PVC,
-or the `volumeClaimSyncStrategy` is updated to `LockStep` while the PVC is not compatible.
-
 TODO: Recover from failed in-place update (insufficient storage, etc.)
 What else is needed in addition to revert the StatefulSet spec?
 
