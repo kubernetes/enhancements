@@ -20,7 +20,7 @@ aliases:
     - ritazh
   sig-autoscaling-leads:
     - gjtempleton
-    - mwielgus
+    - maciekpytel
   sig-cli-leads:
     - ardaguclu
     - eddiezane
@@ -45,12 +45,14 @@ aliases:
     - palnabarun
   sig-docs-leads:
     - divya-mohan0209
+    - katcosgrove
     - kbhawkey
     - natalisucks
     - onlydole
     - reylejano
     - sftim
     - tengqm
+    - salaxander
   sig-etcd-leads:
     - ahrtr
     - jmhbnz
