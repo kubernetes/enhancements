@@ -35,6 +35,7 @@ latest-milestone: "v1.30"
 milestone:
   alpha: "v1.28"
   beta: "v1.30"
+  ga: "v1.32"
 
 
 # The following PRR answers are required at alpha release
