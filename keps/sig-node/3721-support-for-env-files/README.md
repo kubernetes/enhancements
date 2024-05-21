@@ -264,8 +264,8 @@ outcome once this KEP is implemented.
 |1. The volumeName specified in `FileEnvSource` or `FileKeySelector` field does not exist | Pod creation fails with an error |  |
 |2. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
 |3. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
-|4. Either the filepath or key specified in `FileKeySleector` field does not exist | Pod created | Container fails to start and error message in event.|
-|5. Either the filepath or key specified in `FileKeySleector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
+|4. Either the filepath or key specified in `FileKeySelector` field does not exist | Pod created | Container fails to start and error message in event.|
+|5. Either the filepath or key specified in `FileKeySelector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
 |6. The specified file is not a parsable env file. | Pod created | Container fails to start and error message in event.|
 |7. The specified file contains invalid env var names. | Pod created | Container starts but invalid env vars are skipped and reported in the events.|
 
