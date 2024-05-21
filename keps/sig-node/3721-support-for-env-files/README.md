@@ -5,6 +5,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -108,7 +109,21 @@ streamline the process for users.
 
 ### Goals
 
-- Define container environment variables from a file.
+1. Support instantiating a container's environment variables from a file. This
+file can be in any volume (hostPath, emptyDir or PVC) as long as the kubelet
+can access the file and parse it. kubelet will instantiate the env vars in the
+container from the specified file but it will not mount the file.
+
+2. All containers (container, initContainer, sidecar and ephemeral container)
+will be able to load env vars from a file.
+
+### Non-Goals
+
+1. We do not plan to support expansion of environment variables, that is, when an
+environment variable refers to another.
+
+2. We do not intend to update env vars if the file content has changed after the
+container consuming it has started.
 
 ## Proposal
 
@@ -125,7 +140,9 @@ container.
 Instead, k8s can provide a new mechanism that will be used to instantiate
 env vars from the specified file. The user can generate an env file using an
 `initContainer`. The container can then use the `fileRef` field to reference
-the file from which it should initialize the env vars. In the example below,
+the file from which it should initialize the env vars. Behind the scene, kubelet will
+parse the env file and instantiate these env vars during container creation. It
+does not mount this file onto the main container. In the example below,
 the Pod's output includes `CONFIG_VAR=HELLO`.
 
 ```
@@ -169,8 +186,10 @@ CONFIG_VAR_A=WORLD
 ```
 
 The user can use the `fileKeyRef` field to select a subset of these env vars
-that it wants to provide to the app. In this case, the Pod's output includes
-`CONFIG_VAR=HELLO`
+that it wants to provide to the app. Behind the scene, kubelet will parse the
+env file on the host and instantiate these env vars when creating the main
+container. It does not mount this hostPath volume onto the main container.
+In this case, the Pod's output includes `CONFIG_VAR=HELLO`
 
 ```
 apiVersion: v1
@@ -256,8 +275,16 @@ type FileKeySelector struct {
 ### Failure and Fallback Strategy
 
 There are different scenarios in which applying `FileEnvSource` and
-`FileKeySelector` fields may fail. Below are the ones we mapped and their
-outcome once this KEP is implemented.
+`FileKeySelector` fields may fail. We plan to provide an erorr message that is
+descriptive enough to troubleshoot the issue but it will not contain the env
+file as it can contain sensitive information.
+
+Environment variable names must consist of letters, numbers, underscores, dots,
+or hyphens, but the first character cannot be a digit. If the
+`RelaxedEnvironmentVariableValidation` feature gate is enabled, all printable
+ASCII characters except "=" may be used for environment variable names
+
+Below are the ones we mapped and their outcome once this KEP is implemented.
 
 |Scenario| API Server Result | Kubelet Result |
 |--------|-------------------|----------------|
