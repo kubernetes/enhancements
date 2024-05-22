@@ -1,4 +1,4 @@
-# KEP-4444: Routing Preference for Services
+# KEP-4444: Traffic Distribution for Services
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -17,8 +17,8 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Standard Heuristic Implementation (kube-proxy dataplane)](#standard-heuristic-implementation-kube-proxy-dataplane)
-    - [<code>Default</code>](#default)
-    - [<code>Close</code>](#close)
+    - [Default (i.e. <code>trafficDistribution</code> is not configured)](#default-ie-trafficdistribution-is-not-configured)
+    - [<code>PreferClose</code>](#preferclose)
   - [Changes within kube-proxy](#changes-within-kube-proxy)
   - [Choice of field name](#choice-of-field-name)
   - [Intersection with internal/externalTrafficPolicy](#intersection-with-internalexternaltrafficpolicy)
@@ -49,7 +49,7 @@
   - [Reuse the fields internal/externalTrafficPolicy to offer these routing preferences](#reuse-the-fields-internalexternaltrafficpolicy-to-offer-these-routing-preferences)
   - [Granular Routing Controls](#granular-routing-controls)
   - [Reuse Pod Topology Spread Constraints for Traffic Distribution](#reuse-pod-topology-spread-constraints-for-traffic-distribution)
-    - [Complementary Use of Pod Topology Spread Constraints and routingPreference](#complementary-use-of-pod-topology-spread-constraints-and-routingpreference)
+    - [Complementary Use of Pod Topology Spread Constraints and trafficDistribution](#complementary-use-of-pod-topology-spread-constraints-and-trafficdistribution)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -96,7 +96,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes introducing a new field, `routingPreference`, to the
+This KEP proposes introducing a new field, `trafficDistribution`, to the
 Kubernetes Service spec. It will supersede the functionality currently provided
 by the `service.kubernetes.io/topology-mode` annotation and it’s precursor
 `topologyKeys` field (which has been deprecated since Kubernetes 1.21)
@@ -162,7 +162,7 @@ TopologyAwareRouting in conjunction with InternalTrafficPolicy didn’t exactly
 allow users to express a much desired use case from topologyKeys which is
 "prefer node-local, failover to same zone, then route anywhere" While this
 specific behavior is a non-goal for the initial implementation of the
-`routingPreference` field, the design allows for the potential introduction of
+`trafficDistribution` field, the design allows for the potential introduction of
 such a preference in future refinements.
 
 ## Goals
@@ -184,7 +184,7 @@ such a preference in future refinements.
 
 ## Non-Goals
 
-* **Strict Routing Guarantees:** The `routingPreference` field will not
+* **Strict Routing Guarantees:** The `trafficDistribution` field will not
   enforce deterministic routing paths. It serves as a mechanism for expressing
   hints and preferences that implementations can consider when making routing
   decisions.
@@ -200,20 +200,21 @@ such a preference in future refinements.
 
 ## Proposal
 
-Add a new field, `routingPreference`, to the Service specification. This field
+Add a new field, `trafficDistribution`, to the Service specification. This field
 will serve as preference or hint for the underlying implementation to consider
 while making routing decisions. It does not offer strict routing guarantees.
 
 The field will support the following initial values:
 
 
-* `Default`: Indicates no specific routing preference. The user delegates the
-  routing decision to the implementation, allowing it to apply its best-effort
-  strategy.
-* `Close`: Indicates a preference for routing traffic to endpoints that
+* `PreferClose`: Indicates a preference for routing traffic to endpoints that
   are topologically proximate to the client. The interpretation of
   "topologically proximate" may vary across implementations and could encompass
   endpoints within the same node, rack, zone, or even region.
+
+Absence of a value indicates no specific routing preference. In this case, the
+user delegates the routing decision to the implementation, allowing it to apply
+its best-effort strategy.
 
 Implementations SHOULD support the standard values. While some flexibility in
 interpretation is permitted, implementations should aim to align their behavior
@@ -221,9 +222,9 @@ with the described intent of these preferences as closely as possible.
 
 NOTE: Implementations reserve the right to refine the behavior associated with
   any heuristic, including standard heuristics. This means the behavior enabled
-  by values such as `Default` or `Close` might evolve over time, and some
+  by values such as `PreferClose` might evolve over time, and some
   evolutions might interpret the heuristic goals slightly differently. For
-  example, in the case of `Close`, an implementation might initially route
+  example, in the case of `PreferClose`, an implementation might initially route
   traffic within the zone without considering endpoint overload, while a future
   refinement could introduce feedback mechanisms to detect overload and route
   traffic outside the zone when necessary, optimizing overall performance. The
@@ -237,7 +238,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I don't have strong preferences for how my application
   traffic is routed. I prioritize simplicity and trust my Kubernetes
   implementation to optimize traffic distribution.
-* **Solution:** Set `routingPreference: Default` (or leave the field unset)
+* **Solution:** Leave the `trafficDistribution` field unset.
 * **Effect:** The Kubernetes implementation will apply its best-effort routing
   strategy based on its design. This strategy might change over time as the
   implementation evolves. It may load balance across zones or regions.
@@ -246,7 +247,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
 * **Requirement:** I want my application to primarily send traffic to endpoints
   that are topologically close for performance or cost reasons. However, I want
   to avoid connection failures if no sufficiently close endpoints are available.
-* **Solution:** Set `routingPreference: Close`
+* **Solution:** Set `trafficDistribution: PreferClose`
 * **Effect:** The Kubernetes implementation will aim to prioritize routing
   traffic to endpoints in the same zone as the client. If no endpoints are
   available within the zone, traffic will be routed to other zones. It's
@@ -260,7 +261,7 @@ NOTE: Implementations reserve the right to refine the behavior associated with
   deployment configuration to enable same-zone routing behavior in a portable
   way that works across many different environments.
 * **Solution:** Using one of the available standard values in the
-  `routingPreference` field will allow the customer to use the same Helm Chart
+  `trafficDistribution` field will allow the customer to use the same Helm Chart
   configurations with greater confidence regardless of the underlying Kubernetes
   implementation. This simplifies their deployment process and reduces the
   complexity of managing cross-cluster applications.
@@ -272,14 +273,14 @@ configuration. There's a non-zero chance that we may need to revisit this again.
 
 ### Risks and Mitigations
 
-* **Risk:** Having a routing preference like `Close` comes at the risk of
+* **Risk:** Having a routing preference like `PreferClose` comes at the risk of
   endpoints in certain locality being overloaded if the originating traffic is
   skewed towards a particular locality.
 
   **Mitigation:**
-    * Emphasize in the documentation that the `Close` preference is designed for
-      low-latency or monetory-cost reasons, with the understanding that it can
-      lead to overload within that locality.
+    * Emphasize in the documentation that the `PreferClose` preference is
+      designed for low-latency or monetory-cost reasons, with the understanding
+      that it can lead to overload within that locality.
     * Recommend approaches like having deployments per locality, (like a zone
       locality when using kube-proxy as the data-plane), which can scale
       independently of other localities.
@@ -300,30 +301,30 @@ configuration. There's a non-zero chance that we may need to revisit this again.
 ### Standard Heuristic Implementation (kube-proxy dataplane)
 
 kube-proxy (along with EndpointSlice controller, within kube-controller-manager
-as the control plane) will support the two standard routing preferences
-(`Default`, `Close`).
+as the control plane) will start with supporting two distinct behaviors based on
+the value configured for `trafficDistribution`
 
-#### `Default`
-* **Meaning:** `Default` value for kube-proxy would match it's existing
-  behaviour of having an equal distribution of traffic across endpoints
-  (potentially spanning multiple zones or regions)
+#### Default (i.e. `trafficDistribution` is not configured)
+* **Meaning:** When `trafficDistribution` is not used, kube-proxy would match
+  it's existing behaviour of having an equal distribution of traffic across
+  endpoints (potentially spanning multiple zones or regions)
 * This leverages existing implementation, requiring no major changes.
 
-#### `Close`
+#### `PreferClose`
 * **Meaning:** Attempts to route traffic to endpoints within the same zone as
   the client. If no endpoints are available within the zone, traffic would be
   routed to other zones.
 * This preference will be implemented by the use of Hints within EndpointSlices.
 * We already use Hints to implement `service.kubernetes.io/topology-mode: Auto`
   In a similar manner, the EndpointSlice controller will now also populate hints
-  for `routingPreference: Close` -- although in this case, the zone hint will
+  for `trafficDistribution: PreferClose` -- although in this case, the zone hint will
   match the endpoint of the zone itself.
 * While it may seem redundant to populate the hints here since kube-proxy can
   already derive the zone hint from the endpoints zone (as they would be the
   same), we will still use this for implementation simply because of the reason
   that it’s easier to implement and provides a better design. Consider an
   alternative implementation where kube-proxy reads
-  `routingPreference: Close` field and then constructs the route rules
+  `trafficDistribution: PreferClose` field and then constructs the route rules
   accordingly. This means some extra logic needs to be baked into the kube-proxy
   which could have just as easily been implemented by an already existing
   extensibility mechanism (i.e. EndpointSlice hints)
@@ -331,7 +332,7 @@ as the control plane) will support the two standard routing preferences
 Although this is not an explicit design goal, an implication of the above
 implementation choice means that:
 * The control plane (kube-controller-manager in this case) is only concerned
-  with the field `routingPreference` and populates EndpointSlice hints based
+  with the field `trafficDistribution` and populates EndpointSlice hints based
   on its value 
 * The data plane (kube-proxy in this case) is only concerned with the Hints
   populated in the EndpointSlice and the fields `internal/externalTrafficPolicy`
@@ -339,7 +340,7 @@ implementation choice means that:
 * Neither the control plane nor the data plane looks at the others field.
 
 NOTE: The fact that EndpointSlice hints are not expected to be implemented by
-  all data planes is not of concern here, because `routingPreference` is anyways
+  all data planes is not of concern here, because `trafficDistribution` is anyways
   supposed to be implementation dependent. Since we know that the kube-proxy
   data plane will respect the Hints, it’s sufficient for the kube-proxy and
   kube-controller-manager based implementations to say that we do support the
@@ -352,7 +353,7 @@ programming if the `service.kubernetes.io/topology-aware-hints` annotation is
 set to "Auto"
 
 **New behaviour:** Irrespective of what the annotation
-`service.kubernetes.io/topology-aware-hints` or field `routingPreference` are
+`service.kubernetes.io/topology-aware-hints` or field `trafficDistribution` are
 set to (or even if they are not set at all), kube-proxy will always consider
 EndpointSlice hints (assuming this feature-gate is enabled).
 
@@ -365,7 +366,7 @@ NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
 <<[UNRESOLVED Name for the field is being discussed]>>
 
 ### Choice of field name
-The name `routingPreference` is meant to capture the highly
+The name `trafficDistribution` is meant to capture the highly
 implementation-specific nature of this field and how it affects the routing of
 traffic
 * Field names that include the word "topology", like `topologyPreference` and
@@ -379,10 +380,9 @@ traffic
   within EndpointSlices which has previously been discussed in relation to such
   routing heuristics. In a sense, the hint field within EndpointSlices is just
   an implementation detail.
-* Use of words like “traffic” and “policy” for names like
-  trafficRoutingPreference was not favored so that it’s clearly different from
-  the `internalTrafficPolicy` and `externalTrafficPolicy` fields which have a
-  more fixed behavior.
+* Use of words like “policy” for names like trafficPolicy was not favored so
+  that it’s clearly different from the `internalTrafficPolicy` and
+  `externalTrafficPolicy` fields which have a more fixed behavior.
 * Use of the word "selection" for a name like `endpointSelection` were avoided
   so as not to confuse with the actual process of selecting the complete set of
   pods backing a service.
@@ -402,7 +402,7 @@ captures the precedence
   <tr>
     <th>ExternalTrafficPolicy</th>
     <th>InternalTrafficPolicy</th>
-    <th>routingPreference</th>
+    <th>trafficDistribution</th>
     <th>External Result</th>
     <th>Internal Result</th>
   </tr>
@@ -412,15 +412,15 @@ captures the precedence
     <td>-</td>
     <td>-</td>
     <td>Auto</td>
-    <td>routingPreference: Auto</td>
-    <td>routingPreference: Auto</td>
+    <td>trafficDistribution: Auto</td>
+    <td>trafficDistribution: Auto</td>
   </tr>
   <tr>
     <td>Local</td>
     <td>-</td>
     <td>Auto</td>
     <td>ExternalTrafficPolicy: Local</td>
-    <td>routingPreference: Auto</td>
+    <td>trafficDistribution: Auto</td>
   </tr>
   <tr>
     <td>Local</td>
@@ -459,14 +459,14 @@ The following packages will also see minor changes:
 ##### Integration tests
 
 * Verify that if both the annotation `service.kubernetes.io/topology-mode: Auto`
-  and field `routingPreference: Close` are configured, precedence is given to
+  and field `trafficDistribution: PreferClose` are configured, precedence is given to
   the annotation.
 
 ##### e2e tests
 
 * Verify that EndpointSlice hints are correctly populated when
-  `routingPreference` is set to `Close`.
-* Verify through probes that for `routingPreference: Close`, requests originating
+  `trafficDistribution` is set to `PreferClose`.
+* Verify through probes that for `trafficDistribution: PreferClose`, requests originating
   from a zone which has service pods get sent to a pod in the same zone. For
   requests originating from zones with no service pods, requests should not get
   blackholed and should rather be forwarded to any service pod from the cluster.
@@ -485,14 +485,14 @@ No special considerations are required for upgrade / downgrade:
 Upon upgrade of the EndpointSlice controller (within kube-controller-manager)
 and kube-proxy:
 * If a Service had both annotation `service.kubernetes.io/topology-mode` and
-  field `routingPreference`, then the annotation will take precedence and the
+  field `trafficDistribution`, then the annotation will take precedence and the
   field will be ignored. 
 * If a Service only had the annotation `service.kubernetes.io/topology-mode`,
-  then field `routingPreference`'s value will be assumed to be `Default` and the
-  behaviour will be the same as above with the annotation taking precedence.
+  then field `trafficDistribution` was absent, then behaviour will be the same
+  as above with the annotation taking precedence.
 
 Upon downgrade of EndpointSlice controller (within kube-controller-manager) and
-kube-proxy, the `routingPreference` will simply not be considered in any
+kube-proxy, the `trafficDistribution` will simply not be considered in any
 decisions.
 
 ### Version Skew Strategy
@@ -503,18 +503,18 @@ Version skews should naturally get handled as per the following behaviour.
   Policies](https://kubernetes.io/releases/version-skew-policy/#supported-version-skew)
   require that kube-apiserver is at least at the version of kube-proxy or
   kube-controller-manager. The only valid version skew would mean that a newer
-  kube-apiserver serves the new `routingPreference` field but the older
+  kube-apiserver serves the new `trafficDistribution` field but the older
   kube-proxy and kube-controller-manager would silently ignore this field. (No
   adverse affect, behaviour equivalent to feature being disabled).
 
 * **New kube-controller-manager (EndpointSlice controller) / Old kube-proxy:**
 
-  1. **Both `service.kubernetes.io/topology-mode` and `routingPreference` are
+  1. **Both `service.kubernetes.io/topology-mode` and `trafficDistribution` are
      set:** For EndpointSlice controller, since the annotation takes precedence
      it will have the same behaviour as the old version, which will naturally
      work with the old kube-proxy.
 
-  2. **Only `routingPreference` is set:** EndpointSlice controller configure
+  2. **Only `trafficDistribution` is set:** EndpointSlice controller configure
      EndpointSlice hints for the new routing preference, but kube-proxy still
      sees that `service.kubernetes.io/topology-mode` is unset (i.e. disabled)
      hence ignores the hints.
@@ -523,20 +523,20 @@ Version skews should naturally get handled as per the following behaviour.
 
 * **Old kube-controller-manager (EndpointSlice controller) / New kube-proxy:**
 
-  1. **Both `service.kubernetes.io/topology-mode` and `routingPreference` are
+  1. **Both `service.kubernetes.io/topology-mode` and `trafficDistribution` are
      set:** Old EndpointSlice controller programs hints as per
      `service.kubernetes.io/topology-mode`. kube-proxy sees that the
-     `routingPreference` is set to takes the hints into account (it's not a
+     `trafficDistribution` is set to takes the hints into account (it's not a
      problem that the hints were programmed according to the annotation)
 
-  2. **Only `routingPreference` is set:** EndpointSlice controller does NOT
+  2. **Only `trafficDistribution` is set:** EndpointSlice controller does NOT
      configure EndpointSlice hints for the new routing preference. kube-proxy
      recognizes the new routing preference and checks for any hints. Since no
      hints are set, it configures routes as it would without any hints.
 
   3. **Only `service.kubernetes.io/topology-mode` is set:** Same as scenario 1,
-     because if `routingPreference` is not set, kube-proxy would think it's set
-     to the `Default` value.
+     because if `trafficDistribution` is not set, the annotation
+     `service.kubernetes.io/topology-mode` will take precedence.
 
 ## Possible future expansions
 
@@ -549,40 +549,40 @@ To provide clear status updates about the routing preferences to the user, the
 EndpointSlice controller (which is acting as the control plane) will update the
 Service status with the following conditions (inspired by Gateway API conditions)
 
-* RoutingPreferenceAccepted
-  * **Type:** `RoutingPreferenceAccepted` 
+* TrafficDistributionAccepted
+  * **Type:** `TrafficDistributionAccepted` 
   * **Description:** 
     * Indicates whether a control plane component recognized and successfully
-      parsed the `routingPreference` value. A `False` status typically suggests
+      parsed the `trafficDistribution` value. A `False` status typically suggests
       a configuration issue (e.g., an unsupported or malformed preference).
     * The EndpointSlice controller will set this status to `True` if it
-      recognizes the `routingPreference` value as one it explicitly supports. 
+      recognizes the `trafficDistribution` value as one it explicitly supports. 
 
-* RoutingPreferenceProgrammed
-  * **Type:**  `RoutingPreferenceProgrammed`
+* TrafficDistributionProgrammed
+  * **Type:**  `TrafficDistributionProgrammed`
   * **Description:** 
-    * This condition indicates whether they `routingPreference` has generated
+    * This condition indicates whether they `trafficDistribution` has generated
       some configuration that is assumed to be ready soon in the underlying data
       plane.
     * The EndpointSlice controller will set this status to `True` if it
       successfully populated the EndpointSlice hints based on the
-      `routingPreference`.
+      `trafficDistribution`.
 
 Note that the EndpointSlice controller and kube-proxy implementation does not
 currently provide a condition denoting acknowledgment from the dataplane. In the
 future when this is possible, another condition like the following could be
 used:
 
-* RoutingPreferenceHonored
-  * **Type:** `RoutingPreferenceHonored`
+* TrafficDistributionHonored
+  * **Type:** `TrafficDistributionHonored`
   * **Description:** Confirms that the dataplane has received the hints,
     acknowledged them, and configured itself accordingly.
 
 #### Condition usage by other implementations
 
-Other implementations supporting `routingPreference` **should** adopt a domain
+Other implementations supporting `trafficDistribution` **should** adopt a domain
 prefixing strategy for their condition types. This means prefixing condition
-types with a domain string (e.g., `my.domain.io/RoutingPreferenceAccepted`) to
+types with a domain string (e.g., `my.domain.io/TrafficDistributionAccepted`) to
 prevent conflicts when multiple control planes (like the default EndpointSlice
 controller) are present.
 
@@ -597,7 +597,7 @@ This can enable supporting the following user story:
 * **Requirement:** I have some other precise preferences for how traffic should
   be routed, and I know that my chosen implementation supports the desired
   preference. 
-* **Solution:** Set `routingPreference: <domain>/<heuristicName>` (where
+* **Solution:** Set `trafficDistribution: <domain>/<heuristicName>` (where
   `<domain>` and `<heuristicName>` are provided by your implementation).
 * **Effect:** The Kubernetes implementation will apply the specified routing
   heuristic. It's important to note that the precise behavior of
@@ -610,13 +610,13 @@ This can enable supporting the following user story:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ServiceRoutingPreference`
+  - Feature gate name: `ServiceTrafficDistribution`
   - Components depending on the feature gate: kube-controller-manager, kube-proxy, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
 No. (since we are giving precedence to the existing
-`service.kubernetes.io/topology-mode` over the new `routingPreference` field)
+`service.kubernetes.io/topology-mode` over the new `trafficDistribution` field)
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -915,15 +915,15 @@ can be seen as a revisited, and potentially expanded, version of the
 `topologyKeys`, as stated previously.)
 
 In some sense, the approach is indeed very tempting. The reason why an option
-like `routingPreference` might be a better option is:
+like `trafficDistribution` might be a better option is:
 
 * Introducing numerous configuration options within the Service API (or a
   separate API type) could be sacrificing some of the core simplicity of the
   Service API. Future, more complex needs could (and should) be explored within
   the Gateway API.
 
-* The `routingPreference` field elegantly balances control and abstraction.
-  Users can influence behavior with high-level heuristics (like `Close`) while
+* The `trafficDistribution` field elegantly balances control and abstraction.
+  Users can influence behavior with high-level heuristics (like `PreferClose`) while
   implementations handle the underlying complexity. Heuristics can flag
   potential issues and guide users towards safe configurations. Using
   independent fields increases the risk of unintended consequences, as
@@ -934,7 +934,7 @@ like `routingPreference` might be a better option is:
 
 * Rigid API contracts with granular fields can hinder an implementation's
   ability to introduce innovative routing strategies that don't fit the
-  predefined mold. `routingPreference` encourages flexibility by treating
+  predefined mold. `trafficDistribution` encourages flexibility by treating
   preferences as hints, allowing for sophisticated, implementation-specific
   algorithms that can evolve over time.
 
@@ -965,9 +965,9 @@ The potential benefits of traffic routing based solely on Topology Spread
 Constraints might not outweigh the added implementation and configuration
 complexity. 
 
-A dedicated `routingPreference` fields gets us:
+A dedicated `trafficDistribution` fields gets us:
 
-* **Clear Intent:** The `routingPreference` field provides an explicit way for
+* **Clear Intent:** The `trafficDistribution` field provides an explicit way for
   users to signal desired traffic patterns, focusing solely on traffic
   distribution.
 
@@ -975,15 +975,15 @@ A dedicated `routingPreference` fields gets us:
   Topology Spread Constraints information (if desired) alongside other factors
   like latency, load, or custom heuristics to optimize routing decisions.
 
-#### Complementary Use of Pod Topology Spread Constraints and routingPreference
+#### Complementary Use of Pod Topology Spread Constraints and trafficDistribution
 
 Rather than having to choose between the two, Pod Topology Spread Constraints
-and `routingPreference` can offer slightly better and resilient traffic
+and `trafficDistribution` can offer slightly better and resilient traffic
 distribution when used in conjunction.
 
-* Users can set `routingPreference` to `Close` to express the preference for
+* Users can set `trafficDistribution` to `PreferClose` to express the preference for
   keeping traffic within the same zone as the client.
 * Then, they can configure Pod Topology Spread Constraints to Ensure balanced
   pod distribution across zones, maximizing the likelihood that the
-  `routingPreference` can be satisfied and reduce (although not completely
+  `trafficDistribution` can be satisfied and reduce (although not completely
   eliminate) chances of overload for a single zone.
