@@ -1,5 +1,5 @@
 title: StatefulSet Support for Updating Volume Claim Template
-kep-number: NNNN
+kep-number: 4650
 authors:
   - "@huww98"
 owning-sig: sig-storage

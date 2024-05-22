@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: StatefulSet Support for Updating Volume Claim Template
+# KEP-4650: StatefulSet Support for Updating Volume Claim Template
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
