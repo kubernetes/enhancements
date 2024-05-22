@@ -340,6 +340,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - Allowing time for feedback and any other user-experience reports.
 - Conformance tests
+- Consolidate the existing service account docs to be more coherent and avoid duplication,
+  especially in regards to consuming service account tokens outside of Kubernetes:
+    - https://kubernetes.io/docs/concepts/security/service-accounts
+    - https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin
+    - https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account
 
 ### Upgrade / Downgrade Strategy
 
