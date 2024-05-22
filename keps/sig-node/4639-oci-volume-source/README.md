@@ -88,8 +88,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Vocabulary: OCI Images, Artifacts, and Objects](#vocabulary-oci-images-artifacts-and-objects)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Kubelet and CRI support for OCI artifacts](#kubelet-and-cri-support-for-oci-artifacts)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -158,8 +160,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images and/or OCI artifacts. This allows users to package files
-and share them among containers in a pod without including a shell in the image, thereby reducing vulnerabilities and simplifying image creation.
+The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images and/or OCI artifacts.
+This allows users to package files and share them among containers in a pod without including a shell in the image,
+thereby reducing vulnerabilities and simplifying image creation.
+
+While OCI images are well-supported by Kubernetes and CRI,
+extending support to OCI artifacts involves recognizing additional media types, implementing custom lifecycle management,
+and ensuring appropriate validation and security measures.
 
 ## Motivation
 
@@ -208,17 +215,37 @@ efficient model deployment.
 - The implementation must handle image pull secrets and other registry authentication mechanisms.
 - Performance considerations must be taken into account, especially for large images or artifacts.
 
+### Vocabulary: OCI Images, Artifacts, and Objects
+
+**OCI Image:**
+   - A container image that conforms to the Open Container Initiative (OCI) Image Specification.
+     It includes a filesystem bundle and metadata required to run a container.
+   - Consists of multiple layers (each layer being a tarball), a manifest (which lists the layers), and a config file
+     (which provides configuration data such as environment variables, entry points, etc.).
+   - **Use Case:** Used primarily for packaging and distributing containerized applications.
+
+**OCI Artifact:**
+   - An artifact describes any content that is stored and distributed using the OCI image format.
+     It includes not just container images but also other types of content like Helm charts, WASM modules, machine learning models, etc.
+   - Artifacts use the same image manifest and layer structure but may contain different types of data
+     within those layers. The artifact manifest can have media types that differ from those in standard container images.
+   - **Use Case:** Allows the distribution of non-container content using the same infrastructure and tools developed for OCI images.
+
+**OCI Object:**
+   - Umbrella term encompassing both OCI images and OCI artifacts. It represents any object that conforms to the OCI specifications for storage and distribution.
+
 ### Risks and Mitigations
 
 - **Security Risks:** Allowing direct mounting of OCI images introduces potential attack vectors. Mitigation includes thorough security reviews and
-  limiting access to trusted registries.
+  limiting access to trusted registries. Limiting to OCI artifacts (non-runnable content) or read-only mode may lessen the security risk.
 - **Compatibility Risks:** Ensure compatibility with existing features.
 - **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
   guidance on best practices for users.
 
 ## Design Details
 
-The new `VolumeSource` will be defined in the Kubernetes API, and the implementation will involve updating the Kubernetes control plane components to support this source type. Key design aspects include:
+The new `VolumeSource` will be defined in the Kubernetes API, and the implementation will involve updating components (CRI, Kubelet, Scheduler)
+to support this source type. Key design aspects include:
 
 - API changes to introduce the new `VolumeSource` type.
 - Modifications to the Kubelet to handle mounting OCI images and artifacts.
@@ -248,6 +275,28 @@ spec:
     - mountPath: /data
       name: oci-volume
 ```
+
+### Kubelet and CRI support for OCI artifacts
+
+Kubelet and the Container Runtime Interface (CRI) currently handle OCI images. To support OCI artifacts,
+potential enhancements may be required:
+
+**Extended Media Type Handling:**
+   - Update Kubelet and CRI to recognize and handle new media types associated with OCI artifacts.
+   - Ensure that pulling and storing these artifacts is as efficient and secure as with OCI images.
+
+**Lifecycling and Garbage Collection:**
+   - Implement custom logic for managing the lifecycle of various OCI artifacts.
+
+**Artifact-Specific Configuration:**
+   - Introduce new configuration options or CRD to handle the unique requirements of different types of OCI artifacts.
+
+**Validation:**
+   - Extend validation and security checks to cover new artifact types.
+
+**Storage Optimization:**
+   - Develop optimized storage solutions tailored for different artifact types,
+     potentially integrating with existing storage solutions or introducing new mechanisms.
 
 ### Test Plan
 
@@ -812,11 +861,10 @@ An out-of-tree CSI plugin can provide flexibility and modularity, but there are 
 ### Advantages of In-Tree OCI VolumeSource
 
 1. **Leverage Existing Mechanisms:**
-   - **No New Data Types or Objects:** The OCI VolumeSource leverages OCI objects, which are already a core part of the Kubernetes ecosystem.
-	 This ensures consistency and reduces complexity, as no new data types or objects are introduced.
+   - **No New Data Types or Objects:** OCI images are already a core part of the Kubernetes ecosystem. Extending support for OCI artifacts, many of
+     the same mechanisms will be reused. This ensures consistency and reduces complexity, as both adhere to the same OCI image format.
    - **Existing Lifecycle Management and Garbage Collection:** Kubernetes has efficient lifecycle management and garbage collection mechanisms for
-	 volumes and container images. The in-tree OCI VolumeSource will utilizes these existing mechanisms, ensuring robust and reliable management
-     without re-implementing these features.
+	 volumes and container images. The in-tree OCI VolumeSource will utilize these existing mechanisms.
 
 2. **Integration with Kubernetes:**
    - **Optimal Performance:** Deep integration with the scheduler and kubelet ensures optimal performance and
