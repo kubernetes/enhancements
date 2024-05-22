@@ -77,9 +77,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Kubernetes API Changes](#kubernetes-api-changes)
   - [Updated Reconciliation Logic](#updated-reconciliation-logic)
   - [What PVC is compatible](#what-pvc-is-compatible)
-  - [Collected PVC Status](#collected-pvc-status)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Batch Expand Volumes](#story-1-batch-expand-volumes)
     - [Story 2: Migrating Between Storage Providers](#story-2-migrating-between-storage-providers)
@@ -242,17 +242,42 @@ nitty-gritty.
 
 2. Modify StatefulSet controller to add PVC reconciliation logic.
 
-3. Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
+3. Collect the status of managed PVCs, and show them in the StatefulSet status.
+
+### Kubernetes API Changes
+
+Changes to StatefulSet `spec`:
+
+1. Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
    specify how to coordinate the update of PVCs and Pods. Possible values are:
    - `OnDelete`: the default value, only update the PVC when the the old PVC is deleted.
    - `InPlace`: update the PVC in-place if possible. Also includes the `OnDelete` behavior.
 
-4. Introduce a new field in StatefulSet `spec.updateStrategy.rollingUpdate`: `volumeClaimSyncStrategy`
+2. Introduce a new field in StatefulSet `spec.updateStrategy.rollingUpdate`: `volumeClaimSyncStrategy`
    to specify how to update PVCs and Pods. Possible values are:
    - `Async`: the default value, preseve the current behavior.
    - `LockStep`: update PVCs first, then update Pods. See below for details.
 
-5. Collect the status of managed PVCs, and show them in the StatefulSet status.
+Changes to StatefultSet `status`:
+
+Additionally collect the status of managed PVCs, and show them in the StatefulSet status.
+
+For each PVC in the template:
+- compatible: the number of PVCs that are compatible with the template.
+  These replicas will not be blocked on Pod recreation if `volumeClaimSyncStrategy` is `LockStep`.
+- updating: the number of PVCs that are being updated in-place.
+- overSized: the number of PVCs that are over-sized.
+- totalCapacity: the sum of `status.capacity` of all the PVCs.
+
+Some fields in the `status` are also updated to reflect the staus of the PVCs:
+- readyReplicas: in addition to pods, also consider the PVCs status. A PVC is not ready if:
+  - `volumeClaimUpdateStrategy` is `InPlace` and the PVC is updating;
+- availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
+- currentRevision, updateRevision, currentReplicas, updatedReplicas
+  are updated to reflect the status of PVCs.
+
+With these changes, user can still use `kubectl rollout status` to monitor the update process,
+both for in-place update and for the PVCs that need manual intervention.
 
 ### Updated Reconciliation Logic
 
@@ -309,25 +334,6 @@ A PVC is compatible with the template if:
   the `spec.resources.requests.storage` of the template; and
 - `status.currentVolumeAttributesClassName` of PVC is equal to
   the `spec.volumeAttributesClassName` of the template.
-
-### Collected PVC Status
-
-For each PVC in the template:
-- compatible: the number of PVCs that are compatible with the template.
-  These replicas will not be blocked on Pod recreation if `volumeClaimSyncStrategy` is `LockStep`.
-- updating: the number of PVCs that are being updated in-place.
-- overSized: the number of PVCs that are over-sized.
-- totalCapacity: the sum of `status.capacity` of all the PVCs.
-
-Some fields in the `status` are also updated to reflect the staus of the PVCs:
-- readyReplicas: in addition to pods, also consider the PVCs status. A PVC is not ready if:
-  - `volumeClaimUpdateStrategy` is `InPlace` and the PVC is updating;
-- availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
-- currentRevision, updateRevision, currentReplicas, updatedReplicas
-  are updated to reflect the status of PVCs.
-
-With these changes, user can still use `kubectl rollout status` to monitor the update process,
-both for in-place update and for the PVCs that need manual intervention.
 
 ### User Stories (Optional)
 
