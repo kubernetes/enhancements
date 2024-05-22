@@ -108,7 +108,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+  - [<a href="https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1495-volume-populators">KEP 1495: Volume Populators</a>](#kep-1495-volume-populators)
+  - [Custom CSI Plugin](#custom-csi-plugin)
+  - [Advantages of In-Tree OCI VolumeSource](#advantages-of-in-tree-oci-volumesource)
+  - [Conclusion](#conclusion)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -160,9 +163,9 @@ and share them among containers in a pod without including a shell in the image,
 
 ## Motivation
 
-Currently, packaging files within images often requires the inclusion of a shell, even when the sole purpose of the image is to share files among containers in a pod.
-This not only increases the image size unnecessarily but also introduces potential security vulnerabilities. By supporting OCI images and artifacts
-directly as a `VolumeSource`, we can streamline the process and enhance security.
+Currently, mounting files from OCI images requires the inclusion of a shell, even when the sole purpose of the image is to deliver files
+to be shared among containers in a pod. This not only increases the image size unnecessarily but also introduces potential security vulnerabilities.
+By supporting OCI images and artifacts directly as a `VolumeSource`, we can streamline the process and enhance security.
 
 ### Goals
 
@@ -174,12 +177,12 @@ directly as a `VolumeSource`, we can streamline the process and enhance security
 ### Non-Goals
 
 - This proposal does not aim to replace existing `VolumeSource` types.
-- This proposal does not address other use cases for OCI images beyond file sharing among containers in a pod.
+- This proposal does not address other use cases for OCI objects beyond file sharing among containers in a pod.
 
 ## Proposal
 
-We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI image or artifact directly into a pod,
-making the files within the image accessible to the containers without the need for a shell or additional image manipulation.
+We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI object
+directly into a pod, making the files within the image accessible to the containers without the need for a shell or additional image manipulation.
 
 ### User Stories (Optional)
 
@@ -196,7 +199,8 @@ so that I can streamline my CI/CD pipeline. I want to package this file in an OC
 #### Story 3
 
 As a data scientist, MLOps engineer, or AI developer, I want to mount large language models or machine learning models in a pod alongside a model-server, so that I can efficiently serve the models
-without including them in the container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure efficient model deployment.
+without including them in the container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
+efficient model deployment.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -206,9 +210,11 @@ without including them in the container image. I want to package these models in
 
 ### Risks and Mitigations
 
-- **Security Risks:** Allowing direct mounting of OCI images introduces potential attack vectors. Mitigation includes thorough security reviews and limiting access to trusted registries.
+- **Security Risks:** Allowing direct mounting of OCI images introduces potential attack vectors. Mitigation includes thorough security reviews and
+  limiting access to trusted registries.
 - **Compatibility Risks:** Ensure compatibility with existing features.
-- **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing guidance on best practices for users.
+- **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
+  guidance on best practices for users.
 
 ## Design Details
 
@@ -781,16 +787,49 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### [KEP 1495: Volume Populators](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1495-volume-populators)
 
-## Infrastructure Needed (Optional)
+The volume-populators API extension allows you to populate a volume with data from an external data source when the volume is created.
+This is a good solution for restoring a volume from a snapshot or initializing a volume with data from a database backup. However, it does not
+address the desire to use OCI distribution, versioning, and signing for mounted data.
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+The proposed in-tree OCI VolumeSource provides a direct and integrated approach to mount OCI artifacts, leveraging the existing OCI
+infrastructure for packaging, distribution, and security.
+
+### Custom CSI Plugin
+
+See [https://github.com/warm-metal/container-image-csi-driver](https://github.com/warm-metal/container-image-csi-driver)
+
+An out-of-tree CSI plugin can provide flexibility and modularity, but there are trade-offs to consider:
+
+ - Complexity of managing an external CSI plugin. This includes handling the installation, configuration, and updates of the CSI driver, which adds
+   an additional operational burden. For a generic, vendor-agnostic, and widely-adopted solution this would not make sense.
+ - External CSI plugins implement their own lifecycle management and garbage collection mechanisms,
+   yet these already exist in-tree for OCI images.
+ - Performance: There is additional overhead with an out-of-tree CSI plugin, especially in scenarios requiring frequent image pulls
+   or large volumes of data.
+
+### Advantages of In-Tree OCI VolumeSource
+
+1. **Leverage Existing Mechanisms:**
+   - **No New Data Types or Objects:** The OCI VolumeSource leverages OCI objects, which are already a core part of the Kubernetes ecosystem.
+	 This ensures consistency and reduces complexity, as no new data types or objects are introduced.
+   - **Existing Lifecycle Management and Garbage Collection:** Kubernetes has efficient lifecycle management and garbage collection mechanisms for
+	 volumes and container images. The in-tree OCI VolumeSource will utilizes these existing mechanisms, ensuring robust and reliable management
+     without re-implementing these features.
+
+2. **Integration with Kubernetes:**
+   - **Optimal Performance:** Deep integration with the scheduler and kubelet ensures optimal performance and
+     resource management. This integration allows the OCI VolumeSource to benefit from all existing optimizations and features.
+   - **Unified Interface:** Users interact with a consistent and unified interface for managing volumes, reducing the learning curve and
+     potential for configuration errors.
+
+3. **Simplified Maintenance and Updates:**
+   - **Core Project Maintenance:** In-tree features are maintained and updated as part of the core project. It makes sense
+     for widely-used and vendor agnostic features to utilize the core testing infrastructure, release cycles, and security updates.
+
+### Conclusion
+
+The in-tree implementation of an OCI VolumeSource offers significant advantages by leveraging existing core mechanisms,
+ensuring deep integration, and simplifying management. This approach avoids the complexity, duplication, and other potential inefficiencies
+of out-of-tree CSI plugins, providing a more reliable solution for mounting OCI images and artifacts.
