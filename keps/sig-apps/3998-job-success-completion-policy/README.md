@@ -15,6 +15,7 @@
     - [Difference between &quot;complete&quot; and &quot;successCriteriaMet&quot;](#difference-between-complete-and-successcriteriamet)
     - [The CronJob concurrentPolicy is not affected by JobSuccessPolicy](#the-cronjob-concurrentpolicy-is-not-affected-by-jobsuccesspolicy)
     - [Status never switches from &quot;SuccessCriteriaMet&quot; to &quot;Failed&quot;](#status-never-switches-from-successcriteriamet-to-failed)
+    - [The scope of the SuccessCriteriaMet condition](#the-scope-of-the-successcriteriamet-condition)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Job API](#job-api)
@@ -213,6 +214,18 @@ which depends on the Job API.
 So, the status can never switch from `SucessCriterionMet` to `Failed`.
 Additionally, once the job has `SuccessCriteriaMet=true` condition, the job definitely ends with `Complete=true` condition
 even if the lingering pods could potentially meet the failure policies.
+
+#### The scope of the SuccessCriteriaMet condition
+
+As part of this KEP we introduced the `SuccessCriteriaMet` condition scoped to
+the success policy.
+
+However, we are going to extend the scope of the condition to the scenario when
+the Job completes by reaching the `.spec.completions`, as part of fixing
+(issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
+
+See more details in the
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/issues/4368).
 
 ### Risks and Mitigations
 

@@ -22,6 +22,7 @@
     - [API](#api)
     - [Implementation overview](#implementation-overview)
     - [Job status validation](#job-status-validation)
+    - [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions)
     - [Mutability](#mutability)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -362,6 +363,52 @@ We may come up with more validation rules during the implementation phase.
 The API comments to the Job status API fields will be updated to make the contract
 clear.
 
+We also plan to add a validation rule to make sure that the terminal conditions
+(`Failed` and `Complete`) are only added to Job when all pods are terminated.
+For that we plan to follow the approach described [below](#terminating-pods-and-terminal-job-conditions).
+
+#### Terminating pods and terminal Job conditions
+
+During the development process of Alpha in 1.30 we considered adding a
+validation rule enforcing that the Job terminal conditions (`Failed` or `Complete`)
+are only added when all pods are terminated (`status.terminating=0` and
+`status.ready=0`). However, the rule turned out to be violated by the built-in
+Job controller (see issue [#123775](https://github.com/kubernetes/kubernetes/issues/123775)).
+
+We are going to solve this issue by delaying the addition of the Job terminal
+conditions (Failed or Complete) until the pods are terminated
+(`terminating=0` and `ready=0`).
+
+One complication of this approach is that pod termination may take an
+arbitrarily long if the non-standard pod graceful termination period
+(`terminationGracePeriodSeconds`) is configured (30s by default). In order to
+give the API clients flexibility to know the fate of a Job as soon as possible
+we extend the scope for the following Job conditions:
+- `FailureTarget` - introduced in [Pod Failure Policy KEP](https://github.com/kubernetes/enhancements/issues/3329)
+- `SuccessCriteriaMet` - introduced in [Success Policy KEP](https://github.com/kubernetes/enhancements/issues/3998)
+
+Note that, with the new conditions an API client can now the fate of a Job
+earlier than currently, since adding the conditions will not wait for emptying
+of the `uncountedTerminatedPods` structure, as shown in the
+[experiment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2114710754).
+
+Since the fix is needed for this KEP and the
+[Pod Replacement Policy KEP](https://github.com/kubernetes/enhancements/issues/3939),
+we intend to protect the fix with the OR of the `JobManagedBy` and the
+`JobReplacementPolicy` feature gates.
+
+Note also that the fix impacts `CronJob` which in the `Forbid` concurrency
+policy (see [here](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy)).
+However, it can be argued that the current behavior of the CronJob / Job integration
+does not match the expectations of the `Forbid` policy
+(see [comment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2115200217)),
+and can be handled as a bug.
+
+The validation rule will be added in the +1 release (1.32) to ensure the
+addition of the `Failed` and `Complete` conditions is delayed appropriately in
+case of a skewed deployment when the kube-controller-manager is one version
+ahead the kube-apiserver.
+
 #### Mutability
 
 We keep the field immutable. See also the discussion in
@@ -431,9 +478,14 @@ We propose a single e2e test for the following scenario:
 - e2e tests
 - implement the `job_by_external_controller_total` metric
 - address all known inconsistencies between validation and the Job controller behavior,
-  in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775)
+  in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775).
+  The proposed approach is outlined in [here](#terminating-pods-and-terminal-job-conditions).
 - verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
+
+Second Beta (1.32):
+- Add validation rule that `Failed` and `Complete` conditions are added when
+  `terminating=0`, and `ready=0`.
 
 #### GA
 
