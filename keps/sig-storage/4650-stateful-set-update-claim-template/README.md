@@ -107,8 +107,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [extensively validate the updated <code>volumeClaimTemplate</code>](#extensively-validate-the-updated-volumeclaimtemplate)
-  - [Only support for updating <code>volumeClaimTemplate.spec.resources.requests.storage</code>](#only-support-for-updating-volumeclaimtemplatespecresourcesrequestsstorage)
+  - [Extensively validate the updated <code>volumeClaimTemplates</code>](#extensively-validate-the-updated-volumeclaimtemplates)
+  - [Only support for updating storage size](#only-support-for-updating-storage-size)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -175,8 +175,8 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Kubernetes does not support the modification of the `volumeClaimTemplate` of a StatefulSet currently.
-This enhancement proposes to support arbitrary modifications to the `volumeClaimTemplate`,
+Kubernetes does not support the modification of the `volumeClaimTemplates` of a StatefulSet currently.
+This enhancement proposes to support arbitrary modifications to the `volumeClaimTemplates`,
 automatically updating the associated PersistentVolumeClaim objects in-place if applicable.
 Currently, PVC `spec.resources.requests.storage` and `spec.volumeAttributesClassName`
 fields can be updated in-place.
@@ -211,7 +211,7 @@ This brings many headaches in a continuously evolving environment.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-* Allow users to update the `volumeClaimTemplate` of a `StatefulSet` in place.
+* Allow users to update the `volumeClaimTemplates` of a `StatefulSet` in place.
 * Automatically update the associated PersistentVolumeClaim objects in-place if applicable.
 * Support updating PersistentVolumeClaim objects with `OnDelete` strategy.
 * Coordinate updates to `Pod` and PersistentVolumeClaim objects.
@@ -224,7 +224,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 * Support automatic rolling update of PersistentVolumeClaim.
-* Validate the updated `volumeClaimTemplate` as how PVC update does.
+* Validate the updated `volumeClaimTemplates` as how PVC update does.
 * Update ephemeral volumes.
 
 
@@ -238,7 +238,7 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-1. Change API server to allow any updates to `volumeClaimTemplate` of a StatefulSet.
+1. Change API server to allow any updates to `volumeClaimTemplates` of a StatefulSet.
 
 2. Modify StatefulSet controller to add PVC reconciliation logic.
 
@@ -283,7 +283,7 @@ both for in-place update and for the PVCs that need manual intervention.
 
 How to update PVCs:
 1. If `volumeClaimUpdateStrategy` is `InPlace`,
-   and if `volumeClaimTemplate` and actual PVC only differ in mutable fields
+   and if `volumeClaimTemplates` and actual PVC only differ in mutable fields
    (`spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations` currently),
    update the PVC in-place to the extent possible.
    Do not perform the update that will be rejected by API server, such as
@@ -299,14 +299,14 @@ Tested on Kubernetes v1.28, and I can see this event:
 Warning  FailedCreate         3m58s (x7 over 3m58s)  statefulset-controller  create Pod test-rwop-0 in StatefulSet test-rwop failed error: pvc data-test-rwop-0 is being deleted
 -->
 
-3. Use either current or updated revision of the `volumeClaimTemplate` to create/update the PVC,
+3. Use either current or updated revision of the `volumeClaimTemplates` to create/update the PVC,
    just like Pod template.
 
 When to update PVCs:
 1. If `volumeClaimSyncStrategy` is `LockStep`,
    before advancing `status.updatedReplicas` to the next replica,
    additionally check that the PVCs of the next replica are 
-   [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplate`.
+   [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplates`.
    If not, and we are not going to update it in-place automatically,
    wait for the user to delete/update the old PVC manually.
 
@@ -336,7 +336,7 @@ Failure cases: don't left too many PVCs being updated in-place. We expect to upd
   We should update status, just like what we do when waiting for Pod to be ready.
   We should block the update process if the PVC is never compatible.
 
-- If the `volumeClaimTemplate` is updated again when the previous rollout is blocked,
+- If the `volumeClaimTemplates` is updated again when the previous rollout is blocked,
   similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
   user may need to manually deal with the blocking PVCs (update or delete them).
 
@@ -372,7 +372,7 @@ All the test, review, approval, and rollback process can be reused.
 We decide to switch from home-made local storage to the storage provided by a cloud provider.
 We can not afford any downtime, so we don't want to delete and recreate the StatefulSet.
 Our app can automatically rebuild the data in the new storage from other replicas.
-So we update the `volumeClaimTemplate` of the StatefulSet,
+So we update the `volumeClaimTemplates` of the StatefulSet,
 delete the PVC and Pod of one replica, let the controller re-create them,
 then monitor the rebuild process.
 Once the rebuild completes successfully, we proceed to the next replica.
@@ -395,7 +395,7 @@ The same process as Story 2 can be used.
 
 The storage requirement of different replicas are not identical,
 so we still want to update each PVC manually and separately.
-Possibly we also update the `volumeClaimTemplate` for new replicas,
+Possibly we also update the `volumeClaimTemplates` for new replicas,
 but we don't want the controller to interfere with the existing replicas.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -413,12 +413,12 @@ we wait for the PVC to be compatible whenever we would wait for the Pod to be re
 
 `volumeClaimSyncStrategy` is introduce to keep capability of current deployed workloads.
 StatefulSet currently accepts and uses existing PVCs that is not created by the controller,
-So the `volumeClaimTemplate` and PVC can differ even before this enhancement.
+So the `volumeClaimTemplates` and PVC can differ even before this enhancement.
 Some users may choose to keep the PVCs of different replicas different.
 We should not block the Pod updates for them.
 
 If `volumeClaimSyncStrategy` is `Async`,
-we just ignore the PVCs that cannot be updated to be compatible with the new `volumeClaimTemplate`,
+we just ignore the PVCs that cannot be updated to be compatible with the new `volumeClaimTemplates`,
 as what we do currently.
 Of course, we report this in the status of the StatefulSet.
 
@@ -426,7 +426,7 @@ However, a workload may rely on some features provided by a specific PVC,
 So we should provide a way to coordinate the update.
 That's why we also need `LockStep`.
 
-The StatefulSet controller should also keeps the current and updated revision of the `volumeClaimTemplate`,
+The StatefulSet controller should also keeps the current and updated revision of the `volumeClaimTemplates`,
 so that a `LockStep` StatefulSet can still re-create Pods and PVCs that are yet-to-be-updated.
 
 ### Risks and Mitigations
@@ -1006,12 +1006,12 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-### extensively validate the updated `volumeClaimTemplate`
+### Extensively validate the updated `volumeClaimTemplates`
 
-[KEP-0661] proposes that we should do extensive validation on the updated `volumeClaimTemplate`.
+[KEP-0661] proposes that we should do extensive validation on the updated `volumeClaimTemplates`.
 e.g., prevent decreasing the storage size, preventing expand if the storage class does not support it.
 However, this have saveral drawbacks:
-* Not reverting the `volumeClaimTemplate` when rollback the StatefulSet is confusing, 
+* Not reverting the `volumeClaimTemplates` when rollback the StatefulSet is confusing, 
 * The validation can be a barrier when recovering from a failed update.
   If RecoverVolumeExpansionFailure feature gate is enabled, we can recover from failed expansion by decreasing the size.
 * The validation is racy, especially when recovering from failed expansion.
@@ -1019,16 +1019,17 @@ However, this have saveral drawbacks:
 * This does not match the pattern of existing behaviors.
   That is, the controller should take the expected state, retry as needed to reach that state.
   For example, StatefulSet will not reject a invalid `serviceAccountName`.
-* `volumeClaimTemplate` is also used when creating new PVCs, so even if the existing PVCs cannot be updated,
+* `volumeClaimTemplates` is also used when creating new PVCs, so even if the existing PVCs cannot be updated,
   a user may still want to affect new PVCs.
 
-### Only support for updating `volumeClaimTemplate.spec.resources.requests.storage`
+### Only support for updating storage size
 
-[KEP-0661] only enables expanding the volume. However, because the StatefulSet can take pre-existing PVCs,
+[KEP-0661] only enables expanding the volume by updating `volumeClaimTemplates[*].spec.resources.requests.storage`.
+However, because the StatefulSet can take pre-existing PVCs,
 we still need to consider what to do when template and PVC don't match.
 The complexity of this proposal will not decrease much if we only support expanding the volume.
 
-By enabling arbitrary updating to the `volumeClaimTemplate`,
+By enabling arbitrary updating to the `volumeClaimTemplates`,
 we just acknowledge and officially support this use case.
 
 [KEP-0661]: https://github.com/kubernetes/enhancements/pull/3412
