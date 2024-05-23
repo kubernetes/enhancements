@@ -293,36 +293,52 @@ How to update PVCs:
 
 2. If it is not possible to make the PVC [compatible](#what-pvc-is-compatible),
    do nothing. But when recreating a Pod and the corresponding PVC is deleting,
-   wait for the deletion then create a new PVC with the current template
-   together with the new Pod (already implemented).
+   wait for the deletion then create a new PVC together with the new Pod (already implemented).
 <!--
 Tested on Kubernetes v1.28, and I can see this event:
 Warning  FailedCreate         3m58s (x7 over 3m58s)  statefulset-controller  create Pod test-rwop-0 in StatefulSet test-rwop failed error: pvc data-test-rwop-0 is being deleted
 -->
 
+3. Use either current or updated revision of the `volumeClaimTemplate` to create/update the PVC,
+   just like Pod template.
+
 When to update PVCs:
-1. Before advancing `status.updatedReplicas` to the next replica,
+1. If `volumeClaimSyncStrategy` is `LockStep`,
+   before advancing `status.updatedReplicas` to the next replica,
    additionally check that the PVCs of the next replica are 
    [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplate`.
-   If not, update the PVC after old Pod deleted, before creating new pod,
-   or if update is not possible:
-   <!-- TODO: what if the update to PVC failed? -->
-   - If `volumeClaimSyncStrategy` is `LockStep`,
-     wait for the user to delete/update the old PVC manually.
-   - If `volumeClaimSyncStrategy` is `Async`,
-     the diff is ignored and the normal rolling update proceeds.
+   If not, and we are not going to update it in-place automatically,
+   wait for the user to delete/update the old PVC manually.
 
-2. If Pod spec does not change, only mutable fields in `volumeClaimTemplate` differ,
-   The PVCs should be updated just like Pods would. A replica is considered ready
-   if all its volumes are compatible with the new `volumeClaimTemplate`.
-   `spec.ordinals` and `spec.updateStrategy.rollingUpdate.partition` are also respected.
+2. When doing rolling update, A replica is considered ready if the Pod is ready
+   and all its volumes are not being updated in-place.
+   Wait for a replica to be ready for at least `minReadySeconds` before proceeding to the next replica.
+
+3. Whenever we check for Pod update, also check for PVCs update.
    e.g.:
    - If `spec.updateStrategy.type` is `RollingUpdate`,
      update the PVCs in the order from the largest ordinal to the smallest.
-     Only proceed to the next ordinal when all the PVCs of the previous ordinal
-     are compatible with the new `volumeClaimTemplate`.
    - If `spec.updateStrategy.type` is `OnDelete`,
      Only update the PVC when the Pod is deleted.
+   
+4. When updating the PVC in-place, if we also re-create the Pod,
+   update the PVC after old Pod deleted, together with creating new pod.
+   Otherwise, if pod is not changed, update the PVC only.
+
+Failure cases: don't left too many PVCs being updated in-place. We expect to update the PVCs in order.
+
+- If the PVC update fails, we should block the update process.
+  If the Pod is also deleted (by controller or manually), don't block the creation of new Pod.
+  We should retry and report events for this.
+  The events and status should look like those when the Pod creation fails.
+
+- While waiting for the PVC to reach the compatible state,
+  We should update status, just like what we do when waiting for Pod to be ready.
+  We should block the update process if the PVC is never compatible.
+
+- If the `volumeClaimTemplate` is updated again when the previous rollout is blocked,
+  similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
+  user may need to manually deal with the blocking PVCs (update or delete them).
 
 
 ### What PVC is compatible
@@ -348,7 +364,7 @@ bogged down.
 
 We're running a CI/CD system and the end-to-end automation is desired.
 To expand the volumes managed by a StatefulSet,
-we can just use the same pipeline that we are already using to updating the Pod.
+we can just use the same pipeline that we are already using to update the Pod.
 All the test, review, approval, and rollback process can be reused.
 
 #### Story 2: Migrating Between Storage Providers
@@ -377,8 +393,8 @@ The same process as Story 2 can be used.
 
 #### Story 5: Asymmetric Replicas
 
-The replicas of our StatefulSet are not identical, so we still want to update
-each PVC manually and separately.
+The storage requirement of different replicas are not identical,
+so we still want to update each PVC manually and separately.
 Possibly we also update the `volumeClaimTemplate` for new replicas,
 but we don't want the controller to interfere with the existing replicas.
 
@@ -391,6 +407,10 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+When designing the `InPlace` update strategy, we update the PVC like how we re-create the Pod.
+i.e. we update the PVC whenever we would re-create the Pod;
+we wait for the PVC to be compatible whenever we would wait for the Pod to be ready.
+
 `volumeClaimSyncStrategy` is introduce to keep capability of current deployed workloads.
 StatefulSet currently accepts and uses existing PVCs that is not created by the controller,
 So the `volumeClaimTemplate` and PVC can differ even before this enhancement.
@@ -398,15 +418,13 @@ Some users may choose to keep the PVCs of different replicas different.
 We should not block the Pod updates for them.
 
 If `volumeClaimSyncStrategy` is `Async`,
-then if the template and PVC differs, and the PVC is not being deleted,
-the PVC is not considered as managed by the StatefulSet.
+we just ignore the PVCs that cannot be updated to be compatible with the new `volumeClaimTemplate`,
+as what we do currently.
+Of course, we report this in the status of the StatefulSet.
 
 However, a workload may rely on some features provided by a specific PVC,
 So we should provide a way to coordinate the update.
 That's why we also need `LockStep`.
-
-We consider a StatefulSet in stable state if all the managed PVCs are compatible with the current template.
-In a stable state, most operations are possible, and we are not actively fixing something.
 
 The StatefulSet controller should also keeps the current and updated revision of the `volumeClaimTemplate`,
 so that a `LockStep` StatefulSet can still re-create Pods and PVCs that are yet-to-be-updated.
@@ -994,7 +1012,8 @@ information to express the idea and why it was not acceptable.
 e.g., prevent decreasing the storage size, preventing expand if the storage class does not support it.
 However, this have saveral drawbacks:
 * Not reverting the `volumeClaimTemplate` when rollback the StatefulSet is confusing, 
-* This can be a barrier when recovering from a failed update.
+* The validation can be a barrier when recovering from a failed update.
+  If RecoverVolumeExpansionFailure feature gate is enabled, we can recover from failed expansion by decreasing the size.
 * The validation is racy, especially when recovering from failed expansion.
   We still need to consider most abnormal cases even we do those validations.
 * This does not match the pattern of existing behaviors.
