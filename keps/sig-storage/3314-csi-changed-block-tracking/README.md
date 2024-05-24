@@ -1097,6 +1097,7 @@ volume snapshot name and namespace from the gGRPC request metadata.
 snapshot class, volume handle, and metadata service resources.
 * Unit tests to cover the logic around creating token review and subject access
 review resources.
+* Unit tests to ensure no tokens/secrets are logged by k8s-csi logging methods.
 
 ##### Integration tests
 
