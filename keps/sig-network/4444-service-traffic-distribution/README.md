@@ -212,9 +212,9 @@ The field will support the following initial values:
   "topologically proximate" may vary across implementations and could encompass
   endpoints within the same node, rack, zone, or even region.
 
-Absence of a value indicates no specific routing preference. In this case, the
-user delegates the routing decision to the implementation, allowing it to apply
-its best-effort strategy.
+The absence of a value indicates no specific routing preference. In this case,
+the user delegates the routing decision to the implementation, allowing it to
+apply its best-effort strategy.
 
 Implementations SHOULD support the standard values. While some flexibility in
 interpretation is permitted, implementations should aim to align their behavior
