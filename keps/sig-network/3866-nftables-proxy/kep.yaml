@@ -13,12 +13,12 @@ approvers:
   - "@thockin"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.29"
+latest-milestone: "v1.31"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -36,4 +36,16 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - ...
+  - sync_proxy_rules_duration_seconds
+  - sync_proxy_rules_last_queued_timestamp_seconds
+  - sync_proxy_rules_last_timestamp_seconds
+  - sync_proxy_rules_endpoint_changes_pending
+  - sync_proxy_rules_endpoint_changes_total
+  - sync_proxy_rules_service_changes_pending
+  - sync_proxy_rules_service_changes_total
+  - proxy_healthz_total
+  - proxy_livez_total
+  - network_programming_duration_seconds
+  - sync_proxy_rules_no_local_endpoints_total
+  - sync_proxy_rules_nftables_cleanup_failures_total
+  - sync_proxy_rules_nftables_sync_failures_total
