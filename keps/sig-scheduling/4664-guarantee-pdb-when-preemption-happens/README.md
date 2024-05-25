@@ -58,7 +58,11 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-3280: Guarantee PodDisruptionBudget When Preemption Happens
+
+<!--
+ Previously, the KEP had the number 3280, but since the original author no longer has the time to maintain it and the new author unable to modify the original KEP issue, we need to create a new issue and modify the KEP number to allow the new author to track and update everything about this KEP.
+-->
+# KEP-4664: Guarantee PodDisruptionBudget When Preemption Happens
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -369,14 +373,14 @@ when selecting victims.
 - if the priority of the preemptor is greater than or equal to the value of `AllowDisruptionByPriorityGreaterThanOrEqual` in victim pod, 
   the implementation will remain consistent with the existing behavior, meaning that the scheduler will try to select victims whose PDBs 
   are not violated by preemption, but if no such victims are found, preemption will still happen and lower priority pods will be preempted 
-  via the `/evictions` endpoint despite their PDBs being violated. If the `/eviction` endpoint returns a response `429 Too Many Requests`
-  and the scheduler will fallback to deletion as an alternative.
+  via the `/evictions` endpoint despite their PDBs being violated. If the `/eviction` endpoint returns a response `429 Too Many Requests`, 
+  the scheduler will fallback to deletion as an alternative.
 - if the priority of the preemptor is less than the value of `AllowDisruptionByPriorityGreaterThanOrEqual` in victim pod, 
   the scheduler will check if the victim' PDBs will be violated when selecting victims
   - if violate the victims' PDBs, this victim will not be selected as candidates.
-  - if not violate the victims' PDBs, scheduler will preempt this pod via the `/evictions` endpoint. If it responds `200 OK`, 
-    it means the eviction is allowed, and the victim is deleted, similar to sending a DELETE request to the Pod URL. If it responses
-    `429 Too Many Requests`, the scheduler will output an error log and choose another victim among the candidate victims to preempt 
+  - if not violate the victims' PDBs, scheduler will preempt this pod via the `/evictions` endpoint. 
+    - If it responds `200 OK`, it means the eviction is allowed, and the victim is deleted, similar to sending a DELETE request to the Pod URL. 
+    - If it responses `429 Too Many Requests`, the scheduler will output an error log and choose another victim among the candidate victims to preempt 
     until it succeeds or there are no more candidates.
 
 ### PreemptionPolicy vs AllowDisruptionByPriorityGreaterThanOrEqual
@@ -932,6 +936,7 @@ Major milestones might include:
 -->
 - 2023-01-19: Initial KEP
 - 2023-01-28: Move the responsibilities from `AllowDisruptionByPriorityGreaterThanOrEqual` to `PriorityClass`
+- 2024-05-25: Restart KEP. Update design details.
 
 ## Drawbacks
 

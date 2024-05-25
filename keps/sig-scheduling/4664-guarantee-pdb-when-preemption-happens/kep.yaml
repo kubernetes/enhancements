@@ -1,7 +1,9 @@
 title: Guarantee PodDisruptionBudget When Preemption Happens
-kep-number: 3280
+# Previously, the KEP had the number 3280, but since the original author no longer has the time to maintain it and the new author unable to modify the original KEP issue, we need to create a new issue and modify the KEP number to allow the new author to track and update everything about this KEP.
+kep-number: 4664
 authors:
   - "@denkensk"
+  - "AxeZhan"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-auth
@@ -27,11 +29,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.27"
+latest-milestone: "v1.31"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.27"
+  alpha: "v1.31"
   beta: TBD
   stable: TBD
 
