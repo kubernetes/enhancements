@@ -2,9 +2,9 @@ title: StatefulSet Support for Updating Volume Claim Template
 kep-number: 4650
 authors:
   - "@huww98"
-owning-sig: sig-storage
+owning-sig: sig-apps
 participating-sigs:
-  - sig-app
+  - sig-storage
 status: provisional
 creation-date: 2024-05-17
 reviewers:
