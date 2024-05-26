@@ -186,7 +186,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Currently, when creating CustomResourceDefinitions you can define a map of additionalPrinterColumns that would be displayed when querying the custom resources with kubectl. This list of additionalPrinterColumns are defined using JSON paths. If your CustomResourceDefinition is defined in the following manner, running `kubectl get mycrd myresource` would yield the following response.
+Currently, when creating CustomResourceDefinitions you can define a map of `additionalPrinterColumns` that would be displayed when querying the custom resources with kubectl. This list of `additionalPrinterColumns` are defined using JSON paths. If your CustomResourceDefinition is defined in the following manner, running `kubectl get mycrd myresource` would yield the following response.
 
 ```yaml
 additionalPrinterColumns:
@@ -201,14 +201,14 @@ additionalPrinterColumns:
   jsonPath: .metadata.creationTimestamp
 ```
 
-```bash
+```
 NAME                 DESIRED    CURRENT     AGE
 myresource           1          1           7s
 ```
 
 This approach has a few limitations such as not being able to support arrays, missing support for processing conditionals, not being able to compute column value from multiple fields and difficulty with formatting dates as duration from another timestamp.
 
-With the advent of CEL, we can provide an alternative input for additionalPrinterColumns to represent the value in CEL for more complicated table readings. This would be added along with the existing JSON path and users can define additionalPrinterColumns for their CRDs in either JSON path or as a CEL expression.
+With the advent of CEL, we can provide an alternative input for `additionalPrinterColumns` to represent the value in CEL for more complicated table readings. This would be added along with the existing JSON path and users can define `additionalPrinterColumns` for their CRDs in either JSON path or as a CEL expression.
 
 ### Goals
 
@@ -217,7 +217,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Provide an alternative to configuring additionalPrinterColumns with JSON path.
+- Provide an alternative to configuring additionalPrinterColumns with JSONPath.
 
 ### Non-Goals
 
