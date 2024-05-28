@@ -877,12 +877,14 @@ gRPC service provided by the
 [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
 deployed by a CSI driver.
 
-The CR must have the following label value set:
+The CR name should be that of the associated CSI driver to ensure that only one such
+CR is created for a given driver.
+Additionally, the CR must have the following label value set:
 ```
 cbt.storage.k8s.io/driver: NAME_OF_THE_CSI_DRIVER
 ```
 The presence of this label allows a backup application to efficiently locate
-the CR for the CSI driver.
+the CR for the CSI driver regardless of the namespace in which the CR is created.
 
 The CR `spec` contains the following fields:
 
