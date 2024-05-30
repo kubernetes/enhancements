@@ -13,8 +13,8 @@ approvers:
   - "@soltysh"
 
 see-also:
-  - "https://github.com/kubernetes-sigs/jobset/pull/381"
-  - "https://github.com/kubernetes/enhancements/pull/3374"
+  - "https://github.com/kubernetes-sigs/jobset/tree/main/keps/262-ConfigurableFailurePolicy"
+  - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha

@@ -133,7 +133,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -144,7 +144,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -161,8 +161,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This KEP proposes to extend the Job API by adding an optional `Name` field to `PodFailurePolicyRule`. If unset, it would default to the index of
 the rule in the `podFailurePolicy.rules` slice. 
 
-When a pod failure policy rule triggers a Job failure, the rule name would be appended as a suffix to the `JobFailed` condition reason, in the
-format: `PodFailurePolicy_{ruleName}`.
+The purpose of giving the rule a name is to expose more detailed failure information inside the
+`JobFailed` condition reason. When a pod failure policy rule triggers a Job failure, the rule name would be appended as a suffix to the `JobFailed` condition reason, in the
+format: `PodFailurePolicy_{ruleName}`. This will allow users to set multiple pod failure policy rules
+and distinguish which one (if any) triggered a Job failure.
 
 ## Motivation
 
@@ -189,14 +191,12 @@ For pod failure policies to be able communicate different failure types to highe
 
 ## Proposal
 
-The proposal is to add an optional `Name` field to the `PodFailurePolicyRule`, allowing the user
-to define a name for a pod failure policy rule. If unset, it will default to the index of the 
-`PodFailurePolicyRule` in the `PodFailurePolicy.Rules` slice.
+The proposal is to add an optional `Name` field to the `PodFailurePolicyRule`. If unset, it will default to the index of the  `PodFailurePolicyRule` in the `PodFailurePolicy.Rules` slice.
 
 When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
 controller will append the name of the pod failure policy rule which triggered the failure
 to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816)
-reason. The exact format of the JobFailed condition reason will be `PodFailurePolicy-{ruleName}`.
+reason. The exact format of the JobFailed condition reason will be `PodFailurePolicy_{ruleName}`.
 
 ### User Stories (Optional)
 
@@ -360,7 +360,9 @@ we are validating against malformed/invalid inputs.
 If unset, the `Name` field will default to the index of the pod failure policy rule in the `Rules` slice.
 
 #### Validation
-- We will validate the name be used as a valid Reason ([non-empty, CamelCase string](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1555)). We will also validate the user-defined Reason is less than 128 characters.
+- Validate all pod failure policy rule names are unique.
+- We will validate the Job failure conditionr reason that would be generated from a given
+PodFailurePolicy rule name (i.e., `PodFailurePolicy_{ruleName}`) will be a valid reason (CamelCase, max length of 128 characters, and matches the regex defined [here](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1559)).
 - We will also validate the pod failure policy rule does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
 
 #### Business logic
@@ -426,14 +428,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 <!-- - <test>: <link to test coverage> -->
-- Test that when the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
-matching PodFailurePolicyRule with the `SetConditionReason` field defined, check that the `JobFailed`
-condition has the user-specified `SetConditionReason` set on it correctly.
+- Test that when the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a matching PodFailurePolicyRule, check that the `JobFailed` condition has a reason of `PodFailurePolicy_{Name}`.
 
 - Test that when the feature flag is off, but when it was previously enabled, there is an existing Job
-which already had the `JobFailed` condition reason set by the new `SetConditionReason` field, that the
-Job controller does not overwrite the reason to `PodFailurePolicy`, and that it remains set to the
-user-defined `SetConditionReason`.
+which already had the `JobFailed` condition reason set with the new suffix (i.e., `PodFailurePolicy_{Name}`), that the Job controller does not overwrite the reason to `PodFailurePolicy`, and that it remains set to the existing value.
+
+- Add test cases for both onPodConditions and onExitCodes to ensure the `Name` is properly added
+as a suffix to the JobFailed reason upon Job failure.
 
 ##### e2e tests
 
@@ -451,8 +452,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 We will a test case similar to the integration test case:
 
 - When the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
-matching PodFailurePolicyRule with the `SetConditionReason` field defined, check that the `JobFailed`
-condition has the user-specified `SetConditionReason` set on it correctly.
+matching PodFailurePolicyRule, check that the `JobFailed` condition has the `PodFailurePolicy_{Reason}` reason set correctly.
 
 ### Graduation Criteria
 
@@ -593,7 +593,7 @@ you need any help or guidance.
 <!--
 This section must be completed when targeting alpha to a release.
 -->
-- Upgrade to k8s version 1.30+
+- Upgrade to k8s version 1.31+
 - Enable feature flag `PodFailurePolicyName`
 
 ###### How can this feature be enabled / disabled in a live cluster?
@@ -853,7 +853,8 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 If the optional `name` field is specified, the podFailurePolicy object size will increase by 1 byte per
-character in the `name` string.
+character in the `name` string. The name field will be no longer than 128 characters, thus the max size
+increase of the PodFailurePolicy object will be 128 bytes.
 Otherwise, if unset, it will default to the index of the rule, and thus increase by 1 byte per digit in
 the index number.
 
@@ -943,24 +944,17 @@ Major milestones might include:
 
 ## Drawbacks
 
-None
+It is a less intuitive user experience to have the PodFailurePolicy rule name be appended
+as a suffix to the Job failure reason, rather than 
 
 ## Alternatives
-1. We discussed the idea of having a new optional `PodFailurePolicyRule` field `SetConditionReason`, which will enable
+
+We discussed the idea of having a new optional `PodFailurePolicyRule` field `SetConditionReason`, which will enable
 the user to explicitly set the condition reason they want on the JobFailed condition set on the Job when that pod failure
 policy rule triggers a Job failure. However, ultimately it was decided we didn't want to open up the reason field to be
 explicitly set by the user to any arbitrary value, as this would be tricky to validate, and would diverge from the current
 paradigm of having only machine set reasons which are determined programatically.
 
-2. Rather than having the user specify a custom reason via the proposed `SetConditionReason` field, which will require validation and an additional step
-in the user-experience, instead the Job controller could automatically generate reasons, using a determnistic
-format which depends on if the podFailurePolicy was triggered by the `onPodConditions` or `onContainerExitCodes`.
-
-For example, in the case of container exit codes, we could append the container exit code to
-the default reason (e.g., `PodFailurePolicy-PodFailurePolicy_ExitCode3`). For `onPodConditions`, it could be the pod condition
-type and status joined together (e.g., `PodFailurePolicy-{type}-{status}`). However, this limits flexibility
-for the user, and locks us in to supporting this concrete, specific behavior, rather than the more generic
-behavior resulting from the optional `SetConditionReason` field set by the user.
 
 ## Infrastructure Needed (Optional)
 
