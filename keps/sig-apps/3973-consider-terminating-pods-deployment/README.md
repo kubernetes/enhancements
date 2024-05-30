@@ -14,9 +14,13 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Consideration for Other Controllers](#consideration-for-other-controllers)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Feature Impact](#feature-impact)
+    - [kubectl Skew](#kubectl-skew)
 - [Design Details](#design-details)
   - [Deployment Behavior Changes](#deployment-behavior-changes)
   - [ReplicaSet Status and Deployment Status Changes](#replicaset-status-and-deployment-status-changes)
+  - [Deployment Scaling Changes and a New Annotation for ReplicaSets](#deployment-scaling-changes-and-a-new-annotation-for-replicasets)
+  - [kubectl Changes](#kubectl-changes)
   - [API](#api)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -210,11 +214,29 @@ This feature is already implemented for Jobs ([KEP-3939](https://github.com/kube
 
 ### Risks and Mitigations
 
+#### Feature Impact
+
 Deployment rollouts might be slower when using the `TerminationComplete` PodReplacementPolicy.
 
 Deployment rollouts might consume excessive resources when using the `TerminationStarted` PodReplacementPolicy.
 
 This is mitigated by making this feature opt-in.
+
+#### kubectl Skew
+The `deployment.kubernetes.io/replicaset-replicas-before-scale` annotation should be removed during
+deployment rollback when annotations are copied from the ReplicaSet to the Deployment. Support for
+this removal will be added to kubectl in the same release as this feature. Therefore, rollback using
+an older kubectl will not be supported until one minor release after the feature first reaches
+alpha. The documentation for Deployments will include a notice about this.
+
+If an older kubectl version is used, the impact should be minimal. The deployment may end up with an
+unnecessary `deployment.kubernetes.io/replicaset-replicas-before-scale` annotation. The deployment
+controller then synchronizes Deployment annotations back to the ReplicaSet. This is done by the
+Deployment controller, which will ignore this new annotations if the feature gate is on.
+
+The bug should be mainly visual (extra annotation in the Deployment), unless the feature is turned
+on and off in a succession. In this case, incorrect annotations could end up on a ReplicaSet, which
+would affect the scaling proportions during a rollout.
 
 ## Design Details
 
@@ -242,7 +264,8 @@ Scaling logic:
       ReplicaSets as well and not spawn replicas that would be higher than Deployment's
       `.spec.replicas + .spec.strategy.rollingUpdate.maxSurge`. This will be implemented by
       checking ReplicaSet's `.spec.replicas`, `.status.replicas` and `.status.terminatingReplicas`
-      to determine the number of pods.
+      to determine the number of pods. See [Deployment Scaling Changes and a New Annotation for ReplicaSets](#deployment-scaling-changes-and-a-new-annotation-for-replicasets)
+      for more details.
     - Changing scaling down logic is not necessary, and we can scale down as many pods as we want
       because the policy does not affect this since we are not replacing the pods.
 
@@ -255,6 +278,101 @@ are only expecting non-terminating pods to be present in this field.
 To satisfy the requirement for tracking terminating pods, and for implementation purposes,
 we propose a new field `.status.terminatingReplicas` to the ReplicaSet's and Deployment's
 status.
+
+### Deployment Scaling Changes and a New Annotation for ReplicaSets
+
+Currently, scaling is done proportionally over all ReplicaSets to mitigate the risk of losing
+availability during a rolling update.
+
+To calculate the new ReplicaSet size, we need to know
+- `replicasBeforeScale`: The `.spec.replicas` of the ReplicaSet before the scaling began.
+- `deploymentMaxReplicas`: Equals to `.spec.replicas + .spec.strategy.rollingUpdate.maxSurge` of
+  the current Deployment.
+- `deploymentMaxReplicasBeforeScale`: Equals to
+  `.spec.replicas + .spec.strategy.rollingUpdate.maxSurge` of the old Deployment. This information
+  is stored in the `deployment.kubernetes.io/max-replicas` annotation in each ReplicaSet.
+
+Then we can calculate a new size for each ReplicaSet proportionally as follows:
+
+$$
+newReplicaSetReplicas = replicasBeforeScale * \frac{deploymentMaxReplicas}{deploymentMaxReplicasBeforeScale}
+$$
+
+This is currently done in the [getReplicaSetFraction](https://github.com/kubernetes/kubernetes/blob/1cfaa95cab0f69ecc62ad9923eec2ba15f01fc2a/pkg/controller/deployment/util/deployment_util.go#L492-L512)
+function. The leftover pods are added to the newest ReplicaSet.
+
+This results in the following scaling behavior. 
+
+The first scale operation occurs at T2 and the second scale at T3.
+
+| Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio |
+|------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-------------| 
+| T1   | any amount       | 50           | 30           | 20           | 100          | 100                       | 110                                  | -           |
+| T2   | any amount       | 61           | 35           | 24           | 120          | 120                       | 130                                  | 1.182       |
+| T3   | any amount       | 66           | 38           | 26           | 130          | 130                       | 140                                  | 1.077       | 
+
+With the `TerminationComplete` PodReplacementPolicy, scaling cannot proceed immediately if there
+are terminating pods present, in order to adhere to the Deployment constraints. We need to scale
+some ReplicaSets fully and some partially. And we have to postpone scaling to the future when
+terminating pods disappear.
+
+A single scale operation occurs at T2.
+
+| Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio |
+|------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-------------| 
+| T1   | 15               | 50           | 30           | 20           | 100          | 100                       | 110                                  | -           |
+| T2   | 15               | 61           | 34           | 20           | 115          | 120                       | 130                                  | 1.182       |
+| T3   | 5                | 61           | 35           | 24           | 120          | 120                       | 130                                  | -           | 
+| T4   | 0                | 61           | 35           | 24           | 120          | 120                       | 130                                  | -           | 
+
+To proceed with the scaling in the future (T3), we need to remember both `replicasBeforeScale` and
+`deploymentMaxReplicasBeforeScale` to calculate the original scale ratio. The terminating pods can
+take a long time to terminate and there can be many steps and ReplicaSet updates between T2 and T3.
+If we were to use the current number of ReplicaSet or Deployment replicas in any of these steps
+(including T3), we would calculate an incorrect scale ratio.
+
+- `deploymentMaxReplicasBeforeScale` is already stored in the `deployment.kubernetes.io/max-replicas`
+  ReplicaSet annotation. The main change is that we need to keep the old Deployment max replicas
+  value in the annotation until the partial scale for a ReplicaSet is complete.
+- To remember `replicasBeforeScale`, we will introduce a new annotation called
+  `deployment.kubernetes.io/replicaset-replicas-before-scale`, which will be added to the
+  Deployment's ReplicaSets that are being partially scaled. This annotation will be removed once
+  the partial scaling is complete. This annotation will be added and managed by the deployment
+  controller.
+
+These two ReplicaSet annotation will be used to calculate the original scale ratio for the partial
+scaling.
+
+The following example shows a first scale at T2 and a second scale at T3.
+
+| Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio           |
+|------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-----------------------| 
+| T1   | 15               | 50           | 30           | 20           | 100          | 100                       | 110                                  | -                     |
+| T2   | 15               | 61           | 34           | 20           | 115          | 120                       | 130                                  | 1.182                 |
+| T3   | 15               | 66           | 38           | 21           | 125          | 130                       | 140                                  | 1.077 (1.273 from T1) | 
+| T4   | 5                | 67           | 38           | 25           | 130          | 130                       | 140                                  | -                     | 
+| T5   | 0                | 67           | 38           | 25           | 130          | 130                       | 140                                  | -                     | 
+
+- At T2, a ful scale was done for RS1 with a ratio of 1.182. RS1 can then use the new scale ratio
+  at T3 with a value of 1.077.
+- RS2 has been partially scaled (1.182 ratio) and RS3 has not been scaled at all at T2 due to the
+  terminating pods. When a new scale occurs at T3, RS2 and RS3 have not yet completed the first
+  scale. So their annotations still point to the T1 state. A new ratio of 1.273 is calculated and
+  used for the second scale.
+
+As we can see, we will get a slightly different result when compared to the first table. This is
+due to the consecutive scales and the fact that the last scale is not yet fully completed.
+
+The consecutive partial scaling behavior is a best effort. We still adhere to all deployment
+constraints and have a bias toward scaling the newest ReplicaSet. To implement this properly we
+would have to introduce a full scaling history, which is probably not worth the added complexity.
+
+### kubectl Changes
+
+Similar to `deployment.kubernetes.io/max-replicas`, we have to remove
+`deployment.kubernetes.io/replicaset-replicas-before-scale` annotations from [annotationsToSkip](https://github.com/kubernetes/kubernetes/blob/9e2075b3c87061d25759b0ad112266f03601afd8/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/rollback.go#L184)
+to support rollbacks.
+See [kubectl Skew](#kubectl-skew) for more details.
 
 ### API
 
@@ -493,6 +611,10 @@ test/e2e/storage/utils/deployment.go
 - Test that a Deployment with `RollingUpdate` strategy and a `TerminationComplete` PodReplacementPolicy does not
   exceed the amount of pods specified by `spec.replicas + .spec.strategy.rollingUpdate.maxSurge` when
   rolling out new revisions and/or scaling the deployment at any point in time.
+- Test scaling of Deployments that are in the middle of a rollout (even with more than 2 revisions).
+  Verify that scaling is done proportionally across all ReplicaSets when terminating pods are
+  present. Scale these deployments in a succession, even when the previous scale has not yet
+  completed.
 
 <!--
 - <test>: <link to test coverage>
@@ -504,6 +626,7 @@ test/e2e/storage/utils/deployment.go
 
 - Feature gate disabled by default.
 - Unit, enablement/disablement, e2e, and integration tests implemented and passing.
+- Document [kubectl Skew](#kubectl-skew) for alpha.
 
 
 #### Beta
@@ -512,6 +635,7 @@ test/e2e/storage/utils/deployment.go
 - `.spec.podReplacementPolicy` is nil by default and preserves the original behavior.
 - E2e and integration tests are in Testgrid and linked in the KEP.
 - add new metrics to `kube-state-metrics`
+- Remove documentation for [kubectl Skew](#kubectl-skew) that was introduced in alpha.
 
 
 #### GA
@@ -535,6 +659,7 @@ If the feature is not enabled on the apiserver, and it is enabled in the kube-co
 - The feature cannot be used for new workloads.
 - Workloads that have the `.spec.podReplacementPolicy` field set will use the new behavior.
 
+Also, as mentioned in [kubectl Skew](#kubectl-skew), kubectl skew is not supported in the alpha version.
 
 ## Production Readiness Review Questionnaire
 
@@ -585,10 +710,20 @@ By disabling the feature:
 - Actors reading `.status.TerminatingReplicas` for ReplicaSet and Deployments will see the field to
   be omitted (observe 0 pods), once the status is reconciled by the controllers.
 
+As mentioned in [kubectl Skew](#kubectl-skew), kubectl skew is not supported in alpha. If an older
+unsupported version of kubectl was used, it is important to remove the
+`deployment.kubernetes.io/replicaset-replicas-before-scale` annotation from all Deployments and
+ReplicaSets after disabling this feature. This should prevent any unexpected behavior on the next
+enablement.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The ReplicaSet and Deployment controllers will start reconciling the `.status.TerminatingReplicas`
 and behave according to the `.spec.podReplacementPolicy`.
+
+Similar to the section above, it is important to make sure that the
+`deployment.kubernetes.io/replicaset-replicas-before-scale` annotation is removed from all
+Deployments and ReplicaSets before the re-enablement.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -793,6 +928,7 @@ deployment and replicaset controllers.
 
 - 2023-05-01: First version of the KEP opened (https://github.com/kubernetes/enhancements/pull/3974).
 - 2023-12-12: Second version of the KEP opened (https://github.com/kubernetes/enhancements/pull/4357).
+- 2024-29-05: Added a Deployment Scaling Changes and a New Annotation for ReplicaSets section (https://github.com/kubernetes/enhancements/pull/4670).
 
 ## Drawbacks
 
