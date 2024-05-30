@@ -313,8 +313,7 @@ the API proposed by this KEP aims to
   and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.  
   Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD 
   have sufficient permission to access the member cluster to fetch the information so it can update the status
-  of the ClusterProfile API resource. Examples of cluster manager are projects like [OCM](https://open-cluster-management.io/),
-  [Clusternet](https://clusternet.io/), [Kubernetes Fleet Manager](https://github.com/Azure/fleet) or [Karmada](https://karmada.io/).
+  of the ClusterProfile API resource.
 
 - **ClusterProfile API Consumer**: the person running the cluster managers
   or the person developing extensions for cluster managers for the purpose of
@@ -395,9 +394,9 @@ Note that a cluster can only be in one ClusterSet while there is not such restri
 
 #### How should the API be consumed?
 We recommend that all ClusterProfile objects within the same cluster inventory reside on 
-a dedicated hub Kubernetes cluster. This approach allows consumers to have a single integration 
+a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration 
 point to access all the information within a cluster inventory. Additionally, a multi-cluster aware
-controller can be run on the hub cluster to offer high-level functionalities over this inventory of clusters.
+controller can be run on the dedicated  cluster to offer high-level functionalities over this inventory of clusters.
 
 ####  How should we organize ClusterProfile objects on a hub cluster?
 While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object. 
@@ -406,8 +405,7 @@ certain clusters within the inventory.
 
 However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
 and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
-and the value as the name of the clusterSet. It's important to note that this means users would lose the ability to apply Kubernetes' 
-native namespace-based RBAC within a clusterSet since Kubernetes does not support nested namespaces.
+and the value as the name of the clusterSet. 
 
 #### Uniqueness of the ClusterProfile object
 While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
