@@ -91,7 +91,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Vocabulary: OCI Images, Artifacts, and Objects](#vocabulary-oci-images-artifacts-and-objects)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Kubelet and CRI support for OCI artifacts](#kubelet-and-cri-support-for-oci-artifacts)
+  - [Kubelet and Container Runtime Interface (CRI) support for OCI artifacts](#kubelet-and-container-runtime-interface-cri-support-for-oci-artifacts)
+    - [kubelet](#kubelet)
+    - [CRI](#cri)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -276,7 +278,7 @@ spec:
       name: oci-volume
 ```
 
-### Kubelet and CRI support for OCI artifacts
+### Kubelet and Container Runtime Interface (CRI) support for OCI artifacts
 
 Kubelet and the Container Runtime Interface (CRI) currently handle OCI images. To support OCI artifacts,
 potential enhancements may be required:
@@ -297,6 +299,73 @@ potential enhancements may be required:
 **Storage Optimization:**
    - Develop optimized storage solutions tailored for different artifact types,
      potentially integrating with existing storage solutions or introducing new mechanisms.
+
+#### kubelet
+
+Some parts of the existing kubelet code can be reused, for example:
+
+- The logic how to ensure that an image exists on the node:
+  https://github.com/kubernetes/kubernetes/blob/39c6bc3/pkg/kubelet/images/image_manager.go#L102
+- The retrieval of available secrets for a pod:
+  https://github.com/kubernetes/kubernetes/blob/39c6bc3/pkg/kubelet/kubelet_pods.go#L988
+
+We consider to refactor the logic into re-usable bits for both, the kubelet as
+well as the volume plugin, because volume plugins run in a dedicated go routine
+at the beggining of the kubelet initialization:
+
+https://github.com/kubernetes/kubernetes/blob/39c6bc3/pkg/kubelet/kubelet.go#L1633-L1634
+
+Specifying a pull policy will not be supported in the alpha implementation of the
+feature and will align to `PullAlways`.
+
+For registry authentication purposes the same credentials will be used as for
+the running pod, if available.the
+
+#### CRI
+
+The CRI is already capable of pulling images [via the `PullImage` RPC](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L154).
+This does not necessarily include OCI artifacts and is dependent on the used
+container runtime (CRI-O, containerd). Beside that, volume plugins usually
+require a mount from a local directory. This means we extend the CRI protocol by
+adding a two new methods as well as their request and response types:
+
+```protobuf
+// ImageService defines the public APIs for managing images.
+service ImageService {
+    // MountOCIObject pulls and mounts any OCI image or artifact to a local
+    // directory on disk
+    rpc MountOCIObject(MountOCIObjectRequest) returns (MountOCIObjectResponse) {}
+
+    // UnmountOCIObject unmounts and also removes any OCI image or artifact.
+    rpc UnmountOCIObject(UnmountOCIObjectRequest) returns (UnmountOCIObjectResponse) {}
+
+    /// …
+}
+
+message MountOCIObject {
+    // Reference to be pulled.
+    string object = 1;
+
+    // Authentication configuration for pulling the object.
+    AuthConfig auth = 2;
+
+    // Local path to be mounted.
+    string path = 3;
+}
+
+
+message MountOCIObjectResponse {
+    // Reference to the object in use.
+    string id = 1;
+}
+
+message UnmountOCIObjectRequest {
+    // Identifier of the object to remove.
+    string id = 1;
+}
+
+message UnmountOCIObjectResponse {}
+```
 
 ### Test Plan
 
