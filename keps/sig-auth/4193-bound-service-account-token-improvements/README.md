@@ -698,6 +698,7 @@ For example, attempting to issue a node bound token, or attempting to authentica
 * Renamed audit annotation used for the `serviceaccounts/<name>/token` endpoint to be clearer: https://github.com/kubernetes/kubernetes/pull/123098
 * Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
 * `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
+* Promoted `ServiceAccountTokenNodeBinding` promoted to beta for v1.31 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
