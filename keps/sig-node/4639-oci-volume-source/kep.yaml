@@ -7,14 +7,24 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-storage
-  - TBD
 status: provisional
 creation-date: 2024-05-17
 reviewers:
-  - TBD
+  - "@BigVan"
   - "@alice.doe"
+  - "@aojea"
+  - "@humblec"
+  - "@mikebrow"
+  - "@mrunalp"
+  - "@rchincha"
+  - "@samuelkarp"
+  - "@sftim"
+  - "@syed"
+  - "@vsoch"
+  - "@xing-yang"
 approvers:
-  - TBD
+  - "@sig-node-leads"
+  - "@sig-storage-leads"
   - "@oscar.doe"
 
 # The target maturity stage in the current dev cycle for this KEP.

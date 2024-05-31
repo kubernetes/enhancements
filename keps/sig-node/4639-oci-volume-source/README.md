@@ -163,7 +163,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images and/or OCI artifacts.
-This allows users to package files and share them among containers in a pod without including a shell in the image,
+This allows users to package files and share them among containers in a pod without including them in the main image,
 thereby reducing vulnerabilities and simplifying image creation.
 
 While OCI images are well-supported by Kubernetes and CRI,
@@ -172,16 +172,15 @@ and ensuring appropriate validation and security measures.
 
 ## Motivation
 
-Currently, mounting files from OCI images requires the inclusion of a shell, even when the sole purpose of the image is to deliver files
-to be shared among containers in a pod. This not only increases the image size unnecessarily but also introduces potential security vulnerabilities.
-By supporting OCI images and artifacts directly as a `VolumeSource`, we can streamline the process and enhance security.
+Supporting OCI images and artifacts directly as a `VolumeSource` allows
+Kubernetes to focus on OCI standards as well as allows to store and distribute
+any content using OCI registries. This allows the project to grow into use cases
+which go beyond running particular images.
 
 ### Goals
 
 - Introduce a new `VolumeSource` type that allows mounting OCI images and/or artifacts.
 - Simplify the process of sharing files among containers in a pod.
-- Reduce the need for including a shell in images, thereby minimizing security risks.
-- Reuse existing logic from ConfigMaps for managing file locations, garbage collection, and updates.
 
 ### Non-Goals
 
@@ -191,13 +190,13 @@ By supporting OCI images and artifacts directly as a `VolumeSource`, we can stre
 ## Proposal
 
 We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI object
-directly into a pod, making the files within the image accessible to the containers without the need for a shell or additional image manipulation.
+directly into a pod, making the files within the image accessible to the containers without the need to include them in the main image and to be able to host them in OCI compatible registries.
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a Kubernetes user, I want to share a configuration file among multiple containers in a pod without including a shell in my image, so that I can
+As a Kubernetes user, I want to share a configuration file among multiple containers in a pod without including the file in my main image, so that I can
 minimize security risks and image size. I want to package this file in an OCI object to take advantage of OCI distribution.
 
 #### Story 2
@@ -209,7 +208,7 @@ so that I can streamline my CI/CD pipeline. I want to package this file in an OC
 
 As a data scientist, MLOps engineer, or AI developer, I want to mount large language models or machine learning models in a pod alongside a model-server, so that I can efficiently serve the models
 without including them in the container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
-efficient model deployment.
+efficient model deployment. This allows to separate the data from the executables that process them.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -219,14 +218,14 @@ efficient model deployment.
 
 ### Vocabulary: OCI Images, Artifacts, and Objects
 
-**OCI Image:**
+**OCI Image ([spec](https://github.com/opencontainers/image-spec/blob/main/spec.md)):**
    - A container image that conforms to the Open Container Initiative (OCI) Image Specification.
      It includes a filesystem bundle and metadata required to run a container.
    - Consists of multiple layers (each layer being a tarball), a manifest (which lists the layers), and a config file
      (which provides configuration data such as environment variables, entry points, etc.).
    - **Use Case:** Used primarily for packaging and distributing containerized applications.
 
-**OCI Artifact:**
+**OCI Artifact ([guidance](https://github.com/opencontainers/image-spec/blob/main/artifacts-guidance.md)):**
    - An artifact describes any content that is stored and distributed using the OCI image format.
      It includes not just container images but also other types of content like Helm charts, WASM modules, machine learning models, etc.
    - Artifacts use the same image manifest and layer structure but may contain different types of data
@@ -311,7 +310,7 @@ Some parts of the existing kubelet code can be reused, for example:
 
 We consider to refactor the logic into re-usable bits for both, the kubelet as
 well as the volume plugin, because volume plugins run in a dedicated go routine
-at the beggining of the kubelet initialization:
+at the beginning of the kubelet initialization:
 
 https://github.com/kubernetes/kubernetes/blob/39c6bc3/pkg/kubelet/kubelet.go#L1633-L1634
 
