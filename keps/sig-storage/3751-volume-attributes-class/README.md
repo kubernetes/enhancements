@@ -25,6 +25,9 @@
   - [4. Add new CSI API ControllerModifyVolume, when there is a change of VolumeAttributesClass in PVC, external-resizer triggers a ControllerModifyVolume operation against a CSI endpoint. A Controller Plugin MUST implement this RPC call if it has MODIFY_VOLUME capability.](#4-add-new-csi-api-controllermodifyvolume-when-there-is-a-change-of-volumeattributesclass-in-pvc-external-resizer-triggers-a-controllermodifyvolume-operation-against-a-csi-endpoint-a-controller-plugin-must-implement-this-rpc-call-if-it-has-modify_volume-capability)
   - [5. Add new operation metrics for ModifyVolume operations](#5-add-new-operation-metrics-for-modifyvolume-operations)
 - [Design Details](#design-details)
+    - [Binding of PV and PVC](#binding-of-pv-and-pvc)
+      - [Find a PV matching the PVC](#find-a-pv-matching-the-pvc)
+      - [Perform the binding](#perform-the-binding)
     - [VolumeAttributesClass Deletion Protection](#volumeattributesclass-deletion-protection)
     - [Create VolumeAttributesClass](#create-volumeattributesclass)
     - [Delete VolumeAttributesClass](#delete-volumeattributesclass)
@@ -435,6 +438,69 @@ Operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernete
 
 ## Design Details
 
+#### Binding of PV and PVC
+
+Creating the bidirectional binding between a PV and PVC is delicate, because
+there is no transaction support in the kubernetes API to do the whole thing
+atomically. Binding with volume attributes adds to this process but does not
+fundamentally change the 4 steps performed. To support the VolumeAttributesClass
+the binding process will become the following.
+
+A key assumption is that the PVC needs to be immutable until binding is
+complete. This is to avoid race conditions that could, among other things,
+violate quota. For example, suppose there are two VACs, `fast` and `slow`. The
+latter is cheap and unrestricted, but `fast` has limited quota requirements. It
+is not possible to downgrade `fast` to `slow`. If
+VAC could be changed before binding is complete, a user could create a PVC with
+`fast` and change it to `slow` during the binding process. This race with
+binding could end up with a `fast` PV bound to the PVC with a `slow` VAC;
+because it is not possible to downgrade the PV will remain `fast`. But since VAC
+quota only looks at the PVC's VAC, the user is now able to create additional
+`fast` volumes beyond their quota.
+
+An alternative of requiring VAC to match at all steps of binding means that if
+the VAC is changed by mistake, a PVC and PV could be incompletely bound (for
+example, succeed steps 1-3 below but fail at step 4). There is no way to undo
+binding, so even if the PV is deleted the PV would be unavailable until the
+cluster administrator manually intervenes.
+
+##### Find a PV matching the PVC
+
+In the matching process, a PVC is only matched with a PV if their VACs match:
+they are the same class, or are both unspecified. Either a nil or an empty VAC
+is considered unspecified, so for example a PVC with a nil VAC **can** match
+with a PV whose VAC is the empty string.
+
+The matching process then become the following.
+
+If the PVC is pre-bound to a PV, check if node affinity is satisfied, and the
+PVC VAC matches the PV VAC. If so select it, otherwise no PV is selected.
+
+Otherwise, iterate through all unbound PVs. Check if the storage class and
+volume attributes class of the PV matches the PVC, and the capacity is equal to
+or greater than that requested by the PVC. If so, add it to the list of
+candidates. After all unbound PVs have been examined, select the candidate with
+the smallest capacity.
+
+##### Perform the binding
+
+1. Bind the PV to the PVC by updating `pv.Spec.ClaimRef` to point to the PVC.
+1. Update the PV volume phase to Bound.
+1. Bind the PVC to the PV by updating `pvc.Spec.VolumeName` to point to the PV.
+1. Update the PVC claim status, including current volume attributes class, phase
+and capacity.
+
+The changes from when there was no VolumeAttributesClass are:
+* Change the matching algorithm to be aware of volume attributes.
+* Change the last step in binding to update the PVC status indicating the
+  current volume attributes.
+  
+Otherwise the algorithm is unchanged.
+
+As discussed above, this assumes the PVC VAC is immutable until it is bound to a
+PVC. If a PVC cannot be bound due to an otherwise matching PV having the wrong
+VAC, the PVC must be deleted and re-created.
+
 #### VolumeAttributesClass Deletion Protection
 
 While a VolumeAttributesClass is referenced by any PVC, we will prevent the object from being deleted by adding a finalizer([reference](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/admission/storage/storageobjectinuseprotection/admission.go)). 
@@ -554,7 +620,15 @@ Deleting a PVC will trigger a list PVCs call and decide if we need to remove the
 
 ![VolumeAttributesClass Update Flow](./VolumeAttributesClass-Flow.png)
 
-Since VolumeAttributesClass is **immutable**, to update the parameters, the end user can modify the PVC object to set a different VolumeAttributesClass. If the existing VolumeAttributesClass cannot satisfy the end user’s use case, the end user needs to contact the cluster administrator to create a new VolumeAttributesClass.
+Since VolumeAttributesClass is **immutable**, to update the parameters, the end
+user can modify the PVC object to set a different VolumeAttributesClass. If the
+existing VolumeAttributesClass cannot satisfy the end user’s use case, the end
+user needs to contact the cluster administrator to create a new
+VolumeAttributesClass. The VAC cannot be changed until the PVC is bound to a PV
+(see [binding](#binding-of-pv-and-pvc), above). This is enforced in API
+validation in the same way as storage capacity, see
+[ValidatePersistentVolumeClaimUpdate](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/validation/validation.go#L2389).
+
 
 **Watching changes in the PVC object**, if the PVC’s VolumeAttributesClass changes, it will trigger a ModifyVolume call.
 
