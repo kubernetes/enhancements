@@ -48,4 +48,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics: 
-  - pod_deletions_node_affinity_total
+  - evictions_node_affinity_total
+  - pod_failed_eviction_node_affinity_total

@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [manage multi tenant cluster with dedicated nodes](#manage-multi-tenant-cluster-with-dedicated-nodes)
-    - [handle data locality pods when data is corrupted](#handle-data-locality-pods-when-data-is-corrupted)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -69,15 +68,15 @@ This KEP aims to introduce node-affinity-based eviction.
 In this KEP, we will introduce a new nodeAffinity type: `requiredDuringSchedulingRequiredDuringExecution`.
 A new controller called `node-affinity-eviction` will be added to the controller-manager. 
 This controller will monitor changes in node labels, and try to evict pods if their `requiredDuringSchedulingRequiredDuringExecution` node affinity are no longer met.
-This controller will respect PDB during the eviction, and if eviction failed, 
-the pods will remain unchanged except that a new pod condition will be added.
+If eviction fails, the pods that failed to be evicted will be rechecked for violations of the `requiredDuringSchedulingRequiredDuringExecution` affinity during the next node label update. 
+If, in the next eviction round, they still violate the `requiredDuringSchedulingRequiredDuringExecution` affinity, they will be attempted for eviction again.
+This controller will respect PDB during the eviction.
 
 We'll start using `Eviction API with PDB` to evict pods during alpha stage for simplicity, 
-and transfer to `Evacuation API` in beta stage.
+and may transfer to `Evacuation API` in future stage.
 
 ## Motivation
 
-- Enable `requiredDuringSchedulingRequiredDuringExecution` node affinity for pod scheduling and execution.
 - Provide users with greater control over pod placement.
 - Ensure predictable and consistent pod behavior in various scenarios.
 - Address use cases with specific placement and execution requirements.
@@ -85,9 +84,10 @@ and transfer to `Evacuation API` in beta stage.
 ### Goals
 
 - Introduce the `RequiredDuringSchedulingRequiredDuringExecution` **nodeAffinity** type.
-- Add `node-affinity-eviction` controller to ensure pods being evicted if the selectors are no longer met at runtime.
-- Explore a fine way to bring more descheduler features into core kubernetes(e.g. podAffinityEviction)
-  
+- Add `node-affinity-eviction` controller to ensure pods being evicted if the selectors are no longer met at runtime, with the respect of PDB the same time.
+- DaemonSet controller will take the `RequiredDuringSchedulingRequiredDuringExecution` into consideration, 
+when recalculating the eligible nodes where the DaemonSet pods can run.
+
 ### Non-Goals
 
 - This KEP does not aim to introduce the `RequiredDuringSchedulingRequiredDuringExecution` **podAffinity** type and **podAntiAffinity** type.
@@ -106,23 +106,9 @@ I have some nodes labeled with "userA=allow" and "userB=allow", which means that
 As the scale grows I want to add new nodes only for user B while leaving the current nodes only for user A.
 I want to migrate all pods available to user B to new nodes, and I want to ensure HA of my services during the migration.
 
-Without `node-affinity-eviction`, I have to remove "userB=allow" label of node, and delete the pods manually.
+Without `node-affinity-eviction`, I have to remove "userB=allow" label of node, and delete the pods manually. Also I can't use taints because they don't respect PDBs.
 With `node-affinity-eviction`, I can simply delete the "userB=allow" label from the existing nodes 
 to re-schedule all pods of user B to these new nodes.
-
-#### handle data locality pods when data is corrupted
-
-I have one application whose pods need to be co-located with some specific data stored in some particular nodes. 
-When one node's data is corrupted, the pod on this node will provide some inaccurate services.
-So I want it to be scheduled to another special node when data is detected to be corrupted.
-And in the meantime, I want to keep other running pods on that node intact.
-Also, I want to ensure my PDB is guaranteed, so I can't taint the node directly.
-
-[stack overflow link](https://stackoverflow.com/questions/55006205/how-to-prevent-pods-scheduling-to-a-node-after-a-pod-has-failed-on-it-in-gce)
-
-Without `node-affinity-eviction`, I have to relabel the node to suggest data on that node is corrupted, 
-and then manually iterating the pods on the node, decide whether to delete them to trigger a reschedule.
-With `node-affinity-eviction`, the only thing I need to do is to relabel the node, and `node-affinity-eviction` controller will do the rest.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -130,9 +116,14 @@ N/A
 
 ### Risks and Mitigations
 
-The major concern for this controller may be the overhead of the nodes with a large number of pods. 
-Every time a node's label is updated, the controller needs to iterate all pods assigned to the node. This may cause potential scaling issues.
-However, the impact won't be significant due to the limitation on the number of pods per node.
+The major concern may be that during the eviction, some pods may fail to be evicted. Users can use `pod_failed_eviction_node_affinity_total` metric to find them.  
+
+Typically, the reason for a failed eviction is due to a violation of the PDB. 
+However, it is also possible that there could be issues with Kubernetes components or a misconfiguration. 
+If the eviction of the target pod fails, users should first check if the eviction violates the pod's PDB configuration. 
+If it does violate the PDB, users should manually adjust the replica setting of the owner of the pod to ensure that the eviction no longer violates the PDB configuration. Alternatively, users can manually terminate the pod.
+Another thing users can check is whether there is incorrect configuration, such as multiple PodDisruptionBudgets referencing the same Pod.
+kube-apiserver and controller-manager logs can be also checked for failures.
 
 ## Design Details
 
@@ -143,7 +134,15 @@ type NodeSelector struct {
 }
 
 type NodeAffinity struct {
-	RequiredDuringSchedulingRequiredDuringExecution *NodeSelector
+  // If the affinity requirements specified by this field are not met at
+  // scheduling time, the pod will not be scheduled onto the node.
+  // If the affinity requirements specified by this field cease to be met
+  // at some point during pod execution (e.g. due to an update), the system
+  // will try to eventually evict the pod from its node.
+  // For v1alpha1, evictions are performed by calling the Eviction API.
+  // This may change in later versions.
+  // +optional
+  RequiredDuringSchedulingRequiredDuringExecution *NodeSelector
 }
 ```
 
@@ -152,21 +151,20 @@ Add a controller called `node-affinity-eviction`
 The controller do the following things:
 
 - Listening to the changes of node labels
-- Iterating over all pods assigned to the node, checks the NodeAffinity field, if `RequiredDuringSchedulingRequiredDuringExecution` exists, checks if `NodeSelector` still match the new node. 
+- Iterating over all pods assigned to the node(excluding mirror pods), checks the NodeAffinity field, if `RequiredDuringSchedulingRequiredDuringExecution` exists, checks if `NodeSelector` still match the new node. 
 - If `RequiredDuringSchedulingRequiredDuringExecution` is no loger met, trying to evict the pod.
-- It will add a DisruptionTarget condition with corresponding reason and message for the pod.
-- It will use Eviction API with PDB to evict the pod. 
-- If the eviction fails, the pod will remain unchanged with a new pod condition.
 
-New condition:
-```go
-		v1.PodCondition{
-			Type:    v1.DisruptionTarget,
-			Status:  v1.ConditionTrued,
-			Reason:  "DeletionByNodeAffinityEviction",
-			Message: "deleting due to mismatched node affinities",
-		}
-```
+- For alpha stage:
+  - With each occurrence of a node label update event, a new eviction round is triggered. In each round of eviction, the controller will iterate through each pod on that node to determine whether the pod should be evicted.
+  - It will use Eviction API to evict the pod(The API takes the PDBs into consideration, so we do not have to use the PDBs explicitly here). 
+  - If eviction for one pod fails, We will skip the eviction of the target pod in the current round. In the next eviction round, we will recheck the pod and may trigger eviction based on the results of the check.
+
+- After the eviction in the current round is completed, we will print logs to record the pods that failed to be evicted. And increase the metric `pod_failed_eviction_node_affinity_total` labeled with pods' name. So that users can find out this and take care of the pod manually.
+- To avoid any disruption to KCM caused by excessive logging, the logs will be kept minimal and will use the debug level, containing only the names of the pods, ensuring simplicity.
+
+
+After a node's label is updated, the DaemonSet controller will recalculate the eligible nodes where the DaemonSet pods can run. During this process, the DaemonSet controller will take the `RequiredDuringSchedulingRequiredDuringExecution` into consideration, similar to `RequiredDuringSchedulingIgnoredDuringExecution`. 
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -181,6 +179,7 @@ Currently coverages:
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity`: `2023-12-13` - `82.5`
 - `k8s.io/kubernetes/pkg/apis/core/validation`:`2023-12-13` - `83.9`
 - `k8s.io/kubernetes/pkg/controller/nodeaffinityeviction`:`2023-12-13` - `0` 
+- `k8s.io/kubernetes/pkg/controller/daemon`:`2024-06011` - `68.9`
 
 These tests will be added:
 - New tests will be added to `/pkg/scheduler/framework/plugins/nodeaffinity` to ensure scheduler handles `RequiredDuringSchedulingRequiredDuringExecution` correctly when the feature is enabled/disabled.
@@ -193,9 +192,11 @@ These tests will be added:
 
 These tests will be added:
 - Test that pods with `RequiredDuringSchedulingRequiredDuringExecution` node affinity are correctly scheduled when the feature is enabled.
-- Test that pods with `RequiredDuringSchedulingRequiredDuringExecution` node affinity are evicted if the corresponding node's label changed and the selectors are no longer met when the feature is enabled.
+- Test that pods with `RequiredDuringSchedulingRequiredDuringExecution` node affinity are evicted if the corresponding node's label changed and the selectors are no longer met and the eviction doesn't violate the pod's PDB configuration. .
 - Test that pods with `RequiredDuringSchedulingRequiredDuringExecution` node affinity are **not** evicted if the corresponding node's label changed and the selectors are no longer met when the feature is disabled.
 - Test that `RequiredDuringSchedulingRequiredDuringExecution` node affinity is ignored during scheduling when the feature is disabled.
+- Test that DaemonSet with `RequiredDuringSchedulingRequiredDuringExecution` does not enter a scheduling and descheduling hot loop after being evicted. 
+- Test that pods with `RequiredDuringSchedulingRequiredDuringExecution` node affinity are  not evicted if the eviction violates the pod's PDB configuration. 
 
 ##### e2e tests
 
@@ -218,6 +219,7 @@ These tests will be added:
 - Feature implemented behind a feature flag
 - Initial unit/e2e tests completed and enabled
 - Documentation is added to demonstrate why this is useful how exactly affinity needs to be configured
+- Documentation is added to demonstrate potential pitfalls of the eviction and handling of these.
 - Initial metrics are added
 
 #### Beta
@@ -251,8 +253,10 @@ to be present.
 If kube-apiserver doesn't enable the feature gate, this new affinity will be silently dropped during pod creating, and will be silently dropped during pod updating if it's not been used.
 
 If kube-apiserver enable the feature gate, and:
-if only the kube-controller-manager enables the feature gate, the node affinity will be ignored during the scheduling phase.
-if only the kube-scheduler enables the feature gate, the node affinity will be ignored during the execution phase. 
+
+if only the kube-controller-manager enables the feature gate, the node affinity will be ignored during the scheduling phase. However, DaemonSet pods will still adhere to the `requiredDuringSchedulingRequiredDuringExecution` because the nodes running DaemonSets are determined within the DaemonSet controller.
+
+if only the kube-scheduler enables the feature gate, the node affinity will be ignored during the execution phase. However, DaemonSet pods will not adhere to the `requiredDuringSchedulingRequiredDuringExecution` because the nodes running DaemonSets are determined within the DaemonSet controller.
 
 ## Production Readiness Review Questionnaire
 
@@ -297,14 +301,14 @@ field is preserved, however, the newly created Pod's `.spec.affinity.nodeAffinit
 
 ###### What specific metrics should inform a rollback?
 
-We will introduce one new metric for this feature. Please refer to the "SLIs" section below for its specific meaning.
-If the value of metric `pod_deletions_node_affinity_total` or is larger than expected, users should check their system and may need to rollback.
+We will introduce two new metric for this feature. Please refer to the "SLIs" section below for its specific meaning.
+If the value of metric `pod_failed_eviction_node_affinity_total` or `evictions_node_affinity_total` is larger than expected, users should check their system and may need to rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 Will be tested manually.
 
-Steps:
+Test1:
 - Create a node that has a label
 - Start a local Kubernetes cluster (feature gate defaulted disabled)
 - Create a Pod `test-pod` with `RequiredDuringSchedulingRequiredDuringExecution` node affinity matches the node
@@ -328,6 +332,25 @@ Steps:
 - Re-start kube-controller-manager, kube-scheduler and kube-apiserver with feature gate enabled
 - Remove the node label
 - Verify that the pod is evicted 
+
+Test2:
+- Start kube-controller-manager, kube-scheduler and kube-apiserver with feature gate enabled.
+- Create a daemonSet with requiredDuringSchedulingRequiredDuringExecution. 
+- Verify that the pod runs only on nodes that meet the nodeAffinity.
+- Remove the node label.
+- Verify that the daemonSet pod on that node is evicted and not recreated.
+- Add the node's label back.
+- Verify that the daemonSet pod runs on the same node again.
+  
+- Re-start kube-controller-manager, kube-scheduler and kube-apiserver with feature gate disabled
+- Verify the old `.spec.affinity.nodeAffinity.requiredDuringSchedulingRequiredDuringExecution` reserved
+- Remove the node label 
+- Verify that the pod is not evicted
+- Add the node's label back 
+
+- Re-start kube-controller-manager, kube-scheduler and kube-apiserver with feature gate enabled
+- Remove the node label
+- Verify that the daemonSet pod on that node is evicted and not recreated.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -357,10 +380,11 @@ N/A
 
 - [x] Metrics
   - Metric name:
-    - pod_deletions_node_affinity_total(counts the number of Pods deleted because of nodeAffinity since this contoller start)
+    - evictions_node_affinity_total(counts of the eviction/evacuation subresources created by the controller)
+    - pod_failed_eviction_node_affinity_total(counts of the pods that failed to be evicted, labeled by pod name)
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-One new metric `pod_deletions_node_affinity_total` will be added.
+Two new metric `evictions_node_affinity_total` and `pod_failed_eviction_node_affinity_total` will be added.
 
 ### Dependencies
 
@@ -374,8 +398,7 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-- There will be calls to PATCH pod status.
-- There will be calls to delete pod.
+- There will be calls to evict pods with eviction subresource. 
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -387,8 +410,26 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-It increasing the size of `.spec.affinity.nodeAffinity` a little bit.
-
+- No to existing API objects that doesn't use this feature.
+- For API objects that use this feature:
+  - API type: Pod
+  - Estimated increase in size: 
+    - New field `.spec.affinity.nodeAffinity.requiredDuringSchedulingRequiredDuringExecution`. Which is a `NodeSelector` struct.
+    - NodeSelector:
+      - NodeSelectorTerms (slice header): 24 bytes
+      - Total: 24 bytes
+    - NodeSelectorTerm:
+      - MatchExpressions (slice header): 24 bytes
+      - MatchFields (slice header): 24 bytes
+      - Total: 48 bytes
+    - NodeSelectorRequirement:
+      - Key (string): 16 bytes (assuming an average size)
+      - Operator (string): 16 bytes (assuming an average size)
+      - Values (slice header): 24 bytes (assuming one element)
+      - Values[0] (string): 16 bytes (assuming an average size)
+      - Total: 88 bytes
+    - The estimated size of the `requiredDuringSchedulingRequiredDuringExecution` would be approximately 176 bytes(assuming we only defined one rule in it).
+    
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 If `.spec.affinity.nodeAffinity.requiredDuringSchedulingRequiredDuringExecution` field is defined, this feature will slightly increase the pod scheduling time and increase the possibility of pods being evicted.
