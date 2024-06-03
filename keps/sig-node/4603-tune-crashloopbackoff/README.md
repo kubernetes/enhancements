@@ -292,15 +292,17 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This KEP proposes new contianer spec values that allow individual containers to
-respect overrides on the global timeout behavior depending on the exit reason.
-These overrides will exist for the following reasons:
+This design seeks to incorporate a three-pronged approach:
 
-* image download failures
-* workload crash: any non-0 exit code from the workload itself
-* infrastructure events: terminated by the system, e.g. exec probe failures,
-  OOMKill, or other kubelet runtime errors
-* success: a 0 exit code from the workload itself
+1. Change the existing default backoff curve to stack more retries earlier, but
+   target the same amount of overall retries as the current behavior. This means
+   more restarts in the first 1 min or so, but later retries would be spaced out
+   further than they are today.
+2. Allow free (0-10s + jitter) restarts when the exit code is 0, if
+   `RestartPolicy: Always`.
+3. Provide a `RestartPolicy: Rapid` option to configure even faster restarts for
+specific Pod/Container (particularly init or sidecar containers), regardless of
+exit code, reducing the max wait to 1 minute
 
 These have been selected because there are known use cases where changed restart
 behavior would benefit workloads epxeriencing these categories of failures.
