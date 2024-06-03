@@ -12,11 +12,18 @@ creation-date: "2024-04-26"
 last-updated: v1.31
 status: provisional
 stage: alpha
+
 latest-milestone: "1.31"
+
 milestone:
     alpha: "1.31"
     beta: ""
     stable: ""
-feature-gates: []
-disable-supported: false
+
+feature-gates:
+  - name: CRDAdditionalPrinterColumnCEL
+    components:
+      - kube-apiserver
+disable-supported: true
+
 metrics: []

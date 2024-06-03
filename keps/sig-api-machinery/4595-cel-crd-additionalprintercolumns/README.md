@@ -226,7 +226,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 - Making any changes to the existing JSONPath support.
-- Any change to kubectl.
+- Any change to kubectl or other clients.
 
 ## Proposal
 
@@ -239,7 +239,36 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal is to add a mutually exclusive sibling to the `additionalPrinterColumns[].jsonPath` field of CRDs, `additionalPrinterColumns[].cel` which would encode the column values with a CEL expression that resolves to a string. We'd need to change the API so that printer columns can be expressed with CEL, and update the REST response for `Table` requests to run the CEL code for the list of resources requested.
+The proposal is to add a mutually exclusive sibling to the `additionalPrinterColumns[].jsonPath` field of CRDs, `additionalPrinterColumns[].expression` which would encode the column values with a CEL expression that resolves to a string. We'd need to change the API so that printer columns can be expressed with CEL, and update the REST response for `Table` requests to run the CEL code for the list of resources requested.
+
+If you have the following additionalPrinterColumn defined in your custom resource definition:
+
+```yaml
+additionalPrinterColumns:
+- name: Replicas
+  type: string
+  expression: "%d/%d".format([self.status.replicas, self.spec.replicas])
+- name: Age
+  type: date
+  jsonPath: .metadata.creationTimestamp
+- name: Status
+  type: string
+  expression: self.status.replicas == self.spec.replicas ? "READY" : "WAITING"
+```
+
+it could yield the following:
+
+```
+NAME                 REPLICAS     AGE      STATUS
+myresource           1/1          7s       READY
+myresource2          0/1          2s       WAITING
+```
+
+### Calculating CEL cost limits
+
+We want to make sure that the time taken for computing the CEL expressions for additionalPrinterColumns would be in the same order of magnitude as that of using JSONPath and set the CEL cost limit accordingly. Let's assume we have a representative CRD with 10 additionalPrinterColumns. The total time taken for executing the all the JSONPaths would be equal to the time taken for executing a single JSONPath expression times the total number of additionalPrinterColumns. As part of this proposal we aim to calculate a reasonable total cost for the CEL expressions by multiplying the total number of seconds it takes the expressions to get evaluated with a CEL cost per second, which would be a constant.
+
+As part of this benchmarking, we are also planning to calculate the percentage of time of a `kubectl get` call on a CRD is taken up to compute the additionalPrinterColumns JSONPath. If it is a low enough value, we can set a higher CEL cost before users would notice a time difference between using CEL or JSONPath.
 
 ### User Stories (Optional)
 
@@ -252,7 +281,6 @@ bogged down.
 
 #### Story 1
 
-#### Story 2
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -277,6 +305,10 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+#### CEL evaluation resulting in error
+
+The CEL expression provided by the user can evaluate to an error, we can either catch this while validating the CRD or notify the user of the error in the table when fetching the CRDs
+
 ## Design Details
 
 <!--
@@ -285,6 +317,72 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+We extend the `CustomResourceColumnDefinition` type by adding an `expression` field which takes CEL expressions as a string.
+
+```go
+type CustomResourceColumnDefinition struct {
+	// ...
+	expression string
+}
+```
+
+```go
+type CustomResourceColumnDefinition struct {
+	// ...
+	expression string `json:"expression,omitempty" protobuf:"bytes,7,opt,name=expression"`
+}
+```
+
+We expect the additionalPrinterColumns of a CustomResourceDefinition to either have a `jsonPath` or an `expression` field. The validation would look like this:
+
+```go
+func ValidateCustomResourceColumnDefinition(col *apiextensions.CustomResourceColumnDefinition, fldPath *field.Path) field.ErrorList {
+	// ...
+	if len(col.JSONPath) == 0 && len(col.expression) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("JSONPath or expression"), "either JSONPath or CEL expression must be specified"))
+	}
+
+	if len(col.JSONPath) != 0 {
+		if errs := validateSimpleJSONPath(col.JSONPath, fldPath.Child("jsonPath")); len(errs) > 0 {
+			allErrs = append(allErrs, errs...)
+		}
+	}
+
+	if len(col.expression) != 0 {
+		// Placeholder method for the actual CEL validation that would happen at this stage.
+		if errs := validateCELExpression(col.expression, fldPath.Child("expression")); len(errs) > 0 {
+			allErrs = append(allErrs, errs...)
+		}
+	}
+
+	return allErrs
+}
+```
+
+For executing the CEL expression and printing the result would be done from `staging/src/k8s.io/apiextensions-apiserver/pkg/registry/customresource/tableconvertor/tableconvertor.go` like so. We'd also define our own `findResults` and `printResults` methods for computing the CEL expressions.
+
+```go
+func New(crdColumns []apiextensionsv1.CustomResourceColumnDefinition) (rest.TableConvertor, error) {
+	// ...
+
+	fetch baseEnv
+	extend env
+
+	for _, col := range crdColumns {
+		ast := env.Compile(col.expression)
+
+		if len(col.JSONPath == 0){
+			// existing JSONPath code
+		} else {
+			celProgram, err := cel.NewProgram(ast)
+			if err != nil {
+				return c, fmt.Errorf("unrecognised column definition %q", col.expression)
+			}
+			c.additionalColumns = append(c.additionalColumns, celProgram)
+		}
+}
+```
 
 ### Test Plan
 
@@ -433,16 +531,19 @@ in back-to-back releases.
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Unit tests and integration tests completed and enabled
+- Implement the new expression field for additionalPrinterColumns with an approximate CEL cost
 
 #### Beta
 
 - Gather feedback from developers and surveys
-- e2e tests added
+- Additional e2e tests added
+- Benchmarking JSONPath execution and modify CEL cost if needed
 
 #### GA
 
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Upgrade/downgrade e2e tests
+- Scalability tests
 - Allowing time for feedback
 
 ### Upgrade / Downgrade Strategy
@@ -459,6 +560,10 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+No change in how users upgrade/downgrade their clusters. This feature may remove
+complexity by removing risk that a tightened validation on Kubernetes' part
+does not break workflow.
+
 ### Version Skew Strategy
 
 <!--
@@ -473,6 +578,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+N/A
 
 ## Production Readiness Review Questionnaire
 
@@ -516,9 +623,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `CRDAdditionalPrinterColumnCEL`
+  - Components depending on the feature gate: `apiextensions-apiserver`, `kube-apiserver`
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -533,6 +640,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+No default behaviour will be changed since we still support additionalPrinterColumns with JSONPath.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -546,7 +655,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, the feauter can be disabled once it has been enabled. Enabling this feature would let users define additionalPrinterColumns in their custom resource definitions with CEL expressions instead of JSONPath. Existing JSONPath support is untouched. If the feature is disabled, the existing additionalPrinterColumns with JSONPaths would work as expected. Resources with CEL expressions in their additionalPrinterColumn definition would be invalid if we disable the feature however.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Nothing. CRDs which had failed validation previously might now succeed if the CEL expression is valid.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -562,6 +675,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will add an integration test to ensure that the feature is disabled when the feature gate is off.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -581,6 +696,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This feature will not impact rollouts or already-running workloads.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -596,11 +713,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+No, a Kubernetes upgrade/downgrade operation is not expected to affect this feature.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -635,8 +756,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Users will be able to define additionalPrinterColumns for their custom resources with `expression` instead of `jsonPath`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -675,6 +796,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+No.
+
 ### Dependencies
 
 <!--
@@ -697,6 +820,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -725,6 +850,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -734,6 +861,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -741,6 +870,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -750,6 +881,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -761,6 +894,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Performance of CRD reads might be impacted. Benchmarking needs to be done to know the exact difference between using JSONPath and CEL.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -774,6 +909,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Planning to benchmark this before beta.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -785,6 +922,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -801,6 +940,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The same way any write to apiserver would.
+
 ###### What are other known failure modes?
 
 <!--
@@ -816,7 +957,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Disable the feature.
 
 ## Implementation History
 
@@ -844,6 +989,13 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+An alternative to the CEL approach proposed by this KEP would be to extend JSONPath to support arrays and other complex queries. There have been a couple of attempts to implement this previously.
+
+- [Adding support for complex json paths in AdditionalPrinterColumns #101205](https://github.com/kubernetes/kubernetes/pull/101205)
+- [apiextensions: allow complex json paths for additionalPrinterColumns #67079](https://github.com/kubernetes/kubernetes/pull/67079)
+
+These attempts were not successful because of breaking changes to JSONPath. Now that we have CEL as an option, we can move away from trying to extend JSONPath and embrace CEL, since it covers a much larger ground than what we could achieve with extending JSONPath.
 
 ## Infrastructure Needed (Optional)
 
