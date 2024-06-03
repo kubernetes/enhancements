@@ -354,6 +354,14 @@ message MountOCIObject {
 
     // Local path to be mounted.
     string path = 3;
+
+    // Corresponding to:
+    // https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L809-L812
+    string runtime_handler = 4;
+
+    // Corresponding to:
+    // https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L802-L805
+    map<string, string> annotations = 5;
 }
 
 
