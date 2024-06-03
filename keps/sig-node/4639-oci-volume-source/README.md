@@ -197,7 +197,12 @@ directly into a pod, making the files within the image accessible to the contain
 #### Story 1
 
 As a Kubernetes user, I want to share a configuration file among multiple containers in a pod without including the file in my main image, so that I can
-minimize security risks and image size. I want to package this file in an OCI object to take advantage of OCI distribution.
+minimize security risks and image size. 
+
+Beside that, I want:
+- to package this file in an OCI object to take advantage of OCI distribution.
+- the image to be downloaded with the same credentials that kubelet using for other images.
+- to be able to use image pull secrets when downloading the image if an image is from the registry that requires image pull secrets.
 
 #### Story 2
 
@@ -239,7 +244,7 @@ efficient model deployment. This allows to separate the data from the executable
 
 - **Security Risks:** Allowing direct mounting of OCI images introduces potential attack vectors. Mitigation includes thorough security reviews and
   limiting access to trusted registries. Limiting to OCI artifacts (non-runnable content) or read-only mode may lessen the security risk.
-- **Compatibility Risks:** Ensure compatibility with existing features.
+- **Compatibility Risks:** Existing webhooks watching for the images used by the pod using some policies will need to be updated to expect the image to be specified as a `VolumeSource`.
 - **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
   guidance on best practices for users.
 
@@ -317,7 +322,7 @@ Specifying a pull policy will not be supported in the alpha implementation of th
 feature and will align to `PullAlways`.
 
 For registry authentication purposes the same credentials will be used as for
-the running pod, if available.the
+the running pod, if available.
 
 #### CRI
 
@@ -920,6 +925,7 @@ An out-of-tree CSI plugin can provide flexibility and modularity, but there are 
 
  - Complexity of managing an external CSI plugin. This includes handling the installation, configuration, and updates of the CSI driver, which adds
    an additional operational burden. For a generic, vendor-agnostic, and widely-adopted solution this would not make sense.
+ - Supporting the image pull secrets as well as credentials provider will be tricky and needs to be reimplemented with the separate API calls.
  - External CSI plugins implement their own lifecycle management and garbage collection mechanisms,
    yet these already exist in-tree for OCI images.
  - Performance: There is additional overhead with an out-of-tree CSI plugin, especially in scenarios requiring frequent image pulls
