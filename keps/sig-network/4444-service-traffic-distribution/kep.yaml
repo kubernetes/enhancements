@@ -1,4 +1,4 @@
-title: Routing Preference for Services
+title: Traffic Distribution for Services
 kep-number: 4444
 authors:
   - "@gauravkghildiyal"
@@ -34,7 +34,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: ServiceRoutingPreference
+  - name: ServiceTrafficDistribution
     components:
       - kube-controller-manager
       - kube-proxy
