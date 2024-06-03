@@ -188,7 +188,7 @@ selected by the AdminNetworkPolicy, as opposed to what NetworkPolicy rules imply
 
 - Pass: Traffic that matches a `Pass` rule will skip all further rules from all
   lower precedenced ANPs, and instead be enforced by the K8s NetworkPolicies.
-  If there is no K8s NetworkPolicy rule match, and no BaselineAdminNetworkPolicy
+  If there is no K8s NetworkPolicy selecting the pod, and no BaselineAdminNetworkPolicy
   rule match (more on this in the [priority section](#priority)), traffic will be
   governed by the implementation. For most implementations, this means "allow",
   but there may be implementations which have their own policies outside of the
