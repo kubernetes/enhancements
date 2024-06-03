@@ -245,12 +245,11 @@ efficient model deployment. This allows to separate the data from the executable
 
 ## Design Details
 
-The new `VolumeSource` will be defined in the Kubernetes API, and the implementation will involve updating components (CRI, Kubelet, Scheduler)
+The new `VolumeSource` will be defined in the Kubernetes API, and the implementation will involve updating components (CRI, Kubelet)
 to support this source type. Key design aspects include:
 
 - API changes to introduce the new `VolumeSource` type.
 - Modifications to the Kubelet to handle mounting OCI images and artifacts.
-- Enhancements to the scheduler to recognize and properly allocate resources for this new volume type.
 - Handling image pull secrets and registry authentication.
 - Reuse existing logic from ConfigMaps for:
   - Determining the file location on the host filesystem.
