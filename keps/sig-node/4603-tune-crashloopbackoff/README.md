@@ -175,15 +175,26 @@ updates.
 
 CrashLoopBackoff is designed to slow the speed at which failing containers
 restart, preventing the starvation of kubelet by a misbehaving container.
-Currently it is a fixed behavior regardless of container failure: after
-containers in a Pod exit with a non-0 status code, the kubelet restarts them
-with an exponential back-off delay (10s, 20s, 40s, …), that is capped at five
-minutes. Once a container has executed for 10 minutes without any problems, the
-kubelet resets the restart backoff timer for that container
-([ref](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)). This
-KEP proposes making changes to this behavior opt-in per exit type on a per
-container basis, with empirically derived defaults intended to maintain node
-stability.
+Currently it is a subjectively conservative, fixed behavior regardless of
+container failure type: after containers in a Pod exit, the kubelet restarts
+them with an exponential back-off delay (10s, 20s, 40s, …), that is capped at
+five minutes. The delay for restarts will stay at 5 minutes until a container
+has executed for 10 minutes without any problems, in which case the kubelet
+resets the restart backoff timer for that container and further crash loops
+start again at the beginning of the delay curve
+([ref](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)). 
+
+Both the decay to 5 minute back-off delay, and the 10 minute recovery threshold,
+are considered too conservative, especially in cases where the exit code was 0
+(Success) and the pod is transitioned into a "Completed" state or the expected
+length of the pod run is less than 10 minutes. This KEP proposes a three-pronged
+approach to revisiting the CrashLoopBackoff behaviors for common use cases:
+1. modifying the standard backoff delay to decay slower, then plateau sharply,
+using empirically derived defaults intended to maintain node stability
+2. allowing containers to opt-in to an even faster backoff curve regardless of
+exit conditions
+3. reducing the backoff decay even further to sub-10 seconds plus jitter for all
+pods transitioning directly from a `Completed` state
 
 ## Motivation
 
@@ -196,15 +207,53 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Kubernetes#57291, with >250 positive reactions, specifically requests to make
-this behavior tunable. Anecdotally, there are use cases representative of some
-of Kubernetes' most rapidly growing workload types like
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), with
+over 250 positive reactions and as the fifth most upvoted issue in k/k, covers a
+range of suggestions to change the rate of decay for the backoff delay or the
+criteria to restart the backoff counter, in some cases requesting to make this
+behavior tunable per node, per container, and/or per exit code. Anecdotally,
+there are use cases representative of some of Kubernetes' most rapidly growing
+workload types like
 [gaming](https://github.com/googleforgames/agones/issues/2781) and
 [AI/ML](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures)
 that would benefit from this behavior being different for varying types of
-containers. This KEP recognizes the need of backoff times to protect node
-stability, avoiding sweeping changes to backoff behavior or unreasonable
-defaults.
+containers. Application-based workarounds using init containers or startup
+wrapper scripts, or custom operators like
+[kube_remediator](https://github.com/ankilosaurus/kube_remediator) and
+[descheduler](https://github.com/kubernetes-sigs/descheduler) are used by the
+community to anticipate crashloopbackoff behavior, prune pods with nonzero
+backoff counters, or otherwise "pretend" the pod did not exit recently to force
+a faster restart from kubelet. Discussions with early Kubernetes contributors
+indicate that the current behavior was not designed beyond the motivation to
+throttle misbehaving containers, and is open to reintepretation in light of user
+experiences, empirical evidence, and emerging workloads.
+
+By definition this KEP will cause pods to restart faster and more often than the
+current status quo; let it be known that such a change is desired. It is also
+the intention of the author that, to some degree, this change happens without
+the need to reconfigure workloads or expose extensive API surfaces, as
+experience shows that makes changes difficult to adopt, increases the risk for
+misconfiguration, and can make the system overly complex to reason about. That
+being said, this KEP recognizes the need of backoff times to protect node
+stability, avoiding too big of sweeping changes to backoff behavior, or setting
+unreasonable or unpredictable defaults. Therefore the approach manages the risk
+of different decay curves to node stability by providing an API surface to
+opt-in to the riskiest option, and ultimately also provides the observability
+instrumentation needed by cluster operators to model the impact of this change
+on their existing deployments.
+
+A large number of alternatives have been discussed over the 5+ years the
+canonical tracking issue has been open, some of which imply high levels of
+sophistication for kubelet to make different decisions based on system state,
+workload specific factors, or by detecting anomalous workload behavior. While
+this KEP does not rule out those directions in the future, the proposal herein
+focuses on the simpler, easily modeled changes that are designed to address the
+most common issues observed today. It is the desire of the author that the
+observability and benchmarking improvements instrumented as part of this
+proposal can serve as a basis for pursuing those types of improvements in the
+future, including as signals for end users to represent such solutions as
+necessary. Some analysis of these alternatives are included in the Alternatives
+Considered section below for future reference.
 
 ### Goals
 
@@ -213,11 +262,14 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Improve pod restart backoff logic to better match the actual load it creates and meet emerging use cases
-* Quantify risks to node stability resulting from decreased and/or
+* Improve pod restart backoff logic to better match the actual load it creates
+  and meet emerging use cases
+* Quantify and expose risks to node stability resulting from decreased and/or
   hetereogeneous backoff configurations
-* Empirically derive defaults and allowable thresholds that approximate current node stability
-* Provide a simple UX that does not require changes for the majority of workloads
+* Empirically derive defaults and allowable thresholds that approximate current
+  node stability
+* Provide a simple UX that does not require changes for the majority of
+  workloads
 
 ### Non-Goals
 
@@ -919,7 +971,23 @@ information to express the idea and why it was not acceptable.
 
 ### Global override
 
-Allow an override of the global constant of a maximum backoff period (or other settings) in kubelet configuration. Especially without 
+Allow an override of the global constant of a maximum backoff period (or other
+settings) in kubelet configuration.
+
+### Per exit code configuration
+
+One alternative is for new contianer spec values that allow individual containers to
+respect overrides on the global timeout behavior depending on the exit reason.
+These overrides will exist for the following reasons:
+
+* image download failures
+* workload crash: any non-0 exit code from the workload itself
+* infrastructure events: terminated by the system, e.g. exec probe failures,
+  OOMKill, or other kubelet runtime errors
+* success: a 0 exit code from the workload itself
+
+These had been selected because there are known use cases where changed restart
+behavior would benefit workloads epxeriencing these categories of failures.
 
 ## Infrastructure Needed (Optional)
 
