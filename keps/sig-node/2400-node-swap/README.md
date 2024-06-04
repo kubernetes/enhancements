@@ -854,6 +854,19 @@ For beta 1:
 - Add e2e tests that verify pod-level control of swap utilization.
 - Add e2e tests that verify swap performance with pods using a tmpfs.
 
+For beta 2:
+
+- Add Node-conformance tests for basic swap validation. To avoid disrupting node conformance lanes, only the
+cgroup knobs are validated to be defined as expected with no real memory stress or swap use.
+- Add a lane dedicated for swap testing, including stress tests and other tests that might be disruptive and intensive.
+These lanes are called "swap-conformance", and are (and should remain) consistently green:
+  - [kubelet-swap-conformance-fedora-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-fedora-serial): Green.
+  - [kubelet-swap-conformance-ubuntu-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-ubuntu-serial): Green.
+
+For GA:
+
+- Ensure that all e2e tests, especially swap-conformance tests, are consistently green.
+
 ### Graduation Criteria
 
 #### Alpha
