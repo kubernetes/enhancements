@@ -138,6 +138,8 @@ controller, and delegate the status synchronization to the Kueue controller.
 ### Non-Goals
 
 - passing custom parameters to the external controller
+- Introduce a new concurrency policy for CronJobs (eg. `ForbidActive` or `SoftForbid`)
+to replace a Job that is about to complete, but still has terminating pods.
 
 ## Proposal
 
