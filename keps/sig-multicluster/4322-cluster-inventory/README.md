@@ -1046,7 +1046,7 @@ Cluster is primarily owned by platform administrators focused on provisioning cl
 whereas the new API is designed to be owned by the cluster manager that created the
 cluster it represents.
 
-### Cluster-scoped ClusterProfile CRD
+### ClusterProfile CRD scope
 
 We had [extensive discussions](https://docs.google.com/document/d/1E_z3ti-d-modwnhsvR3yBZwX4rRpL26dKkl41YAptRo/edit)
 in SIG-Multicluster meetings about the appropriate scope for ClusterProfile
