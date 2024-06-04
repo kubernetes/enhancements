@@ -438,11 +438,13 @@ As beta2 was being worked on, we discovered use cases where `--fail-swap-on=fals
 Kind e2e tests run kubelet with `--fail-swap-on=false` and
 the default developer configuration for `hack/local-up-cluster` allows for running developer clusters with swap enabled.
 
-We need to support the `--fail-swap-on=false` for both cgroup v1 and cgroupv2. We will not support KEP-2400 with cgroup v1.
-So when one wants to GA this feature, we need to have a way to disable workloads from using swap while keeping the feature toggle on.
-To address this, we will propose a new field to `MemorySwap` called `NoSwap`. This will disable swap usage on the node while keeping the feature active.
+Now, `--fail-swap-on=false` is supported for both cgroup v1 and cgroupv2 although KEP-2400 does not support cgroup v1.
+This is achieved by the newly introduced `MemorySwap` called `NoSwap`, which serves as the default swap behavior, that
+will disable swap usage on the node while keeping the feature active.
+In addition, nodes that support cgroups v1 only would be able to only use `NoSwap`, i.e. in such environments containers
+will be restricted from having access to swap. 
 
-This can address existing use cases where `--fail-swap-on=false` in cgroupv1 and still allow us to turn this feature on.
+This addresses existing use cases where `--fail-swap-on=false` in cgroupv1 and still allow us to turn this feature on.
 
 #### Exhausting swap resource
 
