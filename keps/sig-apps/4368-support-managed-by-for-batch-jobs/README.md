@@ -397,7 +397,7 @@ Since the fix is needed for this KEP and the
 we intend to protect the fix with the OR of the `JobManagedBy` and the
 `JobReplacementPolicy` feature gates.
 
-Note also that the fix impacts `CronJob` which in the `Forbid` concurrency
+Note also that the fix impacts `CronJob` when using the `Forbid` concurrency
 policy (see [here](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy)).
 However, it can be argued that the current behavior of the CronJob / Job integration
 does not match the expectations of the `Forbid` policy
