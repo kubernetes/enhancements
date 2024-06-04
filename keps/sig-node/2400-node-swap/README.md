@@ -826,11 +826,11 @@ Here are specific improvements to be made:
 
 #### GA
 
-_(Tentative.)_
-
-- Test a wide variety of scenarios that may be affected by swap support.
-- Remove feature flag.
-- Remove the Swap Support using Burstable QoS Pods only deprecated in Beta 2.
+- Test a wide variety of scenarios that may be affected by swap support, including tests with aggressive memory stress.
+- Address memory-backed backed volumes which should not have access to swap.  
+- Remove feature gate.
+- Address increasing debug abilities by providing a method to easily understand which nodes are swap-enabled.
+- Exclude high-priority, static and mirrored pods from gaining access to swap.
 
 ### Upgrade / Downgrade Strategy
 

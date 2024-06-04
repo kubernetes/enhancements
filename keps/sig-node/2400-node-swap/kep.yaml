@@ -33,7 +33,7 @@ latest-milestone: "v1.30"
 milestone:
   alpha: "v1.22"
   beta: "v1.30"
-  stable: "TBD"
+  stable: "v1.32"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
