@@ -387,7 +387,7 @@ we extend the scope for the following Job conditions:
 - `FailureTarget` - introduced in [Pod Failure Policy KEP](https://github.com/kubernetes/enhancements/issues/3329)
 - `SuccessCriteriaMet` - introduced in [Success Policy KEP](https://github.com/kubernetes/enhancements/issues/3998)
 
-Note that, with the new conditions an API client can now the fate of a Job
+Note that, with the new conditions an API client can know the fate of a Job
 earlier than currently, since adding the conditions will not wait for emptying
 of the `uncountedTerminatedPods` structure, as shown in the
 [experiment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2114710754).
