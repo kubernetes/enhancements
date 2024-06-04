@@ -176,12 +176,13 @@ updates.
 CrashLoopBackoff is designed to slow the speed at which failing containers
 restart, preventing the starvation of kubelet by a misbehaving container.
 Currently it is a subjectively conservative, fixed behavior regardless of
-container failure type: after containers in a Pod exit, the kubelet restarts
-them with an exponential back-off delay (10s, 20s, 40s, …), that is capped at
-five minutes. The delay for restarts will stay at 5 minutes until a container
-has executed for 10 minutes without any problems, in which case the kubelet
-resets the restart backoff timer for that container and further crash loops
-start again at the beginning of the delay curve
+container failure type: when a Pod has a restart policy besides `Never`, after
+containers in a Pod exit, the kubelet restarts them with an exponential back-off
+delay (10s, 20s, 40s, …), that is capped at five minutes. The delay for restarts
+will stay at 5 minutes until a container has executed for 10 minutes without any
+problems, in which case the kubelet resets the restart backoff timer for that
+container and further crash loops start again at the beginning of the delay
+curve
 ([ref](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)). 
 
 Both the decay to 5 minute back-off delay, and the 10 minute recovery threshold,
@@ -322,7 +323,7 @@ standard hockey-stick exponential decay graph followed by a linear rise until
 the heat death of the universe as depicted below:
 
 ![A graph showing the backoff decay for a Kubernetes pod in
-CrashLoopBackoff]('crashloopbackoff-succeedingcontainer.png' "CrashLoopBackoff
+CrashLoopBackoff](./crashloopbackoff-succeedingcontainer.png "CrashLoopBackoff
 decay")
 
 Remember that the backoff counter is reset if containers run longer than 10
@@ -347,7 +348,7 @@ value of 1s, and a catch-up delay of 569 seconds (almost 9.5 minutes) on the 6th
 retry.
 
 !["A graph showing the delay interval function needed to maintain restart
-number"]('initialvaluesandnumberofrestarts.png'
+number"](controlfornumberofrestarts.png
 "Alternate CrashLoopBackoff decay")
 
 
@@ -360,10 +361,10 @@ The wording of the public documentation
 ([ref](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-restarts))
 and the naming of the `CrashLoopBackOff` state itself implies that it is a
 remedy for a container not exiting as intended, but the restart delay decay
-curve is applied to all containers whose `restartPolicy = Always`. On the
+curve is applied to even successful pods if their `restartPolicy = Always`. On the
 canonical tracking issue for this problem, a significant number of requests
 focus on how an exponential decay curve is inappropriate for workloads
-completing as expected, and unnecessarily delays workloads from being
+completing as expected, and unnecessarily delays healthy workloads from being
 rescheduled.
 
 This KEP intends to vastly simplify and cut down on the restart delays for
@@ -375,7 +376,7 @@ value and benchmarking it before and during alpha is in the Design Details
 section, and for the first pass will be set to 5s.
 
 Fundamentally, this change is taking a stand that a successful exit of a
-workload is intentional by the end user -- and by extension, if its been
+workload is intentional by the end user -- and by extension, if it has been
 configured with `restartPolicy = Always`, that its impact on the Kubernetes
 infrastructure when restarting is by end user design. This is predicated on the
 concept that on its own, the Pod API best models long-running containers that
@@ -383,15 +384,24 @@ rarely or never exit themselves with "Success"; features like autoscaling,
 rolling updates, and enhanced workload types like StatefulSets assume this,
 while other workload types like those implemented with the Job and CronJob API
 better model workloads that do exit themselves, running until Success or at
-predictable intervals. 
+predictable intervals. The end user choice not to use one of these alternative
+workload types, but to run a relatively fast exiting Pod (under 10 minutes) with
+both a successful exit code and configured to `restartPolicy: Always`, is
+interpreted now directly as the intention for the end user to restart the pod
+quickly and without penalty to resume/restart its workloads without
+rescheduling.
+
+TODO: pic!
 
 This provides a workaround (and therefore, opportunity for abuse), where
 application developers could catch any number of internal errors of their
 workload in their application code, but exit with exit code 0, forcing extra
 fast restart behavior in a way that is opaque to kubelet or the cluster
 operator. Something similar is already being taken advantage of by application
-developers via wrapper scripts, but this causes no extra strain on kubelet as it
-simply causes the container to run indefinitely.
+developers via wrapper scripts, but this causes no direct extra strain on
+kubelet as it simply causes the container to run indefinitely.
+
+
 
 **Alternative**: Workloads must opt-in with `restartPolicy: FastOnSuccess`, as a
 foil to `restartPolicy: OnFailure`. In this case, existing workloads with
@@ -405,18 +415,19 @@ However, then it becomes impossible for a workload to opt into both
 
 For some users in
 [Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), any
-delay over 1 minute at any point is just too slow. A common refrain is that for
-independently recoverable errors, especially system infrastructure events or
-recovered external dependencies, or for critical sidecar pods, users would
-rather poll more often or more intelligently to reduce the amount of time a
-workload has to wait to try again after a failure. In the extreme cases, users
-want to be able to configure (by container, node, or exit code) the backoff to
-close to 0 seconds. This KEP considers it out of scope to implement fully
-user-customizable behavior, and too risky to node stability to allow
-legitimately crashing workloads to have a backoff of 0, but it is in scope to
-provide users a way to opt workloads in to a faster restart curve that is not as
-drastic as what is intended for `Success` states, nor as beholden to the status
-quo as the front loaded decay with interval solution suggested above.
+delay over 1 minute at any point is just too slow, even if it is legitimately
+crashing. A common refrain is that for independently recoverable errors,
+especially system infrastructure events or recovered external dependencies, or
+for absolutely nonnegotiably critical sidecar pods, users would rather poll more
+often or more intelligently to reduce the amount of time a workload has to wait
+to try again after a failure. In the extreme cases, users want to be able to
+configure (by container, node, or exit code) the backoff to close to 0 seconds.
+This KEP considers it out of scope to implement fully user-customizable
+behavior, and too risky to node stability to allow legitimately crashing
+workloads to have a backoff of 0, but it is in scope to provide users a way to
+opt workloads in to a faster restart curve that is not as drastic as what is
+intended for `Success` states, nor as beholden to the status quo as the new
+default front loaded decay with interval modification.
 
 Pods and init/sidecar containers will be able to set a new OneOf value,
 `restartPolicy: Rapid`, to opt in to an exponential backoff decay that starts at
@@ -434,7 +445,8 @@ Again, let it be known that by definition this KEP will cause pods to restart
 faster and more often than the current status quo and such a change is desired.
 However, to do so as safely as possible, improved visibility into cluster
 restart behavior is needed both for benchmarking this change and for cluster
-operator's to quantify the risk posed to their specific clusters on upgrade.
+operators to be able to quantify the risk posed to their specific clusters on
+upgrade.
 
 This KEP requires the ability to determine, for a given percentage of
 heterogenity between "Succeeded" terminating pods, crashing pods whose
@@ -449,6 +461,8 @@ container restarts, the container restart policy (inherited or declared), and
 the terminal state of a container before restarting must be tracked. For a more
 complete picture, pod lifecycle duration in CrashLoopBackoff state as opposed to
 Running state would also be useful.
+
+More details on the specifics of these changes are included in the Design Details and Production Readiness Review sections below.
 
 ### Relationship with liveness and readiness probes
 
