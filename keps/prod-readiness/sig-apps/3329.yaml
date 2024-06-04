@@ -4,4 +4,4 @@ alpha:
 beta:
   approver: "@johnbelamaric"
 stable:
-  approver: "@johnbelamaric" # tentatively, to be confirmed
+  approver: "@johnbelamaric"
