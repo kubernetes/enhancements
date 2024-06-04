@@ -123,13 +123,13 @@ A single-item List or Watch request is still a list as normal (including selecto
 ### Authorization Attributes changes
 
 The authorization attributes have easy access to the query parameter field and label selectors.
-To avoid confusion, field and label selectors will not be included in authorization attributes for verbs where the field
-selector has no semantic meaning.
+To avoid confusion, field and label selectors will not be included in authorization attributes for kube-apiserver requests
+with verbs where the field selector has no semantic meaning.
 In practice this means that (for now), only List, Watch, and DeleteCollection have field and label selectors.
-SubjectAccessReviews submitted to the kube-apiserver with verbs that do not honor the selectors will have the field and
-label selector attributes removed prior to checking authorization.
-Webhook authors: remember that the list of verbs accepting field and label selectors may change over time.
-If the kube-apiserver sends the FieldSelector or LabelSelector to a webhook, the kube-apiserver intends to honor the selector attributes.
+
+SubjectAccessReviews submitted to the kube-apiserver with verbs that do not honor the selectors will NOT modify the field and label selector attributes.
+The client is trusted to be sending only combinations that will be honored.
+
 Any authorizer that gets an error from `ParseFieldSelector` or `ParseLabelSelector` may attempt to authorize without
 field or label selectors since that will authorize using a wider permission (field and label selectors can only reduce access).
 
@@ -145,15 +145,18 @@ type Attributes interface {
     ParseLabelSelector() ([]Requirement, error)
 ```
 
+Webhook authors: remember that the list of verbs accepting field and label selectors may change over time.
+If the kube-apiserver sends the FieldSelector or LabelSelector to a webhook, the kube-apiserver intends to honor the selector attributes.
+
 #### Future-proofing your authorization webhook for future verbs
 
 As of 1.31, the only verbs with field and label selectors are List, Watch, and DeleteCollection.
-<<[UNRESOLVED deads2k, liggitt, jpbetz, sttts: this is a future promise for the kube-apiserver behavior if we add it ]>>
-In the future, the kube-apiserver may add field and label selectors to Create, Update, Patch, and Delete.
-<<[/UNRESOLVED]>>
+In the future, the kube-apiserver may add field and label selectors to Get, Create, Update, Patch, and Delete.
+* For Get, this means the field and label selector of the retrieved object must match.
 * For Create, this means that the resource after all mutation is complete (finalObject) must match the field and label selector. 
 * For Update/Patch, this means that the finalNewObject and oldObject must match the field and label selector.
 * For Delete, this means that the oldObject must match the field and label selector.
+* For subresources, if the storage layer cannot verify the parent object matches the selector (both old and new), the request must be rejected.
  
 We do not allow field and label selectors for Get, because if a client is specifying a selector, they can add a `.metadata.name`
 field selector and use a List to get equivalent functionality.
@@ -175,10 +178,8 @@ type SubjectAccessReviewSpec struct {
 }
 
 type ResourceAttributes struct {
-    // If the SubjectAccessReview specified verb,resource tuple does not honor field selection, the fieldSelector is ignored.
 	FieldSelector *FieldSelectorAttributes
 
-    // If the SubjectAccessReview specified verb,resource tuple does not honor label selection, the labelSelector is ignored.
 	LabelSelector *LabelSelectorAttributes
 }
 
@@ -288,6 +289,8 @@ To support this we will two congruent options similar to
 ```
 This will allow usage like `authorizer.group('').resource('pods').fieldSelector('spec.nodeName=foo').check('list').allowed()`.
 The parsing will happen during the call to `allowed` where we track errors and have means of handling them already.
+Field and label selectors that fail to parse will be ignored.
+No checking of valid verb,selector pairs is made.
 
 ### User Stories (Optional)
 
@@ -330,7 +333,8 @@ The `ResolveRequestInfo` method will not add field and label selectors to the `r
 in the `authorization.Attributes`, so the spurious selectors are not passed to the authorizer.
 This keeps authorization behavior exactly as it was previously.
 
-SubjectAccessReviews are similarly modified prior to calling the kube-apiserver authorizer.
+SubjectAccessReviews are not modified prior to calling the kube-apiserver authorizer.
+This allows skew in support between the kube-apiserver and other apiservers.
 
 #### client provides SAR where field rawSelector does not match field requirements.
 
