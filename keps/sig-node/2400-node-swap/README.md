@@ -695,6 +695,46 @@ type SwapStats struct {
 }
 ```
 
+In addition, we've added swap to stats to Summary API and Prometheus endpoints (`/stats/summary` and
+`/metrics/resource`):
+```shell
+> kubectl get --raw "/api/v1/nodes/<NODE-NAME>/proxy/metrics/resource" | grep swap
+# HELP container_swap_usage_bytes [ALPHA] Current container amount of swap usage in bytes
+# TYPE container_swap_usage_bytes gauge
+container_swap_usage_bytes{container="c1",namespace="default",pod="test-pod"} 3.4400333824e+10 1687950863878
+container_swap_usage_bytes{container="coredns",namespace="kube-system",pod="coredns-8f5847b64-t9gmr"} 0 1687950855483
+# HELP node_swap_usage_bytes [ALPHA] Current node swap usage in bytes
+# TYPE node_swap_usage_bytes gauge
+node_swap_usage_bytes 1.8446743709127774e+19 1687950863599
+# HELP pod_swap_usage_bytes [ALPHA] Current pod amount of swap usage in bytes
+# TYPE pod_swap_usage_bytes gauge
+pod_swap_usage_bytes{namespace="default",pod="test-pod"} 3.4379333632e+10 1687950858784
+pod_swap_usage_bytes{namespace="kube-system",pod="coredns-8f5847b64-t9gmr"} 0 1687950863144
+```
+
+```shell
+> kubectl get --raw "/api/v1/nodes/localhost/proxy/stats/summary"
+
+node:
+ nodeName: localhost
+ swap:
+   swapAvailableBytes: 407531442176
+   swapUsageBytes: 18446743709127774000
+pods:
+- name: test-pod
+  swapUsageBytes: 34379333632
+  containers:
+  - name: c1
+    swapUsageBytes: 34400333824 
+- name: coredns-8f5847b64-t9gmr
+  swapUsageBytes: 0
+  containers:
+  - name: coredns
+    swapUsageBytes: 0
+```
+
+(This output is simplified, for full examples please look at the description of: https://github.com/kubernetes/kubernetes/pull/118865)
+
 ### Test Plan
 
 <!--
