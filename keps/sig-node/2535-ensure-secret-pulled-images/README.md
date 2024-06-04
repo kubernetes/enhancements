@@ -15,9 +15,6 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
@@ -146,6 +143,7 @@ For beta an API will be considered to manage the ensure metadata.
 `kubelet` will ensure any image in the list is always pulled if an authentication
 used is not present, thus enforcing authentication / re-authentication.
 
+
 ### User Stories
 
 #### Story 1
@@ -176,36 +174,46 @@ Since images can be pre-loaded, loaded outside the `kubelet` process, and
 garbage collected.. the list of images that required authentication in `kubelet`
 will not be a source of truth for how all images were pulled that are in the
 container runtime cache. To mitigate, images can be garbage collected at boot.
-And for alpha, we will not persist ensure metadata across reboot of host, and restart
+And we will persist ensure metadata across reboot of host, and restart
 of kubelet, and possibly look at a way to add ensure metadata for images loaded
 outside of kubelet. In beta we will add a switch to enable re-auth on boot for
 admins seeking that instead of having to garbage collect where they do not use
 or expect preloaded images since boot.
 
+
 ## Design Details
 
-Kubelet will track, in memory, a hash map for the credentials that were successfully
-used to pull an image.
+Kubelet will track, in memory, a hash map for the credentials that were successfully used to pull an image.
+It has been decided that the hash map will be persisted to disk, in alpha.
+
+The persisted "cache" will undergo cleanup operations on a timely basis (by default once an hour).
+
+The persistence of the on storage cache is mainly for restarting kubelet and/or node reboot.
+
+The max size of the cache will scale with the number of unique cache entries * the number of unique images that have not been garbage collected.
+It is not expected that this will be a significant number of bytes. Will be verified by actual use in Alpha and subsequent metrics in Beta.
+
+See `/var/lib/kubelet/image_manager_state` in [kubernetes/kubernetes#114847](https://github.com/kubernetes/kubernetes/pull/114847)
+
+> ```
+> {
+>   "images": {
+>     "sha256:eb6cbbefef909d52f4b2b29f8972bbb6d86fc9dba6528e65aad4f119ce469f7a": {
+>       "authHash": { ** per review comment use SHA256 here vs hash **
+>         "115b8808c3e7f073": {
+>           "ensured": true,
+>           "dueDate": "2023-05-30T05:26:53.76740982+08:00"
+>         }
+>       },
+>       "name": "daocloud.io/daocloud/dce-registry-tool:3.0.8"
+>     }
+>   }
+> }
+> ```
 
 See PR linked above for detailed design / behavior documentation.
 
-Kubelet will add a new flag, named `PullImageSecretRecheckDuration` to make
-the expired duration configurable. The default value could be 1d. For a pod with
-IfNotPresent image pull policy and an image pull secret, kubelet will recheck
-the secret after `PullImageSecretRecheckDuration`.
-
-Use image pull policy `Always` if user want to recheck the secret everytime.
-
-For image pull policy "if not present", when admin/user doesn't want to automatically
-recheck the secret, set `PullImageSecretRecheckDuration` to 0 to disable it(which means
-never recheck).
-
 Note: using the tag `:latest` is equivalent to using the image pull policy `Always.`
-
-Note: since the cache is not persisted to disk, a recheck will happen every kubelet restart.
-This is acceptable because kubelet only restarts during upgrades or in maintenance modes.
-In other words, it should be relatively infrequent(and much less frequent than the default
-value of `PullImageSecretRecheckDuration`).
 
 ### Test Plan
 
@@ -247,6 +255,8 @@ For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by
 ```
 
 [TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
+
+PersistHashMeta() ** will be persisting SHA256 entries vs hash **
 
 Additionally, for Alpha we will update this readme with an enumeration of the core packages being touched by the PR to implement this enhancement and provide the current unit coverage for those in the form of:
 
