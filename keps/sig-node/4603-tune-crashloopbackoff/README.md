@@ -190,12 +190,15 @@ are considered too conservative, especially in cases where the exit code was 0
 (Success) and the pod is transitioned into a "Completed" state or the expected
 length of the pod run is less than 10 minutes. This KEP proposes a three-pronged
 approach to revisiting the CrashLoopBackoff behaviors for common use cases:
-1. modifying the standard backoff delay to decay slower, then plateau sharply,
-using empirically derived defaults intended to maintain node stability
+1. modifying the standard backoff delay to decay slower
 2. allowing containers to opt-in to an even faster backoff curve regardless of
 exit conditions
 3. reducing the backoff decay even further to sub-10 seconds plus jitter for all
 pods transitioning directly from a `Completed` state
+
+For each of these changes, the exact values are subject to modification in the
+alpha period in order to empirically derive  derived defaults intended to
+maintain node stability.
 
 ## Motivation
 
