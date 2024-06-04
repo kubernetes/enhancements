@@ -31,6 +31,7 @@
     - [Exhausting swap resource](#exhausting-swap-resource)
     - [Security risk](#security-risk)
     - [Cgroupv1 support](#cgroupv1-support)
+    - [Memory-backed volumes](#memory-backed-volumes)
 - [Design Details](#design-details)
   - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
   - [API Changes](#api-changes)
@@ -466,6 +467,25 @@ Additionally, end user may decide to disable swap completely for a Pod or a cont
 
 In the early release of this feature, there was a goal to support cgroup v1. As the feature progressed, sig-node realized that supporting swap with cgroup v1 would be very difficult.
 Therefore, this feature is limited to cgroupv2 only. The main goal is to deprecate cgroupv1 eventually so this should not be a major inconvience.
+
+#### Memory-backed volumes
+
+Kubernetes guarantees that some volumes' memory would never reside on disk, e.g. Secrets, memory-backed emptyDirs, etc.
+Behind the scenes, Kubelet mounts such volumes as tmpfs volumes on the host.
+
+To address this risk, if `--fail-swap-on=false`, the [tmpfs noswap option](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)
+will be used in order to prevent the volumes' pages from swapping to disk.
+
+Bear in mind that the tmpfs noswap option is fairly new and is supported in kernel versions >= 6.4. However, different
+Linux distributions can decide to backport this options to older versions of the kernel. Therefore, when
+`--fail-swap-on=false` is being provided on a node:
+* If the kernel version equals or is above 6.4, the tmpfs noswap option is being used when necessary.
+* Else, kubelet would try to mount a dummy volume with the tmpfs noswap option to understand whether the option is
+  backported. If the mount succeeds, the tmpfs noswap option is being used when necessary.
+* Else, kubelet would raise a warning about the option not being supported and the possible risk.
+
+In the longer term, when this option would be very widely supported, this would no longer be a concern, hence this logic
+could be dropped.
 
 ## Design Details
 
