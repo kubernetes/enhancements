@@ -534,7 +534,7 @@ exceeded), as part of fixing
 (issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
 
 See more details in the
-[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/issues/4368).
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
 
 #### Current state review
 
