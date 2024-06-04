@@ -1026,6 +1026,10 @@ N/A.
 
 - 2023-12.20 - First version of the KEP
 - 2024-03-05 - Merged implementation PR [Support for the Job managedBy field (alpha)](https://github.com/kubernetes/kubernetes/pull/123273)
+- 2024-03-07 - Merged [Update Job conformance test for job status updates](https://github.com/kubernetes/kubernetes/pull/123751)
+- 2024-03-08 - Merged [Follow up fix to the job status update test](https://github.com/kubernetes/kubernetes/pull/123815)
+- 2024-03-11 - Merged [Adjust the Job field API comments and validation to the current state](https://github.com/kubernetes/kubernetes/pull/123792)
+- 2024-05-16 - Merged [Fix the comment for the Job managedBy field](https://github.com/kubernetes/kubernetes/pull/124793)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
