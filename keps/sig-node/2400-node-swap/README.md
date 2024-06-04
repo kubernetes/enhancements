@@ -942,11 +942,15 @@ Here are specific improvements to be made:
 
 #### GA
 
-_(Tentative.)_
-
-- Test a wide variety of scenarios that may be affected by swap support.
-- Remove feature flag.
-- Remove the Swap Support using Burstable QoS Pods only deprecated in Beta 2.
+- Test a wide variety of scenarios that may be affected by swap support, including tests with aggressive memory stress.
+- Address memory-backed backed volumes which should not have access to swap.  
+- Remove feature gate.
+- Exclude high-priority, static and mirrored pods from gaining access to swap.
+- Add documentation regarding encrypted swap.
+- Test a wide variety of scenarios in which the node is being memory-stressed with different eviction and swap configurations. 
+Ensure the behavior is consistent and reliable.
+- Use the presence of the e2e tests to inform documentation changes warning users about the behavior of eviction and swap
+with different swap configurations and eviction thresholds.
 
 ### Upgrade / Downgrade Strategy
 
