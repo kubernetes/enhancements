@@ -416,9 +416,12 @@ tracking the number of terminating pods as soon as the Job is marked as Failed
 with the `Failed` condition (see (issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775]).
 The remaining pods may be occupying resources for an arbitrary amount of time.
 
-In the 1.31 iteration of Beta we are going to fix this issue by delaying the
+In 1.31 we are going to fix this issue by delaying the
 addition of the `Failed` or `Complete` conditions until all pods are fully
-terminated (for more details see [Job API managed-by mechanism](https://github.com/kubernetes/enhancements/issues/4368)).
+terminated. To indicate that a Job is doomed to fail or succeed, as soon as
+possible, we extend the scope of pre-existing conditions: `FailureTarget`, and
+`SuccessCriteriaMet`, respectively, See more details in
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
 
 ### Implementation
 
