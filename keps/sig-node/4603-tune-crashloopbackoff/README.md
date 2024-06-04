@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Tune CrashLoopBackoff
+# KEP-4604: Tune CrashLoopBackoff
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -655,6 +655,46 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Changes to existing backoff curve implemented behind a feature flag 
+    1. Front-loaded decay curve with interval for all workloads with
+       `restartPolicy: Always`
+    2. 0-10 sec + jitter for workloads transitioning from "Success" state
+    3. Front-loaded, max cap backoff curve for workloads with `restartPolicy:
+       Rapid`
+- New OneOf option `Rapid` for `pod.spec.restartPolicy` and
+  `pod.spec.container.restartPolicy` (init and restart containers only),
+  converted to `Always` on downgrade or without feature flag
+- Metrics implemented to expose pod and container restart policy statistics,
+  exit states, and runtimes
+- Initial e2e tests completed and enabled
+  * Feature flag on or off
+  * pod and container restart policy `Rapid` upgrade and downgrade path
+- Fix https://github.com/kubernetes/kubernetes/issues/123602 if this blocks the
+  implementation, otherwise beta criteria
+- Low confidence in the specific numbers/decay rate
+
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- High confidence in the specific numbers/decay rate
+- Benchmark restart load methodology and analysis published and discussed with
+  SIG-Node
+- Additional e2e and benchmark tests, as identified during alpha period, are in
+  Testgrid and linked in KEP
+
+#### GA
+
+- 2 Kubernetes releases soak in beta
+- Completely finalize the decay curves and document them thoroughly
+- Remove the feature flag code
+- Confirm the exponential backoff decay curve related tests and code are still
+  in use elsewhere and do not need to be removed
+- Conformance test added for pods/sidecar containers with `restartPolicy: Rapid`
+
 
 <!--
 **Note:** *Not required until targeted at a release.*
