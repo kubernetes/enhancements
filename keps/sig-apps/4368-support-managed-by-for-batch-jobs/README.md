@@ -474,20 +474,20 @@ We propose a single e2e test for the following scenario:
   API fields affected by the new validation rules
 - make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
 - The feature flag disabled by default
+- implement the `job_by_external_controller_total` metric
+
+Second Alpha (1.31):
+- preparatory fix to address all known inconsistencies between validation and the
+  Job controller behavior, in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775).
+  The proposed approach is outlined in [here](#terminating-pods-and-terminal-job-conditions).
 
 #### Beta
 
 - e2e tests
-- implement the `job_by_external_controller_total` metric
-- address all known inconsistencies between validation and the Job controller behavior,
-  in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775).
-  The proposed approach is outlined in [here](#terminating-pods-and-terminal-job-conditions).
-- verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
-- The feature flag enabled by default
-
-Second Beta (1.32):
 - Add validation rule that `Failed` and `Complete` conditions are added when
   `terminating=0`, and `ready=0`.
+- verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
+- The feature flag enabled by default
 
 #### GA
 
