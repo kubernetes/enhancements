@@ -384,8 +384,8 @@ arbitrarily long if the non-standard pod graceful termination period
 (`terminationGracePeriodSeconds`) is configured (30s by default). In order to
 give the API clients flexibility to know the fate of a Job as soon as possible
 we extend the scope for the following Job conditions:
-- `FailureTarget` - introduced in [Pod Failure Policy KEP](https://github.com/kubernetes/enhancements/issues/3329)
-- `SuccessCriteriaMet` - introduced in [Success Policy KEP](https://github.com/kubernetes/enhancements/issues/3998)
+- `FailureTarget` - introduced in [Pod Failure Policy KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures)
+- `SuccessCriteriaMet` - introduced in [Success Policy KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3998-job-success-completion-policy)
 
 Note that, with the new conditions an API client can know the fate of a Job
 earlier than currently, since adding the conditions will not wait for emptying
