@@ -956,6 +956,7 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 - 2023-10-13: Kep is proposed as alpha feature
+- 2024-06-04: Kep is promoted to beta
 
 ## Drawbacks
 
