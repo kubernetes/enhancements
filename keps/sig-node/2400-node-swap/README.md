@@ -627,24 +627,20 @@ type KubeletConfiguration struct {
 }
 
 type MemorySwapConfiguration struct {
-	// Configure swap memory available to container workloads. May be one of
-  // "", "NoSwap": workload will not use swap
-	// "LimitedSwap": workload combined memory and swap usage cannot exceed pod memory limit
-	SwapBehavior string
-}
+	// swapBehavior configures swap memory available to container workloads. May be one of
+	// "", "NoSwap": workloads can not use swap, default option.
+	// "LimitedSwap": workload swap usage is limited. The swap limit is proportionate to the container's memory request.
+	// +featureGate=NodeSwap
+	// +optional
+	SwapBehavior string `json:"swapBehavior,omitempty"`}
 ```
 
 We want to expose common swap configurations based on the [Docker] and open
 container specification for the `--memory-swap` flag. Thus, the
 `MemorySwapConfiguration.SwapBehavior` setting will have the following effects:
 
-* If `SwapBehavior` is set to `"LimitedSwap"`, containers do not have
-  access to swap beyond their memory limit. This value prevents a container
-  from using swap in excess of their memory limit, even if it is enabled on a
-  system.
-  * With cgroups v2, swap is configured independently from memory. Thus, the
-    container runtimes can set [`memory.swap.max`] to 0 in this case, and _no_ swap
-    usage will be permitted.
+* If `SwapBehavior` is set to `"LimitedSwap"`, containers have limited (or no) swap access.
+  See "Steps to Calculate Swap Limit" above.
 * If `SwapBehavior` is set to `""` or `"NoSwap"`, no workloads will utilize swap.
 
 [docker]: https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details
