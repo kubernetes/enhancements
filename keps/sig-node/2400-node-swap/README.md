@@ -456,6 +456,7 @@ To avoid exhausting swap on a node, `UnlimitedSwap` was dropped from the API in 
 #### Security risk
 
 Enabling swap on a system without encryption poses a security risk, as critical information, such as Kubernetes secrets, may be swapped out to the disk. If an unauthorized individual gains access to the disk, they could potentially obtain these secrets. To mitigate this risk, it is recommended to use encrypted swap. However, handling encrypted swap is not within the scope of kubelet; rather, it is a general OS configuration concern and should be addressed at that level. Nevertheless, it is essential to provide documentation that warns users of this potential issue, ensuring they are aware of the potential security implications and can take appropriate steps to safeguard their system.
+The documentation updates are required; there is already a [blog article](https://kubernetes.io/blog/2023/08/24/swap-linux-beta/) that mentions the security implications.
 
 To guarantee that system daemons are not swapped, the kubelet must configure the `memory.swap.max` setting to `0` within the system reserved cgroup. Moreover, to make sure that burstable pods are able to utilize swap space, kubelet should verify that the cgroup associated with burstable pods should not be nested under the cgroup designated for system reserved.
 
