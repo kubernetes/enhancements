@@ -3,6 +3,7 @@ kep-number: 2535
 authors:
   - "@mikebrow"
   - "@pacoxu"
+  - "@haircommander"
 owning-sig: sig-node
 status: implementable
 creation-date: 2021-03-10
@@ -11,16 +12,15 @@ reviewers:
   - "@yujuhong"
   - "@mrunalp"
   - "@adisky"
-  - "@haircommander"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: alpha
-latest-milestone: "v1.30"
+latest-milestone: "v1.31"
 milestone:
-  alpha: "v1.30"
-  beta: "v1.31"
-  stable: "v1.33"
+  alpha: "v1.31"
+  beta: "v1.32"
+  stable: "v1.34"
 feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:
