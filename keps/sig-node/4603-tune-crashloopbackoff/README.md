@@ -299,10 +299,9 @@ nitty-gritty.
 
 This design seeks to incorporate a three-pronged approach:
 
-1. Change the existing default backoff curve to stack more retries earlier, but
-   target the same amount of overall retries as the current behavior. This means
-   more restarts in the first 1 min or so, but later retries would be spaced out
-   further than they are today.
+1. Change the existing initial value for the backoff curve to stack more retries
+   earlier for all restarts (`restartPolicy: OnFailure` and `restartPolicy:
+   Always`)
 2. Allow fast, flat-rate (0-10s + jitter) restarts when the exit code is 0, if
    `restartPolicy: Always`.
 3. Provide a `restartPolicy: Rapid` option to configure even faster restarts for
@@ -315,7 +314,7 @@ better analyze and anticipate the change in load and node stability as a result
 of these changes.
 
 
-#### Existing backoff curve change: front loaded decay with interval
+#### Existing backoff curve change: front loaded decay
 
 As mentioned above, today the standard backoff curve is an exponential decay
 starting at 10s and capping at 5 minutes, resulting in a composite of the
@@ -334,22 +333,13 @@ in the first 30 minutes the container will restart about 10 times, with the
 first four restarts in the first 5 minutes.
 
 This KEP proposes changing the existing backoff curve to load more restarts
-earlier by changing the initial value of the exponential backoff. In an effort
-to anticipate API server stability ahead of the experiential data we can collect
-during alpha, the proposed changes are to both reduce the initial value, and
-step function to a higher delay cap once the decay curve triggers the same
-number of total restarts as experienced today in a 10 minute time horizon, in
-order to approximate load (though not rate) of pod restart API server requests.
+earlier by changing the initial value of the exponential backoff. A number of
+alternate initial values are modelled below, until the 5 minute cap would be
+reached. This proposal suggests we start with a new initial value of 1s, and
+analyze its impact on infrastructure during alpha.
 
-The detailed methodology for determining the implementable starting value and
-step function cap, and benchmarking it during and after alpha, is enclosed in
-Design Details. In short, the current proposal is to implement a new initial
-value of 1s, and a catch-up delay of 569 seconds (almost 9.5 minutes) on the 6th
-retry.
-
-!["A graph showing the delay interval function needed to maintain restart
-number"](controlfornumberofrestarts.png
-"Alternate CrashLoopBackoff decay")
+!["A graph showing the decay curves for different initial values"](differentinitialvalues.png
+"Alternate CrashLoopBackoff initial values")
 
 
 #### Flat-rate restarts for `Success` (exit code 0)
@@ -1193,6 +1183,32 @@ These overrides will exist for the following reasons:
 These had been selected because there are known use cases where changed restart
 behavior would benefit workloads epxeriencing these categories of failures.
 
+### Front loaded decay with interval
+In an effort
+to anticipate API server stability ahead of the experiential data we can collect
+during alpha, the proposed changes are to both reduce the initial value, and include a
+step function to a higher delay cap once the decay curve triggers the same
+number of total restarts as experienced today in a 10 minute time horizon, in
+order to approximate load (though not rate) of pod restart API server requests.
+
+In short, the current proposal is to implement a new initial
+value of 1s, and a catch-up delay of 569 seconds (almost 9.5 minutes) on the 6th
+retry.
+
+!["A graph showing the delay interval function needed to maintain restart
+number"](controlfornumberofrestarts.png
+"Alternate CrashLoopBackoff decay")
+
+**Why not?**: If we keep the same decay rate as today (2x), no matter what the
+initial value is, the majority of the added restarts are in the beginning. Even
+if we "catch up" the delay to the total number of restarts, we expect problem
+with kubelet to happen more as a result of the faster restarts in the beginning,
+not because we spaced out later ones longer. In addition, we are only talking
+about 3-7 more restarts per backoff, even in the fastest modeled case (25ms
+initial value), which is not anticipated to be a sufficient enough hit to the
+infrastructure to warrant implementing such a contrived backoff curve.
+
+!["A graph showing the changes to restarts depending on some initial values"](initialvaluesandnumberofrestarts.png "Different CrashLoopBackoff initial values")
 
 ### More complex heuristics
 
