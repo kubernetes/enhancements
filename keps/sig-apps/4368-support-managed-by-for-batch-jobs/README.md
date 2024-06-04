@@ -367,7 +367,11 @@ clear.
 
 We also plan to add a validation rule to make sure that the terminal conditions
 (`Failed` and `Complete`) are only added to Job when all pods are terminated.
-For that we plan to follow the approach described [below](#terminating-pods-and-terminal-job-conditions).
+For that we plan to follow the approach described [below](#terminating-pods-and-terminal-job-conditions),
+which extend the scope of the interim `FailureTarget` and `SuccessCriteriaMet`
+conditions. We will also validate that the transition to `Failed` or `Complete`
+condition is preceded by adding the `FailureTarget` or `SuccessCriteriaMet`
+condition, respecively.
 
 #### Terminating pods and terminal Job conditions
 
