@@ -429,11 +429,12 @@ opt workloads in to a faster restart curve that is not as drastic as what is
 intended for `Success` states, nor as beholden to the status quo as the new
 default front loaded decay with interval modification.
 
-Pods and init/sidecar containers will be able to set a new OneOf value,
-`restartPolicy: Rapid`, to opt in to an exponential backoff decay that starts at
-a low initial value and maximizes to a cap of 1 minute. The detailed methodology
-for determining the implementable starting value, and benchmarking it during and
-after alpha, is enclosed in Design Details, but will start at 250ms.
+Pods and restartable init (aka sidecar) containers will be able to set a new
+OneOf value, `restartPolicy: Rapid`, to opt in to an exponential backoff decay
+that starts at a low initial value and maximizes to a cap of 1 minute. The
+detailed methodology for determining the implementable starting value, and
+benchmarking it during and after alpha, is enclosed in Design Details, but will
+start at 250ms.
 
 TODO: Confirm the interaction between pod level restart policy and container
 level restartpolicy if not only for sidecar containers
@@ -679,8 +680,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
     3. Front-loaded, max cap backoff curve for workloads with `restartPolicy:
        Rapid`
 - New OneOf option `Rapid` for `pod.spec.restartPolicy` and
-  `pod.spec.container.restartPolicy` (init and restart containers only),
-  converted to `Always` on downgrade or without feature flag
+  `pod.spec.container.restartPolicy` (restartable init aka sidecar containers
+  only), converted to `Always` on downgrade or without feature flag
 - Metrics implemented to expose pod and container restart policy statistics,
   exit states, and runtimes
 - Initial e2e tests completed and enabled
