@@ -18,8 +18,8 @@ approvers:
 creation-date: 2020-04-15
 last-updated: 2024-01-20
 stage: stable
-status: implementable
-latest-milestone: "v1.30"
+status: implemented
+latest-milestone: "v1.31"
 milestone:
   alpha: "v1.21"
   beta: "v1.28"
