@@ -527,16 +527,9 @@ high retry load.
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- 2024-01-31: KEP merged as implementable
+- Kubernetes v1.30 - Implementation available as an off-by-default alpha feature
+- Kubernetes v1.31 - Implementation available as an on-by-default beta feature
 
 ## Drawbacks
 
