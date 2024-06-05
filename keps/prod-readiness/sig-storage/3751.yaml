@@ -4,3 +4,5 @@
 kep-number: 3751
 alpha:
   approver: "@johnbelamaric"
+beta:
+  approver: "@johnbelamaric"
