@@ -453,7 +453,15 @@ The following scenarios are covered:
 - the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
 - verify the field is immutable, both when the job is suspended or unsuspended; when the feature is enabled
 - enablement / disablement of the feature after the Job (with custom "managedBy" field) is created
-- verify the new Job Status API validation rules (see [here](#job-status-validation))
+- verify the new Job Status API validation rules (see [here](#job-status-validation)). In particular:
+  1. `Failed` and `Complete` conditions cannot be added when `status.terminating!=0` or `status.ready!=0`
+  2. `Failed` and `Complete` conditions cannot be added if there are not corresponding `FailureTarget` or `SuccessCriteriaMet` conditions,
+  3. the counter for the "ready" pods is lower or equal to the counter for "active" pods
+
+The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 ##### Integration tests
 
@@ -467,6 +475,11 @@ The following scenarios are covered:
 - the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created
 - the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value
 - the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy")
+
+The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 During the implementation more scenarios might be covered.
 

@@ -483,6 +483,11 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - `gc_controller.go`: `April 3rd 2023` - `82.4`
    a. Set `PodPhase` to `failed` when `JobPodReplacementPolicy` true but `PodDisruptionConditions` is false
 
+The following scenarios related to [tracking the terminating pods](#tracking-the-terminating-pods) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
+
 ##### Integration tests
 
 <!--
@@ -532,8 +537,13 @@ Case for disable and reenable `JobPodReplacementPolicy`
   11. Verify that pod creation only occurs once pod is fully terminated.
   12. Verify that pod creation only occurs once deletion happens.
 
-To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.  
-Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.  
+To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.
+Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.
+
+The following scenarios related to [tracking the terminating pods](#tracking-the-terminating-pods) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 ##### e2e tests
 
