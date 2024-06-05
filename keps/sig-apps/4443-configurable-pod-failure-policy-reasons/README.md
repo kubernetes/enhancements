@@ -621,6 +621,7 @@ well as the [existing list] of feature gates.
   - Feature gate name: `PodFailurePolicyName`
   - Components depending on the feature gate:
     - kube-controller-manager
+    - kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -673,6 +674,8 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 We can add unit tests for:
 - feature enabled and field set
 - feature disabled and field set
+- feature disabled after Jobs have `JobFailed` condition with reason set using the
+new format
 
 ### Rollout, Upgrade and Rollback Planning
 
