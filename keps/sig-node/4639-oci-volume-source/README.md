@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Vocabulary: OCI Images, Artifacts, and Objects](#vocabulary-oci-images-artifacts-and-objects)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -268,9 +269,7 @@ to support this source type. Key design aspects include:
 - API changes to introduce the new `VolumeSource` type.
 - Modifications to the Kubelet to handle mounting OCI images and artifacts.
 - Handling image pull secrets and registry authentication.
-- Reuse existing logic from ConfigMaps for:
-  - Determining the file location on the host filesystem.
-  - Handling updates to the OCI image or artifact, similar to how ConfigMaps update mounted files.
+- Reuse existing logic from ConfigMaps to determining the file location on the host filesystem.
 
 The following code snippet illustrates the proposed API change:
 
@@ -356,7 +355,7 @@ message ImageSpec {
     // …
 
     // Absolute local path where the image/artifacts should be mounted to.
-    string mount_path = 20;
+    string mountpoint = 20;
 }
 ```
 
@@ -366,14 +365,15 @@ plugin as part of the existing [volume manager](https://github.com/kubernetes/ku
 
 #### Container Runtimes
 
-Container runtimes need to support the new `mount_path` field, otherwise the
-feature cannot be used. The kubelet will verify if the mount path actually
+Container runtimes need to support the new `mountpoint` field, otherwise the
+feature cannot be used. The kubelet will verify if the `mountpoint` actually
 exists on disk to check the feature availability, because Protobuf will strip
 the field in a backwards compatible way for older runtimes. Pods using the new
 `VolumeSource` combined with a not supported container runtime version will fail
 to run on the node.
 
-For security reasons, volume mounts should be done using the [`noexec`] flag.
+For security reasons, volume mounts should set the [`noexec`] and `ro`
+(read-only) options by default.
 
 ### Test Plan
 
