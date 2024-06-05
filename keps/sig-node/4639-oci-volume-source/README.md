@@ -218,6 +218,15 @@ As a data scientist, MLOps engineer, or AI developer, I want to mount large lang
 without including them in the container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
 efficient model deployment. This allows to separate the data from the executables that process them.
 
+#### Story 4
+
+As a security engineer, I want to use a public image for a malware scanner and
+mount in a volume of private (commercial) malware signatures, so that I can load
+those signatures without baking my own combined image (which might not be
+allowed by the copyright on the public image). Those files work regardless of
+the OS or version of the scanning software.
+
+
 ### Notes/Constraints/Caveats (Optional)
 
 - This enhancement assumes that the cluster has access to the OCI registry.
