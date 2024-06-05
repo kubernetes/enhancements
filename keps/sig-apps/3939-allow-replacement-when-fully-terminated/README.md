@@ -599,7 +599,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Address reviews and bug reports from Beta users
 - Allow Job API clients tracking the number of the terminating pods until all
-  the resources are released (see [tracking the terminating pods](#tracking-the-terminating-pods))
+  the resources are released (see [tracking the terminating pods](#tracking-the-terminating-pods)).
+  Also, link provide links for the relevant integration tests in the KEP.
 - Lock the `JobPodReplacementPolicy` feature-gate to true
 
 #### Deprecation

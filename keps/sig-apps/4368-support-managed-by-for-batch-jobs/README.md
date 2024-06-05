@@ -517,7 +517,7 @@ Second Alpha (1.31):
 
 - e2e tests
 - Add validation rule that `Failed` and `Complete` conditions are added when
-  `terminating=0`, and `ready=0`.
+  `terminating=0`, and `ready=0`. Also, link provide links for the relevant integration tests in the KEP.
 - Add validation rule that the count of ready pods is lower or equal than active pods
 - verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
