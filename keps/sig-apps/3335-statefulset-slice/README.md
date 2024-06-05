@@ -99,6 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -139,15 +140,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -536,6 +537,11 @@ in back-to-back releases.
  * Enable feature gate for e2e pipelines
  * Add e2e tests
 
+#### GA
+
+ * Real-world usage
+   * ([The LeaderWorkerSet API (LWS)](https://github.com/kubernetes-sigs/lws/blob/main/docs/setup/install.md))
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -562,14 +568,18 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
 
 There are only `kube-controller-manager` changes involved (in addition to the apiserver changes for dealing with the new StatefulSet field). Node components are not involved so there is no version skew between nodes and the control plane.
+
+An n-1 `kube-controller-manager` will have the same effect (when applicable) as rolling back
+to a version where this feature is not enabled. See
+[Rollout, upgrade and rollback planning](#rollout-upgrade-and-rollback-planning) for details.
 
 ## Production Readiness Review Questionnaire
 
@@ -729,7 +739,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Manual upgrade->downgrade->upgrade scenario (to be validated):
+A manual upgrade->downgrade->upgrade scenario was performed:
 
 - Create a cluster on a version that doesn't use this feature (eg: 1.26)
 - Upgrade a cluster to a version that uses this feature (eg: 1.27)
@@ -784,7 +794,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Other (treat as last resort)
+- [X] Other (treat as last resort)
   - Details: The user can inspect the pods that are created by the StatefulSet
     which match the StatefulSet's selector.
 
@@ -959,6 +969,22 @@ This through this both in small and large cases, again with respect to the
 
 No. Resource usage remains the same with this feature.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No. This feature runs only on the control plane (StatefulSet controller within `kube-controller-manager`).
+It also doesn't result in any increased node usage, as the number of expected StatefulSet replicas
+remains constant whether this feature is enabled (`.spec.ordinals.start` is set).
+
 ### Troubleshooting
 
 <!--
@@ -1045,7 +1071,8 @@ Major milestones might include:
 
   - 2022-06-02: KEP created.
   - 2022-10-06: Alpha implementation.
-  - 2023-02-09: Beta implementation.
+  - 2023-02-09: Beta graduation.
+  - 2024-06-04: Stable graduation.
 
 ## Drawbacks
 
