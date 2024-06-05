@@ -269,7 +269,7 @@ metadata:
   name: some-custom-controller-0001A
   namespace: kube-system
 spec:
-  canLeadLease: kube-system/some-custom-controller
+  canLeadLease: some-custom-controller
   leaseDurationSeconds: 300
   renewTime: "2023-12-05T02:33:08.685777Z"
 ```
@@ -380,11 +380,12 @@ The `Strategy` field signals to the coordinated leader election controller the
 appropriate algorithm to use when selecting leaders.
 
 We will allow the Coordinated Leader Election controller to create a Lease
-without a holder. If there are no candidate objects, the `Strategy` field will remain
-empty to indicate that the `Lease` is not managed by the CLE controller.
-Otherwise the strategy will always default to `MinimumCompatibilityVersion`. 
-The `Lease` may also be updated by a third party to the desired
-`spec.Strategy` if an alternate strategy is preferred. This may be done either by the candidates, users, or additional controllers.
+without a holder. If there are no candidate objects, the `Strategy` field will
+remain empty to indicate that the `Lease` is not managed by the CLE controller.
+Otherwise the strategy will always default to `MinimumCompatibilityVersion`. The
+`Lease` may also be updated by a third party to the desired `spec.Strategy` if
+an alternate strategy is preferred. This may be done either by the candidates,
+users, or additional controllers.
 
 #### Alternative for Strategy
 
@@ -521,7 +522,7 @@ For the LeaseCandidate leases, a new lease will be created
 type LeaseCandidateSpec struct {
   // The fields BinaryVersion and CompatibilityVersion will be mandatory labels instead of fields in the spec
 
-	// CanLeadLease is in the format <namespace>/<name>, indicating the namespace and name of the lease that the candidate may lead
+	// CanLeadLease indicates the name of the lease that the candidate may lead
 	CanLeadLease string
 
 	// Strategy indicates the preferred strategy for the coordinated leader election controller to use.
