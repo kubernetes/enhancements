@@ -167,9 +167,11 @@ The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports O
 This allows users to package files and share them among containers in a pod without including them in the main image,
 thereby reducing vulnerabilities and simplifying image creation.
 
-While OCI images are well-supported by Kubernetes and CRI,
-extending support to OCI artifacts involves recognizing additional media types, implementing custom lifecycle management,
-and ensuring appropriate validation and security measures.
+While OCI images are well-supported by Kubernetes and CRI, extending support to
+OCI artifacts involves recognizing additional media types within container
+runtimes, implementing custom lifecycle management, resolution of artifact
+registry referrers use pattern for artifacts, and ensuring appropriate
+validation and security measures.
 
 ## Motivation
 
@@ -207,7 +209,7 @@ Beside that, I want:
 
 #### Story 2
 
-As a DevOps engineer, I want to package and distribute binary artifacts using OCI images and mount them directly into my Kubernetes pods,
+As a DevOps engineer, I want to package and distribute binary artifacts using OCI image and distribution specification standards and mount them directly into my Kubernetes pods,
 so that I can streamline my CI/CD pipeline. I want to package this file in an OCI object to take advantage of OCI distribution.
 
 #### Story 3
@@ -296,6 +298,16 @@ potential enhancements may be required:
 
 **Artifact-Specific Configuration:**
    - Introduce new configuration options to handle the unique requirements of different types of OCI artifacts.
+
+**Artifacts as Subject Referrers:**
+   - Introduce new refer to image and filter for artifact type criterion/options for to be mounted artifact(s).
+   - Certain types of OCI artifacts include a subject reference. That reference
+     identifies the artifact/image for which this artifact refers. For example a
+     signature artifact could refer to a platform index, for certifying the
+     platform images, or to an SBOM artifact that refers to a platform matched
+     image. These artifacts may or may not be located on the same
+     registry/repository. The new referrers API allows for retrieving these
+     artifacts.
 
 **Validation:**
    - Extend validation and security checks to cover new artifact types.
