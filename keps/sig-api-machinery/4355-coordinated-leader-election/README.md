@@ -380,9 +380,11 @@ The `Strategy` field signals to the coordinated leader election controller the
 appropriate algorithm to use when selecting leaders.
 
 We will allow the Coordinated Leader Election controller to create a Lease
-without a holder. The `Lease` may be updated by a third party to the desired
-`spec.Strategy`. The strategy will always default to
-`MinimumCompatibilityVersion`. 
+without a holder. If there are no candidate objects, the `Strategy` field will remain
+empty to indicate that the `Lease` is not managed by the CLE controller.
+Otherwise the strategy will always default to `MinimumCompatibilityVersion`. 
+The `Lease` may also be updated by a third party to the desired
+`spec.Strategy` if an alternate strategy is preferred. This may be done either by the candidates, users, or additional controllers.
 
 #### Alternative for Strategy
 
