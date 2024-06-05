@@ -178,7 +178,7 @@ to the `JobFailed` condition added to the Job when it fails, but different pod f
 same condition reason of `PodFailurePolicy`. This prevents higher level APIs like JobSet from distinguishing them and being able to take different
 actions depending on the type of Job failure that occurred.
 
-For a concrete use case, see the JobSet [Configurable Failury Policy KEP](https://github.com/kubernetes-sigs/jobset/pull/381) which illuminated the need for more granular pod failure policy reasons.
+For a concrete use case, see the JobSet [Configurable Failury Policy KEP](https://github.com/kubernetes-sigs/jobset/blob/main/keps/262-ConfigurableFailurePolicy/README.md) which illuminated the need for more granular pod failure policy reasons.
 
 ### Goals
 
@@ -361,7 +361,7 @@ If unset, the `Name` field will default to the index of the pod failure policy r
 
 #### Validation
 - Validate all pod failure policy rule names are unique.
-- We will validate the Job failure conditionr reason that would be generated from a given
+- We will validate the Job failure condition reason that would be generated from a given
 PodFailurePolicy rule name (i.e., `PodFailurePolicy_{ruleName}`) will be a valid reason (CamelCase, max length of 128 characters, and matches the regex defined [here](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1559)).
 - We will also validate the pod failure policy rule does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
 
@@ -521,6 +521,16 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag
 - Initial unit and integration tests are implemented
+- Documentation is updated
+
+#### Beta
+- Address reviews and bug reports from Alpha users
+- Feature is stable in Alpha for 1 release cycle
+- Feature flag enabled by default
+
+#### GA
+- Address reviews and bug reports from Beta users
+- Feature is stable in Beta for 2 full release cycles
 
 ### Upgrade / Downgrade Strategy
 
@@ -643,7 +653,7 @@ Yes, by disabling the feature flag `PodFailurePolicyName`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-For new Jobs, the apiserver will stop wiping out the new field.
+For new Jobs, the apiserver will stop wiping out the new field (`Name`).
 For existing Jobs, the Job controller will stop ignoring the new field, and begin
 using it as described in previous sections.
 
@@ -679,6 +689,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+If any component has not yet rolled out, or fails to rollout, the existing
+default behavior will continue to apply, but there is no downtime during partial
+rollout or rollback.
+
 
 ###### What specific metrics should inform a rollback?
 
@@ -686,20 +700,24 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+A substantial increase in the `job_sync_duration_seconds` metric may suggest the
+processing of the configured job pod failure policy rules consumes too much time.
+
+An operator can also observe `job_pods_finished_total` to check if the reason count
+of taken actions (`FailJob`, `Count` or `Ignore`) correlates with the expected
+changes based on the Job workload specificity.
+
+Additionally, an operator should check if the failed Jobs have the correct condition
+reason set on the `JobFailed` reason, as described in the [design details](#design-details).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Feature is not implemented yet so we cannot test these paths.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+`PodFailurePolicy` reason format will be deprecated in GA and replaced by `PodFailurePolicy_{RuleName}`.
+Until then, we will maintain both based on conditional logic behind a feature flag.
 
 ### Monitoring Requirements
 
@@ -760,12 +778,11 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `job_sync_duration_seconds` (existing): can be used to see how much the
+feature enablement increases the time spent in the sync job
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -774,11 +791,14 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+No.
+
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
 
 ###### Does this feature depend on any specific services running in the cluster?
 
