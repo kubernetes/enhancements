@@ -538,7 +538,24 @@ connection to the apiserver. Access control through a validating admission
 policy can ensure that the drivers running on one node are not allowed to
 create or modify `ResourceSlices` belonging to another node. The `nodeName`
 and `driverName` fields in each `ResourceSlice` object are used to determine which objects are
-managed by which driver instance.
+managed by which driver instance. The owner reference ensures that objects
+beloging to a node get cleaned up when the node gets removed.
+
+In addition, whenever kubelet starts, it first deletes all `ResourceSlices`
+belonging to the node with a `DeleteCollection` call that uses the node name in
+a field filter. This ensures that no pods depending in DRA get scheduled to the
+node until the required DRA drivers have started up again (node reboot) and
+reconnected to kubelet (kubelet restart). It also ensures that drivers which
+don't get started up again at all don't leave stale `ResourceSlices`
+behind. Garbage collection does not help in this case because the node object
+still exists. For the same reasons, the ResourceSlices belonging to a driver
+get removed when the driver unregisters, this time with a field filter for node
+name and driver name.
+
+Deleting `ResourceSlices` is possible because all information in them can be
+reconstructed by the driver. This has no effect on already allocated claims
+because the allocation result is tracked in those claims, not the
+`ResourceSlice` objects (see [below](#state-and-communication)).
 
 Embedded inside each `ResourceSlice` is the representation of the resources
 managed by a driver according to a specific "structured model". In the example
@@ -2068,16 +2085,12 @@ kubelet wouldn't know about a new version anyway.
 
 Keeping kubelet at some old release while upgrading the control and DRA drivers
 is desirable and officially supported by Kubernetes. To support the same when
-using DRA, the kubelet now leaves ResourceSlice handling (almost) entirely to
-the plugins. The one exception is that it deletes all ResourceSlices on
-startup. This ensures that no pods depending in DRA get scheduled to the node
-until the required DRA drivers have started up again. It also ensures that
-drivers which don't get started up again at all don't leave stale
-ResourceSlices behind. For the same reasons, the ResourceSlices belonging to a
-driver get removed when the driver unregisters. This access is done with
-whatever resource.k8s.io API version is the latest known to the kubelet. To
-support version skew, support for older API versions must be preserved as far
-back as support for older kubelet releases is desired.
+using DRA, the kubelet now leaves [ResourceSlice
+handling](#publishing-node-resources) almost entirely to the plugins. The
+remaining calls are done with whatever resource.k8s.io API version is the
+latest known to the kubelet. To support version skew, support for older API
+versions must be preserved as far back as support for older kubelet releases is
+desired.
 
 #### Security
 
