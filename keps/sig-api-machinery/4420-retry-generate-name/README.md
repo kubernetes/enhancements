@@ -360,7 +360,7 @@ served by an apiserver with this feature enabled.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: NameGenerationRetries
+  - Feature gate name: RetryGenerateName
   - Components depending on the feature gate: kube-apiserver
 
 
