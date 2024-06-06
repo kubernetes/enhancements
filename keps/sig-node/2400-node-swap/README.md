@@ -1,4 +1,4 @@
-# KEP-2400: Node system swap support
+# KEP-2400: Node memory swap support
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -117,6 +117,20 @@ support to nodes in a controlled, predictable manner so that Kubernetes users
 can perform testing and provide data to continue building cluster capabilities
 on top of swap.
 
+This KEP aims to
+introduce basic swap enablement and leave further extensions to follow-up KEPs.
+This way Kubernetes users / vendors would be able to use swap in a basic manner
+quickly while extensions would be brought to discussion in dedicated KEPs that
+would progress in the meantime.
+
+For example, to achieve this goal, this KEP does not introduce any APIs
+that allow customizing how the feature behaves, but instead only determines 
+whether the feature is enabled or disabled.
+Instead, the behaviour is automatic and implicit that requires minimum user
+intervention (see [proposal below](#steps-to-calculate-swap-limit) for more details).
+As mentioned above, in the very near future, follow-up KEPs would bring API extension
+and customizability, supporting zswap, and many other extensions to discussion.
+
 ## Motivation
 
 There are two distinct types of user for swap, who may overlap:
@@ -161,9 +175,11 @@ will be necessary to implement the third scenario.
 - Setting [swappiness]. This can already be set on a system-wide level outside
   of Kubernetes.
 - Allocating swap on a per-workload basis with accounting (e.g. pod-level
-  specification of swap). If desired, this should be designed and implemented
-  as part of a follow-up KEP. This KEP is a prerequisite for that work. Hence,
-  swap will be an overcommitted resource in the context of this KEP.
+  specification of swap), and/or APIs to customize and control the way kubelet
+  calculates swap limits, grants swap access, etc. If desired, this should be
+  designed and implemented as part of a follow-up KEP. This KEP is a
+  prerequisite for that work. Hence, swap will be an overcommitted resource
+  in the context of this KEP.
 - Supporting zram, zswap, or other memory types like SGX EPC. These could be
   addressed in a follow-up KEP, and are out of scope.
 - Use of swap for cgroupsv1.
@@ -194,7 +210,10 @@ Allocate the swap limit equal to the requested memory for each container and adj
 
 #### Set Aside Swap for System Critical Daemons
 
-**Note** In Beta2, we found that having system critical daemons swapping memory could cause degration of services.
+**Note** In Beta2, we found that having system-critical daemons swapping memory could cause degradation of services.
+Therefore, Kubelet will not automatically configure this, although the admin can still manually configure it
+this way. In the near future, when a follow-up KEP regarding customizability is presented, this will be considered
+to automatically be configured under a dedicated configuration.
 
 System critical daemons (such as Kubelet) are essential for node health. Usually, an appropriate portion of system resources (e.g., memory, CPU) is reserved as system reserved. However, swap doesn't inherently support reserving a portion out of the total available. For instance, in the case of memory, we set `memory.min` on the node-level cgroup to ensure an adequate amount of memory is set aside, away from the pods, and for system critical daemons. But there is no equivalent for swap; i.e., no `memory.swap.min` is supported in the kernel.
 
@@ -289,6 +308,10 @@ nodes could improve better resource pressure handling and recovery.
 - https://github.com/facebookincubator/oomd/blob/master/docs/production_setup.md#swap
 
 This user story is addressed by scenario 1 and 2, and could benefit from 3.
+
+Note: critical / high-priority pods would not be able to access swap, but can
+still be configured otherwise to gain swap access. In the future, APIs would
+be able to be used to control swap in a more customized way. 
 
 #### Long-running applications that swap out startup memory
 
