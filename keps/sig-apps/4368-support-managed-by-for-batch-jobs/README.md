@@ -316,7 +316,7 @@ terminated.
 
 This impacts CronJobs with the `Forbid` concurrency policy, resulting in delayed
 creation of the replacement Job (until all pods of the previous job are
-terminated). This might be particularly noticable for Jobs using very long
+terminated). This might be particularly noticeable for Jobs using very long
 termination period (`terminationGracePeriodSeconds`).
 
 However, we argue that this change improves the CronJob to better match
