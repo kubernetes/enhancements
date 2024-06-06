@@ -512,13 +512,13 @@ Second Alpha (1.31):
   pods might be temporarily greater than active pods. The fix will entail
   [Job controller reports the count of ready pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125185),
   as well as merging [Improve the Job API comment for ready field](https://github.com/kubernetes/kubernetes/pull/125189).
+- Add validation rule that `Failed` and `Complete` conditions are added when
+  `terminating=0`, and `ready=0`. Also, link provide links for the relevant integration tests in the KEP.
+- Add validation rule that the count of ready pods is lower or equal than active pods
 
 #### Beta
 
 - e2e tests
-- Add validation rule that `Failed` and `Complete` conditions are added when
-  `terminating=0`, and `ready=0`. Also, link provide links for the relevant integration tests in the KEP.
-- Add validation rule that the count of ready pods is lower or equal than active pods
 - verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
 
