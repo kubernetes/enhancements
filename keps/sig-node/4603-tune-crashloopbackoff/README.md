@@ -1231,6 +1231,24 @@ those updated with `FastOnSuccess` would get truer fast restart behavior.
 However, then it becomes impossible for a workload to opt into both
 `restartPolicy: FastOnSuccess` and `restartPolicy: Rapid`.
 
+##### Related: `Succeeded` vs `Rapid`ly failing: who's getting the better deal?
+
+When both a flat rate `Succeeded` and a `Rapid` implementation were combined in
+this proposal, depending on the variation of the initial value, the first few
+restarts of a failed container would be faster than a successful container,
+which at first look seems backwards.
+
+!["A graph showing the intersection of delay curves between a linear rate for
+success and an exponential rate for rapid
+failures"](successvsrapidwhenfailed.png "success vs rapid CrashLoopBackoff
+dcay")
+
+However, based on the use cases, this is still correct because the goal of
+restarting failed containers is to take maximum advantage of quickly recoverable
+situations, while the goal of restarting successful containers is only to get
+them to run again sometime and not penalize them with longer waits later when
+they've behaving as expected.
+
 ### Front loaded decay with interval
 In an effort
 to anticipate API server stability ahead of the experiential data we can collect
