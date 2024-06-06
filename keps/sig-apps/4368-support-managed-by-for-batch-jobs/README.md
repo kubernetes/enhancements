@@ -421,11 +421,6 @@ does not match the expectations of the `Forbid` policy
 (see [comment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2115200217)),
 and can be handled as a bug.
 
-The validation rule will be added in the +1 release (1.32) to ensure the
-addition of the `Failed` and `Complete` conditions is delayed appropriately in
-case of a skewed deployment when the kube-controller-manager is one version
-ahead the kube-apiserver.
-
 #### Mutability
 
 We keep the field immutable. See also the discussion in
