@@ -408,6 +408,9 @@ extending the production code to implement this enhancement.
 -->
 
 - `k8s.io/kubernetes/pkg/controller/job`: `02/05/2024` - `91.5%`
+- `k8s.io/kubernetes/pkg/apis/batch/v1`: `06/05/2024` - `87.3%`
+- `k8s.io/kubernetes/pkg/apis/batch/v1beta1`: `06/05/2024` - `78.3%`
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `06/05/2024` - `87.7%`
 
 ##### Integration tests
 
@@ -570,8 +573,17 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-N/A. This feature doesn't require coordination between control plane components,
-the changes to the Job controller are self-contained. 
+This feature is limited to control plane, so the version skew with kubelet does
+not matter.
+
+In case kube-apiserver is running in HA mode, and the versions are skewed, then
+the old version of kube-apiserver (from before this change) may not handle
+the the new `Name` field if it is set in a Job PodFailurePolicy spec.
+
+In case the version of the kube-controller-manager leader is skewed (old), the
+built-in Job controller would reconcile the Jobs with the new `Name` field and
+simply drop the field, thereby not using it when setting the `JobFailed` condition
+reason.
 
 ## Production Readiness Review Questionnaire
 
