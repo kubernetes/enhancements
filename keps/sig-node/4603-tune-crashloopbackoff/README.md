@@ -395,15 +395,6 @@ developers via wrapper scripts, but this causes no direct extra strain on
 kubelet as it simply causes the container to run indefinitely.
 
 
-
-**Alternative**: Workloads must opt-in with `restartPolicy: FastOnSuccess`, as a
-foil to `restartPolicy: OnFailure`. In this case, existing workloads with
-`restartPolicy: Always` or ones not determined to be in the critical path would
-use the new, yet still relatively slower, front-loaded decay curve and only
-those updated with `FastOnSuccess` would get truer fast restart behavior.
-However, then it becomes impossible for a workload to opt into both
-`restartPolicy: FastOnSuccess` and `restartPolicy: Rapid`.
-
 #### API opt in for max cap decay curve (`restartPolicy: Rapid`)
 
 For some users in
@@ -1185,6 +1176,16 @@ These overrides will exist for the following reasons:
 
 These had been selected because there are known use cases where changed restart
 behavior would benefit workloads epxeriencing these categories of failures.
+
+#### API opt-in for flat rate/quick restarts when transitioning from `Succeeded` phase
+
+Workloads must opt-in with `restartPolicy: FastOnSuccess`, as a
+foil to `restartPolicy: OnFailure`. In this case, existing workloads with
+`restartPolicy: Always` or ones not determined to be in the critical path would
+use the new, yet still relatively slower, front-loaded decay curve and only
+those updated with `FastOnSuccess` would get truer fast restart behavior.
+However, then it becomes impossible for a workload to opt into both
+`restartPolicy: FastOnSuccess` and `restartPolicy: Rapid`.
 
 ### Front loaded decay with interval
 In an effort
