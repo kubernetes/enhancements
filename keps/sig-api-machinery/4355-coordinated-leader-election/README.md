@@ -379,13 +379,19 @@ and this can be done via the `spec.Strategy` field in a Lease.
 The `Strategy` field signals to the coordinated leader election controller the
 appropriate algorithm to use when selecting leaders.
 
-We will allow the Coordinated Leader Election controller to create a Lease
-without a holder. If there are no candidate objects, the `Strategy` field will
-remain empty to indicate that the `Lease` is not managed by the CLE controller.
-Otherwise the strategy will always default to `MinimumCompatibilityVersion`. The
-`Lease` may also be updated by a third party to the desired `spec.Strategy` if
-an alternate strategy is preferred. This may be done either by the candidates,
-users, or additional controllers.
+We will allow for the existence of a lease without a holder. This will allow
+`Strategy` to be injected and preserved for leases that may not want to use the
+default selected by CLE. If there are no candidate objects, the `Strategy` field
+will remain empty to indicate that the `Lease` is not managed by the CLE
+controller. Otherwise the strategy will always default to
+`MinimumCompatibilityVersion`. The `Lease` may also be created or updated by a
+third party to the desired `spec.Strategy` if an alternate strategy is
+preferred. This may be done either by the candidates, users, or additional
+controllers.
+
+Releasing a `Lease` will involve resetting the holderIdentity to `nil` instead
+of deletion. This will preserve `Strategy` when a `Lease` object is released and
+reacquired by another candidate.
 
 #### Alternative for Strategy
 
@@ -525,9 +531,6 @@ type LeaseCandidateSpec struct {
 	// CanLeadLease indicates the name of the lease that the candidate may lead
 	CanLeadLease string
 
-	// Strategy indicates the preferred strategy for the coordinated leader election controller to use.
-	Strategy CoordinatedLeaseStrategy `json:"strategy,omitempty" protobuf:"string,6,opt,name=strategy"`
-
 	// FIELDS DUPLICATED FROM LEASE
 
 	// leaseDurationSeconds is a duration that candidates for a lease need
@@ -544,12 +547,6 @@ type LeaseCandidateSpec struct {
 
 Each LeaseCandidate lease may only lead one lock. If the same component wishes to lead many leases,
 a separate LeaseCandidate lease will be required for each lock.
-
-If the `LeaseCandidate` objects do not agree on a value for the Strategy, we will have an ordering priority.
-For instance, we define `NewestCompatibilityVersion` > `OldestCompatibilityVersion`. This means that if
-a subset of candidates have `OldestCompatibilityVersion` and and subset have `NewestCompatibilityVersion`,
-coordinated leader election will pick `NewestCompatibilityVersion`. In order for `OldestCompatibilityVersion` to be used,
-all `LeaseCandidate` objects must publish the same `Strategy`.
 
 ### Comparison of leader election
 
