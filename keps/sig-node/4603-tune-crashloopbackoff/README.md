@@ -6,23 +6,23 @@ To get started with this template:
 - [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -151,14 +151,14 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -348,55 +348,22 @@ these changes.
 
 #### Existing backoff curve change: front loaded decay
 
-As mentioned above, today the standard backoff curve is an exponential decay
-starting at 10s and capping at 5 minutes, resulting in a composite of the
-standard hockey-stick exponential decay graph followed by a linear rise until
-the heat death of the universe as depicted below:
-
-![A graph showing the backoff decay for a Kubernetes pod in
-CrashLoopBackoff](./crashloopbackoff-succeedingcontainer.png "CrashLoopBackoff
-decay")
-
-Remember that the backoff counter is reset if containers run longer than 10
-minutes, so in the worst case where a container always exits after 9:59:59, this
-means in the first 30 minute period, the container will restart twice. In a more
-easily digestible example used in models below, for a fast exiting container
-crashing every 10 seconds, in the first 30 minutes the container will restart
-about 10 times, with the first four restarts in the first 5 minutes.
-
 This KEP proposes changing the existing backoff curve to load more restarts
 earlier by changing the initial value of the exponential backoff. A number of
 alternate initial values are modelled below, until the 5 minute cap would be
 reached. This proposal suggests we start with a new initial value of 1s, and
 analyze its impact on infrastructure during alpha.
 
-!["A graph showing the decay curves for different initial values"](differentinitialvalues.png
-"Alternate CrashLoopBackoff initial values")
+![](todayvs1sbackoff.png)
 
 
 #### API opt in for max cap decay curve (`restartPolicy: Rapid`)
 
-For some users in
-[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), any
-delay over 1 minute at any point is just too slow, even if it is legitimately
-crashing. A common refrain is that for independently recoverable errors,
-especially system infrastructure events or recovered external dependencies, or
-for absolutely nonnegotiably critical sidecar pods, users would rather poll more
-often or more intelligently to reduce the amount of time a workload has to wait
-to try again after a failure. In the extreme cases, users want to be able to
-configure (by container, node, or exit code) the backoff to close to 0 seconds.
-This KEP considers it out of scope to implement fully user-customizable
-behavior, and too risky without full and complete benchmarking to node stability
-to allow legitimately crashing workloads to have a backoff of 0, but it is in
-scope for the first alpha to provide users a way to opt workloads in to a even
-faster restart behavior.
-
 Pods and restartable init (aka sidecar) containers will be able to set a new
 OneOf value, `restartPolicy: Rapid`, to opt in to an exponential backoff decay
-that starts at a low initial value and maximizes to a cap of 1 minute. The
-detailed methodology for determining the implementable starting value, and
-benchmarking it during and after alpha, is enclosed in Design Details, but will
-start at 250ms.
+that starts at a lower initial value and maximizes to a lower cap. This proposal
+suggests we start with a new initial value of 250ms and cap of 1 minute, and
+analyze its impact on infrastructure during alpha.
 
 !["A graph showing today's decay curve against a curve with an initial value of
 250ms and a cap of 1 minute for a workload failing every 10 s"](todayvsrapid.png
@@ -497,6 +464,22 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 ### Front loaded decay curve methodology
+As mentioned above, today the standard backoff curve is an exponential decay
+starting at 10s and capping at 5 minutes, resulting in a composite of the
+standard hockey-stick exponential decay graph followed by a linear rise until
+the heat death of the universe as depicted below:
+
+![A graph showing the backoff decay for a Kubernetes pod in
+CrashLoopBackoff](./crashloopbackoff-succeedingcontainer.png "CrashLoopBackoff
+decay")
+
+Remember that the backoff counter is reset if containers run longer than 10
+minutes, so in the worst case where a container always exits after 9:59:59, this
+means in the first 30 minute period, the container will restart twice. In a more
+easily digestible example used in models below, for a fast exiting container
+crashing every 10 seconds, in the first 30 minutes the container will restart
+about 10 times, with the first four restarts in the first 5 minutes.
+
 Why change the initial value of the backoff curve instead of its rate, or why
 not change the decay function entirely to other well known equations (like
 functions resulting in curves that are lienar, parabolic, sinusoidal, etc)?
@@ -513,7 +496,12 @@ is unrecoverable failures causing "runaway" containers to overload kubelet.
 
 To determine the effect in abstract of changing the initial value on current
 behavior, we modeled the change in the starting value of the decay from 10s to
-1s, 250ms, or even 25ms. For today's decay rate, the first restart is within the
+1s, 250ms, or even 25ms. 
+
+!["A graph showing the decay curves for different initial values"](differentinitialvalues.png
+"Alternate CrashLoopBackoff initial values")
+
+For today's decay rate, the first restart is within the
 first 10s, the second within the first 30s, the third within the first 70s.
 Using those same time windows to compare alternate initial values, for example
 changing the initial rate to 1s, we would instead have 3 restarts in the first
@@ -523,19 +511,55 @@ earlier, but even at 250ms or 25ms initial values, each approach a similar rate
 of restarts after the third time window.
 
 ![A graph showing different exponential backoff decays for initial values of
-10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png' "Changes to decay
+10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png "Changes to decay
 with different initial values")
 
 Among these modeled initial values, we would get between 3-7 excess restarts per
 backoff lifetime, mostly within the first three time windows matching today's
 restart behavior.
 
+#### Rapid curve methodology
+
+For some users in
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), any
+delay over 1 minute at any point is just too slow, even if it is legitimately
+crashing. A common refrain is that for independently recoverable errors,
+especially system infrastructure events or recovered external dependencies, or
+for absolutely nonnegotiably critical sidecar pods, users would rather poll more
+often or more intelligently to reduce the amount of time a workload has to wait
+to try again after a failure. In the extreme cases, users want to be able to
+configure (by container, node, or exit code) the backoff to close to 0 seconds.
+This KEP considers it out of scope to implement fully user-customizable
+behavior, and too risky without full and complete benchmarking to node stability
+to allow legitimately crashing workloads to have a backoff of 0, but it is in
+scope for the first alpha to provide users a way to opt workloads in to a even
+faster restart behavior.
+
+The finalization of the initial and max cap after benchmarking. As a
+conservative first estimate in line with maximums discussed on
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), the
+initial curve is selected at initial=250ms / cap=1 minute, but during
+benchmarking this will be modelled against kubelet capacity, potentially
+targeting something closer to an initial value near 0s, and a cap of 10-30s.
+
+
 #### New OneOf for `restartPolicy` -- `Rapid`
-`restartPolicy` is an immutable field in podSpec and containerSpec. If set in podSpec, each container in the Pod inherits the Pod's restart policy of either `Never` (default), `OnFailure`, or `Always`; for a Job, the only valid options are `Never` and `OnFailure`. In containerSpec, it is valid ONLY on init containers and ONLY as `Always`, to configure a sidecar container that runs continuously alongside the regular containers in the Pod.
+`restartPolicy` is an immutable field in podSpec and containerSpec. If set in
+podSpec, each container in the Pod inherits the Pod's restart policy of either
+`Never` (default), `OnFailure`, or `Always`; for a Job, the only valid options
+are `Never` and `OnFailure`. In containerSpec, it is valid ONLY on init
+containers and ONLY as `Always`, to configure a sidecar container that runs
+continuously alongside the regular containers in the Pod.
 
-This KEP will support a new value for this field, `Rapid`, which on feature flag disablement will be interpreted as `Always`. If `restartPolicy: Rapid` is set or inherited for a container, that container will follow the new Rapid backoff curve.
+This KEP will support a new value for this field, `Rapid`, which on feature flag
+disablement will be interpreted as `Always`. If `restartPolicy: Rapid` is set or
+inherited for a container, that container will follow the new Rapid backoff
+curve.
 
-Due to configuring this as another option to this field, this would make Rapid backoff possible for restartable init (aka sidecar) containers, Pods, Deployments, StatefulSets, ReplicaSets, DaemonSets, but NOT pure init containers, Jobs or CronJobs.
+Due to configuring this as another option to this field, this would make Rapid
+backoff possible for restartable init (aka sidecar) containers, Pods,
+Deployments, StatefulSets, ReplicaSets, DaemonSets, but NOT pure init
+containers, Jobs or CronJobs.
 
 ### Kubelet overhead analysis
 
@@ -555,7 +579,7 @@ does during pod restarts.
 * Logs information about all those container operations (utilizing disk IO and
   “spamming” logs)
 
-#### Observability
+### Observability
 
 Again, let it be known that by definition this KEP will cause pods to restart
 faster and more often than the current status quo and such a change is desired.
