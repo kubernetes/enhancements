@@ -1,0 +1,60 @@
+@startuml
+!theme reddress-lightblue
+skinparam componentStyle rectangle
+left to right direction
+
+cloud "resource driver" as resourcedriver {
+  component "CRD controller" as drivercrdcontroller
+  component "kubelet plugin" as driverplugin
+}
+
+component Kubernetes {
+  component apiserver {
+    component namespaced {
+      file ResourceClaimTemplate
+      file Pod
+      file ResourceClaim
+      file DriverCRDParameters
+      file ResourceClaimParameters
+     }
+     component "cluster-scoped" as clusterscoped {
+      file ResourceClass
+      file ResourceSlice
+     }
+  }
+  component scheduler {
+    component "resource plugin" as k8sresourceplugin
+  }
+  component "controller-manager" as controllermanager {
+    component "resource claim controller" as k8sresourceclaimcontroller
+  }
+  component kubelet {
+    component "plugin manager" as pluginmanager
+    component "resource manager" as resourcemanager
+  }
+}
+
+' Kubernetes ---> resourcedriver
+
+ResourceClaimTemplate <. Pod
+Pod <. ResourceClaim: owned by\n(if created from template)
+ResourceClaim .> ResourceClass
+ResourceClaim .> DriverCRDParameters
+ResourceClaimParameters .> DriverCRDParameters: generated from,\nowned by
+
+Pod -u-> k8sresourceclaimcontroller
+ResourceClaimTemplate -u-> k8sresourceclaimcontroller
+ResourceClaim <-u- k8sresourceclaimcontroller: create claim,\nclean up consumers,\ntrigger deallocation
+k8sresourceplugin <- ResourceClaimParameters
+
+Pod <--> kubelet
+Pod <--> scheduler
+ResourceClaim <--> k8sresourceplugin
+
+ResourceClaimParameters <- drivercrdcontroller: create, update
+DriverCRDParameters ---> drivercrdcontroller: read
+resourcemanager <-> driverplugin: calls gRPC methods,\nreceives stream of\nresource information
+ResourceSlice-> k8sresourceplugin: consumes
+resourcemanager --> ResourceSlice: publishes
+pluginmanager <-> driverplugin: registers
+@enduml

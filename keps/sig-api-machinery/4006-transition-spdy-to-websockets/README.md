@@ -94,8 +94,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Proposal: New <code>RemoteCommand</code> Sub-Protocol Version - <code>v5.channel.k8s.io</code>](#proposal-new-remotecommand-sub-protocol-version---v5channelk8sio)
   - [Proposal: API Server RemoteCommand <code>StreamTranslatorProxy</code>](#proposal-api-server-remotecommand-streamtranslatorproxy)
   - [Background: <code>PortForward</code> Subprotocol](#background-portforward-subprotocol)
-  - [Proposal: New <code>PortForward</code> Subprotocol Version - <code>v2.portforward.k8s.io</code>](#proposal-new-portforward-subprotocol-version---v2portforwardk8sio)
-  - [Proposal: API Server PortForward <code>StreamTranslatorProxy</code>](#proposal-api-server-portforward-streamtranslatorproxy)
+  - [Proposal: New <code>PortForward</code> Tunneling Subprotocol Version - <code>v2.portforward.k8s.io</code>](#proposal-new-portforward-tunneling-subprotocol-version---v2portforwardk8sio)
+  - [Proposal: API Server PortForward -- Stream Tunnel Proxy](#proposal-api-server-portforward----stream-tunnel-proxy)
   - [Pre-GA: Kubelet <code>StreamTranslatorProxy</code>](#pre-ga-kubelet-streamtranslatorproxy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -505,83 +505,26 @@ $ curl http://localhost:8080/index.html
 The nginx HTTP response is returned over the same data stream. Once the subrequest is
 complete, both streams are closed and removed.
 
-### Proposal: New `PortForward` Subprotocol Version - `v2.portforward.k8s.io`
+### Proposal: New `PortForward` Tunneling Subprotocol Version - `v2.portforward.k8s.io`
 
-In order to implement `PortForward` over WebSockets, we propose the client attempt to
-upgrade the connection to WebSockets with a new `v2.portforward.k8s.io` subprotocol
-version. This new version will implement stream functionality over WebSockets
-which currently exists in SPDY but not WebSockets. Specifically, the WebSockets streams
-will implement:
+We propose a new PortForward version `v2.portforward.k8s.io`, which identifies upgrade
+requests which require tunneling. PortForward tunneling transparently encodes and
+decodes SPDY framed messages into (and out of) the payload of a WebSocket message.
+This tunneling is implemented on the client by substituting a WebSocket connection
+(which implements the `net.Conn` interface) into the constructor of a SPDY client.
+The SPDY client reads and writes its messages into and out of this connection. These
+SPDY messages are then encoded or decoded into and out of the WebSocket message payload.
 
-1. StreamCreate signal: A signal to the other WebSockets endpoint that a
-stream has been created. This communication will also contain the headers used to
-create the stream.
-2. StreamClose signal: A signal to the other WebSockets endpoint that the stream
-has been half-closed, and will not allow any further writing on the stream from
-the closed end.
-3. Larger stream identifier space: In order to accommodate numerous concurrent
-streams from many posssible portforward subrequests, we will need a large stream
-identifier space. It appears that SPDY implements 2^31 possible stream identifiers
-and we will provide four bytes for the WebSockets stream identifier to match SPDY.
-The size of these four bytes should not be material, since the size of the
-WebSockets buffer is much larger (32KB). But if we need to reduce the size of
-the stream identifier, we can use a `varint` instead of a `uint32`.
+### Proposal: API Server PortForward -- Stream Tunnel Proxy
 
-The WebSockets stream functionality will be implemented by encoding and decoding
-stream headers within the WebSockets data message. The stream header struct will
-look like:
-```
-// wsStreamHeader contains the data at the beginning of a websocket binary message.
-type wsStreamHeader struct {
-	MessageType byte   // Create, Close, or Data
-	StreamID    uint32 // or varint if we need to optimize
-    // Headers are only included in a Create message type. Well-known keys are:
-	// 1. StreamType: DataStream or ErrorStream.
-	// 2. RequestID: A unique identifier for the subrequest.
-	// 3. Port: The remote port the stream is forwarding data to.
-    Headers     http.Header
-}
-```
-
-### Proposal: API Server PortForward `StreamTranslatorProxy`
-
-![PortForward Stream Translator Proxy](./portforward-stream-translator-proxy.png)
-
-Updated steps detailing **requests** and **subrequests** for the proposed `StreamTranslatorProxy`.
-
-1. `kubectl port-forward` makes a **request** to the API Server to upgrade to a WebSockets
-streaming connection. At the API Server, the WebSockets connection is upgraded and terminated,
-while a legacy SPDY connection is created upstream to the container runtime.
-2. An arbitrary number of subsequent (and possibly concurrent) client **subrequests** can be made over
-this previously established WebSockets connection. Example: `curl http://localhost:8080/index.html`.
-3. Each of these **subrequests** creates two streams over the connection (a uni-directional
-error stream and a bi-directional data stream) between the client and the API Server.
-4. The API Server in turn creates a one-to-one correspondence between the WebSockets streams
-and upstream SPDY streams. The WebSocket streams are connected to SPDY streams by goroutines
-copying data between them. So each **subrequest** spawns four goroutines to service the two
-streams (one for the **subrequest** itself, as well as three to copy stream data in each
-direction).
-5. All the resources associated with the **subrequest** are reclaimed once the **subrequest**
-is completed.
-
-Similar to `RemoteCommand`, `PortForward` will also have a `StreamTranslatorProxy`
-within the API server to route data from WebSocket streams onto upstream, legacy
-SPDY streams. The new portforward `StreamTranslatorProxy` will handle requests
-for WebSockets connection upgrades with a `v2.portforward.k8s.io` header. The
-portforward `StreamTranslatorProxy` will initially attempt to create an upstream
-SPDY connection to the Kubelet using the legacy `v1.portforward.k8s.io` header.
-If successful, the `StreamTranslatorProxy` will create a server-side WebSockets
-connection, returning `101 Switching Protocols` to the WebSockets client. The
-server-side WebSockets connection will handle the `StreamCreate` and `StreamClose`
-signals, as well as de-multiplexing WebSocket streams using the passed stream
-identifier. Upon receiving a `StreamCreate` signal on the server-side of the
-WebSockets connection, a WebSocket stream will be created and queued onto a
-stream create channel. On the other end of the channel, the `StreamTranslatorProxy`
-will create a SPDY stream to associate with the WebSockets stream, using headers
-from the WebSockets stream. And if both portforward request streams have been
-created (data and error), then streaming will commence between the WebSockets
-and SPDY streams. Upon completion, the streams will be closed and removed. The
-`StreamClose` signal will be used to determine if the streaming has completed.
+At the API Server, tunneling is implemented by sending different parameters into the
+`UpgradeAwareProxy`. If the new subprotocol version `v2.portforward.k8s.io` is requested,
+the `UpgradeAwareProxy` is called with a new `tunnelingResponseWriter`. This `ResponseWriter`
+contains a tunneling WebSocket connection, which is returned when the connection is
+hijacked. And this tunneling WebSocket connection encodes and decodes SPDY messages
+as the downstream connection within the dual concurrent `io.Copy` proxying goroutines.
+The upstream connection is the same SPDY connection to the container (through the
+Kubelet and CRI).
 
 ### Pre-GA: Kubelet `StreamTranslatorProxy`
 

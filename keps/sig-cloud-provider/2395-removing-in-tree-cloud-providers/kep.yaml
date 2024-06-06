@@ -23,13 +23,13 @@ approvers:
   - "@liggit"
 editor: TBD
 creation-date: 2018-12-18
-last-updated: 2023-10-04
+last-updated: 2023-05-07
 status: implementable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.29"
+latest-milestone: "v1.31"
 
 stage: beta
 
@@ -37,7 +37,7 @@ stage: beta
 milestone:
   alpha: "v1.21"
   beta: "v1.29"
-  stable: "TBD"
+  stable: "v1.31"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

@@ -20,18 +20,16 @@ aliases:
     - ritazh
   sig-autoscaling-leads:
     - gjtempleton
-    - mwielgus
+    - maciekpytel
   sig-cli-leads:
-    - KnVerey
+    - ardaguclu
     - eddiezane
-    - natasha41575
+    - mpuckett159
     - soltysh
   sig-cloud-provider-leads:
-    - andrewsykim
     - bridgetkromhout
     - cheftako
     - elmiko
-    - nckturner
   sig-cluster-lifecycle-leads:
     - CecileRobertMichon
     - fabriziopandini
@@ -45,12 +43,11 @@ aliases:
     - palnabarun
   sig-docs-leads:
     - divya-mohan0209
-    - kbhawkey
+    - katcosgrove
     - natalisucks
-    - onlydole
     - reylejano
-    - sftim
     - tengqm
+    - salaxander
   sig-etcd-leads:
     - ahrtr
     - jmhbnz
@@ -196,10 +193,11 @@ aliases:
     - mrbobbytables
     - palnabarun
   prod-readiness-approvers:
-    - johnbelamaric
     - deads2k
-    - wojtek-t
+    - johnbelamaric
     - jpbetz
+    - soltysh
+    - wojtek-t
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:

@@ -340,6 +340,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - Allowing time for feedback and any other user-experience reports.
 - Conformance tests
+- Consolidate the existing service account docs to be more coherent and avoid duplication,
+  especially in regards to consuming service account tokens outside of Kubernetes:
+    - https://kubernetes.io/docs/concepts/security/service-accounts
+    - https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin
+    - https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account
 
 ### Upgrade / Downgrade Strategy
 
@@ -693,6 +698,7 @@ For example, attempting to issue a node bound token, or attempting to authentica
 * Renamed audit annotation used for the `serviceaccounts/<name>/token` endpoint to be clearer: https://github.com/kubernetes/kubernetes/pull/123098
 * Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
 * `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
+* Promoted `ServiceAccountTokenNodeBinding` promoted to beta for v1.31 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

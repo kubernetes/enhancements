@@ -202,7 +202,7 @@ Add ability to support drop-in configuration directory.
 #### Beta
 
 Add ability to augment the feature's capabilities with a focus on robustness and testing, which includes:
-  - Implement the capability to query the kubelet's full effective configuration via API, covering both standard mode and standalone kubelet mode. Thoroughly test this functionality, ensuring accurate reporting of kubelet.conf.d directory and contents in the configz endpoint. 
+  - Ensure the correct kubelet configuration is displayed when queried using the `kubectl get --raw "/api/v1/nodes/{node-name}/proxy/configz"` command, particularly verifying the contents of the kubelet.conf.d directory.
   - Remove the environment variable `KUBELET_CONFIG_DROPIN_DIR_ALPHA`, introduced during the Alpha phase, to streamline the user experience by simplifying configuration management.
   - Keep the feature disabled by default in the Beta phase. Explicit opt-in activation is required to enable the feature.
   - Provide official guidance on the Kubernetes website for merging lists and structures in the kubelet configuration file, including documentation for the `/configz` endpoint.

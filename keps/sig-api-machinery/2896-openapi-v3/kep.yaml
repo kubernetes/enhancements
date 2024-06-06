@@ -3,7 +3,7 @@ kep-number: 2896
 authors:
   - "@jefftree"
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2021-08-25
 reviewers:
   - "@apelisse"
