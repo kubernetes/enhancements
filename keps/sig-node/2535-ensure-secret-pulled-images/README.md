@@ -69,16 +69,21 @@ when the `ImagePullPolicy` is `IfNotPresent`.
 
 In other words: ensure the pull secrets are rechecked for each new set of credentials, and ensure a pod has access to those images.
 
-This policy change will have no affect on the `Always` `ImagePullPolicy` or for images that are preloaded.
+For the `Never` policy, the behavior also must change. Otherwise, a user who wishes to use the image of another pod could just use `Never` and hope
+another pod have pulled it. Functionally from a security standpoint, we must account for this.
+Thus, `Never` `ImagePullPolicy` images will be allowed past the ensure image stage of the pod lifecyle if the image has previously been pulled
+by an `IfNotPresent` pod successfully: either with no auth, or with the same auth as the `Never` policy. The image will continue to never be pulled
+for this pod.
 
-However, for the `Never` policy if a first pod successfully pulled an image
-with credential and then a second pod with pull never tried to use the image,
-when the feature gate is on the second pod will receive an error message, where
-before and with the feature gate off the second pod would be able to use the image
-pulled with credentials by the first pod.
+This will be enforced for both policies regardless of whether the image is already present when the kubelet starts. For an image to be allowed to be used,
+the kubelet must be aware of its credentials.
 
-This new feature will be enabled with a feature gate in alpha, as well as two kubelet configuration
-fields `pullImageSecretRecheck` and `pullImageSecretRecheckPeriod`.
+This policy change will have no affect on the `Always` `ImagePullPolicy`.
+
+This new feature will be enabled with a feature gate in alpha, as well as a kubelet configuration
+field `pullImageSecretRecheck`. Another kubelet configuration field `pullImageSecretRecheckPeriod` will be added
+to allow an admin to configure the recheck period. A recheck period may be used to periodically clean the cache, or ensure
+expiring credentials are still valid.
 
 *** The issue and these changes improving the security posture without requiring the forcing of pull always, will be documented in the kubernetes image pull policy documentation. The new feature gate should also be documented in release notes. ***
 
@@ -105,7 +110,7 @@ regardless of whether the image is already present on the node.
 
 ### Goals
 
-Modify the current behavior of images with an `IfNotPresent` `ImagePullPolicy` enforced by the kubelet to
+Modify the current behavior of images with an `IfNotPresent` and `Never` `ImagePullPolicy` enforced by the kubelet to
 ensure the images pulled with a secret by the kubelet are authenticated by the CRI implementation. During the
 EnsureImagesExist step the kubelet will require authentication of present images pulled with auth since boot.
 
@@ -125,8 +130,7 @@ runtimes through the CRI wrt. how they should treat the caching of images on a
 node. Such as store for public use but only if encrypted. Or Store for private
 use un-encrypted...
 
-This feature will not change the behavior of pod with `ImagePullPolicy` `Always`
-and `Never`.
+This feature will not change the behavior of pod with `ImagePullPolicy` `Always`.
 
 ## Proposal
 
@@ -477,6 +481,7 @@ Why should this KEP _not_ be implemented. TBD
 - For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
 ensure the image instead of kubelet.
 - Discussions went back and forth as to whether to persist the cache across reboots. It was decided to do so.
+- `Never` could be always allowed to use an image on the node, regardless of its presence on the node. However, this would functionally disable this feature from a security standpoint.
 
 ## Infrastructure Needed [optional]
 
