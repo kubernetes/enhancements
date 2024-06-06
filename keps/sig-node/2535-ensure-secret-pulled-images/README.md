@@ -138,6 +138,17 @@ For beta an API will be considered to manage the ensure metadata.
 The kubelet will ensure any image in the list is always pulled if an authentication
 used is not present, thus enforcing authentication / re-authentication.
 
+There will be two different kubelet configuration options added, as well as a feature
+gate to gate their use:
+- `pullImageSecretRecheck`
+    - A boolean that toggles this behavior. If `false`, the kubelet will fallback to the
+      old behavior: only pull an image if it's not present.
+- `pullImageSecretRecheckPeriod`
+    - the period after which the kubelet's cache will be invalidated,
+      thus causing rechecks for all `IfNotPresent` images that are recreated.
+    - If set to `0s`, or `0`, but `pullImageSecretRecheck` is `true`, then
+      the kubelet will never invalidate its cache, but will maintain one.
+
 
 ### User Stories
 
