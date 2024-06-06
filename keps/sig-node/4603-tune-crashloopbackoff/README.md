@@ -363,11 +363,10 @@ often or more intelligently to reduce the amount of time a workload has to wait
 to try again after a failure. In the extreme cases, users want to be able to
 configure (by container, node, or exit code) the backoff to close to 0 seconds.
 This KEP considers it out of scope to implement fully user-customizable
-behavior, and too risky to node stability to allow legitimately crashing
-workloads to have a backoff of 0, but it is in scope to provide users a way to
-opt workloads in to a faster restart curve that is not as drastic as what is
-intended for `Success` states, nor as beholden to the status quo as the new
-default front loaded decay with interval modification.
+behavior, and too risky without full and complete benchmarking to node stability
+to allow legitimately crashing workloads to have a backoff of 0, but it is in
+scope for the first alpha to provide users a way to opt workloads in to a even
+faster restart behavior.
 
 Pods and restartable init (aka sidecar) containers will be able to set a new
 OneOf value, `restartPolicy: Rapid`, to opt in to an exponential backoff decay
@@ -465,7 +464,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-## Design Details
+## Design Details 
 
 <!--
 This section should contain enough information that the specifics of your
@@ -475,15 +474,38 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 ### Front loaded decay curve methodology
-Why change the initial value of the backoff curve instead of its rate, or why not change the decay function entirely to other well known equations (like functions resulting in curves that are lienar, parabolic, sinusoidal, etc)?
+Why change the initial value of the backoff curve instead of its rate, or why
+not change the decay function entirely to other well known equations (like
+functions resulting in curves that are lienar, parabolic, sinusoidal, etc)?
 
-Exponential decay, particularly at a rate of 2x, is commonly used for software retry backoff as it has the nice properties of starting restarts at a low value, but penalizing repeated crashes harshly, to protect primarily against unrecoverable failures. In contrast, we can interpret linear curves as penalizing every failure the same, or parabolic and sinusoidal curves as giving our software a "second chance" and forgiving later failures more. For a default restart decay curve, where the cause of the restart cannot be known, 2x exponential decay still models the desired properties more, as the biggest risk is unrecoverable failures causing "runaway" containers to overload kubelet.
+Exponential decay, particularly at a rate of 2x, is commonly used for software
+retry backoff as it has the nice properties of starting restarts at a low value,
+but penalizing repeated crashes harshly, to protect primarily against
+unrecoverable failures. In contrast, we can interpret linear curves as
+penalizing every failure the same, or parabolic and sinusoidal curves as giving
+our software a "second chance" and forgiving later failures more. For a default
+restart decay curve, where the cause of the restart cannot be known, 2x
+exponential decay still models the desired properties more, as the biggest risk
+is unrecoverable failures causing "runaway" containers to overload kubelet.
 
-To determine the effect in abstract of changing the initial value on current behavior, we modeled the change in the starting value of the decay from 10s to 1s, 250ms, or even 25ms. For today's decay rate, the first restart is within the first 10s, the second within the first 30s, the third within the first 70s. Using those same time windows to compare alternate initial values, for example changing the initial rate to 1s, we would instead have 3 restarts in the first time window, 1  restart within the time window, and two more restarts within the third time window. As seen below, this type of change gives us more restarts earlier, but even at 250ms or 25ms initial values, each approach a similar rate of restarts after the third time window.
+To determine the effect in abstract of changing the initial value on current
+behavior, we modeled the change in the starting value of the decay from 10s to
+1s, 250ms, or even 25ms. For today's decay rate, the first restart is within the
+first 10s, the second within the first 30s, the third within the first 70s.
+Using those same time windows to compare alternate initial values, for example
+changing the initial rate to 1s, we would instead have 3 restarts in the first
+time window, 1  restart within the time window, and two more restarts within the
+third time window. As seen below, this type of change gives us more restarts
+earlier, but even at 250ms or 25ms initial values, each approach a similar rate
+of restarts after the third time window.
 
-![A graph showing different exponential backoff decays for initial values of 10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png' "Changes to decay with different initial values")
+![A graph showing different exponential backoff decays for initial values of
+10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png' "Changes to decay
+with different initial values")
 
-Among these modeled initial values, we would get between 3-7 excess restarts per backoff lifetime, mostly within the first three time windows matching today's restart behavior.
+Among these modeled initial values, we would get between 3-7 excess restarts per
+backoff lifetime, mostly within the first three time windows matching today's
+restart behavior.
 
 #### New OneOf for `restartPolicy` -- `Rapid`
 `restartPolicy` is an immutable field in podSpec and containerSpec. If set in podSpec, each container in the Pod inherits the Pod's restart policy of either `Never` (default), `OnFailure`, or `Always`; for a Job, the only valid options are `Never` and `OnFailure`. In containerSpec, it is valid ONLY on init containers and ONLY as `Always`, to configure a sidecar container that runs continuously alongside the regular containers in the Pod.
@@ -823,15 +845,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay` and `EnableRapidCrashLoopBackoffDecay`
+  - Components depending on the feature gate: `kube-apiserver`, `kubelet`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -839,6 +855,15 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+Yes, `ReduceDefaultCrashLoopBackoffDecay` changes the default backoff curve for
+exiting Pods and sidecar containers when `restartPolicy` is either `OnFailure`
+or `Always`.
+
+Since we currently only have anecdotal benchmarking, the alpha will implement
+the most conservative modeled initial value, 1s, resulting in 3 excess restarts
+per backoff lifetime. (See [this section](#front-loaded-decay-curve-methodology)
+for the source.]
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -853,7 +878,27 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, disable is supported.
+
+For `ReduceDefaultCrashLoopBackoffDecay`, if this is disabled, once kubelet is
+restarted it will initialize the default backoff to the prior initial value of
+10s, and all restart delays thereafter will be calculated against this equation.
+
+For `EnableRapidCrashLoopBackoffDecay`, if this is disabled, once kube-apiserver
+is restarted it will serve `restartPolicy` fields set to `Rapid` as `Always`.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Both features can also be reenabled.
+
+For `ReduceDefaultCrashLoopBackoffDecay`, if this is reenabled, once kubelet is
+restarted it will initialize the default backoff again to the new initial value
+of 1s, and all restart delays thereafter will be calculated against this
+equation.
+
+For `EnableRapidCrashLoopBackoffDecay`, if this is disabled, once kube-apiserver
+is restarted it will serve `restartPolicy` fields set to `Rapid` again as
+`Rapid`, which kubelet will be able to interpret.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -869,6 +914,15 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Yes, this requires tests for
+* switching `ReduceDefaultCrashLoopBackoffDecay` on or off
+* switching `EnableRapidCrashLoopBackoffDecay` off when there are workloads with
+  `restartPolicy: Rapid` set
+* switching `EnableRapidCrashLoopBackoffDecay` off when there are no workloads
+  with `restartPolicy: Rapid` set
+* switching `EnableRapidCrashLoopBackoffDecay` off, and then back on again, when
+  there are workloads with `restartPolicy: Rapid` set
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1032,6 +1086,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+It will not result in NEW API calls.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1041,6 +1097,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No, this KEP will not result in any new API types.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1048,6 +1106,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No, this KEP will not result in any new calls to the cloud provider.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1057,6 +1117,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No, this KEP will not result in increasing size or count of the existing API objects.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1068,6 +1130,12 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Maybe! As containers will be restarting more, this may affect "Startup latency
+of schedulable stateless pods", "Startup latency of schedule stateful pods".
+This is directly the type of SLI impact that a) the split between the default
+behavior change and the `Rapid` opt in is trying to mitigate, and b) one of the
+targets of the benchmarking period during alpha.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1081,6 +1149,11 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Yes! We expect more CPU usage of kubelet as it processes more restarts. During
+the alpha benchmarking period, we will be quantifying that amount in fully and
+partially saturated nodes with both the new default backoff curve and the
+`Rapid` backoff curve.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1092,6 +1165,9 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+It's possible, and is why during this alpha period we must benchmark fully
+saturated nodes with the most aggressive restart characteristics.
 
 ### Troubleshooting
 
