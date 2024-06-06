@@ -2096,8 +2096,9 @@ desired.
 
 The daemonset of a DRA driver must be configured to have a service account
 which grants the following permissions:
-- read/write/patch ResourceSlice
-- read ResourceClaim
+- get/list/watch/create/update/oatch/delete ResourceSlice
+- get ResourceClaim
+- get Node
 
 Ideally, write access to ResourceSlice should be limited to objects belonging
 to the node. This is possible with a [validating admission
