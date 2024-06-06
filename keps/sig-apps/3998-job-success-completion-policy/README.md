@@ -22,16 +22,6 @@
   - [Evaluation](#evaluation)
   - [Transition of &quot;status.conditions&quot;](#transition-of-statusconditions)
     - [The situations where successPolicy conflicts other terminating policies](#the-situations-where-successpolicy-conflicts-other-terminating-policies)
-  - [Future Work](#future-work)
-    - [Possibility for the lingering pods to continue running after the job meets the successPolicy](#possibility-for-the-lingering-pods-to-continue-running-after-the-job-meets-the-successpolicy)
-      - [Additional Story](#additional-story)
-      - [Job API](#job-api-1)
-      - [Evaluation](#evaluation-1)
-      - [Transition of &quot;status.conditions&quot;](#transition-of-statusconditions-1)
-    - [Possibility for introducing a new CronJob concurrentPolicy, &quot;ForbidUntilJobSuccessful&quot;](#possibility-for-introducing-a-new-cronjob-concurrentpolicy-forbiduntiljobsuccessful)
-    - [Possibility for the configurable reason for the &quot;SuccessCriteriaMet&quot; condition](#possibility-for-the-configurable-reason-for-the-successcriteriamet-condition)
-      - [Additional Story](#additional-story-1)
-      - [Job API](#job-api-2)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -39,7 +29,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Optional Second Alpha](#optional-second-alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -60,6 +49,17 @@
   - [Acceptable percentage of total succeeded indexes in the succeededCount field](#acceptable-percentage-of-total-succeeded-indexes-in-the-succeededcount-field)
   - [Match succeededIndexes using CEL](#match-succeededindexes-using-cel)
   - [Use JobSet instead of Indexed Job](#use-jobset-instead-of-indexed-job)
+  - [Possibility for the lingering pods to continue running after the job meets the successPolicy](#possibility-for-the-lingering-pods-to-continue-running-after-the-job-meets-the-successpolicy)
+    - [Additional Story](#additional-story)
+    - [Job API](#job-api-1)
+    - [Evaluation](#evaluation-1)
+    - [Transition of &quot;status.conditions&quot;](#transition-of-statusconditions-1)
+  - [Possibility for introducing a new CronJob concurrentPolicy, &quot;ForbidUntilJobSuccessful&quot;](#possibility-for-introducing-a-new-cronjob-concurrentpolicy-forbiduntiljobsuccessful)
+  - [Possibility for the configurable reason for the &quot;SuccessCriteriaMet&quot; condition](#possibility-for-the-configurable-reason-for-the-successcriteriamet-condition)
+    - [Additional Story](#additional-story-1)
+    - [Job API](#job-api-2)
+      - [Set the entire reason](#set-the-entire-reason)
+      - [Set the suffix of the reason](#set-the-suffix-of-the-reason)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -398,214 +398,6 @@ To avoid the above conflicts, terminating policies are evaluated the first befor
 This means that the terminating policies are respected rather than the successPolicies,
 if the Job doesn't have the `FailureTarget` or `SuccessCriteriaMet` conditions yet.
 
-### Future Work
-
-We need to re-evaluate the following points in the graduation to the beta stage.
-And then, if we introduce these features to this enhancement, we need to have the second alpha stage.
-
-#### Possibility for the lingering pods to continue running after the job meets the successPolicy
-
-There are cases where a batch workload can be declared as succeeded, and continue the lingering pods if a number of pods succeed.
-So, it is possible to introduce a new field, `whenCriteriaAchieved` to make configurable the action for the lingering pods.
-
-Note that if we introduce the `whenCriteriaChieved` field, we must have the second alpha stage.
-
-##### Additional Story
-
-As a simulation researcher/engineer for fluid dynamics/biochemistry.
-I want to mark the job as successful and continue the lingering pods if some indexes succeed
-because I set the minimum required value for sampling in the `.successPolicy.rules.succeededCount` and
-perform the same simulation in all indexes.
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-spec:
-  parallelism: 10
-  completions: 10
-  completionMode: Indexed
-  successPolicy:
-    rules:
-    - succeededCount: 5
-      succeededIndexes: "1-9"
-      whenCriteriaAchieved: continue
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: job-container
-          image: job-image
-          command: ["./sample"]
-``` 
-
-##### Job API
-
-```golang
-// SuccessPolicyRules describes a Job can be succeeded based on succeeded indexes.
-type SuccessPolicyRule struct {
-	...
-	// Specifies the action to be taken on the not finished (successCriteriaMet or failed) pods 
-	// when the job achieved the requirements.
-	// Possible values are:
-	// - Continue indicates that all pods wouldn't be terminated. 
-	//   When the lingering pods failed, the pods would ignore the terminating policies (backoffLimit, 
-	//   backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods aren't re-created.
-	// - ContinueWithRecreations indicates that all pods wouldn't be terminated.
-	//   When the lingering pods failed, the pods would follow the terminating policies (backoffLimit, 
-	//   backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods are re-created.
-	// - Terminate indicates that not finished pods would be terminated.
-	//
-	// Default value is Terminate.
-	WhenCriteriaAchieved WhenCriteriaAchievedSuccessPolicy	
-}
-
-// WhenCriteriaAchievedSuccessPolicy specifies the action to be taken on the pods
-// when the job achieved the requirements.
-// +enum
-type WhenCriteriaAchievedSuccessPolicy string
-
-const (
-	// All pods wouldn't be terminated when the job reached successPolicy.
-	// When the lingering pods failed, the pods would ignore the terminating policies (backoffLimit,
-	// backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods aren't re-created.
-	ContinueWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "Continue"
-
-	// All pods wouldn't be terminated when the job reached successPolicy.
-	// When the lingering pods failed, the pods would follow the terminating policies (backoffLimit,
-	// backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods are re-created.
-	ContinueWithRecreationsWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "ContinueWithRecreations"
-
-	// Not finished pods would be terminated when the job reached successPolicy.
-	TerminateWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "Terminate"
-)
-```
-
-##### Evaluation
-
-We need to have more discussions if we support the `continue` and `continueWithRecreatios` in the `whenCriteriaAchieved`.
-We have main discussion points here:
-
-1. After the job meets any successPolicy with `whenCriteriaAchieved=continue` and the job gets `SuccessCriteriaMet` condition,
-   what we would expect to happen, when the lingering pods are failed.
-   We may be able to select one of the actions in `a: Failed pods follow terminating policies like backoffLimit and podFailurePolicy`
-   or `b: Failed pods are terminated immediately, and the terminating policies are ignored`.
-   Moreover, as an alternative, we may be able to select the action `b` for the `whenCriteriaAchieved=continue`,
-   and then we may be possible to introduce a new `whenCriteriaAchieved`, `continueWithRecreations`, for the action `a`.
-
-  - `terminate`: The current supported behavior. All pods would be terminated by the job controller.
-  - `continue`: This behavior isn't supported in the alpha stage.
-    The lingering pods wouldn't be terminated when the job reached successPolicy.
-    Additionally, when the lingering pods failed, the pods are re-created followed terminating policies.
-  - `continueWithRecreations`: This behavior isn't supported in the alpha stage.
-    The lingering pods wouldn't be terminated when the job reached successPolicy.
-    Additionally, when the lingering pods failed, the pods are re-created followed terminating policies.
-
-##### Transition of "status.conditions"
-
-When the job with `whenCriteriaAchieved=continue` is submitted, the job `status.conditions` transits in the following:
-Note that the Job doesn't have an actual `Running` condition in the `status.conditions`.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Running
-    Running --> Failed: Exceeded backoffLimit
-    Running --> FailureTarget: Matched FailurePolicy with action=FailJob
-    FailureTarget --> Failed: All pods are terminated
-    Failed --> [*]
-    Running --> SuccessCriteriaMet: Matched SuccessPolicy
-    SuccessCriteriaMet --> SuccessCriteriaMet: Wait for all pods are finalized
-    SuccessCriteriaMet --> Complete: All pods are finished
-    Complete --> [*]
-```
-
-#### Possibility for introducing a new CronJob concurrentPolicy, "ForbidUntilJobSuccessful"
-
-It is potentially possible to add a new CronJob concurrentPolicy, `ForbidUntilJobSuccessful`,
-which the CronJob with `ForbidUntilJobSuccessful` creates Jobs based on Job's `SuccessCriteriaMet` condition.
-If we add a new concurrentPolicy to CronJobs, we need to have a dedicated alpha featureGate separate from `JobSuccessPolicy`.
-
-#### Possibility for the configurable reason for the "SuccessCriteriaMet" condition
-
-It is possible to add a configurable reason for the "SuccessCriteriaMet" condition.
-The machine-readable reason would be useful when the external programs like custom controllers implements the mechanism
-so that the CustomJob API can change the actions based on the reason.
-
-If we add this new field, we need to have a dedicated alpha featureGate separate from `JobSuccessPolicy`.
-Additionally, we can define the API scheme along with the [PodFailrePolicyReason (KEP-4443)](https://github.com/kubernetes/enhancements/pull/4479).
-
-##### Additional Story
-
-As a developer of CustomJob API built with Job API like JobSet, I want to implement the reconcile logic so that
-the controller can change the actions based on the reason why the job has been succeeded.
-
-So, it should be included in the `reason` field instead of `message` field since the reason field should be machine-readable.
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-spec:
-  parallelism: 10
-  completions: 10
-  completionMode: Indexed
-  successPolicy:
-    rules:
-    - succeededIndexes: "0"
-      setSuccessCriteriaMetReason: "LeaderSucceeded"
-    - succeededIndexes: "1-9"
-      setSuccessCriteriaMetReason: "WorkersSucceeded"
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: job-container
-          image: job-image
-          command: ["./sample"]
-status:
-  conditions:
-  - type: "SuccessCriteriaMet"
-    status: "True"
-    reason: "LeaderSucceeded"
-```
-
-##### Job API
-
-Selecting one of the following API designs is possible, but the first, `setSuccessCriteriaMetReason` was preferred
-during the JobSuccessPolicy alpha stage discussions. Because the second, `SuccessCriteriaMetReasonSuffix` would decrease the machine-readability
-since we need to parse the reason by the separation, `As`.
-
-Furthermore, allowing the `reason` to have merging field responsibility wouldn't better and
-decreasing the machine-readability would decrease the valuable that we have this reason in the `status.reason` field instead of `status.message` field.
-
-###### Set the entire reason
-
-```golang
-// SuccessPolicyRule describes rule for declaring a Job as succeeded.
-// Each rule must have at least one of the "succeededIndexes" or "succeededCount" specified.
-type SuccessPolicyRule struct {
-	// SetSuccessCriteriaMetReason specifies the CamelCase reason for the "SuccessCriteriaMet" condition.
-	// Once the job meets this rule, the specified reason is set to the "status.reason".
-	// The default value is "JobSuccessPolicy".
-	//
-	// +optional
-	SetSuccessCriteriaMetReason *string
-}
-```
-
-###### Set the suffix of the reason
-
-```golang
-// SuccessPolicyRule describes a rule for declaring a Job as succeeded.
-// Each rule must have at least one of the "succeededIndexes" or "succeededCount" specified.
-type SuccessPolicyRule struct {
-	// SuccessCriteriaMetReasonSuffix specifies the CamelCase suffix of the reason for the "SuccessCriteriaMet" condition.
-	// Once the job meets these rule, "JobSuccessPolicy" and the specified suffix is combined with "As".
-	// For example, if specified suffix is "LeaderSucceeded", it is represented as "JobSuccessPolicyAsLeaderSucceeded".
-	//
-	// +optional
-	SuccessCriteriaMetReasonSuffix *string
-}
-```
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -630,11 +422,11 @@ to implement this enhancement.
 ##### Integration tests
 
 - Test scenarios:
-  - enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate
-  - handling of successPolicy when all indexes succeeded
-  - handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending
-  - handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending 
-  - handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail
+  - [enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L794)
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L539)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L608)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L653) 
+  - [handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L698)
 
 ##### e2e tests
 
@@ -650,21 +442,10 @@ to implement this enhancement.
 - Feature implemented behind the `JobSuccessPolicy` feature gate.
 - Unit and integration tests passed as designed in [TestPlan](#test-plan).
 
-#### Optional Second Alpha
-
-- Decided whether we introduce a `whenCriteriaAchived=continue` and `whenCriteriaAchived=continueWithRecreations`.
-Please see the [Possibility for the lingering pods to continue running after the job meets the successPolicy](#possibility-for-the-lingering-pods-to-continue-running-after-the-job-meets-the-successpolicy)
-section for discussion points.
-- Decided whether we introduce a new CronJob concurrentPolicy, `ForbidUntilJobSuccessful`.
-Please see the [Possibility for introducing a new CronJob concurrentPolicy, "ForbidUntilJobSuccessful"](#possibility-for-introducing-a-new-cronjob-concurrentpolicy-forbiduntiljobsuccessful).
-section for more details.
-- Decided whether we introduce a configurable reason for the `SuccessCriteriaMet` condition.
-Please see the [Possibility for the configurable reason for the "SuccessCriteriaMet" condition](#possibility-for-the-configurable-reason-for-the-successcriteriamet-condition). 
-
 #### Beta
 
 - E2E tests passed as designed in [TestPlan](#test-plan).
-- Added a new reasons to the existing `job_finished_total` metric in [Monitoring Requirements](#monitoring-requirements).
+- Introduced a new `job_succeeded_total` metric in [Monitoring Requirements](#monitoring-requirements).
 - Feature is enabled by default.
 - Address all issues reported by users.
 
@@ -749,7 +530,82 @@ specifically the reason.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO
+In the alpha stage, the upgrade->downgrade->upgrade testing was added in the integration tests
+[here](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L794).
+
+In terms of a manual test for the upgrade and rollback, we can use th v1.30.
+
+The upgrade->downgrade->upgrade testing was done manually using the `alpha` version in v1.30 with the following steps:
+
+1. Start the cluster with the `JobSuccessPolicy` feature gate enabled:
+
+Create a KIND cluster with v1.30 and use the `Cluster` configuration below to turn this feature on. 
+
+```shell
+kind create cluster --config config.yaml
+```
+
+using `config.yaml`:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  "JobSuccessPolicy": true
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.30.0
+  - role: worker
+    image: kindest/node:v1.30.0
+```
+
+Then, create the job using the `.spec.successPolicy.rules[0].succeededCount=1,succeedeIndexes=0`:
+
+```shell
+kubectl create -f job.yaml
+```
+
+using `job.yaml`:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-success-policy
+spec:
+  parallelism: 3
+  completions: 3
+  completionMode: Indexed
+  successPolicy:
+    rules:
+    - succeededCount: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: main
+        image: python:3.12
+        command:
+        - python3
+        - -c
+        - |
+          import os, sys, time
+          index = os.environ.get("JOB_COMPLETION_INDEX")
+          sys.exit(0) if index == "0" else time.sleep(300)
+          sys.exit(0) if index == "1" else time.sleep(3600)
+        imagePullPolicy: IfNotPresent
+```
+
+Await for the pods to be running and the pod with index=0 to be succeeded.
+
+2. Simulate downgrade by disabling the feature for api server and control-plane.
+
+Then, await for the pod with index=1 to be succeeded and
+verify that the pod with index=2 still running and the Job doesn't have `SuccessCriteriaMet`.
+
+3. Simulate upgrade by enabling the feature for api server and control-plane.
+
+Then, very that the pod with index=2 is terminated and the Job has `SuccessCriteriaMet` and `Complete` conditions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -759,9 +615,11 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-`job_finished_total`: the new `JobSuccessPolicy` and `Completions` values for the `reason` label. 
-  - `JobSuccessPolicy` indicates a job is declared as succeeded because the job meets `.spec.successPolicy`.
-  - `Completions` indicates a job is declared as succeeded because the job meets `spec.completions`.
+We will introduce the new `job_succeeded_total` metric with `JobSuccessPolicy` and `Completions` reasons,
+which indicates the following situations: 
+
+- `JobSuccessPolicy` indicates a job is declared as `SuccessCriteriaMet` because the job meets `spec.succesPolicy`.
+- `Completions` indicates a job is declared as `SuccessCriteriaMet` because the job meets `spec.completions`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -861,6 +719,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2023.10.03: API design is updated.
 - 2024.02.07: API is finalized for the alpha stage.
 - 2024.03.09: "Criteria" is replaced with "Rules".
+- 2024.06.06: Beta Graduation.
 
 ## Drawbacks
 
@@ -992,3 +851,212 @@ with names representing the semantics of those different groups of pods.
 
 However, both Job level and JobSet level successPolicies would be valuable
 since there are some cases in which we want to launch a Job by a single podTemplate.
+
+### Possibility for the lingering pods to continue running after the job meets the successPolicy
+
+There are cases where a batch workload can be declared as succeeded, and continue the lingering pods if a number of pods succeed.
+So, it is possible to introduce a new field, `whenCriteriaAchieved` to make configurable the action for the lingering pods.
+
+#### Additional Story
+
+As a simulation researcher/engineer for fluid dynamics/biochemistry.
+I want to mark the job as successful and continue the lingering pods if some indexes succeed
+because I set the minimum required value for sampling in the `.successPolicy.rules.succeededCount` and
+perform the same simulation in all indexes.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  successPolicy:
+    rules:
+    - succeededCount: 5
+      succeededIndexes: "1-9"
+      whenCriteriaAchieved: continue
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: job-container
+          image: job-image
+          command: ["./sample"]
+``` 
+
+#### Job API
+
+```golang
+// SuccessPolicyRules describes a Job can be succeeded based on succeeded indexes.
+type SuccessPolicyRule struct {
+	...
+	// Specifies the action to be taken on the not finished (successCriteriaMet or failed) pods 
+	// when the job achieved the requirements.
+	// Possible values are:
+	// - Continue indicates that all pods wouldn't be terminated. 
+	//   When the lingering pods failed, the pods would ignore the terminating policies (backoffLimit, 
+	//   backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods aren't re-created.
+	// - ContinueWithRecreations indicates that all pods wouldn't be terminated.
+	//   When the lingering pods failed, the pods would follow the terminating policies (backoffLimit, 
+	//   backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods are re-created.
+	// - Terminate indicates that not finished pods would be terminated.
+	//
+	// Default value is Terminate.
+	WhenCriteriaAchieved WhenCriteriaAchievedSuccessPolicy	
+}
+
+// WhenCriteriaAchievedSuccessPolicy specifies the action to be taken on the pods
+// when the job achieved the requirements.
+// +enum
+type WhenCriteriaAchievedSuccessPolicy string
+
+const (
+	// All pods wouldn't be terminated when the job reached successPolicy.
+	// When the lingering pods failed, the pods would ignore the terminating policies (backoffLimit,
+	// backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods aren't re-created.
+	ContinueWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "Continue"
+
+	// All pods wouldn't be terminated when the job reached successPolicy.
+	// When the lingering pods failed, the pods would follow the terminating policies (backoffLimit,
+	// backoffLimitPerIndex, and podFailurePolicy, etc.) and the pods are re-created.
+	ContinueWithRecreationsWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "ContinueWithRecreations"
+
+	// Not finished pods would be terminated when the job reached successPolicy.
+	TerminateWhenCriteriaAchievedSuccessPolicy WhenCriteriaAchievedSuccessPolicy = "Terminate"
+)
+```
+
+#### Evaluation
+
+We need to have more discussions if we support the `continue` and `continueWithRecreatios` in the `whenCriteriaAchieved`.
+We have main discussion points here:
+
+1. After the job meets any successPolicy with `whenCriteriaAchieved=continue` and the job gets `SuccessCriteriaMet` condition,
+   what we would expect to happen, when the lingering pods are failed.
+   We may be able to select one of the actions in `a: Failed pods follow terminating policies like backoffLimit and podFailurePolicy`
+   or `b: Failed pods are terminated immediately, and the terminating policies are ignored`.
+   Moreover, as an alternative, we may be able to select the action `b` for the `whenCriteriaAchieved=continue`,
+   and then we may be possible to introduce a new `whenCriteriaAchieved`, `continueWithRecreations`, for the action `a`.
+
+- `terminate`: The current supported behavior. All pods would be terminated by the job controller.
+- `continue`: This behavior isn't supported in the alpha stage.
+  The lingering pods wouldn't be terminated when the job reached successPolicy.
+  Additionally, when the lingering pods failed, the pods are re-created followed terminating policies.
+- `continueWithRecreations`: This behavior isn't supported in the alpha stage.
+  The lingering pods wouldn't be terminated when the job reached successPolicy.
+  Additionally, when the lingering pods failed, the pods are re-created followed terminating policies.
+
+#### Transition of "status.conditions"
+
+When the job with `whenCriteriaAchieved=continue` is submitted, the job `status.conditions` transits in the following:
+Note that the Job doesn't have an actual `Running` condition in the `status.conditions`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Running
+    Running --> Failed: Exceeded backoffLimit
+    Running --> FailureTarget: Matched FailurePolicy with action=FailJob
+    FailureTarget --> Failed: All pods are terminated
+    Failed --> [*]
+    Running --> SuccessCriteriaMet: Matched SuccessPolicy
+    Running --> SuccessCriteriaMet: Matched SuccessPolicy
+    SuccessCriteriaMet --> SuccessCriteriaMet: Wait for all pods are finalized
+    SuccessCriteriaMet --> Complete: All pods are finished
+    Complete --> [*]
+```
+
+### Possibility for introducing a new CronJob concurrentPolicy, "ForbidUntilJobSuccessful"
+
+It is potentially possible to add a new CronJob concurrentPolicy, `ForbidUntilJobSuccessful`,
+which the CronJob with `ForbidUntilJobSuccessful` creates Jobs based on Job's `SuccessCriteriaMet` condition.
+
+```go
+type ConcurrentPolicy string
+
+const (
+	...
+	// ForbidUntilJobSuccessful means that the CronJob creates Jobs based on Job's SuccessCriteriaMet condition.
+	ForbidUntilJobSuccessful ConcurrentPolicy = "ForbidUntilJobSuccessful"
+)
+```
+
+### Possibility for the configurable reason for the "SuccessCriteriaMet" condition
+
+It is possible to add a configurable reason for the "SuccessCriteriaMet" condition.
+The machine-readable reason would be useful when the external programs like custom controllers implements the mechanism
+so that the CustomJob API can change the actions based on the reason similar to 
+the [PodFailrePolicyReason (KEP-4443)](https://github.com/kubernetes/enhancements/pull/4479).
+
+#### Additional Story
+
+As a developer of CustomJob API built with Job API like JobSet, I want to implement the reconcile logic so that
+the controller can change the actions based on the reason why the job has been succeeded.
+
+So, it should be included in the `reason` field instead of `message` field since the reason field should be machine-readable.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  successPolicy:
+    rules:
+    - succeededIndexes: "0"
+      setSuccessCriteriaMetReason: "LeaderSucceeded"
+    - succeededIndexes: "1-9"
+      setSuccessCriteriaMetReason: "WorkersSucceeded"
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: job-container
+          image: job-image
+          command: ["./sample"]
+status:
+  conditions:
+  - type: "SuccessCriteriaMet"
+    status: "True"
+    reason: "LeaderSucceeded"
+```
+
+#### Job API
+
+Selecting one of the following API designs is possible, but the first, `setSuccessCriteriaMetReason` was preferred
+during the JobSuccessPolicy alpha stage discussions. Because the second, `SuccessCriteriaMetReasonSuffix` would decrease the machine-readability
+since we need to parse the reason by the separation, `As`.
+
+Furthermore, allowing the `reason` to have merging field responsibility wouldn't better and
+decreasing the machine-readability would decrease the valuable that we have this reason in the `status.reason` field instead of `status.message` field.
+
+##### Set the entire reason
+
+```golang
+// SuccessPolicyRule describes rule for declaring a Job as succeeded.
+// Each rule must have at least one of the "succeededIndexes" or "succeededCount" specified.
+type SuccessPolicyRule struct {
+	// SetSuccessCriteriaMetReason specifies the CamelCase reason for the "SuccessCriteriaMet" condition.
+	// Once the job meets this rule, the specified reason is set to the "status.reason".
+	// The default value is "JobSuccessPolicy".
+	//
+	// +optional
+	SetSuccessCriteriaMetReason *string
+}
+```
+
+##### Set the suffix of the reason
+
+```golang
+// SuccessPolicyRule describes a rule for declaring a Job as succeeded.
+// Each rule must have at least one of the "succeededIndexes" or "succeededCount" specified.
+type SuccessPolicyRule struct {
+	// SuccessCriteriaMetReasonSuffix specifies the CamelCase suffix of the reason for the "SuccessCriteriaMet" condition.
+	// Once the job meets these rule, "JobSuccessPolicy" and the specified suffix is combined with "As".
+	// For example, if specified suffix is "LeaderSucceeded", it is represented as "JobSuccessPolicyAsLeaderSucceeded".
+	//
+	// +optional
+	SuccessCriteriaMetReasonSuffix *string
+}
+```
