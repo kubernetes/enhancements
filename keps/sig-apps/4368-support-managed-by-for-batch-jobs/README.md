@@ -18,6 +18,7 @@
     - [Two controllers running when feature is disabled](#two-controllers-running-when-feature-is-disabled)
     - [Debuggability](#debuggability)
     - [Custom controllers not compatible with API assumptions by CronJob](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob)
+    - [CronJob delaying start of a new Job in Forbid mode](#cronjob-delaying-start-of-a-new-job-in-forbid-mode)
 - [Design Details](#design-details)
     - [API](#api)
     - [Implementation overview](#implementation-overview)
@@ -306,6 +307,27 @@ Additionally, we intend to strengthen the CronJob implementation to verify the
 Job has the `Complete` condition before using `CompletionTime`
 (see [here](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/controller/cronjob/cronjob_controllerv2.go#L452)).
 
+#### CronJob delaying start of a new Job in Forbid mode
+
+As a consequence of fixing [#123775](https://github.com/kubernetes/kubernetes/issues/123775)
+as proposed in [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions)
+delay setting the `Complete` and `Failed` conditions until the Job pods are
+terminated.
+
+This impacts CronJobs with the `Forbid` concurrency policy, resulting in delayed
+creation of the replacement Job (until all pods of the previous job are
+terminated). This might be particularly noticable for Jobs using very long
+termination period (`terminationGracePeriodSeconds`).
+
+However, we argue that this change improves the CronJob to better match
+the semantic for the `Forbid` concurrency policy
+(see [here](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy),
+and the [comment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2115200217)).
+
+Users who expect two (or more) Jobs owned by a CronJob to run at the same time
+should use the `Allow` concurrency policy, which can be combined with the use
+of a quota management system, like [Kueue](https://kueue.sigs.k8s.io/), to
+control the maximal number of the Jobs running at the same time.
 
 ## Design Details
 
@@ -414,12 +436,9 @@ also require fixing:
 - [Job controller reports the count of terminating pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125089) and
 - [Job controller reports the count of ready pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125185).
 
-Note also that the fix impacts `CronJob` when using the `Forbid` concurrency
-policy (see [here](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy)).
-However, it can be argued that the current behavior of the CronJob / Job integration
-does not match the expectations of the `Forbid` policy
-(see [comment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2115200217)),
-and can be handled as a bug.
+Note also that the fix impacts `CronJob` when using the `Forbid` concurrency,
+see more details in
+[CronJob delaying start of a new Job in Forbid mode](#cronjob-delaying-start-of-a-new-job-in-forbid-mode).
 
 #### Mutability
 
