@@ -700,8 +700,7 @@ As well as fuzz tests covering:
 
 - for all native types, native-to-JSON-to-unstructured and
   native-to-CBOR-to-unstructured is identical
-- the number of bytes allocated per decode is not more than directly
-  proportional to the input size
+- the number of bytes allocated per decode does not exceed a reasonable upper limit
 - roundtrip JSON-to-CBOR-to-JSON and CBOR-to-JSON-to-CBOR
 - roundtrip through implementations in at least some of the non-Go client
   languages
