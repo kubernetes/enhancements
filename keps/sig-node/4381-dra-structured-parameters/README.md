@@ -84,7 +84,6 @@ SIG Architecture for cross-cutting KEPs).
 - [Design Details](#design-details)
   - [Components](#components)
   - [State and communication](#state-and-communication)
-  - [Custom parameters](#custom-parameters)
   - [Sharing a single ResourceClaim](#sharing-a-single-resourceclaim)
   - [Ephemeral vs. persistent ResourceClaims lifecycle](#ephemeral-vs-persistent-resourceclaims-lifecycle)
   - [Scheduled pods with unallocated or unreserved claims](#scheduled-pods-with-unallocated-or-unreserved-claims)
@@ -92,11 +91,10 @@ SIG Architecture for cross-cutting KEPs).
   - [API](#api)
     - [resource.k8s.io](#resourcek8sio)
       - [ResourceSlice](#resourceslice)
-      - [ResourceClass](#resourceclass)
-      - [ResourceClassParameters](#resourceclassparameters)
-      - [ResourceClaimParameters](#resourceclaimparameters)
+      - [DeviceClass](#deviceclass)
       - [Allocation result](#allocation-result)
       - [ResourceClaimTemplate](#resourceclaimtemplate)
+      - [ResourceQuota](#resourcequota)
       - [Object references](#object-references)
     - [core](#core)
   - [kube-controller-manager](#kube-controller-manager)
@@ -110,7 +108,7 @@ SIG Architecture for cross-cutting KEPs).
     - [PreBind](#prebind)
     - [Unreserve](#unreserve)
   - [kubelet](#kubelet)
-    - [Communication between kubelet and resource kubelet plugin](#communication-between-kubelet-and-resource-kubelet-plugin)
+    - [Communication between kubelet and kubelet plugin](#communication-between-kubelet-and-kubelet-plugin)
     - [Version skew](#version-skew)
     - [Security](#security)
     - [Managing resources](#managing-resources)
@@ -144,7 +142,6 @@ SIG Architecture for cross-cutting KEPs).
   - [Reusing volume support as-is](#reusing-volume-support-as-is)
   - [Extend volume support](#extend-volume-support)
   - [Extend Device Plugins](#extend-device-plugins)
-  - [Webhooks instead of ResourceClaim updates](#webhooks-instead-of-resourceclaim-updates)
   - [ResourceDriver](#resourcedriver)
   - [Complex sharing of ResourceClaim](#complex-sharing-of-resourceclaim)
 - [Infrastructure Needed](#infrastructure-needed)
@@ -207,54 +204,44 @@ can be installed outside of specific nodes and be connected to nodes
 dynamically as needed.
 
 This KEP introduces a new API for describing which of these new resources
-a pod needs. The API supports:
+a pod needs. Typically, such resources are devices like a GPU or other kinds
+of accelerators. The API supports:
 
-- Network-attached resources. The existing [device plugin API](https://github.com/kubernetes/design-proposals-archive/blob/main/resource-management/device-plugin.md)
+- Network-attached devices. The existing [device plugin API](https://github.com/kubernetes/design-proposals-archive/blob/main/resource-management/device-plugin.md)
   is limited to hardware on a node. However, further work is still
   needed to actually use the new API with those.
-- Sharing of a resource allocation between multiple containers or pods.
-  The device manager API currently cannot share resources at all. It
-  could be extended to share resources between containers in a single pod,
+- Sharing of allocated devices between multiple containers or pods.
+  The device plugin API currently cannot share devices at all. It
+  could be extended to share devices between containers in a single pod,
   but supporting sharing between pods would need a completely new
   API similar to the one in this KEP.
-- Using a resource that is expensive to initialize multiple times
+- Using a device that is expensive to initialize multiple times
   in different pods. This is not possible at the moment.
-- Custom parameters that describe resource requirements and initialization.
-  Parameters are not limited to a single, linear quantity that can be counted.
+- Custom parameters that describe device configuration.
   With the current Pod API, annotations have to be used to capture such
   parameters and then hacks are needed to access them from a CSI driver or
   device plugin.
 
 Support for new hardware will be provided by hardware vendor add-ons. Those add-ons
-are responsible for reporting available resources in a format defined and
+are called "DRA drivers". They are responsible for reporting available devices in a format defined and
 understood by Kubernetes and for configuring hardware before it is used. Kubernetes
-handles the allocation of those resources as part of pod scheduling.
-
+handles the allocation of those devices as part of pod scheduling.
 This KEP does not replace other means of requesting traditional resources
-(RAM/CPU, volumes, extended resources). The scheduler will serve as coordinator
-between the add-ons which own resources (CSI driver, resource driver) and the
-resources owned and assigned by the scheduler (RAM/CPU, extended resources).
+(RAM/CPU, volumes, extended resources).
 
 At a high-level, DRA with structured parameters takes the following form:
 
-* DRA drivers publish their available resources in the form of a
-  `ResourceSlice` object on a node-by-node basis according to one or more of the
-  builtin "structured models" known to Kubernetes. This object is stored in the
+* DRA drivers publish their available devices in the form of a
+  `ResourceSlice` object on a node-by-node basis. This object is stored in the
   API server and available to the scheduler (or Cluster Autoscaler) to query
-  when a resource request comes in later on.
+  when a request for devices comes in later on.
 
-* When a user wants to consume a resource, they create a `ResourceClaim`,
-  which, in turn, references a claim parameters object. This object defines how
-  many resources are needed and which capabilities they must have. Typically, it
-  is defined using a vendor-specific type which might also support configuration
-  parameters (i.e. parameters that are *not* needed for allocation but *are*
-  needed for configuration).
+* When a user wants to consume a resource, they create a `ResourceClaim`.
+  This object defines how
+  many devices are needed and which capabilities they must have.
 
-* With such a claim in place, DRA drivers "resolve" the contents of any
-  vendor-specific claim parameters into a canonical form (i.e. a generic
-  `ResourceClaimParameters` object in the `resource.k8s.io` API group) which
-  the scheduler (or Cluster Autoscaler) can evaluate against the
-  `ResourceSlice` of any candidate nodes without knowing exactly what is
+* With such a claim in place, the scheduler (or Cluster Autoscaler) can evaluate against the
+  `ResourceSlice` of any candidate nodes by comparing attributes, without knowing exactly what is
   being requested. They then use this information to help decide which node to
   schedule a pod on (as well as allocate resources from its `ResourceSlice`
   in the process).
@@ -263,19 +250,11 @@ At a high-level, DRA with structured parameters takes the following form:
   store the result in the API server as well as update its in-memory model of
   available resources. DRA drivers are responsible for using this allocation
   result to inject any allocated resource into the Pod, according to
-  the resource choices made by the scheduler. This includes applying any
-  configuration information attached to the vendor-specific claim parameters
-  object used in the request.
+  the device choices made by the scheduler. This includes applying any
+  configuration information attached to the original request.
 
-This KEP is specifically focused on defining the framework necessary to enable
-different "structured models" to be added to Kuberenetes over time. It is out of
-scope to actually define one of these model themselves.
-
-Instead, we provide an example of how one might map the way resources are
-exposed by the traditional device-plugin API into a "structured model". We don't
-believe this model is expressive enough to satify the majority of the use-cases
-we want to cover with DRA, but it's useful enough to demonstrate the overall
-"structured parameters" framework.
+This KEP defines a way to describe devices with a name and some associated
+attributes that are used to select devices.
 
 ## Motivation
 
@@ -367,27 +346,27 @@ inside a container.
 
 - Support node-local resources
 
-- Support claim parameters that are specified in a vendor CRD as
-  an alternative to letting users directly specify parameters with
-  the in-tree type. This provides a user experience that is similar to
-  what has been possible since Kubernetes 1.26. Ideally, users should not notice
-  at all that a driver is using structured parameters under the hood.
+- Support configuration parameters that are specified in a format defined by a
+  vendor.
 
 ### Non-Goals
 
-* Replace the device plugin API. For resources that fit into its model
-  of a single, linear quantity it is a good solution. Other resources
+* Replace the device plugin API. For devices that fit into its model
+  of a single, linear quantity it is a good solution. Other devices
   should use dynamic resource allocation. Both are expected to co-exist, with vendors
   choosing the API that better suits their needs on a case-by-case
   basis. Because the new API is going to be implemented independently of the
   existing device plugin support, there's little risk of breaking stable APIs.
 
-* Provide an abstraction layer for resource requests, i.e., something like a
+* Provide an abstraction layer for device requests, i.e., something like a
   “I want some kind of GPU”. Users will need to know about specific
-  resource drivers and which parameters they support. Portability of
-  workloads could be added on top of this proposal by introducing the
-  selection of a resource implementation through labels and
-  standardizing those labels and the associated parameters. The
+  DRA drivers and which configuration parameters and attributes they support.
+  Administrators and/or vendors can simplify this by creating device class
+  objects in the cluster, but defining those is out-of-scope for Kubernetes.
+
+  Portability of  workloads could be added on top of this proposal by
+  standardizing attributes and what they mean for certain classes of devices.
+  The
   [Resource Class
   Proposal](https://docs.google.com/document/d/1qKiIVs9AMh2Ua5thhtvWqOqW0MSle_RV3lfriO1Aj6U/edit#heading=h.jzfmfdca34kj)
   included such an approach.
@@ -404,10 +383,8 @@ As a hardware vendor, I want to make my hardware available also to applications
 that run in a container under Kubernetes. I want to make it easy for a cluster
 administrator to configure a cluster where some nodes have this hardware.
 
-I develop two components, one that runs as part of the Kubernetes control plane
-and one that runs on each node, and package those inside container images. YAML
-files describe how to deploy my software on a Kubernetes cluster that supports
-dynamic resource allocation.
+I develop a DRA driver, package it in a container image and provide YAML files
+for running it as a kubelet plugin via a daemon set.
 
 Documentation for administrators explains how the nodes need to be set
 up. Documentation for users explains which parameters control the behavior of
@@ -419,33 +396,31 @@ As a cluster administrator, I want to make GPUs from vendor ACME available to us
 of that cluster. I prepare the nodes and deploy the vendor's components with
 `kubectl create`.
 
-I create a ResourceClass for the hardware with parameters that only I as the
+I create a DeviceClass for the hardware with parameters that only I as the
 administrator am allowed to choose, like for example running a command with
-root privileges that does some cluster-specific initialization for each allocation:
+root privileges that does some cluster-specific initialization of a device
+each time it is prepared on a node:
 ```
-apiVersion: gpu.example.com/v1
-kind: GPUInit
-metadata:
-  name: acme-gpu-init
-# DANGER! This option must not be accepted for
-# user-supplied parameters. A real driver might
-# not even allow it for admins. This is just
-# an example to show the conceptual difference
-# between ResourceClass and ResourceClaim
-# parameters.
-initCommand:
-- /usr/local/bin/acme-gpu-init
-- --cluster
-- my-cluster
----
-apiVersion: core.k8s.io/v1alpha2
-kind: ResourceClass
+apiVersion: resource.k8s.io/v1alpha3
+kind: DeviceClass
 metadata:
   name: acme-gpu
-parametersRef:
-  apiGroup: gpu.example.com
-  kind: GPUInit
-  name: acme-gpu-init
+
+requirements:
+- deviceSelector: device.driverName == "gpu.acme.example.com"
+
+config:
+- opaque:
+    driverName: gpu.acme.example.com
+    parameters:
+      apiVersion: gpu.acme.example.com/v1
+      kind: GPUInit
+      # DANGER! This option must not be accepted for
+      # user-supplied parameters.
+      initCommand:
+        - /usr/local/bin/acme-gpu-init
+        - --cluster
+        - my-cluster
 ```
 
 #### Partial GPU allocation
@@ -453,17 +428,11 @@ parametersRef:
 As a user, I want to use a GPU as accelerator, but don't need exclusive access
 to that GPU. Running my workload with just 2Gb of memory is sufficient. This is
 supported by the ACME GPU hardware. I know that the administrator has created
-an "acme-gpu" ResourceClass.
+an "acme-gpu" DeviceClass.
 
 For a simple trial, I create a Pod directly where two containers share the same subset
 of the GPU:
 ```
-apiVersion: gpu.example.com/v1
-kind: GPURequirements
-metadata:
-  name: device-consumer-gpu-parameters
-memory: "2Gi"
----
 apiVersion: resource.k8s.io/v1alpha2
 kind: ResourceClaimTemplate
 metadata:
@@ -473,11 +442,10 @@ spec:
     # Additional annotations or labels for the
     # ResourceClaim could be specified here.
   spec:
-    resourceClassName: "acme-gpu"
-    parametersRef:
-      apiGroup: gpu.example.com
-      kind: GPURequirements
-      name: device-consumer-gpu-parameters
+    requests:
+    - name: gpu-request # could be used to select this device in a container when requesting more than one
+      deviceClassName: acme-gpu
+      deviceSelector: device.quantityAttribute["gpu.acme.example.com/memory"].isGreaterThan(quantity("2Gi"))
 ---
 apiVersion: v1
 kind: Pod
@@ -486,8 +454,7 @@ metadata:
 spec:
   resourceClaims:
   - name: "gpu" # this name gets referenced below under "claims"
-    template:
-      resourceClaimTemplateName: device-consumer-gpu-template
+    resourceClaimTemplateName: device-consumer-gpu-template
   containers:
   - name: workload
     image: my-app
@@ -515,18 +482,16 @@ spec:
       - "gpu"
 ```
 
-This request triggers resource allocation on a node that has a GPU device with
-2Gi of memory available and then the Pod runs on that node. The remaining
-capacity of the GPU may be usable for other pods, with constrains like alignment
-to segment sizes ensured by the resource driver.
-The lifecycle of the resource
-allocation is tied to the lifecycle of the Pod.
+This request triggers allocation on a node that has a GPU device with
+at least 2Gi of memory available and then the Pod runs on that node. The remaining
+capacity of the GPU may be usable for other pods. The lifecycle of the allocation
+is tied to the lifecycle of the Pod.
 
 In production, a similar PodTemplateSpec in a Deployment will be used.
 
 ### Publishing node resources
 
-The resources available on a node need to be published to the API server. In
+The devices available on a node need to be published to the API server. In
 the typical case, this is expected to be published by the on-node driver
 as described in the next paragraph. However, the source of this data may vary; for
 example, a cloud provider controller could populate this based upon information
@@ -534,7 +499,12 @@ from the cloud provider API.
 
 In the kubelet case, each driver running on a node publishes a set of
 `ResourceSlice` objects to the API server for its own resources, using its
-connection to the apiserver. Access control through a validating admission
+connection to the apiserver. The collection of these objects form a pool from
+which resources can be allocated. Some additional fields (defined in the API
+section) enable a consumer to determine whether it has a complete and
+consistent view of that pool.
+
+Access control through a validating admission
 policy can ensure that the drivers running on one node are not allowed to
 create or modify `ResourceSlices` belonging to another node. The `nodeName`
 and `driverName` fields in each `ResourceSlice` object are used to determine which objects are
@@ -557,278 +527,81 @@ reconstructed by the driver. This has no effect on already allocated claims
 because the allocation result is tracked in those claims, not the
 `ResourceSlice` objects (see [below](#state-and-communication)).
 
-Embedded inside each `ResourceSlice` is the representation of the resources
-managed by a driver according to a specific "structured model". In the example
-seen below, the structured model in use is called `namedResources`:
+Embedded inside each `ResourceSlice` is the representation of one or more devices.
 
 ```yaml
 kind: ResourceSlice
-apiVersion: resource.k8s.io/v1alpha2
+apiVersion: resource.k8s.io/v1alpha3
 ...
 spec:
   nodeName: worker-1
   driverName: cards.dra.example.com
-  namedResources:
-    ...
-```
-
-Such a model could be created to represent resources in a manner similar to the
-opaque strings passed over the tradition device plugin API to the kubelet. The
-one addition being that each named resource can have a set of arbitrary
-attributes attached to it.
-
-If a driver wanted to use a different structured model to represent its resources,
-a new structured model would need to be defined inside Kuberenetes, and a field
-would need to be added to this struct at the same level as
-`namedResources`. Driver implementors would then have the option
-to set this new field instead.
-
-**Note:** If a new model is added to the schema but clients are not updated,
-they'll encounter an object with no information from any known structured model
-when they serialize into their known version of a `ResourceSlice`. This
-tells them that they cannot handle the object because the API has been extended.
-
-Drivers can use different structured models by publishing multiple
-`ResourceSlice` objects, as long as each model represents a distinct set of
-resources. Whether the information about resources of one particular structured
-model must fit into one ResourceSlice object (or be distributed across
-many) depends on how that particular structured model describes its resources. In
-all cases, the size of each object is a hard limit and one must take this into
-account when designing a structured model and preparing ResourceSlice objects
-for it.
-
-Below is an example of a driver that provides two discrete GPU cards using the
-`namedResources` model described above:
-
-```yaml
-kind: ResourceSlice
-apiVersion: resource.k8s.io/v1alpha2
-...
-spec:
-  nodeName: worker-1
-  driverName: cards.dra.example.com
-  namedResources:
-  - name: gpu-0
+  devices:
+  - name: card-1
     attributes:
-    - name: UUID
-      string: GPU-ceea231c-4257-7af7-6726-efcb8fc2ace9
+    - name: manufacturer # a vendor-specific attribute, automatically qualified as cards.dra.example.com/manufacturer
+      string: Cards-are-us Inc.
+    - name: productName:
+      string: ACME T1000 16GB
     - name: driverVersion
-      string: 1.2.3
+      version: 1.2.3
     - name: runtimeVersion
       string: 11.1.42
     - name: memory
       quantity: 16Gi
-    - name: productName:
-      string: ACME T1000 32GB
-  - name: gpu-1
-    attributes:
-    - name: UUID
-      string: GPU-6aa0af9e-a2be-88c8-d2b3-2240d25318d7
-    - name: driverVersion
-      string: 1.2.3
-    - name: runtimeVersion
-      string: 11.1.42
-    - name: memory
-      quantity: 32Gi
-    - name: productName:
-      string: ACME A4-PCIE-40GB
+    - name: powerSavingSupported
+      bool: true
+    - name: dra.k8s.io/pciRoot # a fictional standardized attribute, not actually part of this KEP
+      string: pci-root-0
 ```
 
-Where "gpu-0" represents one type of card and "gpu-1" represents another (with
-the attributes hanging off each serving to "define" their individual
-properties).
-
-Compared to labels, attributes in this model have values of exactly one type. As
+Compared to labels, attributes have values of exactly one type. As
 described later on, these attributes can be used in CEL expressions to select a
 specific resource for allocation on a node.
 
-While this model is still hypothetical, we do imagine real-world models
-attaching attributes to their resources in a similar way. To avoid any future
-conflicts, we plan to reserve any attributes with the ".k8s.io" suffix for
-future use and standardization by Kubernetes. This could be used to describe
+To avoid any future conflicts, we reserve any attributes with the ".k8s.io" domain suffix
+for future use and standardization by Kubernetes. This could be used to describe
 topology across resources from different vendors, for example, but this is out-
 of-scope for now.
 
-**Note:** If a driver needs to reduce resource capacity, then there is a risk
-that a claim gets allocated using that capacity while the kubelet is updating a
-`ResourceSlice`. The implementations of structured models must handle
-scenarios where more resources are allocated than available. The kubelet plugin
-of a DRA driver ***must*** double-check that the allocated resources are still
+**Note:** If a driver needs to remove a device or change its attributes,
+then there is a risk that a claim gets allocated based on the old
+`ResourceSlice`. The scheduler must handle
+scenarios where more devices are allocated than available. The kubelet plugin
+of a DRA driver ***must*** double-check that the allocated devices are still
 available when NodePrepareResource is called. If not, the pod cannot start until
-the resource comes back. Treating this as a fatal error during pod admission
+the device comes back. Treating this as a fatal error during pod admission
 would allow us to delete the pod and trying again with a new one.
 
 ### Using structured parameters
 
-The following is an example CRD which the developer of the
-`cards.dra.example.com` DRA driver might define as a valid claim parameters
-object for requesting access to its GPUs:
+A ResourceClaim is a request to allocate one or more devices. Each request in a
+claim may reference a pre-defined DeviceClass to narrow down which devices are
+desired or describe that directly in the request itself through a device
+selector. A device selector is a CEL expression that must evaluate to true if a
+device satisfies the request. A special `device` variable provides access to
+the attributes of a device.
 
-```yaml
-kind: CardParameters
-apiVersion: dra.example.com/v1alpha1
-metadata:
-  name: my-parameters
-  namespace: user-namespace
-  uid: foobar-uid
-...
-spec:
-  minimumRuntimeVersion: v12.0.0
-  minimumMemory: 32Gi
-  # "sharing" is a configuration parameter that does not
-  # get translated into the selector below.
-  sharing:
-    strategy: TimeSliced
-```
+To correlate different devices, a claim may have "match attributes". Those are
+the names of attributes whose values must be the same for all devices that get
+allocated for the claim.
 
-Note that all fields in this CRD can be fully validated since it is owned by
-the DRA driver itself. This includes value ranges that are specific to the
-underlying hardware. There's no risk of using invalid attribute names because
-only the fields shown here are valid.
+Configuration can be embedded in the claim for all devices at the claim level
+and separately for each request. These configuration parameters are ignored by
+the scheduler when selecting devices. They get passed down to the DRA drivers
+which provide the devices when preparing the devices on a node.
 
-With this CRD in place, a DRA driver controller is able to convert instances of
-it into a generic, in-tree `ResourceClaimParameters` object that the scheduler
-is able to understand.
-
-For the example above, the converted object would look as follows:
-
-```yaml
-kind: ResourceClaimParameters
-apiVersion: resource.k8s.io/v1alpha2
-
-metadata:
-  # This cannot be the same as my-parameters because parameter objects with a different
-  # type might also use it. Instead, the original object gets linked to below.
-  name: someArbitraryName
-  namespace: user-namespace
-
-generatedFrom:
-  name: my-parameters
-  kind: CardParameters
-  apiGroup: dra.example.com
-  uid: foobar-uid
-
-vendorParameters:
-  # A vendor can put any kind of object here to pass the configuration
-  # parameters down to the kubelet plugin. In this case, the vendor
-  # driver simply copied the entire CR. It could also be some
-  # separate, smaller configuration type.
-  #
-  # Beware that ResourceClaimParameters have separate RBAC rules than
-  # the vendor CRD, so information included here may get visible
-  # to more users than the original CRD. Both objects are in the same
-  # namespace.
-  kind: CardParameters
-  apiVersion: dra.example.com/v1alpha1
-  metadata:
-    name: my-parameters
-    namespace: user-namespace
-    uid: foobar-uid
-  ...
-  spec:
-    minimumRuntimeVersion: v12.0.0
-    minimumMemory: 32Gi
-    sharing:
-      strategy: TimeSliced
-
-driverRequests:
-- driverName: cards.dra.example.com
-  requests:
-  # Each entry here is a request for one resource.
-  - namedresources:
-      # Selectors are CEL expressions with access to the attributes of the named resource
-      # that is being checked for a match.
-      selector: |-
-        attributes.version["runtimeVersion"].isGreaterThan(semver("12.0.0")) &&
-        attributes.quantity["memory"].isGreaterThan(quantity("32Gi"))
-```
-
-The meaning is that the selector expression must evaluate to true for a
-particular named resource in `namedResources`.
-
-Future extensions could be added to support partioning of resources as well as a
-express constraints that must be satisfied *between* any selected resources. For
-example, selecting two cards which are on the same PCI root complex may be
-needed to get the required performance.
-
-Instead of defining a vendor-specific CRD, DRA driver authors (or
-administrators) could decide to allow users to create and reference
-`ResourceClaimParameters` directly within their `ResourceClaims`. This would
-avoid the translation step shown above, but at the cost of (1) providing per-
-claim configuration parameters for their requested resources, and (2) doing any
-sort of validation on the CEL expressions created by the user.
-
-Resource class parameters are supported the same way. To ensure that
-permissions can be limited to administrators, there's a separate cluster-scoped
-ResourceClassParameters type. Instead of individual requests, one additional
-selector can be specified there which then also must be true for all individual
-requests made with that class:
-
-```yaml
-kind: ResourceClassParameters
-apiVersion: resource.k8s.io/v1alpha2
-
-metadata:
-  name: someArbitraryName
-
-generatedFrom:
-  name: gpu-parameters
-  kind: CardClassParameters
-  apiGroup: dra.example.com
-  uid: foobar-uid
-
-vendorParameters:
-  ...
-
-filters:
-- driverName: cards.dra.example.com
-  namedResources:
-    selector: |-
-      attributes["memory"] <= "16Gi"
-```
-
-In this example, the additional selector expression limits users of this class
-to just the cards with less that "16Gi" of memory. Together with limiting the
-number of claims that users are allowed to create for this class (see resource
-quotas in the core KEP) this can ensure that users do not consume too many
-resources. Allowing resource quotas that are based on resource attributes may be
-a useful future enhancement.
+A DeviceClass can contain the same device selector and device configuration
+parameters. Those get added to what is specified in the claim when a class gets
+referenced.
 
 ### Communicating allocation to the DRA driver
 
-The scheduler decides which resources to use for a claim and how much of
-them. It also needs to pass through the opaque vendor parameters, if there are
-any. This accurately captures the configuration parameters as they were set
-at the time of allocation.
-
-All of this information gets stored in the allocation result inside the
-ResourceClaim status. For the example above, the result produced by the
-scheduler is simply the list of IDs of the selected named resource:
-
-```yaml
-# Matches with the StructuredResourceHandle Go type defined below.
-vendorClassParameters:
-  ...
-vendorClaimParameters:
-  kind: CardParameters
-  apiVersion: dra.example.com/v1alpha1
-  metadata:
-    name: my-parameters
-    namespace: user-namespace
-    uid: foobar-uid
-  ...
-  spec:
-    count: 2
-    minimumRuntimeVersion: v12.0.0
-    minimumMemory: 32Gi
-    sharing:
-      strategy: TimeSliced
-
-nodeName: worker-1
-namedResources:
-  resources:
-  - gpu-1
-```
+The scheduler decides which devices to use for a claim. It also needs to pass
+through the opaque vendor parameters, if there are any. This accurately
+captures the configuration parameters as they were set at the time of
+allocation. All of this information gets stored in the allocation result inside
+the ResourceClaim status.
 
 ### Risks and Mitigations
 
@@ -846,7 +619,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 #### Feature not used
 
-In a cluster where the feature is not used (no resource driver installed, no
+In a cluster where the feature is not used (no DRA driver installed, no
 pods using dynamic resource allocation) the impact is minimal, both for
 performance and security. The scheduler plugin will
 return quickly without doing any work for pods.
@@ -871,30 +644,30 @@ because kubelet is in control of which capacity it reports for those: it could
 publish much higher values than the device plugin reported and thus attract
 pods to the node that normally would run elsewhere. With dynamic resource
 allocation, such an attack is still possible, but the attack code would have to
-be different for each resource driver because all of them will use structured
+be different for each DRA driver because all of them will use structured
 parameters differently for reporting resource availability.
 
 #### Compromised kubelet plugin
 
-This is the result of an attack against the resource driver, either from a
-container which uses a resource exposed by the driver, a compromised kubelet
-which interacts with the plugin, or due to resource driver running on a node
+This is the result of an attack against the DRA driver, either from a
+container which uses a device exposed by the driver, a compromised kubelet
+which interacts with the plugin, or due to DRA driver running on a node
 with a compromised root account.
 
-The resource driver needs write access for ResourceSlices. It can be deployed so
+The DRA driver needs write access for ResourceSlices. It can be deployed so
 that it can only write objects associated with the node, so the impact of a
 compromise would be limited to the node. Other drivers on the node could also
 be impacted because there is no separation by driver.
 
-However, a resource driver may need root access on the node to manage
+However, a DRA driver may need root access on the node to manage
 hardware. Attacking the driver therefore may lead to root privilege
 escalation. Ideally, driver authors should try to avoid depending on root
 permissions and instead use capabilities or special permissions for the kernel
 APIs that they depend on. Long term, limiting apiserver access by driver
 name would be useful.
 
-A resource driver may also need privileged access to remote services to manage
-network-attached devices. Resource driver vendors and cluster administrators
+A DRA driver may also need privileged access to remote services to manage
+network-attached devices. DRA driver vendors and cluster administrators
 have to consider what the effect of a compromise could be for that and how such
 privileges could get revoked.
 
@@ -905,10 +678,10 @@ case](#ephemeral-vs-persistent-resourceclaims-lifecycle) gets covered by
 creating ResourceClaims on behalf of the user automatically through
 kube-controller-manager. The implication is that RBAC rules that are meant to
 prevent creating ResourceClaims for certain users can be circumvented, at least
-for ephemeral resources. Administrators need to be aware of this caveat when
+for ephemeral claims. Administrators need to be aware of this caveat when
 designing user restrictions.
 
-A quota system that is based on the information in the structured parameter model
+A quota system that is based on the attributes of devices
 could be implemented in Kubernetes. When a user has exhausted their
 quota, the scheduler then refuses to allocate further ResourceClaims.
 
@@ -920,10 +693,10 @@ allocation also may turn out to be insufficient. Some risks are:
 - Slower pod scheduling due to more complex decision making.
 
 - Additional complexity when describing pod requirements because
-  separate objects must be created for the parameters.
+  separate objects must be created.
 
 All of these risks will have to be evaluated by gathering feedback from users
-and resource driver developers.
+and DRA driver developers.
 
 ## Design Details
 
@@ -945,27 +718,25 @@ Several components must be implemented or modified in Kubernetes:
   resource is allocated before the Pod gets scheduled, similar to
   https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder.go
 - Kubelet must be extended to manage ResourceClaims
-  and to call a resource kubelet plugin. That plugin returns CDI device ID(s)
+  and to call a kubelet plugin. That plugin returns CDI device ID(s)
   which then must be passed to the container runtime.
 
-A resource driver can have the following components:
-- *CRD controller* (optional): a central component which translates parameters
-  defined with a vendor CRD into in-tree parameter types. 
-- *kubelet plugin* (required): a component which cooperates with kubelet to
-  publish resource information and to prepare the usage of the resource on a node.
+A DRA driver can have the following components:
+- *admission webhook* (optional): a central component which checks the opaque
+  configuration parameters in ResourceClaims, ResourceClaimTemplates and DeviceClasses at
+  the time that they are created. Without this, invalid parameters can only
+  be detected when a Pod is about to run on a node.
+- *kubelet plugin* (required): a component which publishes device information
+  and cooperates with kubelet to prepare the usage of the devices on a node.
 
-When a resource driver doesn't use its own CRD for parameters, the CRD controller
-is not needed and a ResourceClaim references ResourceClaimParameters directly.
-
-A [utility library](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation) for resource drivers was developed.
+A [utility library](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation) for DRA drivers was developed.
 It does not have to be used by drivers, therefore it is not described further
 in this KEP.
 
 ### State and communication
 
-A ResourceClaim object defines what kind of resource is needed and what
-the parameters for it are. It is owned by users and namespaced. Additional
-parameters are provided by a cluster admin in ResourceClass objects.
+A ResourceClaim object defines what devices are needed and what parameters should be used to configure them once allocated. It is owned by a user and namespaced. Additional
+parameters are provided by a cluster admin in DeviceClass objects.
 
 The ResourceClaim spec is immutable. The ResourceClaim
 status is reserved for system usage and holds the current state of the
@@ -983,8 +754,8 @@ Handling state and communication through objects has two advantages:
 - The only requirement for deployments is that the components can connect to
   the API server.
 
-The entire state of a resource can be determined by looking at its
-ResourceClaim (see [API below](#api) for details), for example:
+The entire state of a claim can be determined by looking at its
+status (see [API below](#api) for details), for example:
 
 - It is **allocated** if and only if `claim.status.allocation` is non-nil and
   points to the `AllocationResult`, i.e. the struct where information about
@@ -1016,9 +787,9 @@ Some of the race conditions that need to be handled are:
   information elsewhere to detect when some allocated resource is no
   longer needed to recover from such scenarios.
 
-- A ResourceClaim gets deleted and recreated while the resource driver is
-  adding the finalizer. The driver can update the object to add the finalizer
-  and then will get a conflict error, which informs the driver that it must
+- A ResourceClaim gets deleted and recreated while the scheduler is
+  adding the finalizer. The scheduler can update the object to add the finalizer
+  and then will get a conflict error, which informs the scheduler that it must
   work on a new instance of the claim. In general, patching a ResourceClaim
   is only acceptable when it does not lead to race conditions. To detect
   delete+recreate, the UID must be added as precondition for a patch.
@@ -1048,41 +819,15 @@ Some of the race conditions that need to be handled are:
   being deallocated. Because that is visible in the claim status, scheduling
   of the second pod cannot proceed.
 
-### Custom parameters
-
-To support arbitrarily complex parameters, both ResourceClass and ResourceClaim
-contain one field which references a separate object. The reference contains
-API group, kind and name and thus is sufficient for generic clients to
-retrieve the parameters. For ResourceClass, that object must be
-cluster-scoped. For ResourceClaim, it must be in the same namespace as the
-ResourceClaim and thus the Pod. Which kind of objects a resource driver accepts as parameters depends on
-the driver.
-
-This approach was chosen because then validation of the parameters can be done
-with a CRD and that validation will work regardless of where the parameters
-are needed.
-
-It is the responsibility of the resource driver to convert these CRD parameters
-into in-tree ResourceClaimParameters and ResourceClassParameters. Kubernetes
-finds those generated parameters based on their `generatedFrom` back-reference.
-
-Parameters may get deleted before the ResourceClaim or ResourceClass that
-references them. In that case, a pending resource cannot be allocated until the
-parameters get recreated. An allocated resource must remain usable and
-deallocating it must be possible. To support this, resource drivers must copy
-all relevant information:
-- For usage, the `claim.status.allocation.resourceHandle` can be hold some copied information
-  because the ResourceClaim and thus this field must exist.
-- For deallocation, drivers should use some other location to handle
-  cases where a user force-deletes a ResourceClaim or the entire
-  cluster gets removed.
-
 ### Sharing a single ResourceClaim
 
 Pods reference resource claims in a new `pod.spec.resourceClaims` list. Each
 resource in that list can then be made available to one or more containers in
-that Pod. Depending on the capabilities defined in the
-`claim.status.allocation` by the driver, a ResourceClaim can be used exclusively
+that Pod. Containers can also get access to a specific requested devices in cases where a
+claim has asked for more than one.
+
+Depending on the capabilities defined in the
+`claim.status.allocation`, a ResourceClaim can be used exclusively
 by one pod at a time or an unlimited number of pods. Support for additional
 constraints (maximum number of pods, maximum number of nodes) could be
 added once there are use cases for those.
@@ -1160,22 +905,13 @@ all running pods on the node will be deleted by the GC controller and the
 resources used by the pods will be deallocated. However, they will not be
 un-prepared as the node is down and Kubelet is not running on it.
 
-Resource drivers should be able to handle this situation correctly and
+DRA drivers should be able to handle this situation correctly and
 should not expect `UnprepareNodeResources` to be always called.
 If resources are unprepared when `Deallocate` is called, `Deallocate`
 might need to perform additional actions to correctly deallocate
 resources.
 
 ### API
-
-```
-<<[UNRESOLVED @pohly @johnbelamaric]>>
-Before 1.31, we need to re-evaluate the API, including, but not limited to:
-- Do we really need a separate ResourceClaim?
-- Does "Device" instead of "Resource" make the API easier to understand?
-- Avoid separate parameter objects if and when possible.
-<<[/UNRESOLVED]>>
-```
 
 The PodSpec gets extended. To minimize the changes in core/v1, all new types
 get defined in a new resource group. This makes it possible to revise those
@@ -1185,14 +921,14 @@ set when it is enabled. Initially, they are declared as alpha. Even though they
 are alpha, changes to their schema are discouraged and would have to be done by
 using new field names.
 
-ResourceClaim, ResourceClass and ResourceClaimTemplate are new built-in types
-in `resource.k8s.io/v1alpha2`. This alpha group must be explicitly enabled in
+ResourceClaim, DeviceClass and ResourceClaimTemplate are new built-in types
+in `resource.k8s.io/v1alpha3`. This alpha group must be explicitly enabled in
 the apiserver's runtime configuration. Using builtin types was chosen instead
 of using CRDs because core Kubernetes components must interact with the new
 objects and installation of CRDs as part of cluster creation is an unsolved
 problem.
 
-Secrets are not part of this API: if a resource driver needs secrets, for
+Secrets are not part of this API: if a DRA driver needs secrets, for
 example to access its own backplane, then it can define custom parameters for
 those secrets and retrieve them directly from the apiserver. This works because
 drivers are expected to be written for Kubernetes.
@@ -1210,221 +946,290 @@ server-side-apply (SSA) simpler. Patching individual list elements is not
 needed and there is a single owner.
 
 ```go
-// ResourceSlice provides information about available
-// resources on individual nodes.
+// One or more slices represent a pool of devices managed by a given driver. For
+// node-local devices, each node is a pool. How many slices the driver uses
+// to publish that pool is driver-specific. Within each pool the device name must
+// be unique.
+//
+// The slice in which a device gets published may change over time. The unique identifier
+// for a node-local device is the tuple `<driver name>/<node name>/<device name>`. Each
+// of these names is a DNS label or domain, so it is okay to concatenate them
+// like this in a string with a slash as separator.
+//
+// Whenever a driver needs to update a pool, it bumps the pool generation number
+// and updates all slices with that new number and any new device definitions. A consumer
+// must only use device definitions from slices with the highest generation number
+// and ignore all others.
+//
+// If necessary, a consumer can check the number of total devices in a pool (included
+// in each slice) to determine whether its view of a pool is complete.
+//
+// For devices that are not local to a node, the node name is not set. Instead,
+// a pool name is chosen by the driver as necessary. It can be left blank if the
+// device names are unique in the entire cluster. The unique identifier then
+// has the same format as before with `<driver name>[/<pool name>]/<device name>`.
 type ResourceSlice struct {
     metav1.TypeMeta
     // Standard object metadata
+    // +optional
     metav1.ObjectMeta
 
-    // NodeName identifies the node which provides the resources
-    // if they are local to a node.
+    Spec ResourceSliceSpec
+
+    // A status might get added later.
+}
+
+type ResourceSliceSpec struct {
+    // NodeName identifies the node which provides the devices. All devices
+    // are local to that node and part of a per-node pool.
     //
-    // A field selector can be used to list only ResourceSlice
-    // objects with a certain node name.
+    // This field can be used to limit access from nodes to slices with
+    // the same node name. It also indicates to autoscalers that adding
+    // new nodes of the same type as some old node might also make new
+    // devices available.
+    //
+    // NodeName and PoolName are mutually exclusive.
+    //
+    // +optional
     NodeName string
+
+    // PoolName can be used to describe pools of devices which are not local
+    // to a node. It can be left blank if the device names are unique in the cluster.
+    //
+    // It must not be longer than 253 and must consist of one or more DNS sub-domains
+    // separated by slashes.
+    //
+    // +optional
+    PoolName string
+
+    // The generation gets bumped in all slices of a pool whenever device
+    // definitions change. A consumer must only use device definitions from slices
+    // with the highest generation number and ignore all others.
+    PoolGeneration int64
+
+    // Defines which nodes have access to the devices in the pool.
+    // Must not be set when the node name is set.
+    //
+    // If the node name is not set and this field is unset, devices
+    // are accessible in the entire cluster.
+    //
+    // +optional
+    NodeSelector *v1.NodeSelector
 
     // DriverName identifies the DRA driver providing the capacity information.
     // A field selector can be used to list only ResourceSlice
     // objects with a certain driver name.
+    //
+    // Must be a DNS subdomain and should end with a DNS domain owned by the
+    // vendor of the driver.
     DriverName string
 
-    ResourceModel
+    // The total number of devices in the pool.
+    // Consumers can use this to check whether they have
+    // seen all slices.
+    TotalDeviceNumber int64
+
+    // Devices lists all available devices in this pool.
+    //
+    // Must not have more than 128 entries.
+    Devices []Device
+
+    // FUTURE EXTENSION: some other kind of list, should we ever need it.
+    // Old clients seeing an empty Devices field can safely ignore the (to
+    // them) empty pool.
 }
+
+const ResourceSliceMaxDevices = 128
 ```
 
-The ResourceSlice object holds the
-information about available resources. A status is not strictly needed because
+The ResourceSlice object holds the information about available devices.
+Together, the slices form a pool of devices that can be allocated.
+
+A status is not strictly needed because
 the information in the allocated claim statuses is sufficient to determine
-which of those resources are reserved for claims.
+which devices are allocated to which claims.
 
 However, despite the finalizer on the claims it could happen that a well
 intentioned but poorly informed user deletes a claim while it is in use.
 Therefore adding a status is a useful future extension. That status will
-include information about reserved resources (set by schedulers before
+include information about reserved devices (set by schedulers before
 allocating a claim) and in-use resources (set by the kubelet). This then
 enables conflict resolution when multiple schedulers schedule pods to the same
 node because they would be required to set a reservation before proceeding with
 the allocation. It also enables detecting inconsistencies and taking actions to
 fix those, like deleting pods which use a deleted claim.
 
-At the moment, there is a single structured model. To enable adding alternative
-models in the future, one-of-many structs are used. If a component encounters
-such a struct with no known field set, it knows that it cannot handle the
-struct because some newer, unsupported model is used:
-
 ```go
-// ResourceModel must have one and only one field set.
-type ResourceModel struct {
-    // NamedResources describes available resources using the named resources model.
-    NamedResources *NamedResourcesResources
-}
-```
-
-The "named resources" model lists individual resource instances and their
-attributes:
-
-```go
-// NamedResourcesResources is used in NodeResourceModel.
-type NamedResourcesResources struct {
-    // The list of all individual resources instances currently available.
-    Instances []NamedResourcesInstance
-}
-
-// NamedResourcesInstance represents one individual hardware instance that can be selected based
+// Device represents one individual hardware instance that can be selected based
 // on its attributes.
-type NamedResourcesInstance struct {
-    // Name is unique identifier among all resource instances managed by
-    // the driver on the node. It must be a DNS subdomain.
+type Device struct {
+    // Name is unique identifier among all devices managed by
+    // the driver on the node. It must be a DNS label.
     Name string
 
-    // Attributes defines the attributes of this resource instance.
+    // Attributes defines the set of attributes for this device.
     // The name of each attribute must be unique.
-    Attributes []NamedResourcesAttribute
+    //
+    // Must not have more than 32 entries.
+    //
+    // +listType=atomic
+    // +optional
+    Attributes []DeviceAttribute
+
+    // TODO for 1.31: define how to support partitionable devices
 }
 
-// NamedResourcesAttribute is a combination of an attribute name and its value.
-type NamedResourcesAttribute struct {
-    // Name is unique identifier among all resource instances managed by
-    // the driver on the node. It must be a DNS subdomain.
+const ResourceSliceMaxAttributesPerDevice = 32
+
+// ResourceSliceMaxDevices and ResourceSliceMaxAttributesPerDevice where chosen
+// so that with the maximum attribute length of 96 characters the total size of
+// the ResourceSlice object is around 420KB.
+
+// DeviceAttribute is a combination of an attribute name and its value.
+// Exactly one value must be set.
+type DeviceAttribute struct {
+    // Name is a unique identifier for this attribute, which will be
+    // referenced when selecting devices.
+    //
+    // Attributes are defined either by the owner of the specific driver
+    // (usually the vendor) or by some 3rd party (e.g. the Kubernetes
+    // project). Because attributes are sometimes compared across devices,
+    // a given name is expected to mean the same thing and have the same
+    // type on all devices.
+    //
+    // Attribute names must be either a C-style identifier
+    // (e.g. "the_name") or a DNS subdomain followed by a slash ("/")
+    // followed by a C-style identifier
+    // (e.g. "example.com/the_name"). Attributes whose name does not
+    // include the domain prefix are assumed to be part of the driver's
+    // domain. Attributes defined by 3rd parties must include the domain
+    // prefix.
+    //
+    // The maximum length for the DNS subdomain is 63 characters (same as
+    // for driver names) and the maximum length of the C-style identifier
+    // is 32.
     Name string
 
-    NamedResourcesAttributeValue
-}
+    // The Go field names below have a Value suffix to avoid a conflict between the
+    // field "String" and the corresponding method. That method is required.
+    // The Kubernetes API is defined without that suffix to keep it more natural.
 
-// NamedResourcesAttributeValue must have one and only one field set.
-type NamedResourcesAttributeValue struct {
     // QuantityValue is a quantity.
     QuantityValue *resource.Quantity
     // BoolValue is a true/false value.
     BoolValue *bool
-    // IntValue is a 64-bit integer.
-    IntValue *int64
-    // IntSliceValue is an array of 64-bit integers.
-    IntSliceValue *NamedResourcesIntSlice
-    // StringValue is a string.
+    // StringValue is a string. Must not be longer than 64 characters.
     StringValue *string
-    // StringSliceValue is an array of strings.
-    StringSliceValue *NamedResourcesStringSlice
     // VersionValue is a semantic version according to semver.org spec 2.0.0.
+    // Must not be longer than 64 characters.
     VersionValue *string
 }
 
-// NamedResourcesIntSlice contains a slice of 64-bit integers.
-type NamedResourcesIntSlice struct {
-    // Ints is the slice of 64-bit integers.
-    Ints []int64
-}
-
-// NamedResourcesStringSlice contains a slice of strings.
-type NamedResourcesStringSlice struct {
-    // Strings is the slice of strings.
-    Strings []string
-}
+const DeviceAttributeMaxIDLength = 32
+const DeviceAttributeMaxValueLength = 64
 ```
 
-All names must be DNS sub-domains. This excludes the "/" character, therefore
-combining different names with that separator to form an ID is valid.
-
-In the Go types above, all structs starting with `NamedResources` are part of
-that structured model. Code generators (more specifically, the applyconfig
-generator) assume that all Go types of an API are defined in the same Go
-package. If it wasn't for that, defining those structs in their own package
-without the `NamedResources` prefix would be possible and make the Go code
-cleaner without affecting the Kubernetes API.
-
-##### ResourceClass
+##### DeviceClass
 
 ```go
-// ResourceClass is used by administrators to influence how resources
-// are allocated.
-//
-// This is an alpha type and requires enabling the DynamicResourceAllocation
-// feature gate.
-type ResourceClass struct {
+// DeviceClass is a vendor or admin-provided resource that contains
+// device configuration and requirements. It can be referenced in
+// the device requests of a claim to apply these presets.
+// Cluster scoped.
+type DeviceClass struct {
     metav1.TypeMeta
     // Standard object metadata
     // +optional
     metav1.ObjectMeta
 
-    // ParametersRef references an arbitrary separate object that may hold
-    // parameters that will be used by the driver when allocating a
-    // resource that uses this class. A dynamic resource driver can
-    // distinguish between parameters stored here and and those stored in
-    // ResourceClaimSpec.
-    // +optional
-    ParametersRef *ResourceClassParametersReference
-
-    // Only nodes matching the selector will be considered by the scheduler
-    // when trying to find a Node that fits a Pod when that Pod uses
-    // a ResourceClaim that has not been allocated yet.
+    // Config defines configuration parameters that apply to each device that is claimed via this class.
+    // Some classses may potentially be satisfied by multiple drivers, so each instance of a vendor
+    // configuration applies to exactly one driver.
     //
-    // Setting this field is optional. If null, all nodes are candidates.
+    // They are passed to the driver, but are not consider while allocating the claim.
+    //
     // +optional
-    SuitableNodes *core.NodeSelector
+    // +listType=atomic
+    Config []ConfigurationParameters
 
-    // DefaultClaimParametersRef is an optional reference to an object that holds parameters
-    // used as default when allocating a claim which references this class. This field is utilized
-    // only when the ParametersRef of the claim is nil. If both ParametersRef
-    // and DefaultClaimParametersRef are nil, the claim requests no resources and thus
-    // can always be allocated.
+    // Requirements must be satisfied by devices. Applies to all devices of
+    // a claim when the claim references the class and only to the devices
+    // in a request when referenced there.
+    //
     // +optional
-    DefaultClaimParametersRef *ResourceClassParametersReference
-}
-```
-
-##### ResourceClassParameters
-
-```go
-// ResourceClassParameters defines resource requests for a ResourceClass in an
-// in-tree format understood by Kubernetes.
-type ResourceClassParameters struct {
-    metav1.TypeMeta
-    // Standard object metadata
-    metav1.ObjectMeta
-
-    // If this object was created from some other resource, then this links
-    // back to that resource. This field is used to find the in-tree representation
-    // of the class parameters when the parameter reference of the class refers
-    // to some unknown type.
-    GeneratedFrom *ResourceClassParametersReference
-
-    // VendorParameters are arbitrary setup parameters for all claims using
-    // this class. They are ignored while allocating the claim. There must
-    // not be more than one entry per driver.
-    VendorParameters []VendorParameters
-
-    // Filters describes additional contraints that must be met when using the class.
-    Filters []ResourceFilter
+    // +listType=atomic
+    Requirements []Requirement
 }
 
-// ResourceFilter is a filter for resources from one particular driver.
-type ResourceFilter struct {
-    // DriverName is the name used by the DRA driver kubelet plugin.
+// ConfigurationParameters must have one and only one field set.
+type ConfigurationParameters struct {
+    Opaque *OpaqueConfigurationParameters
+}
+
+// OpaqueConfigurationParameters contains configuration parameters for a driver.
+type OpaqueConfigurationParameters struct {
+    // DriverName is used to determine which kubelet plugin needs
+    // to be passed these configuration parameters.
+    //
+    // An admission webhook provided by the driver developer could use this
+    // to decide whether it needs to validate them.
+    //
+    // Must be a DNS subdomain and should end with a DNS domain owned by the
+    // vendor of the driver.
     DriverName string
 
-    ResourceFilterModel
+    // Parameters can contain arbitrary data. It is the responsibility of
+    // the driver developer to handle validation and versioning. Typically this
+    // includes self-identification and a version ("kind" + "apiVersion" for
+    // Kubernetes types), with conversion between different versions.
+    Parameters runtime.RawExtension
 }
 
-// ResourceFilterModel must have one and only one field set.
-type ResourceFilterModel struct {
-    // NamedResources describes a resource filter using the named resources model.
-    NamedResources *NamedResourcesFilter
-}
-
-// NamedResourcesFilter is used in ResourceFilterModel.
-type NamedResourcesFilter struct {
-    // Selector is a CEL expression which must evaluate to true if a
-    // resource instance is suitable. The language is as defined in
+// Requirement must have one and only one field set.
+type Requirement struct {
+    // This CEL expression which must evaluate to true if a
+    // device is suitable. This covers qualitative aspects of
+    // device selection.
+    //
+    // The language is as defined in
     // https://kubernetes.io/docs/reference/using-api/cel/
+    // with several additions that are specific to device selectors.
     //
-    // In addition, for each type in NamedResourcesAttributeValue there is a map that
-    // resolves to the corresponding value of the instance under evaluation.
-    // For example:
+    // For each attribute type there is a
+    // `device.<type>Attributes` map that resolves to the corresponding
+    // value of the instance under evaluation. The type of those map
+    // entries are known at compile time, which makes it easier to
+    // detect errors like string to int comparisons.
     //
-    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
-    //    attributes.stringslice["b"].isSorted()
-    Selector string
+    // In cases where such type safety is not needed or not desired,
+    // `device.attributes` can be used instead. The type of the entries
+    // then only gets checked at runtime.
+    //
+    // Unknown keys are not an error. Instead, `device.<type>Attributes`
+    // returns a default value for each type:
+    // - empty string
+    // - false for a boolean
+    // - zero quantity
+    // - 0.0.0 for a version
+    //
+    // `device.attributes` returns nil.
+    //
+    // The `device.driverName` string variable can be used to check for a specific
+    // driver explicitly in a filter that is meant to work for devices from
+    // different vendors. It is provided by Kubernetes and matches the
+    // `driverName` from the ResourceSlice which provides the device.
+    //
+    // The CEL expression is applied to *all* available devices from any driver.
+    // Because of the defaults, it is safe to reference and use attribute values
+    // without checking first whether they are set. For this to work without
+    // ambiguity, attribute names have to be fully-qualified.
+    //
+    // Some examples:
+    //    device.quantityAttributes["memory.dra.example.com"].isGreaterThan(quantity("1Gi")) # >= 1Gi
+    //    "memory.dra.example.com" in device.attributes # attribute is set
+    //
+    // +optional
+    DeviceSelector *string
 }
 ```
 
@@ -1432,8 +1237,9 @@ type NamedResourcesFilter struct {
 
 
 ```go
-// ResourceClaim describes which resources are needed by a resource consumer.
-// Its status tracks whether the resource has been allocated and what the
+// ResourceClaim describes which resources (typically one or more devices)
+// are needed by a claim consumer.
+// Its status tracks whether the claim has been allocated and what the
 // resulting attributes are.
 //
 // This is an alpha type and requires enabling the DynamicResourceAllocation
@@ -1444,13 +1250,10 @@ type ResourceClaim struct {
     // +optional
     metav1.ObjectMeta
 
-    // Spec describes the desired attributes of a resource that then needs
-    // to be allocated. It can only be set once when creating the
-    // ResourceClaim.
+    // Spec defines what to allocated and how to configure it.
     Spec ResourceClaimSpec
 
-    // Status describes whether the resource is available and with which
-    // attributes.
+    // Status describes whether the claim is ready for use.
     // +optional
     Status ResourceClaimStatus
 }
@@ -1475,225 +1278,310 @@ prevented. Deleting the entire cluster also leaves resources allocated outside
 of the cluster in an allocated state.
 
 ```go
-// ResourceClaimSpec defines how a resource is to be allocated.
 type ResourceClaimSpec struct {
-    // ResourceClassName references the driver and additional parameters
-    // via the name of a ResourceClass that was created as part of the
-    // driver deployment.
-    // +optional
-    ResourceClassName string
-
-    // ParametersRef references a separate object with arbitrary parameters
-    // that will be used by the driver when allocating a resource for the
-    // claim.
+    // This field holds configuration for multiple potential drivers which
+    // could satisfy requests in this claim. The configuration applies to
+    // the entire claim. It is ignored while allocating the claim.
     //
-    // The object must be in the same namespace as the ResourceClaim.
     // +optional
-    ParametersRef *ResourceClaimParametersReference
+    // +listType=atomic
+    Config []ConfigurationParameters
+
+    // These constraints must be satisfied by the set of devices that get
+    // allocated for the claim.
+    Constraints []Constraint
+
+    // Requests are individual requests for separate resources for the claim.
+    // An empty list is valid and means that the claim can always be allocated
+    // without needing anything. A class can be referenced to use the default
+    // requests from that class.
+    //
+    // +listType=atomic
+    Requests []Request
+
+    // Future extension, ignored by older schedulers. This is fine because scoring
+    // allows users to define a preference, without making it a hard requirement.
+    //
+    //
+    // Score *SomeScoringStruct
+
+    // Shareable indicates whether the allocated claim is meant to be shareable
+    // by multiple consumers at the same time.
+    // +optional
+    Shareable bool
+}
+
+// Constraint must have one and only one field set.
+type Constraint struct {
+    // All devices must have this attribute and its value must be the same.
+    //
+    // For example, if you specified "numa.dra.example.com" (a hypothetical example!),
+    // then only devices in the same NUMA node will be chosen.
+    //
+    // +optional
+    // +listType=atomic
+    MatchAttribute *string
+
+    // Future extension, not part of the current design:
+    // A CEL expression which compares different devices and returns
+    // true if they match.
+    //
+    // Because it would be part of a one-of, old schedulers will not
+    // accidentally ignore this additional, for them unknown match
+    // criteria.
+    //
+    // matcher string
+}
+
+// Request is a request for one of many resources required for a claim.
+// This is typically a request for a single resource like a device, but can
+// also ask for several identical devices. It might get extended to support
+// asking for one of several different alternatives.
+type Request struct {
+    // The name can be used to reference this request in a pod.spec.containers[].resources.claims
+    // entry.
+    //
+    // Must be a DNS label.
+    Name string
+
+    *ResourceRequestDetail
+
+    // FUTURE EXTENSION:
+    //
+    // OneOf contains a list of requests, only one of which must be satisfied.
+    // Requests are listed in order of priority.
+    //
+    // +optional
+    // +listType=atomic
+    // OneOf []ResourceRequestDetail
+}
+
+type ResourceRequestDetail struct {
+    // When referencing a DeviceClass, a request inherits additional
+    // configuration and requirements.
+    //
+    // +optional
+    DeviceClassName *string
+
+    // Config defines configuration parameters that apply to the requested resource(s).
+    // They are ignored while allocating the claim.
+    //
+    // +optional
+    // +listType=atomic
+    Config []ConfigurationParameters
+
+    // AdminAccess indicates that this is a claim for administrative access
+    // to the device(s). Claims with AdminAccess are expected to be used for
+    // monitoring or other management services for a device.  They ignore
+    // all ordinary claims to the device with respect to access modes and
+    // any resource allocations. Ability to request this kind of access is
+    // controlled via ResourceQuota in the resource.k8s.io API.
+    //
+    // Default is false.
+    //
+    // +optional
+    AdminAccess *bool
+
+    // The amount field can be used to ask for all devices which match the
+    // requirements or a certain fixed number. The default is exactly one device.
+    //
+    // Note that the overall number of allocated devices per claim is limited
+    // to 32, so asking for one device in more than 32 requests and asking for
+    // more than 32 identical devices in a single request are both not allowed.
+    // This gets checked during validation. The number of devices matching
+    // the requirements is not known in advance, so asking for "all devices"
+    // can fail during allocation.
+    //
+    // +optional
+    Amount *Amount
+
+    // Requirements describe additional contraints that all must be met by a device
+    // to satisfy the request.
+    //
+    // +optional
+    // +listType=atomic
+    Requirements []Requirement
+}
+
+// Exactly one field must be set.
+type Amount struct {
+    // All, if set, asks for all devices matching the requirements.
+    // Allocation fails if not all of them are available, unless admin
+    // access is requested. Admin access is granted also for
+    // devices which are in use.
+    //
+    // +optional
+    All bool
+
+    // A fixed number of devices which match the same requirements.
+    //
+    // +optional
+    Count *int64
 }
 ```
 
-The `ResourceClassName` field may be left empty. The parameters are sufficient
-to determine which driver needs to provide resources. This leads to some corner cases:
-- Empty `ResourceClassName` and nil `ParametersRef`: this is a claim which requests
-  no resources. Such a claim can always be allocated with an empty result. Allowing
-  this simplifies code generators which dynamically fill in the resource requests
-  because they are allowed to generate an empty claim.
-- Non-empty `ResourceClassName`, nil `ParametersRef`, nil
-  `ResourceClass.DefaultClaimParametersRef`: this is handled the same way, the
-  only difference is that the cluster admin has decided that such claims need
-  no resources by not providing default parameters.
+The `DeviceClassName` field may be left empty. The request itself can specify which
+driver needs to provide devices. There are some corner cases:
+- Empty `claim.requests`: this is a "null request" which can be satisfied without
+  allocating any device.
+- Empty `claim.requests[].deviceClassName` and empty `requirements`: this is a request
+  which can be satisfied by any device. This does not really make sense, but is not
+  disallowed either.
+- Non-empty `deviceClassName`, empty class: this is handled the same way.
 
-There is no default ResourceClass. If that is desirable, then it can be
+There is no default DefaultClass. If that is desirable, then it can be
 implemented with a mutating and/or admission webhook.
 
-```
+```go
 // ResourceClaimStatus tracks whether the resource has been allocated and what
-// the resulting attributes are.
+// the result of that was.
 type ResourceClaimStatus struct {
-    // Allocation is set by the resource driver once a resource or set of
-    // resources has been allocated successfully. If this is not specified, the
-    // resources have not been allocated yet.
+    // Allocation is set once the claim has been allocated successfully.
     // +optional
     Allocation *AllocationResult
 
     // ReservedFor indicates which entities are currently allowed to use
     // the claim. A Pod which references a ResourceClaim which is not
-    // reserved for that Pod will not be started.
+    // reserved for that Pod will not be started. A claim that is in
+    // use or might be in use because it has been reserved must not get
+    // deallocated.
+    //
+    // In a cluster with multiple scheduler instances, two pods might get
+    // scheduled concurrently by different schedulers. When they reference
+    // the same ResourceClaim which may only get used by one pod at a time,
+    // only one pod can be scheduled.
+    //
+    // Both schedulers try to add their pod to the claim.status.reservedFor
+    // field, but only the update that reaches the API server first gets
+    // stored. The other one fails with a conflict error and the scheduler
+    // which issued it knows that it must put the pod back into the queue,
+    // waiting for the ResourceClaim to become usable again.
     //
     // There can be at most 32 such reservations. This may get increased in
     // the future, but not reduced.
+    //
+    // +listType=map
+    // +listMapKey=uid
+    // +patchStrategy=merge
+    // +patchMergeKey=uid
     // +optional
     ReservedFor []ResourceClaimConsumerReference
 }
-
-// ReservedForMaxSize is the maximum number of entries in
-// claim.status.reservedFor.
-const ResourceClaimReservedForMaxSize = 32
 ```
-
-##### ResourceClaimParameters
-
-```go
-// ResourceClaimParameters defines resource requests for a ResourceClaim in an
-// in-tree format understood by Kubernetes.
-type ResourceClaimParameters struct {
-    metav1.TypeMeta
-    // Standard object metadata
-    metav1.ObjectMeta
-
-    // If this object was created from some other resource, then this links
-    // back to that resource. This field is used to find the in-tree representation
-    // of the claim parameters when the parameter reference of the claim refers
-    // to some unknown type.
-    GeneratedFrom *ResourceClaimParametersReference
-
-    // Shareable indicates whether the allocated claim is meant to be shareable
-    // by multiple consumers at the same time.
-    Shareable bool
-
-    // DriverRequests describes all resources that are needed for the
-    // allocated claim. A single claim may use resources coming from
-    // different drivers. For each driver, this array has at most one
-    // entry which then may have one or more per-driver requests.
-    //
-    // May be empty, in which case the claim can always be allocated.
-    DriverRequests []DriverRequests
-}
-
-// DriverRequests describes all resources that are needed from one particular driver.
-type DriverRequests struct {
-    // DriverName is the name used by the DRA driver kubelet plugin.
-    DriverName string
-
-    // VendorParameters are arbitrary setup parameters for all requests of the
-    // claim. They are ignored while allocating the claim.
-    VendorParameters runtime.Object
-
-    // Requests describes all resources that are needed from the driver.
-    Requests []ResourceRequest
-}
-
-// ResourceRequest is a request for resources from one particular driver.
-type ResourceRequest struct {
-    // VendorParameters are arbitrary setup parameters for the requested
-    // resource. They are ignored while allocating a claim.
-    VendorParameters runtime.Object
-
-    ResourceRequestModel
-}
-
-// ResourceRequestModel must have one and only one field set.
-type ResourceRequestModel struct {
-    // NamedResources describes a request for resources with the named resources model.
-    NamedResources *NamedResourcesRequest
-}
-
-// NamedResourcesRequest is used in ResourceRequestModel.
-type NamedResourcesRequest struct {
-    // Selector is a CEL expression which must evaluate to true if a
-    // resource instance is suitable. The language is as defined in
-    // https://kubernetes.io/docs/reference/using-api/cel/
-    //
-    // In addition, for each type in NamedResourcesAttributeValue there is a map that
-    // resolves to the corresponding value of the instance under evaluation.
-    // For example:
-    //
-    //    attributes.quantity["a"].isGreaterThan(quantity("0")) &&
-    //    attributes.stringslice["b"].isSorted()
-    Selector string
-}
-```
-
-NamedResourcesFilter and NamedResourcesRequest currently have the same
-content. Despite that, they are defined as separate structs because that might
-change in the future.
-
 
 ##### Allocation result
 
 ```go
 // AllocationResult contains attributes of an allocated resource.
 type AllocationResult struct {
-    // ResourceHandles contain the state associated with an allocation that
-    // should be maintained throughout the lifetime of a claim. Each
-    // ResourceHandle contains data that should be passed to a specific kubelet
-    // plugin once it lands on a node.
+    // ControllerName is the name of the DRA driver which handled the
+    // allocation. That driver is also responsible for deallocating the
+    // claim. It is empty when the claim can be deallocated without
+    // involving a driver.
     //
-    // Setting this field is optional. It has a maximum size of 32 entries.
-    // If null (or empty), it is assumed this allocation will be processed by a
-    // single kubelet plugin with no ResourceHandle data attached. The name of
-    // the kubelet plugin invoked will match the DriverName set in the
-    // ResourceClaimStatus this AllocationResult is embedded in.
+    // A driver may allocate devices provided by other drivers, so the
+    // controller name here can be different from the driver names listed in
+    // the results.
+    //
+    // This is an alpha field and requires enabling the DRAControlPlaneController
+    // feature gate.
+    //
+    // +optional
+    ControllerName string
+
+    // This field holds configuration for all drivers which
+    // satisfied requests in this claim. The configuration applies to
+    // the entire claim.
+    //
+    // +optional
+    // +listType=atomic
+    Config []ConfigurationParameters
+
+    // Results lists all allocated devices.
     //
     // +listType=atomic
-    ResourceHandles []ResourceHandle
+    Results []RequestAllocationResult
 
-    // This field will get set by the resource driver after it has allocated
-    // the resource to inform the scheduler where it can schedule Pods using
-    // the ResourceClaim.
+    // Setting this field is optional. If unset, the allocated devices are available everywhere.
     //
-    // Setting this field is optional. If null, the resource is available
-    // everywhere.
     // +optional
-    AvailableOnNodes *core.NodeSelector
+    AvailableOnNodes *v1.NodeSelector
 
-    // Shareable determines whether the resource supports more
-    // than one consumer at a time.
+    // Shareable determines whether the claim supports more than one consumer at a time.
+    //
     // +optional
     Shareable bool
 }
 
-// AllocationResultResourceHandlesMaxSize represents the maximum number of
-// entries in allocation.resourceHandles.
-const AllocationResultResourceHandlesMaxSize = 32
+// AllocationResultsMaxSize represents the maximum number of
+// entries in allocation.results.
+const AllocationResultsMaxSize = 32
 
-// ResourceHandle holds opaque resource data for processing by a specific kubelet plugin.
-type ResourceHandle struct {
-    // DriverName specifies the name of the resource driver whose kubelet
-    // plugin should be invoked to process this ResourceHandle's data once it
-    // lands on a node. This may differ from the DriverName set in
-    // ResourceClaimStatus this ResourceHandle is embedded in.
+// RequestAllocationResult contains configuration and the allocation result for
+// one request.
+type RequestAllocationResult struct {
+    // DriverName specifies the name of the DRA driver whose kubelet
+    // plugin should be invoked to process the allocation once the claim is
+    // needed on a node.
+    //
+    // Must be a DNS subdomain and should end with a DNS domain owned by the
+    // vendor of the driver.
     DriverName string
 
-    // StructuredData captures the result of the allocation for this
-    // particular driver.
-    StructuredData *StructuredResourceHandle
+    // Config contains all the configuration pieces that apply to the request
+    // and that were meant for the driver which handles these devices.
+    // They get collected during the allocation and stored here
+    // to ensure that they remain available while the claim is allocated.
+    //
+    // Entries are list in the same order as in class.config and claim.config,
+    // with class.config entries first.
+    //
+    // +optional
+    Config []DeviceConfiguration
+
+    // RequestName identifies the request in the claim which caused this
+    // device to be allocated. If a request was satisfied by multiple
+    // devices, they are indexed starting with zero in the order
+    // in which they are listed in the results.
+    RequestName string
+
+    // This name together with the driver name and the device name field
+    // identify which device was allocated.
+    //
+    // For a driver with node-local devices, it is the name of the node and
+    // the overall ID is `<driver name>/<node name>/<device name>`.
+    //
+    // For other drivers, the overall ID is `<driver name>[/pool
+    // name>]/<device name>`.
+    //
+    // Must not be longer than 253 characters and may contain one or more
+    // DNS sub-domains separated by slashes.
+    //
+    // +optional
+    PoolName string
+
+    // DeviceName references one device instance via its name in the driver's
+    // resource pool. It must be a DNS label.
+    DeviceName string
 }
 
-// StructuredResourceHandle is the in-tree representation of the allocation result.
-type StructuredResourceHandle struct {
-    // VendorClassParameters are the per-claim configuration parameters
-    // from the resource class at the time that the claim was allocated.
-    VendorClassParameters runtime.Object
+const PoolNameMaxLength = validation.DNS1123SubdomainMaxLength // Same as for a single node name.
 
-    // VendorClaimParameters are the per-claim configuration parameters
-    // from the resource claim parameters at the time that the claim was
-    // allocated.
-    VendorClaimParameters runtime.Object
+// DeviceConfiguration is one entry in a list of configuration pieces for a device.
+type DeviceConfiguration struct {
+    // Admins is true if the source of the piece was a class and thus
+    // not something that a normal user would have been able to set.
+    Admin bool
 
-    // NodeName is the name of the node providing the necessary resources
-    // if the resources are local to a node.
-    NodeName string
-
-    // Results lists all allocated driver resources.
-    Results []DriverAllocationResult
+    DriverConfigurationParameters
 }
 
-// DriverAllocationResult contains vendor parameters and the allocation result for
-// one request.
-type DriverAllocationResult struct {
-    // VendorRequestParameters are the per-request configuration parameters
-    // from the time that the claim was allocated.
-    VendorRequestParameters runtime.Object
-
-    AllocationResultModel
-}
-
-// AllocationResultModel must have one and only one field set.
-type AllocationResultModel struct {
-    // NamedResources describes the allocation result when using the named resources model.
-    NamedResources *NamedResourcesAllocationResult
+// DriverConfigurationParameters must have one and only one one field set.
+//
+// In contrast to ConfigurationParameters, the driver name is
+// not included and has to be infered from the context.
+type DriverConfigurationParameters struct {
+    Opaque *runtime.RawExtension
 }
 ```
 
@@ -1730,45 +1618,76 @@ type ResourceClaimTemplateSpec struct {
 }
 ```
 
+##### ResourceQuota
+
+At the moment, this type is only used to control whether admin access is
+allowed in a namespace. Other aspects may get added later.
+
+Admin access can be checked in an admission plugin. Other limitations may have
+to be checked at allocation time, either because they depend on device
+attributes which cannot be assumed to be known at the time of admission of a
+claim or because the quota itself influences device selection. For example, a
+future "give me device A if available, otherwise device B" request might not be
+able to provide A because usage of A over quota while device B is still under
+quota.
+
+```go
+// Quota controls whether a ResourceClaim may get allocated.
+// Quota is namespaced and applies to claims within the same namespace.
+type Quota struct {
+	metav1.TypeMeta
+	// Standard object metadata.
+	metav1.ObjectMeta
+
+	Spec QuotaSpec
+}
+
+type QuotaSpec struct {
+	// AllowManagementAccess controls whether claims with ManagementAccess
+	// may be allocated. If multiple quota objects exist and at least one
+	// has a true value, access will be allowed. The default to deny such access.
+	//
+	// +optional
+	AllowManagementAccess bool `json:"allowManagementAccess,omitempty"`
+
+	// Stretch goals for 1.31:
+	//
+	// - maximum number of devices matching a selector
+	// - maximum sum of a certain quantity attribute
+	//
+	// These are additional requirements when checking whether a device
+	// instance can satisfy a request. Creating a claim is always allowed,
+	// but allocating it fails when the quota is currently exceeded.
+
+	// Other useful future extensions (>= 1.32):
+
+	// DeviceLimits is a CEL expression which take the currently allocated
+	// devices and their attributes and some new allocations as input and
+	// returns false if those allocations together are not permitted in the
+	// namespace.
+	//
+	// DeviceLimits string
+
+	// A class listed in DeviceClassDenyList must not be used in this
+	// namespace. This can be useful for classes which contain
+	// configuration pieces that a user in this namespace should not have
+	// access to.
+	//
+	// DeviceClassDenyList []string
+
+	// A class listed in ResourceClassAllowList may be used in this namespace
+	// even when that class is marked as "privileged". Normally classes
+	// are not privileged and using them does not require explicit listing
+	// here, but some classes may contain more sensitive configurations
+	// that not every user should have access to.
+	//
+	// DeviceClassAllowList []string
+}
+```
+
 ##### Object references
 
 ```go
-// ResourceClassParametersReference contains enough information to let you
-// locate the parameters for a ResourceClass.
-type ResourceClassParametersReference struct {
-    // APIGroup is the group for the resource being referenced. It is
-    // empty for the core API. This matches the group in the APIVersion
-    // that is used when creating the resources.
-    // +optional
-    APIGroup string
-    // Kind is the type of resource being referenced. This is the same
-    // value as in the parameter object's metadata.
-    Kind string
-    // Name is the name of resource being referenced.
-    Name string
-    // Namespace that contains the referenced resource. Must be empty
-    // for cluster-scoped resources and non-empty for namespaced
-    // resources.
-    // +optional
-    Namespace string
-}
-
-// ResourceClaimParametersReference contains enough information to let you
-// locate the parameters for a ResourceClaim. The object must be in the same
-// namespace as the ResourceClaim.
-type ResourceClaimParametersReference struct {
-    // APIGroup is the group for the resource being referenced. It is
-    // empty for the core API. This matches the group in the APIVersion
-    // that is used when creating the resources.
-    // +optional
-    APIGroup string
-    // Kind is the type of resource being referenced. This is the same
-    // value as in the parameter object's metadata, for example "ConfigMap".
-    Kind string
-    // Name is the name of resource being referenced.
-    Name string
-}
-
 // ResourceClaimConsumerReference contains enough information to let you
 // locate the consumer of a ResourceClaim. The user must be a resource in the same
 // namespace as the ResourceClaim.
@@ -1787,11 +1706,9 @@ type ResourceClaimConsumerReference struct {
 }
 ```
 
-`ResourceClassParametersReference` and `ResourceClaimParametersReference` use
-the more user-friendly "kind" to identify the object type because those
-references are provided by users. `ResourceClaimConsumerReference` is typically
-set by the control plane and therefore uses the more technically correct
-"resource" name.
+`ResourceClaimConsumerReference` is typically set by the control plane and
+therefore uses the more technically correct "resource" name instead of the
+more user-friendly "kind".
 
 #### core
 
@@ -1837,7 +1754,20 @@ type ResourceClaim struct {
     // the Pod where this field is used. It makes that resource available
     // inside a container.
     Name string
-}
+
+    // A name set in claim.spec.requests[].name.
+    // +optional
+    RequestName string
+
+    // The index of a device in a request which was satisfied by
+    // more than one device. Starts at zero.
+    //
+    // May only be set together with a request name. Setting
+    // a request name and no index makes all devices of
+    // that request available in the container.
+    //
+    // +optional
+    Index *int64
 ```
 
 `Claims` is a list of structs with a single `Name` element because that struct
@@ -1850,12 +1780,12 @@ it was a list of strings.
 // It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
 // Containers that need access to the ResourceClaim reference it with this name.
 type PodResourceClaim struct {
-    // Name uniquely identifies this resource claim inside the pod.
-    // This must be a DNS_LABEL.
+    // Name must match the name of one entry in pod.spec.resourceClaims of
+    // the Pod where this field is used. It makes that resource available
+    // inside a container. Must be a DNS label.
     Name string
 
-    // Source describes where to find the ResourceClaim.
-    Source ClaimSource
+    ClaimSource // inlined to avoid one level of indirectin in the YAML.
 }
 
 // ClaimSource describes a reference to a ResourceClaim.
@@ -1863,8 +1793,11 @@ type PodResourceClaim struct {
 // Exactly one of these fields should be set.  Consumers of this type must
 // treat an empty object as if it has an unknown value.
 type ClaimSource struct {
-    // ResourceClaimName is the name of a ResourceClaim object in the same
-    // namespace as this pod.
+    // The ResourceClaim named here is shared by all pods which
+    // reference it. The lifecycle of that ResourceClaim is not
+    // managed by Kubernetes.
+    //
+    // +optional
     ResourceClaimName *string
 
     // ResourceClaimTemplateName is the name of a ResourceClaimTemplate
@@ -2062,9 +1995,9 @@ Unreserve is called in two scenarios:
 
 ### kubelet
 
-#### Communication between kubelet and resource kubelet plugin
+#### Communication between kubelet and kubelet plugin
 
-Resource kubelet plugins are discovered through the [kubelet plugin registration
+kubelet plugins are discovered through the [kubelet plugin registration
 mechanism](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/#device-plugin-registration). A
 new "ResourcePlugin" type will be used in the Type field of the
 [PluginInfo](https://pkg.go.dev/k8s.io/kubelet/pkg/apis/pluginregistration/v1#PluginInfo)
@@ -2114,7 +2047,7 @@ and documentation.
 kubelet must ensure that resources are ready for use on the node before running
 the first Pod that uses a specific resource instance and make the resource
 available elsewhere again when the last Pod has terminated that uses it. For
-both operations, kubelet calls a resource kubelet plugin as explained in the next
+both operations, kubelet calls a kubelet plugin as explained in the next
 section.
 
 Pods that are not listed in ReservedFor or where the ResourceClaim doesn't
@@ -2201,11 +2134,39 @@ message NodePrepareResourcesResponse {
     // will be called again for those that are missing.
     map<string, NodePrepareResourceResponse> claims = 1;
 }
+
+message NodePrepareResourceResponse {
+    // These are the additional devices that kubelet must
+    // make available via the container runtime. A claim
+    // may have zero or more requests and each request
+    // may have zero or more devices.
+    repeated Device cdi_devices = 1 [(gogoproto.customname) = "CDIDevices"];
+    // If non-empty, preparing the ResourceClaim failed.
+    // cdi_devices is ignored in that case.
+    string error = 2;
+}
+
+message Device {
+    // A single device instance may map to several CDI device IDs.
+    // None is also valid.
+    repeated string cdi_ids = 1;
+
+    // The request in the claim that this device is associated with.
+    string request_name = 2;
+
+    // A single request may be satisfied by allocating several
+    // different devices. This is the index number starting at zero.
+    int index = 3;
 ```
+
+The `request_name` here allows kubelet to find the right CDI IDs for a
+container which uses device(s) from a specific request instead of all devices
+of a claim. The index gets added in preparation for supporting more
+than one device per request.
 
 CRI protocol MUST be extended for this purpose:
 
- * CDIDevice structure should be added to the CRI specification
+ * CDIDevice structure was added to the CRI specification
 ```protobuf
 // CDIDevice specifies a CDI device information.
 message CDIDevice {
@@ -2216,7 +2177,9 @@ message CDIDevice {
     string name = 1;
 }
 ```
- * CDI devices should be added to the ContainerConfig structure:
+
+ * CDI devices have been added to the ContainerConfig structure:
+
 ```protobuf
 // ContainerConfig holds all the required and optional fields for creating a
 // container.
@@ -2235,6 +2198,10 @@ message ContainerConfig {
     repeated CDIDevice cdi_devices = 17;
 }
 ```
+
+At the time of Kubernetes 1.31, most container runtimes [support this
+field](https://github.com/kubernetes/kubernetes/issues/125210) so it can be
+used instead of some earlier approach with annotations.
 
 ###### NodePrepareResource Errors
 
@@ -2397,7 +2364,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-End-to-end testing depends on a working resource driver and a container runtime
+End-to-end testing depends on a working DRA driver and a container runtime
 with CDI support. A [test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
 was developed in parallel to developing the
 code in Kubernetes.
@@ -2904,26 +2871,12 @@ It should be also taken into account that device plugins API is
 beta. Introducing incompatible changes to it may not be accepted by
 the Kubernetes community.
 
-### Webhooks instead of ResourceClaim updates
-
-In the current design, scheduler and the third-party resource driver communicate by
-updating fields in a ResourceClaim. This has several advantages compared to an
-approach were kube-scheduler retrieves information from the resource driver
-via HTTP:
-* No need for a new webhook API.
-* Simpler deployment of a resource driver because all it needs are
-  credentials to communicate with the apiserver.
-* Current status can be checked by querying the ResourceClaim.
-
-The downside is higher load on the apiserver and an increase of the size of
-ResourceClaim objects.
-
 ### ResourceDriver
 
-Similar to CSIDriver for storage, a separate object describing a resource
+Similar to CSIDriver for storage, a separate object describing a DRA
 driver might be useful at some point. At the moment it is not needed yet and
 therefore not part of the v1alpha2 API. If it becomes necessary to describe
-optional features of a resource driver, such a ResourceDriver type might look
+optional features of a DRA driver, such a ResourceDriver type might look
 like this:
 
 ```
