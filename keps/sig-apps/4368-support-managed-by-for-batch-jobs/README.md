@@ -18,10 +18,12 @@
     - [Two controllers running when feature is disabled](#two-controllers-running-when-feature-is-disabled)
     - [Debuggability](#debuggability)
     - [Custom controllers not compatible with API assumptions by CronJob](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob)
+    - [CronJob delaying start of a new Job in Forbid mode](#cronjob-delaying-start-of-a-new-job-in-forbid-mode)
 - [Design Details](#design-details)
     - [API](#api)
     - [Implementation overview](#implementation-overview)
     - [Job status validation](#job-status-validation)
+    - [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions)
     - [Mutability](#mutability)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -137,6 +139,8 @@ controller, and delegate the status synchronization to the Kueue controller.
 ### Non-Goals
 
 - passing custom parameters to the external controller
+- Introduce a new concurrency policy for CronJobs (eg. `ForbidActive` or `SoftForbid`)
+to replace a Job that is about to complete, but still has terminating pods.
 
 ## Proposal
 
@@ -303,6 +307,27 @@ Additionally, we intend to strengthen the CronJob implementation to verify the
 Job has the `Complete` condition before using `CompletionTime`
 (see [here](https://github.com/kubernetes/kubernetes/blob/48b68582b89b0ae9ad4d435516b2dd5943f48cd3/pkg/controller/cronjob/cronjob_controllerv2.go#L452)).
 
+#### CronJob delaying start of a new Job in Forbid mode
+
+As a consequence of fixing [#123775](https://github.com/kubernetes/kubernetes/issues/123775)
+as proposed in [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions)
+delay setting the `Complete` and `Failed` conditions until the Job pods are
+terminated.
+
+This impacts CronJobs with the `Forbid` concurrency policy, resulting in delayed
+creation of the replacement Job (until all pods of the previous job are
+terminated). This might be particularly noticeable for Jobs using very long
+termination period (`terminationGracePeriodSeconds`).
+
+However, we argue that this change improves the CronJob to better match
+the semantic for the `Forbid` concurrency policy
+(see [here](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#concurrency-policy),
+and the [comment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2115200217)).
+
+Users who expect two (or more) Jobs owned by a CronJob to run at the same time
+should use the `Allow` concurrency policy, which can be combined with the use
+of a quota management system, like [Kueue](https://kueue.sigs.k8s.io/), to
+control the maximal number of the Jobs running at the same time.
 
 ## Design Details
 
@@ -362,6 +387,59 @@ We may come up with more validation rules during the implementation phase.
 The API comments to the Job status API fields will be updated to make the contract
 clear.
 
+We also plan to add a validation rule to make sure that the terminal conditions
+(`Failed` and `Complete`) are only added to Job when all pods are terminated.
+For that we plan to follow the approach described [below](#terminating-pods-and-terminal-job-conditions),
+which extend the scope of the interim `FailureTarget` and `SuccessCriteriaMet`
+conditions. We will also validate that the transition to `Failed` or `Complete`
+condition is preceded by adding the `FailureTarget` or `SuccessCriteriaMet`
+condition, respecively.
+
+Additionally, we are going to introduce a validation rule that the count of
+ready `status.ready` pods is lower or equal than the number of active `status.active`
+pods. In order to introduce this validation we need to first solve
+[Job controller reports the count of ready pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125185),
+as well as merge [Improve the Job API comment for ready field](https://github.com/kubernetes/kubernetes/pull/125189).
+
+#### Terminating pods and terminal Job conditions
+
+During the development process of Alpha in 1.30 we considered adding a
+validation rule enforcing that the Job terminal conditions (`Failed` or `Complete`)
+are only added when all pods are terminated (`status.terminating=0` and
+`status.ready=0`). However, the rule turned out to be violated by the built-in
+Job controller (see issue [#123775](https://github.com/kubernetes/kubernetes/issues/123775)).
+
+We are going to solve this issue by delaying the addition of the Job terminal
+conditions (Failed or Complete) until the pods are terminated
+(`terminating=0` and `ready=0`).
+
+One complication of this approach is that pod termination may take an
+arbitrarily long if the non-standard pod graceful termination period
+(`terminationGracePeriodSeconds`) is configured (30s by default). In order to
+give the API clients flexibility to know the fate of a Job as soon as possible
+we extend the scope for the following Job conditions:
+- `FailureTarget` - introduced in [Pod Failure Policy KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures)
+- `SuccessCriteriaMet` - introduced in [Success Policy KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3998-job-success-completion-policy)
+
+Note that, with the new conditions an API client can know the fate of a Job
+earlier than currently, since adding the conditions will not wait for emptying
+of the `uncountedTerminatedPods` structure, as shown in the
+[experiment](https://github.com/kubernetes/kubernetes/issues/123775#issuecomment-2114710754).
+
+Since the fix is needed for this KEP and the
+[Pod Replacement Policy KEP](https://github.com/kubernetes/enhancements/issues/3939),
+we intend to protect the fix with the OR of the `JobManagedBy` and the
+`JobReplacementPolicy` feature gates.
+
+Additionally, fixing the issue [#123775](https://github.com/kubernetes/kubernetes/issues/123775) will
+also require fixing:
+- [Job controller reports the count of terminating pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125089) and
+- [Job controller reports the count of ready pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125185).
+
+Note also that the fix impacts `CronJob` when using the `Forbid` concurrency,
+see more details in
+[CronJob delaying start of a new Job in Forbid mode](#cronjob-delaying-start-of-a-new-job-in-forbid-mode).
+
 #### Mutability
 
 We keep the field immutable. See also the discussion in
@@ -389,7 +467,15 @@ The following scenarios are covered:
 - the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
 - verify the field is immutable, both when the job is suspended or unsuspended; when the feature is enabled
 - enablement / disablement of the feature after the Job (with custom "managedBy" field) is created
-- verify the new Job Status API validation rules (see [here](#job-status-validation))
+- verify the new Job Status API validation rules (see [here](#job-status-validation)). In particular:
+  1. `Failed` and `Complete` conditions cannot be added when `status.terminating!=0` or `status.ready!=0`
+  2. `Failed` and `Complete` conditions cannot be added if there are not corresponding `FailureTarget` or `SuccessCriteriaMet` conditions,
+  3. the counter for the "ready" pods is lower or equal to the counter for "active" pods
+
+The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 ##### Integration tests
 
@@ -400,9 +486,15 @@ The following scenarios are covered:
   - it does not reset the status for a Job with `.spec.suspend=false`,
   - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
 - the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
+- the Job controller handles correctly re-enablement of the feature gate [link](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)
 - the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created
 - the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value
 - the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy")
+
+The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 During the implementation more scenarios might be covered.
 
@@ -425,13 +517,23 @@ We propose a single e2e test for the following scenario:
   API fields affected by the new validation rules
 - make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
 - The feature flag disabled by default
+- implement the `job_by_external_controller_total` metric
+
+Second Alpha (1.31):
+- preparatory fix to address all known inconsistencies between validation and the
+  Job controller behavior, in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775).
+  The proposed approach is outlined in [here](#terminating-pods-and-terminal-job-conditions).
+- preparatory fixes to address the issues that currently the count for ready
+  pods might be temporarily greater than active pods. The fix will entail
+  [Job controller reports the count of ready pods with unnecessary delay](https://github.com/kubernetes/kubernetes/issues/125185),
+  as well as merging [Improve the Job API comment for ready field](https://github.com/kubernetes/kubernetes/pull/125189).
+- Add validation rule that `Failed` and `Complete` conditions are added when
+  `terminating=0`, and `ready=0`. Also, link provide links for the relevant integration tests in the KEP.
+- Add validation rule that the count of ready pods is lower or equal than active pods
 
 #### Beta
 
 - e2e tests
-- implement the `job_by_external_controller_total` metric
-- address all known inconsistencies between validation and the Job controller behavior,
-  in particular: [#123775](https://github.com/kubernetes/kubernetes/issues/123775)
 - verify the validation passes during e2e tests for open-source projects (like Kueue and JobSet)
 - The feature flag enabled by default
 
@@ -608,8 +710,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, we will have unit tests for the feature enablement / disablement after the
-Job is created (see [unit tests](#unit-tests)).
+Yes, we introduce the integration tests for the feature enablement / disablement
+after the Job is created (see [here](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -974,6 +1076,10 @@ N/A.
 
 - 2023-12.20 - First version of the KEP
 - 2024-03-05 - Merged implementation PR [Support for the Job managedBy field (alpha)](https://github.com/kubernetes/kubernetes/pull/123273)
+- 2024-03-07 - Merged [Update Job conformance test for job status updates](https://github.com/kubernetes/kubernetes/pull/123751)
+- 2024-03-08 - Merged [Follow up fix to the job status update test](https://github.com/kubernetes/kubernetes/pull/123815)
+- 2024-03-11 - Merged [Adjust the Job field API comments and validation to the current state](https://github.com/kubernetes/kubernetes/pull/123792)
+- 2024-05-16 - Merged [Fix the comment for the Job managedBy field](https://github.com/kubernetes/kubernetes/pull/124793)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

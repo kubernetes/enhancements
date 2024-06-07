@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Job-level vs. pod-level spec](#job-level-vs-pod-level-spec)
     - [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy)
+    - [The scope of the FailureTarget condition](#the-scope-of-the-failuretarget-condition)
     - [Current state review](#current-state-review)
       - [Preemption](#preemption)
       - [Taint-based eviction](#taint-based-eviction)
@@ -520,6 +521,20 @@ This is in order to avoid the problematic race-conditions between Kubelet and
 Job controller. For example, Kubelet could restart a failed container before the
 Job controller decides to terminate the corresponding job due to a rule using
 `onExitCodes`.
+
+#### The scope of the FailureTarget condition
+
+As part of this KEP we introduced the
+[FailureTarget condition](#interim-failuretarget-job-condition) scoped to the
+failures due to pod failure policy.
+
+However, we are going to extend the scope of the condition to all Job failure
+scenarios (covering also backoffLimit exceeded and ActiveDeadlineSeconds
+exceeded), as part of fixing
+(issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
+
+See more details in the
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
 
 #### Current state review
 

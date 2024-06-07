@@ -15,6 +15,7 @@
     - [Difference between &quot;Complete&quot; and &quot;SuccessCriteriaMet&quot;](#difference-between-complete-and-successcriteriamet)
     - [The CronJob concurrentPolicy is not affected by JobSuccessPolicy](#the-cronjob-concurrentpolicy-is-not-affected-by-jobsuccesspolicy)
     - [Status never switches from &quot;SuccessCriteriaMet&quot; to &quot;Failed&quot;](#status-never-switches-from-successcriteriamet-to-failed)
+    - [The scope of the SuccessCriteriaMet condition](#the-scope-of-the-successcriteriamet-condition)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Job API](#job-api)
@@ -215,6 +216,18 @@ So, the status can never switch from `SucessCriteriaMet` to `Failed`.
 Additionally, once the job has `SuccessCriteriaMet=true` condition, the job definitely ends with `Complete=true` condition
 even if the lingering pods could potentially meet the failure policies.
 
+#### The scope of the SuccessCriteriaMet condition
+
+As part of this KEP we introduced the `SuccessCriteriaMet` condition scoped to
+the success policy.
+
+However, we are going to extend the scope of the condition to the scenario when
+the Job completes by reaching the `.spec.completions`, as part of fixing
+(issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
+
+See more details in the
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
+
 ### Risks and Mitigations
 
 - If the job object's size reaches to limit of the etcd and
@@ -346,17 +359,20 @@ Then, after the lingering pods are terminated, the `Complete` condition is added
 
 ### Transition of "status.conditions"
 
-When the job with successPolicies is submitted, the job `status.conditions` transits in the following:
-Note that the Job doesn't have an actual `Running` condition in the `status.conditions`.
+After extending the scope of the `SuccessCriteriaMet` and `FailureTarget` conditions
+as proposed in [The scope of the SuccessCriteriaMet condition](#the-scope-of-the-successcriteriamet-condition)
+the diagram of transitions looks like below:
 
 ```mermaid
 stateDiagram-v2
     [*] --> Running
-    Running --> Failed: Exceeded backoffLimit
+    Running --> FailureTarget: Exceeded backoffLimit
+    Running --> FailureTarget: Exceeded activeDeadlineSeconds
     Running --> FailureTarget: Matched FailurePolicy with action=FailJob
     FailureTarget --> Failed: All pods are terminated
     Failed --> [*]
     Running --> SuccessCriteriaMet: Matched SuccessPolicy
+    Running --> SuccessCriteriaMet: Achieved the expected completions
     SuccessCriteriaMet --> Complete: All pods are terminated
     Complete --> [*]
 ```
@@ -365,6 +381,7 @@ It means that the job's `.status.conditions` follows the following rules:
 
 - The job could have both `SuccessCriteriaMet=true` and `Complete=true` conditions.
 - The job can't have both `Failed=true` and `SuccessCriteriaMet=true` conditions.
+- The job can't have both `FailureTarget=true` and `SuccessCriteriaMet=true` conditions.
 - The job can't have both `Failed=true` and `Complete=true` conditions.
 
 #### The situations where successPolicy conflicts other terminating policies
