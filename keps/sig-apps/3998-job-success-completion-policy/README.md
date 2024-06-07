@@ -349,17 +349,20 @@ Then, after the lingering pods are terminated, the `Complete` condition is added
 
 ### Transition of "status.conditions"
 
-When the job with successPolicies is submitted, the job `status.conditions` transits in the following:
-Note that the Job doesn't have an actual `Running` condition in the `status.conditions`.
+After extending the scope of the `SuccessCriteriaMet` and `FailureTarget` conditions
+as proposed in [The scope of the SuccessCriteriaMet condition](#the-scope-of-the-successcriteriamet-condition)
+the diagram of transitions looks like below:
 
 ```mermaid
 stateDiagram-v2
     [*] --> Running
-    Running --> Failed: Exceeded backoffLimit
+    Running --> FailureTarget: Exceeded backoffLimit
+    Running --> FailureTarget: Exceeded activeDeadlineSeconds
     Running --> FailureTarget: Matched FailurePolicy with action=FailJob
     FailureTarget --> Failed: All pods are terminated
     Failed --> [*]
     Running --> SuccessCriteriaMet: Matched SuccessPolicy
+    Running --> SuccessCriteriaMet: Achieved the expected completions
     SuccessCriteriaMet --> Complete: All pods are terminated
     Complete --> [*]
 ```
@@ -368,6 +371,7 @@ It means that the job's `.status.conditions` follows the following rules:
 
 - The job could have both `SuccessCriteriaMet=true` and `Complete=true` conditions.
 - The job can't have both `Failed=true` and `SuccessCriteriaMet=true` conditions.
+- The job can't have both `FailureTarget=true` and `SuccessCriteriaMet=true` conditions.
 - The job can't have both `Failed=true` and `Complete=true` conditions.
 
 #### The situations where successPolicy conflicts other terminating policies
