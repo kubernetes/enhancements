@@ -356,7 +356,9 @@ we are validating against malformed/invalid inputs.
 ## Design Details
 
 #### Defaulting
-If unset, the `Name` field will default to the index of the pod failure policy rule in the `Rules` slice.
+
+There will be no defaulting for the new pod failure policy `Name` field.
+When `Name` is unset, the Job controller will set the reason suffix to the index of the rule in the `podFailurePolicy.rules` slice (e.g. `PodFailurePolicy_{index}`).
 
 #### Validation
 - Validate all pod failure policy rule names are unique.
@@ -435,8 +437,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - Test that when the feature flag is off, but when it was previously enabled, there is an existing Job
 which already had the `JobFailed` condition reason set with the new suffix (i.e., `PodFailurePolicy_{Name}`), that the Job controller does not overwrite the reason to `PodFailurePolicy`, and that it remains set to the existing value.
 
-- Add test cases for both onPodConditions and onExitCodes to ensure the `Name` is properly added
-as a suffix to the JobFailed reason upon Job failure.
+- Add test cases for both onPodConditions and onExitCodes to ensure the `Name` or the rule's index (when `Name` is empty) is properly added.
 
 ##### e2e tests
 
