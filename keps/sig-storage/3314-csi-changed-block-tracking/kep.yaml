@@ -8,7 +8,7 @@ owning-sig: sig-storage
 participating-sigs:
   - sig-storage
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2023-06-12
 reviewers:
   - "@xing-yang"
