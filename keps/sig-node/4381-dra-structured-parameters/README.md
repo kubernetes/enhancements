@@ -78,7 +78,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Feature not used](#feature-not-used)
     - [Compromised node](#compromised-node)
-    - [Compromised resource driver plugin](#compromised-resource-driver-plugin)
+    - [Compromised kubelet plugin](#compromised-kubelet-plugin)
     - [User permissions and quotas](#user-permissions-and-quotas)
     - [Usability](#usability)
 - [Design Details](#design-details)
@@ -527,8 +527,8 @@ In production, a similar PodTemplateSpec in a Deployment will be used.
 ### Publishing node resources
 
 The resources available on a node need to be published to the API server. In
-the typical case, this is expected to be published by the on-node driver via
-the kubelet, as described below. However, the source of this data may vary; for
+the typical case, this is expected to be published by the on-node driver
+as described in the next paragraph. However, the source of this data may vary; for
 example, a cloud provider controller could populate this based upon information
 from the cloud provider API.
 
@@ -853,7 +853,7 @@ return quickly without doing any work for pods.
 
 #### Compromised node
 
-Kubelet is intentionally limited to read-only access for ResourceClass and ResourceClaim
+Kubelet is intentionally limited to read-only access for ResourceClaim
 to prevent that a
 compromised kubelet interferes with scheduling of pending pods, for example
 by updating status information normally set by the scheduler.
@@ -874,22 +874,24 @@ allocation, such an attack is still possible, but the attack code would have to
 be different for each resource driver because all of them will use structured
 parameters differently for reporting resource availability.
 
-#### Compromised resource driver plugin
+#### Compromised kubelet plugin
 
 This is the result of an attack against the resource driver, either from a
 container which uses a resource exposed by the driver, a compromised kubelet
 which interacts with the plugin, or due to resource driver running on a node
 with a compromised root account.
 
-The resource driver plugin only needs read access to objects described in this
-KEP, so compromising it does not interfere with dynamic resource allocation for
-other drivers.
+The resource driver needs write access for ResourceSlices. It can be deployed so
+that it can only write objects associated with the node, so the impact of a
+compromise would be limited to the node. Other drivers on the node could also
+be impacted because there is no separation by driver.
 
-A resource driver may need root access on the node to manage
+However, a resource driver may need root access on the node to manage
 hardware. Attacking the driver therefore may lead to root privilege
 escalation. Ideally, driver authors should try to avoid depending on root
 permissions and instead use capabilities or special permissions for the kernel
-APIs that they depend on.
+APIs that they depend on. Long term, limiting apiserver access by driver
+name would be useful.
 
 A resource driver may also need privileged access to remote services to manage
 network-attached devices. Resource driver vendors and cluster administrators
