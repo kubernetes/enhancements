@@ -486,6 +486,7 @@ The following scenarios are covered:
   - it does not reset the status for a Job with `.spec.suspend=false`,
   - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
 - the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
+- the Job controller handles correctly re-enablement of the feature gate [link](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)
 - the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created
 - the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value
 - the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy")
@@ -709,8 +710,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, we will have unit tests for the feature enablement / disablement after the
-Job is created (see [unit tests](#unit-tests)).
+Yes, we introduce the integration tests for the feature enablement / disablement
+after the Job is created (see [here](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)).
 
 ### Rollout, Upgrade and Rollback Planning
 
