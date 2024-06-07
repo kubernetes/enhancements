@@ -104,6 +104,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
+  - [Custom JSON Marshalers](#custom-json-marshalers)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -752,6 +753,48 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - request and response content-type negotiation with 1.17 sample API server
 
+### Custom JSON Marshalers
+
+If a type implements json.Marshaler or json.Unmarshaler without corresponding CBOR behaviors,
+serializing values of that type to and from CBOR using default behaviors risks mangling the data.
+
+As an example, consider the structure of a marshalled
+[IntOrString](https://pkg.go.dev/k8s.io/apimachinery/pkg/util/intstr#IntOrString) with the custom
+behavior versus the default behavior:
+
+| Go                                       | Custom  | Default                               |
+|------------------------------------------|---------|---------------------------------------|
+| IntOrString{Type: Int, IntVal: 7}        | 7       | {"IntVal":7,"StrVal":"","Type:":0}    |
+| IntOrString{Type: String, StrVal: "foo"} | "foo"   | {"IntVal":0,"StrVal":"foo","Type:":1} |
+| IntOrString{Type: -1}                    | <error> | {"IntVal":0,"StrVal":"","Type:":-1}   |
+
+Imagine a similar type is declared out-of-tree. It has a similar implementation of `json.Marshaler`,
+but not corresponding custom implementation for CBOR. From this type, a CRD and typed client are
+generated. This typed client is used in a program to write to a custom resource, using JSON to
+encode the request body as either a JSON number or a JSON string. On the server side, the request
+body is decoded into an Unstructured object, and within that object, the IntOrString value is
+represented by either a `string` or an `int64`.
+
+Now imagine that the same request is repeated, but with CBOR as the negotiated content type of the
+request body, and that the CBOR serializer implementation _does not_ recognize types that implement
+`json.Marshaler` or `json.Unmarshaler`. By changing the request content type from JSON to CBOR, the
+actual bytes of the request body represent a structurally different object. Referencing the table
+above, instead of the "Custom" encoding, the encoded CBOR would look like the "Default" encoding.
+
+On the server side, the value is represented within the decoded Unstructured as a
+`map[string]interface{}` with three keys, `"IntVal"`, `"StrVal`", and `"Type"`. A change in the
+request encoding resulted in a structural change to the object the client intended to send.
+
+The CBOR serializer must not use the default behaviors to marshal and unmarshal values that
+implement only custom JSON behaviors. Rejecting them with an error is a minimum requirement for
+alpha, since it prevents corruption. This would support in-tree types, server-side custom resource
+serialization, and typical dynamic client usage. A second alpha release will support these types
+automatically by invoking the JSON methods and transcoding to or from CBOR.
+
+All of the above also applies to types implementing `encoding.TextMarshaler` (which is used if
+implemented unless `json.Marshaler` is also implemented) and `encoding.TextUnmarshaler` (which is
+used if implemented when the input is a JSON string unless `json.Unmarshaler` is also implemented).
+
 ### Graduation Criteria
 
 <!--
@@ -824,11 +867,17 @@ in back-to-back releases.
 - Client generation updated to support CBOR behind client-side gates.
 - Runtime gating mechanism added to client-go.
 - Maintenance of CBOR library is understood.
+- Types that implement json.Marshaler or json.Unmarshaler without corresponding custom CBOR
+  behaviors are either rejected with an error on Encode and Decode or automatically transcoded from
+  JSON.
 
 #### Beta
 
 - Review of nondeterministic encoding mode and final decision on whether to keep
   or remove it.
+- To support rollback from beta to alpha, at least one alpha release has supported automatic
+  transcoding of types that implement json.Marshaler or json.Unmarshaler without corresponding
+  custom CBOR behaviors.
 
 #### GA
 
