@@ -125,7 +125,11 @@ AllocatedResourcesStatus ResourcesStatus
 type ResourcesStatus map[ResourceName]ResourceStatus
 
 type ResourceStatus struct {
-    // map of unique Resource ID to its status
+    // map of unique Resource ID to its status with the following restrictions:
+    //  - ResourceID must uniquely identify the Resource allocated to the Pod on the Node for the lifetime of a Pod.
+    //  - ResourceID may not make sense outside the Pod. Often it will identify the resource on the Node, but not guaranteed.
+    //  - ResourceID of one Pod must not be compared with the ResourceID of other Pod.
+    // In case of Device Plugin ResourceID maps to DeviceID.
     Resources map[ResourceID] ResourceStatus
     
     // allow to extend this struct in future with the overall health fields or things like Device Plugin version
@@ -136,17 +140,24 @@ type ResourceID string
 type ResourceStatus struct {
     // can be one of:
     //  - Healthy: operates as normal
-    //  - Unhealthy: reported unhealthy. We consider this a temporary health issue since we do not mechanism today to distinguish temporary and permanent issues.
-    //  - Unknown: The status cannot be determined. For example, Device Plugin got unregistered and hasn't been re-registered since.
+    //  - Unhealthy: reported unhealthy. We consider this a temporary health issue
+    //               since we do not mechanism today to distinguish
+    //               temporary and permanent issues.
+    //  - Unknown: The status cannot be determined.
+    //             For example, Device Plugin got unregistered and hasn't been re-registered since.
+    //
+    // In future we may want to introduce the PermanentlyUnhealthy Status.
     Status string
 }
 ```
 
 ***Is there any guarantee that the AllocatedResourcesStatus will be updated before Container crashed and unscheduled?***
 
-No, there is no guarantee that the Device Plugin/DRA will detect device going unhealthy earlier than the Pod. Once device got unhealthy, container may crash and being marked as Failed already.
+No, there is no guarantee that the Device Plugin/DRA will detect device going unhealthy earlier than the Pod. Once device got unhealthy, container may crash and being marked as Failed already (if `restartPolicy=Never`, in other cases Pod will enter crash loop backoff).
 
 The proposal is to update the Pod Status with the device status even if the pod has been marked as Failed already, but still known to the kubelet.
+
+This use case is important to explore so this status may inform the retry policy introduced by the KEP: [Retriable and non-retriable Pod failures for Jobs](https://github.com/kubernetes/enhancements/issues/3329).
 
 
 ***Do we need the CheckDeviceHealth call introduced to the Device Plugin to work around the limitation above?***
@@ -200,9 +211,11 @@ We should consider introducing another field to the Status that will be a free f
 Today DRA does not return the health of the device back to kubelet. The proposal is to extend the
 
 type `NamedResourcesInstance` (from [pkg/apis/resource/namedresources.go](https://github.com/kubernetes/kubernetes/blob/790dfdbe386e4a115f41d38058c127d2dd0e6f44/pkg/apis/resource/namedresources.go#L29-L37)) to include the Health field the same way it is done in 
-the Device Plugin.
+the Device Plugin as well as a device ID.
 
 Kubelet will react on this field the same way as we propose to do it for the Device Plugin.
+
+Specific implementation details will be added for the beta.
 
 ### Test Plan
 
