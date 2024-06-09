@@ -12,6 +12,7 @@
     - [Story 2](#story-2)
 - [Design Details](#design-details)
   - [Pod API](#pod-api)
+  - [Env File](#env-file)
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -154,7 +155,7 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo CONFIG_VAR="HELLO" > /etc/config/config.env']
+    command: ['sh', '-c', 'echo "CONFIG_VAR: HELLO" > /etc/config/config.yaml']
     volumeMounts:
     - name: data
       mountPath: /etc/config
@@ -164,7 +165,7 @@ spec:
     command: [ "/bin/sh", "-c", "env" ]
     envFrom:
     - fileRef:
-        path: config.env
+        path: config.yaml
         volumeName: data
   restartPolicy: Never
   volumes:
@@ -180,8 +181,8 @@ provide some of the information in this file to the vendor's container via
 env vars. For example, consider that each node has the following env file:
 
 ```
-CONFIG_VAR=HELLO
-CONFIG_VAR_A=WORLD
+CONFIG_VAR: HELLO
+CONFIG_VAR_A: WORLD
 ...
 ```
 
@@ -197,7 +198,16 @@ kind: Pod
 metadata:
   name: dapi-test-pod
 spec:
-  containers:
+  initContainers:
+  - name: setup-envfile
+    image: registry.k8s.io/busybox
+    command: ['sh', '-c', 'cp /etc/config/config.yaml /data/config.yaml']
+    volumeMounts:
+    - name: config
+      mountPath: /data
+    - name: data
+      mountPath: /etc/config
+   containers:
   - name: use-envfile
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
@@ -205,11 +215,13 @@ spec:
     - name: CONFIG_VAR
       valueFrom:
         fileKeyRef:
-          path: node.env
-          volumeName: data
+          path: config.yaml
+          volumeName: config
           key: CONFIG_VAR
   restartPolicy: Never
   volumes:
+  - name: config
+    emptyDir: {}
   - name: data
     hostPath: /etc/config
 ```
@@ -272,6 +284,33 @@ type FileKeySelector struct {
 }
 ```
 
+### Env File
+
+The full specification of an env file:
+
+1. **File Format**: The environment variable (env) file must adhere to valid YAML syntax to ensure correct parsing.
+
+2. **Variable Naming**:
+    
+    a. **Standard**: Environment variable names should be composed of alphanumeric characters (letters and numbers), underscores, dots, or hyphens. The first character cannot be a digit.
+
+    b. **Relaxed**: If the Kubernetes feature gate `RelaxedEnvironmentVariableValidation` is enabled, the naming restriction is less stringent, allowing any printable ASCII character except the equals sign (=).
+
+3. **Duplicate Names**: If an environment variable is defined multiple times in the file, the last occurrence takes precedence and overrides any previous values.
+
+4. **Size Limit**: The maximum allowed size for the env file is 1 MiB.
+
+5. **File Location**: The env file must be placed within the `emptyDir` volume associated with the pod. If it is not found in the correct location, the Kubernetes API server will reject the pod creation request.
+
+6. **Container Behavior**:
+    
+    a. **Startup**: At container startup, the kubelet (the Kubernetes node agent) will parse the env file from the emptyDir volume and inject the defined variables into the container's environment.
+    
+    b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration.
+
+7. **Dynamic Updates**: Currently, changes to the env file after container startup are not reflected in the container's environment until a restart. A potential future enhancement could involve dynamically updating environment variables when the file is modified.
+
+
 ### Failure and Fallback Strategy
 
 There are different scenarios in which applying `FileEnvSource` and
@@ -279,22 +318,18 @@ There are different scenarios in which applying `FileEnvSource` and
 descriptive enough to troubleshoot the issue but it will not contain the env
 file as it can contain sensitive information.
 
-Environment variable names must consist of letters, numbers, underscores, dots,
-or hyphens, but the first character cannot be a digit. If the
-`RelaxedEnvironmentVariableValidation` feature gate is enabled, all printable
-ASCII characters except "=" may be used for environment variable names
-
 Below are the ones we mapped and their outcome once this KEP is implemented.
 
 |Scenario| API Server Result | Kubelet Result |
 |--------|-------------------|----------------|
 |1. The volumeName specified in `FileEnvSource` or `FileKeySelector` field does not exist | Pod creation fails with an error |  |
-|2. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
-|3. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
-|4. Either the filepath or key specified in `FileKeySelector` field does not exist | Pod created | Container fails to start and error message in event.|
-|5. Either the filepath or key specified in `FileKeySelector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
-|6. The specified file is not a parsable env file. | Pod created | Container fails to start and error message in event.|
-|7. The specified file contains invalid env var names. | Pod created | Container starts but invalid env vars are skipped and reported in the events.|
+|2. The volumeName specified in `FileEnvSource` or `FileKeySelector` is not an emptyDir | Pod creation fails with an error |  |
+|3. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
+|4. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
+|5. Either the filepath or key specified in `FileKeySelector` field does not exist | Pod created | Container fails to start and error message in event.|
+|6. Either the filepath or key specified in `FileKeySelector` field exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
+|7. The specified file is not a parsable env file. | Pod created | Container fails to start and error message is reported in the events.|
+|8. The specified file contains invalid env var names. | Pod created | Container fails to start and erorr message is reported in the events.|
 
 
 ### Test Plan
