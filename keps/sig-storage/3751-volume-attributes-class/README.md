@@ -416,7 +416,7 @@ Please see session "Kubernetes API" above.
 
 A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [StorageClass](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98). 
 
-Today, we loop through all PersistentVolume objects, check if `pv.Status.Phase == v1.VolumeBound` and increment the appropriate `pv.Spec.StorageClassName` bucket. For these new metrics, when the feature flag is enabled, we also increment the appropriate `pv.Spec.VolumeAttributeClassName` if it is not empty. 
+Prior to this enhancement, we loop through all PersistentVolume objects, check if `pv.Status.Phase == v1.VolumeBound` and increment the appropriate `pv.Spec.StorageClassName` bucket. For these new metrics, when the feature flag is enabled, we also increment the appropriate `pv.Spec.VolumeAttributeClassName` if it is not empty. 
 
 ```
 boundPVCCountDesc = metrics.NewDesc(
@@ -863,9 +863,9 @@ Yes, the feature may impact CreateVolume. We will measure this impact during bet
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Using this feature may result in non-negligible increase of resource usage IF customers batch modify many volumes at once and increase default external-resizer `--workers`, `-kube-api-burst`, and `-kube-api-qps` options.
+Using this feature may result in non-negligible increase of resource usage IF customers batch modify many volumes at once and CSI Controller Pod has high API Priority.
 - external-resizer CPU and memory will see a non-negligible increase if users increased the number of concurrent operations via the `--workers` flag. We follow the strategy of sharing that limit between `ControllerExpandVolume` and `ControllerModifyVolume` RPCs, similar to how external-provisioner functions. 
-- If users increased the default `-kube-api-burst` and `-kube-api-qps` of their external-resizer container, the API-Server may see a spike of CPU when processing these changes 
+- The API-Server may see a spike of CPU when processing relevant changes.
 
 Stress tests will determine increase in resource usage at varying amounts of concurrent volume modifications. 
 
