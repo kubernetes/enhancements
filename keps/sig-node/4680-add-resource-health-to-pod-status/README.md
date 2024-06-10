@@ -75,7 +75,7 @@ Today it is difficult to know when a Pod is using a device that has failed or is
 
 Device Plugin and DRA do not have a good failure handling strategy defined. With proliferation of workloads using devices (like GPU), variable quality of devices, and overcommitting of data centers on power, there are cases when devices can fail temporarily or permanently and k8s need to handle this natively.
 
-Today, the typical design is for jobs consuming a failing device to fail itself with the specific error code whenever possible. For the inference of long running workloads, k8s will keep restarting the workload without reallocating it on a different device. So container will be in crash loop backoff with limited information on why it is crashing.
+Today, the typical design is for jobs consuming a failing device to fail with a specific error code whenever possible. For long running workloads, K8s will keep restarting the workload without reallocating it on a different device. So the container will be in crash loop backoff with limited information on why it is crashing.
 
 People develop strategies to deal with such situations. Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device and be able to respond to this properly.
 
