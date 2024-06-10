@@ -341,7 +341,7 @@ if multiple rules match a pod failure.
 What are the risks of this proposal, and how do we mitigate? Think broadly.
 For example, consider both security and how this will impact the larger
 Kubernetes ecosystem.
-
+Validate all pod failure policy rule names are unique
 How will security be reviewed, and by whom?
 
 How will UX be reviewed, and by whom?
@@ -362,6 +362,8 @@ When `Name` is unset, the Job controller will set the reason suffix to the index
 
 #### Validation
 - Validate all pod failure policy rule names are unique.
+- Validate pod failure policy rule names do not have integer values of any of the existing indexes
+(unless the value is the rule's own index).
 - We will validate the Job failure condition reason that would be generated from a given
 PodFailurePolicy rule name (i.e., `PodFailurePolicy_{ruleName}`) will be a valid reason (CamelCase, max length of 128 characters, and matches the regex defined [here](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1559)).
 - We will also validate the pod failure policy rule does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
