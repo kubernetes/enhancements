@@ -77,7 +77,7 @@ Device Plugin and DRA do not have a good failure handling strategy defined. With
 
 Today, the typical design is for jobs consuming a failing device to fail with a specific error code whenever possible. For long running workloads, K8s will keep restarting the workload without reallocating it on a different device. So the container will be in crash loop backoff with limited information on why it is crashing.
 
-People develop strategies to deal with such situations. Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device and be able to respond to this properly.
+Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device, and be able to respond to this properly.
 
 ### Goals
 
