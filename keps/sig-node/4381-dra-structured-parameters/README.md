@@ -1548,7 +1548,7 @@ type DeviceConfiguration struct {
 // DriverConfigurationParameters must have one and only one one field set.
 //
 // In contrast to ConfigurationParameters, the driver name is
-// not included and has to be infered from the context.
+// not included and has to be inferred from the context.
 type DriverConfigurationParameters struct {
     Opaque *runtime.RawExtension
 }
