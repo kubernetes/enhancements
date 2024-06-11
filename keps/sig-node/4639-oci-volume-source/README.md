@@ -590,15 +590,11 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: OCIVolume
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kube-apiserver (API validation)
+    - kubelet (volume mount)
 
 ###### Does enabling the feature change any default behavior?
 
@@ -606,6 +602,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+Yes, it makes the new `VolumeSource` API functional.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -620,7 +618,12 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, by disabling the feature gate. Existing workloads will not be affected by
+the change.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+It will make the API functional again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -636,6 +639,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Yes, unit tests for the alpha release for each component. End-to-end (serial
+node) tests will be targeted for beta.
 
 ### Rollout, Upgrade and Rollback Planning
 

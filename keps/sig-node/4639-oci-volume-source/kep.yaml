@@ -7,18 +7,25 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-storage
-status: provisional
+status: implementable
 creation-date: 2024-05-17
 reviewers:
   - "@BigVan"
-  - "@alice.doe"
+  - "@ChaoyiHuang"
+  - "@SergeyKanzhelev"
   - "@aojea"
+  - "@arewm"
+  - "@cgwalters"
+  - "@haircommander"
   - "@humblec"
+  - "@jsafrane"
+  - "@mariasalcedo"
   - "@mikebrow"
   - "@mrunalp"
   - "@rchincha"
   - "@samuelkarp"
   - "@sftim"
+  - "@sudo-bmitch"
   - "@syed"
   - "@vsoch"
   - "@xing-yang"
@@ -46,7 +53,8 @@ milestone:
 feature-gates:
   - name: OCIVolume
     components:
-      - TBD
+      - kube-apiserver
+      - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
