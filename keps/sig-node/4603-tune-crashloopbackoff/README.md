@@ -218,7 +218,7 @@ approach to revisiting the CrashLoopBackoff behaviors for common use cases:
 2. allowing Pods to opt-in to an even faster backoff curve
 
 For each of these changes, the exact values are subject to modification in the
-alpha period in order to empirically derive derived defaults intended to
+alpha period in order to empirically derive defaults intended to
 maintain node stability.
 
 ## Motivation
@@ -436,9 +436,75 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 #### On Success
 
-The original version of this proposal included a change specific to Pods transitioning through the "Succeeded" phase. On further discussion, this was determined to be both too risky and a non-goal for Kubernetes architecturally, and moved into the Alternatives section. The risk for bad actors is described in the Alternatives section and is somewhat obvious. The larger point of it being a non-goal within the design framework of Kubernetes as a whole is less transparent and discussed here.
+The original version of this proposal included a change specific to Pods
+transitioning through the "Succeeded" phase to have flat rate restarts. On
+further discussion, this was determined to be both too risky and a non-goal for
+Kubernetes architecturally, and moved into the Alternatives section. The risk
+for bad actors overloading the kubelet is described in the Alternatives section
+and is somewhat obvious. The larger point of it being a non-goal within the
+design framework of Kubernetes as a whole is less transparent and discussed
+here.
 
-FIXME: explain some more
+After discussion with early Kubernetes contributors and members of SIG-Node,
+it's become more clear to the author that the prevailing Kubernetes assumption
+is that that on its own, the Pod API best models long-running containers that
+rarely or never exit themselves with "Success"; features like autoscaling,
+rolling updates, and enhanced workload types like StatefulSets assume this,
+while other workload types like those implemented with the Job and CronJob API
+better model workloads that do exit themselves, running until Success or at
+predictable intervals. In line with this assumption, Pods that run "for a while"
+(longer than 10 minutes) are the ones that are "rewarded" with a reset backoff
+counter -- not Pods that exit with Success. Ultimately, non-Job Pods are not
+intended to exit Successfully in any meaningful way to the infrastructure, and
+quick rerun behavior of any application code is considered to be an application
+level concern instead.
+
+Therefore, even though it is widely desired by commenters on
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), this
+KEP is not pursuing a different backoff curve for Pods exiting with Success any
+longer.
+
+For Pods that are today intended to rerun after Success, it is instead suggested
+to 
+
+1. exec the application logic with an init script or shell that reruns it
+   indefinitely, like that described in
+   [Kubernetes#57291#issuecomment-377505620](https://github.com/kubernetes/kubernetes/issues/57291#issuecomment-377505620):
+  ```
+  #!/bin/bash
+
+  while true; do
+      python /code/app.py
+  done
+  ```
+2. or, if a shell in particular is not desired, implement the application such
+   that it starts and monitors the restarting process inline, or as a
+   subprocess/separate thread/routine
+
+The author is aware that these solutions still do not address use cases where
+users have taken advantage of the "cleaner" state "guarantees" of a restarted
+pod to alleviate security or privacy concerns between sequenced Pod runs. In
+these cases, during alpha, it is recommended to take advantage of the
+`restartPolicy: Rapid` option, with expectations that on further infrastructure
+analysis this behavior may become even faster.
+
+This decision here does not disallow the possibility that this is solved in
+other ways, for example:
+1. the Job API, which better models applications with meaningful Success states,
+   introducing a variant that models fast-restarting apps by infrastructure
+   configuration instead of by their code, i.e. Jobs with `restartPolicy:
+   Always` and/or with no completion count target
+2. support restart on exit 0 as a directive in the container runtime or as a
+   common independent tool, e.g. `RESTARTABLE CMD mycommand` or
+   `restart-on-exit-0 -- mycommand -arg -arg -arg`
+3. formalized reaper behavior such as discussed in
+   [Kubernetes#50375](https://github.com/kubernetes/kubernetes/issues/50375)
+
+However, there will always need to be some throttling or quota for restarts to
+protect node stability, so even if these alternatives are pursued separately,
+they will depend on the analysis and benchmarking implementation during this
+KEP's alpha stage to stay within node stability boundaries. 
+
 
 ### Risks and Mitigations
 
