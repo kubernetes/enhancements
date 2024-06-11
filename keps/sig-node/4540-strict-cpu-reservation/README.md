@@ -65,7 +65,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options (#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
 These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
 The three policy options that already exist are `full-pcpus-only` (#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327).
-With this KEP, a new `CPUManager` policy option is introduced which ensures that `reservedSystemCPUs` are strictly reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
+With this KEP, a new `CPUManager` policy option `strict-cpu-reservation` is introduced which ensures that `reservedSystemCPUs` are strictly reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
 
 
 ## Motivation
@@ -79,6 +79,7 @@ Solutions like Intel's Balloons Policy can be deployed to separate infrastructur
  * Ensure no breaking changes for the `static` policy of `CPUManager`.
 
 ### Non-Goals
+ * Align scheduler and node view for Node Allocatable which should not include reserved CPUs.
 
 ## Proposal
 
@@ -88,22 +89,22 @@ With this policy option, we remove the reserved cores from the list of all avail
 ### User Stories (Optional)
 
 #### Story 1
-To protect latency of guaranteed workload, systemd daemons including irqbalance daemon are commonly constrained to the reserved CPUs.
+To protect latency of workload, systemd daemons including irqbalance daemon are commonly constrained to the reserved CPUs.
 Burstable and best-effort pods (and guaranteed pods with fractional CPU requests) running on the reserved CPUs causes CPU throttling for infrastructure services which results in poor system response time which in turn hits back on workload response time e.g. hand-shaking failures between guaranteed pods.
+This issue is particularly critical in all-in-one deployments where workloads are placed on combined master+worker+storage nodes. In all-in-one deployments, system daemons include additional services like ceph storage.
 
 #### Story 2
-Isolating system daemons and interrupt processing is particularly critical in all-in-one deployments where workloads are placed on combined master+worker(+HCI storage) nodes.
-In all-in-one deployments, system daemons include additional services like ceph storage. Burstable and best-effort pods running on the reserved CPUs can saturate those CPUs degrading infrastructure performance which in turn causes latency issues for workload.
+The reverse is true for workloads running on the reserved CPUs. Workloads have been reported suffering from occasional but much bigger latency contention with system processes on the reserved CPUs e.g. fail to swact (switch of activity).
 
 ### Risks and Mitigations
 
-The feature is isolated to a specific policy option within the `CPUManager`, and is protected both by the option itself, as well as the `CPUManagerPolicyAlphaOptions` feature gate (which is disabled by default).
+The feature is isolated to a specific policy option within the `CPUManager` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to stable.
 
 Kube-scheduler schedules pods on node allocatable which is total - reserved cores. It is at the node level, burstable and best-effort pods are allowed to run on the reserved cores. The `strict-cpu-reservation` feature removes this discrepancy.
 
 However, kubelet has been requiring non-zero shared pool when the static policy is enabled. Kube-scheduler knows a portion of the node allocatable is not available for exclusive allocation. This not-for-exclusive portion has been conveniently the reserved cores.
 
-To maintain backward compatibility, we introduce `numMinSharedCPUs` in KubeletConfiguration as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler.
+To maintain backward compatibility, we add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler.
 
 ![MinSharedCPUs](./strict-cpu-allocation.png)
 
@@ -139,9 +140,8 @@ featureGates:
   CPUManagerPolicyAlphaOptions: true
 cpuManagerPolicy: static
 cpuManagerPolicyOptions:
-  strict-cpu-reservation: "true"
+  strict-cpu-reservation: { "enable": "true", "numMinSharedCPUs": 4 }
 reservedSystemCPUs: "0,32,1,33,16,48"
-numMinSharedCPUs: 4
 ...
 ```
 
@@ -154,7 +154,7 @@ When `strict-cpu-reservation` is disabled:
 When `strict-cpu-reservation` is enabled:
 ```console
 # cat /var/lib/kubelet/cpu\_manager\_state
-{"policyName":"static","defaultCpuSet":"2-3,6-15,17-31,34-35,38-47,49-63","entries":{"6dda0e2e-ac6c-4f9d-8cff-201e18aebb2f":{"busybox":"36"},"6ed17b91-0eb0-4a0c-8841-3565fd2e45dc":{"busybox":"37"},"716e4823-ca49-4be7-a429-58d6f3c29d96":{"busybox":"4"},"93ad7328-0dd5-4f9c-ac51-eb46debb16a7":{"busybox":"5"}},"checksum":2153668133}
+{"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
 ```
 
 In Node API, we add `exclusive-cpu` in Node Allocatable for Kube-scheduler to consume.
@@ -378,8 +378,9 @@ Inspect the cgroup/cpuset configuration of burstable and best-effort pods -- che
 
 Below is an example when Cgroup v1 is used:
 ```console
-# cat /sys/fs/cgroup/cpuset/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod50ca196f\_866c\_4070\_844a\_16d466b957ae.slice/cri-containerd-b511f2ad6e959a0a369578d335c8f0c3f01a2108c9157bce8d239a8d8d6a0d64.scope/cpuset.cpus
-2-19,22-39,42-59,62-79 
+# kubectl exec cnf1-58446568f4-dr986 -n cnf1-ns -- grep Cpus_allowed /proc/self/status
+Cpus_allowed:   fffefffc,fffefffc
+Cpus_allowed_list:      2-15,17-31,34-47,49-63
 ```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
