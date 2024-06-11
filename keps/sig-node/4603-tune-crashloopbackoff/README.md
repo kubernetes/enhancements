@@ -937,6 +937,43 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+For `ReduceDefaultCrashLoopBackoffDecay`:
+
+For an existing cluster, no changes are required to configuration, invocations
+or API objects to make an upgrade.
+
+To use the enhancement, the alpha feature gate is turned on. In the future when
+(/if) the feature gate is removed, no configurations would be required to be
+made, and the default behavior of the baseline backoff curve would -- by design
+-- be changed.
+
+For `EnableRapidCrashLoopBackoffDecay`:
+
+For an existing cluster, no changes are required to configuration, invocations
+or API objects to make an upgrade.
+
+To make use of this enhancement, on upgrade, the feature gate must first be
+turned on. Then, if any Pods want to opt into the `Rapid` backoff decay curve,
+they must be completely redeployed with `restartPolicy: Rapid`, since that field
+cannot be patched.
+
+To stop use of this enhancement, there are two options. 
+
+On a per-Pod basis, Pods can be completely redeployed with `restartPolicy` set
+to something besides `Rapid`. They will no longer use the `Rapid` backoff curve;
+since the Pods have been completely redeployed, they will lose their prior
+backoff counter anyways and, if restarted, will start from the beginning of
+their backoff curve (either the original one with initial value 10s, or the new
+baseline with initial value 1s, depending on whether they've turned on the
+`ReduceDefaultCrashLoopBackoffDecay` feature gate).
+
+Or, the entire cluster can be restarted with the
+`EnableRapidCrashLoopBackoffDecay` feature gate turned off. In this case, any
+Pod configured with `restartPolicy: Rapid` will instead serve as `restartPolicy:
+Always` and use the default backoff curve. Again, since the cluster was
+restarted and Pods were redeployed, they will not maintain prior state and will
+start at the beginning of their backoff curve.
+
 ### Version Skew Strategy
 
 <!--
