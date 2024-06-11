@@ -279,6 +279,8 @@ type ResourceClaimSpec struct {
 type ResourceClaimStatus struct {
     ...
 
+    Allocation *AllocationResult // same as in #4381
+
     // Indicates that a claim is to be deallocated. While this is set,
     // no new consumers may be added to ReservedFor.
     //
@@ -921,6 +923,11 @@ resources were not requested.
     - kube-controller-manager
     - kube-scheduler
     - kubelet
+  - Feature gate name: DRAControlPlaneController
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1211,7 +1218,8 @@ instructions.
   a template are generated instead of deterministic), scheduler performance
   enhancements (no more backoff delays).
 - Kubernetes 1.29, 1.30: most blocking API calls moved into Pod binding goroutine
-- Kubernetes 1.31: removal of support for immediate allocation and for CRDs as claim parameters
+- Kubernetes 1.31: v1alpha3 with a new API (removal of support for immediate
+  allocation and for CRDs as claim parameters)
 
 ## Drawbacks
 
