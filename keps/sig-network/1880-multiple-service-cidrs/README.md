@@ -742,18 +742,38 @@ A rollout failure can impact the new apiserver to not be able to start or the cl
 
 ###### What specific metrics should inform a rollback?
 
-If the apiserver is not able to start, can be detected during the rollout phase, not metrics needed.
-Users not be able to create Services can be monitored via two sets of metrics:
-1. IP allocator pkg/registry/core/service/ipallocator/metrics.go
-2. IP repair loop pkg/registry/core/service/ipallocator/controller/metrics.go
+The feature impact the apiserver bootstrap process, specially about the kubernetes.default IP address assignment,
+in case the apiserver is not able to start after enabling the feature, it is a strong indicated that a rollback is required.
+
+Another metrics that can indicate a rollback are `clusterip_allocator.allocation_errors_total`, `clusterip_repair.ip_errors_total` or `clusterip_repair.reconcile_errors_total`, definitions can be found on
+- IP allocator pkg/registry/core/service/ipallocator/metrics.go
+- IP repair loop pkg/registry/core/service/ipallocator/controller/metrics.go
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+There are integration tests these behaviors:
+
+test/integration/servicecidr/allocator_test.go TestSkewedAllocators
+1. start one apiserver with the feature gate enabled and other with the feature gate disabled
+2. create 5 Services against each apiserver
+3. the Services created against the apiserver with the bitmap will not allocate the IPAddresses automatically,
+but the repair loop of the apiserver with the feature enable must reconcile these new Services and create the IPAddresses
+
+test/integration/servicecidr/allocator_test.go  TestMigrateService
+1. store a Service with ClusterIP directly in etcd
+2. start an apiserver with the new feature enable
+3. the reconciler must detect this stored service and create the corresponding IPAddress
+
+To be added in Beta https://github.com/kubernetes/kubernetes/pull/122047
+test/integration/servicecidr/feature_enable_disable.go TestEnableDisableServiceCIDR
+1. start apiserver with the feature disabled
+2. create new services and assert are correct
+3. shutdown apiserver
+4. start new apiserver with feature enabled
+5. create new services and assert previous and new ones are correct
+6. shutdown apiserver
+7. start new apiserver with feature disabled
+8. create new services and assert previous and new ones are correct
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -764,12 +784,38 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-A new group of metrics are added for the new Cluster IP allocators
-1. IP allocator pkg/registry/core/service/ipallocator/metrics.go
-2. IP repair loop pkg/registry/core/service/ipallocator/controller/metrics.go
+A group of metrics are added to each new Cluster IP allocators, labeled with the
+correspoding ServiceCIDR associateed to the allocator:
+
+`clusterip_allocator.allocated_ips`
+`clusterip_allocator.available_ips`
+`clusterip_allocator.allocation_total`
+
+See IP allocator pkg/registry/core/service/ipallocator/metrics.go for definitions.
 
 Users can also obtain the `ServiceCIDR` and `IPAddress` objects that are only available
-if the feature is enabled.
+if the feature is enabled, per each Service with a ClusterIP associated there must be a
+corresponding IPAddress object. Per example:
+
+```
+$ kubectl get service kubernetes
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   17d
+```
+
+```
+$ kubectl get ipaddress 10.96.0.1
+NAME        PARENTREF
+10.96.0.1   services/default/kubernetes
+```
+
+All the ServiceCIDRs ranges configured must be present, included those ones created from the
+apiserver flags to initialize the cluster, with the special name `kubernetes`:
+```
+$ kubectl get servicecidr
+NAME         CIDRS          AGE
+kubernetes   10.96.0.0/28   17d
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -800,6 +846,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+- 99.9% of ClusterIP allocations per day take less than 500 ms.
+- 100% of ClusterIP allocations succeed.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -809,6 +857,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Idially we should have metrics to detect overlaps or IP conflicts with the Pods and Nodes network, but this was
+[heavily discussed on the SIG](https://docs.google.com/document/d/1Dx7Qu5rHGaqoWue-JmlwYO9g_kgOaQzwaeggUsLooKo/edit#heading=h.rkh0f6t1c3vc) and we concluded that is not possible to get the Pod and Nodes network information reliably,
+so any metrics of this kind will be misleading.
 
 ### Dependencies
 
@@ -825,7 +877,7 @@ See Drawbacks section
 
 When creating a Service this will require to create an IPAddress object,
 previously we updated a bitmap on etcd, so we keep the number of request
-but the size of the objects stored is reduced considerable.
+but the size of the objects stored is reduced considerably.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
