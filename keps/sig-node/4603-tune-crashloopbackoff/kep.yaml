@@ -12,8 +12,7 @@ reviewers:
   - "@tallclair"
   - "@pehunt"
 approvers:
-  - TBD
-  - "@oscar.doe"
+  - "SergeyKanzhelev"
 
 # see-also:
 #   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
