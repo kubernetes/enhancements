@@ -1785,7 +1785,6 @@ Fourth iteration (1.29):
 - Address reviews and bug reports from Beta users
 - Improved tests coverage:
   * unit test for preemption by kube-scheduler, if feasible
-  * integration test for re-enabling of the feature gate
 - Write a blog post about the feature
 - Graduate e2e tests as conformance tests
 - Lock the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates
