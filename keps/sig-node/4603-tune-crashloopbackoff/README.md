@@ -434,7 +434,7 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-#### On Success
+#### On Success and the 10 minute recovery threshold
 
 The original version of this proposal included a change specific to Pods
 transitioning through the "Succeeded" phase to have flat rate restarts. On
@@ -530,7 +530,7 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 ### Front loaded decay curve methodology
-As mentioned above, today the standard backoff curve is an exponential decay
+As mentioned above, today the standard backoff curve is a 2x exponential decay
 starting at 10s and capping at 5 minutes, resulting in a composite of the
 standard hockey-stick exponential decay graph followed by a linear rise until
 the heat death of the universe as depicted below:
@@ -601,12 +601,15 @@ to allow legitimately crashing workloads to have a backoff of 0, but it is in
 scope for the first alpha to provide users a way to opt workloads in to a even
 faster restart behavior.
 
-The finalization of the initial and max cap after benchmarking. As a
-conservative first estimate in line with maximums discussed on
-[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), the
-initial curve is selected at initial=250ms / cap=1 minute, but during
+The finalization of the initial and max cap can only be done after benchmarking.
+But as a conservative first estimate for alpha in line with maximums discussed
+on [Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291),
+the initial curve is selected at initial=250ms / cap=1 minute, but during
 benchmarking this will be modelled against kubelet capacity, potentially
-targeting something closer to an initial value near 0s, and a cap of 10-30s.
+targeting something closer to an initial value near 0s, and a cap of 10-30s. To
+further restrict the blast radius of this change before full and complete
+benchmarking is worked up, this is gated by a separate alpha feature gate and is
+opted in to per Pod using a new `restartPolicy: Rapid` value, described below.
 
 
 #### New OneOf for `restartPolicy` -- `Rapid`
@@ -619,8 +622,8 @@ continuously alongside the regular containers in the Pod.
 
 This KEP will support a new value for this field, `Rapid`, which on feature flag
 disablement will be interpreted as `Always`. If `restartPolicy: Rapid` is set or
-inherited for a container, that container will follow the new Rapid backoff
-curve.
+inherited for a container and the feature flag for this feature is turned on for
+a given cluster, that container will follow the new Rapid backoff curve.
 
 Due to configuring this as another option to this field, this would make Rapid
 backoff possible for restartable init (aka sidecar) containers, Pods,
@@ -670,7 +673,13 @@ Running state would also be useful.
 
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
-Job API provides its own API surface for describing alterntive restart behaviors, from [KEP-3329: Retriable and non-retriable Pod failures for Jobs](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures), in beta as of Kubernetes 1.30. The following example from that KEP shows the new configuration options: `backoffLimit`, which controls for number of retries on failure, and `podFailurePolicy`, which controls for types of workload exit codes or kube system events to ignore against that `backoffLimit`.
+Job API provides its own API surface for describing alterntive restart
+behaviors, from [KEP-3329: Retriable and non-retriable Pod failures for
+Jobs](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/3329-retriable-and-non-retriable-failures),
+in beta as of Kubernetes 1.30. The following example from that KEP shows the new
+configuration options: `backoffLimit`, which controls for number of retries on
+failure, and `podFailurePolicy`, which controls for types of workload exit codes
+or kube system events to ignore against that `backoffLimit`.
 
 ```yaml
 apiVersion: v1
@@ -690,13 +699,29 @@ spec:
       - type: DisruptionTarget
 ```
 
-The implementation of KEP-3329 is entirely in the Job controller, and the restarts are not handled by kubelet at all; in fact, use of this API is only available if the `restartPolicy` is set to `Never`. As a result, to expose the new backoff curve Jobs using this feature, the updated backoff curve must also be implemented in the Job controller.
+The implementation of KEP-3329 is entirely in the Job controller, and the
+restarts are not handled by kubelet at all; in fact, use of this API is only
+available if the `restartPolicy` is set to `Never`. As a result, to expose the
+new backoff curve Jobs using this feature, the updated backoff curve must also
+be implemented in the Job controller.
 
 ### Relationship with ImagePullBackOff
 
-ImagePullBackoff is used, as the name suggests, only when a container needs to pull a new image. If the iamge pull fails, a backoff decay is used to make later retries on the image download wait longer and longer. This is configured internally independently ([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L606)) from the backoff for container restarts ([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L855)).
+ImagePullBackoff is used, as the name suggests, only when a container needs to
+pull a new image. If the iamge pull fails, a backoff decay is used to make later
+retries on the image download wait longer and longer. This is configured
+internally independently
+([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L606))
+from the backoff for container restarts
+([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L855)).
 
-This KEP considers changes to ImagePullBackoff as out of scope, so during implementation this will keep the same backoff. This is both to reduce the number of variables during the benchmarking period for the restart counter, and because the problem space of ImagePullBackoff could likely be handled by a compeltely different pattern, as unlike with CrashLoopBackoff the types of errors with ImagePullBackoff are less variable and better interpretable by the infrastructure as recovereable or non-recoverable (i.e. 404s).
+This KEP considers changes to ImagePullBackoff as out of scope, so during
+implementation this will keep the same backoff. This is both to reduce the
+number of variables during the benchmarking period for the restart counter, and
+because the problem space of ImagePullBackoff could likely be handled by a
+compeltely different pattern, as unlike with CrashLoopBackoff the types of
+errors with ImagePullBackoff are less variable and better interpretable by the
+infrastructure as recovereable or non-recoverable (i.e. 404s).
 
 
 ### Test Plan
