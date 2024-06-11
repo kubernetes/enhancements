@@ -934,10 +934,6 @@ field.
 
 ###### What are other known failure modes?
 
-Can't think of other failure modes, given the somewhat minimal scope of the
-changes, though here are some general tips on debugging the usage of the
-feature.
-
 **Feature Usage Failure Modes:**
 
 - Ensure the `trafficDistribution` field is present in the Service spec.
