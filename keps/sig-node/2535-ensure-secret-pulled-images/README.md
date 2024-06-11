@@ -63,24 +63,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We will add support in the kubelet for an admin to enable the ability to ensure an image that is already present on a node because
-a pod with `ImagePullSecrets` previously pulled it is reauthenticated when a new pod with different `ImagePullSecrets` attempts to use the same image,
-when the `ImagePullPolicy` is `IfNotPresent`.
+Give the admin the ability to ensure pods that use an image are authorized to access that image. This will culminate in changes to the `IfNotPresent` and
+`Never` pull policies, as the `Always` policy will go through an authentication check each time.
 
-In other words: ensure the pull secrets are rechecked for each new set of credentials, and ensure a pod has access to those images.
-
-For the `Never` policy, the behavior also must change. Otherwise, a user who wishes to use the image of another pod could just use `Never` and hope
-another pod have pulled it. Functionally from a security standpoint, we must account for this.
-Thus, `Never` `ImagePullPolicy` images will be allowed past the ensure image stage of the pod lifecyle if the image has previously been pulled
-by an `IfNotPresent` pod successfully: either with no auth, or with the same auth as the `Never` policy. The image will continue to never be pulled
-for this pod.
+When this feature is enabled, and an image in a pod request has not been successfully pulled with the given credentials
+(or successfully pulled in the past with no credentials), then the kubelet will consider the credentials unauthenticated.
+Thus even if the image is present, it may still be reauthenticated.
+- For `IfNotPresent` images, the kubelet will re-pull the image
+- For `Never` images, the image creation will fail
 
 This will be enforced for both policies regardless of whether the image is already present when the kubelet starts. For an image to be allowed to be used,
 the kubelet must be aware of its credentials.
 
-This policy change will have no affect on the `Always` `ImagePullPolicy`.
+This behavior mirrors what would happen if an image was not present on the node (as opposed to present, but yet to be authorized with the credentials present).
 
-This new feature will be enabled with a feature gate in alpha, as well as a kubelet configuration
+This new feature will be enabled with a feature gate, as well as a kubelet configuration
 field `pullImageSecretRecheck`. Another kubelet configuration field `pullImageSecretRecheckPeriod` will be added
 to allow an admin to configure the recheck period. A recheck period may be used to periodically clean the cache, or ensure
 expiring credentials are still valid.
