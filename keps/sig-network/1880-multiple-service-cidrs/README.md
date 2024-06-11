@@ -564,12 +564,18 @@ make this code solid enough prior to committing the changes necessary to impleme
 
 - cmd/kube-apiserver/app/options/validation_test.go: 06/02/23 - 99.1
 - pkg/apis/networking/validation/validation_test.go: 06/02/23 - 91.7
+- pkg/controller/servicecidrs/servicecidrs_controller.go: 11/06/24 - 64.3
 - pkg/controlplane/instance_test.go: 06/02/23 - 49.7
+- pkg/controlplane/controller/defaultservicecidr/default_servicecidr_controller.go: 11/06/24 - 43.3
 - pkg/printers/internalversion/printers_test.go: 06/02/23 - 49.7
 - pkg/registry/core/service/ipallocator/bitmap_test.go: 06/02/23 - 86.9
-- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 06/02/23 - 0 (new)
-- pkg/registry/core/service/ipallocator/ipallocator_test.go: 06/02/23 - 0 (new)
-- pkg/registry/networking/ipaddress/strategy_test.go: 06/02/23 - 0 (new)
+- pkg/registry/core/service/ipallocator/cidrallocator_test.go: 11/06/24 - 69.3
+- pkg/registry/core/service/ipallocator/ipallocator_test.go: 11/06/24 - 80.1
+- pkg/registry/core/service/ipallocator/metrics_test.go: 11/06/24 - 100
+- pkg/registry/core/service/ipallocator/controller/metrics_test.go: 11/06/24 - 100
+- pkg/registry/core/service/ipallocator/controller/repair_test.go: 11/06/24 - 74.4
+- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 11/06/24 - 47.6
+- pkg/registry/networking/ipaddress/strategy_test.go: 11/06/24 - 77.8
 - staging/src/k8s.io/kubectl/pkg/describe/describe_test.go: 06/02/23 - 49.7
 
 ##### Integration tests
