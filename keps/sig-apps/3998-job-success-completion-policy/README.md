@@ -70,16 +70,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -509,9 +509,8 @@ only for running Jobs and don't update `.status.conditions` for already finished
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, we will add the following flow integration tests for the new APIs from the alpha stage:
-
-- enablement -> disablement -> re-enablement
+Yes, we added the "enablement -> disablement -> re-enablement" flow integration tests for the new APIs from the alpha stage 
+[here](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L794):
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -533,7 +532,7 @@ specifically the reason.
 In the alpha stage, the upgrade->downgrade->upgrade testing was added in the integration tests
 [here](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L794).
 
-In terms of a manual test for the upgrade and rollback, we can use th v1.30.
+In terms of a manual test for the upgrade and rollback, we can use the v1.30.
 
 The upgrade->downgrade->upgrade testing was done manually using the `alpha` version in v1.30 with the following steps:
 
@@ -605,7 +604,7 @@ verify that the pod with index=2 still running and the Job doesn't have `Success
 
 3. Simulate upgrade by enabling the feature for api server and control-plane.
 
-Then, very that the pod with index=2 is terminated and the Job has `SuccessCriteriaMet` and `Complete` conditions.
+Then, verify that the pod with index=2 is terminated and the Job has `SuccessCriteriaMet` and `Complete` conditions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -655,8 +654,6 @@ No.
 
 Yes, if the Job meets the SuccessPolicy,
 the job-controller must make an additional API call to update the condition with `SuccessCriteriaMet`.
-
-No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -719,7 +716,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2023.10.03: API design is updated.
 - 2024.02.07: API is finalized for the alpha stage.
 - 2024.03.09: "Criteria" is replaced with "Rules".
-- 2024.06.06: Beta Graduation.
+- 2024.06.11: Beta Graduation.
 
 ## Drawbacks
 
