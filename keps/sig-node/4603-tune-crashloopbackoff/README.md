@@ -215,7 +215,7 @@ length of the pod run is less than 10 minutes. This KEP proposes a two-pronged
 approach to revisiting the CrashLoopBackoff behaviors for common use cases:
 1. modifying the standard backoff delay to start faster but decay to the same 5m
    threshold
-2. allowing Pods to opt-in to an even faster backoff curve
+2. allowing Pods to opt-in to an even faster backoff curve with a lower max cap
 
 For each of these changes, the exact values are subject to modification in the
 alpha period in order to empirically derive defaults intended to
@@ -344,6 +344,17 @@ Longer term, these
 metrics will also supply cluster operators the data necessary to better analyze
 and anticipate the change in load and node stability as a result of upgrading to
 these changes.
+
+Note that proposal will NOT change:
+* backoff behavior for Pods transitioning from the "Success" state -- see
+  [Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold)
+* the time Kubernetes waits before resetting the backoff counter -- see the
+  [Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold)
+* the ImagePullBackoff -- out of scope, see [Design
+  Details](#relationship-with-imagepullbackoff)
+* changes that address 'late recovery', or modifications to backoff behavior
+  once the max cap has been reached -- see
+  [Alternatives](#more-complex-heuristics)
 
 
 #### Existing backoff curve change: front loaded decay
@@ -1489,6 +1500,30 @@ initial value), which is not anticipated to be a sufficient enough hit to the
 infrastructure to warrant implementing such a contrived backoff curve.
 
 !["A graph showing the changes to restarts depending on some initial values"](initialvaluesandnumberofrestarts.png "Different CrashLoopBackoff initial values")
+
+### Late recovery
+
+There are many use cases not covered in this KEP's target [User
+Stories](#user-stories) that share the common properties of being concerned with
+the recovery timeline of Pods that have already reached their max cap for their
+backoff. Today, some of these Pods will have their backoff counters reset once
+they have run successfully for 10 minutes. However, user stories exist where
+
+1. the Pod will never successfully run for 10 minutes by design
+2. the user wants to be able to force the decay curve to restart
+   ([Kubernetes#50375](https://github.com/kubernetes/kubernetes/issues/50375))
+3. the application knows what to wait for and could communicate that to the
+   system (like a restart probe)
+
+As discussed in
+[Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold),
+the first case is unlikely to be address by Kubernetes.
+
+The latter two are considered out of scope for this KEP, as the most common use
+cases are regarding the initial recovery period. If there is still sufficient
+appetite after this KEP reaches beta to specifically address late recovery
+scenarios, then that would be a good time to address them without the noise and
+change of this KEP.
 
 ### More complex heuristics
 
