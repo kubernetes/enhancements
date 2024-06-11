@@ -1363,6 +1363,13 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+* 04-23-2024: Problem lead opted in by SIG-Node for 1.31 target
+  ([enhancements#4603](https://github.com/kubernetes/enhancements/issues/4603))
+* 06-04-2024: KEP proposed to SIG-Node focused on providing limited alpha
+  changes to baseline backoff curve, addition of opt-in `Rapid` curve, and
+  change to constant backoff for `Succeeded` Pods
+* 06-06-2024: Removal of constant backoff for `Succeeded` Pods
+
 ## Drawbacks
 
 <!--
