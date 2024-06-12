@@ -6,7 +6,7 @@ owning-sig: sig-node
 # participating-sigs:
 #   - sig-aaa
 #   - sig-bbb
-status: provisional
+status: implementable
 creation-date: 2024-04-29
 reviewers:
   - "@tallclair"
