@@ -712,28 +712,57 @@ does during pod restarts.
 * Logs information about all those container operations (utilizing disk IO and
   “spamming” logs)
 
-### Observability
+### Benchmarking
 
 Again, let it be known that by definition this KEP will cause pods to restart
 faster and more often than the current status quo and such a change is desired.
-However, to do so as safely as possible, improved visibility into cluster
-restart behavior is needed both for benchmarking this change and for cluster
-operators to be able to quantify the risk posed to their specific clusters on
-upgrade.
+However, to do so as safely as possible, it is required that during the alpha
+period, we reevaluate the SLIs and SLOs and benchmarks related to this change and
+expose clearly the methodology needed for cluster operators to be able to quantify the
+risk posed to their specific clusters on upgrade.
 
-This KEP requires the ability to determine, for a given percentage of
-heterogenity between "Succeeded" terminating pods, crashing pods whose
-`restartPolicy: Always`, and crashing pods whose `restartPolicy: Rapid`, 
+To best reason about the changes in this KEP, we requires the ability to
+determine, for a given percentage of heterogenity between "Succeeded"
+terminating pods, crashing pods whose `restartPolicy: Always`, and crashing pods
+whose `restartPolicy: Rapid`, 
  * what is the load and rate of Pod restart related API requests to the API
    server?
- * what are the performance (memory, CPU, and pod start latency) effects on the kubelet
-   component?
+ * what are the performance (memory, CPU, and pod start latency) effects on the
+   kubelet component?
 
-In order to answer these questions, metrics tying together the number of
-container restarts, the container restart policy (inherited or declared), and
-the terminal state of a container before restarting must be tracked. For a more
-complete picture, pod lifecycle duration in CrashLoopBackoff state as opposed to
-Running state would also be useful.
+Today there are alpha SLIs in Kubernetes that can observe that impact in
+aggregate:
+* Kubelet component CPU and memory
+* `kubelet_http_inflight_requests`
+* `kubelet_http_requests_duration_seconds`
+* `kubelet_http_requests_total`
+* `kubelet_pod_worker_duration_seconds`
+* `kubelet_runtime_operations_duration_seconds`
+* `kubelet_pod_start_duration_seconds`
+* `kubelet_pod_start_sli_duration_seconds`
+
+In addition, estimates given the currently suggested changes in API requests are
+included in [Risks and Mitigations](#risks-and-mitigations) and were deciding
+factors in specific changes to the backoff curves. Since the changes in this
+proposal are deterministic, this is pre-calculatable for a given heterogenity of
+quantity and rate of restarting pods.
+
+In addition, the `kube-state-metrics`, project already implements
+restart-specific metadata for metrics that can be used to observe pod restart
+latency in more detail, including:
+* `kube_pod_container_status_restarts_total`
+* `kube_pod_restart_policy`
+* `kube_pod_start_time`
+* `kube_pod_created`
+
+During the alpha period, these metrics, the SIG-Scalability benchmarking tests,
+added kubelet performance tests, and manual benchmarking by the author against
+`kube-state-metrics` will be used to answer the above questions, tying together the
+container restart policy (inherited or declared), the terminal state of a
+container before restarting, and the number of container restarts, to articulate
+the rate and load of restart related API requests and the performance effects on
+kubelet.
+
 
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
@@ -1737,25 +1766,26 @@ change of this KEP.
 
 ### More complex heuristics
 
-The following alternatives are all considered by the author to be in the category of "more complex heuristics", meaning solutions predicated on kubelet making runtime decisions on a variety of system or workload states or trends. These approaches all share the common negatives of being:
+The following alternatives are all considered by the author to be in the
+category of "more complex heuristics", meaning solutions predicated on kubelet
+making runtime decisions on a variety of system or workload states or trends.
+These approaches all share the common negatives of being:
 1. harder to reason about
-2. of unknown return on investment for use cases relative to the investment to implement
+2. of unknown return on investment for use cases relative to the investment to
+   implement
 3. expensive to benchmark and test
 
-That being said, after this initial KEP reaches beta and beyond, it is entirely possible that the community will desire more sophisticated behavior based on or inspired by some of these considered alternatives. As mentioned above, the observability and benchmarking work done within the scope of this KEP can help users provide empirical support for further enhancements, and the following review may be useful to such efforts in the future.
+That being said, after this initial KEP reaches beta and beyond, it is entirely
+possible that the community will desire more sophisticated behavior based on or
+inspired by some of these considered alternatives. As mentioned above, the
+observability and benchmarking work done within the scope of this KEP can help
+users provide empirical support for further enhancements, and the following
+review may be useful to such efforts in the future.
 
-### Expose podFailurePolicy to nonJob Pods
-
-TBD
-
-#### Subsidize running time in backoff delay
-FIXME: Subsidize latest successful pod running time/readinessProbe/livenessProbe
-into the CrashLoopBackOff backoff, potentially restarting the backoff counter as
-a result 
-
-#### Detect anomalous workload crashes
-
-TBD
+* Expose podFailurePolicy to nonJob Pods
+* Subsidize successful running time/readinessProbe/livenessProbe seconds in
+  current backoff delay
+* Detect anomalous workload crashes
 
 
 ## Infrastructure Needed (Optional)
