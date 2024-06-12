@@ -974,9 +974,7 @@ needed and there is a single owner.
 // in each slice) to determine whether its view of a pool is complete.
 //
 // For devices that are not local to a node, the node name is not set. Instead,
-// a pool name is chosen by the driver as necessary. It can be left blank if the
-// device names are unique in the entire cluster. The unique identifier then
-// has the same format as before with `<driver name>[/<pool name>]/<device name>`.
+// the driver may use a node selector to specify where the devices are available.
 type ResourceSlice struct {
     metav1.TypeMeta
     // Standard object metadata
@@ -985,7 +983,7 @@ type ResourceSlice struct {
 
     Spec ResourceSliceSpec
 
-    // A status might get added later.
+    Status ResourceSliceStatus
 }
 
 type ResourceSliceSpec struct {
