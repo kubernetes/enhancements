@@ -73,6 +73,8 @@ SIG Architecture for cross-cutting KEPs).
     - [Cluster configuration](#cluster-configuration)
     - [Partial GPU allocation](#partial-gpu-allocation)
   - [Publishing node resources](#publishing-node-resources)
+    - [Devices as a named list of attributes](#devices-as-a-named-list-of-attributes)
+    - [Partitionable devices](#partitionable-devices)
   - [Using structured parameters](#using-structured-parameters)
   - [Communicating allocation to the DRA driver](#communicating-allocation-to-the-dra-driver)
   - [Risks and Mitigations](#risks-and-mitigations)
