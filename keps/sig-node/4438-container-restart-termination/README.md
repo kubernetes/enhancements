@@ -207,6 +207,15 @@ the restart during Pod termination.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+The following behaviors should be maintained during pod termination:
+- sidecar containers restarting
+- liveness, readiness and startup probing
+- container lifecycle hooks running
+- service account token rotation
+- secret and configmap volume updates
+
+Also, container termination should be non-blocking, which will fix issue [#121398](https://github.com/kubernetes/kubernetes/issues/121398)
+a container cannot restart when there is any terminating container in the same pod.
 
 ### Non-Goals
 
@@ -471,7 +480,7 @@ in back-to-back releases.
 #### Alpha
 
 - Allow sidecar containers to restart during the shutdown of the Pod.
-- Enable `livenessProbe` and `startupProbe` during the shutdown of the Pod for sidecar containers that restart.
+- Enable `livenessProbe`, `readinessProbe` and `startupProbe` during the shutdown of the Pod for sidecar containers that restart.
 - Enable `postStart` and `preStop` hooks during the shutdown of the Pod for sidecar containers that restart.
 
 #### Beta
@@ -559,7 +568,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: SidecarContainerRestartDuringTermination
+  - Feature gate name: RestartContainerDuringTermination
   - Components depending on the feature gate:
     - kubelet
 - [ ] Other
