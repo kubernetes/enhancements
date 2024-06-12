@@ -90,14 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Fast restart on failure](#fast-restart-on-failure)
     - [Sidecar containers fast restart](#sidecar-containers-fast-restart)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [On Success](#on-success)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Front loaded decay curve methodology](#front-loaded-decay-curve-methodology)
-    - [New OneOf for <code>restartPolicy</code> -- <code>Rapid</code>](#new-oneof-for-restartpolicy----rapid)
-  - [Kubelet overhead analysis](#kubelet-overhead-analysis)
-    - [Observability](#observability)
-  - [Relationship with Job API podFailurePolicy and backoffLimit](#relationship-with-job-api-podfailurepolicy-and-backofflimit)
+    - [On Success and the 10 minute recovery threshold](#on-success-and-the-10-minute-recovery-threshold)
   - [Relationship with ImagePullBackOff](#relationship-with-imagepullbackoff)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -126,6 +119,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Related: API opt-in for flat rate/quick restarts when transitioning from <code>Succeeded</code> phase](#related-api-opt-in-for-flat-ratequick-restarts-when-transitioning-from-succeeded-phase)
       - [Related: <code>Succeeded</code> vs <code>Rapid</code>ly failing: who's getting the better deal?](#related-succeeded-vs-rapidly-failing-whos-getting-the-better-deal)
   - [Front loaded decay with interval](#front-loaded-decay-with-interval)
+  - [Late recovery](#late-recovery)
   - [More complex heuristics](#more-complex-heuristics)
   - [Expose podFailurePolicy to nonJob Pods](#expose-podfailurepolicy-to-nonjob-pods)
     - [Subsidize running time in backoff delay](#subsidize-running-time-in-backoff-delay)
@@ -730,7 +724,7 @@ This KEP considers changes to ImagePullBackoff as out of scope, so during
 implementation this will keep the same backoff. This is both to reduce the
 number of variables during the benchmarking period for the restart counter, and
 because the problem space of ImagePullBackoff could likely be handled by a
-compeltely different pattern, as unlike with CrashLoopBackoff the types of
+completely different pattern, as unlike with CrashLoopBackoff the types of
 errors with ImagePullBackoff are less variable and better interpretable by the
 infrastructure as recovereable or non-recoverable (i.e. 404s).
 
@@ -1450,7 +1444,7 @@ settings) in kubelet configuration.
 
 ### Per exit code configuration
 
-One alternative is for new contianer spec values that allow individual containers to
+One alternative is for new container spec values that allow individual containers to
 respect overrides on the global timeout behavior depending on the exit reason.
 These overrides will exist for the following reasons:
 
@@ -1605,7 +1599,7 @@ That being said, after this initial KEP reaches beta and beyond, it is entirely 
 TBD
 
 #### Subsidize running time in backoff delay
-FIXME: Subsidize latest succesful pod running time/readinessProbe/livenessProbe
+FIXME: Subsidize latest successful pod running time/readinessProbe/livenessProbe
 into the CrashLoopBackOff backoff, potentially restarting the backoff counter as
 a result 
 

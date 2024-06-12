@@ -41,7 +41,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
-    - name: EnableRapidCrashLoopBackoffDecay
+  - name: EnableRapidCrashLoopBackoffDecay
     components:
       - kube-apiserver
       - kubelet
