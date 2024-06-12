@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: provisional #|implementable|implemented|deferred|rejected|withdrawn|replaced
+status: implementable #provisional|X|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2024-05-31
 reviewers:
   - "@ffromani"

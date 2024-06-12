@@ -134,9 +134,9 @@ type ResourceStatus struct {
     // allow to extend this struct in future with the overall health fields or things like Device Plugin version
 }
 
-// ResourceID is calculated based on source of this resource health information.
+// ResourceID is calculated based on the source of this resource health information.
 // For DevicePlugin:
-//   deviceplugin:Device.ID, where Device.ID is from the Device structure of DevicePlugin's ListAndWatchResponse type: https://github.com/kubernetes/kubernetes/blob/eda1c780543a27c078450e2f17d674471e00f494/staging/src/k8s.io/kubelet/pkg/apis/deviceplugin/v1alpha/api.proto#L61-L73
+//   deviceplugin:DeviceID, where DeviceID is from the Device structure of DevicePlugin's ListAndWatchResponse type: https://github.com/kubernetes/kubernetes/blob/eda1c780543a27c078450e2f17d674471e00f494/staging/src/k8s.io/kubelet/pkg/apis/deviceplugin/v1alpha/api.proto#L61-L73
 // DevicePlugin ID is usually a constant for the lifetime of a Node and typically can be used to uniquely identify the device on the node.
 // For DRA:
 //   dra:<driver name>[/<pool name>]/<device name>: such a device can be looked up in the information published by that DRA driver to learn more about it. It is designed to be globally unique in a cluster.
