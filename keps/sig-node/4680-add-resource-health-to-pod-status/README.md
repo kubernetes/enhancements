@@ -113,7 +113,7 @@ One field reflects the resource requests and limits and the other actual allocat
 
 This structure will contain standard resources as well as extended resources. As noted in the comment: https://github.com/kubernetes/kubernetes/pull/124227#issuecomment-2130503713, it is only logical to also include the status of those allocated resources. 
 
-The proposal is to keep this structure as-is to simplify parsing of well-known ResourceList data type by various consumers. Typical scenario would be to compare if the AllocatedResources match the desired state.
+The proposal is to keep this structure as-is to simplify parsing of well-known ResourceList data type by various consumers. Typical scenario would be to compare if the `AllocatedResources` match the desired state.
 
 The proposal is to introduce an additional field:
 
@@ -125,19 +125,23 @@ AllocatedResourcesStatus ResourcesStatus
 type ResourcesStatus map[ResourceName]ResourceStatus
 
 type ResourceStatus struct {
-    // map of unique Resource ID to its status with the following restrictions:
-    //  - ResourceID must uniquely identify the Resource allocated to the Pod on the Node for the lifetime of a Pod.
-    //  - ResourceID may not make sense outside the Pod. Often it will identify the resource on the Node, but not guaranteed.
-    //  - ResourceID of one Pod must not be compared with the ResourceID of other Pod.
-    // In case of Device Plugin ResourceID maps to DeviceID.
-    Resources map[ResourceID] ResourceStatus
+    // map of unique Resource ID to its health.
+    // At a minimum, ResourceID must uniquely identify the Resource
+    // allocated to the Pod on the Node for the lifetime of a Pod.
+    // See ResourceID type for it's definition.
+    Resources map[ResourceID] ResourceHealth
     
     // allow to extend this struct in future with the overall health fields or things like Device Plugin version
 }
 
 type ResourceID string
 
-type ResourceStatus struct {
+type ResourceHealth struct {
+    // List of conditions with the transition times
+    Conditions []ResourceHealthCondition
+}
+// This condition type is replicating other condition types exposed by various status APIs
+type ResourceHealthCondition struct {
     // can be one of:
     //  - Healthy: operates as normal
     //  - Unhealthy: reported unhealthy. We consider this a temporary health issue
@@ -147,7 +151,19 @@ type ResourceStatus struct {
     //             For example, Device Plugin got unregistered and hasn't been re-registered since.
     //
     // In future we may want to introduce the PermanentlyUnhealthy Status.
-    Status string
+    Type string 
+
+    // Status of the condition, one of True, False, Unknown.
+    Status ConditionStatus
+    // The last time the condition transitioned from one status to another.
+    // +optional
+    LastTransitionTime metav1.Time
+    // The reason for the condition's last transition.
+    // +optional
+    Reason string
+    // A human readable message indicating details about the transition.
+    // +optional
+    Message string
 }
 ```
 
@@ -206,6 +222,7 @@ One improvement will be needed is to distinguish unhealthy devices (marked unhea
 NVIDIA device plugin has the checkHealth implementation: https://github.com/NVIDIA/k8s-device-plugin/blob/eb3a709b1dd82280d5acfb85e1e942024ddfcdc6/internal/rm/health.go#L39 that has more information than simple “Unhealthy”.
 
 We should consider introducing another field to the Status that will be a free form error information as a future improvement.
+
 ### DRA implementation details
 
 Today DRA does not return the health of the device back to kubelet. The proposal is to extend the
