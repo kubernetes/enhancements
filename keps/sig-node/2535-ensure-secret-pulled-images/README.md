@@ -326,20 +326,23 @@ TBD subsequent to alpha
 
 ### Feature Enablement and Rollback
 
-- At Alpha this feature will be disabled by default with a feature gate.
-- At Beta this feature will be enabled by default with the feature gate.
-- At GA the ability to gate the feature will be removed leaving the feature enabled.
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: KubeletEnsureSecretPulledImages
-  - Components depending on the feature gate: kubelet
-
+  - Components depending on the feature gate: Kubelet
+- [x] Other
+  - Describe the mechanism: Kubelet configuration field `pullImageSecretRecheck`
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+    - No, only a restart of the kubelet
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node?
+    - Yes, as the kubelet must be restarted.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, see discussions above.
+Yes. The behavior of `IfNotPresent` and `Never` pull policies will change, incurring more image pulls and pod creation failures, respectively.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -347,7 +350,8 @@ Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Will go back to working as designed.
+Images pulled during the period the feature was disabled will not be present in the cache, and thus could incur redundant pulls/container creation failures.
+However, the cache may still be present, and thus it will retain information from when it was previously enabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -355,36 +359,46 @@ Yes, tests run both enabled and disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-TBD
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-TBD
+Rollout can fail if the registry isn't available when the kubelet is starting and attempting to create pods, in a similar way
+to how the kubelet will generally be more sensitive to registry downtime.
+
+Rollback should not fail for this feature specifically. The kubelet will no longer use the cache to determine whether credentials were used, and
+the behavior of the pull policies will revert to the previous behavior.
 
 ###### What specific metrics should inform a rollback?
 
-TBD needed for Beta
+If the feature gate is enabled, but the kubelet configuration field is not enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
+`image_pull_secret_recheck_hit` which will be both be a histogram counting the number of images that had a cache miss (despite the image potentially being present).
+
+This will allow an admin to see how many images would have reauthorization checks done.
+
+A histogram was chosen to allow an admin to compare registry uptime with cache misses, as the main failure scenerio is registry unavailability
+could cause pods not to come up, because the kubelet doesn't have credentials cached.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+They can be. The presence of a feature gate and kubelet configuration will make this path safe. Plus, there are no API objects that cause issue
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TBD
+No
 
 ### Monitoring Requirements
 
-TBD
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-For alpha can check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
-using the pull if not present image pull policy. Will show up as network events. Though only the manifests will be
-revalidated against the container image repository, large contents will not be pulled. Thus one could monitor traffic
-to the registry.
+When the feature is enabled, the kubelet will emit a metric `image_pull_secret_recheck_miss` and `image_pull_secret_recheck_hit` that will happen when a cache miss happens.
+This will happen regardless of whether the feature is enabled in the kubelet via its configuration flag.
 
-For beta will add metrics allowing an admin to determine how often an image has been reauthenticated to an image registry because of cache expiration or due to reuse across pods that have different authentication information. Success metrics will also be provided highlighting cache hits.
+To determine if the feature is actually working, they will have to check manually.
+
+A user could check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
+using the pull if not present image pull policy.
+
+It also will show up as network events. Though only the manifests will be revalidated against the container image repository,
+large contents will not be pulled. Thus one could monitor traffic to the registry.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -433,34 +447,36 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No existing API objects will be unchanged.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
 Yes. When enabled, and when container images have been pulled with image pull secrets (credentials), subsequent image
 pulls for pods that do not contain the image pull secret that successfully pulled the image will have to authenticate
 by trying to pull the image manifests from the registry. The image layers do not have to be re-pulled, just the
 manifests for authentication purposes.
 
-###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
-
-When switched on see above.
+However, this registry round-trip will slow down the pod creation process. This slowdown is the expense of the added security of this feature.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-When switched on see above.
+Similar to the increased time above, there will also be a CPU/memory/IO cost when the kubelet instructs the CRI implementation to repull the image
+redundantly.
 
 ### Troubleshooting
 
-TBD
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-TBD
+This feature doesn't interact with the API server or etcd.
 
 ###### What are other known failure modes?
 
-TBD
+A registry being unavailable is going to be a common failure mode for this feature. Unfortunately, this is the cost of this feature. The kubelet
+needs to go through the authentication process redundantly, and that will mean the cluster will be more sensitive to registry downtime.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Check logs.
+Reduce the number of cache misses (as seen through the metrics) by ensuring similar credentials are shared among images.
 
 ## Implementation History
 
