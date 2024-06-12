@@ -494,7 +494,9 @@ enhancement:
 
 ### Version Skew Strategy
 
-N/A. This feature doesn't impact nodes.
+In a multi-master setup, when the cluster has skewed apiservers, some create requests
+may get accepted and some may get rejected. This is a transient state until all instances are on the same k8s version. 
+
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -595,7 +597,8 @@ The api-server will accept mutation requests to `spec.completions` for `Indexed`
 
 ###### Are there any tests for feature enablement/disablement?
 
-N/A
+See [Job integration tests](https://github.com/kubernetes/kubernetes/blob/a06568062c41b4f0f903dcb78aa6ea348bbdecfc/test/integration/job/job_test.go#L2746)
+
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -641,7 +644,7 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-It will be tested manually prior to beta launch.
+It was tested manually prior to beta launch, but also given the feature effectively is only relaxing validation (so is purely in-memory), upgrade/downgrade boils down to actual feature tests.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -893,6 +896,7 @@ N/A.
 
 ## Implementation History
 
+- 2024-06-12: Graduated to stable.
 - 2023-01-10: Proposed KEP.
 
 <!--
