@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2024-02-15
 reviewers:
   - "@sftim"
@@ -16,7 +16,7 @@ approvers:
 see-also:
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: implementable
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
