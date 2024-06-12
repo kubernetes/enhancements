@@ -1190,10 +1190,6 @@ of the cluster in an allocated state.
 
 ```go
 type ResourceClaimSpec struct {
-    // These constraints must be satisfied by the set of devices that get
-    // allocated for the claim.
-    Constraints []Constraint
-
     // Requests are individual requests for separate resources for the claim.
     // An empty list is valid and means that the claim can always be allocated
     // without needing anything. A class can be referenced to use the default
@@ -1202,9 +1198,13 @@ type ResourceClaimSpec struct {
     // +listType=atomic
     Requests []Request
 
+    // These constraints must be satisfied by the set of devices that get
+    // allocated for the claim.
+    Constraints []Constraint
+
     // This field holds configuration for multiple potential drivers which
-    // could satisfy requests in this claim. The configuration applies to
-    // the entire claim. It is ignored while allocating the claim.
+    // could satisfy requests in this claim. It is ignored while allocating
+    // the claim.
     //
     // +optional
     // +listType=atomic
@@ -1215,36 +1215,6 @@ type ResourceClaimSpec struct {
     //
     //
     // Score *SomeScoringStruct
-}
-
-// Besides the request name slice, constraint must have one and only one field set.
-type Constraint struct {
-    // The constraint applies to devices in these requests. A single entry is okay
-    // and used when that request is for multiple devices.
-    //
-    // If empty, the constrain applies to all devices in the claim.
-    //
-    // +optional
-    RequestNames []string
-
-    // The devices must have this attribute and its value must be the same.
-    //
-    // For example, if you specified "numa.dra.example.com" (a hypothetical example!),
-    // then only devices in the same NUMA node will be chosen.
-    //
-    // +optional
-    // +listType=atomic
-    MatchAttribute *string
-
-    // Future extension, not part of the current design:
-    // A CEL expression which compares different devices and returns
-    // true if they match.
-    //
-    // Because it would be part of a one-of, old schedulers will not
-    // accidentally ignore this additional, for them unknown match
-    // criteria.
-    //
-    // matcher string
 }
 
 // Request is a request for one of many resources required for a claim.
@@ -1258,7 +1228,7 @@ type Request struct {
     // Must be a DNS label.
     Name string
 
-    *ResourceRequestDetail
+    *RequestDetail
 
     // FUTURE EXTENSION:
     //
@@ -1267,10 +1237,10 @@ type Request struct {
     //
     // +optional
     // +listType=atomic
-    // OneOf []ResourceRequestDetail
+    // OneOf []RequestDetail
 }
 
-type ResourceRequestDetail struct {
+type RequestDetail struct {
     // When referencing a DeviceClass, a request inherits additional
     // configuration and selectors.
     //
@@ -1284,13 +1254,6 @@ type ResourceRequestDetail struct {
     Selectors []Selector
 
     *Amount // inline, so no extra level in YAML and no separate documentation
-
-    // Config defines configuration parameters that apply to the requested resource(s).
-    // They are ignored while allocating the claim.
-    //
-    // +optional
-    // +listType=atomic
-    Config []ConfigurationParameters
 
     // AdminAccess indicates that this is a claim for administrative access
     // to the device(s). Claims with AdminAccess are expected to be used for
@@ -1340,6 +1303,21 @@ type Selector struct {
     // +optional
     Expression *string
 }
+```
+
+```
+<<[UNRESOLVED @pohly ]>>
+
+The `device.` prefix is included in the CEL environment for the reasons given in
+https://github.com/kubernetes-sigs/wg-device-management/issues/23#issuecomment-2160044359.
+
+Whether we really do it like that will be discussed further in that issue and/or during
+the implementation phase. Dropping it is not a conceptual change.
+
+<<[/UNRESOLVED]>>
+```
+
+```go
 
 // Exactly one field must be set.
 type Amount struct {
@@ -1361,8 +1339,45 @@ type Amount struct {
     Count *int64
 }
 
-// ConfigurationParameters must have one and only one field set.
+// Besides the request name slice, constraint must have one and only one field set.
+type Constraint struct {
+    // The constraint applies to devices in these requests. A single entry is okay
+    // and used when that request is for multiple devices.
+    //
+    // If empty, the constrain applies to all devices in the claim.
+    //
+    // +optional
+    RequestNames []string
+
+    // The devices must have this attribute and its value must be the same.
+    //
+    // For example, if you specified "numa.dra.example.com" (a hypothetical example!),
+    // then only devices in the same NUMA node will be chosen.
+    //
+    // +optional
+    // +listType=atomic
+    MatchAttribute *string
+
+    // Future extension, not part of the current design:
+    // A CEL expression which compares different devices and returns
+    // true if they match.
+    //
+    // Because it would be part of a one-of, old schedulers will not
+    // accidentally ignore this additional, for them unknown match
+    // criteria.
+    //
+    // matcher string
+}
+
+// Besides the request name slice, ConfigurationParameters must have one and only one field set.
 type ConfigurationParameters struct {
+    // The constraint applies to devices in these requests.
+    //
+    // If empty, the configuration applies to all devices in the claim.
+    //
+    // +optional
+    RequestNames []string
+
     Opaque *OpaqueConfigurationParameters
 }
 
@@ -1471,18 +1486,22 @@ type DeviceClass struct {
 ```go
 // AllocationResult contains attributes of an allocated resource.
 type AllocationResult struct {
-    // This field holds configuration for all drivers which
-    // satisfied requests in this claim. The configuration applies to
-    // the entire claim.
-    //
-    // +optional
-    // +listType=atomic
-    Config []ConfigurationParameters
-
     // Results lists all allocated devices.
     //
     // +listType=atomic
     Results []RequestAllocationResult
+
+    // This field is a combination of all the claim and class configuration parameters.
+    // Drivers can distinguish between those based on a flag.
+    //
+    // This includes configuration parameters for drivers which have no allocated
+    // devices in the result because it is up to the drivers which configuration
+    // parameters they support. They can silently ignore unknown configuration
+    // parameters.
+    //
+    // +optional
+    // +listType=atomic
+    Config []AllocationConfigurationParameters
 
     // Setting this field is optional. If unset, the allocated devices are available everywhere.
     //
@@ -1494,8 +1513,7 @@ type AllocationResult struct {
 // entries in allocation.results.
 const AllocationResultsMaxSize = 32
 
-// RequestAllocationResult contains configuration and the allocation result for
-// one request.
+// RequestAllocationResult contains the allocation result for one request.
 type RequestAllocationResult struct {
     // DriverName specifies the name of the DRA driver whose kubelet
     // plugin should be invoked to process the allocation once the claim is
@@ -1504,17 +1522,6 @@ type RequestAllocationResult struct {
     // Must be a DNS subdomain and should end with a DNS domain owned by the
     // vendor of the driver.
     DriverName string
-
-    // Config contains all the configuration parameters that apply to the request
-    // and that were meant for the driver which handles these devices.
-    // They get collected during the allocation and stored here
-    // to ensure that they remain available while the claim is allocated.
-    //
-    // Entries are list in the same order as in class.config and claim.config,
-    // with class.config entries first.
-    //
-    // +optional
-    Config []DeviceConfiguration
 
     // RequestName identifies the request in the claim which caused this
     // device to be allocated. If a request was satisfied by multiple
@@ -1536,21 +1543,14 @@ type RequestAllocationResult struct {
     DeviceName string
 }
 
-// DeviceConfiguration is one entry in a list of configuration parameters for a device.
-type DeviceConfiguration struct {
+// AllocationConfigurationParameters is a superset of ConfigurationParameters which
+// is used in AllocationResult to track where the parameters came from.
+type AllocationConfigurationParameters struct {
     // Admins is true if the source of the configuration was a class and thus
     // not something that a normal user would have been able to set.
     Admin bool
 
-    DriverConfigurationParameters
-}
-
-// DriverConfigurationParameters must have one and only one one field set.
-//
-// In contrast to ConfigurationParameters, the driver name is
-// not included and has to be inferred from the context.
-type DriverConfigurationParameters struct {
-    Opaque *runtime.RawExtension
+    ConfigurationParameters
 }
 ```
 
@@ -2699,7 +2699,7 @@ Major milestones might include:
 -->
 
 - Kubernetes 1.30: Code merged as extension of v1alpha2
-- Kubernetes 1.31: v1alpha3 with new API and several new features (
+- Kubernetes 1.31: v1alpha3 with new API and several new features
 
 ## Drawbacks
 
