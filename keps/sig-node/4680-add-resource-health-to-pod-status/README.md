@@ -214,7 +214,7 @@ This might be a good place to talk about core concepts and how they relate.
 ### Risks and Mitigations
 
 There is not many risks of this KEP. The biggest risk is that Device Plugins will not be
-able to detect device health reliable and fast enough to assign this status to the
+able to detect device health reliably and fast enough to assign this status to the
 Pods, marked as `restartPolicy=Never`. End users will expect this field and the
 missing health information will confuse them.
 
