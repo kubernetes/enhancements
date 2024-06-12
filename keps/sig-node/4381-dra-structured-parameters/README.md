@@ -1267,6 +1267,20 @@ type RequestDetail struct {
     // +optional
     AdminAccess *bool
 }
+```
+
+```
+<<[UNRESOLVED @johnbelamaric ]>>
+
+There is nothing in the current revision of the KEP which depends on device classes
+being mandatory, therefore the `DeviceClassName` is optional. Before beta we need
+to decide whether we keep that or make it required. Changing after beta will be
+harder.
+
+<<[/UNRESOLVED]>>
+```
+
+```go
 
 // Exactly one field must be set.
 type Selector struct {
