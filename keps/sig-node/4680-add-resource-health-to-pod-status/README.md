@@ -239,7 +239,7 @@ the Device Plugin as well as a device ID.
 
 In `1.30` we had a similar `ListAndWatch()` API as in DevicePlugin, from which we could have inferred something very analogous to the above. However, we are removing this in `1.31`, so will need to provide something different.
 
-An optional gRPC interface will be created, so DRA drivers can opt into this by implementing it. The interface will allow a plugin to stream health status information in as form of deviceIDs (of the form `<driver name>/<pool name>/<device name>`) along with extra metadata indicating its health status. Just as before, a device completely disappearing would still need to trigger some state change, but now more informative information could be attached in the form of metadata when a device isn't necessarily gone, but also isn't operating as it should be.
+An optional gRPC interface will be created, so DRA drivers can opt into this by implementing it. The interface will allow a plugin to stream health status information in the form of deviceIDs (of the form `<driver name>/<pool name>/<device name>`) along with extra metadata indicating its health status. Just as before, a device completely disappearing would still need to trigger some state change, but now more detailed information could be attached in the form of metadata when a device isn't necessarily gone, but also isn't operating as it should be.
 
 The API will be limited to "prepared" devices and include the claim `name/namespace/UID`. That should be enough information for kubelet to correlate with the pods for which the claim was prepared and then post that information for those pods.
 
