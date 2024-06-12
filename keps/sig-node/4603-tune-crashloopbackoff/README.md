@@ -121,9 +121,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Front loaded decay with interval](#front-loaded-decay-with-interval)
   - [Late recovery](#late-recovery)
   - [More complex heuristics](#more-complex-heuristics)
-  - [Expose podFailurePolicy to nonJob Pods](#expose-podfailurepolicy-to-nonjob-pods)
-    - [Subsidize running time in backoff delay](#subsidize-running-time-in-backoff-delay)
-    - [Detect anomalous workload crashes](#detect-anomalous-workload-crashes)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1782,10 +1779,10 @@ observability and benchmarking work done within the scope of this KEP can help
 users provide empirical support for further enhancements, and the following
 review may be useful to such efforts in the future.
 
-* Expose podFailurePolicy to nonJob Pods
-* Subsidize successful running time/readinessProbe/livenessProbe seconds in
-  current backoff delay
-* Detect anomalous workload crashes
+  * Expose podFailurePolicy to nonJob Pods
+  * Subsidize successful running time/readinessProbe/livenessProbe seconds in
+    current backoff delay
+  * Detect anomalous workload crashes
 
 
 ## Infrastructure Needed (Optional)
