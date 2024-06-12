@@ -655,9 +655,17 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes, by disabling the feature gate. Existing workloads will not be affected by
 the change.
 
+To clear old volumes, all workloads using the `VolumeSource` needs to be
+recreated after restarting the kubelets. The kube-apiserver does only the API
+validation whereas the kubelets serve the implementation. This means means that
+a restart of the kubelet as well as the workload would be enough to disable the
+feature functionality.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-It will make the API functional again.
+It will make the API functional again. If the feature gets re-enabled only for a
+subset of kubelets and a user runs a scalable deployment or daemonset, then the
+volume source will be only available for some pod instances.
 
 ###### Are there any tests for feature enablement/disablement?
 
