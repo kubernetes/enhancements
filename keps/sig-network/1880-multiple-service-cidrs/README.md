@@ -606,8 +606,10 @@ Files:
 
 ##### e2e tests
 
-e2e tests will validate that components that depend on Services are able
+e2e tests validate that components that depend on Services are able
 to use the new ServiceCIDR ranges allocated.
+
+https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20alpha,%20beta&include-filter-by-regex=ServiceCIDRs
 
 ### Graduation Criteria
 
