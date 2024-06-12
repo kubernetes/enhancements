@@ -927,6 +927,12 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Pods do not start correctly
+    - Detection: The user notices that the desired pods are not starting correctly, and their status indicates an error or a failure related to image pull failures, which can then be traced to the Split Image Filesystem feature.
+    - Mitigations: The Split Image Filesystem feature can be disabled as a mitigation step. However, it is not without side effects, where any container images downloaded before would have to be downloaded again. Thus, further investigation would be recommended before a decision to disable this feature is made. The user should also ensure that if the feature is disabled, enough disk space will be available at the location where the ContainerFs filesystem is currently pointed against. A restart of kubelet will be required if this feature is to be disabled.
+    - Diagnostics: Kubernetes cluster events and specific pods statutes report image pull failures that are related to problems with one of the filesystem access permissions, storage volumes issues, mount points issues, etc., where none of the reported issues are related to disk space utilisation, which would otherwise trigger pods eviction. Reviewing CRI and kubelet service logs can help to determine the root cause. Additionally, reviewing operating system logs can be helpful and can be used to correlate events and any errors found in the service logs.
+    - Testing: A set of end-to-end tests aims to cover this scenario.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 The operator should ensure that:
