@@ -1135,6 +1135,28 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+This biggest bottleneck expected will be kubelet, as it is expected to get more
+restart requests and have to trigger all the overhead discussed in [Design
+Details](#kubelet-overhead-analysis) more often. Cluster operators should be
+closely watching these existing metrics:
+
+* Kubelet component CPU and memory
+* `kubelet_http_inflight_requests`
+* `kubelet_http_requests_duration_seconds`
+* `kubelet_http_requests_total`
+* `kubelet_pod_worker_duration_seconds`
+* `kubelet_runtime_operations_duration_seconds`
+
+Most important to the perception of the end user is Kubelet's actual ability to
+create pods, which we measure in the latency of a pod actually starting compared
+to its creation timestamp. The following existing metrics are for all pods, not
+just ones that are restarting, but at a certain saturation of restarting pods
+this metric would be expected to become slower and must be watched to determine
+rollback:
+* `kubelet_pod_start_duration_seconds`
+* `kubelet_pod_start_sli_duration_seconds`
+
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
