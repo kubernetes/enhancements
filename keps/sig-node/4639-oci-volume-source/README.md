@@ -210,14 +210,18 @@ Beside that, I want:
 
 #### Story 2
 
-As a DevOps engineer, I want to package and distribute binary artifacts using OCI image and distribution specification standards and mount them directly into my Kubernetes pods,
-so that I can streamline my CI/CD pipeline. I want to package this file in an OCI object to take advantage of OCI distribution.
+As a DevOps engineer, I want to package and distribute binary artifacts using
+OCI image and distribution specification standards and mount them directly into
+my Kubernetes pods, so that I can streamline my CI/CD pipeline. This allows me to
+maintain a small set of base images by attaching the CI/CD artifacts to them.
+Beside that, I want to package the artifacts in an OCI object to take advantage
+of OCI distribution.
 
 #### Story 3
 
 As a data scientist, MLOps engineer, or AI developer, I want to mount large language models or machine learning models in a pod alongside a model-server, so that I can efficiently serve the models
-without including them in the container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
-efficient model deployment. This allows to separate the data from the executables that process them.
+without including them in the model-server container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
+efficient model deployment. This allows to separate the model specifications/content from the executables that process them.
 
 #### Story 4
 
