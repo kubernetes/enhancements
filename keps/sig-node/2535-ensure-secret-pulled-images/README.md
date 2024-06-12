@@ -63,67 +63,61 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We will add support in kubelet for the `pullIfNotPresent` image pull policy, for
-ensuring images pulled with pod imagePullSecrets are re-authenticated for other
-pods that do not have the same imagePullSecret/auths used to successfully pull
-the images in the first place.
+Give the admin the ability to ensure pods that use an image are authorized to access that image. This will culminate in changes to the `IfNotPresent` and
+`Never` pull policies, as the `Always` policy will go through an authentication check each time.
 
-This policy change will have no affect on the `pull always` image pull
-policy or for images that are preloaded.
+When this feature is enabled, and an image in a pod request has not been successfully pulled with the given credentials
+(or successfully pulled in the past with no credentials), then the kubelet will consider the credentials unauthenticated.
+Thus even if the image is present, it may still be reauthenticated.
+- For `IfNotPresent` images, the kubelet will re-pull the image
+- For `Never` images, the image creation will fail
 
-However, for the `pull never` policy if a first pod successfully pulled an image
-with credential and then a second pod with pull never tried to use the image,
-when the feature gate is on the second pod will receive an error message, where
-before and with the feature gate off the second pod would be able to use the image
-pulled with credentials by the first pod.
+This will be enforced for both policies regardless of whether the image is already present when the kubelet starts. For an image to be allowed to be used,
+the kubelet must be aware of its credentials.
 
-This new feature will be enabled with a feature gate in alpha. This feature
-improves the security posture for privacy/security of image contents by forcing
-images pulled with an imagePullSecret/auth of a first pod to be re-authenticated
-for a second pod even if the image is already present through the secure pull of
-the first pod.
+This behavior mirrors what would happen if an image was not present on the node (as opposed to present, but yet to be authorized with the credentials present).
 
-The new behavior means that if a first pod results in an image pulled with
-imagePullSecrets a second pod would have to also have rights to the image in
-order to use a present image.
-
-This means that the image pull policy alwaysPull would no longer be required in
-every scenario to ensure image access rights by pods.
+This new feature will be enabled with a feature gate, as well as a kubelet configuration
+field `pullImageSecretRecheck`. Another kubelet configuration field `pullImageSecretRecheckPeriod` will be added
+to allow an admin to configure the recheck period. A recheck period may be used to periodically clean the cache, or ensure
+expiring credentials are still valid.
 
 *** The issue and these changes improving the security posture without requiring the forcing of pull always, will be documented in the kubernetes image pull policy documentation. The new feature gate should also be documented in release notes. ***
 
 ## Motivation
 
 There have been customer requests for improving upon kubernetes' ability to
-secure images pulled with auth. on a node. Issue
+secure images pulled with auth on a node. Issue
 [#18787](https://github.com/kubernetes/kubernetes/issues/18787) has been around
 for a while.
 
-To secure images one currently needs to inject `AllwaysPullImages` into pod
+To secure images one currently needs to inject `Always` `ImagePullPolicy` into pod
 specs via an admission plugin. As @liggitt [notes](https://github.com/kubernetes/kubernetes/issues/18787#issuecomment-532280931)
 the `pull` does not re-pull already-pulled layers of the image, but simply
 resolves/verifies the image manifest has not changed in the registry (which
 incidentally requires authenticating to private registries, which enforces the
 image access). That means in the normal case (where the image has not changed
-since the last pull), the request size is O(kb). However, the `pull` does put
-the registry in the critical path of starting a container, since an unavailable
-registry will fail the pull image manifest check (with or without proper
-authentication.)
+since the last pull), the request size is O(kb).
+
+However, the `pull` does put the registry in the critical path of starting a container,
+since an unavailable registry will fail the pull image manifest check (with or without proper authentication.)
+
+Thus, the motivation is to allow users to ensure the kubelet requires an image pull auth check for each new set of credentials,
+regardless of whether the image is already present on the node.
 
 ### Goals
 
-Modify the current pullIfNotPresent policy management enforced by `kubelet` to
-ensure the images pulled with a secret by `kubelet` since boot. During the
-EnsureImagesExist step `kubelet` will require authentication of present images
-pulled with auth since boot.
+Modify the current behavior of images with an `IfNotPresent` and `Never` `ImagePullPolicy` enforced by the kubelet to
+ensure the images pulled with a secret by the kubelet are authenticated by the CRI implementation. During the
+EnsureImagesExist step the kubelet will require authentication of present images pulled with auth since boot.
 
 Optimize to only force re-authentication for a pod container image when the
-secret used to pull the container image is not present. IOW if an image is
-pulled with authentication for a first pod, subsequent pods that have the same
-authentication information should not need to re-authenticate.
+`ImagePullSecrets` used to pull the container image has not already been authenticated.
+IOW if an image is pulled with authentication for a first pod, subsequent pods that have the same
+authentication information should not need to re-authenticate, unless the kubelet's `pullImageSecretRecheckPeriod` has passed.
 
-Images already present at boot or loaded externally to `kubelet` or successfully
-pulled through `kubelet` with no imagePullSecret/authentication required will
+Images already present at boot or loaded externally to the kubelet or successfully
+pulled through the kubelet with no `ImagePullSecrets`/authentication required will
 not require authentication.
 
 ### Non-Goals
@@ -133,18 +127,29 @@ runtimes through the CRI wrt. how they should treat the caching of images on a
 node. Such as store for public use but only if encrypted. Or Store for private
 use un-encrypted...
 
-This feature will not change the behavior of pod with image pull policy `Always`
-and `Never`.
+This feature will not change the behavior of pod with `ImagePullPolicy` `Always`.
 
 ## Proposal
 
-For alpha `kubelet` will keep a list, across reboots of host and restart of
+For alpha the kubelet will keep a list, across reboots of host and restart of
 kubelet, of container images that required authentication and a list of the
 authentications that successfully pulled the image.
 For beta an API will be considered to manage the ensure metadata.
 
-`kubelet` will ensure any image in the list is always pulled if an authentication
+The kubelet will ensure any image in the list is always pulled if an authentication
 used is not present, thus enforcing authentication / re-authentication.
+
+There will be two different kubelet configuration options added, as well as a feature
+gate to gate their use:
+- `pullImageSecretRecheck`
+    - A boolean that toggles this behavior. If `false`, the kubelet will fallback to the
+      old behavior: only pull an image if it's not present.
+- `pullImageSecretRecheckPeriod`
+    - the period after which the kubelet's cache will be invalidated,
+      thus causing rechecks for all `IfNotPresent` images that are recreated.
+    - If set to `0s`, or `0`, but `pullImageSecretRecheck` is `true`, then
+      the kubelet will never invalidate its cache, but will maintain one.
+
 
 ### User Stories
 
@@ -155,7 +160,7 @@ concern that one tenant will gain access to an image that they don't have rights
 
 #### Story 2
 
-User will will no longer have to inject the Pull Always Image Pull Policy to
+User will no longer have to inject the `PullAlways` imagePullPolicy to
 ensure all tenants have rights to the images that are already present on a host.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -165,47 +170,52 @@ to set the feature gate to true to gain these this Secure by Default benefit.
 
 ### Risks and Mitigations
 
-Image authentications with a registry may expire. To mitigate expirations a
-a timeout will be used to force re-authentication. The timeout could be a
-container runtime feature or a `kubelet` feature. If at the container runtime,
-images would not be present during the EnsureImagesExist step, thus would have
-to be pulled and authenticated if necessary. This timeout feature will be
-implemented in alpha.
+- Image authentications with a registry may expire.
+  - To mitigate expirations a timeout will be used to force re-authentication.
+    This timeout will be configured as a kubelet configuration field `pullImageSecretRecheckPeriod`.
+    This timeout feature will be implemented in alpha.
 
-Since images can be pre-loaded, loaded outside the `kubelet` process, and
-garbage collected.. the list of images that required authentication in `kubelet`
-will not be a source of truth for how all images were pulled that are in the
-container runtime cache. To mitigate, images can be garbage collected at boot.
-And for alpha, we will not persist ensure metadata across reboot of host, and restart
-of kubelet, and possibly look at a way to add ensure metadata for images loaded
-outside of kubelet. In beta we will add a switch to enable re-auth on boot for
-admins seeking that instead of having to garbage collect where they do not use
-or expect preloaded images since boot.
+- Images can be "pre-loaded", or pulled behind the kubelet's back before it starts.
+  In this case, the kubelet is not managing the credentials for these images.
+  - To mitigate, metadata will be persisted across reboot. The kubelet will compare previously
+    cached credentials against the images that exist. On a new image pull, the kubelet will use
+    its saved cache and revalidate as necessary.
+    In other words: even if the images are already cached, if new images are present that have not
+    previously been authenticated against a pods credentials, then the image will be revalidated.
+
 
 ## Design Details
 
-Kubelet will track, in memory, a hash map for the credentials that were successfully
-used to pull an image.
+The kubelet will track, in memory, a pulled image auth cache for the credentials that were successfully used to pull an image.
+This cache will be persisted to disk, to allow nodes that are "disconnected", or unable to reach the registry to boot up, assuming
+they have previously been able to access a registry and authenticated the images present.
+
+The persisted cache will be cleaned up every `pullImageSecretRecheckPeriod`.
+
+The max size of the cache will scale with the number of unique cache entries * the number of unique images that have not been garbage collected.
+It is not expected that this will be a significant number of bytes. Will be verified by actual use in Alpha and subsequent metrics in Beta.
+
+See `/var/lib/kubelet/image_manager_state` in [kubernetes/kubernetes#114847](https://github.com/kubernetes/kubernetes/pull/114847)
+
+```
+> {
+>   "images": {
+>     "sha256:eb6cbbefef909d52f4b2b29f8972bbb6d86fc9dba6528e65aad4f119ce469f7a": {
+>       "authHash": { ** per review comment use SHA256 here vs hash **
+>         "115b8808c3e7f073": {
+>           "ensured": true,
+>           "dueDate": "2023-05-30T05:26:53.76740982+08:00"
+>         }
+>       },
+>       "name": "daocloud.io/daocloud/dce-registry-tool:3.0.8"
+>     }
+>   }
+> }
+```
 
 See PR linked above for detailed design / behavior documentation.
 
-Kubelet will add a new flag, named `PullImageSecretRecheckDuration` to make
-the expired duration configurable. The default value could be 1d. For a pod with
-IfNotPresent image pull policy and an image pull secret, kubelet will recheck
-the secret after `PullImageSecretRecheckDuration`.
-
-Use image pull policy `Always` if user want to recheck the secret everytime.
-
-For image pull policy "if not present", when admin/user doesn't want to automatically
-recheck the secret, set `PullImageSecretRecheckDuration` to 0 to disable it(which means
-never recheck).
-
 Note: using the tag `:latest` is equivalent to using the image pull policy `Always.`
-
-Note: since the cache is not persisted to disk, a recheck will happen every kubelet restart.
-This is acceptable because kubelet only restarts during upgrades or in maintenance modes.
-In other words, it should be relatively infrequent(and much less frequent than the default
-value of `PullImageSecretRecheckDuration`).
 
 ### Test Plan
 
@@ -247,6 +257,8 @@ For alpha, exhaustive Kubelet unit tests will be provided. Functions affected by
 ```
 
 [TestShouldPullImage link](https://github.com/kubernetes/kubernetes/pull/94899/files#diff-7297f08c72da9bf6479e80c03b45e24ea92ccb11c0031549e51b51f88a91f813R311-R438)
+
+PersistMeta() ** will be persisting SHA256 entries vs hash **
 
 Additionally, for Alpha we will update this readme with an enumeration of the core packages being touched by the PR to implement this enhancement and provide the current unit coverage for those in the form of:
 
@@ -314,20 +326,23 @@ TBD subsequent to alpha
 
 ### Feature Enablement and Rollback
 
-- At Alpha this feature will be disabled by default with a feature gate.
-- At Beta this feature will be enabled by default with the feature gate.
-- At GA the ability to gate the feature will be removed leaving the feature enabled.
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: KubeletEnsureSecretPulledImages
-  - Components depending on the feature gate: kubelet
-
+  - Components depending on the feature gate: Kubelet
+- [x] Other
+  - Describe the mechanism: Kubelet configuration field `pullImageSecretRecheck`
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+    - No, only a restart of the kubelet
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node?
+    - Yes, as the kubelet must be restarted.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, see discussions above.
+Yes. The behavior of `IfNotPresent` and `Never` pull policies will change, incurring more image pulls and pod creation failures, respectively.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -335,7 +350,8 @@ Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Will go back to working as designed.
+Images pulled during the period the feature was disabled will not be present in the cache, and thus could incur redundant pulls/container creation failures.
+However, the cache may still be present, and thus it will retain information from when it was previously enabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -343,36 +359,46 @@ Yes, tests run both enabled and disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-TBD
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-TBD
+Rollout can fail if the registry isn't available when the kubelet is starting and attempting to create pods, in a similar way
+to how the kubelet will generally be more sensitive to registry downtime.
+
+Rollback should not fail for this feature specifically. The kubelet will no longer use the cache to determine whether credentials were used, and
+the behavior of the pull policies will revert to the previous behavior.
 
 ###### What specific metrics should inform a rollback?
 
-TBD needed for Beta
+If the feature gate is enabled, but the kubelet configuration field is not enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
+`image_pull_secret_recheck_hit` which will be both be a histogram counting the number of images that had a cache miss (despite the image potentially being present).
+
+This will allow an admin to see how many images would have reauthorization checks done.
+
+A histogram was chosen to allow an admin to compare registry uptime with cache misses, as the main failure scenerio is registry unavailability
+could cause pods not to come up, because the kubelet doesn't have credentials cached.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+They can be. The presence of a feature gate and kubelet configuration will make this path safe. Plus, there are no API objects that cause issue
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TBD
+No
 
 ### Monitoring Requirements
 
-TBD
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-For alpha can check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
-using the pull if not present image pull policy. Will show up as network events. Though only the manifests will be
-revalidated against the container image repository, large contents will not be pulled. Thus one could monitor traffic
-to the registry.
+When the feature is enabled, the kubelet will emit a metric `image_pull_secret_recheck_miss` and `image_pull_secret_recheck_hit` that will happen when a cache miss happens.
+This will happen regardless of whether the feature is enabled in the kubelet via its configuration flag.
 
-For beta will add metrics allowing an admin to determine how often an image has been reauthenticated to an image registry because of cache expiration or due to reuse across pods that have different authentication information. Success metrics will also be provided highlighting cache hits.
+To determine if the feature is actually working, they will have to check manually.
+
+A user could check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
+using the pull if not present image pull policy.
+
+It also will show up as network events. Though only the manifests will be revalidated against the container image repository,
+large contents will not be pulled. Thus one could monitor traffic to the registry.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -421,34 +447,36 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No existing API objects will be unchanged.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
 Yes. When enabled, and when container images have been pulled with image pull secrets (credentials), subsequent image
 pulls for pods that do not contain the image pull secret that successfully pulled the image will have to authenticate
 by trying to pull the image manifests from the registry. The image layers do not have to be re-pulled, just the
 manifests for authentication purposes.
 
-###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
-
-When switched on see above.
+However, this registry round-trip will slow down the pod creation process. This slowdown is the expense of the added security of this feature.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-When switched on see above.
+Similar to the increased time above, there will also be a CPU/memory/IO cost when the kubelet instructs the CRI implementation to repull the image
+redundantly.
 
 ### Troubleshooting
 
-TBD
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-TBD
+This feature doesn't interact with the API server or etcd.
 
 ###### What are other known failure modes?
 
-TBD
+A registry being unavailable is going to be a common failure mode for this feature. Unfortunately, this is the cost of this feature. The kubelet
+needs to go through the authentication process redundantly, and that will mean the cluster will be more sensitive to registry downtime.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Check logs.
+Reduce the number of cache misses (as seen through the metrics) by ensuring similar credentials are shared among images.
 
 ## Implementation History
 
@@ -465,6 +493,8 @@ Why should this KEP _not_ be implemented. TBD
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
 - For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
 ensure the image instead of kubelet.
+- Discussions went back and forth as to whether to persist the cache across reboots. It was decided to do so.
+- `Never` could be always allowed to use an image on the node, regardless of its presence on the node. However, this would functionally disable this feature from a security standpoint.
 
 ## Infrastructure Needed [optional]
 
