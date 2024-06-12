@@ -370,6 +370,8 @@ Check the Pod Status.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
+N/A
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 N/A
