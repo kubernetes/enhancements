@@ -69,15 +69,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Today it is difficult to know when a Pod is using a device that has failed or is temporarily unhealthy. This makes troubleshooting of Pod crashes hard or impossible. This KEP will fix this by exposing device health via Pod Status. This KEP is intentionally scoped small, but can be extended later to expose more device information to troubleshoot Pod devices placement issues (for example, validating that related Pods are allocated on connected devices).
+Today it is hard to impossible to know when the Pod is using a device that has failed or is temporarily unhealthy. This makes troubleshooting of Pod crashes hard or impossible. This KEP aims to fix this by exposing device health via Pod Status. The KEP is intentionally scoped small, but can be extended later to expose more device information to troubleshoot Pod devices placement issues (for example, validating that related Pods are allocated on connected devices).
 
 ## Motivation
 
 Device Plugin and DRA do not have a good failure handling strategy defined. With proliferation of workloads using devices (like GPU), variable quality of devices, and overcommitting of data centers on power, there are cases when devices can fail temporarily or permanently and k8s need to handle this natively.
 
-Today, the typical design is for jobs consuming a failing device to fail with a specific error code whenever possible. For long running workloads, K8s will keep restarting the workload without reallocating it on a different device. So the container will be in crash loop backoff with limited information on why it is crashing.
+Today, the typical design is for jobs consuming a failing device to fail itself with the specific error code whenever possible. For the inference of long running workloads, k8s will keep restarting the workload without reallocating it on a different device. So container will be in crash loop backoff with limited information on why it is crashing.
 
-Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device, and be able to respond to this properly.
+People develop strategies to deal with such situations. Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device and be able to respond to this properly.
 
 ### Goals
 
@@ -134,12 +134,19 @@ type ResourceStatus struct {
     // allow to extend this struct in future with the overall health fields or things like Device Plugin version
 }
 
+// ResourceID is calculated based on source of this resource health information.
+// For DevicePlugin:
+//   deviceplugin:Device.ID, where Device.ID is from the Device structure of DevicePlugin's ListAndWatchResponse type: https://github.com/kubernetes/kubernetes/blob/eda1c780543a27c078450e2f17d674471e00f494/staging/src/k8s.io/kubelet/pkg/apis/deviceplugin/v1alpha/api.proto#L61-L73
+// DevicePlugin ID is usually a constant for the lifetime of a Node and typically can be used to uniquely identify the device on the node.
+// For DRA:
+//   dra:<driver name>[/<pool name>]/<device name>: such a device can be looked up in the information published by that DRA driver to learn more about it. It is designed to be globally unique in a cluster.
 type ResourceID string
 
 type ResourceHealth struct {
     // List of conditions with the transition times
     Conditions []ResourceHealthCondition
 }
+
 // This condition type is replicating other condition types exposed by various status APIs
 type ResourceHealthCondition struct {
     // can be one of:
