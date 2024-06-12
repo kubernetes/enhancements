@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [kubelet](#kubelet)
     - [CRI](#cri)
     - [Container Runtimes](#container-runtimes)
+      - [SELinux](#selinux)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -360,12 +361,18 @@ message ImageSpec {
 
     // Absolute local path where the image/artifacts should be mounted to.
     string mountpoint = 20;
+
+    // List of additional mount options (`mount -o`).
+    repeated string mount_options = 21;
 }
 ```
 
 This allows to re-use the existing kubelet logic for managing the OCI objects,
 with the caveat that the new `VolumeSource` won't be isolated in a dedicated
 plugin as part of the existing [volume manager](https://github.com/kubernetes/kubernetes/tree/6d0aab2/pkg/kubelet/volumemanager).
+
+The added `mount_options` allow the kubelet to handle features like SELinux
+relabelling by passing additional mount arguments.
 
 #### Container Runtimes
 
@@ -378,6 +385,23 @@ to run on the node.
 
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
+
+##### SELinux
+
+Traditionally, the container runtime is responsible of applying SELinux labels
+to volume mounts, which are inherited from the `securityContext` of the pod or
+container. Relabeling volume mounts can be time-consuming, especially when there
+are many files on the volume.
+
+If the following criteria are met, then the kubelet will use the `mount_options`
+field in the CRI to pass `context=<SELinux label>` (`mount -o`) to the container
+runtime.
+
+- The operating system must support SELinux
+- The Pod must have at least `seLinuxOptions.level` assigned in the
+  `PodSecurityContext` or all volume using containers must have it set in their
+  `SecurityContexts`. Kubernetes will read the default user, role and type from
+  the operating system defaults (typically `system_u`, `system_r` and `container_t`).
 
 ### Test Plan
 
