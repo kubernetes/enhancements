@@ -801,7 +801,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -810,12 +810,26 @@ This feature requires two levels of testing: the regular enhancement testing
 increase confidence in ongoing node stability given heterogeneous backoff timers
 and timeouts.
 
+Some stress/benchmark testing will still be developed as part of this enhancement,
+including the kubelet_perf tests indicated in the e2e section below.
+
+Some of the benefit of pursuing this change in alpha is to also have the
+opportunity to run against the existing SIG-Scalability performance and
+benchmarking tests within an alpha candidate. In addition, manual benchmark
+testing with GKE clusters can be performed by the author and evaluated as
+candidates for formal, periodic benchmark testing in the Kubernetes testgrid.
+
 ##### Prerequisite testing updates
 
 <!--
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+
+* Version skew: must have a test to address kubelet handling of noninterpretable
+  `restartPolicy` values; in this specific case, the value `Rapid`
+* Test coverage of proper requeue behavior; see
+  https://github.com/kubernetes/kubernetes/issues/123602
 
 ##### Unit tests
 
@@ -838,7 +852,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
+  coverage run on
+  [prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-coverage-unit/1800947623675301888)**
 
 ##### Integration tests
 
@@ -857,7 +873,9 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- k8s.io/kubernetes/test/integration/kubelet:
+  https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-integration-master/1800944856244162560
+  * test with and without feature flags enabled
 
 ##### e2e tests
 
@@ -871,7 +889,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- k8s.io/kubernetes/test/e2e/node/kubelet_perf: for a given percentage of
+heterogenity between "Succeeded" terminating pods, crashing pods whose
+`restartPolicy: Always`, and crashing pods whose `restartPolicy: Rapid`, 
+ * what is the load and rate of Pod restart related API requests to the API
+   server?
+ * what are the performance (memory, CPU, and pod start latency) effects on the
+   kubelet component?
 
 ### Graduation Criteria
 
