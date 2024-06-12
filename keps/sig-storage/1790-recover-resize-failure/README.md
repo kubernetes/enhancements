@@ -9,6 +9,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Making allocatedResourceStatus not change unnecessarily for every error in 1.31](#making-allocatedresourcestatus-not-change-unnecessarily-for-every-error-in-131)
   - [Making resizeStatus more general in v1.28](#making-resizestatus-more-general-in-v128)
   - [Implementation](#implementation)
     - [User flow stories](#user-flow-stories)
@@ -107,6 +108,26 @@ As part of this proposal, we are mainly proposing three changes:
    - NodeExpansionInProgress // state set when kubelet starts expanding the volume.
    - NodeExpansionFailed // state set when expansion has failed in kubelet with a terminal error. Transient errors don't set NodeExpansionFailed.
 3. Update quota code to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` when evaluating usage for PVC.
+
+### Making allocatedResourceStatus not change unnecessarily for every error in 1.31
+
+We are trying to reduce number of state changes which can happen when volume expansion on either the kubelet or external-resizer fails.
+
+We are considering following gRPC error codes as "infeasible":
+- INVALID_ARGUMENt
+- OUT_OF_RANGE
+- NOT_FOUND
+
+In the external-resizer if `ControllerExpandVolume` fails with any of the error codes above, controller expansion will be marked as failed and resizing will be retried at slower rate. For all the other errors - an event will be generated and a condition will be added to PVC that expansion has failed, but state change will not be recorded in `allocatedResourceStatus`.
+
+
+On the node side - `allocatedResourceStatus` will only be updated with failed expansion if:
+- `NodeExpandVolume` failed with one of the `infeasible` error codes from above.
+- `NodeExpandVolume` failed with a final error and there is a pending pvc size request change from the user.
+
+This will allow external-resizer to recover safely from node expansion failures too.
+
+![New flow kubelet](./Expanding volume - Kubelet Loop.png)
 
 ### Making resizeStatus more general in v1.28
 
