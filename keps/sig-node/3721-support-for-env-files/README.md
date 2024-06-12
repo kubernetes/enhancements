@@ -111,9 +111,10 @@ streamline the process for users.
 ### Goals
 
 1. Support instantiating a container's environment variables from a file. This
-file can be in any volume (hostPath, emptyDir or PVC) as long as the kubelet
-can access the file and parse it. kubelet will instantiate the env vars in the
-container from the specified file but it will not mount the file.
+file must be in emptyDir volume. The env file can be created by an initContainer
+or sidecar in the emptyDir volume. kubelet will instantiate the env vars in the
+container from the specified file in the emptyDir volume but it will not mount
+the file.
 
 2. All containers (container, initContainer, sidecar and ephemeral container)
 will be able to load env vars from a file.
