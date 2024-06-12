@@ -90,7 +90,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -679,7 +679,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc.
+- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc. Controllers will handle VolumeAttributeClass feature gates being on by default, but beta API itself being disabled on cluster by default. 
 - Involve 3 different CSI drivers to participate in testing
 - Stress test before GA
 
@@ -795,12 +795,12 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-- Ratio of `controller_modify_volume_errors_total`/`controller_modify_volume_total` <= 1%
+- Ratio of `controller_modify_volume_errors_total`/`controller_modify_volume_total` <= 1%. (Exclude errors with `UNAVAILABLE` code which indicate some quota has been exhausted.) 
 - CreateVolume `csi_sidecar_operations_seconds_sum` does not increase by more than 5% when feature flags are enabled. 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [X] Metrics
     - Metric name: `controller_modify_volume_total` and `controller_modify_volume_errors_total`
     - [Optional] Aggregation method:
     - Components exposing the metric: external-resizer
