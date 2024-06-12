@@ -500,7 +500,7 @@ as described in the next paragraph. However, the source of this data may vary; f
 example, a cloud provider controller could populate this based upon information
 from the cloud provider API.
 
-In the kubelet case, each driver running on a node publishes a set of
+In the node-local case, each driver running on a node publishes a set of
 `ResourceSlice` objects to the API server for its own resources, using its
 connection to the apiserver. The collection of these objects form a pool from
 which resources can be allocated. Some additional fields (defined in the API
@@ -514,7 +514,7 @@ and `driverName` fields in each `ResourceSlice` object are used to determine whi
 managed by which driver instance. The owner reference ensures that objects
 beloging to a node get cleaned up when the node gets removed.
 
-In addition, whenever kubelet starts, it first deletes all `ResourceSlices`
+In addition, whenever the kubelet starts, it first deletes all `ResourceSlices`
 belonging to the node with a `DeleteCollection` call that uses the node name in
 a field filter. This ensures that no pods depending in DRA get scheduled to the
 node until the required DRA drivers have started up again (node reboot) and
@@ -530,7 +530,9 @@ reconstructed by the driver. This has no effect on already allocated claims
 because the allocation result is tracked in those claims, not the
 `ResourceSlice` objects (see [below](#state-and-communication)).
 
-Embedded inside each `ResourceSlice` is the representation of one or more devices.
+#### Devices as a named list of attributes
+
+Embedded inside each `ResourceSlice` is a list of one or more devices, represented as a named list of attributes.
 
 ```yaml
 kind: ResourceSlice
@@ -583,6 +585,146 @@ the device comes back. Checking it at admission time and treating this as a fata
 would allow us to delete the pod and trying again with a new one, but is not done
 at the moment because admission checks cannot be retried if a check finds
 a transient problem.
+
+#### Partitionable devices
+
+In addition to devices, a `ResourceSlice` can also embed a list of
+`SharedCapacity` objects. Each `SharedCapacity` object represents some amount
+of shared "capacity" that can be consumed by one or more devices listed in the
+slice. When listing such devices, the sum of the capacity consumed across all
+devices *may* exceed the total amount available in the `SharedCapacity` object.
+This allows one, for example, to provide a way of logically partition a device
+into a set of overlapping sub-devices, each of which "could" be allocated by a
+scheduler (just not at the same time).
+
+As such, scheduler support will need to be added to track the set of
+`SharedCapacity` objects provided by each `ResourceSlice` as well as perform
+the following steps to decide if a given device is a candidate for allocation
+or not:
+
+1. Look at the set of `SharedCapacityConsumed` objects referenced by the device
+1. For each `SharedCapacityConsumed` object, look and see how much capacity is still available in the `SharedCapacity` object it is tracking with the same name
+1. If enough capacity is still available in the `SharedCapacity` object to satisfy the device's consumption, continue to consider it for allocation
+1. If not enough capacity is available, move on to the next device
+1. Upon deciding to allocate a device, subtract all of the capacity in its `SharedCapacityConsumed` objects from the corresponding `SharedCapacity` objects being tracked
+1. Upon freeing a device, add all of the capacity in its `SharedCapacityConsumed` objects back into the corresponding `SharedCapacity` objects being tracked
+
+**Note:** Only devices embedded in the _same_ `ResourceSlice` where a given
+`SharedCapacity` is declared have access to that `SharedCapacity`. This
+restriction simplifies the logic required to track these capacities in the
+scheduler, and shouldn't be too limiting in practice. Also, note that while it
+is described as "subtracting" and "adding" capacity in the `SharedCapacity`
+object, these activities are not written back to the `ResourceSlice` itself.
+Just like all summaries of current allocations, they are maintained in-memory
+by the scheduler based on the totality of device allocations recorded in all
+claim statuses.
+
+As an example, consider the following YAML which declares shared capacity for a
+set of "memory" blocks within a GPU. Multiple devices (including the full GPU)
+are defined which consume some number of these memory blocks at varying
+physical locations within GPU memory. With this in place, the scheduler is free
+to choose any device that matches a provided device selector, so long as no
+other devices have already been allocated that consume overlapping memory
+blocks.
+
+```yaml
+kind: ResourceSlice
+apiVersion: resource.k8s.io/v1alpha3
+...
+spec:
+  # The node name indicates the node.
+  # Each driver on a node provides pools of devices for allocation,
+  # with unique device names inside each pool.
+  # Usually, but not necessarily, that pool name is the same as the
+  # node name.
+  nodeName: worker-1
+  poolName: worker-1
+  driverName: gpu.dra.example.com
+  sharedCapacity:
+  - name: gpu-0-memory-block-0
+    capacity: 1
+  - name: gpu-0-memory-block-1
+    capacity: 1
+  - name: gpu-0-memory-block-2
+    capacity: 1
+  - name: gpu-0-memory-block-3
+    capacity: 1
+  devices:
+  - name: gpu-0
+    attributes:
+    - name: memory
+      quantity: 40Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-0
+      capacity: 1
+    - name: gpu-0-memory-block-1
+      capacity: 1
+    - name: gpu-0-memory-block-2
+      capacity: 1
+    - name: gpu-0-memory-block-3
+      capacity: 1
+  - name: gpu-0-first-half
+    attributes:
+    - name: memory
+      quantity: 20Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-0
+      capacity: 1
+    - name: gpu-0-memory-block-1
+      capacity: 1
+  - name: gpu-0-middle-half
+    attributes:
+    - name: memory
+      quantity: 20Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-1
+      capacity: 1
+    - name: gpu-0-memory-block-2
+      capacity: 1
+  - name: gpu-0-second-half
+    attributes:
+    - name: memory
+      quantity: 20Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-2
+      capacity: 1
+    - name: gpu-0-memory-block-3
+      capacity: 1
+  - name: gpu-0-first-quarter
+    attributes:
+    - name: memory
+      quantity: 10Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-0
+      capacity: 1
+  - name: gpu-0-second-quarter
+    attributes:
+    - name: memory
+      quantity: 10Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-1
+      capacity: 1
+  - name: gpu-0-third-quarter
+    attributes:
+    - name: memory
+      quantity: 10Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-2
+      capacity: 1
+  - name: gpu-0-fourth-quarter
+    attributes:
+    - name: memory
+      quantity: 10Gi
+    sharedCapacityConsumed:
+    - name: gpu-0-memory-block-3
+      capacity: 1
+```
+
+In this example, `gpu-0-first-half` and `gpu-0-second-half` could be allocated
+simultaneouly (because the set of `gpu-0-memory-block`s they consume are
+mutually exclusive). However, `gpu-0-first-half` and `gpu-0-first-quarter`
+could not (because `gpu-0-memory-block-0` is consumed completely by both of
+them).
 
 ### Using structured parameters
 
@@ -1038,6 +1180,15 @@ type ResourceSliceSpec struct {
     // seen all slices.
     PoolDeviceCount int64
 
+    // SharedCapacity defines the set of shared capacity consumable by
+    // devices in this ResourceSlice.
+    //
+    // Must not have more than 128 entries.
+    //
+    // +listType=atomic
+    // +optional
+    SharedCapacity []SharedCapacity
+
     // Devices lists all available devices in this pool.
     //
     // Must not have more than 128 entries.
@@ -1048,6 +1199,7 @@ type ResourceSliceSpec struct {
     // them) empty pool.
 }
 
+const ResourceSliceMaxSharedCapacity = 128
 const ResourceSliceMaxDevices = 128
 const PoolNameMaxLength = validation.DNS1123SubdomainMaxLength // Same as for a single node name.
 ```
@@ -1086,14 +1238,23 @@ type Device struct {
     // +optional
     Attributes []DeviceAttribute
 
-    // TODO for 1.31: define how to support partitionable devices
+    // SharedCapacityConsumed defines the set of shared capacity consumed by
+    // this device.
+    //
+    // Must not have more than 32 entries.
+    //
+    // +listType=atomic
+    // +optional
+    SharedCapacityConsumed []SharedCapacity
 }
 
 const ResourceSliceMaxAttributesPerDevice = 32
+const ResourceSliceMaxSharedCapacityConsumedPerDevice = 32
 
-// ResourceSliceMaxDevices and ResourceSliceMaxAttributesPerDevice where chosen
-// so that with the maximum attribute length of 96 characters the total size of
-// the ResourceSlice object is around 420KB.
+// ResourceSliceMaxDevices and ResourceSliceMaxAttributesPerDevice were chosen
+// so that with a maximum `DeviceAttribute` length of 96 characters and a
+// maximum `SharedCapacity` length of ~40 characters (ignoring overhead), the
+// total size of the ResourceSlice object is around 590KB.
 
 // DeviceAttribute is a combination of an attribute name and its value.
 // Exactly one value must be set.
@@ -1135,11 +1296,43 @@ type DeviceAttribute struct {
     VersionValue *string
 }
 
+type SharedCapacity struct {
+    // Name is a unique identifier among all shared capacities managed by the
+    // driver in the pool.
+    //
+    // It is referenced both when defining the total amount of shared capacity
+    // that is available, as well as by individual devices when declaring
+    // how much of this shared capacity they consume.
+    //
+    // SharedCapacity names must be a C-style identifier (e.g. "the_name") with
+    // a maximum length of 32.
+    //
+    // By limiting these names to a C-style identifier, the same validation can
+    // be used for both these names and the identifier portion of a
+    // DeviceAttribute name.
+    //
+    // +required
+    Name string `json:"name"`
+
+    // Capacity is the total capacity of the named resource.
+    // This can either represent the total *available* capacity, or the total
+    // capacity *consumed*, depending on the context where it is referenced.
+    //
+    // +required
+    Capacity resource.Quantity `json:"capacity"`
+}
+
+// CStyleIdentifierMaxLength is the maximum length of a c-style identifier used for naming.
+const CStyleIdentifierMaxLength = 32
+
 // DeviceAttributeMaxIDLength is the maximum length of the identifier in a device attribute name (`<domain>/<ID>`).
-const DeviceAttributeMaxIDLength = 32
+const DeviceAttributeMaxIDLength = CStyleIdentifierMaxLength
 
 // DeviceAttributeMaxValueLength is the maximum length of a string or version attribute value.
 const DeviceAttributeMaxValueLength = 64
+
+// SharedCapacityMaxNameLength is the maximum length of a shared capacity name.
+const SharedCapacityMaxNameLength = CStyleIdentifierMaxLength
 ```
 
 ###### ResourceClaim
