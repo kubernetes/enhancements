@@ -597,10 +597,10 @@ To correlate different devices, a claim may have "match attributes". Those are
 the names of attributes whose values must be the same for all devices that get
 allocated for the claim.
 
-Configuration can be embedded in the claim for all devices at the claim level
-and separately for each request. These configuration parameters are ignored by
+Configuration parameters can be embedded in the claim so that they apply
+to all or some requests. These configuration parameters are ignored by
 the scheduler when selecting devices. They get passed down to the DRA drivers
-which provide the devices when preparing the devices on a node.
+when preparing the devices on a node.
 
 A DeviceClass can contain the same device selector and device configuration
 parameters. Those get added to what is specified in the claim when a class gets
