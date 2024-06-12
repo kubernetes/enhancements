@@ -1066,6 +1066,44 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+For the default backoff curve, no coordination must be done between the control
+plane and the nodes; all behavior changes are local to the kubelet component and
+its start up configuration.
+
+For the `Rapid` case, the API server and kubelets across all nodes must be
+coordinated:
+
+Firstly, `Rapid` must be a valid option to the `restartPolicy` in the API
+server, which will only be possible if the API server is updated to 1.31. 
+
+Secondly, the `Rapid` value must be interpretable by all kubelets on every node.
+Unfortunately, it is not possible for the API server to be aware of what version
+each kubelet is on, so it cannot serve `Rapid` as `Always` preferentially to
+each kubelet depending on its version. Instead, each kubelet must be able to
+handle this value properly, both at n-3 kubelet version and -- more easily -- at
+its contemporary 1.31+ kubelet version. At 1.31+ kubelet version, each kubelet
+will be able to detect if it has the feature gate on, and if so, interpret
+`Rapid` to use the new rapid backoff curve; and if the feature gate is off,
+interpret it instead as `Always`. But at earlier kubelet versions, `Rapid` must
+be ignored in favor of `Always`. Unfortunately for this KEP, the default value
+for `restartPolicy` is Never, so if kubelet drops unexpected enum values for
+`restartPolicy`, a Pod with `Rapid` will be misconfigured by an old kubelet to
+never restart.
+
+There are two options to deal with this version skew issue:
+
+1. Follow the restrictions
+   [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#new-enum-value-in-existing-field),
+   implement the fallback to `Always` in kubelet, and wait 3 releases before the
+   API server is allowed to serve the new enum value to honor the n-3 kubelet
+   restriction, or 
+2. introduce the `Rapid` policy as a different field instead, for example,
+   `backoffCurve: Rapid` or even more transiently, `alphaBackoffCurve: Rapid`.
+   Even though the Pod API is already at v1, adding fields to GA APIs is
+   [allowed](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-a-field)
+   without changing the API version. As this is an alpha field, it can be
+   deprecated later.
+
 ## Production Readiness Review Questionnaire
 
 <!--
