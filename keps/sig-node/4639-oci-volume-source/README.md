@@ -351,6 +351,7 @@ container image.
 
 The CRI API is already capable of managing container images [via the `ImageService`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L146-L161).
 Those RPCs will be re-used for managing OCI artifacts, while the [`ImageSpec`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L798-L813)
+as well as [`PullImageResponse`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1530-L1534)
 will be extended to mount the OCI object to a local path:
 
 ```protobuf
@@ -359,11 +360,18 @@ will be extended to mount the OCI object to a local path:
 message ImageSpec {
     // …
 
-    // Absolute local path where the image/artifacts should be mounted to.
-    string mountpoint = 20;
+    // Indicate that the OCI object should be mounted.
+    bool mount = 20;
 
-    // List of additional mount options (`mount -o`).
-    repeated string mount_options = 21;
+    // SELinux label to be used.
+    string mount_label = 21;
+}
+
+message PullImageResponse {
+    // …
+
+    // Absolute local path where the OCI object got mounted.
+    string mountpoint = 2;
 }
 ```
 
@@ -371,17 +379,16 @@ This allows to re-use the existing kubelet logic for managing the OCI objects,
 with the caveat that the new `VolumeSource` won't be isolated in a dedicated
 plugin as part of the existing [volume manager](https://github.com/kubernetes/kubernetes/tree/6d0aab2/pkg/kubelet/volumemanager).
 
-The added `mount_options` allow the kubelet to handle features like SELinux
-relabelling by passing additional mount arguments.
+The added `mount_label` allow the kubelet to support SELinux contexts.
 
 #### Container Runtimes
 
-Container runtimes need to support the new `mountpoint` field, otherwise the
-feature cannot be used. The kubelet will verify if the `mountpoint` actually
-exists on disk to check the feature availability, because Protobuf will strip
-the field in a backwards compatible way for older runtimes. Pods using the new
-`VolumeSource` combined with a not supported container runtime version will fail
-to run on the node.
+Container runtimes need to support the new `mount` field, otherwise the
+feature cannot be used. The kubelet will verify if the returned `mountpoint`
+actually exists on disk to check the feature availability, because Protobuf will
+strip the field in a backwards compatible way for older runtimes. Pods using the
+new `VolumeSource` combined with a not supported container runtime version will
+fail to run on the node.
 
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
@@ -393,9 +400,8 @@ to volume mounts, which are inherited from the `securityContext` of the pod or
 container. Relabeling volume mounts can be time-consuming, especially when there
 are many files on the volume.
 
-If the following criteria are met, then the kubelet will use the `mount_options`
-field in the CRI to pass `context=<SELinux label>` (`mount -o`) to the container
-runtime.
+If the following criteria are met, then the kubelet will use the `mount_label`
+field in the CRI to apply the right SELinux label to the mount.
 
 - The operating system must support SELinux
 - The Pod must have at least `seLinuxOptions.level` assigned in the
