@@ -16,11 +16,11 @@ approvers:
 see-also:
   - "keps/sig-api-machinery/1965-kube-apiserver-identity"
 stage: alpha
-latest-milestone: "v1.30"
+latest-milestone: "v1.31"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.30"
+  alpha: "v1.31"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
