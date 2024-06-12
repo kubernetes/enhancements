@@ -92,8 +92,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
     - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -417,9 +417,9 @@ Please see session "Kubernetes API" above.
 
 ### 5. Add new operation metrics for ModifyVolume operations
 
-Usage metrics:
+A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [StorageClass](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98). 
 
-Count of pvcs per VolumeAttributesClass similar to [StorageClass](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98).
+Prior to this enhancement, we loop through all PersistentVolume objects, check if `pv.Status.Phase == v1.VolumeBound` and increment the appropriate `pv.Spec.StorageClassName` bucket. For these new metrics, when the feature flag is enabled, we also increment the appropriate `pv.Spec.VolumeAttributeClassName` if it is not empty. 
 
 ```
 boundPVCCountDesc = metrics.NewDesc(
@@ -434,7 +434,13 @@ unboundPVCCountDesc = metrics.NewDesc(
 	metrics.ALPHA, "")
 ```
 
-Operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernetes-csi/csi-lib-utils/blob/597d128ce3a24d9e3fd5ff5b8d1ff4fd862e543a/metrics/metrics.go#LL250C6-L250C32) for the ModifyVolume operation.
+B. Operation metrics for ControllerModifyVolume 
+
+The metrics `controller_modify_volume_total` `controller_modify_volume_errors_total` can be used to issues in volume modification.
+
+There are operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernetes-csi/csi-lib-utils/blob/597d128ce3a24d9e3fd5ff5b8d1ff4fd862e543a/metrics/metrics.go#LL250C6-L250C32) for the ModifyVolume operation to report latencies.
+
+Finally, CSI Driver Plugin maintainers can expose their own metrics.  
 
 ## Design Details
 
@@ -703,6 +709,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - The behavior with feature gate and API turned on/off and mix match
 - The happy path with creating and modifying volume successfully with VolumeAttributesClass
+  - [E2E CSI Test PR](https://github.com/kubernetes/kubernetes/pull/124151/)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=storage&test=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+  - [Testgrid[(https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
 
 ##### e2e tests
 
@@ -724,10 +733,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Give a driver that does not ControllerModifyVolume, CSI volume should not be modified.
 - If ControllerModifyVolume fails, PVC should have appropriate events.
 
+[API Conformance Test PR](https://github.com/kubernetes/kubernetes/pull/121849)
+
 ##### Stress tests
 
-- VAC protection controller with large(define large later) lists of PVCs
-- Creating a large(define large later) amount of PVCs using the same VolumeAttributesClass
+- VAC protection controller with large lists of PVCs (2000)
+- Creating a large amount of PVCs (2000) using the same VolumeAttributesClass
 
 ### Graduation Criteria
 
@@ -742,13 +753,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Beta in 1.30: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc.
+- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc. Controllers will handle VolumeAttributeClass feature gates being on by default, but beta API itself being disabled on cluster by default. 
 - Involve 3 different CSI drivers to participate in testing
 - Stress test before GA
 
 #### GA
 
-- GA in 1.31, all major issues in the issue board should be fixed before GA.
+- GA in 1.3x, all major issues in the issue board should be fixed before GA.
 - No users complaining about the new behavior
 
 ### Upgrade / Downgrade Strategy
@@ -821,7 +832,7 @@ A metric `controller_modify_volume_errors_total` will indicate a problem with th
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade and rollback will be tested when the feature gate will change to beta.
+TODO Upgrade and rollback will be tested when the feature gate will change to beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -838,7 +849,7 @@ count of successful and failed ControllerModifyVolume.
 
 By inspecting a `controller_modify_volume_total` metric value. If the counter
 is increasing while letting PVCs being updated retroactively the feature is enabled. And at the same time if
-`controller_modify_volume_total` counter does not increase the feature
+`controller_modify_volume_errors_total` counter does not increase the feature
 works as expected.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -858,9 +869,12 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- Ratio of `controller_modify_volume_errors_total`/`controller_modify_volume_total` <= 1%. (Exclude errors with `UNAVAILABLE` code which indicate some quota has been exhausted.) 
+- CreateVolume `csi_sidecar_operations_seconds_sum` does not increase by more than 5% when feature flags are enabled. 
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [X] Metrics
     - Metric name: `controller_modify_volume_total` and `controller_modify_volume_errors_total`
     - [Optional] Aggregation method:
     - Components exposing the metric: external-resizer
@@ -871,6 +885,7 @@ question.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No.
 
 ### Dependencies
 
@@ -880,7 +895,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-external-provisioner, external-resizer.
+external-provisioner, external-resizer. 
 
 ### Scalability
 
@@ -923,6 +938,11 @@ Yes, the feature may impact CreateVolume. We will measure this impact during bet
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+Using this feature may result in non-negligible increase of resource usage IF customers batch modify many volumes at once and CSI Controller Pod has high API Priority.
+- external-resizer CPU and memory will see a non-negligible increase if users increased the number of concurrent operations via the `--workers` flag. We follow the strategy of sharing that limit between `ControllerExpandVolume` and `ControllerModifyVolume` RPCs, similar to how external-provisioner functions. 
+- The API-Server may see a spike of CPU when processing relevant changes.
+
+Stress tests will determine increase in resource usage at varying amounts of concurrent volume modifications. 
 
 ### Troubleshooting
 
@@ -939,6 +959,15 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No change from today's volume provisioning workflow if API Server / etcd are unavailable.
+
+If API server and/or etcd is unavailable, there are two scenarios for volume modification workflow
+
+1. External-resizer detects volume needing modification before API Server is made unavailable. Calls ControllerModifyVolume. Cloud provider will modify volume, report success to external resizer. External-resizer will be unable to update PVC object until API Server back online. Error will be logged. 
+
+2. External-resizer does NOT detect volume needing modification before API Server is made unavailable. Volume modification will not take place until API Server back online. 
+
+In both cases the PVC has not been updated to reflect new VolumeAttributeClass until API Server back online. 
 
 ###### What are other known failure modes?
 
@@ -955,9 +984,21 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
     -->
+-->
+- ControllerModifyVolume cannot modify volume to reflect new VolumeAttributeClass due to user misconfiguration or cloudprovider backend error/limits. Volume would fall back to workable default configuration but external-resizer will requeue with longer `Infeasible` interval. 
+    - Detection: See event on PVC object. See increase in `controller_modify_volume_errors_total`
+    - Mitigations: No serious mitigation needed because volume would fall back to previous configuration. Can edit PVC to previous VolumeAttributeClass to prevent retry ControllerModifyVolume calls. 
+    - Diagnostics: 
+        - Events on PVC which include the associated [ControllerModifyVolume error](https://github.com/container-storage-interface/spec/blob/master/spec.md#controllermodifyvolume-errors) and message
+        - external-resizer container logs: Logs similar to "ModifyVolume failed..." (At Log Levels 2&3)
+    - Testing: Are there any tests for failure mode? If not, describe why.
+        - There are tests to that validate appropriate events/errors propagate. Otherwise 
+    - Note: See [Modify Design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/3751-volume-attributes-class#modify-pvc) to see flow. 
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+When SLOs are not being met, PVC events should be observed. Debug level logging should be enabled on the appropriate containers (external-resizer for volume modifications, external-provisioner for volume creations, relevant CSI Driver plugin). If problem is not determined from PVC events, operator must look at debug logs to narrow problem to CSI Driver plugin or external sidecars. It may be helpful to see if volume was modified on storage backend. If problem is in CSI Driver plugin, must reach out to CSI Driver maintainers. Storage admin can requested for help finding root cause. 
 
 ## Implementation History
 
@@ -971,6 +1012,16 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 2023-06-15 SIG Acceptance of KEP and Agreement on proposed Volume Attributes Class design ([link](https://github.com/kubernetes/enhancements/commit/8929cf618f056e447d0b2bed562af3fc134c8cbb))
+- 2023-06-26 Original demo of VolumeAttributeClass proof-of-concept
+- 2023-10-31 VolumeAttributesClass API changes merged in kubernetes/kubernetes
+- 2023-10-26 Implementation merged in kubernetes-csi/external-provisioner
+- 2023-11-09 Implementation merged in kubernetes-csi/external-resizer
+- First available release: Alpha in Kubernetes 1.29
+
+Implementations in CSI Drivers:
+- [AWS EBS CSI Driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/a402256d03ab3008f642e70253acb4b41d674af0/pkg/driver/controller.go#L581)
+
 
 ## Drawbacks
 
