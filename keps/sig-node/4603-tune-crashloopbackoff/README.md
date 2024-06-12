@@ -525,6 +525,65 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+The biggest risk of this proposal is reducing the decay of the _default_
+CrashLoopBackoff: to do so too severely compromises node stability, risking the
+kubelet component to become too slow to respond and the pod lifecycle to
+increase in latency, or worse, causing entire nodes to crash if kubelet takes up
+too much CPU or memory. Since each phase transition for a Pod also has an
+accompanying API request, if the requests become rapid enough due to fast enough
+churn of Pods through CrashLoopBackoff phases, the central API server could
+become unresponsive, effectively taking down an entire cluster.
+
+The same risk exists for the `Rapid` feature, which, while not default, is by
+design a more severe reduction in the decay behavior. It can abused by
+application developers that can edit their Pod template manifests, and in the
+worst case cause nodes to fully saturate with `Rapid`ly restarting pods that
+will never recover, risking similar issues as above: taking down nodes
+or at least nontrivially slowing kubelet, or increasing the API requests to
+store backoff state so significantly that the central API server is unresponsive
+and the cluster fails.
+
+During alpha, naturally the first line of defense is that the enhancements, even
+the reduced "default" baseline curve for CrashLoopBackoff, are not usable by
+default and must be opted into. In this specific case they are opted into
+separately as kubelet flags, so clusters will only be affected by each risk if
+the cluster operator enables the new features during the alpha period.
+
+Beyond this, there are two main mitigations during alpha: conservativism in
+changes to the default behavior, and API opt-in and redeployment required for
+the more aggressive behavior.
+
+The alpha changes to the default backoff curve were chosen because they are
+minimal -- the proposal maintains the existing rate and max cap, and reduces the
+initial value to the point that only introduces 3 excess restarts per pod, the
+first 2 excess in the first 10 seconds and the last excess following in the next
+30 seconds (see [Design Details](#front-loaded-decay-curve-methodology)). For a
+hypothetical node with the max 110 pods all stuck in a simultaneous
+CrashLoopBackoff, API requests to change the state transition would increase at
+its fastest period from ~110 requests/10s to 330 requests/10s. By passing this
+minimal change through the existing SIG-scalability tests, while pursuing manual
+and more detailed periodic benchmarking during the alpha period, we can increase
+the confidence in this change and in the possibility of reducing further in the
+future.
+
+For the `Rapid` case, because the change is more significant, including lowering
+the max cap, there is more risk to node stability expected. This change is of
+interest to be tested in the alpha period by end users, and is why it is still
+included with API opt-in even though the risks are higher. That being said it is
+still a relatively conservative change in an effor to minimize the unknown
+changes for fast feedback during alpha, while improved benchmarking and testing
+occurs. For a hypothetical node with the max 110 pods all stuck in a
+simultaneous `Rapid` CrashLoopBackoff, API requests to change the state
+transition would increase from ~110 requests/10s to 440 requests/10s, and since
+the max cap would be lowered, would exhibit up to 440 requests in excess every
+300s (5 minutes), or an extra 1.4 requests per second once all pods reached
+their max cap backoff. It also should be noted that due to the specifics of the
+configuration required in the Pod manifest, being against an immutable field,
+will require the Pods in question to be redeployed. This means it is unlikely
+that all Pods will be in a simultaneous CrashLoopBackoff even if they are
+designed to quickly crash, since they will all need to be redeployed and
+rescheduled.
+
 ## Design Details 
 
 <!--
