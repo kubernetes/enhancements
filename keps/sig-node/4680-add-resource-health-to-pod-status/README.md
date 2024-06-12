@@ -152,7 +152,7 @@ type ResourceHealthCondition struct {
     // can be one of:
     //  - Healthy: operates as normal
     //  - Unhealthy: reported unhealthy. We consider this a temporary health issue
-    //               since we do not mechanism today to distinguish
+    //               since we do not have a mechanism today to distinguish
     //               temporary and permanent issues.
     //  - Unknown: The status cannot be determined.
     //             For example, Device Plugin got unregistered and hasn't been re-registered since.
