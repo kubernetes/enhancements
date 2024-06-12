@@ -929,6 +929,46 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+The operator should ensure that:
+
+- The underlying node is currently not under high load due to high CPU utilisation, memory pressure or storage volume latency (with the focus on I/O wait times)
+- There is sufficient disk space available on the filesystem or volume that is used for the image filesystem to use to store data
+- There are a sufficient number of inodes free and available, especially if the filesystem does not support a dynamic inodes allocation, on the provisioned filesystem where the image filesystem will store data
+- The volume, if backed by a local block device or network-attached storage, has been made available to the image filesystem to be used to store data
+- The CRI, container runtimes and kubelet have access to the location on the filesystem or the volume (block device) where the image filesystem will be storing data
+- The system user, if either CRI, container runtimes or kubelet have been configured to use a system user other than the privileged one such as root, has access to the filesystem location or volume where the image filesystem will store data
+- The node components, such as the CRI, container runtimes and kubelet, are up and running, and service logs are free from errors that might otherwise impact or degrade any of the components mentioned earlier
+- The CRI, container runtimes and kubelet service logs are free from error reports about the configured ContainerFs, ImageFs, and otherwise configured filesystem location or storage volumes
+
+Additionally, the operator should also confirm that the necessary CRI and kubelet configuration has been deployed
+correctly and points to a correct path to a filesystem location where the image filesystem will be storing data.
+
+While troubleshooting issues potentially related to the Split Image Filesystem feature, it's best to focus on
+the following areas:
+
+- Current CPU and memory utilisation on the underlying node
+- Storage volumes, disk space availability, and sufficient inodes capacity
+- I/O wait times, read and write queue depths, and latency for the storage volumes
+- Any expected mount points, whether bind mounts or otherwise
+- Access permission issues
+- SELinux, AppArmor, or POSIX ACLs set up
+- The kernel message buffer (dmesg)
+- Operating system logs
+- Specific services logs, such as CRI, container runtimes and kubelet
+- Kubernetes cluster events with a focus on evictions of pods from affected nodes
+- Any relevant pods or workloads statuses
+- Kubernetes cluster health with a focus on the Control Plane and any affected nodes
+- Monitoring and alerting system or services, with a focus on recent and historic events (past 24 hours or so)
+
+If the Kubernetes cluster sports an observability solution, it would be useful to look at the collected usage
+metrics so that any problems found could potentially be correlated to events and usage data from the last 24
+hours or so.
+
+For cloud-based deployments, it would be prudent to interrogate any available monitoring dashboards for the node
+and any specific storage volume and to ensure that there is enough IOPS capacity provisioned and available, that
+the correct storage type has been provisioned, and that metrics such as burst capacity for IOPS and throughput
+aren't negatively impacted, should the storage volume support such features.
+
 ## Implementation History
 
 - Initial Draft (September 12th 2023)
