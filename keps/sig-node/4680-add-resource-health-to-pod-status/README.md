@@ -69,15 +69,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Today it is hard to impossible to know when the Pod is using a device that has failed or is temporarily unhealthy. This makes troubleshooting of Pod crashes hard or impossible. This KEP aims to fix this by exposing device health via Pod Status. The KEP is intentionally scoped small, but can be extended later to expose more device information to troubleshoot Pod devices placement issues (for example, validating that related Pods are allocated on connected devices).
+Today it is difficult to know when a Pod is using a device that has failed or is temporarily unhealthy. This makes troubleshooting of Pod crashes hard or impossible. This KEP will fix this by exposing device health via Pod Status. This KEP is intentionally scoped small, but can be extended later to expose more device information to troubleshoot Pod devices placement issues (for example, validating that related Pods are allocated on connected devices).
 
 ## Motivation
 
 Device Plugin and DRA do not have a good failure handling strategy defined. With proliferation of workloads using devices (like GPU), variable quality of devices, and overcommitting of data centers on power, there are cases when devices can fail temporarily or permanently and k8s need to handle this natively.
 
-Today, the typical design is for jobs consuming a failing device to fail itself with the specific error code whenever possible. For the inference of long running workloads, k8s will keep restarting the workload without reallocating it on a different device. So container will be in crash loop backoff with limited information on why it is crashing.
+Today, the typical design is for jobs consuming a failing device to fail with a specific error code whenever possible. For long running workloads, K8s will keep restarting the workload without reallocating it on a different device. So the container will be in crash loop backoff with limited information on why it is crashing.
 
-People develop strategies to deal with such situations. Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device and be able to respond to this properly.
+Exposing unhealthy devices in Pod Status will provide a generic way to understand that the failure is related to the unhealthy device, and be able to respond to this properly.
 
 ### Goals
 
@@ -236,6 +236,12 @@ Today DRA does not return the health of the device back to kubelet. The proposal
 
 type `NamedResourcesInstance` (from [pkg/apis/resource/namedresources.go](https://github.com/kubernetes/kubernetes/blob/790dfdbe386e4a115f41d38058c127d2dd0e6f44/pkg/apis/resource/namedresources.go#L29-L37)) to include the Health field the same way it is done in 
 the Device Plugin as well as a device ID.
+
+In `1.30` we had a similar `ListAndWatch()` API as in DevicePlugin, from which we could have inferred something very analogous to the above. However, we are removing this in `1.31`, so will need to provide something different.
+
+An optional gRPC interface will be created, so DRA drivers can opt into this by implementing it. The interface will allow a plugin to stream health status information in as form of deviceIDs (of the form `<driver name>/<pool name>/<device name>`) along with extra metadata indicating its health status. Just as before, a device completely disappearing would still need to trigger some state change, but now more informative information could be attached in the form of metadata when a device isn't necessarily gone, but also isn't operating as it should be.
+
+The API will be limited to "prepared" devices and include the claim `name/namespace/UID`. That should be enough information for kubelet to correlate with the pods for which the claim was prepared and then post that information for those pods.
 
 Kubelet will react on this field the same way as we propose to do it for the Device Plugin.
 
