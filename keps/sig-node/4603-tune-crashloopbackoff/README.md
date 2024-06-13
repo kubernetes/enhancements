@@ -1173,8 +1173,10 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay` and `EnableRapidCrashLoopBackoffDecay`
-  - Components depending on the feature gate: `kube-apiserver`, `kubelet`
+  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay`
+    - Components depending on the feature gate: `kubelet`
+  - Feature gate name: `EnableRapidCrashLoopBackoffDecay`
+    - Components depending on the feature gate: `kube-apiserver`, `kubelet`
 
 ###### Does enabling the feature change any default behavior?
 
