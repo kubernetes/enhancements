@@ -1401,7 +1401,7 @@ type ResourceClaimSpec struct {
     //
     // +optional
     // +listType=atomic
-    Config []ConfigurationParameters
+    Config []ClaimConfigurationParameters
 
     // Future extension, ignored by older schedulers. This is fine because scoring
     // allows users to define a preference, without making it a hard requirement.
@@ -1556,7 +1556,7 @@ type Constraint struct {
     // +optional
     RequestNames []string
 
-    // The devices must have this attribute and its value must be the same.
+    // If set, then the devices must have this attribute and its value must be the same.
     //
     // For example, if you specified "numa.dra.example.com" (a hypothetical example!),
     // then only devices in the same NUMA node will be chosen.
@@ -1576,15 +1576,21 @@ type Constraint struct {
     // matcher string
 }
 
-// Besides the request name slice, ConfigurationParameters must have one and only one field set.
-type ConfigurationParameters struct {
-    // The constraint applies to devices in these requests.
+type ClaimConfigurationParameters struct {
+    // The configuration applies to devices in these requests.
     //
     // If empty, the configuration applies to all devices in the claim.
     //
     // +optional
     RequestNames []string
 
+    ConfigurationParameters // inline
+}
+
+// ConfigurationParameters must have one and only one field set. It gets embedded
+// inline in some other structs which have other fields, so field names must
+// not conflict with those.
+type ConfigurationParameters struct {
     Opaque *OpaqueConfigurationParameters
 }
 
@@ -1680,12 +1686,19 @@ type DeviceClass struct {
     // Some classses may potentially be satisfied by multiple drivers, so each instance of a vendor
     // configuration applies to exactly one driver.
     //
-    // They are passed to the driver, but are not consider while allocating the claim.
+    // They are passed to the driver, but are not considered while allocating the claim.
     //
     // +optional
     // +listType=atomic
-    Config []ConfigurationParameters
+    Config []ClassConfigurationParameters
 }
+
+// ClassConfigurationParameters is currently just a wrapper for the common
+// ConfigurationParameters. This could change, therefore its a separate struct.
+type ClassConfigurationParameters struct {
+    ConfigurationParameters // inline
+}
+
 ```
 
 ##### Allocation result
@@ -1750,14 +1763,19 @@ type RequestAllocationResult struct {
     DeviceName string
 }
 
-// AllocationConfigurationParameters is a superset of ConfigurationParameters which
-// is used in AllocationResult to track where the parameters came from.
 type AllocationConfigurationParameters struct {
     // Admins is true if the source of the configuration was a class and thus
     // not something that a normal user would have been able to set.
     Admin bool
 
-    ConfigurationParameters
+    // The configuration applies to devices in these requests.
+    //
+    // If empty, the configuration applies to all devices in the claim.
+    //
+    // +optional
+    RequestNames []string
+
+    ConfigurationParameters // inline
 }
 ```
 
@@ -1822,7 +1840,7 @@ type QuotaSpec struct {
     // Controls whether devices may get allocated with admin access
     // (concurrent with normal use, potentially privileged access permissions
     // depending on the driver). If multiple quota objects exist and at least one
-    // has a true value, access will be allowed. The default to deny such access.
+    // has a true value, access will be allowed. The default is to deny such access.
     //
     // +optional
     AllowAdminAccess bool `json:"allowManagementAccess,omitempty"`
