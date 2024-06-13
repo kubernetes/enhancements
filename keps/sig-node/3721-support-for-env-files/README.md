@@ -156,7 +156,7 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo "CONFIG_VAR: HELLO" > /etc/config/config.yaml']
+    command: ['sh', '-c', 'echo "CONFIG_VAR=HELLO" > /etc/config/config.env']
     volumeMounts:
     - name: data
       mountPath: /etc/config
@@ -166,7 +166,7 @@ spec:
     command: [ "/bin/sh", "-c", "env" ]
     envFrom:
     - fileRef:
-        path: config.yaml
+        path: config.env
         volumeName: data
   restartPolicy: Never
   volumes:
@@ -182,8 +182,8 @@ provide some of the information in this file to the vendor's container via
 env vars. For example, consider that each node has the following env file:
 
 ```
-CONFIG_VAR: HELLO
-CONFIG_VAR_A: WORLD
+CONFIG_VAR=HELLO
+CONFIG_VAR_A=WORLD
 ...
 ```
 
@@ -202,7 +202,7 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'cp /etc/config/config.yaml /data/config.yaml']
+    command: ['sh', '-c', 'cp /etc/config/config.env /data/config.env']
     volumeMounts:
     - name: config
       mountPath: /data
@@ -216,7 +216,7 @@ spec:
     - name: CONFIG_VAR
       valueFrom:
         fileKeyRef:
-          path: config.yaml
+          path: config.env
           volumeName: config
           key: CONFIG_VAR
   restartPolicy: Never
@@ -254,7 +254,8 @@ type FileEnvSource struct {
     VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
     // The relative file path inside the volume mount to select from.
     Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
-    // Specify whether the file must exist.
+    // Specify whether the file must exist. If the file does not exist,
+    // then the env var is not published.
     // +optional
     Optional *bool `json:"optional,omitempty" protobuf:"varint,3,opt,name=optional"`
 }
@@ -279,7 +280,8 @@ type FileKeySelector struct {
     Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
     // The key of the env file to select from.  Must be a valid key.
     Key string `json:"key" protobuf:"bytes,3,opt,name=key"`
-    // Specify whether the file or its key must be defined
+    // Specify whether the file or its key must be defined. If the file or key
+    // does not exist, then the env var is not published.
     // +optional
     Optional *bool `json:"optional,omitempty" protobuf:"varint,4,opt,name=optional"`
 }
@@ -289,7 +291,13 @@ type FileKeySelector struct {
 
 The full specification of an env file:
 
-1. **File Format**: The environment variable (env) file must adhere to valid YAML syntax to ensure correct parsing.
+1. **File Format**: The environment variable (env) file must adhere to valid [.env syntax](https://smartmob-rfc.readthedocs.io/en/latest/2-dotenv.html) to ensure correct parsing. An example:
+
+```
+KEY1=VALUE1
+KEY2=VALUE2
+...
+```
 
 2. **Variable Naming**:
     
@@ -299,18 +307,15 @@ The full specification of an env file:
 
 3. **Duplicate Names**: If an environment variable is defined multiple times in the file, the last occurrence takes precedence and overrides any previous values.
 
-4. **Size Limit**: The maximum allowed size for the env file is 1 MiB.
+4. **Size Limit**: To start with, the maximum allowed size for the env file will be 64KiB. Limits for key-value length will be added as a part of implementation after additional investigation.
 
 5. **File Location**: The env file must be placed within the `emptyDir` volume associated with the pod. If it is not found in the correct location, the Kubernetes API server will reject the pod creation request.
 
 6. **Container Behavior**:
     
-    a. **Startup**: At container startup, the kubelet (the Kubernetes node agent) will parse the env file from the emptyDir volume and inject the defined variables into the container's environment.
+    a. **Startup**: At container startup, the kubelet (the Kubernetes node agent) will parse the env file from the emptyDir volume and inject the defined variables into the container's environment. To avoid race condition with another container updating the env file, we will restrict mounting the emptyDir volume (containing the env file) in initContainer only.
     
     b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration.
-
-7. **Dynamic Updates**: Currently, changes to the env file after container startup are not reflected in the container's environment until a restart. A potential future enhancement could involve dynamically updating environment variables when the file is modified.
-
 
 ### Failure and Fallback Strategy
 
