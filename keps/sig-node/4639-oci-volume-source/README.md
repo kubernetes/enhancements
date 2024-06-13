@@ -94,6 +94,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Kubelet and Container Runtime Interface (CRI) support for OCI artifacts](#kubelet-and-container-runtime-interface-cri-support-for-oci-artifacts)
     - [kubelet](#kubelet)
+      - [Pull Policy](#pull-policy)
+      - [Registry authentication](#registry-authentication)
     - [CRI](#cri)
     - [Container Runtimes](#container-runtimes)
       - [SELinux](#selinux)
@@ -341,8 +343,17 @@ be reused, for example:
 - The retrieval of available secrets for a pod:
   https://github.com/kubernetes/kubernetes/blob/39c6bc3/pkg/kubelet/kubelet_pods.go#L988
 
-Specifying a `pullPolicy` be supported in the same way as for the existing
-`imagePullPolicy` API.
+##### Pull Policy
+
+While the `imagePullPolicy` is working on container level, the introduced
+`pullPolicy` is a pod level construct. This means that we can support the same
+values `IfNotPresent`, `Always` and `Never`, but will only pull once per pod.
+
+This means we need to pull in [`SyncPod`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1049)
+for OCI objects on a pod level and not during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
+before the container gets started.
+
+##### Registry authentication
 
 For registry authentication purposes the same logic will be used as for the
 container image.
