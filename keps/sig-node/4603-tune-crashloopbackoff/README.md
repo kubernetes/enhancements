@@ -567,7 +567,7 @@ For the `Rapid` case, because the change is more significant, including lowering
 the max cap, there is more risk to node stability expected. This change is of
 interest to be tested in the alpha period by end users, and is why it is still
 included with API opt-in even though the risks are higher. That being said it is
-still a relatively conservative change in an effor to minimize the unknown
+still a relatively conservative change in an effort to minimize the unknown
 changes for fast feedback during alpha, while improved benchmarking and testing
 occurs. For a hypothetical node with the max 110 pods all stuck in a
 simultaneous `Rapid` CrashLoopBackoff, API requests to change the state
