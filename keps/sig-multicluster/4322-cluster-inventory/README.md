@@ -389,7 +389,6 @@ The ClusterProfile API represents a single member cluster in a cluster inventory
 #### What's the relationship between a cluster inventory and clusterSet?
 A cluster inventory may or may not represent a ClusterSet. A cluster inventory is considered a [clusterSet](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#terminology)
 if all its member clusters adhere to the [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) principle.
-In other terms, a clusterSet is a special type of cluster inventory while the reverse is not true.
 Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
 
 #### How should the API be consumed?
