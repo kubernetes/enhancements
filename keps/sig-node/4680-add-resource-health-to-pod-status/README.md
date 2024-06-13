@@ -278,6 +278,12 @@ Planned tests:
 - Pod failed due to unhealthy device, earlier than device plugin detected it. Pod status is still updated.
 - Pod is in crash loop backoff due to unhealthy device - pod status is updated to unhealthy
 
+For alpha rollout and rollback:
+
+- Fields dropped on update when feature gate is disabled
+- Field is not populated after the feature gate is disabled
+- Field is populated again when the feature gate is enabled
+
 Test coverage will be listed once tests are implemented.
 
 - <test>: <link to test coverage>
@@ -330,15 +336,20 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, with no side effect except of missing the new field in pod status.
+Yes, with no side effect except of missing the new field in pod status. Values written 
+while the feature was enabled will continue to have it and may be wiped on next update request.
+They also may be ignored on reads.
+Re-enablement of the feature will not guarantee to keep the values written before the
+feature was disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The pod status will be updated again.
+The pod status will be updated again. Consistency will not be guaranteed for fields written
+before the last enablement. 
 
 ###### Are there any tests for feature enablement/disablement?
 
-Nothing is planned.
+Yes, see in e2e tests section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -348,7 +359,10 @@ No
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+API server error rate increase. `apiserver_request_total` filtered by `code` to be non `2xx`.
+API validation error is the most likely indication of an error.
+
+Potential errors on kubelet would likely be exposed as error logs and events on Pods.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -378,7 +392,14 @@ N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+There are a few error modes for this feature:
+1. API issues accepting the new field - for example kubelet is writing the field in a format not acceptable by the API server
+2. kubelet fails while populating this field
+
+First error mode can be observer with the metric `apiserver_request_total` filtered by `code` to be non `2xx`.
+
+There is no good metric for the second error mode because it will not be clear what part of processing may fail.
+The most likely indication of an error would be the increased number of error events on the Pod.
 
 ### Dependencies
 
