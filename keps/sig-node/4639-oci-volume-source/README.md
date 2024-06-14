@@ -98,6 +98,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Registry authentication](#registry-authentication)
     - [CRI](#cri)
     - [Container Runtimes](#container-runtimes)
+      - [Filesystem representation](#filesystem-representation)
       - [SELinux](#selinux)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -188,11 +189,15 @@ which go beyond running particular images.
 
 - Introduce a new `VolumeSource` type that allows mounting OCI images and/or artifacts.
 - Simplify the process of sharing files among containers in a pod.
+- Providing a runtime guideline of how artifact files and directories should be
+  mounted.
 
 ### Non-Goals
 
 - This proposal does not aim to replace existing `VolumeSource` types.
-- This proposal does not address other use cases for OCI objects beyond file sharing among containers in a pod.
+- This proposal does not address other use cases for OCI objects beyond file or
+  directory sharing among containers in a pod.
+- Mounting thousands of images and artifacts in a single pod.
 
 ## Proposal
 
@@ -222,9 +227,13 @@ of OCI distribution.
 
 #### Story 3
 
-As a data scientist, MLOps engineer, or AI developer, I want to mount large language models or machine learning models in a pod alongside a model-server, so that I can efficiently serve the models
-without including them in the model-server container image. I want to package these models in an OCI object to take advantage of OCI distribution and ensure
-efficient model deployment. This allows to separate the model specifications/content from the executables that process them.
+As a data scientist, MLOps engineer, or AI developer, I want to mount large
+language model weights or machine learning model weights in a pod alongside a
+model-server, so that I can efficiently serve them without including them in the
+model-server container image. I want to package these in an OCI object to take
+advantage of OCI distribution and ensure efficient model deployment. This allows
+to separate the model specifications/content from the executables that process
+them.
 
 #### Story 4
 
@@ -258,12 +267,21 @@ the OS or version of the scanning software.
    - **Use Case:** Allows the distribution of non-container content using the same infrastructure and tools developed for OCI images.
 
 **OCI Object:**
-   - Umbrella term encompassing both OCI images and OCI artifacts. It represents any object that conforms to the OCI specifications for storage and distribution.
+   - Umbrella term encompassing both OCI images and OCI artifacts. It represents
+     any object that conforms to the OCI specifications for storage and
+     distribution and can be represented as file or filesystem by an OCI container runtime.
 
 ### Risks and Mitigations
 
-- **Security Risks:** Allowing direct mounting of OCI images introduces potential attack vectors. Mitigation includes thorough security reviews and
-  limiting access to trusted registries. Limiting to OCI artifacts (non-runnable content) or read-only mode may lessen the security risk.
+- **Security Risks:**:
+    - Allowing direct mounting of OCI images introduces potential attack
+      vectors. Mitigation includes thorough security reviews and limiting access
+      to trusted registries. Limiting to OCI artifacts (non-runnable content)
+      and read-only mode will lessen the security risk.
+    - Path traversal attacks are a high risk for introducing security
+      vulnerabilities. Container Runtimes should re-use their existing
+      implementations to merge layers as well as secure join symbolic links in
+      the container storage prevent such issues.
 - **Compatibility Risks:** Existing webhooks watching for the images used by the pod using some policies will need to be updated to expect the image to be specified as a `VolumeSource`.
 - **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
   guidance on best practices for users.
@@ -310,6 +328,8 @@ potential enhancements may be required:
 
 **Lifecycling and Garbage Collection:**
    - Reuse the existing kubelet logic for managing the lifecycle of OCI objects.
+   - Extending the existing image garbage collection to not remove an OCI volume
+     image if a pod is still referencing it. 
 
 **Artifact-Specific Configuration:**
    - Introduce new configuration options to handle the unique requirements of different types of OCI artifacts.
@@ -403,6 +423,154 @@ fail to run on the node.
 
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
+
+##### Filesystem representation
+
+Container Runtimes are expected to return a `mountpoint`, which is a single
+directory containing the unpacked (in case of tarballs) and merged layer files
+from the image or artifact. If an OCI artifact has multiple layers (in the same
+way as for container images), then the runtime is expected to merge them
+together. Duplicate files from distinct layers will be overwritten from the
+higher indexed layer.
+
+Runtimes are expected to be able to handle layers as tarballs (like they do for
+images right now) as well as plain single files. How the runtimes implement the
+expected output and which media types they want to support is deferred to them
+for now. Kubernetes only defines the expected output as a single directory
+containing the (unpacked) content.
+
+###### Example using ORAS
+
+Assuming the following directory structure:
+
+```console
+./
+├── dir/
+│  └── file
+└── file
+```
+
+```console
+$ cat dir/file
+layer0
+
+$ cat file
+layer1
+```
+
+Then we can manually create two distinct layers by:
+
+```bash
+tar cfvz layer0.tar dir
+tar cfvz layer1.tar file
+```
+
+We also need a `config.json`, ideally indicating the requested architecture:
+
+```bash
+jq --null-input '.architecture = "amd64" | .os = "linux"' > config.json
+```
+
+Now using [ORAS](https://oras.land) to push the distinct layers:
+
+```bash
+oras push --config config.json:application/vnd.oci.image.config.v1+json \
+    localhost:5000/image:v1 \
+    layer0.tar:application/vnd.oci.image.layer.v1.tar+gzip \
+    layer1.tar:application/vnd.oci.image.layer.v1.tar+gzip
+```
+
+```console
+✓ Uploaded  layer1.tar                                                                                                                               129/129  B 100.00%   73ms
+  └─ sha256:0c26e9128651086bd9a417c7f0f3892e3542000e1f1fe509e8fcfb92caec96d5
+✓ Uploaded  application/vnd.oci.image.config.v1+json                                                                                                   47/47  B 100.00%  126ms
+  └─ sha256:4a2128b14c6c3699084cd60f24f80ae2c822f9bd799b24659f9691cbbfccae6b
+✓ Uploaded  layer0.tar                                                                                                                               166/166  B 100.00%  132ms
+  └─ sha256:43ceae9994ffc73acbbd123a47172196a52f7d1d118314556bac6c5622ea1304
+✓ Uploaded  application/vnd.oci.image.manifest.v1+json                                                                                               752/752  B 100.00%   40ms
+  └─ sha256:7728cb2fa5dc31ad8a1d05d4e4259d37c3fc72e1fbdc0e1555901687e34324e9
+Pushed [registry] localhost:5000/image:v1
+ArtifactType: application/vnd.oci.image.config.v1+json
+Digest: sha256:7728cb2fa5dc31ad8a1d05d4e4259d37c3fc72e1fbdc0e1555901687e34324e9
+```
+
+The resulting manifest looks like:
+
+```bash
+oras manifest fetch localhost:5000/image:v1 | jq .
+```
+
+```json
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "config": {
+    "mediaType": "application/vnd.oci.image.config.v1+json",
+    "digest": "sha256:4a2128b14c6c3699084cd60f24f80ae2c822f9bd799b24659f9691cbbfccae6b",
+    "size": 47
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:43ceae9994ffc73acbbd123a47172196a52f7d1d118314556bac6c5622ea1304",
+      "size": 166,
+      "annotations": {
+        "org.opencontainers.image.title": "layer0.tar"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:0c26e9128651086bd9a417c7f0f3892e3542000e1f1fe509e8fcfb92caec96d5",
+      "size": 129,
+      "annotations": {
+        "org.opencontainers.image.title": "layer1.tar"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.created": "2024-06-14T07:49:06Z"
+  }
+}
+```
+
+The container runtime can now pull the artifact with the `mount = true` CRI
+field set, for example using an experimental [`crictl pull --mount` flag](https://github.com/kubernetes-sigs/cri-tools/compare/master...saschagrunert:oci-volumesource-poc):
+
+```bash
+sudo crictl pull --mount localhost:5000/image:v1
+```
+
+```console
+Image is up to date for localhost:5000/image@sha256:7728cb2fa5dc31ad8a1d05d4e4259d37c3fc72e1fbdc0e1555901687e34324e9
+Image mounted to: /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
+```
+
+And the returned `mountpoint` contains the unpacked layers as directory tree:
+
+```bash
+sudo tree /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
+```
+
+```console
+/var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
+├── dir
+│   └── file
+└── file
+
+2 directories, 2 files
+```
+
+```console
+$ sudo cat /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged/dir/file
+layer0
+
+$ sudo cat /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged/file
+layer1
+```
+
+ORAS (and other tools) are also able to push multiple files or directories
+within a single layer. This should be supported by container runtimes in the
+same way.
 
 ##### SELinux
 
