@@ -215,6 +215,9 @@ Beside that, I want:
 - to package this file in an OCI object to take advantage of OCI distribution.
 - the image to be downloaded with the same credentials that kubelet using for other images.
 - to be able to use image pull secrets when downloading the image if an image is from the registry that requires image pull secrets.
+- to be able to update the configuration if the artifact is referenced by a
+  moving tag like `latest`. To achieve that, I just have to restart the pod and
+  specify a `pullPolicy` of `Always`.
 
 #### Story 2
 
@@ -369,9 +372,12 @@ While the `imagePullPolicy` is working on container level, the introduced
 `pullPolicy` is a pod level construct. This means that we can support the same
 values `IfNotPresent`, `Always` and `Never`, but will only pull once per pod.
 
-This means we need to pull in [`SyncPod`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1049)
+Technically it means that we need to pull in [`SyncPod`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1049)
 for OCI objects on a pod level and not during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
 before the container gets started.
+
+If users want to re-pull artifacts when referencing moving tags like `latest`,
+then they need to restart / evict the pod.
 
 ##### Registry authentication
 
