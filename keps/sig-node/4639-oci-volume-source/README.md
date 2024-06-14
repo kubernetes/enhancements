@@ -1160,6 +1160,16 @@ An out-of-tree CSI plugin can provide flexibility and modularity, but there are 
  - Supporting the image pull secrets as well as credentials provider will be tricky and needs to be reimplemented with the separate API calls.
  - External CSI plugins implement their own lifecycle management and garbage collection mechanisms,
    yet these already exist in-tree for OCI images.
+    - The kubelet has max parallel image pull constant to maintain the reasonable
+      load on a disk and network. This will not be respected by CSI driver and
+      the only point of integration may be if we move this constant down to
+      runtime.
+    - The kubelet has GC logic that is not cleaning up images immediately in
+      case they will be reused. Also GC logic has it's own thresholds and
+      behavior on eviction. It will be nice to have those integrated.
+    - The kubelet exposes metrics on image pulls and we have KEP in place to
+      improve it even further. Having CSI exposing those metrics will require
+      customer to integrate with one more source of data.
  - Performance: There is additional overhead with an out-of-tree CSI plugin, especially in scenarios requiring frequent image pulls
    or large volumes of data.
 
