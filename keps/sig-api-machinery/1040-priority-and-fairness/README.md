@@ -787,11 +787,7 @@ type ExemptPriorityLevelConfiguration struct {
 
 The fields of `ExemptPriorityLevelConfiguration` limit the borrowing
 from exempt priority levels.  This type and its use are added in all
-the versions (`v1alpha1`, `v1beta1`, `v1beta2`, and `v1beta3`).  In
-the next version, the common fields of
-`LimitedPriorityLevelConfiguration` and
-`ExemptPriorityLevelConfiguration` will move to their common ancestor
-`PriorityLevelConfigurationSpec`.
+the versions (`v1alpha1`, `v1beta1`, `v1beta2`, and `v1beta3`).
 
 The limits on borrowing are two-sided: a given priority level has a
 limit on how much it may borrow and a limit on how much may be
@@ -828,6 +824,40 @@ configuration.
 | Name | Nominal Shares | Lendable |
 | ---- | -------------- | -------- |
 | exempt |            0 | 50%      |
+
+From release 1.32 onward, borrowing is weighted and the weight is
+given in the configuration objects. Prior to release 1.32, borrowing
+is unweighted. Put another way, prior to release 1.32 every priority
+level has the same weight and it is not a field in the configuration
+objects but rather fixed in the implementation.
+
+In release 1.32 the following field is added to
+`LimitedPriorityLevelConfiguration`.
+
+```go
+type LimitedPriorityLevelConfiguration struct {
+  ...
+  // `weight` gives this priority level more or less priority in the borrowing
+  // of concurrency.
+  // The default configuration objects use values in the range 10--100.
+  // The default value is 30.
+  // +optional
+  Weight *int32
+}
+```
+
+Following are the weights in the default non-exempt
+PriorityLevelConfiguration objects.
+
+| Name | Weight |
+| ---- | -----: |
+| leader-election | 100 |
+| node-high       | 100 |
+| system          | 100 |
+| workload-high   |  60 |
+| workload-low    |  30 |
+| global-default  |  10 |
+| catch-all       |  10 |
 
 Every priority level `i` has two concurrency limits: its
 NominalConcurrencyLimit (`NominalCL(i)`) as defined above by
@@ -953,11 +983,14 @@ When `MinCLSum < RemainingServerCL < MinCurrentCLSum`, the concurrency
 available to non-exempt levels is above their rock-bottom limit but
 not enough to give each its `MinCurrentCL`. In this case and when
 `RemainingServerCL = MinCurrentCLSum` we share the excess above
-`MinCL` proportionally, using the following formula.
+`MinCL` proportionally to each level's deficit and weight, using the
+following formulae.
 
 ```
-CurrentCL(i) = MinCL(i) + ( MinCurrentCL(i) - MinCL(i) ) *
-                          (RemainingServerCL-MinCLSum) / (MinCurrentCLSum-MinCLSum)
+CurrentCL(i) = MinCL(i) + ( MinCurrentCL(i) - MinCL(i) ) * Weight(i) *
+                          (RemainingServerCL-MinCLSum) / WeightedDiffSum
+WeightedDiffSum = sum[non-exempt priority level i]
+                          ( MinCurrentCL(i) - MinCL(i) ) * Weight(i)
 ```
 
 Finally, when `MinCurrentCLSum < RemainingServerCL` there _is_ wiggle
@@ -974,22 +1007,24 @@ Target(i) = max( MinCurrentCL(i), SmoothSeatDemand(i) )
 
 Sadly, the sum of the Target values --- let's name that TargetSum ---
 is not necessarily equal to `RemainingServerCL`.  However, if
-`TargetSum < RemainingServerCL` then all the Targets could be scaled
+`TargetSum < RemainingServerCL` then all the Targets could (if we wanted even weighting) be scaled
 up in the same proportion `FairProp = RemainingServerCL / TargetSum`
 (if that did not violate any upper bound) to get the new concurrency
 limits `CurrentCL(i) := FairProp * Target(i)` for each non-exempt
 priority level `i`.  Similarly, if `TargetSum > RemainingServerCL`
-then all the Targets could be scaled down in the same proportion (if
+then all the Targets could (if we wanted even weighting) be scaled down in the same proportion (if
 that did not violate any lower bound) to get the new concurrency
 limits.  This shares the wealth or the pain proportionally among the
 priority levels (but note: the upper bound does not affect the target,
 lest the pain of not achieving a high SmoothSeatDemand be distorted,
 while the lower bound _does_ affect the target, so that merely
 achieving the lower bound is not considered a gain).  The following
-computation generalizes this idea to respect the relevant bounds.
+computation generalizes this idea to (a) respect the relevant bounds
+and (b) give different weights to different levels' borrowing/lending.
 
+First consider just the bounds, assuming even weighting.
 We can not necessarily scale all the Targets by the same factor ---
-because that might violate some upper or lower bounds.  The problem is
+because that might violate some upper or lower bounds.  The even-weighted problem is
 to find a proportion `FairProp` that can be shared by all the
 non-exempt priority levels except those with a bound that forbids it.
 This means to find a value of `FairProp` that simultaneously solves
@@ -1000,6 +1035,22 @@ that is OK, because they all produce the same CurrentCL values.
 
 ```
 CurrentCL(i) = min( MaxCL(i), max( MinCurrentCL(i), FairProp * Target(i) ))
+```
+
+The weighted version replaces `FairProp` with `1 + Delta * Weight(i)
+** sgn(Delta)`, with `Delta` becoming the scalar value to solve
+for. Here `**` is the power function (X to the power of Y) and `sgn`
+is the sign function: it maps 0 to 0, every negative number to -1, and
+every positive number to 1. That is: when there is extra concurrency
+to distribute among the non-exempt priority levels, the ones with
+higher weight get more, and when all must give up some, the ones with
+higher weight give up less. Thus, taking weights into account, the
+formula for CurrentCL is as follows.
+
+```
+CurrentCL(i) = min( MaxCL(i), max( MinCurrentCL(i),
+                                   (1 + Delta * Weight(i) ** sgn(Delta))
+                                   * Target(i) ))
 ```
 
 This is similar to the max-min fairness problem and can be solved
