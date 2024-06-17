@@ -177,9 +177,9 @@ updates.
 
 Kubernetes does not support the modification of the `volumeClaimTemplates` of a StatefulSet currently.
 This enhancement proposes to support arbitrary modifications to the `volumeClaimTemplates`,
-automatically updating the associated PersistentVolumeClaim objects in-place if applicable.
-Currently, PVC `spec.resources.requests.storage` and `spec.volumeAttributesClassName`
-fields can be updated in-place.
+automatically patching the associated PersistentVolumeClaim objects if applicable.
+Currently, PVC `spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations`
+can be patched.
 For other fields, we support updating existing PersistentVolumeClaim objects with `OnDelete` strategy.
 All the updates to PersistentVolumeClaim can be coordinated with `Pod` updates
 to honor any dependencies between them.
@@ -211,8 +211,8 @@ This brings many headaches in a continuously evolving environment.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-* Allow users to update the `volumeClaimTemplates` of a `StatefulSet` in place.
-* Automatically update the associated PersistentVolumeClaim objects in-place if applicable.
+* Allow users to update the `volumeClaimTemplates` of a `StatefulSet`.
+* Automatically patch the associated PersistentVolumeClaim objects if applicable, without interrupting the running Pods.
 * Support updating PersistentVolumeClaim objects with `OnDelete` strategy.
 * Coordinate updates to `Pod` and PersistentVolumeClaim objects.
 * Provide accurate status and error messages to users when the update fails.
@@ -223,8 +223,8 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-* Support automatic rolling update of PersistentVolumeClaim.
-* Validate the updated `volumeClaimTemplates` as how PVC update does.
+* Support automatic re-creating of PersistentVolumeClaim. We will never delete a PVC automatically.
+* Validate the updated `volumeClaimTemplates` as how PVC patch does.
 * Update ephemeral volumes.
 
 
@@ -251,7 +251,7 @@ Changes to StatefulSet `spec`:
 1. Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
    specify how to coordinate the update of PVCs and Pods. Possible values are:
    - `OnDelete`: the default value, only update the PVC when the the old PVC is deleted.
-   - `InPlace`: update the PVC in-place if possible. Also includes the `OnDelete` behavior.
+   - `InPlace`: patch the PVC in-place if possible. Also includes the `OnDelete` behavior.
 
 2. Introduce a new field in StatefulSet `spec.updateStrategy.rollingUpdate`: `volumeClaimSyncStrategy`
    to specify how to update PVCs and Pods. Possible values are:
@@ -265,7 +265,7 @@ Additionally collect the status of managed PVCs, and show them in the StatefulSe
 For each PVC in the template:
 - compatible: the number of PVCs that are compatible with the template.
   These replicas will not be blocked on Pod recreation if `volumeClaimSyncStrategy` is `LockStep`.
-- updating: the number of PVCs that are being updated in-place.
+- updating: the number of PVCs that are being updated in-place (e.g. expansion in progress).
 - overSized: the number of PVCs that are over-sized.
 - totalCapacity: the sum of `status.capacity` of all the PVCs.
 
@@ -277,7 +277,7 @@ Some fields in the `status` are also updated to reflect the staus of the PVCs:
   are updated to reflect the status of PVCs.
 
 With these changes, user can still use `kubectl rollout status` to monitor the update process,
-both for in-place update and for the PVCs that need manual intervention.
+both for automated patching and for the PVCs that need manual intervention.
 
 ### Updated Reconciliation Logic
 
@@ -285,11 +285,13 @@ How to update PVCs:
 1. If `volumeClaimUpdateStrategy` is `InPlace`,
    and if `volumeClaimTemplates` and actual PVC only differ in mutable fields
    (`spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations` currently),
-   update the PVC in-place to the extent possible.
-   Do not perform the update that will be rejected by API server, such as
-   decreasing the storage size below its current status.
-   Note that decrease the size can help recover from a failed expansion if 
-   `RecoverVolumeExpansionFailure` feature gate is enabled.
+   patch the PVC to the extent possible.
+   - `spec.resources.requests.storage` is patched to max(template spec, PVC status)
+     - Do not decreasing the storage size below its current status.
+       Note that decrease the size in PVC spec can help recover from a failed expansion if 
+       `RecoverVolumeExpansionFailure` feature gate is enabled.
+   - `spec.volumeAttributesClassName` is patched to the template value.
+   - `metadata.labels` and `metadata.annotations` are patched with server side apply.
 
 2. If it is not possible to make the PVC [compatible](#what-pvc-is-compatible),
    do nothing. But when recreating a Pod and the corresponding PVC is deleting,
@@ -307,7 +309,7 @@ When to update PVCs:
    before advancing `status.updatedReplicas` to the next replica,
    additionally check that the PVCs of the next replica are 
    [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplates`.
-   If not, and we are not going to update it in-place automatically,
+   If not, and if we are not going to patch it automatically,
    wait for the user to delete/update the old PVC manually.
 
 2. When doing rolling update, A replica is considered ready if the Pod is ready
@@ -321,7 +323,7 @@ When to update PVCs:
    - If `spec.updateStrategy.type` is `OnDelete`,
      Only update the PVC when the Pod is deleted.
    
-4. When updating the PVC in-place, if we also re-create the Pod,
+4. When patching the PVC, if we also re-create the Pod,
    update the PVC after old Pod deleted, together with creating new pod.
    Otherwise, if pod is not changed, update the PVC only.
 
@@ -454,7 +456,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We can use Server Side Apply to update the PVCs in-place,
+We can use Server Side Apply to patch the PVCs,
 so that we will not interfere with the user's manual changes,
 e.g. to `metadata.labels` and `metadata.annotations`.
 
@@ -1050,12 +1052,25 @@ However, this have saveral drawbacks:
 ### Only support for updating storage size
 
 [KEP-0661] only enables expanding the volume by updating `volumeClaimTemplates[*].spec.resources.requests.storage`.
-However, because the StatefulSet can take pre-existing PVCs,
+However,
+1. because the StatefulSet can take pre-existing PVCs,
 we still need to consider what to do when template and PVC don't match.
 The complexity of this proposal will not decrease much if we only support expanding the volume.
-
 By enabling arbitrary updating to the `volumeClaimTemplates`,
 we just acknowledge and officially support this use case.
+1. We have VAC now, which is expected to go to beta soon.
+And can be patched to existing PVC. We should also support patching VAC
+by updating `volumeClaimTemplates`.
+
+### Patch PVCs regardless of the immutable fields
+
+We propose to patch the PVCs only when the immutable fields match.
+
+If only expansion is supported, patching regardless of the immutable fields can be a logical choice.
+But this KEP also integrates with VAC. VAC is closely coupled with storage class.
+Only patching VAC if storage class matches is a very logical choice.
+And we'd better follow the same operation model for all mutable fields.
+
 
 [KEP-0661]: https://github.com/kubernetes/enhancements/pull/3412
 
