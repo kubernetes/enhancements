@@ -445,6 +445,11 @@ plugin as part of the existing [volume manager](https://github.com/kubernetes/ku
 
 The added `mount_label` allow the kubelet to support SELinux contexts.
 
+The kubelet will use the `mountpoint` on container creation
+(by calling the `CreateContainer` RPC) to indicate the additional required volume mount ([`ContainerConfig.Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1102))
+from the runtime. The runtime needs to ensure that mount and also manages its
+life-cycle.
+
 The [`PodSandbox`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L624-L643)
 (used by `ListPodSandboxResponse` for the kubelet image garbage collection) will
 be extended to support a string list of user requested OCI volume mounts:
