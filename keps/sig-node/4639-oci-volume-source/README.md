@@ -448,27 +448,10 @@ The added `mount_label` allow the kubelet to support SELinux contexts.
 The kubelet will use the `mountpoint` on container creation
 (by calling the `CreateContainer` RPC) to indicate the additional required volume mount ([`ContainerConfig.Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1102))
 from the runtime. The runtime needs to ensure that mount and also manages its
-life-cycle.
+life-cycle, for example to remove the bind mount on container removal.
 
-The [`PodSandbox`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L624-L643)
-(used by `ListPodSandboxResponse` for the kubelet image garbage collection) will
-be extended to support a string list of user requested OCI volume mounts:
-
-```protobuf
-message PodSandbox {
-    // …
-
-    repeated string oci_volumes = 8;
-}
-```
-
-This allows the kubelet to identify which OCI volume images are still in use by
-pods. It also requires runtimes to track the linked information between mounted
-OCI objects and the pod sandbox to:
-
-- Prevent removing OCI objects which are still in use
-- Be able to provide the information which pod is using which mounted volumes to
-  API consumers (kubelet image garbage collection or maybe kubectl)
+The kubelet tracks the information about which OCI object is used by which
+sandbox and therefore manages the life-cycle of them.
 
 #### Container Runtimes
 
