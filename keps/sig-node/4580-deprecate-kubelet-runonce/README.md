@@ -155,7 +155,7 @@ Deprecate and remove kubelet support for RunOnce mode, and mark the `RunOnce` fi
 
 ## Motivation
 
-* RunOnce does not work in systemd mode.
+* RunOnce mode has been broken and does not work.
 * RunOnce mode doesn't support many newer pod features (init containers).
 * RunOnce mode does not apply to the pod lifecycle we describe in the documentation, e.g. it does not support any volumes.
 * RunOnce only provides some unit tests, without any e2e or integration tests, which makes us unable to guarantee whether it is usable.
@@ -194,7 +194,7 @@ make the `--runonce` flag as deprecated, and remove it in GA version.
 Starting in 1.31, during kubelet startup, if running in RunOnce mode, the kubelet will log a warning message, for example:
 
 ```
-klog.Warning("RunOnce mode has been deprecated, and will be removed in a future release")
+klog.ErrorS(nil, "RunOnce mode is deprecated, please migrate to the podman kube subcommand.")
 ```
 
 ### Introduction LegacyNodeRunOnceMode feature gate
@@ -354,6 +354,6 @@ No
 ## Alternatives
 
 * Fix RunOnce mode and add e2e tests and integration tests.
-* Make RunOnce mode work in systemd mode and support volumes.
+* Make RunOnce mode work and support volumes.
 
 ## Infrastructure Needed (Optional)
