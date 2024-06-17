@@ -195,9 +195,29 @@ which go beyond running particular images.
 ### Non-Goals
 
 - This proposal does not aim to replace existing `VolumeSource` types.
-- This proposal does not address other use cases for OCI objects beyond file or
-  directory sharing among containers in a pod.
+- This proposal does not address other use cases for OCI objects beyond directory sharing among containers in a pod.
 - Mounting thousands of images and artifacts in a single pod.
+- The enhancement leaves single file use case out for now and restrict the mount
+  output to directories.
+- The runtimes (CRI-O, containerd, others) will have to agree on the
+  implementation of how artifacts are manifested as directories. We don't want
+  to over-spec on selecting based on media types or other attributes now and can
+  consider that for later.
+    - We don't want to tie too strongly to how models are hosted on a particular
+      provider so we are flexible to adapt to different ways models and their
+      configurations are stored.
+    - If some file, say a VM format such as a qcow file, is stored as an
+      artifact, we don't want the runtime to be the entity responsible for
+      interpreting and correctly processing it to its final consumable state.
+      That could be delegated to the consumer or perhaps to some hooks and is
+      out of scope for alpha.
+- Manifest list use cases are left out for now and will be restricted to
+  matching architecture like we do today for images. In the future (if there are
+  use cases) we will consider support for lists with items separated by
+  quantization or format or other attributes. However, that is out of scope for
+  now as it is easily worked around by creating a different image/artifact for
+  each instance/format/quantization of a model.
+
 
 ## Proposal
 
@@ -297,7 +317,10 @@ to support this source type. Key design aspects include:
 - API changes to introduce the new `VolumeSource` type.
 - Modifications to the Kubelet to handle mounting OCI images and artifacts.
 - Handling image pull secrets and registry authentication.
-- Reuse existing logic from ConfigMaps to determining the file location on the host filesystem.
+- The regular OCI images (that are used to create container rootfs today) can
+  be setup similarly as a directory and mounted as a volume source.
+- For OCI artifacts, we want to convert and represent them as a directory with
+  files. A single file could also be nested inside a directory.
 
 The following code snippet illustrates the proposed API change:
 
