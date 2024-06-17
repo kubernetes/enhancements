@@ -75,7 +75,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
@@ -215,6 +215,11 @@ Integration tests are not needed.
 
 #### Alpha -> Beta
 * Unit tests and e2e tests outlined in design proposal implemented.
+  * unit tests: https://github.com/kubernetes-csi/external-snapshotter/pull/1118
+  * e2e tests:
+    * https://github.com/kubernetes/test-infra/pull/33417
+    * https://github.com/kubernetes/kubernetes/pull/126326
+* At least 2 CSI drivers have a POC implementation.
 
 #### Beta -> GA
 * Volume group snapshot support is added to multiple CSI drivers.
@@ -328,22 +333,30 @@ type VolumeGroupSnapshotSpec struct {
         // +optional
         VolumeGroupSnapshotClassName *string
 
-        // A label query over persistent volume claims to be grouped together
-        // for snapshotting.
-        // This labelSelector will be used to match the label added to a PVC.
-        // Note that if volumes are added/removed from the label after a group snapshot
-        // is created, the existing snapshots won't be modified.
-        // Once a VolumeGroupSnapshotContent is created and the sidecar starts to process it,
-        // the volume list will not change with retries.
-        Selector *metav1.LabelSelector
+	// Source specifies where a group snapshot will be created from.
+	// This field is immutable after creation.
+	// Required.
+	Source VolumeGroupSnapshotSource
+}
 
-        // VolumeGroupSnapshotSecretRef is a reference to the secret object containing
-        // sensitive information to pass to the CSI driver to complete the CSI
-        // calls for VolumeGroupSnapshots.
-        // This field is optional, and may be empty if no secret is required. If the
-        // secret object contains more than one secret, all secrets are passed.
-        // +optional
-        VolumeGroupSnapshotSecretRef *SecretReference
+type VolumeGroupSnapshotSource struct {
+	// Selector is a label query over persistent volume claims that are to be
+	// grouped together for snapshotting.
+	// This labelSelector will be used to match the label added to a PVC.
+	// If the label is added or removed to a volume after a group snapshot
+	// is created, the existing group snapshots won't be modified.
+	// Once a VolumeGroupSnapshotContent is created and the sidecar starts to process
+	// it, the volume list will not change with retries.
+	// +optional
+	Selector *metav1.LabelSelector
+
+	// VolumeGroupSnapshotContentName specifies the name of a pre-existing VolumeGroupSnapshotContent
+	// object representing an existing volume group snapshot.
+	// This field should be set if the volume group snapshot already exists and
+	// only needs a representation in Kubernetes.
+	// This field is immutable.
+	// +optional
+	VolumeGroupSnapshotContentName *string
 }
 
 Type VolumeGroupSnapshotStatus struct {
@@ -360,10 +373,20 @@ Type VolumeGroupSnapshotStatus struct {
         // +optional
         Error *VolumeSnapshotError
 
-        // List of volume snapshot refs
-        // The max number of snapshots in the group is 100
-        // +optional
-        VolumeSnapshotRefList []core_v1.ObjectReference
+	// VolumeSnapshotRefList is the list of PVC and VolumeSnapshot pairs that
+	// is part of this group snapshot.
+	// The maximum number of allowed snapshots in the group is 100.
+	// +optional
+	PVCVolumeSnapshotRefList []PVCVolumeSnapshotPair
+}
+
+// PVCVolumeSnapshotPair defines a pair of a PVC reference and a Volume Snapshot Reference
+type PVCVolumeSnapshotPair struct {
+	// PersistentVolumeClaimRef is a reference to the PVC this pair is referring to
+	PersistentVolumeClaimRef core_v1.LocalObjectReference
+
+	// VolumeSnapshotRef is a reference to the VolumeSnapshot this pair is referring to
+	VolumeSnapshotRef core_v1.LocalObjectReference
 }
 ```
 
@@ -393,7 +416,7 @@ type VolumeGroupSnapshotContentSpec struct {
         VolumeGroupSnapshotRef core_v1.ObjectReference
 
         // Required
-        VolumeGroupSnapshotDeletionPolicy VolumeGroupSnapshotDeletionPolicy
+        DeletionPolicy snapshotv1.DeletionPolicy
 
         // Required
         Driver string
@@ -409,14 +432,35 @@ type VolumeGroupSnapshotContentSpec struct {
 
 // OneOf
 type VolumeGroupSnapshotContentSource struct {
-        // Dynamic provisioning of VolumeGroupSnapshot
-        // A list of PersistentVolume names to be snapshotted together
-        // +optional
-        PersistentVolumeNames []string
+	// VolumeHandles is a list of volume handles on the backend to be snapshotted
+	// together. It is specified for dynamic provisioning of the VolumeGroupSnapshot.
+	// This field is immutable.
+	// +optional
+	VolumeHandles []string
 
-        // Pre-provisioned VolumeGroupSnapshot
-        // +optional
-        VolumeGroupSnapshotHandle *string
+	// GroupSnapshotHandles specifies the CSI "group_snapshot_id" of a pre-existing
+	// group snapshot and a list of CSI "snapshot_id" of pre-existing snapshots
+	// on the underlying storage system for which a Kubernetes object
+	// representation was (or should be) created.
+	// This field is immutable.
+	// +optional
+	GroupSnapshotHandles *GroupSnapshotHandles
+}
+
+type GroupSnapshotHandles struct {
+	// VolumeGroupSnapshotHandle specifies the CSI "group_snapshot_id" of a pre-existing
+	// group snapshot on the underlying storage system for which a Kubernetes object
+	// representation was (or should be) created.
+	// This field is immutable.
+	// Required.
+	VolumeGroupSnapshotHandle string
+
+	// VolumeSnapshotHandles is a list of CSI "snapshot_id" of pre-existing
+	// snapshots on the underlying storage system for which Kubernetes objects
+	// representation were (or should be) created.
+	// This field is immutable.
+	// Required.
+	VolumeSnapshotHandles []string
 }
 
 Type VolumeGroupSnapshotContentStatus struct {
@@ -437,10 +481,11 @@ Type VolumeGroupSnapshotContentStatus struct {
         // +optional
         Error *VolumeSnapshotError
 
-        // List of volume snapshot content refs
-        // The max number of snapshots in a group is 100
-        // +optional
-        VolumeSnapshotContentRefList []core_v1.ObjectReference
+	// PVVolumeSnapshotContentList is the list of pairs of PV and
+	// VolumeSnapshotContent for this group snapshot
+	// The maximum number of allowed snapshots in the group is 100.
+	// +optional
+	PVVolumeSnapshotContentList []PVVolumeSnapshotContentPair
 }
 ```
 
@@ -459,7 +504,7 @@ type VolumeSnapshotStatus struct{
 type VolumeSnapshotContentStatus struct{
 	......
         // +optional
-        VolumeGroupSnapshotContentName *string
+        VolumeGroupSnapshotHandle *string
 	......
 }
 ```
@@ -682,7 +727,7 @@ _This section must be completed when targeting alpha to a release._
       feature when the snapshot controller and csi-snapshotter sidecar are started.
     - Will enabling / disabling the feature require downtime of the control
       plane?
-      From the controller side, it only affects the external controller sidecars.
+      From the controller side, it only affects the external controller and sidecars.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node?
       No.
@@ -709,14 +754,30 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
+  To rollout this new feature, the snapshot-controller and CSI snapshotter sidecar
+  need to be restarted.
+  If the snapshot-controller fails to come up, user won't be able to create/delete
+  volume snapshots any more. Existing volume snapshots won't be affected.
+  The CSI snapshotter sidecar is typically deployed together with the CSI driver.
+  If the CSI driver and its sidecars don't come up, user won't be able to create,
+  attach, detach, delete volumes and won't be able to create/delete volume snapshots
+  any more. Existing workloads should not be affected.
 
 * **What specific metrics should inform a rollback?**
+  If the metric `snapshot_controller_operation_total_seconds` added in snapshot-controller
+  shows a high rate of "Failure", that means this feature does not work well.
+
+  If the metric `csi_sidecar_operations_seconds` shows grpc_status_code is not "OK" most
+  of time for the CSI snapshotter sidecar during create or deletion volume group snapshot
+  operations, that also means this feature does not work well.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Upgrade and rollback will be manually tested.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
+  No.
 
 ### Monitoring Requirements
 
@@ -726,17 +787,34 @@ _This section must be completed when targeting beta graduation to a release._
   Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
+  The following metric is added to snapshot-controller for volume group snapshot
+  operations.
+  - snapshot_controller_operation_total_seconds
+  This metric has operation_status that is either "Success" or "Failure".
+  "operation_name" can be the following:
+    - CreateGroupSnapshot (CreationTime field set to be non-nil for
+      dynamic provisioning)
+    - CreateGroupSnapshotAndReady (ReadyToUse set to true for both dynamic
+      provisioning and pre-provisioning)
+    - DeleteGroupSnapshot
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  The following metric is available for volume group snapshot sidecar.
+  - csi_sidecar_operations_seconds
+  This has a grpc_status_code that shows the operation status. A grpc_status_code
+  of "OK" indicates the operation is successful, otherwise, it is a failure.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+* **How can someone using this feature know that it is working for their instance?
+ * Events
+  * Event Reason: A GroupSnapshotCreated Normal Event with a message:
+    GroupSnapshot <name> was successfully created by the CSI driver.
+ * API .status
+  * Condition name:
+  * Other field: VolumeGroupSnapshot Status has CreationTime != nil and
+    ReadyToUse = true.
+ * Other (treat as last resort)
+  * Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?
   <!--
   At a high level, this usually will be in the form of "high percentile of SLI
   per day <= X". It's impossible to provide comprehensive guidance, but at the very
@@ -746,6 +824,20 @@ the health of the service?**
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
   -->
+  The create and delete volume group snapshot operations should be successful most
+  of time, i.e., 99%. The operator should examine every failure and determine
+  the root cause.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  - [x] Metrics
+    - Metric name:
+      - snapshot_controller_operation_total_seconds
+      - csi_sidecar_operations_seconds
+    - [Optional] Aggregation method:
+    - Components exposing the metric: snapshot-controller, csi-snapshotter sidecar
+  - [ ] Other (treat as last resort)
+    - Details:
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
@@ -753,6 +845,7 @@ of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
   -->
+  N/A
 
 ### Dependencies
 
@@ -772,6 +865,25 @@ _This section must be completed when targeting beta graduation to a release._
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 
+  This feature depends on snapshot-controller, CSI snapshotter sidecar and
+  the CSI driver that supports this feature.
+
+  If the snapshot-controller goes down, a new VolumeGroupSnapshot request will
+  be pending until snapshot-controller comes up again.
+
+  If the snapshot-controller goes down, a VolumeGroupSnapshot request that has
+  already been processed by the controller and passed down to csi-snapshotter
+  sidecar will continue to be processed. When the operation is completed by the
+  sidecar, the snapshot-controller is not available to finish the work. In the
+  case of creation, for example, ReadyToUse field in the VolumeGroupSnapshot
+  will stay "false" until the snapshot-controller is up and running again.
+  In the case of deletion, VolumeGroupSnapshotContent and VolumeGroupSnapshot
+  can't be deleted until the snapshot-controller is up and running again.
+
+  If the CSI snapshotter sidecar and the CSI driver (typically deployed together)
+  go down, a VolumeGroupSnapshot creation or deletion request can't be processed
+  until they come up again.
+
 ### Scalability
 
 _For alpha, this section is encouraged: reviewers should consider these questions
@@ -784,27 +896,31 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - API call type (e.g. PATCH pods): new APIs VolumeGroup, VolumeGroupContent, VolumeGroupClass, VolumeGroupSnapshot, VolumeGroupSnapshotContent, VolumeGroupSnapshotClass
+  - API call type (e.g. PATCH pods): new APIs VolumeGroupSnapshot, VolumeGroupSnapshotContent, VolumeGroupSnapshotClass
   - estimated throughput
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
   focusing mostly on:
-  - components listing and/or watching resources they didn't before
+  - components listing and/or watching resources they didn't before:
+    snapshot-controller and CSI snapshotter sidecar are watching the new API objects.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
+    A new VolumeGroupSnapshot API object will also trigger the creation and binding of individual
+    VolumeSnapshot and VolumeSnapshotContent API objects. 
 
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
-  - API type:
+  - API type: new APIs VolumeGroupSnapshot, VolumeGroupSnapshotContent, VolumeGroupSnapshotClass
   - Supported number of objects per cluster:
   - Supported number of objects per namespace (for namespace-scoped objects):
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
+  If the CSI driver for a cloud provider supports this feature, it will result in new calls.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
   Describe them, providing:
-  - API type(s):
+  - API type(s): A new string field is added to VolumeSnapshot and VolumeSnapshotContent respectively.
   - Estimated increase in size: (e.g., new annotation of size 32B):
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
@@ -812,6 +928,7 @@ the existing API objects?**
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+  This does not affect existing operations.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -820,6 +937,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+  This feature will result in more API calls as mentioned earlier.
+
+* **Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+  No.
 
 ### Troubleshooting
 
@@ -830,21 +951,52 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  If the API server is unavailable, VolumeGroupSnapshot creation and deletion won't happen
+  until the API server is up again.
+
+  If the request is already being processed by the CSI driver and it is completed,
+  the CSI snapshotter sidecar won't be able to update VolumeGroupSnapshotContent
+  until the API server is up again. The CSI driver should support idempotency, so
+  a retry should not result in orphaned resources on the underlying storage system.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
+
+      The operator can check the metric `snapshot_controller_operation_total_seconds`
+      in the snapshot-controller and see if the operation_status is "Success" or "Failure".
+
+      The operator can also check the metric `csi_sidecar_operations_seconds`
+      in the CSI snapshotter sidecar and see if the grpc_status_code is "OK".
+
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
+
+      If the operator sees a high rate of failure through the metrics, he/she
+      should examine the logs and find the root cause of those failures.
+
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
       Not required until feature graduated to beta.
 
+      If the logs indicate API patch failure, the operator should take a look
+      at the API server logs and investigate more.
+
+      It is very likely that the real failure happened on the storage system layer.
+      For example, if create group snapshot failed, the operator can find the following
+      error message in the CSI snapshotter sidecar logs.
+      "failed to take group snapshot of the volumes <volume handles>: <error>"
+      The operator should look at the specific CSI driver logs for further information.
+
     - Testing: Are there any tests for failure mode? If not, describe why.
+      e2e tests for failure mode will be added.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+  The operator should take a look at the logs from the CSI driver and the underlying
+  storage system to determine the root cause, and consult the CSI driver maintainers.
+  Based on that, the operator can determine the next steps.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
