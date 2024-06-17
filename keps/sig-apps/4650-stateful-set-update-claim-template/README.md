@@ -201,8 +201,8 @@ They can only expand the volumes, or modify them with VolumeAttributesClass
 by updating individual PersistentVolumeClaim objects as an ad-hoc operation.
 When the StatefulSet scales up, the new PVC(s) will be created with the old
 config and this again needs manual intervention.
-Modifying immutable parameters, shinking, or even switch to another
-storage provider is not possible currently.
+Modifying immutable parameters, shrinking, or even switching to another
+storage provider is not currently possible.
 This brings many headaches in a continuously evolving environment.
 
 ### Goals
@@ -678,12 +678,6 @@ well as the [existing list] of feature gates.
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -691,7 +685,9 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No.
+The update to StatefulSet `volumeClaimTemplates` will be accepted by the API server while it is previously rejected.
+
+Otherwise No.
 If `volumeClaimUpdateStrategy` is `OnDelete` and `volumeClaimSyncStrategy` is `Async` (the default values),
 the behavior of StatefulSet controller is almost the same as before.
 
@@ -707,8 +703,16 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes. Since the `volumeClaimTemplates` can already differ from the actual PVCs now,
+disable this feature gate should not leave any inconsistent state.
+
+If the `volumeClaimTemplates` is updated then the feature is disabled and the StatefulSet is rolled back,
+The `volumeClaimTemplates` will be kept as the latest version, and the history of them will be lost.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+If the `volumeClaimUpdateStrategy` is already set to `InPlace` reenable the feature
+will kick off the update process immediately.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -724,6 +728,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+Will add unit tests for the StatefulSet controller with and without the feature gate,
+`volumeClaimUpdateStrategy` set to `InPlace` and `OnDelete` respectively.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -886,6 +892,16 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+- PATCH StatefulSet
+  - kubectl or other user agents
+- PATCH PersistentVolumeClaim
+  - 1 per updated PVC in the StatefulSet (number of updated claim template * replica)
+  - StatefulSet controller (in KCM)
+  - triggered by the StatefulSet spec update
+- PATCH StatefulSet status
+  - 1-2 per updated PVC in the StatefulSet (number of updated claim template * replica)
+  - StatefulSet controller (in KCM)
+  - triggered by the StatefulSet spec update and PVC status update
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -895,6 +911,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -903,6 +920,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+Not directly. The cloud provider may be called when the PVCs are updated.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -912,6 +930,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+StatefulSet:
+- `spec`: 2 new enum fields, ~10B
+- `status`: 4 new integer fields, ~10B
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -923,6 +944,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -935,6 +957,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+The logic of StatefulSet controller is more complex, more CPU will be used.
+TODO: measure the actual increase.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -947,6 +971,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No.
 
 ### Troubleshooting
 
