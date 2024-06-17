@@ -372,6 +372,7 @@ potential enhancements may be required:
 
 **Validation:**
    - Extend validation and security checks to cover new artifact types.
+   - Disallow `subPath` mounting through the API validation
 
 **Storage Optimization in the container runtime:**
    - Develop optimized storage solutions tailored for different artifact types,
