@@ -402,6 +402,10 @@ before the container gets started.
 If users want to re-pull artifacts when referencing moving tags like `latest`,
 then they need to restart / evict the pod.
 
+The [AlwaysPullImages](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#alwayspullimages)
+admission plugin needs to respect the pull policy as well and has to set the
+field accordingly.
+
 ##### Registry authentication
 
 For registry authentication purposes the same logic will be used as for the
@@ -440,6 +444,26 @@ with the caveat that the new `VolumeSource` won't be isolated in a dedicated
 plugin as part of the existing [volume manager](https://github.com/kubernetes/kubernetes/tree/6d0aab2/pkg/kubelet/volumemanager).
 
 The added `mount_label` allow the kubelet to support SELinux contexts.
+
+The [`PodSandbox`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L624-L643)
+(used by `ListPodSandboxResponse` for the kubelet image garbage collection) will
+be extended to support a string list of user requested OCI volume mounts:
+
+```protobuf
+message PodSandbox {
+    // …
+
+    repeated string oci_volumes = 8;
+}
+```
+
+This allows the kubelet to identify which OCI volume images are still in use by
+pods. It also requires runtimes to track the linked information between mounted
+OCI objects and the pod sandbox to:
+
+- Prevent removing OCI objects which are still in use
+- Be able to provide the information which pod is using which mounted volumes to
+  API consumers (kubelet image garbage collection or maybe kubectl)
 
 #### Container Runtimes
 
