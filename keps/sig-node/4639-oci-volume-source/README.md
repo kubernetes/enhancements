@@ -384,7 +384,7 @@ potential enhancements may be required:
 
 While the container runtime will be responsible of pulling and storing the OCI
 objects in the same way as for images, the kubelet still has to manage the full
-life-cycle of them. This means that some parts of the existing kubelet code can
+lifecycle of them. This means that some parts of the existing kubelet code can
 be reused, for example:
 
 - The logic how to ensure that an image exists on the node:
@@ -451,10 +451,10 @@ The added `mount_label` allow the kubelet to support SELinux contexts.
 The kubelet will use the `mountpoint` on container creation
 (by calling the `CreateContainer` RPC) to indicate the additional required volume mount ([`ContainerConfig.Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1102))
 from the runtime. The runtime needs to ensure that mount and also manages its
-life-cycle, for example to remove the bind mount on container removal.
+lifecycle, for example to remove the bind mount on container removal.
 
 The kubelet tracks the information about which OCI object is used by which
-sandbox and therefore manages the life-cycle of them.
+sandbox and therefore manages the lifecycle of them.
 
 #### Container Runtimes
 
