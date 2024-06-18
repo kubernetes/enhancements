@@ -248,7 +248,7 @@ This default IP family is used in cases where a Service creation doesn't provide
 the Service to Single Stack with an IP chosen from the default IP family defined.
 
 The current implementation doesn't guarantee consistency for Service IP ranges and default IP families across
-multiple apiservers, see https://github.com/kubernetes/kubernetes/issues/114743.
+multiple apiservers, see <https://github.com/kubernetes/kubernetes/issues/114743>.
 
 [![](https://mermaid.ink/img/pako:eNqFU0FuwjAQ_MrKZ_iAD0gpFIlbJKSectnaG1jJsVPbQaKIv9dpEhICtM4tM7OZnXEuQjlNQopAXw1ZRRvGg8eqsJAOqug8ZIAB1p4wEuzJn1hRB9foIyuu0UZ4owPbjvQMLJ2nV2iW7z7QsMbIzj7C--QBD536KWHLlsPx1fQNqaRPM4pemsFytZr6lU-Xsy69cSfy99Sd5cjJ7TfBLoctVmzOUDIZHf7UZcY41X5kbZoQye_yMBia8GDZeRvjkhBisk-H8-P4KSv3lLamrfPTIF6xN97VoDngpyF9sz_YGZmdn7uCJJxmZd3BnWLWmQSKSvd3ykQIjVIU-sDaM-N3Q27NyeSwrXjk36DfLjMJHUQmEJTI5p_J0xsjwVMKKI6SMbQ5zxCGaYPAJZD37d0axFPJzJzVbcTDA5MjFqIiXyHr9CdeWqwQ8UgVFSKphaYSGxMLUdhrojZ1ipreNafVhCwxLb0Q2ES3P1slZPQNDaT-b-5Z1x-6EVE6)](https://mermaid.live/edit#pako:eNqFU0FuwjAQ_MrKZ_iAD0gpFIlbJKSectnaG1jJsVPbQaKIv9dpEhICtM4tM7OZnXEuQjlNQopAXw1ZRRvGg8eqsJAOqug8ZIAB1p4wEuzJn1hRB9foIyuu0UZ4owPbjvQMLJ2nV2iW7z7QsMbIzj7C--QBD536KWHLlsPx1fQNqaRPM4pemsFytZr6lU-Xsy69cSfy99Sd5cjJ7TfBLoctVmzOUDIZHf7UZcY41X5kbZoQye_yMBia8GDZeRvjkhBisk-H8-P4KSv3lLamrfPTIF6xN97VoDngpyF9sz_YGZmdn7uCJJxmZd3BnWLWmQSKSvd3ykQIjVIU-sDaM-N3Q27NyeSwrXjk36DfLjMJHUQmEJTI5p_J0xsjwVMKKI6SMbQ5zxCGaYPAJZD37d0axFPJzJzVbcTDA5MjFqIiXyHr9CdeWqwQ8UgVFSKphaYSGxMLUdhrojZ1ipreNafVhCwxLb0Q2ES3P1slZPQNDaT-b-5Z1x-6EVE6)
 
@@ -276,7 +276,7 @@ not try to change the IP. If the apiserver that created the Service no longer wo
 admin has to delete the Service so others apiservers can create it with its own ranges.
 
 With current implementation, each kube-apiserver can boot with different ranges configured without errors,
-but the cluster will not work correctly, see https://github.com/kubernetes/kubernetes/issues/114743.
+but the cluster will not work correctly, see <https://github.com/kubernetes/kubernetes/issues/114743>.
 There is no conflict resolution, each apiserver keep writing and deleting others apiservers allocator bitmap
 and Services.
 
@@ -313,13 +313,14 @@ about, allowing future developments to use it to implement more complex operatio
 
 #### The special "default" ServiceCIDR
 
-The `kubernetes.default` Service is expected to be covered by a valid range. Each apiserver 
+The `kubernetes.default` Service is expected to be covered by a valid range. Each apiserver
 ensure that a ServiceCIDR object exists to cover its own flag-defined ranges. If someone were to force-delete
 the ServiceCIDR covering `kubernetes.default` it would be treated the same as before, any apiserver will try
 to recreate the Service from its configured default Service CIDR flag-defined range.
 
 This well-known an establish behavior can allow administrators to replace the `kubernetes.default` by a
 series of operations, per example:
+
 1. Initial state: 2 kube-apiservers with default ServiceCIDR 10.0.0.0/24
 2. Apiservers will create the `kubernetes.default` Service with ClusterIP 10.0.0.1.
 3. Upgrade kube-apiservers and replace the service-cidr flag to 192.168.0.0/24
@@ -400,7 +401,7 @@ until it verifies that the consumer associated to that IP has been deleted too.
 - Valid IPAddress and ServiceCIDR but no Service
 
 The IPAddress will be deleted and an event generated if the controller determines that the IPAddress
-is orphan [(see Allocator section)](#Allocator)
+is orphan [(see Allocator section)](#allocator)
 
 - IPAddress referencing recreated Object (different UID)
 
@@ -443,21 +444,32 @@ keeping the same behavior that exists today.
 #### API
 
 ```go
-// ServiceCIDR defines a range of IPs using CIDR format (192.168.0.0/24 or 2001:db2::0/64).
+// ServiceCIDR defines a range of IP addresses using CIDR format (e.g. 192.168.0.0/24 or 2001:db2::/64).
+// This range is used to allocate ClusterIPs to Service objects.
 type ServiceCIDR struct {
- metav1.TypeMeta   `json:",inline"`
- metav1.ObjectMeta `json:"metadata,omitempty"`
-
- Spec   ServiceCIDRSpec   `json:"spec,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	// Standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	// spec is the desired state of the ServiceCIDR.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+	// +optional
+	Spec ServiceCIDRSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	// status represents the current state of the ServiceCIDR.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+	// +optional
+	Status ServiceCIDRStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
-
 
 // ServiceCIDRSpec describe how the ServiceCIDR's specification looks like.
 type ServiceCIDRSpec struct {
- // IPv4 is an IPv4 block in CIDR notation "10.0.0.0/8" 
- IPv4 string `json:"ipv4"`
- // IPv6 is an IPv6 block in CIDR notation "fd12:3456:789a:1::/64" 
- IPv6 string `json:"ipv6"`
+	// CIDRs defines the IP blocks in CIDR notation (e.g. "192.168.0.0/24" or "2001:db8::/64")
+	// from which to assign service cluster IPs. Max of two CIDRs is allowed, one of each IP family.
+	// This field is immutable.
+	// +optional
+	// +listType=atomic
+	CIDRs []string `json:"cidrs,omitempty" protobuf:"bytes,1,opt,name=cidrs"`
 }
 
 // IPAddress represents an IP used by Kubernetes associated to an ServiceCIDR.
@@ -537,50 +549,33 @@ invalid or missing
 
 Controllers must have unit tests and integration tests covering all possible race conditions.
 
-E2E test must be added covering the user stories defined in the KEP.
+Since this is an API based feature, integration test must be added covering the user stories defined in the KEP.
 
-In addition to testing, it will require a lot of user feedback, requiring multiple releases to
-graduate.
+E2E must be added in order for components that depend on Services, like kube-proxy, to evaluate its
+compatibility.
 
 [x] I/we understand the owners of the involved components may require updates to existing tests to
 make this code solid enough prior to committing the changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
 - cmd/kube-apiserver/app/options/validation_test.go: 06/02/23 - 99.1
 - pkg/apis/networking/validation/validation_test.go: 06/02/23 - 91.7
+- pkg/controller/servicecidrs/servicecidrs_controller.go: 11/06/24 - 64.3
 - pkg/controlplane/instance_test.go: 06/02/23 - 49.7
+- pkg/controlplane/controller/defaultservicecidr/default_servicecidr_controller.go: 11/06/24 - 43.3
 - pkg/printers/internalversion/printers_test.go: 06/02/23 - 49.7
 - pkg/registry/core/service/ipallocator/bitmap_test.go: 06/02/23 - 86.9
-- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 06/02/23 - 0 (new)
-- pkg/registry/core/service/ipallocator/ipallocator_test.go: 06/02/23 - 0 (new)
-- pkg/registry/networking/ipaddress/strategy_test.go: 06/02/23 - 0 (new)
+- pkg/registry/core/service/ipallocator/cidrallocator_test.go: 11/06/24 - 69.3
+- pkg/registry/core/service/ipallocator/ipallocator_test.go: 11/06/24 - 80.1
+- pkg/registry/core/service/ipallocator/metrics_test.go: 11/06/24 - 100
+- pkg/registry/core/service/ipallocator/controller/metrics_test.go: 11/06/24 - 100
+- pkg/registry/core/service/ipallocator/controller/repair_test.go: 11/06/24 - 74.4
+- pkg/registry/core/service/ipallocator/controller/repairip_test.go: 11/06/24 - 47.6
+- pkg/registry/networking/ipaddress/strategy_test.go: 11/06/24 - 77.8
 - staging/src/k8s.io/kubectl/pkg/describe/describe_test.go: 06/02/23 - 49.7
 
 ##### Integration tests
@@ -596,29 +591,25 @@ https://storage.googleapis.com/k8s-triage/index.html
 There will be added tests to verify:
 
 - API servers using the old and new allocators at same time
-- API server upgrade from old to new allocatr
+- API server upgrade from old to new allocator
 - ServicesCIDRs resizing
 - ServiceCIDR without the IPv6 limitation size
+- Default ServiceCIDR can be migrated to a new one
+- ServiceCIDR can not leave orhpan IPAddress objects
 
 Files:
 
 - test/integration/controlplane/synthetic_controlplane_test.go
 - test/integration/servicecidr/allocator_test.go
-- test/integration/servicecidr/main_test.go
+- test/integration/servicecidr/migration_test.go
+- test/integration/servicecidr/servicecidr_test.go
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+e2e tests validate that components that depend on Services are able
+to use the new ServiceCIDR ranges allocated.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-e2e tests will cover all the user stories defined in the KEP
+https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20alpha,%20beta&include-filter-by-regex=ServiceCIDRs
 
 ### Graduation Criteria
 
@@ -689,6 +680,25 @@ Example:
 - the apiserver repair loops will generate periodic events informing the user that the Service with the IP allocated
   is not within the configured range
 
+One of the biggest problem when running with skewed apiservers is that each of them will use independent
+allocators that will rely on the repair loops to reconcile the Services and ClusterIP. This can cause that
+two Services created in different skewed apiservers, requesting the same ClusterIP, can succeed if the allocation
+happens before the repair loops run, with the catastrophic result of having two Services with the same ClusterIP.
+
+To avoid this race problem, the new IP allocator will implement a dual-write strategy, creating an IPAddress object and
+also allocating the IP in the corresponding bitmap allocator. This behavior will be controlled with a new feature gate,
+`DisableAllocatorDualWrite`, that will be disabled by default until `MultiCIDRServiceAllocator` is GA.
+The next version after `MultiCIDRServiceAllocator` is GA, all the apiservers will be using the new IP allocator, so
+it will be safe to disable the dual-write mode.
+
+
+| Version  | MultiCIDRServiceAllocator | DisableAllocatorDualWrite |
+|----------|----------|----------|
+| 1.31     | Beta off   | Alpha off   |
+| 1.32     | GA on  (locked) | Beta off   |
+| 1.33     | GA on  (there are no bitmaps running) | GA on (also delete old bitmap)|
+| 1.34     | remove feature gate | remove feature gate  |
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -696,12 +706,12 @@ Example:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ServiceCIDR
+  - Feature gate name: MultiCIDRServiceAllocator
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-The time to reuse an already allocated ClusterIP to a Service will be longer, since the ClusterIPs
+The time to reuse an already allocated ClusterIP to a Service may be longer, since the ClusterIPs
 now depend on an IPAddress object that is protected by a finalizer.
 
 The bootstrap logic has been updated to deal with the problem of multiple apiservers with different
@@ -736,9 +746,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Tests for feature enablement/disablement will be implemented.
-TBD later, during the alpha implementation.
-
+Tests for feature enablement/disablement are implemented as integration test, see `test/integration/servicecidr/feature_enable_disable.go`
+The feature add new API objects, no new API fields to existing objects are added.
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -747,53 +756,87 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+The objects consumed by the cluster components are the Services, and ClusterIP is a field of these objects.
+Running workloads can not be impacted since the existing Services objects are never mutated.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+A rollout failure can impact the new apiserver to not be able to start or the clients not being able to create new Services.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+The feature impact the apiserver bootstrap process, specially about the kubernetes.default IP address assignment,
+in case the apiserver is not able to start after enabling the feature, it is a strong indicated that a rollback is required.
+
+Another metrics that can indicate a rollback are `clusterip_allocator.allocation_errors_total`, `clusterip_repair.ip_errors_total` or `clusterip_repair.reconcile_errors_total`, definitions can be found on
+- IP allocator pkg/registry/core/service/ipallocator/metrics.go
+- IP repair loop pkg/registry/core/service/ipallocator/controller/metrics.go
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+There are integration tests these behaviors:
+
+test/integration/servicecidr/allocator_test.go TestSkewedAllocators
+1. start one apiserver with the feature gate enabled and other with the feature gate disabled
+2. create 5 Services against each apiserver
+3. the Services created against the apiserver with the bitmap will not allocate the IPAddresses automatically,
+but the repair loop of the apiserver with the feature enable must reconcile these new Services and create the IPAddresses
+
+test/integration/servicecidr/allocator_test.go  TestMigrateService
+1. store a Service with ClusterIP directly in etcd
+2. start an apiserver with the new feature enable
+3. the reconciler must detect this stored service and create the corresponding IPAddress
+
+To be added in Beta https://github.com/kubernetes/kubernetes/pull/122047
+test/integration/servicecidr/feature_enable_disable.go TestEnableDisableServiceCIDR
+1. start apiserver with the feature disabled
+2. create new services and assert are correct
+3. shutdown apiserver
+4. start new apiserver with feature enabled
+5. create new services and assert previous and new ones are correct
+6. shutdown apiserver
+7. start new apiserver with feature disabled
+8. create new services and assert previous and new ones are correct
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+A group of metrics are added to each new Cluster IP allocators, labeled with the
+correspoding ServiceCIDR associateed to the allocator:
+
+`clusterip_allocator.allocated_ips`
+`clusterip_allocator.available_ips`
+`clusterip_allocator.allocation_total`
+
+See IP allocator pkg/registry/core/service/ipallocator/metrics.go for definitions.
+
+Users can also obtain the `ServiceCIDR` and `IPAddress` objects that are only available
+if the feature is enabled, per each Service with a ClusterIP associated there must be a
+corresponding IPAddress object. Per example:
+
+```
+$ kubectl get service kubernetes
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   17d
+```
+
+```
+$ kubectl get ipaddress 10.96.0.1
+NAME        PARENTREF
+10.96.0.1   services/default/kubernetes
+```
+
+All the ServiceCIDRs ranges configured must be present, included those ones created from the
+apiserver flags to initialize the cluster, with the special name `kubernetes`:
+```
+$ kubectl get servicecidr
+NAME         CIDRS          AGE
+kubernetes   10.96.0.0/28   17d
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -806,73 +849,46 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: KubernetesDefaultServiceCIDRError, "The default ServiceCIDR can not be created"
+  - Event Reason: KubernetesDefaultServiceCIDRError, "The default ServiceCIDR Status can not be set to Ready=True"
+  - Event Reason: ClusterIPOutOfRange, ClusterIP is not within any configured Service CIDR; please recreate service
+  - Event Reason: ClusterIPNotAllocated, ClusterIP is not allocated; repairing
+  - Event Reason: UnknownError, Unable to allocate Cluster IP due to unknown error
+  - Event Reason: ClusterIPNotAllocated, ClusterIP has a wrong reference; repairing
+  - Event Reason: ClusterIPAlreadyAllocated, ClusterIP was assigned to multiple services; please recreate service
+  - Event Reason: IPAddressNotAllocated, IPAddress appears to have been modified, not referencing a Service : cleaning up
+  - Event Reason: IPAddressNotAllocated, IPAddress appears to have leaked: cleaning up
+  - Event Reason: IPAddressWrongReference, IPAddress for Service has a wrong reference; cleaning up
+
+- [x] API .status
+  - Condition name: ServiceCIDRConditionReady, represents status of a ServiceCIDR that is ready to be used by the apiserver to allocate ClusterIPs for Services.
+  - Condition reason: ServiceCIDRReasonTerminating, represents a reason where a ServiceCIDR is not ready because it is being deleted.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- 99.9% of ClusterIP allocations per day take less than 500 ms.
+- 100% of ClusterIP allocations succeed.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+- [x] Metrics
+  - Metric name: ip_errors_total, reconcile_errors_total, allocation_errors_total should be 0 and allocation_duration_seconds should be < 500 ms
+  - Components exposing the metric: kube-apiserver
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Idially we should have metrics to detect overlaps or IP conflicts with the Pods and Nodes network, but this was
+[heavily discussed on the SIG](https://docs.google.com/document/d/1Dx7Qu5rHGaqoWue-JmlwYO9g_kgOaQzwaeggUsLooKo/edit#heading=h.rkh0f6t1c3vc) and we concluded that is not possible to get the Pod and Nodes network information reliably,
+so any metrics of this kind will be misleading.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+The kube-controller-manager runs a controller to handle the deletion of ServiceCIDR objects to avoid leaking
+IP address objects due to admin operations.
 
 ### Scalability
 
@@ -882,7 +898,7 @@ See Drawbacks section
 
 When creating a Service this will require to create an IPAddress object,
 previously we updated a bitmap on etcd, so we keep the number of request
-but the size is reduced considerable.
+but the size of the objects stored is reduced considerably.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -890,73 +906,58 @@ See [API](#api)
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-N/A
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-See [Drawbacks](#drawbacks)
+See [Drawbacks](#drawbacks), a new IPAddress object will be created by Service.Spec.ClusterIP
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-The apiservers will increase the memory usage because they have to keep a local informer with the new objects ServiceCIDR and IPAddress.
+The apiservers and kube-controller manager will increase the memory usage because they have to keep a local informer with the new objects ServiceCIDR and IPAddress.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The feature depends on the API server to work.
+The feature depends on the API server to work, however, the components consuming the existing objects will be unaffected.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Can not create Service with ClusterIP
+  - Detection: via metrics that record errors and latency to allocate an Cluster IP, the allocator also log slow operations in `pkg/registry/core/service/ipallocator/ipallocator.go`
+> 	trace := utiltrace.New("allocate dynamic ClusterIP address")
+>	defer trace.LogIfLong(500 * time.Millisecond)
+  - Mitigations: already running workloads will not be affected, if no new services can be created first check if is because there
+are not available IPs checking the metrics with the number of available IPs
+  - Diagnostics: The ServiceCIDR object has conditions in state that can help to understand if there is some problems with
+the available ranges. The kube-apiserve metrics shows the repair IP and ip allocation errors. 
+  - Testing: See integration tests added
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+This feature contain repair controllers in the apiserver that makes rollbacks safe, as they are able to reconcile the current state.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- [x] Alpha
+  - [x] KEP (`k/enhancements`) update PR(s):
+    - https://github.com/kubernetes/enhancements/pull/3365
+    - https://github.com/kubernetes/enhancements/pull/3844
+  - [x] Code (`k/k`) update PR(s):
+    - https://github.com/kubernetes/kubernetes/pull/115075
+    - https://github.com/kubernetes/kubernetes/pull/116516
+  - [x] Docs (`k/website`) update PR(s):
+    - https://github.com/kubernetes/website/pull/37620
+    - https://github.com/kubernetes/website/pull/43469
 
 ## Drawbacks
 
