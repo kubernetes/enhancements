@@ -208,6 +208,47 @@ Alternate options considered for discovering topology:
 1. Execute a mature external topology program like [`mpi-hwloc`][hwloc] --
    potentially adding support for the hwloc file format to the Kubelet.
 
+#### Windows CPU Discovery
+
+The Windows Kubelet provides an implementation for the [cadvisor api](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cadvisor/cadvisor_windows.go#L50) 
+in order to provide Windows stats to other components without modification.  
+The ability to provide the `cadvisorapi.MachineInfo` api is already partially mapped
+in on the Windows client.  By mapping the Windows specific topology API's to 
+cadvisor API, no changes are required to the CPU Manager.
+
+The [Windows concepts](https://learn.microsoft.com/en-us/windows/win32/procthread/processor-groups) are mapped to [Linux concepts](https://github.com/kubernetes/kubernetes/blob/cede96336a809a67546ca08df0748e4253ec270d/pkg/kubelet/cm/cpumanager/topology/topology.go#L34-L39) with the following:
+
+| Kubelet Term | Description | Cadvisor term | Windows term |
+| --- | --- | --- | --- |
+| CPU | logical CPU | thread | Logical processor |
+| Core | physical CPU | Core | Core |
+| Socket | socket | Socket | Physical Processor |
+| NUMA Node | NUMA cell | Node | Numa node |
+
+The Windows API's used will be
+-	[getlogicalprocessorinformationex](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getlogicalprocessorinformationex)
+-	[nf-winbase-getnumaavailablememorynodeex](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnumaavailablememorynodeex) 
+
+One difference between the Windows API and Linux is the concept of [Processor groups](https://learn.microsoft.com/en-us/windows/win32/procthread/processor-groups).
+On Windows systems with more than 64 cores the CPU's will be split into groups, 
+each processor is identified by its group number and its group-relative processor number. 
+
+In Cri we will add the following structure to the `WindowsContainerResources` in CRI:
+
+```
+message WindowsCpuGroupAffinity {
+    // CPU mask relative to this CPU group.
+    uint64 cpu_mask = 1;
+    // CPU group that this CPU belongs to.
+    uint32 cpu_group = 2;
+}
+```
+
+Since the API's are looking for a distinct ProcessId, the id will be calculated by:
+`(group *64) + processid` resulting in unique process id's from `group 0` as `1-64` and 
+process Id's from `group 1` as `65-128` and so on.  When converting back to the Windows
+Group Affinity we will divide by 2 until we receive a value under 64.
+
 ### CPU Manager interfaces (sketch)
 
 ```go

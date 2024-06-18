@@ -929,3 +929,11 @@ allocation and thread scheduling, but does not address device locality.
 
 Multi-NUMA hardware is needed for testing of this feature. Recently, support for multi-NUMA
 harware was [added](https://github.com/kubernetes/test-infra/pull/28369) in Kubernetes test infrastructure.
+
+## Windows considerations
+
+Topology manager is already enabled on Windows in order to support the device manager.  The same configuration options
+and PRR applies to Windows. The CPU manager and Memory Manager can independently be enabled to support advance configuration
+where affinity is applied.  In the future a new Policy maybe required to address unique Numa Memory Management as described in the 
+Windows Section on the Memory Manager KEP. 
+

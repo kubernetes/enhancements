@@ -778,3 +778,17 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 [hugepage-issue]: https://github.com/kubernetes/kubernetes/issues/80716
 [memory-issue]: https://github.com/kubernetes/kubernetes/issues/81009
 
+### Windows considerations
+
+Numa nodes can not be guaranteed via the Windows API, instead an [ideal Numa](https://learn.microsoft.com/en-us/windows/win32/procthread/numa-support#numa-support-on-systems-with-more-than-64-logical-processors) node can be 
+configured via the [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).  
+Using Memory manager's internal mapping this should provide the desired behavior.  But it is possible that a CPU could access memory from a different Numa Node than it is currently in, resulting in decreased performance.  
+If this is undesirable then `single-numa-node` should be configured in the Topology Manager policy setting.  In the future, in the case of workloads that span multiple Numa nodes, it may be desirable for 
+Topology manager to have a new policy specific for Windows.  
+
+#### Kubelet memory management 
+
+There is work to [enable kubelet's eviction](https://github.com/kubernetes/kubernetes/pulls/marosset) which would follow the same patterns
+as [Mechanism I](#mechanism-i-pod-eviction-by-kubelet).
+Windows does not have an OOM killer and so Mechanisms II and III are out of scope in the section 
+related to the [Kubernetes Node Memory Management](#kubernetes-nodes-memory-management-mechanisms-and-their-relation-to-the-memory-manager).
