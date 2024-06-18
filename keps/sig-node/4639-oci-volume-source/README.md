@@ -456,6 +456,12 @@ lifecycle, for example to remove the bind mount on container removal.
 The kubelet tracks the information about which OCI object is used by which
 sandbox and therefore manages the lifecycle of them.
 
+The proposal also considers smaller CRI changes, for example to add a list of
+mounted volume paths to the `ImageStatusResponse.Image` message returned by the
+`ImageStatus` RPC. This allows providing the right amount of information between
+the kubelet and the runtime to ensure that no context gets lost in restart
+scenarios.
+
 #### Container Runtimes
 
 Container runtimes need to support the new `mount` field, otherwise the
