@@ -62,8 +62,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Just set <code>--fail-swap-on=false</code>](#just-set---fail-swap-onfalse)
-  - [Restrict swap usage at the cgroup level](#restrict-swap-usage-at-the-cgroup-level)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -928,6 +927,10 @@ automations, so be extremely careful here.
 
 No. If the feature flag is enabled, the user must still set
 `--fail-swap-on=false` to adjust the default behaviour.
+In addition, since the default "swap behavior" is "NoSwap",
+by default containers would not be able to access swap. Instead,
+the administrator would need to set a non-default behavior in order
+for swap to be accessible.
 
 A node must have swap provisioned and available for this feature to work. If
 there is no swap available, but the feature flag is set to true, there will
@@ -960,7 +963,8 @@ for workloads.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A
+As described above, swap can be turned on and off, although kubelet would need to be
+restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -971,8 +975,18 @@ with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
 
-N/A. This should be tested separately for scenarios with the flag enabled and
-disabled.
+There are extensive tests to ensure that the swap feature as expected.
+
+Unit tests are in place to test that this feature operates as expected with
+cgroup v1/v2, the feature gate being on/off, and different swap behaviors defined.
+
+In addition, node e2e tests are added and run as part of the node-conformance
+suite. These tests ensure that the underlying cgroup knobs are being configured
+as expected.
+
+Furthermore, "swap-conformance" periodic lanes have been introduced for the purpose
+testing swap on a stressed environment. These tests ensure that swap kicks in when
+expected, tested while stressing both on the node-level and container-level. 
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1038,9 +1052,8 @@ This section must be completed when targeting beta to a release.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-See #swap-metrics
-
-1. Kubelet stats API will be extended to show swap usage details.
+See #swap-metrics: available by both Summary API (/stats/summary) and Prometheus (/metrics/resource)
+which provide how and if swap is utilized in the node, pod and container level.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1049,6 +1062,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+See #swap-metrics: available by both Summary API (/stats/summary) and Prometheus (/metrics/resource)
+which provide how and if swap is utilized in the node, pod and container level.
 
 KubeletConfiguration has set `failOnSwap: false`.
 
@@ -1061,19 +1077,22 @@ utilization.
 Pick one more of these and delete the rest.
 -->
 
-TBD. We will determine a set of metrics as a requirement for beta graduation.
-We will need more production data; there is not a single metric or set of
-metrics that can be used to generally quantify node performance.
+See #swap-metrics: available by both Summary API (/stats/summary) and Prometheus (/metrics/resource)
+which provide how and if swap is utilized in the node, pod and container level.
 
-This section to be updated before the feature can be marked as graduated, and
-to be worked on during 1.23 development.
-
-We will also add swap memory utilization to the Kubelet stats API, to provide a means of monitoring this beyond cadvisor Prometheus stats.
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [X] Metrics
+  - Metric names:
+    - `container_swap_usage_bytes`
+    - `pod_swap_usage_bytes`
+    - `node_swap_usage_bytes`
+    Components exposing the metric: `/metrics/resource` endpoint
+  - Metric names:
+    - `node.swap.swapUsageBytes`
+    - `node.swap.swapAvailableBytes`
+    - `node.systemContainers.swap.swapUsageBytes`
+    - `pods[i].swap.swapUsageBytes`
+    - `pods[i].containers[i].swap.swapUsageBytes`
+    Components exposing the metric: `/stats/summary` endpoint
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1089,7 +1108,14 @@ high level (needs more precise definitions) those may be things like:
   - 99,9% of /health requests per day finish with 200 code
 -->
 
-N/A
+Swap is being managed by the kernel, depends on many factors and configurations
+that are outside of kubelet's reach like the nature of the workloads running on the node,
+swap capacity, memory capacity and other distro-specific configurations. However, generally:
+
+- Nodes with swap enabled → `node.swap.swapAvailableBytes` should be non-zero.
+- Nodes with memory pressure → `node.swap.swapUsageBytes` should be non-zero.
+- Containers that reach their memory limit threshold → `pods[i].containers[i].swap.swapUsageBytes` should be non-zero.
+- Pods with containers that reach their memory limit threshold → `pods[i].swap.swapUsageBytes` should be non-zero. 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1204,9 +1230,11 @@ Think about adding additional work or introducing new steps in between
 -->
 
 Yes, enabling swap can affect performance of other critical daemons on the system.
-Any scenario where swap memory gets utilized is a result of system running out of physical RAM.
+Any scenario where swap memory gets utilized is a result of system running out of physical RAM,
+or a container reaching its memory limit threshold.
 Hence, to maintain the SLIs/SLOs of critical daemons on the node we highly recommend to disable the swap for the system.slice
-along with reserving adequate enough system reserved memory.
+along with reserving adequate enough system reserved memory, giving io latency precedence to the system.slice, and more.
+See #best practices for more info.
 
 The SLI that could potentially be impacted is [pod startup latency](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md).
 If the container runtime or kubelet are performing slower than expected, pod startup latency would be impacted.
@@ -1284,6 +1312,8 @@ nodes that do not use swap memory.
 - **2023-04-17:** KEP update for beta1 [#3957](https://github.com/kubernetes/enhancements/pull/3957).
 - **2023-08-15:** Beta1 released in kubernetes 1.28
 - **2024-01-12:** Updates to Beta2 KEP.
+- **2024-01-08:** Beta2 released in kubernetes 1.30.
+- **2024-06-18:** Updates to KEP, GA requirements and intention to release in version 1.32.
 
 ## Drawbacks
 
@@ -1295,43 +1325,26 @@ When swap is enabled, particularly for workloads, the kubelet’s resource
 accounting may become much less accurate. This may make cluster administration
 more difficult and less predictable.
 
-Currently, there exists an unsupported workaround, which is setting the kubelet
-flag `--fail-swap-on` to false.
+In general, swap is less predictable and might cause performance degradation.
+It also might be hard in certain scenarios to understand why certain workloads
+are the chosen candidates for swapping, which could occur for reasons external
+to the workload.
+
+In addition, containers with memory limits would be killed less frequently
+since with swap enabled the kernel can usually reclaim a lot more memory.
+While this can help to avoid crashes, it could also "hide a problem" of a container
+reaching its memory limits.
 
 ## Alternatives
 
 ### Just set `--fail-swap-on=false`
 
-This is insufficient for most use cases because there is inconsistent control
-over how swap will be used by various container runtimes. Dockershim currently
-sets swap available for workloads to 0. The CRI does not restrict it at all.
-This inconsistency makes it difficult or impossible to use swap in production,
-particularly if a user wants to restrict workloads from using swap when using
-the CRI rather than dockershim.
+When `--fail-swap-on=false` is provided to Kubelet but swap is not configured
+otherwise it is guaranteed that, by default, no Kubernetes workloads would
+be able to utilize swap. However, everything outside of kubelet's reach
+(e.g. system daemons, kubelet, etc) would be able to use swap.
 
-This is also a breaking change. 
-Users have used --fail-swap-on=false to allow for kubernetes to run
-on a swap enabled node.
-
-### Restrict swap usage at the cgroup level
-
-Setting a swap limit at the cgroup level would allow us to restrict the usage
-of swap on a pod-level, rather than container-level basis.
-
-For alpha, we are opting for the container-level basis to simplify the
-implementation (as the container runtimes already support configuration of swap
-with the `memory-swap-limit` parameter). This will also provide the necessary
-plumbing for container-level accounting of swap, if that is proposed in the
-future.
-
-In beta, we may want to revisit this.
-
-See the [Pod Resource Management design proposal] for more background on the
-cgroup limits the kubelet currently sets based on each QoS class.
-
-[Pod Resource Management design proposal]: https://github.com/kubernetes/design-proposals-archive/blob/master/node/pod-resource-management.md#pod-level-cgroups
-
-## Infrastructure Needed (Optional)
+## Infrastructure Needed
 
 <!--
 Use this section if you need things from the project/SIG. Examples include a
@@ -1339,4 +1352,7 @@ new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
 
-We may need Linux VM images built with swap partitions for e2e testing in CI.
+Added the "swap-conformance" lane for extensive swap testing under node pressure: [kubelet-swap-conformance-fedora-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-fedora-serial),
+kubelet-swap-conformance-ubuntu-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-ubuntu-serial).
+
+See #e2e tests above for more information
