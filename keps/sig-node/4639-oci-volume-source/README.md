@@ -369,6 +369,8 @@ potential enhancements may be required:
      image. These artifacts may or may not be located on the same
      registry/repository. The new referrers API allows for retrieving these
      artifacts.
+   - How Kubernetes and especially runtimes should support OCI referrers is not
+     part of the alpha feature and will be considered in future graduations.
 
 **Validation:**
    - Extend validation and security checks to cover new artifact types.
