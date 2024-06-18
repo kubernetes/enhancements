@@ -14,6 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Discovering CPU topology](#discovering-cpu-topology)
+    - [Windows CPU Discovery](#windows-cpu-discovery)
   - [CPU Manager interfaces (sketch)](#cpu-manager-interfaces-sketch)
   - [Configuring the CPU Manager](#configuring-the-cpu-manager)
     - [Policy 1: &quot;none&quot; cpuset control [default]](#policy-1-none-cpuset-control-default)

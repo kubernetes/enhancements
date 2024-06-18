@@ -53,6 +53,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Windows considerations](#windows-considerations)
 <!-- /toc -->
 
 ## Release Signoff Checklist

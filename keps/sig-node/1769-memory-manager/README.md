@@ -58,6 +58,8 @@
     - [Mechanism I (pod eviction by kubelet)](#mechanism-i-pod-eviction-by-kubelet)
     - [Mechanism II (Out-of-Memory (OOM) killer by kernel/OS)](#mechanism-ii-out-of-memory-oom-killer-by-kernelos)
     - [Mechanism III (obey cgroup limit, by OOM killer)](#mechanism-iii-obey-cgroup-limit-by-oom-killer)
+  - [Windows considerations](#windows-considerations)
+    - [Kubelet memory management](#kubelet-memory-management)
 <!-- /toc -->
 
 ## Release Signoff Checklist
