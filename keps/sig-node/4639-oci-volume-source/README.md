@@ -1190,6 +1190,17 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### No enhancement
+
+Currently, a shared volume approach can be used. This involves packaging file to share in an image that includes a shell in its base layer.
+An init container can be used to copy files from an image to a shared volume using shell commands. This volume can be made accessible to all
+containers in the pod.
+
+An OCI VolumeSource eliminates the need for a shell and an init container by allowing the direct mounting of OCI images as volumes,
+making it easier to modularize. For example, in the case of LLMs and model-servers, it is useful to package them in separate images,
+so various models can plug into the same model-server image. An OCI VolumeSource not only simplifies file copying but also allows
+container native distribution, authentication, and version control for files.
+
 ### [KEP 1495: Volume Populators](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1495-volume-populators)
 
 The volume-populators API extension allows you to populate a volume with data from an external data source when the volume is created.
