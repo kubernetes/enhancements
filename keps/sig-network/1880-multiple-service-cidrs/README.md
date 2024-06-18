@@ -680,6 +680,25 @@ Example:
 - the apiserver repair loops will generate periodic events informing the user that the Service with the IP allocated
   is not within the configured range
 
+One of the biggest problem when running with skewed apiservers is that each of them will use independent
+allocators that will rely on the repair loops to reconcile the Services and ClusterIP. This can cause that
+two Services created in different skewed apiservers, requesting the same ClusterIP, can succeed if the allocation
+happens before the repair loops run, with the catastrophic result of having two Services with the same ClusterIP.
+
+To avoid this race problem, the new IP allocator will implement a dual-write strategy, creating an IPAddress object and
+also allocating the IP in the corresponding bitmap allocator. This behavior will be controlled with a new feature gate,
+`DisableAllocatorDualWrite`, that will be disabled by default until `MultiCIDRServiceAllocator` is GA.
+The next version after `MultiCIDRServiceAllocator` is GA, all the apiservers will be using the new IP allocator, so
+it will be safe to disable the dual-write mode.
+
+
+| Version  | MultiCIDRServiceAllocator | DisableAllocatorDualWrite |
+|----------|----------|----------|
+| 1.31     | Beta off   | Alpha off   |
+| 1.32     | GA on  (locked) | Beta off   |
+| 1.33     | GA on  (there are no bitmaps running) | GA on (also delete old bitmap)|
+| 1.34     | remove feature gate | remove feature gate  |
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
