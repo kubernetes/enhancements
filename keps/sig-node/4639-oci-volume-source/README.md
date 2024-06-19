@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Vocabulary: OCI Images, Artifacts, and Objects](#vocabulary-oci-images-artifacts-and-objects)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Kubernetes API](#kubernetes-api)
   - [Kubelet and Container Runtime Interface (CRI) support for OCI artifacts](#kubelet-and-container-runtime-interface-cri-support-for-oci-artifacts)
     - [kubelet](#kubelet)
       - [Pull Policy](#pull-policy)
@@ -323,6 +324,8 @@ to support this source type. Key design aspects include:
 - For OCI artifacts, we want to convert and represent them as a directory with
   files. A single file could also be nested inside a directory.
 
+### Kubernetes API
+
 The following code snippet illustrates the proposed API change:
 
 ```yaml
@@ -342,6 +345,84 @@ spec:
     volumeMounts:
     - mountPath: /data
       name: oci-volume
+```
+
+
+This means we extend the [`VolumeSource`](https://github.com/kubernetes/kubernetes/blob/7b359a2f9e1ff5cdc49cfcc4e350e9d796f502c0/staging/src/k8s.io/api/core/v1/types.go#L49)
+by:
+
+```go
+// Represents the source of a volume to mount.
+// Only one of its members may be specified.
+type VolumeSource struct {
+	// …
+
+	// oci represents a OCI object pulled and mounted on kubelet's host machine
+	// +optional
+	OCI *OCIVolumeSource `json:"oci,omitempty" protobuf:"bytes,30,opt,name=oci"
+}
+```
+
+And add the corresponding `OCIVolumeSource` type:
+
+```go
+// OCIVolumeSource represents a OCI volume resource.
+type OCIVolumeSource struct {
+	// Required: Image or artifact reference to be used
+	Reference string `json:"reference,omitempty" protobuf:"bytes,1,opt,name=reference"`
+
+	// Policy for pulling OCI objects
+	// Defaults to IfNotPresent
+	// +optional
+	PullPolicy PullPolicy `json:"pullPolicy,omitempty" protobuf:"bytes,2,opt,name=pullPolicy,casttype=PullPolicy"`
+}
+```
+
+The same will apply to [`pkg/apis/core/types.VolumeSource`](https://github.com/kubernetes/kubernetes/blob/7b359a2f9e1ff5cdc49cfcc4e350e9d796f502c0/pkg/apis/core/types.go#L58),
+which is the internal API compared to the external one from staging. The [API Validation](https://github.com/kubernetes/kubernetes/blob/7b359a2f9e1ff5cdc49cfcc4e350e9d796f502c0/pkg/apis/core/validation/validation.go)
+validation will be extended to disallow the `subPath`/`subPathExpr` field as
+well as making the `reference` mandatory:
+
+```go
+// …
+
+if source.OCI != nil {
+	if numVolumes > 0 {
+		allErrs = append(allErrs, field.Forbidden(fldPath.Child("oci"), "may not specify more than 1 volume type"))
+	} else {
+		numVolumes++
+		allErrs = append(allErrs, validateOCIVolumeSource(source.OCI, fldPath.Child("oci"))...)
+	}
+}
+
+// …
+```
+
+```go
+func validateOCIVolumeSource(oci *core.OCIVolumeSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if len(oci.Reference) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("reference"), ""))
+	}
+	allErrs = append(allErrs, validatePullPolicy(oci.PullPolicy, fldPath.Child("pullPolicy"))...)
+	return allErrs
+}
+```
+
+```go
+// …
+
+// Disallow subPath/subPathExpr for OCI volumes
+if v, ok := volumes[mnt.Name]; ok && v.OCI != nil {
+	if mnt.SubPath != "" {
+		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPath"), mnt.SubPath, "not allowed in OCI volume sources"))
+	}
+	if mnt.SubPathExpr != "" {
+		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPathExpr"), mnt.SubPathExpr, "not allowed in OCI volume sources"))
+	}
+}
+
+// …
 ```
 
 ### Kubelet and Container Runtime Interface (CRI) support for OCI artifacts
@@ -375,7 +456,7 @@ potential enhancements may be required:
 
 **Validation:**
    - Extend validation and security checks to cover new artifact types.
-   - Disallow `subPath` mounting through the API validation
+   - Disallow `subPath`/`subPathExpr` mounting through the API validation
 
 **Storage Optimization in the container runtime:**
    - Develop optimized storage solutions tailored for different artifact types,
