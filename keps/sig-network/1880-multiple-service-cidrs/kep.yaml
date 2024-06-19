@@ -40,6 +40,9 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-controller-manager
+  - name: DisableAllocatorDualWrite
+    components:
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
