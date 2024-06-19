@@ -695,8 +695,8 @@ it will be safe to disable the dual-write mode.
 | Version  | MultiCIDRServiceAllocator | DisableAllocatorDualWrite |
 |----------|----------|----------|
 | 1.31     | Beta off   | Alpha off   |
-| 1.32     | GA on  (locked) | Beta off   |
-| 1.33     | GA on  (there are no bitmaps running) | GA on (also delete old bitmap)|
+| 1.32     | GA on  (no locked) | Beta off   |
+| 1.33     | GA locked (there are no bitmaps running) | GA on (also delete old bitmap)|
 | 1.34     | remove feature gate | remove feature gate  |
 
 ## Production Readiness Review Questionnaire
