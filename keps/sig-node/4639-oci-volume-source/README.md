@@ -463,6 +463,56 @@ mounted volume paths to the `ImageStatusResponse.Image` message returned by the
 the kubelet and the runtime to ensure that no context gets lost in restart
 scenarios.
 
+The overall flow for container creation will look like this:
+
+```mermaid
+sequenceDiagram
+    participant K as kubelet
+    participant C as Container Runtime
+    Note left of K: During pod sync
+    Note over K,C: CRI
+    K->>+C: RPC: PullImage
+    Note right of C: Pull and mount<br/>OCI object
+    C-->>-K: PullImageResponse.Mountpoint
+    Note left of K: Add mount points<br/> to container<br/>creation request
+    K->>+C: RPC: CreateContainer
+    Note right of C: Add bind mounts<br/>from object mount<br/>point to container
+    C-->>-K: CreateContainerResponse
+```
+
+1. **Kubelet Initiates Image Pull**:
+   - During pod setup, the kubelet initiates the pull for the OCI object based on the volume source.
+   - The kubelet passes the necessary indicator to mount the object to the container runtime.
+
+2. **Runtime Handles Mounting**:
+   - The container runtime mounts the OCI object as a filesystem using the metadata provided by the kubelet.
+   - The runtime returns the mount point information to the kubelet.
+
+3. **Redirecting of the Mountpoint**:
+   - The kubelet uses the returned mount point to build the container creation request for each container using that mount.
+   - The kubelet initiates the container creation and the runtime creates the required bind mounts to the target location.
+     This is the current implemented behavior for all other mounts and should require no actual container runtime code change.
+
+4. **Lifecycle Management**:
+   - The container runtime manages the lifecycle of the mounts, ensuring they are created during pod setup and cleaned up upon sandbox removal.
+
+5. **Tracking and Coordination**:
+   - The kubelet and runtime coordinate to track pods requesting mounts to avoid removing containers with volumes in use.
+   - During image garbage collection, the runtime provides the kubelet with the necessary mount information to ensure proper cleanup.
+
+6. **SELinux Context Handling**:
+   - The runtime applies SELinux labels to the volume mounts based on the security context provided by the kubelet, ensuring consistent enforcement of security policies.
+
+7. **Pull Policy Implementation**:
+   - The `pullPolicy` at the pod level will determine when the OCI object is pulled, with options for `IfNotPresent`, `Always`, and `Never`.
+   - `IfNotPresent`: Prevents redundant pulls and uses existing images when available.
+   - `Always`: Ensures the latest images are used, for example, with development and testing environments.
+   - `Never`: Ensures only pre-pulled images are used, for example, in air-gapped or controlled environments.
+
+8. **Security and Performance Optimization**:
+   - Implement thorough security checks to mitigate risks such as path traversal attacks.
+   - Optimize performance for handling large OCI artifacts, including caching strategies and efficient retrieval methods.
+
 #### Container Runtimes
 
 Container runtimes need to support the new `mount` field, otherwise the
