@@ -449,8 +449,8 @@ potential enhancements may be required:
      signature artifact could refer to a platform index, for certifying the
      platform images, or to an SBOM artifact that refers to a platform matched
      image. These artifacts may or may not be located on the same
-     registry/repository. The new referrers API allows for retrieving these
-     artifacts.
+     registry/repository. The new referrers API allows for discovering
+     artifacts from a requested repository.
    - How Kubernetes and especially runtimes should support OCI referrers is not
      part of the alpha feature and will be considered in future graduations.
 
