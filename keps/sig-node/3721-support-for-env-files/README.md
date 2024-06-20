@@ -266,11 +266,7 @@ KEY2=VALUE2
 ...
 ```
 
-2. **Variable Naming**:
-    
-    a. **Standard**: Environment variable names should be composed of alphanumeric characters (letters and numbers), underscores, dots, or hyphens. The first character cannot be a digit.
-
-    b. **Relaxed**: If the Kubernetes feature gate `RelaxedEnvironmentVariableValidation` is enabled, the naming restriction is less stringent, allowing any printable ASCII character except the equals sign (=).
+2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars.
 
 3. **Duplicate Names**: If an environment variable is defined multiple times in the file, the last occurrence takes precedence and overrides any previous values.
 
@@ -280,7 +276,7 @@ KEY2=VALUE2
 
 6. **Container Behavior**:
     
-    a. **Startup**: At container startup, the kubelet (the Kubernetes node agent) will parse the env file from the emptyDir volume and inject the defined variables into the container's environment. To avoid race condition with another container updating the env file, we will restrict mounting the emptyDir volume (containing the env file) in initContainer only.
+    a. **Startup**: At container startup, the kubelet will parse the env file from the emptyDir volume and inject the defined variables into the container's environment. To avoid race condition with another container updating the env file, we will restrict mounting the emptyDir volume (containing the env file) in initContainer only. The env file can either be mounted or consumed in a container.
     
     b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration.
 
@@ -388,7 +384,14 @@ populated from the specified file.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No
+Yes, the unit tests will be added along with alpha implementation.
+
+1. Validate that the `fileKeyRef` field is dropped when FeatureGate is disabled.
+2. Validate that the `fileKeyRef` field is not dropped when FeatureGate is
+   enabled.
+3. Validate that the kubelet instantiates the env vars from `fileKeyRef` when
+   the FeatureGate is enabled.
+
 
 ### Rollout, Upgrade and Rollback Planning
 
