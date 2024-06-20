@@ -211,7 +211,7 @@ Alternate options considered for discovering topology:
 
 #### Windows CPU Discovery
 
-The Windows Kubelet provides an implementation for the [cadvisor api](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cadvisor/cadvisor_windows.go#L50) 
+The Windows Kubelet provides an implementation for the [cadvisor api](https://github.com/kubernetes/kubernetes/blob/fbaf9b0353a61c146632ac195dfeb1fbaffcca1e/pkg/kubelet/cadvisor/cadvisor_windows.go#L50) 
 in order to provide Windows stats to other components without modification.  
 The ability to provide the `cadvisorapi.MachineInfo` api is already partially mapped
 in on the Windows client.  By mapping the Windows specific topology API's to 
@@ -245,10 +245,18 @@ message WindowsCpuGroupAffinity {
 }
 ```
 
-Since the API's are looking for a distinct ProcessId, the id will be calculated by:
-`(group *64) + processid` resulting in unique process id's from `group 0` as `1-64` and 
+Since the Kubelet API's are looking for a distinct ProcessorId, the id will be calculated by:
+`(group *64) + procesorid` resulting in unique process id's from `group 0` as `1-64` and 
 process Id's from `group 1` as `65-128` and so on.  When converting back to the Windows
-Group Affinity we will divide by 2 until we receive a value under 64.
+Group Affinity we will divide by 2 until we receive a value under 64, counting the number to determine
+the groupID.
+
+There are some scenarios where cpu count might be greater than 64 cores but in each group it is less
+than 64. For instance, you could have 2 CPU groups with 35 processors each.  The unique ID's using the strategy 
+above would give you: 
+
+- CPU group 0 : 1 to 35
+- CPU group 2: 65 to 100
 
 ### CPU Manager interfaces (sketch)
 

@@ -784,8 +784,10 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 
 Numa nodes can not be guaranteed via the Windows API, instead an [ideal Numa](https://learn.microsoft.com/en-us/windows/win32/procthread/numa-support#numa-support-on-systems-with-more-than-64-logical-processors) node can be 
 configured via the [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).  
-Using Memory manager's internal mapping this should provide the desired behavior.  But it is possible that a CPU could access memory from a different Numa Node than it is currently in, resulting in decreased performance.  
-If this is undesirable then `single-numa-node` should be configured in the Topology Manager policy setting.  In the future, in the case of workloads that span multiple Numa nodes, it may be desirable for 
+Using Memory manager's internal mapping this should provide the desired behavior in most cases. It is possible that a CPU could access memory from a different Numa Node than it is currently in, resulting in decreased performance.  For this reason, 
+we will add documentation in addition to a log warning message in kubelet to help raise awareness.
+If state is undesirable then `single-numa-node` and the CPU manager should be configured in the Topology Manager policy setting 
+which would force Kubelet to only select a numa node if it will have enough memory and CPU's available.  In the future, in the case of workloads that span multiple Numa nodes, it may be desirable for 
 Topology manager to have a new policy specific for Windows.  
 
 #### Kubelet memory management 
