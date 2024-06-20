@@ -358,6 +358,7 @@ type VolumeSource struct {
 	// …
 
 	// oci represents a OCI object pulled and mounted on kubelet's host machine
+	// +featureGate=OCIVolume
 	// +optional
 	OCI *OCIVolumeSource `json:"oci,omitempty" protobuf:"bytes,30,opt,name=oci"
 }
