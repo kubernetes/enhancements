@@ -95,11 +95,7 @@ a few drawbacks in following use-cases:
    environment variable by the main container. Existing mechanisms necessitate
    additional ConfigMap or Secret API calls.
 
-2. when each k8s Node is initialized with an environment file that is used by
-   Pods running on that node, k8s can provide a mechanism to instantiate env
-   vars from this file.
-
-3. The user is using a container offered by a vendor that requires configurating
+2. The user is using a container offered by a vendor that requires configurating
    environment variables (for eg, license key, one-time secret tokens). They can
    use an `initContainer` to fetch this info into a file and the main container
    can consume.
@@ -141,57 +137,11 @@ container.
 
 Instead, k8s can provide a new mechanism that will be used to instantiate
 env vars from the specified file. The user can generate an env file using an
-`initContainer`. The container can then use the `fileRef` field to reference
+`initContainer`. The container can then use the `fileKeyRef` field to reference
 the file from which it should initialize the env vars. Behind the scene, kubelet will
 parse the env file and instantiate these env vars during container creation. It
 does not mount this file onto the main container. In the example below,
 the Pod's output includes `CONFIG_VAR=HELLO`.
-
-```
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod
-spec:
-  initContainers:
-  - name: setup-envfile
-    image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo "CONFIG_VAR=HELLO" > /etc/config/config.env']
-    volumeMounts:
-    - name: data
-      mountPath: /etc/config
-  containers:
-  - name: use-envfile
-    image: registry.k8s.io/busybox
-    command: [ "/bin/sh", "-c", "env" ]
-    envFrom:
-    - fileRef:
-        path: config.env
-        volumeName: data
-  restartPolicy: Never
-  volumes:
-  - name: data
-    emptyDir: {}
-```
-
-#### Story 2
-
-Each k8s Node is instantiated with an env file that contains information about
-the Node (for eg, instance type, failure zones). The user would like to
-provide some of the information in this file to the vendor's container via
-env vars. For example, consider that each node has the following env file:
-
-```
-CONFIG_VAR=HELLO
-CONFIG_VAR_A=WORLD
-...
-```
-
-The user can use the `fileKeyRef` field to select a subset of these env vars
-that it wants to provide to the app. Behind the scene, kubelet will parse the
-env file on the host and instantiate these env vars when creating the main
-container. It does not mount this hostPath volume onto the main container.
-In this case, the Pod's output includes `CONFIG_VAR=HELLO`
 
 ```
 apiVersion: v1
@@ -202,12 +152,10 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'cp /etc/config/config.env /data/config.env']
+    command: ['sh', '-c', 'echo "CONFIG_VAR=HELLO" > /data/config.env']
     volumeMounts:
     - name: config
       mountPath: /data
-    - name: data
-      mountPath: /etc/config
    containers:
   - name: use-envfile
     image: registry.k8s.io/busybox
@@ -223,46 +171,65 @@ spec:
   volumes:
   - name: config
     emptyDir: {}
-  - name: data
-    hostPath: /etc/config
 ```
+
+#### Story 2
+
+The user's workload needs to consume secrets of a service. Usually, they can
+store it in k8s Secret resource and use it to instantiate the env var. But it
+can become difficult to manage if each Pod needs to consume unique secrets.
+
+Instead, k8s can provide a new mechanism to fetch secrets in initContainer and
+store it in a file. The container can then use the `fileKeyRef` field to
+instantiate the env var from the file. Behind the scene, kubelet will parse
+the env file and instantiate these env vars during container creation. It
+does not mount this file onto the main container. In the example below,
+the Pod's output includes `JWT=token`.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dapi-test-pod
+spec:
+  initContainers:
+  - name: setup-envfile
+    image: registry.k8s.io/busybox
+    command: ['sh', '-c', 'echo "JWT=token" > /data/config.env']
+    volumeMounts:
+    - name: config
+      mountPath: /data
+   containers:
+  - name: use-envfile
+    image: registry.k8s.io/busybox
+    command: [ "/bin/sh", "-c", "env" ]
+    env:
+    - name: CONFIG_VAR
+      valueFrom:
+        fileKeyRef:
+          path: config.env
+          volumeName: config
+          key: JWT
+  restartPolicy: Never
+  volumes:
+  - name: config
+    emptyDir: {}
+```
+
+
 
 ## Design Details
 
-Pods and PodTemplate will include `FileEnvSource` field under [`EnvFromSource`](https://pkg.go.dev/k8s.io/api/core/v1#EnvFromSource)
-and `FileKeySelector` field under [`EnvVarSource`](https://pkg.go.dev/k8s.io/api/core/v1#EnvVarSource)
+Pods and PodTemplate will include `FileKeySelector` field under [`EnvVarSource`](https://pkg.go.dev/k8s.io/api/core/v1#EnvVarSource)
 that can be set for an individual container.
 
 ### Pod API
 
-`FileEnvSource` field will allow the users to populate environment variables
-from the specified file. The user can specify a file using `VolumeName` and
+`FileKeySelector` field will allow the users to select the value for environment
+variable from the specified key in the file. The user can specify a file using `VolumeName` and
 `Path` fields. The `VolumeName` field specifies the volume mount that contains
 the file and `Path` is the relative path in this volume mount filesystem.
 
-```
-type EnvFromSource struct {
-    ...
-    // The file to select from
-    // +optional
-    FileRef *FileEnvSource `json:"fileRef,omitempty" protobuf:"bytes,3,opt,name=fileRef"`
-    ...
-}
-
-type FileEnvSource struct {
-    // The name of the volume mount containing the env file.
-    VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
-    // The relative file path inside the volume mount to select from.
-    Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
-    // Specify whether the file must exist. If the file does not exist,
-    // then the env var is not published.
-    // +optional
-    Optional *bool `json:"optional,omitempty" protobuf:"varint,3,opt,name=optional"`
-}
-```
-
-`FileKeySelector` field will allow the users to select the value for environment
-variable from the specified key in the file.
 
 ```
 type EnvVarSource struct {
