@@ -38,7 +38,7 @@ reviewers:
 approvers:
   - "@sig-node-leads"
   - "@sig-storage-leads"
-  - "@oscar.doe"
+  - "@mrunalp"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
