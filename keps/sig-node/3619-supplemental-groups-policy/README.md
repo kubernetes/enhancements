@@ -18,11 +18,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext)
     - [User in ContainerStatus](#user-in-containerstatus)
-    - [RuntimeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field)
   - [CRI](#cri)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext)
     - [user in ContainerStatus](#user-in-containerstatus-1)
-    - [runtime_features in StatusResponse which contains supplemental_groups_policy field](#runtime_features-in-statusresponse-which-contains-supplemental_groups_policy-field)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Deploy a Security Policy to enforce <code>SupplementalGroupsPolicy</code> field](#story-1-deploy-a-security-policy-to-enforce-supplementalgroupspolicy-field)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -31,11 +31,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api-1)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext-1)
     - [User in ContainerStatus](#user-in-containerstatus-2)
-    - [RuntimeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1)
   - [CRI](#cri-1)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext-1)
     - [user in ContainerStatus](#user-in-containerstatus-3)
-    - [runtime_features in StatusResponse which contains supplemental_groups_policy field](#runtime_features-in-statusresponse-which-contains-supplemental_groups_policy-field-1)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -205,24 +205,24 @@ Note that both policies diverge from the semantics of [`config.User` OCI image c
 
 To provide users/administrators to know which identities are actually attached to the container process, it proposes to introduce new `User` field in `ContainerStatus`. `User` is an object which consists of `Uid`, `Gid`, `SupplementalGroups` fields for linux containers. This will help users to identify unexpected identities. This field is derived by CRI response (See [user in ContainerStatus](#user-in-containerstatus-1) section).
 
-#### RuntimeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
 
-Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), It proposes to add `RuntimeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field in side of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature ot not. The field is assumed drived by CRI response.
+Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), It proposes to add `NodeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field in side of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature ot not. The field is assumed drived by CRI response.
 
 ```golang
 type NodeStatus struct {
-	// RuntimeFeatures describes the set of implemented features implemented by the CRI implementation(NodeRuntime).
-	RuntimeFeatures *NodeRuntimeFeatures
+	// Features describes the set of implemented features implemented by the CRI implementation.
+	Features *NodeFeatures
 }
-type NodeRuntimeFeatures struct {
+type NodeFeatures struct {
 	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
 	SupplementalGroupsPolicy *bool
 }
 ```
 
-Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But this does not fit to use for this KEP because RRO mounts should require to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects to [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and this does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `RuntimeFeatures` in `NodeStatus` does not make any confusion with `RuntimeHandlerFeatures` because we can clearly define how to use them as below:
+Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But this does not fit to use for this KEP because RRO mounts should require to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects to [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and this does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `NodeFeatures` in `NodeStatus` does not make any confusion with `RuntimeHandlerFeatures` because we can clearly define how to use them as below:
 
-- `RuntimeFeatures`(added in this KEP):
+- `NodeFeatures`(added in this KEP):
   - focses on features that depend only on cri implementation, be independent on runtime handlers(low-level container runtimes), (i.e. it should not require to inspect to any information from oci runtime-spec's features).
 - `RuntimeHandlerFeature` (introduced in KEP-3857):
   -  focuses features that depend on the runtime handlers, (i.e. dependent to the information exposed by oci runtime-spec's features).
@@ -260,9 +260,9 @@ message ContainerUser {
 }
 ```
 
-#### runtime_features in StatusResponse which contains supplemental_groups_policy field
+#### features in StatusResponse which contains supplemental_groups_policy field
 
-To propagate whether the runtime supports fine-grained supplemental group control to `NodeRuntimeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field`runtime_features` in `StatusResponse`. 
+To propagate whether the runtime supports fine-grained supplemental group control to `NodeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field`features` in `StatusResponse`. 
 
 ```proto
 // service RuntimeService {
@@ -271,8 +271,8 @@ To propagate whether the runtime supports fine-grained supplemental group contro
 // }
 message StatusResponse {
 ...
-    // runtime_features describes the set of features implemented by the CRI implementation.
-    RuntimeFeatures runtime_features = ?;
+    // features describes the set of features implemented by the CRI implementation.
+    RuntimeFeatures features = ?;
 }
 message RuntimeFeatures {
     // supplemental_groups_policy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
@@ -407,14 +407,14 @@ type LinuxContainerUser struct {
 // }
 ```
 
-#### RuntimeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
 
 ```golang
 type NodeStatus struct {
-	// RuntimeFeatures describes the set of implemented features implemented by the CRI implementation(NodeRuntime).
+	// Features describes the set of implemented features implemented by the CRI implementation.
 	// +featureGate=SupplementalGroupsPolicy
 	// +optional
-	RuntimeFeatures *NodeRuntimeFeatures
+	Features *NodeFeatures
 
 	// The available runtime handlers.
 	// +featureGate=RecursiveReadOnlyMounts
@@ -422,10 +422,10 @@ type NodeStatus struct {
   RuntimeHandlers []RuntimeHandlers
 }
 
-// RuntimeFeatures describes the set of implemented features implemented by the CRI implementation(NodeRuntime).
-// THE FEATURES CONTAINED IN THE NodeRuntimeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
+// NodeFeatures describes the set of implemented features implemented by the CRI implementation.
+// THE FEATURES CONTAINED IN THE NodeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
 // (I.E. IT SHOULD NOT REQUIRE TO INSPECT TO ANY INFORMATION FROM OCI RUNTIME-SPEC'S FEATURES).
-type NodeRuntimeFeatures {
+type NodeFeatures {
 	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
 	// +optional
 	SupplementalGroupsPolicy *bool
@@ -512,7 +512,7 @@ message LinuxContainerUser {
 // }
 ```
 
-#### runtime_features in StatusResponse which contains supplemental_groups_policy field
+#### features in StatusResponse which contains supplemental_groups_policy field
 
 ```proto
 // service RuntimeService {
@@ -524,8 +524,8 @@ message StatusResponse {
     // Runtime handlers.
     repeated RuntimeHandler runtime_handlers = 3;
 
-    // runtime_features describes the set of features implemented by the CRI implementation.
-    RuntimeFeatures runtime_features = ?;
+    // features describes the set of features implemented by the CRI implementation.
+    RuntimeFeatures features = ?;
 }
 
 // RuntimeFeatures describes the set of features implemented by the CRI implementation.
