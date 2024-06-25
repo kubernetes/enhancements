@@ -419,7 +419,7 @@ type NodeStatus struct {
 	// The available runtime handlers.
 	// +featureGate=RecursiveReadOnlyMounts
 	// +optional
-  RuntimeHandlers []RuntimeHandlers
+	RuntimeHandlers []RuntimeHandlers
 }
 
 // NodeFeatures describes the set of implemented features implemented by the CRI implementation.
