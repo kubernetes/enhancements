@@ -1,7 +1,7 @@
 
 # KEP-4727: reasonable --image-gc-high-threshold according to imagefs.available hard evict option
 
-
+<!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -20,6 +20,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -109,11 +112,10 @@ Keep the current usage that turn off image garbage collection by setting `--imag
 
 ## Design Details
 
-Add `ImageGCHighThresholdAccurate` feature gate to kubelet. 
+Add `ImageGCBeforeStorageEviction` feature gate to kubelet. 
 When the feature  is turned on, the value of `--image-gc-high-threshold` must be smaller than  value of `100 - imagefs.available`. 
 When the feature is turned off, keep the previous usage.
 
-If `ImageGCHighThresholdAccurate` is turned on, 
 
 ### Test Plan
 
@@ -185,7 +187,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ImageGCHighThresholdAccurate
+  - Feature gate name: ImageGCBeforeStorageEviction
   - Components depending on the feature gate: kubelet
 
 
@@ -199,7 +201,7 @@ Yes, we can just disable the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The constrains are respected again.
+The constraints are respected again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -228,22 +230,20 @@ No.
 
 ### Monitoring Requirements
 
-No.
+Monitor the metrics
+- "kubelet_image_gc_before_storage_eviction" that contains `image-gc-threshold` and `imagefs-available` labels
+
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-No.
+- Verify the Kubelet Configuration with the Kubelet's configz endpoint
+- Monitor the `kubelet_image_gc_before_storage_eviction`, denote whether `--image-gc-high-threshold` smaller than  `100 - imagefs.available`
+
 
 ###### How can someone using this feature know that it is working for their instance?
 
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - `kubelet_image_gc_before_storage_eviction` metric is 1 when `--image-gc-high-threshold` smaller than  `100 - imagefs.available`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -253,7 +253,7 @@ No.
 
 
 - [ ] Metrics
-  - Metric name:
+  - Metric name: `kubelet_image_gc_before_storage_eviction`
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
@@ -264,7 +264,7 @@ No.
 
 ### Dependencies
 
-
+Just Kubelet
 
 ###### Does this feature depend on any specific services running in the cluster?
 

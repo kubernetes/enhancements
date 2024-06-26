@@ -4,14 +4,15 @@ authors:
   - "@olderTaoist"
 owning-sig: sig-node
 participating-sigs:
-status: implementable
+status: provisional
 creation-date: 2024-06-13
 reviewers:
   - "@SergeyKanzhelev"
   - "@haircommander"
 
 approvers:
-  - TBD
+  - "@haircommander"
+  - "@SergeyKanzhelev"
 
 see-also:
 
