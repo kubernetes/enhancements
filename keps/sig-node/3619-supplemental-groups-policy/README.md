@@ -272,6 +272,7 @@ To propagate whether the runtime supports fine-grained supplemental group contro
 message StatusResponse {
 ...
     // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
     RuntimeFeatures features = ?;
 }
 message RuntimeFeatures {
@@ -525,6 +526,7 @@ message StatusResponse {
     repeated RuntimeHandler runtime_handlers = 3;
 
     // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
     RuntimeFeatures features = ?;
 }
 
