@@ -933,8 +933,8 @@ harware was [added](https://github.com/kubernetes/test-infra/pull/28369) in Kube
 
 ## Windows considerations
 
-Topology manager is already enabled on Windows in order to support the device manager.  The same configuration options
-and PRR applies to Windows. The CPU manager and Memory Manager can independently be enabled to support advance configuration
-where affinity is applied.  In the future a new Policy maybe required to address unique Numa Memory Management as described in the 
-Windows Section on the Memory Manager KEP. 
+Topology manager is already enabled on Windows in order to support the device manager.  Since there are no changes to the 
+Topology manager, the answers to the [Production Readiness Review](#production-readiness-review-questionnaire) section also apply to Windows when CPU and Memory manager are 
+added as hint providers. The CPU manager and Memory Manager can independently be enabled or disabled to support cases where the features needs to be shut off.  
+In the future a new Policy (and new KEP) for the Topology manager maybe required to address unique Windows Numa Memory Management requirements as described in the Windows Section on the Memory Manager KEP. 
 

@@ -246,8 +246,8 @@ message WindowsCpuGroupAffinity {
 ```
 
 Since the Kubelet API's are looking for a distinct ProcessorId, the id will be calculated by:
-`(group *64) + procesorid` resulting in unique process id's from `group 0` as `1-64` and 
-process Id's from `group 1` as `65-128` and so on.  When converting back to the Windows
+`(group *64) + procesorid` resulting in unique processor id's from `group 0` as `1-64` and 
+processor Id's from `group 1` as `65-128` and so on.  When converting back to the Windows
 Group Affinity we will divide by 2 until we receive a value under 64, counting the number to determine
 the groupID.
 
