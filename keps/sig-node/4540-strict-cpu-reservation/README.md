@@ -12,6 +12,9 @@
     - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Core Function](#core-function)
+  - [Risk Mitigation Option 1](#risk-mitigation-option-1)
+  - [Risk Mitigation Option 2](#risk-mitigation-option-2)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -94,17 +97,19 @@ Burstable and best-effort pods (and guaranteed pods with fractional CPU requests
 This issue is particularly critical in all-in-one deployments where workloads are placed on combined master+worker+storage nodes. In all-in-one deployments, system daemons include additional services like ceph storage.
 
 #### Story 2
-The reverse is true for workloads running on the reserved CPUs. Workloads have been reported suffering from occasional but much bigger latency contention with system processes on the reserved CPUs e.g. fail to swact (switch of activity).
+The reverse is true for workloads running on the reserved CPUs. Workloads have been reported suffering latency issue when they happen to run on the reserved CPUs.
 
 ### Risks and Mitigations
 
-The feature is isolated to a specific policy option within the `CPUManager` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to stable.
+The feature is isolated to a specific policy option within the `CPUManager` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default. Risk mitigation below is when the feature is enabled.
 
-Kube-scheduler schedules pods on node allocatable which is total - reserved cores. It is at the node level, burstable and best-effort pods are allowed to run on the reserved cores. The `strict-cpu-reservation` feature removes this discrepancy.
+Kubelet has been requiring non-zero shared pool when the static policy is enabled. This is not an issue when `strict-cpu-reservation` is disabled since the reserved cores are not in the node allocatable but are in the shared pool.
 
-However, kubelet has been requiring non-zero shared pool when the static policy is enabled. Kube-scheduler knows a portion of the node allocatable is not available for exclusive allocation. This not-for-exclusive portion has been conveniently the reserved cores.
+Kube-scheduler schedules pods on node allocatable which is total - reserved cores. For best-effort type which does not have resource request defined, kube-scheduler fills in default request values, see https://github.com/kubernetes/kubernetes/blob/master/pkg/api/v1/resource/helpers.go#L44 and https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/util/pod\_resources.go#L32.
 
-To maintain backward compatibility, we add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler.
+Thanks to kube-scheduler behaviour, in practice, the shared pool should not become zero when the reserved cores are removed from the shared pool. However, to make sure this is always true, two options are proposed.
+
+Option 1 is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement.
 
 ![MinSharedCPUs](./strict-cpu-allocation.png)
 
@@ -125,6 +130,8 @@ defaultCPUSet = MinSharedCPUs (4) + 54 (available for exclusive allocation)
 
 ## Design Details
 
+### Core Function
+
 In Kubelet, when `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the shared pool at the stage of calculation DefaultCPUSet and remove the `MinSharedCPUs` from the list of available cores for exclusive allocation.
 
 Feature impact can be illustrated as following:
@@ -140,7 +147,7 @@ featureGates:
   CPUManagerPolicyAlphaOptions: true
 cpuManagerPolicy: static
 cpuManagerPolicyOptions:
-  strict-cpu-reservation: { "enable": "true", "numMinSharedCPUs": 4 }
+  strict-cpu-reservation: "{ "enable": "true", "numMinSharedCPUs": 4 }"
 reservedSystemCPUs: "0,32,1,33,16,48"
 ...
 ```
@@ -156,6 +163,8 @@ When `strict-cpu-reservation` is enabled:
 # cat /var/lib/kubelet/cpu\_manager\_state
 {"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
 ```
+
+### Risk Mitigation Option 1
 
 In Node API, we add `exclusive-cpu` in Node Allocatable for Kube-scheduler to consume.
 
@@ -225,6 +234,8 @@ A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeRes
                 }
         }
 ```
+
+### Risk Mitigation Option 2
 
 ### Test Plan
 
