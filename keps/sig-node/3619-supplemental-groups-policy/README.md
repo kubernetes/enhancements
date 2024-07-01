@@ -207,11 +207,11 @@ To provide users/administrators to know which identities are actually attached t
 
 #### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
 
-Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), It proposes to add `NodeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field in side of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature ot not. The field is assumed drived by CRI response.
+Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), it proposes to add `NodeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field inside of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature or not. The field is populated by CRI response.
 
 ```golang
 type NodeStatus struct {
-	// Features describes the set of implemented features implemented by the CRI implementation.
+	// Features describes the set of features implemented by the CRI implementation.
 	Features *NodeFeatures
 }
 type NodeFeatures struct {
@@ -220,10 +220,10 @@ type NodeFeatures struct {
 }
 ```
 
-Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But this does not fit to use for this KEP because RRO mounts should require to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects to [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and this does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `NodeFeatures` in `NodeStatus` does not make any confusion with `RuntimeHandlerFeatures` because we can clearly define how to use them as below:
+Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But it is not fit to use for this KEP because RRO mounts requires inspecting [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand whether the low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects  [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `NodeFeatures` in `NodeStatus` does not conflict with `RuntimeHandlerFeatures` as we can clearly define how to use them as below:
 
 - `NodeFeatures`(added in this KEP):
-  - focses on features that depend only on cri implementation, be independent on runtime handlers(low-level container runtimes), (i.e. it should not require to inspect to any information from oci runtime-spec's features).
+  - focusses on features that depend only on cri implementation, be independent of runtime handlers(low-level container runtimes), (i.e. it should not require to inspect to any information from oci runtime-spec's features).
 - `RuntimeHandlerFeature` (introduced in KEP-3857):
   -  focuses features that depend on the runtime handlers, (i.e. dependent to the information exposed by oci runtime-spec's features).
 
@@ -262,7 +262,7 @@ message ContainerUser {
 
 #### features in StatusResponse which contains supplemental_groups_policy field
 
-To propagate whether the runtime supports fine-grained supplemental group control to `NodeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field`features` in `StatusResponse`. 
+To propagate whether the runtime supports fine-grained supplemental group control to `NodeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field `features` in `StatusResponse`. 
 
 ```proto
 // service RuntimeService {
