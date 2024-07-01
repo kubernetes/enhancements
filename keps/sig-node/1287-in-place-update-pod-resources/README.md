@@ -676,6 +676,26 @@ Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
 
+### Instrumentation
+
+The following new metric will be added to track total resize requests, counted at the pod level. In
+otherwords, a single pod update changing multiple containers and/or resources will count as a single
+resize request.
+
+`kubelet_container_resize_requests_total` - Total number of resize requests observed by the Kubelet.
+
+Label: `state` - Count resize request state transitions. This closely tracks the [Resize status](#resize-status) state transitions, omitting `InProgress`. Possible values:
+  - `proposed` - Initial request state
+  - `infeasible` - Resize request cannot be completed.
+  - `deferred` - Resize request cannot initially be completed, but will retry
+  - `completed` - Resize operation completed successfully (`spec.Resources == status.Allocated == status.Resources`)
+  - `canceled` - Pod was terminated before resize was completed, or a new resize request was started.
+
+In steady state, `proposed` should equal `infeasible + completed + canceled`.
+
+The metric is recorded as a counter instead of a gauge to ensure that usage can be tracked over
+time, irrespective of scrape interval.
+
 ### Future Enhancements
 
 1. Kubelet (or Scheduler) evicts lower priority Pods from Node to make room for
@@ -855,8 +875,8 @@ TODO: Identify more cases
 - ContainerStatus API changes are done. Tests are ready but not enforced.
 
 #### Beta
-- VPA alpha integration of feature completed and any bugs addressed,
-- E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added,
+- VPA alpha integration of feature completed and any bugs addressed.
+- E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added.
 - Negative tests are identified and added.
 - A "/resize" subresource is defined and implemented.
 - Pod-scoped resources are handled if that KEP is past alpha
@@ -865,7 +885,7 @@ TODO: Identify more cases
 
 #### Stable
 - VPA integration of feature moved to beta,
-- User feedback (ideally from atleast two distinct users) is green,
+- User feedback (ideally from at least two distinct users) is green,
 - No major bugs reported for three months.
 - Pod-scoped resources are handled if that KEP is past alpha
 
@@ -962,19 +982,17 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: InPlacePodVerticalScaling
+    - Feature gate name: `InPlacePodVerticalScaling`
     - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane? No.
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? No.
 
-* **Does enabling the feature change any default behavior?** No
+* **Does enabling the feature change any default behavior?**
+
+  - Kubelet sets several pod status fields: `AllocatedResources`, `Resources`
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?** Yes
+
+  - The feature should not be disabled on a running node (create a new node instead).
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   - API will once again permit modification of Resources for 'cpu' and 'memory'.
@@ -990,69 +1008,84 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  - Failure scenarios are already covered by the version skew strategy.
 
 * **What specific metrics should inform a rollback?**
 
+  - Scheduler indicators:
+    - `scheduler_pending_pods`
+    - `scheduler_pod_scheduling_attempts`
+    - `scheduler_pod_scheduling_duration_seconds`
+    - `scheduler_unschedulable_pods`
+  - Kubelet indicators:
+    - `kubelet_pod_worker_duration_seconds`
+    - `kubelet_runtime_operations_errors_total{operation_type=update_container}` 
+
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+
+  Testing plan:
+
+  1. Create test pod
+  2. Upgrade API server
+  3. Attempt resize of test pod
+     - Expected outcome: resize is rejected (see version skew section for details)
+  4. Create upgraded node
+  5. Create second test pod, scheduled to upgraded node
+  6. Attempt resize of second test pod
+    - Expected outcome: resize successful
+  7. Delete upgraded node
+  8. Restart API server with feature disabled
+    - Ensure original test pod is still running
+  9. Attempt resize of original test pod
+    - Expected outcome: request rejected by apiserver
+  10. Restart API server with feature enabled
+    - Verify original test pod is still running
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Metric: `kubelet_container_resize_requests_total` (see [Instrumentation](#instrumentation))
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Metrics
+    - Metric name: `kubelet_container_resize_requests_total`
+      - Components exposing the metric: kubelet
+    - Metric name: `runtime_operations_duration_seconds{operation_type=container_update}`
+      - Components exposing the metric: kubelet
+    - Metric name: `runtime_operations_errors_total{operation_type=container_update}`
+      - Components exposing the metric: kubelet
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  - Using `kubelet_container_resize_requests_total`, `completed + infeasible + canceled` request count
+  should approach `proposed` request count in steady state.
+  - Resource update operations should complete quickly (`runtime_operations_duration_seconds{operation_type=container_update} < X` for 99% of requests)
+  - Resource update error rate should be low (`runtime_operations_errors_total{operation_type=container_update}/runtime_operations_total{operation_type=container_update}`)
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  - Kubelet admission rejections: https://github.com/kubernetes/kubernetes/issues/125375
+  - Resize operate duration (time from the Kubelet seeing the request to actuating the changes): this would require persisting more state about when the resize was first observed.
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  Compatible container runtime (see [CRI changes](#cri-changes)).
 
 ### Scalability
 
@@ -1126,19 +1159,18 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  - If the API is unavailable prior to the resize request being made, the request wil not go through.
+  - If the API is unavailable before the Kubelet observes the resize, the request will remain pending until the Kubelet sees it.
+  - If the API is unavailable after the Kubelet observes the resize, then the pod status may not
+    accurately reflect the running pod state. The Kubelet tracks the resource state internally.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  - TBD
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  - Investigate Kubelet and/or container runtime logs.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
