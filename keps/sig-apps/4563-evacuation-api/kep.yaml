@@ -1,0 +1,56 @@
+title: Evacuation API
+kep-number: 4563
+authors:
+  - "@atiratree"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-apps
+  - sig-autoscaling
+  - sig-cli
+  - sig-node
+  - sig-scheduling
+status: implementable
+creation-date: 2024-03-28
+reviewers:
+  - "@adammw"
+  - "@alculquicondor"
+  - "@dchen1107"
+  - "@fabiand"
+  - "@mmerkes"
+  - "@pwschuurman"
+  - "@rptaylor"
+  - "@razo7"
+  - "@sftim"
+  - "@soltysh"
+  - "@toVersus"
+approvers:
+  - "@dchen1107"
+  - "@soltysh"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.31"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.31"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: EvacuationAPI
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+## The following PRR answers are required at beta release
+metrics:
+  - evacuation_controller_evictions
+  - evacuation_controller_active_evacuator
+  - evacuation_controller_pod_evacuators
+  - evacuations workqueue metrics
