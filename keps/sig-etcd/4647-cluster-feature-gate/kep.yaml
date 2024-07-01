@@ -1,0 +1,20 @@
+title: Feature Gate in etcd
+kep-number: 4647
+authors:
+  - "@siyuanfoundation"
+  - "@stackbaek"
+  - "@henrybear327"
+owning-sig: sig-etcd
+status: provisional
+creation-date: yyyy-mm-dd
+reviewers:
+  - "@ahrtr"
+  - "@serathius"
+  - "@jmhbnz"
+  - "@wenjiaswe"
+  - "@fuweid"
+  - "@logicalhan"
+approvers:
+  - "@ahrtr"
+  - "@serathius"
+
