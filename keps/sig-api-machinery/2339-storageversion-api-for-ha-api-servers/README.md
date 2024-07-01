@@ -15,6 +15,8 @@
   - [Updating StorageVersion](#updating-storageversion)
   - [Garbage collection](#garbage-collection)
   - [CRDs](#crds)
+    - [Agreements](#agreements)
+    - [Limitations](#limitations)
   - [Aggregated API servers](#aggregated-api-servers)
 - [Consuming the StorageVersion API](#consuming-the-storageversion-api)
 - [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
@@ -346,6 +348,39 @@ correct order.
 
 [enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
 [filter]:#updating-storageversion
+
+#### Agreements
+
+1. Storageversion updates will be triggered in the following scenarios:
+   1. when a CRD create or update request is received - to reconcile storageversion with the requested CRD changes
+   2. when the apiserver is started - to ensure that we always reconcile storageversions with the current state of CRDs (in case of server restarts when a CRD udpate was made, but server crashed before the storageversion could be updated.)
+2. We will perform async updates of storageversions such that we do not block writes of other unrelated APIs(for ex, crdA writes waiting for update of crdB's storageversion). These requests should be handled asynchronously
+3. We will block a storageversion update until the teardown of prev CRD storage is finished. If reconciliation finds storageversions requiring update and it detects that the CRD storage has already been updated, and there are no teardowns of old storages in progress, the storageversion can be updated immediately
+   1. this means we will wait to update storageversion of a CRD until
+      1. old storage of the same CRD is deleted
+      2. pending CR writes using old storageversion of the same CRD are completed
+   2. We will do this to prevent publishing a newer storageversion while a pending CR write is still in progress. Otherwise, if the pending CR write finishes writing the CR using an old version, the storageversion API would not reflect that and the object will remain in etcd, encoded in an old version forever 
+4. We will block new CR writes for a CRD until we have published its latest storageversion. This is discussed more in the [limitations] section
+
+[limitations]:#Limitations 
+
+#### Limitations
+
+When a storageversion of a CRD is updated, we will ensure that all new CR writes:
+1. wait for the latest storageversion to be published
+1. wait for the CRD handler to be replaced
+
+Because we will be reconciling storageversions in 2 places:
+1. whenever a CRD write is received 
+2. whenever the apiserver restarts
+
+it implies that we will take a write outage on CR write requests for the duration of the storageversion update in both the above cases. If the storagaversion update times out and we have retried the update a certain number of times, we will fail the storageversion update and consequently, fail the blocked CR writes.
+
+
+We will allow this for the following reasons:
+1. blocking CR writes till the SV update is finished is in-line with how we handle requests for built-in resources
+2. if we update the CRD handler to the new handler and let it serve new CR writes **before** a storageversion update completes, we risk a server crash - and objects maybe written in new version but storageversion API would not reflect that. To address this, in the event of apiserver restarts, we will always fully reconcile the storageversions with the available CRDs before serving any CR writes 
+3. if we allow old CRD handler to serve CR writes till the storageversions are reconciled as a background job, it would mean that we are intentionally allowing outdated CRD handlers(using old CRD versions) to serve new writes which is incorrect. Ex: in the case when an old CRD handler does not understand the new versions that have been written to etcd by other servers. This will result in read errors on data persisted in new storage versions by other servers. We prefer to take a write-outage in this case instead of (incorrectly) serving new writes with old handlers for an extended period of time (in the case the storageversion update takes long).
 
 ### Aggregated API servers
 
