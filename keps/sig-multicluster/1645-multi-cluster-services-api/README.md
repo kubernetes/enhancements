@@ -118,6 +118,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
   - [Export services via label selector](#export-services-via-label-selector)
   - [Export via annotation](#export-via-annotation)
+  - [Other conflict resolution algorithms](#other-conflict-resolution-algorithms)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -1239,6 +1240,22 @@ but requiring changes to `Service` makes this a much more invasive proposal to
 achieve the same result. As the use of a multi-cluster service implementation
 would be an optional addon, it doesn't warrant a change to such a fundamental
 resource.
+
+### Other conflict resolution algorithms
+
+When a service has a ServiceExport and a ServiceImport, we could have taken the
+approach of favoring a "local truth" by giving a higher precedence to the locally
+exported Service in the conflict resolution algorithm. This alternative
+approach was not adopted, as in this KEP we favored global consistency across
+the ClusterSet.
+
+The conflict resolutions algorithm could also have been based on majority
+instead of ServiceExport oldness. However, with this approach, we would have
+to consider a tie breaking factor that could have also been based on age. This
+would complicate the implementation of MCS-API and, most importantly, might be
+more confusing for users. Having just one simple deciding factor based on
+ServiceExport oldness makes resolving conflicts straightforward, and this
+alternative conflict resolution algorithm could hinder this ease of use.
 
 ## Infrastructure Needed
 <!--
