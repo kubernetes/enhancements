@@ -53,6 +53,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Windows considerations](#windows-considerations)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -929,3 +930,11 @@ allocation and thread scheduling, but does not address device locality.
 
 Multi-NUMA hardware is needed for testing of this feature. Recently, support for multi-NUMA
 harware was [added](https://github.com/kubernetes/test-infra/pull/28369) in Kubernetes test infrastructure.
+
+## Windows considerations
+
+Topology manager is already enabled on Windows in order to support the device manager.  Since there are no changes to the 
+Topology manager, the answers to the [Production Readiness Review](#production-readiness-review-questionnaire) section also apply to Windows when CPU and Memory manager are 
+added as hint providers. The CPU manager and Memory Manager can independently be enabled or disabled to support cases where the features needs to be shut off.  
+In the future a new Policy (and new KEP) for the Topology manager maybe required to address unique Windows Numa Memory Management requirements as described in the Windows Section on the Memory Manager KEP. 
+
