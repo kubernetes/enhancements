@@ -930,31 +930,37 @@ Not that this matters much, because dispatching for those is not
 actually limited.  The sum of those limits, however, is subtracted
 from `ServerCL` to produce a value called `RemainingServerCL` that is
 used in computing the allocations for the non-exempt priority levels.
-If `RemainingServerCL` is zero or negative then all the non-exempt
-priority levels get `CurrentCL = 0`.  Otherwise, the computation
-proceeds as follows.
 
 Because of the borrowing by exempt priority levels, lower bounds could
-be problematic.  Define `LowerBoundSum` as follows.
+be problematic.  Define `MinCLSum` and `MinCurrentCLSum` as follows.
 
 ```
-LowerBoundSum = sum[non-exempt priority level i] MinCurrentCL(i)
+MinCLSum        = sum[non-exempt priority level i] MinCL(i)
+MinCurrentCLSum = sum[non-exempt priority level i] MinCurrentCL(i)
 ```
 
-If `LowerBoundSum = RemainingServerCL` then there is no wiggle room:
-each non-exempt priority level gets `CurrentCL = MinCurrentCL`.
-
-If `LowerBoundSum > RemainingServerCL` then the problem is
-over-constrained.  The solution taken is to reduce all the lower
-bounds in the same proportion, to the point where their sum is
-feasible.  At that point, there is no wiggle room.  Thus, in this case
-the settings are as follows.
+When `RemainingServerCL < MinCLSum`, the expected usage by the exempt
+levels is so high that we would like to give the non-exempt levels
+less than their minimum. But that could be problematic. So in this
+case and when `RemainingServerCL = MinCLSum` we set `CurrentCL` for
+the non-exempt levels by the following formula.
 
 ```
-CurrentCL(i) = MinCurrentCL(i) * RemainingServerCL / LowerBoundSum
+CurrentCL(i) = MinCL(i)
 ```
 
-Finally, when `LowerBoundSum < RemainingServerCL` there _is_ wiggle
+When `MinCLSum < RemainingServerCL < MinCurrentCLSum`, the concurrency
+available to non-exempt levels is above their rock-bottom limit but
+not enough to give each its `MinCurrentCL`. In this case and when
+`RemainingServerCL = MinCurrentCLSum` we share the excess above
+`MinCL` proportionally, using the following formula.
+
+```
+CurrentCL(i) = MinCL(i) + ( MinCurrentCL(i) - MinCL(i) ) *
+                          (RemainingServerCL-MinCLSum) / (MinCurrentCLSum-MinCLSum)
+```
+
+Finally, when `MinCurrentCLSum < RemainingServerCL` there _is_ wiggle
 room and the borrowing computation proceeds as follows.
 
 The non-exempt priority levels would all be fairly happy if we set
