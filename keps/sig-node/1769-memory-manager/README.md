@@ -782,11 +782,10 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 
 ### Windows considerations
 
-Numa nodes can not be directly assigned or guaranteed via the Windows API.  Another limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) does not support setting this for the Job object (i.e. Container) and only supports setting a single Numa Node.
-The `PROC_THREAD_ATTRIBUTE_PREFERRED_NODE` api works by assigning workloads to the Numa Node via CPU affinity.  The API finds all processors associated with the Numa node then applies the CPU affinity to those processors which results in the memory from the Numa node being used. 
-In order to support multiple numa nodes and be able to apply the Numa affinity to job objects the container runtime will be expected to mimic
-the behavior of [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) 
-by finding the associated CPU's for the Numa Nodes that are passed via the Cri API and setting the preferred affinity for the job object. 
+Numa nodes can not be directly assigned or guaranteed via the Windows API.  Another limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
+does not support setting multiple Numa nodes for a single Job object (i.e. Container).
+To work around this limitation, the container runtime will query the OS to get the affinity masks associated with each of the Numa nodes passed in via CRI and use 
+SetInformationJobObjectEx to set affinities for the Job object. This will result in the memory from the Numa node being used. 
 
 Using Memory manager's internal mapping this should provide the desired behavior in most cases. It is possible that a CPU could access memory from a different Numa 
 Node than it is currently in, resulting in decreased performance. For this reason, we will add documentation, a log warning message in kubelet, and an warning event 
