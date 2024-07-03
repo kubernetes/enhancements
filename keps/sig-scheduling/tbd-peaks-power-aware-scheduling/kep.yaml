@@ -1,0 +1,13 @@
+title: Power Efficiency Aware Kubernetes Scheduling
+status: provisional
+authors:
+  - "@knarayan"
+  - "@husky-parul"
+  - "@fali007"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+approvers:
+  - "@Huang-Wei"
+editor: TBD
+creation-date: 2024-07-04
