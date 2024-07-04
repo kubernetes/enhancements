@@ -299,7 +299,7 @@ the OS or version of the scanning software.
 ### Risks and Mitigations
 
 - **Security Risks:**:
-    - Allowing direct mounting of OCI images introduces potential attack
+    - Allowing direct mounting of OCI objects introduces potential attack
       vectors. Mitigation includes thorough security reviews and limiting access
       to trusted registries. Limiting to OCI artifacts (non-runnable content)
       and read-only mode will lessen the security risk.
@@ -337,7 +337,7 @@ spec:
   volumes:
   - name: oci-volume
     oci:
-      image: "example.com/my-image:latest"
+      reference: "example.com/my-image:latest"
       pullPolicy: IfNotPresent
   containers:
   - name: my-container
@@ -370,7 +370,7 @@ And add the corresponding `OCIVolumeSource` type:
 // OCIVolumeSource represents a OCI volume resource.
 type OCIVolumeSource struct {
 	// Required: Image or artifact reference to be used
-	Reference string `json:"reference,omitempty" protobuf:"bytes,1,opt,name=reference"`
+	Reference string `json:"reference" protobuf:"bytes,1,opt,name=reference"`
 
 	// Policy for pulling OCI objects
 	// Defaults to IfNotPresent
@@ -482,8 +482,8 @@ While the `imagePullPolicy` is working on container level, the introduced
 values `IfNotPresent`, `Always` and `Never`, but will only pull once per pod.
 
 Technically it means that we need to pull in [`SyncPod`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1049)
-for OCI objects on a pod level and not during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
-before the container gets started.
+for OCI objects on a pod level and not for each container during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
+before they get started.
 
 If users want to re-pull artifacts when referencing moving tags like `latest`,
 then they need to restart / evict the pod.
@@ -500,28 +500,24 @@ container image.
 #### CRI
 
 The CRI API is already capable of managing container images [via the `ImageService`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L146-L161).
-Those RPCs will be re-used for managing OCI artifacts, while the [`ImageSpec`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L798-L813)
-as well as [`PullImageResponse`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1530-L1534)
-will be extended to mount the OCI object to a local path:
+Those RPCs will be re-used for managing OCI artifacts, while the [`Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L220-L247)
+message will be extended to mount an OCI object using the existing [`ImageSpec`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L798-L813)
+on container creation:
 
 ```protobuf
-
-// ImageSpec is an internal representation of an image.
-message ImageSpec {
+// Mount specifies a host volume to mount into a container.
+message Mount {
     // …
 
-    // Indicate that the OCI object should be mounted.
-    bool mount = 20;
-
-    // SELinux label to be used.
-    string mount_label = 21;
-}
-
-message PullImageResponse {
-    // …
-
-    // Absolute local path where the OCI object got mounted.
-    string mountpoint = 2;
+    // Mount an image reference (image ID, with or without digest), which is a
+    // special use case for OCI volume mounts. If this field is set, then
+    // host_path should be unset. All OCI mounts are per feature definition
+    // readonly. The kubelet does an PullImage RPC and evaluates the returned
+    // PullImageResponse.image_ref value, which is then set to the
+    // ImageSpec.image field. Runtimes are expected to mount the image as
+    // required.
+    // Introduced in the OCI Volume Source KEP: https://kep.k8s.io/4639
+    ImageSpec image = 9;
 }
 ```
 
@@ -529,21 +525,19 @@ This allows to re-use the existing kubelet logic for managing the OCI objects,
 with the caveat that the new `VolumeSource` won't be isolated in a dedicated
 plugin as part of the existing [volume manager](https://github.com/kubernetes/kubernetes/tree/6d0aab2/pkg/kubelet/volumemanager).
 
-The added `mount_label` allow the kubelet to support SELinux contexts.
+Runtimes are already aware of the correct SELinux parameters during container
+creation and will re-use them for the OCI object mounts.
 
-The kubelet will use the `mountpoint` on container creation
-(by calling the `CreateContainer` RPC) to indicate the additional required volume mount ([`ContainerConfig.Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L1102))
-from the runtime. The runtime needs to ensure that mount and also manages its
-lifecycle, for example to remove the bind mount on container removal.
+The kubelet will use the returned `PullImageResponse.image_ref` on pull and sets
+it to `Mount.image.image` together with the other fields for `Mount.image`. The
+runtime will then mount the OCI object directly on container creation assuming
+it's already present on disk. The runtime also manages the lifecycle of the
+mount, for example to remove the OCI bind mount on container removal as well as
+the object mount on the `RemoveImage` RPC.
 
 The kubelet tracks the information about which OCI object is used by which
-sandbox and therefore manages the lifecycle of them.
-
-The proposal also considers smaller CRI changes, for example to add a list of
-mounted volume paths to the `ImageStatusResponse.Image` message returned by the
-`ImageStatus` RPC. This allows providing the right amount of information between
-the kubelet and the runtime to ensure that no context gets lost in restart
-scenarios.
+sandbox and therefore manages the lifecycle of them for garbage collection
+purposes.
 
 The overall flow for container creation will look like this:
 
@@ -554,32 +548,30 @@ sequenceDiagram
     Note left of K: During pod sync
     Note over K,C: CRI
     K->>+C: RPC: PullImage
-    Note right of C: Pull and mount<br/>OCI object
-    C-->>-K: PullImageResponse.Mountpoint
+    Note right of C: Pull OCI object
+    C-->>-K: PullImageResponse.image_ref
     Note left of K: Add mount points<br/> to container<br/>creation request
     K->>+C: RPC: CreateContainer
-    Note right of C: Add bind mounts<br/>from object mount<br/>point to container
+    Note right of C: Mount OCI object
+    Note right of C: Add OCI bind mounts<br/>from OCI object<br/>to container
     C-->>-K: CreateContainerResponse
 ```
 
 1. **Kubelet Initiates Image Pull**:
    - During pod setup, the kubelet initiates the pull for the OCI object based on the volume source.
-   - The kubelet passes the necessary indicator to mount the object to the container runtime.
 
 2. **Runtime Handles Mounting**:
-   - The container runtime mounts the OCI object as a filesystem using the metadata provided by the kubelet.
-   - The runtime returns the mount point information to the kubelet.
+   - The runtime returns the image reference information to the kubelet.
 
 3. **Redirecting of the Mountpoint**:
-   - The kubelet uses the returned mount point to build the container creation request for each container using that mount.
-   - The kubelet initiates the container creation and the runtime creates the required bind mounts to the target location.
+   - The kubelet uses the returned image reference to build the container creation request for each container using that mount.
+   - The kubelet initiates the container creation and the runtime creates the required OCI object mount as well as bind mounts to the target location.
      This is the current implemented behavior for all other mounts and should require no actual container runtime code change.
 
 4. **Lifecycle Management**:
    - The container runtime manages the lifecycle of the mounts, ensuring they are created during pod setup and cleaned up upon sandbox removal.
 
 5. **Tracking and Coordination**:
-   - The kubelet and runtime coordinate to track pods requesting mounts to avoid removing containers with volumes in use.
    - During image garbage collection, the runtime provides the kubelet with the necessary mount information to ensure proper cleanup.
 
 6. **SELinux Context Handling**:
@@ -597,19 +589,17 @@ sequenceDiagram
 
 #### Container Runtimes
 
-Container runtimes need to support the new `mount` field, otherwise the
-feature cannot be used. The kubelet will verify if the returned `mountpoint`
-actually exists on disk to check the feature availability, because Protobuf will
-strip the field in a backwards compatible way for older runtimes. Pods using the
-new `VolumeSource` combined with a not supported container runtime version will
-fail to run on the node.
+Container runtimes need to support the new `Mount.image` field, otherwise the
+feature cannot be used. Pods using the new `VolumeSource` combined with a not
+supported container runtime version will fail to run on the node, because the
+`Mount.host_path` field is not set for those mounts.
 
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
 
 ##### Filesystem representation
 
-Container Runtimes are expected to return a `mountpoint`, which is a single
+Container Runtimes are expected to manage a `mountpoint`, which is a single
 directory containing the unpacked (in case of tarballs) and merged layer files
 from the image or artifact. If an OCI artifact has multiple layers (in the same
 way as for container images), then the runtime is expected to merge them
@@ -716,41 +706,6 @@ oras manifest fetch localhost:5000/image:v1 | jq .
 }
 ```
 
-The container runtime can now pull the artifact with the `mount = true` CRI
-field set, for example using an experimental [`crictl pull --mount` flag](https://github.com/kubernetes-sigs/cri-tools/compare/master...saschagrunert:oci-volumesource-poc):
-
-```bash
-sudo crictl pull --mount localhost:5000/image:v1
-```
-
-```console
-Image is up to date for localhost:5000/image@sha256:7728cb2fa5dc31ad8a1d05d4e4259d37c3fc72e1fbdc0e1555901687e34324e9
-Image mounted to: /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
-```
-
-And the returned `mountpoint` contains the unpacked layers as directory tree:
-
-```bash
-sudo tree /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
-```
-
-```console
-/var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged
-├── dir
-│   └── file
-└── file
-
-2 directories, 2 files
-```
-
-```console
-$ sudo cat /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged/dir/file
-layer0
-
-$ sudo cat /var/lib/containers/storage/overlay/7ee9a1dcea9f152b10590871e55e485b249cd42ea912111ff9f99ab663c1001a/merged/file
-layer1
-```
-
 ORAS (and other tools) are also able to push multiple files or directories
 within a single layer. This should be supported by container runtimes in the
 same way.
@@ -759,17 +714,7 @@ same way.
 
 Traditionally, the container runtime is responsible of applying SELinux labels
 to volume mounts, which are inherited from the `securityContext` of the pod or
-container. Relabeling volume mounts can be time-consuming, especially when there
-are many files on the volume.
-
-If the following criteria are met, then the kubelet will use the `mount_label`
-field in the CRI to apply the right SELinux label to the mount.
-
-- The operating system must support SELinux
-- The Pod must have at least `seLinuxOptions.level` assigned in the
-  `PodSecurityContext` or all volume using containers must have it set in their
-  `SecurityContexts`. Kubernetes will read the default user, role and type from
-  the operating system defaults (typically `system_u`, `system_r` and `container_t`).
+container on container creation. The same will apply to OCI volume mounts.
 
 ### Test Plan
 
@@ -1329,7 +1274,7 @@ Currently, a shared volume approach can be used. This involves packaging file to
 An init container can be used to copy files from an image to a shared volume using shell commands. This volume can be made accessible to all
 containers in the pod.
 
-An OCI VolumeSource eliminates the need for a shell and an init container by allowing the direct mounting of OCI images as volumes,
+An OCI VolumeSource eliminates the need for a shell and an init container by allowing the direct mounting of OCI objects as volumes,
 making it easier to modularize. For example, in the case of LLMs and model-servers, it is useful to package them in separate images,
 so various models can plug into the same model-server image. An OCI VolumeSource not only simplifies file copying but also allows
 container native distribution, authentication, and version control for files.
