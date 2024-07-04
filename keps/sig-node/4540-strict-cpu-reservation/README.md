@@ -105,11 +105,13 @@ The feature is isolated to a specific policy option within the `CPUManager` and 
 
 Kubelet has been requiring non-zero shared pool when the static policy is enabled. This is not an issue when `strict-cpu-reservation` is disabled since the reserved cores are not in the node allocatable but are in the shared pool.
 
-Kube-scheduler schedules pods on node allocatable which is total - reserved cores. For best-effort type which does not have resource request defined, kube-scheduler fills in default request values, see https://github.com/kubernetes/kubernetes/blob/master/pkg/api/v1/resource/helpers.go#L44 and https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/util/pod\_resources.go#L32.
+Kube-scheduler schedules pods on node allocatable which is total - reserved cores. For best-effort pods which do not have resource requests defined, kube-scheduler uses default request values when scoring the nodes, see https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/util/pod_resources.go#L32 and https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/noderesources/resource_allocation.go#L123, but not when fitting the nodes i.e. best-effort pods are always admitted.
 
-Thanks to kube-scheduler behaviour, in practice, the shared pool should not become zero when the reserved cores are removed from the shared pool. However, to make sure this is always true, two options are proposed.
+It stands to argue that node capacity for bursty and guaranteed pods have been taken care of by kube-scheduler, CPU is a compressible resource, best-effort pods are meant to consume whatever CPU left on the nodes including to starve from time to time when no CPU is available.
 
-Option 1 is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement.
+Nevertheless, two options are proposed to ensure the shared pool stays non-zero after the reserved cores are removed from it.
+
+Option 1 is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement. This option affects both kubelet and kube-scheduler so it is not trivial.
 
 ![MinSharedCPUs](./strict-cpu-allocation.png)
 
@@ -127,6 +129,9 @@ ReservedSystemCPUs: 6
 MinSharedCPUs: 4
 defaultCPUSet = MinSharedCPUs (4) + 54 (available for exclusive allocation)
 ```
+
+Option 2 is to force the cpu requests for best effort pods to 1 MilliCPU in kubelet for the purpose of resource availability checks. This option is meant to be simpler than Option 1, but the different resource accounting in kubelet and kube-scheduler can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869. Details need be worked out.
+
 
 ## Design Details
 
@@ -147,7 +152,7 @@ featureGates:
   CPUManagerPolicyAlphaOptions: true
 cpuManagerPolicy: static
 cpuManagerPolicyOptions:
-  strict-cpu-reservation: "{ "enable": "true", "numMinSharedCPUs": 4 }"
+  strict-cpu-reservation: "true"
 reservedSystemCPUs: "0,32,1,33,16,48"
 ...
 ```
@@ -165,6 +170,22 @@ When `strict-cpu-reservation` is enabled:
 ```
 
 ### Risk Mitigation Option 1
+
+Add `numMinSharedCPUs` as part of `strict-cpu-reservation` option in Kubelet configuration:
+
+```yaml
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+featureGates:
+  ...
+  CPUManagerPolicyOptions: true
+  CPUManagerPolicyAlphaOptions: true
+cpuManagerPolicy: static
+cpuManagerPolicyOptions:
+  strict-cpu-reservation: { "enable": "true", "numMinSharedCPUs": 4 }
+reservedSystemCPUs: "0,32,1,33,16,48"
+...
+```
 
 In Node API, we add `exclusive-cpu` in Node Allocatable for Kube-scheduler to consume.
 
@@ -237,6 +258,8 @@ A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeRes
 
 ### Risk Mitigation Option 2
 
+
+
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -259,14 +282,14 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - These cases will be added in the existing integration tests:
   - Feature gate enable/disable tests
   - `strict-cpu-reservation` policy option works as expected.
-  - `strict-cpu-reservation` policy option works with existing polity options.
+  - `strict-cpu-reservation` policy option works with existing policy options.
 
 ##### e2e tests
 
 - These cases will be added in the existing e2e tests:
   - Feature gate enable/disable tests
   - `strict-cpu-reservation` policy option works as expected.
-  - `strict-cpu-reservation` policy option works with existing polity options.
+  - `strict-cpu-reservation` policy option works with existing policy options.
 
 ### Graduation Criteria
 
@@ -309,8 +332,7 @@ The /var/lib/kubelet/cpu\_manager\_state needs be removed when changing the valu
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
-        Yes -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
+    of a node?  No -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
 
 
 ###### Does enabling the feature change any default behavior?
@@ -327,8 +349,7 @@ The feature is only enabled when all following conditions are met:
 
 Yes, the feature can be disabled by either:
 1. Disabling the `CPUManagerPolicyAlphaOptions` feature gate
-2. Switching the `CPUManager` policy to `none`
-3. Removing `strict-cpu-reservation` from the list of `CPUManager` policy options
+2. Removing `strict-cpu-reservation` from the list of `CPUManager` policy options
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -381,13 +402,14 @@ Even if applying deprecation policies, they may still surprise some users.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect the kubelet configuration -- check the presence of the feature gate and usage of the new policy option.
+Inspect the `CPUManager` state file /var/lib/kubelet/cpu\_manager\_state.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Inspect the cgroup/cpuset configuration of burstable and best-effort pods -- check the reserved cores are not used by them.
+Inspect the pods' status file -- check the reserved cores are not used by them.
 
-Below is an example when Cgroup v1 is used:
+Below is an example:
+
 ```console
 # kubectl exec cnf1-58446568f4-dr986 -n cnf1-ns -- grep Cpus_allowed /proc/self/status
 Cpus_allowed:   fffefffc,fffefffc
@@ -396,11 +418,11 @@ Cpus_allowed_list:      2-15,17-31,34-47,49-63
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-This feature to protect infrastructure services, when they are restricted to run on limited number of CPU cores, from bursty workloads.
+This feature to protect infrastructure services, running on the reserved CPU cores, from bursty workloads.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Run `top -H` to observe reservedSystemCPUs are used by system daemons and interrupt processing only.
+Run `top -H` to observe `reservedSystemCPUs` are not used by workloads.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -446,7 +468,7 @@ No
 
 ### Troubleshooting
 
-Incease kubelet log level and check kubelet log for errors.
+Increase kubelet log level and check kubelet log for errors.
 
 Below is how to check kubelet log when it runs as a systemd service:
 ```console
@@ -456,11 +478,11 @@ journalctl _SYSTEMD_INVOCATION_ID=`systemctl show -p InvocationID --value kubele
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-There is no impact on this node local feature.
+There is no known impact.
 
 ###### What are other known failure modes?
 
-There is no known failure mode since this feature changes available CPU core for burstable and best-effort pods only.
+There is no known failure mode.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
