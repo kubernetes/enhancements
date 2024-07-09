@@ -163,11 +163,11 @@ to extract information.
 We’d like to change the runtime behavior of containers based on node labels.
 In our case, we’re using a CNI with DaemonSets to perform network setup, and
 would like to configure the network differently based on the presence of a node
-label (e.g. `toplogy.k8s.io/vpn=true`).
+label (e.g. `topology.k8s.io/vpn=true`).
 
 A number of other use cases exist for providing node labels to pods. One
 example is utilizing topology data from cloud providers, which are automatically
-assignedto nodes, and then used to tailor workloads to minimize cross-zone data
+assigned to nodes, and then used to tailor workloads to minimize cross-zone data
 transfers and reduce costs. Having an easy way for pods to access these node
 topology labels would provide users a straightforward, maintainable way to
 optimize their workloads given topology constraints.
