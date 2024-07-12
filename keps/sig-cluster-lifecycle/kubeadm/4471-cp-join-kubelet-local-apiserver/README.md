@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Caveats](#caveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -219,9 +220,10 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Add a new code path in kubeadm that can be used to  join control plane nodes
+- Add a new code path in kubeadm that can be used to join control plane nodes
   without potentially violating the version skew policy, by letting the kubelet
   only communicate with the local kube-apiserver.
+- Also adjust init and upgrade to result in the same configuration.
 - Use a new feature gate `ControlPlaneKubeletLocalMode` to toggle the feature until
   graduating to GA.
 
@@ -234,7 +236,7 @@ and make progress.
 
 - Support the "old way" and "new way" indefinitely. Once the proposed feature gate
   graduates to GA it will hardcoded to be active.
-- Touch areas of kubeadm different than `kubeadm join`.
+- Touch areas of kubeadm different than `kubeadm join`, `kubeadm init` and `kubeadm upgrade`.
 
 ## Proposal
 
@@ -248,11 +250,15 @@ nitty-gritty.
 -->
 
 The proposal is to implement the required changes to make the kubelet point to the local available kube-apiserver.
-This change only relates to joining control plane nodes and does not affect worker nodes.  
+This change relates to initializing, joining and upgrading control plane nodes and does not affect worker nodes.
 
-The overall change is to adjust the file `/etc/kubernetes/bootstrap-kubelet.conf` to point to the local kube-apiserver, which gets created by kubeadm during the `KubeletStartJoinPhase` ([xref](https://github.com/kubernetes/kubernetes/blob/caf5311/cmd/kubeadm/app/cmd/phases/join/kubelet.go#L122-L125)).
+The overall change is:
 
-To make this work, an additional change is required: etcd needs to get started and joined to the etcd cluster before waiting for the kubelet to finish its bootstrap process, instead of the other way around.  
+- for `kubeadm join` to adjust the file `/etc/kubernetes/bootstrap-kubelet.conf` to point to the local kube-apiserver, which gets created by kubeadm during the `KubeletStartJoinPhase` ([xref](https://github.com/kubernetes/kubernetes/blob/caf5311/cmd/kubeadm/app/cmd/phases/join/kubelet.go#L122-L125)). This will also affect the kubelet's kubeconfig.
+- for `kubeadm init` to adjust the created kubeconfig to point to the local kube-apiserver, which gets created by kubeadm during the `kubeconfig` phase ([xref](https://github.com/kubernetes/kubernetes/blob/8871513c1b64cae321552abfe9a3a90969637560/cmd/kubeadm/app/cmd/phases/init/kubeconfig.go#L87))
+- for `kubeadm upgrade` to edit the kubelet config file to point to the local kube-apiserver.
+
+To make this work for `kubeadm join`, an additional change is required: etcd needs to get started and joined to the etcd cluster before waiting for the kubelet to finish its bootstrap process, instead of the other way around.  
 This requires reordering some of the operations done in different kubeadm phases by extracting the relevant parts into separate phases and changing their order.
 
 Because reordering the phases can be considered a breaking change to the CLI of kubeadm for some users, this should get done behind a feature gate, while preserving the previous behavior when the feature gate is disabled.  
@@ -277,6 +283,10 @@ As a kubeadm user, I wish the kubelet of a joining control plane node points to 
 #### Story 3
 
 As a kubeadm user, I wish the CLI of kubeadm to be stable and breaking changes to it to be announced ahead of time.  
+
+#### Story 4
+
+As a kubeadm user, I wish the kubelet of an initializing control plane node points to the local kube-apiserver.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -341,9 +351,15 @@ As explained above two minor changes are required to implement the required chan
 
 **1. Make the kubelet point to the local kube-apiserver**
 
-To make the kubelet point to the local apiserver, the file for kubelet's bootstrap kubeconfig
-needs to get adjusted, which gets created by kubeadm during the
-`KubeletStartJoinPhase` ([xref](https://github.com/kubernetes/kubernetes/blob/caf5311/cmd/kubeadm/app/cmd/phases/join/kubelet.go#L122-L125)).
+For `kubeadm init` to make the kubelet point to the local apiserver, the kubeconfig
+which get's written for the kubelet needs to get adjusted when the kubelet's kubeconfig
+file gets written
+([xref](https://github.com/kubernetes/kubernetes/blob/caf5311/cmd/kubeadm/app/cmd/phases/init/kubeconfig.go#L135-L163)).
+
+For `kubeadm join` to make the kubelet point to the local apiserver, the file for
+kubelet's bootstrap kubeconfig needs to get adjusted, which gets created by kubeadm during the
+`KubeletStartJoinPhase`
+([xref](https://github.com/kubernetes/kubernetes/blob/caf5311/cmd/kubeadm/app/cmd/phases/join/kubelet.go#L122-L125)).
 
 This creates the following chicken-egg issue:
 
@@ -490,8 +506,12 @@ It can do the following:
 - Create a 3 control plane node cluster
 - Call `kubeadm init` on one of them, having the feature gate `ControlPlaneKubeletLocalMode`
   enabled.
-- Calls `kubeadm join` on the remaining control plane nodes, having the feature gate
-  `ControlPlaneKubeletLocalMode` enabled.
+- Check that the kubelet is pointing to the local apiserver.
+- Call `kubeadm join` on the remaining control plane nodes.
+- Check that the kubelet's are pointing to the local apiserver.
+- Adjust the kubelet's kubeconfig's to point to the load balanced endpoint.
+- Call `kubeadm upgrade` on the nodes.
+- Check that all kubelet's are again pointing to the local apiserver.
 
 ### Graduation Criteria
 
@@ -635,7 +655,8 @@ Major milestones might include:
 
 - 01.02.2024: KEP issue created.
 - 08.02.2024: KEP draft created.
-- 07.05.2024: KEP marked as implementable for 1.31 or later
+- 07.05.2024: KEP marked as implementable for 1.31 or later.
+- 12.07.2024: KEP adjusted to match discussed implementation.
 
 ## Drawbacks
 
