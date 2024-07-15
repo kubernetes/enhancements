@@ -336,7 +336,7 @@ metadata:
 spec:
   volumes:
   - name: oci-volume
-    oci:
+    image:
       reference: "example.com/my-image:latest"
       pullPolicy: IfNotPresent
   containers:
@@ -357,24 +357,22 @@ by:
 type VolumeSource struct {
 	// …
 
-	// oci represents a OCI object pulled and mounted on kubelet's host machine
-	// +featureGate=OCIVolume
-	// +optional
-	OCI *OCIVolumeSource `json:"oci,omitempty" protobuf:"bytes,30,opt,name=oci"
+	// image …
+	Image *ImageVolumeSource `json:"image,omitempty" protobuf:"bytes,30,opt,name=image"
 }
 ```
 
-And add the corresponding `OCIVolumeSource` type:
+And add the corresponding `ImageVolumeSource` type:
 
 ```go
-// OCIVolumeSource represents a OCI volume resource.
-type OCIVolumeSource struct {
-	// Required: Image or artifact reference to be used
+// ImageVolumeSource represents a image volume resource.
+type ImageVolumeSource struct {
+	// Required: Image or artifact reference to be used.
+	// …
 	Reference string `json:"reference" protobuf:"bytes,1,opt,name=reference"`
 
-	// Policy for pulling OCI objects
-	// Defaults to IfNotPresent
-	// +optional
+	// Policy for pulling OCI objects.
+	// …
 	PullPolicy PullPolicy `json:"pullPolicy,omitempty" protobuf:"bytes,2,opt,name=pullPolicy,casttype=PullPolicy"`
 }
 ```
@@ -392,7 +390,7 @@ if source.OCI != nil {
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("oci"), "may not specify more than 1 volume type"))
 	} else {
 		numVolumes++
-		allErrs = append(allErrs, validateOCIVolumeSource(source.OCI, fldPath.Child("oci"))...)
+		allErrs = append(allErrs, validateImageVolumeSource(source.OCI, fldPath.Child("oci"))...)
 	}
 }
 
@@ -400,7 +398,7 @@ if source.OCI != nil {
 ```
 
 ```go
-func validateOCIVolumeSource(oci *core.OCIVolumeSource, fldPath *field.Path) field.ErrorList {
+func validateImageVolumeSource(oci *core.ImageVolumeSource, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if len(oci.Reference) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("reference"), ""))
@@ -413,13 +411,13 @@ func validateOCIVolumeSource(oci *core.OCIVolumeSource, fldPath *field.Path) fie
 ```go
 // …
 
-// Disallow subPath/subPathExpr for OCI volumes
+// Disallow subPath/subPathExpr for image volumes
 if v, ok := volumes[mnt.Name]; ok && v.OCI != nil {
 	if mnt.SubPath != "" {
-		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPath"), mnt.SubPath, "not allowed in OCI volume sources"))
+		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPath"), mnt.SubPath, "not allowed in image volume sources"))
 	}
 	if mnt.SubPathExpr != "" {
-		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPathExpr"), mnt.SubPathExpr, "not allowed in OCI volume sources"))
+		allErrs = append(allErrs, field.Invalid(idxPath.Child("subPathExpr"), mnt.SubPathExpr, "not allowed in image volume sources"))
 	}
 }
 
@@ -510,7 +508,7 @@ message Mount {
     // …
 
     // Mount an image reference (image ID, with or without digest), which is a
-    // special use case for OCI volume mounts. If this field is set, then
+    // special use case for image volume mounts. If this field is set, then
     // host_path should be unset. All OCI mounts are per feature definition
     // readonly. The kubelet does an PullImage RPC and evaluates the returned
     // PullImageResponse.image_ref value, which is then set to the
@@ -932,7 +930,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: OCIVolume
+  - Feature gate name: ImageVolume
   - Components depending on the feature gate:
     - kube-apiserver (API validation)
     - kubelet (volume mount)
