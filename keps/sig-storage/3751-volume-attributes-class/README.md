@@ -242,6 +242,8 @@ The CSI create request will be extended to add mutable parameters. A new Control
 
 A default VolumeAttributesClass can be specified for the Kubernetes cluster. This default VolumeAttributesClass is then used to dynamically provision storage for PersistentVolumeClaims that do not require any specific VolumeAttributesClass. A cluster admin can use annotation to manage default VolumeAttributesClass. The default VolumeAttributesClass has an annotation volumeattributesclass.kubernetes.io/is-default-class set to true. Any other value or absence of the annotation is interpreted as false. 
 
+Note: For Kubernetes versions ≤ v1.31, the VolumeAttributesClass feature does not support a default VolumeAttributesClass. This is because there is already a natural default for VolumeAttributesClass: no VolumeAttributesClass associated with the PersistentVolumeClaim. Furthermore, with a default, there would be added overhead for cluster operators in making sure a cluster's default StorageClass and default VolumeAttributesClass are compatible. Use-cases and support for Default VolumeAttributesClass will be re-evaluated during this feature's beta in Kubernetes v1.31.
+
 #### Pre-provisioned Volume
 
 The cluster admin has created a group of PVs with VolumeAttributesClass and an end user is binding PVCs to pre-provisioned PVs. The PVCs will honor the VolumeAttributesClass. It is up to the cluster admin to make sure the parameters in the PVs matching the parameters in the VolumeAttributesClass. This behavior is similar to StorageClass.
@@ -388,6 +390,8 @@ spec:
   ...
 ```
 
+Note: These Administrator Quota Restrictions are not available for Kubernetes versions ≤ v1.31, due to a [bug](https://github.com/kubernetes/kubernetes/issues/124436) in the implementation of the `scopeSelector` feature. Because there is no default quota, we will be able to add quota support in a future version of Kubernetes without breaking existing workloads.
+
 ### Notes/Constraints/Caveats (Optional)
 
 The parameters in VolumeAttributesClass are opaque and immutable. This gives different cloud providers flexibility but at the same time it is up to the specific driver to verify the values set in the parameters. The parameters from VolumeAttributesClass associated with a volume are mutable because they are coming from different VolumeAttributesClasses.
@@ -417,20 +421,22 @@ Please see session "Kubernetes API" above.
 
 ### 5. Add new operation metrics for ModifyVolume operations
 
-A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [StorageClass](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98). 
+A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [existing PV Collector metrics](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98). 
 
-Prior to this enhancement, we loop through all PersistentVolume objects, check if `pv.Status.Phase == v1.VolumeBound` and increment the appropriate `pv.Spec.StorageClassName` bucket. For these new metrics, when the feature flag is enabled, we also increment the appropriate `pv.Spec.VolumeAttributeClassName` if it is not empty. 
+Prior to this enhancement, we loop through all PVCs, check if `pvc.Status.Phase == v1.VolumeBound` and increment the relevant metric only on `namespace` dimension. When the feature flag is enabled, new metrics will take into account `namespace`, `storage_class`, and `volume_attribute_class`. 
+
+With these additional labels, cluster operators can alarm on these new metrics to detect PVCs that are not able to bind. With the additional StorageClass and VolumeAttributesClass name labels, cluster operators can more easily check whether VolumeAttributeClass or StorageClass object misconfiguration is the cause of these binding issues.
 
 ```
-boundPVCCountDesc = metrics.NewDesc(
-	metrics.BuildFQName("", pvControllerSubsystem, boundPVCKey),
-	"Gauge measuring number of persistent volume claim currently bound",
-	[]string{vacLabel}, nil,
+boundPVCCountWithVACDesc = metrics.NewDesc(
+	metrics.BuildFQName("", pvControllerSubsystem, boundPVCWithVACKey),
+	"Gauge measuring number of persistent volume claims currently bound",
+	[]string{namespaceLabel, storageClassLabel, volumeAttributesClassLabel}, nil,
 	metrics.ALPHA, "")
-unboundPVCCountDesc = metrics.NewDesc(
-	metrics.BuildFQName("", pvControllerSubsystem, unboundPVCKey),
-	"Gauge measuring number of persistent volume claim currently unbound",
-	[]string{vacLabel}, nil,
+unboundPVCCountWithVACDesc = metrics.NewDesc(
+	metrics.BuildFQName("", pvControllerSubsystem, unboundPVCWithVACKey),
+	"Gauge measuring number of persistent volume claims currently unbound",
+	[]string{namespaceLabel, storageClassLabel, volumeAttributesClassLabel}, nil,
 	metrics.ALPHA, "")
 ```
 
@@ -711,7 +717,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - The happy path with creating and modifying volume successfully with VolumeAttributesClass
   - [E2E CSI Test PR](https://github.com/kubernetes/kubernetes/pull/124151/)
   - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=storage&test=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
-  - [Testgrid[(https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+  - [Testgrid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
 
 ##### e2e tests
 
@@ -753,7 +759,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc. Controllers will handle VolumeAttributeClass feature gates being on by default, but beta API itself being disabled on cluster by default. 
+- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc. Controllers will handle VolumeAttributesClass feature gates being on by default, but beta API itself being disabled on cluster by default. 
 - Involve 3 different CSI drivers to participate in testing
 - Stress test before GA
 
@@ -967,7 +973,7 @@ If API server and/or etcd is unavailable, there are two scenarios for volume mod
 
 2. External-resizer does NOT detect volume needing modification before API Server is made unavailable. Volume modification will not take place until API Server back online. 
 
-In both cases the PVC has not been updated to reflect new VolumeAttributeClass until API Server back online. 
+In both cases the PVC has not been updated to reflect new VolumeAttributesClass until API Server back online. 
 
 ###### What are other known failure modes?
 
@@ -985,14 +991,14 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
     -->
 -->
-- ControllerModifyVolume cannot modify volume to reflect new VolumeAttributeClass due to user misconfiguration or cloudprovider backend error/limits. Volume would fall back to workable default configuration but external-resizer will requeue with longer `Infeasible` interval. 
+- ControllerModifyVolume cannot modify volume to reflect new VolumeAttributesClass due to user misconfiguration or cloudprovider backend error/limits. Volume would fall back to workable default configuration but external-resizer will requeue with longer `Infeasible` interval. 
     - Detection: See event on PVC object. See increase in `controller_modify_volume_errors_total`
-    - Mitigations: No serious mitigation needed because volume would fall back to previous configuration. Can edit PVC to previous VolumeAttributeClass to prevent retry ControllerModifyVolume calls. 
+    - Mitigations: No serious mitigation needed because volume would fall back to previous configuration. Can edit PVC to previous VolumeAttributesClass to prevent retry ControllerModifyVolume calls. 
     - Diagnostics: 
         - Events on PVC which include the associated [ControllerModifyVolume error](https://github.com/container-storage-interface/spec/blob/master/spec.md#controllermodifyvolume-errors) and message
         - external-resizer container logs: Logs similar to "ModifyVolume failed..." (At Log Levels 2&3)
     - Testing: Are there any tests for failure mode? If not, describe why.
-        - There are tests to that validate appropriate events/errors propagate. Otherwise 
+        - There are tests to that validate appropriate events/errors propagate.
     - Note: See [Modify Design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/3751-volume-attributes-class#modify-pvc) to see flow. 
 
 
@@ -1013,7 +1019,7 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 - 2023-06-15 SIG Acceptance of KEP and Agreement on proposed Volume Attributes Class design ([link](https://github.com/kubernetes/enhancements/commit/8929cf618f056e447d0b2bed562af3fc134c8cbb))
-- 2023-06-26 Original demo of VolumeAttributeClass proof-of-concept
+- 2023-06-26 Original demo of VolumeAttributesClass proof-of-concept
 - 2023-10-31 VolumeAttributesClass API changes merged in kubernetes/kubernetes
 - 2023-10-26 Implementation merged in kubernetes-csi/external-provisioner
 - 2023-11-09 Implementation merged in kubernetes-csi/external-resizer
