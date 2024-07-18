@@ -1,0 +1,20 @@
+title: Kubectl supports WatchList to list resources
+kep-number: 4764
+authors:
+  - '@xuzhenglun'
+owning-sig: sig-cli
+participating-sigs: [sig-cli]
+reviewers: []
+approvers: ['@soltysh']
+creation-date: "2024-07-17"
+last-updated: v1.31
+status: provisional
+stage: alpha
+latest-milestone: ""
+#milestone:
+#    alpha: ""
+#    beta: ""
+#    stable: ""
+feature-gates: []
+disable-supported: false
+metrics: []
