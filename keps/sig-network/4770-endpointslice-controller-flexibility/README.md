@@ -7,12 +7,19 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+    - [Well-Known Label](#well-known-label)
+    - [Flexibility on the EndpointSlice Reconciler Module](#flexibility-on-the-endpointslice-reconciler-module)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Well-Known Label](#well-known-label-1)
+  - [Flexibility on the EndpointSlice Reconciler Module](#flexibility-on-the-endpointslice-reconciler-module-1)
+    - [Reconciler](#reconciler)
+      - [Service/Pods](#servicepods)
+      - [Endpoints](#endpoints)
+    - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -31,6 +38,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Well-known label: Use Annotation as Selector](#well-known-label-use-annotation-as-selector)
+  - [Well-known label: Use Dummy Selector](#well-known-label-use-dummy-selector)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -66,9 +75,9 @@ Additionally, this KEP aims to give more flexibility for the EndpointSlice Recon
 
 ## Motivation
 
-As of now, a service can be delegated to a custom Service-Proxy/Gateway if the label `service.kubernetes.io/service-proxy-name` is set. Introduced in [KEP-2447](https://github.com/kubernetes/enhancements/issues/2447), this allows custom Service-Proxies/Gateways to implement services in different ways to address different purpose / use-cases. However, the EndpointSlices attached to this service will still be reconciled in the same way as any other service. Addressing more purpose / use-cases, for example, different pod IP addresses, is therefore not natively possible.
+As of now, a service can be delegated to a custom Service-Proxy/Gateway if the label `service.kubernetes.io/service-proxy-name` is set. Introduced in [KEP-2447](https://github.com/kubernetes/enhancements/issues/2447), this allows custom Service-Proxies/Gateways to implement services in different ways to address different purposes / use-cases. However, the EndpointSlices attached to this service will still be reconciled in the same way as any other service. Addressing more purposes / use-cases, for example, different pod IP addresses, is therefore not natively possible.
 
-Delegating EndpointSlice control would allow custom controllers to define their own criterias for pod availability, selecting different pod IPs than the pod.status.PodIPs and more. As reference implementation, and since [KEP-3685](https://github.com/kubernetes/enhancements/issues/3685), the reconciler logic used by Kubernetes can be reused by custom EndpointSlice controllers.
+Delegating EndpointSlice control would allow custom controllers to define their own criteria for pod availability, selecting different pod IPs than the pod.status.PodIPs and more. As a reference implementation, and since [KEP-3685](https://github.com/kubernetes/enhancements/issues/3685), the reconciler logic used by Kubernetes can be reused by custom EndpointSlice controllers.
 
 Providing a generic EndpointSlice Reconciler module would allow users to reuse the same code as the Kubernetes EndpointSlice Controller, thus ensuring consistency and reducing the effort needed to implement custom reconciliation logic. As highlighted in this [comment](https://github.com/kubernetes/kubernetes/pull/118953#discussion_r1245970845), the EndpointSlice Mirroring Controller would also benefit from these changes since the generic EndpointSlice Reconciler could be used from the EndpointSlice Mirroring Controller.
 
@@ -82,16 +91,19 @@ Providing a generic EndpointSlice Reconciler module would allow users to reuse t
 * Change / Replace / Deprecate the existing behavior of the Kubernetes EndpointSlice controller.
 * Introduce additional supported types of the EndpointSlice controllers/Reconciler as part of Kubernetes.
 * Modify the Service / EndpointSlice Specs.
+* Add new features to the EndpointSlice Mirroring Controller.
 
 ## Proposal
 
 #### Well-Known Label
 
-`service.kubernetes.io/endpoint-controller-name` will be added as a well-known label applying on the Service object. When set on a service, the Endpoint, EndpointSlice, and EndpointSlice Mirroring for that service will be disabled, thus EndpointSlices for this service will not be created by the Kubernetes Controller Manager. 
+`service.kubernetes.io/endpoint-controller-name` will be added as a well-known label applying on the Service object. When set on a service, no matter the service specs, the Endpoint, EndpointSlice, and EndpointSlice Mirroring controllers for that service will be disabled, thus Endpoints and EndpointSlices for this service will not be created by the Kubernetes Controller Manager. If the label is not set, the Endpoint, EndpointSlice, and EndpointSlice Mirroring controllers will be enabled for that service and the Endpoints and EndpointSlices will be handled as of today.
+
+The Kubernetes Controller Manager will implement this label both at object creation and on dynamic addition/removal/updates of this label.
 
 #### Flexibility on the EndpointSlice Reconciler Module
 
-The reconciler structure will support more features to cover the requirements set by the current behavior of the EndpointSlice Mirroring Controller (e.g.: placeholder concept does not exist in the Mirroring Controller).
+The reconciler structure will support more features to cover the requirements set by the current behavior of the EndpointSlice Mirroring Controller (e.g.: placeholder EndpointSlice does not exist in the Mirroring Controller).
 
 The `Reconcile` function definition will be changed to accept general types of data (not specific to Services) and the list of features the endpointslices being reconciled will support (e.g. Traffic Distribution). Functions for specific types (Service/Pods for the EndpointSlice Controller and Endpoints for the EndpointSlice Mirroring Controller) generating data to pass to the `Reconcile` function will be provided by the EndpointSlice Reconciler module.
 
@@ -105,9 +117,9 @@ Finally, the EndpointSlice Mirroring reconciler will be discarded from `pkg/cont
 
 #### Story 1
 
-As a Cloud Native Network Function (CNF) vendor, some of my services are handled by custom Service-Proxies/Gateways over secondary networks provided by, for example, [Multus](https://github.com/k8snetworkplumbingwg/multus-cni). IPs configured in the service and registered by the EndpointSlice controller must be only the secondary IPs provided by the secondary network provider (e.g. [Multus](https://github.com/k8snetworkplumbingwg/multus-cni), also see [KEP-3698](https://github.com/kubernetes/enhancements/issues/3698)).
+As a Cloud Native Network Function (CNF) vendor, some of my services are handled by custom Service-Proxies/Gateways over secondary networks provided by, for example, [Multus](https://github.com/k8snetworkplumbingwg/multus-cni). IPs configured in the service and registered by the EndpointSlice controller must be only the secondary IPs provided by the secondary network provider (e.g. [Multus](https://github.com/k8snetworkplumbingwg/multus-cni)).
 
-Therefore, it must be possible to disable the default Kubernetes EndpointSlice Controller for certain services and re-use the Kubernetes EndpointSlice reconciler implementation to create a controller for secondary network providers.
+Therefore, it must be possible to disable the default Kubernetes Endpoints and EndpointSlice Controller for certain services and re-use the Kubernetes EndpointSlice reconciler implementation to create a controller for secondary network providers.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -115,17 +127,23 @@ N/A
 
 ### Risks and Mitigations
 
-The existing behavior will be kept by default, and the Kubernetes EndpointSlice Controller will be disabled only when the service contains this new label. This ensures services without the label to continue to be managed as usual.
+The existing behavior will be kept by default, and the Kubernetes EndpointSlice Controller will not manage the Services with the label. This ensures services without the label to continue to be managed as usual.
 
 This will have no effect on other EndpointSlice controller implementations since they will not be influenced by the presence of this label.
+
+To avoid potential new functionalities to leak into other controllers re-using the EndpointSlice Reconciler (for example, the EndpointSlice Mirroring Controller), new Kubernetes only functionnalities must be optional if possible. No functionalities outside of kubernetes/kubernetes will be added to this controller.
 
 ## Design Details
 
 ### Well-Known Label
 
-The kube-controller-manager should pass to the Endpoints, EndpointSlice and EndpointSlice Mirroring Controllers an informer selecting services that are not labelled with `service.kubernetes.io/endpoint-controller-name`.
+The kube-controller-manager will pass to the Endpoints, EndpointSlice and EndpointSlice Mirroring Controllers an informer selecting services that are not labeled with `service.kubernetes.io/endpoint-controller-name`. Thus, if the label is added to an existing service (by updating the service), the service with the label will be considered as a deleted service for the controllers, and the Endpoints and EndpointSlices will be deleted. If a Service is created with the label, the controllers will not be informed about it, so the Endpoints and EndpointSlices will not be created. If the label is removed from an existing service (by updating the service), the service with the label will be considered as a newly created service for the controllers, and the Endpoints and EndpointSlices will be created.
+
+In the Endpoints, EndpointSlice and EndpointSlice Mirroring Controllers, the behavior to create Endpoints/EndpointSlices on service creation and the behavior to delete the Endpoints/EndpointSlices on service deletion is already in place. Only the service informer passed to these controllers must be tweaked for the proposed well-known label (`service.kubernetes.io/endpoint-controller-name`) to work properly.
 
 ### Flexibility on the EndpointSlice Reconciler Module
+
+The current behavior of the EndpointSlice Reconciler if a service exists but does not have any endpoint behind, is to create an placeholder EndpointSlice for that service. The placeholder EndpointSlice will have no endpoints and no ports. If the service is dualstack, then 2 placeholder EndpointSlices will be created, one for each IP Family (IPv4 and IPv6).
 
 New fields will be added to the `Reconciler` struct to cover the needs of the EndpointSlice and EndpointSlice Mirroring Controllers. Unlike the EndpointSlice Mirroring Controller, the EndpointSlice Controller needs placeholders if a service does not contain any endpoint. So a boolean `placeholderEnabled` will be added. The EndpointSlice Mirroring Controller does not verify which resource owns the EndpointSlice before Updating/Deleting it, another boolean `ownershipEnforced` would control this.
 
@@ -280,13 +298,13 @@ to implement this enhancement.
 
 ##### Integration tests
 
-TDB
+- Usage of `service.kubernetes.io/endpoint-controller-name` on services
+    * A service is created with the label and the service has then no endpoints neither endpointslices. Then service is updated removing the label and the service has now endpoints and endpointslices.
+    * A service is created without the label, the service has endpoints and endpointslices. Then service is updated with the label and the service has no longer any endpoints nor endpointslices.
 
 ##### e2e tests
 
-- Usage of `service.kubernetes.io/endpoint-controller-name` on services
-    * A service is created with the label and the service has then no endpoints.
-    * A service is created without the label, the service has endpoints. Then service is updated with the label and the service has no longer any endpoints.
+TDB
 
 ### Graduation Criteria
 
@@ -443,7 +461,7 @@ TBD
 
 ## Alternatives
 
-### **Well-known label:** Use Annotation as Selector 
+### Well-known label: Use Annotation as Selector 
 
 Services without selectors will not get any EndpointSlice objects. Therefore, selecting pods can be done in different ways, for example, via annotation. An annotation will be used in the service to select which pods will be used as backend for this service. For example, [nokia/danm](https://github.com/nokia/danm) uses `danm.k8s.io/selector` (e.g. [DANM service declaration](https://github.com/nokia/danm/blob/v4.3.0/example/svcwatcher_demo/services/internal_lb_svc.yaml#L7)), and [projectcalico/vpp-dataplane](https://github.com/projectcalico/vpp-dataplane) uses `extensions.projectcalico.org/selector` (e.g. [Calico-VPP Multinet services](https://github.com/projectcalico/vpp-dataplane/blob/v3.25.1/docs/multinet.md#multinet-services)). To simplify the user experience, a mutating webhook could read the selector, add them to the annotation and clear them from the specs when the type of service is detected.
 
@@ -459,7 +477,7 @@ metadata:
 spec: {}
 ```
 
-### **Well-known label:** Use Dummy Selector
+### Well-known label: Use Dummy Selector
 
 The set of Pods targeted by a Service is determined by a selector, the labels in the selector must be included as part of the pod labels. If a dummy selector is added to the service, Kubernetes will not select any pod, the endpointslices created by Kubernetes will then be empty. To simplify the user experience, a mutating webhook could add the dummy selector when the type of service is detected.
 
