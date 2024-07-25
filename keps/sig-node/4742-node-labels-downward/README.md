@@ -161,9 +161,6 @@ to extract information.
 ## Motivation
 
 We’d like to change the runtime behavior of containers based on node labels.
-In our case, we’re using a CNI with DaemonSets to perform network setup, and
-would like to configure the network differently based on the presence of a node
-label (e.g. `topology.k8s.io/vpn=true`).
 
 A number of other use cases exist for providing node labels to pods. One
 example is utilizing topology data from cloud providers, which are automatically
