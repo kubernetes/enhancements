@@ -129,6 +129,15 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Extending Cluster API <code>Cluster</code> resource](#extending-cluster-api-cluster-resource)
+  - [ClusterProfile CRD scope](#clusterprofile-crd-scope)
+    - [Global hub cluster for multiple clustersets](#global-hub-cluster-for-multiple-clustersets)
+    - [Global hub cluster per clusterset](#global-hub-cluster-per-clusterset)
+    - [Regional hub cluster for multiple clustersets](#regional-hub-cluster-for-multiple-clustersets)
+    - [Regional hub clusters per clusterset](#regional-hub-clusters-per-clusterset)
+    - [Self-assembling clustersets](#self-assembling-clustersets)
+    - [Workload placement across multiple clusters <em>without</em> cross-cluster service networking](#workload-placement-across-multiple-clusters-without-cross-cluster-service-networking)
+    - [Workload placement into a specific clusterset](#workload-placement-into-a-specific-clusterset)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
