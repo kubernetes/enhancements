@@ -192,8 +192,18 @@ compared to the ease of using downwardAPI for pod labels and metadata.
 
 The initial design includes:
 
-* Being able to pass node labels to volumes with fieldPath of `node.metadata.labels` where only labels containing `topology.k8s.io/` are passed through
-* Being able to pass a specific node label through an env vars like `topology.k8s.io/region`
+In KEP 1659, the following labels are defined:
+* topology.kubernetes.io/region
+* topology.kubernetes.io/zone
+
+In addition to the above labels, KEP 1659 declares the entire `topology.kubernetes.io` prefix space as reserved for use by the Kubernetes project.
+
+This KEP expands upon KEP 1659 in the following ways:
+- The `x.topology.kubernetes.io` prefix is allocated for use by end users. The kubernetes project itself will not define any standard labels with that prefix.
+- The `<domain>.x.topology.kubernetes.io` prefix is likewise allocated for use by end users or third-parties. The `<domain>` portion is treated the same as a "normal" label prefix. For example, `example.com.x.topology.k8s.io/label-name`.
+- All labels using the `topology.kubernetes.io` or `*.topology.kubernetes.io` prefix spaces are considered "safe" for workloads. A workload may be exposed to the values of these labels which directly apply to the workload. For example, a pod may learn the topology of the node on which it is running.
+
+The idea is that we will expose those labels from nodes to pods via a literal copy from the Node, for instance using the method `GetNode` from Kubelet in the `podFieldSelectorRuntimeValue` function and `volume.VolumeHost` `GetNodeLabels` function in the `CollectData` function in the downward API.
 
 ### User Stories
 
