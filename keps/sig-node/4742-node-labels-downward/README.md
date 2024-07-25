@@ -226,10 +226,6 @@ available to Pods.
 attained through a configmap or secret mounted to a pod, being passed on
 creation but not guaranteed to be immutable and thus should be treated as so.
 
-* Can potentially be featuregated to make this feature strictly opt-in, if
-operators are concerned that existing node labels of the form
-`topology.k8s.io/*` within their clusters are sensitive and should not be
-exposed to pods.
 
 ## Design Details
 
