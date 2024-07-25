@@ -307,9 +307,9 @@ The first scale operation occurs at T2 and the second scale at T3.
 
 | Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio |
 |------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-------------| 
-| T1   | any amount       | 50           | 30           | 20           | 100          | 100                       | 110                                  | -           |
-| T2   | any amount       | 61           | 35           | 24           | 120          | 120                       | 130                                  | 1.182       |
-| T3   | any amount       | 66           | 38           | 26           | 130          | 130                       | 140                                  | 1.077       | 
+| T1   | any amount       | 60           | 30           | 20           | 110          | 100                       | 110                                  | -           |
+| T2   | any amount       | 71           | 35           | 24           | 130          | 120                       | 130                                  | 1.182       |
+| T3   | any amount       | 76           | 38           | 26           | 140          | 130                       | 140                                  | 1.077       | 
 
 With the `TerminationComplete` PodReplacementPolicy, scaling cannot proceed immediately if there
 are terminating pods present, in order to adhere to the Deployment constraints. We need to scale
@@ -321,9 +321,9 @@ A single scale operation occurs at T2.
 | Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio |
 |------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-------------| 
 | T1   | 15               | 50           | 30           | 20           | 100          | 100                       | 110                                  | -           |
-| T2   | 15               | 61           | 34           | 20           | 115          | 120                       | 130                                  | 1.182       |
-| T3   | 5                | 61           | 35           | 24           | 120          | 120                       | 130                                  | -           | 
-| T4   | 0                | 61           | 35           | 24           | 120          | 120                       | 130                                  | -           | 
+| T2   | 15               | 59           | 35           | 21           | 115          | 120                       | 130                                  | 1.182       |
+| T3   | 5                | 66           | 35           | 24           | 125          | 120                       | 130                                  | -           | 
+| T4   | 0                | 71           | 35           | 24           | 130          | 120                       | 130                                  | -           | 
 
 To proceed with the scaling in the future (T3), we need to remember both `replicasBeforeScale` and
 `deploymentMaxReplicasBeforeScale` to calculate the original scale ratio. The terminating pods can
@@ -348,10 +348,10 @@ The following example shows a first scale at T2 and a second scale at T3.
 | Time | Terminating Pods | RS1 Replicas | RS2 Replicas | RS3 Replicas | All RS Total | Deployment .spec.replicas | Deployment .spec.replicas + MaxSurge | Scale ratio           |
 |------|------------------|--------------|--------------|--------------|--------------|---------------------------|--------------------------------------|-----------------------| 
 | T1   | 15               | 50           | 30           | 20           | 100          | 100                       | 110                                  | -                     |
-| T2   | 15               | 61           | 34           | 20           | 115          | 120                       | 130                                  | 1.182                 |
+| T2   | 15               | 59           | 35           | 21           | 115          | 120                       | 130                                  | 1.182                 |
 | T3   | 15               | 66           | 38           | 21           | 125          | 130                       | 140                                  | 1.077 (1.273 from T1) | 
-| T4   | 5                | 67           | 38           | 25           | 130          | 130                       | 140                                  | -                     | 
-| T5   | 0                | 67           | 38           | 25           | 130          | 130                       | 140                                  | -                     | 
+| T4   | 5                | 72           | 38           | 25           | 135          | 130                       | 140                                  | -                     | 
+| T5   | 0                | 77           | 38           | 25           | 140          | 130                       | 140                                  | -                     | 
 
 - At T2, a ful scale was done for RS1 with a ratio of 1.182. RS1 can then use the new scale ratio
   at T3 with a value of 1.077.

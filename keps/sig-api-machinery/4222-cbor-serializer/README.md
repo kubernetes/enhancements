@@ -1082,6 +1082,8 @@ in back-to-back releases.
 - To support rollback from beta to alpha, at least one alpha release has supported automatic
   transcoding of types that implement json.Marshaler or json.Unmarshaler without corresponding
   custom CBOR behaviors.
+- All Kubernetes components have opted out of automatic transcoding to JSON for FieldsV1 and
+  RawExtension.
 
 #### GA
 
