@@ -45,4 +45,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - job_succeeded_total
+  - job_sync_duration_seconds
+  - jobs_finished_total
