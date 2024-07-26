@@ -45,4 +45,3 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - job_succeeded_total
