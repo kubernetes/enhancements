@@ -26,6 +26,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -40,6 +43,7 @@
 - [Alternatives](#alternatives)
   - [Well-known label: Use Annotation as Selector](#well-known-label-use-annotation-as-selector)
   - [Well-known label: Use Dummy Selector](#well-known-label-use-dummy-selector)
+  - [Well-known label: Disable the Kube-Controller-Manager Controllers](#well-known-label-disable-the-kube-controller-manager-controllers)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -69,9 +73,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal adds a new well-known label `service.kubernetes.io/endpoint-controller-name` to Kubernetes Services. This label disables the default Kubernetes EndpointSlice controller for the services where this label is applied and delegates the control of EndpointSlices to a custom EndpointSlice controller.
+This proposal adds a new well-known label `service.kubernetes.io/endpoint-controller-name` to Kubernetes Services. This label disables the default Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for the services where this label is applied and delegates the control of EndpointSlices to a custom EndpointSlice controller.
 
-Additionally, this KEP aims to give more flexibility for the EndpointSlice Reconciler module to allow users to reconcile EndpointSlices with any type of resources (Currently only Service/Pods is supported). For example, Endpoints could be supported for the Kubernetes EndpointSlice Mirroring Controller.
+Additionally, this KEP aims to give more flexibility for the EndpointSlice Reconciler module to allow users to reconcile EndpointSlices with any type of resources (Currently only Service/Pods is supported). For example, reconciling Endpoints type (instead of only Service/Pod as of now) could be supported for the Kubernetes EndpointSlice Mirroring Controller.
 
 ## Motivation
 
@@ -83,14 +87,14 @@ Providing a generic EndpointSlice Reconciler module would allow users to reuse t
 
 ### Goals
 
-* Provide the ability to disable the Kubernetes EndpointSlice controller for particular services.
+* Provide the ability to disable the Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for particular services.
 * Extend and enhance the EndpointSlice Reconciler module to make it generic.
 
 ### Non-Goals
 
-* Change / Replace / Deprecate the existing behavior of the Kubernetes EndpointSlice controller.
+* Change / Replace / Deprecate the existing behavior of the Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers.
 * Introduce additional supported types of the EndpointSlice controllers/Reconciler as part of Kubernetes.
-* Modify the Service / EndpointSlice Specs.
+* Modify the Service / EndpointSlice / Endpoints Specs.
 * Add new features to the EndpointSlice Mirroring Controller.
 
 ## Proposal
@@ -308,7 +312,22 @@ TDB
 
 ### Graduation Criteria
 
-TDB
+#### Alpha
+
+- Feature implemented behind a feature gates (`EndpointControllerNameWellKnownLabel`, `EndpointSliceMirroringControllerSharedModule`). Feature Gates are disabled by default.
+- Documentation provided.
+- Initial unit, integration and e2e tests completed and enabled.
+
+#### Beta
+
+- Feature Gates are enabled by default.
+- No major outstanding bugs.
+- Feedback collected from the community (developers and users) with adjustment provided, implemented and tested.
+
+#### GA
+
+- 2 examples of real-world usage.
+- Allowing time for feedback from developers and users.
 
 ### Upgrade / Downgrade Strategy
 
@@ -324,11 +343,11 @@ N/A
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism: setting the label `service.kubernetes.io/endpoint-controller-name` disables the Kubernetes endpointslice controller.
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: EndpointControllerNameWellKnownLabel, EndpointSliceMirroringControllerSharedModule
+  - Components depending on the feature gate: kube-controller-manager
+- [x] Other
+  - Describe the mechanism: setting the label `service.kubernetes.io/endpoint-controller-name` on a service disables the Kubernetes endpointslice controller for that particular service. So no EndpointSlices/Enpoints for this service from the kube-controller-manager will be existing.
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -336,7 +355,9 @@ N/A
 
 ###### Does enabling the feature change any default behavior?
 
-N/A
+When the feature-gate `EndpointControllerNameWellKnownLabel` is enabled, the label `service.kubernetes.io/endpoint-controller-name` will work as described in this KEP.
+
+When the feature-gate `EndpointSliceMirroringControllerSharedModule`, the EndpointSlice Mirroring Controller will use the shared EndpointSlice Reconciler module, but the behavior of the controller will not change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -453,7 +474,7 @@ N/A
 
 ## Implementation History
 
-- Initial proposal: 2024-06-01
+- Initial proposal: 2024-07-19
 
 ## Drawbacks
 
@@ -477,6 +498,8 @@ metadata:
 spec: {}
 ```
 
+This alternative potentially leads to confusion among users and inconsistency in how services are managed as each implementation is using its own annotation (see the nokia/danm and projectcalico/vpp-dataplane examples), leading to a fragmented approach.
+
 ### Well-known label: Use Dummy Selector
 
 The set of Pods targeted by a Service is determined by a selector, the labels in the selector must be included as part of the pod labels. If a dummy selector is added to the service, Kubernetes will not select any pod, the endpointslices created by Kubernetes will then be empty. To simplify the user experience, a mutating webhook could add the dummy selector when the type of service is detected.
@@ -493,6 +516,14 @@ spec:
     app: a
     dummy-selector: "true"
 ```
+
+This alternative fails to prevent the placeholder (empty) EndpointSlice(s) to be created by Kube-Controller-Manager. This also potentially causes confusion among users as every implementation could use a different dummy-selector key. Additionally, a miss-configuration with the missing dummy label will lead to unintended EndpointSlices being created with Pod.Status.PodIPs.
+
+### Well-known label: Disable the Kube-Controller-Manager Controllers
+
+The list of controllers to enable in the Kube-Controller-Manager can be set using the `--controllers` flag ([kube-controller-manager documentation](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/)). The EndpointSlice can then be disabled in the Kube-Controller-Manager and implemented as an external one that will support the label feature described in this KEP.
+
+This alternative requires significant changes to the cluster management as the cluster level configuration must be modified and a new EndpointSlice controller for the primary network must be developed and deployed to replace the disabled one in the Kube-Controller-Manager.
 
 ## Infrastructure Needed (Optional)
 

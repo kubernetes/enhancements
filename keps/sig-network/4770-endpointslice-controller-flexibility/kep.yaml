@@ -38,7 +38,13 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates: []
+feature-gates:
+  - name: EndpointControllerNameWellKnownLabel
+    components:
+      - kube-controller-manager
+  - name: EndpointSliceMirroringControllerSharedModule
+    components:
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
