@@ -104,6 +104,7 @@ for user to refactor just "a few commands" into "a batch of complex code". So we
 ### Non-Goals
 
 * Change `kubectl` functionality.
+* Deprecate **list** and plan to remove it from `kubectl`.
 
 ## Proposal
 
@@ -112,16 +113,8 @@ Existing `kubectl` subcommands like `get`, `describe` should be able to use a _w
 At this stage, we will adopt a similar approach to `client-go`, using an environment variable to control whether
 to enable this experimental feature, and ensuring that it can revert to the previous behavior if it fails.
 
-<<[UNRESOLVED Will **watchlist** replace **list** completely]>>
-**watchlist** was first released in version 1.27 and is still in the alpha stage, with continuous improvements 
-over the subsequent releases. For a feature in such an early stage, it is too soon to say whether we will fully
-rely on it without other fallback mechanisms.
-
-In my opinion, due to the performance improvements, we should use **watchlist** by default instead of **list** in the
-long term. For the evolution strategy, we can follow the approach of `client-go` and address it in a later release.
-
-<<[/UNRESOLVED]>>
-
+This proposal focuses on adding support for **watchlist** for better performance. Although **list** will be replaced
+by **watchlist** in the long run, deprecation and removal of **list** is not part of this proposal.
 
 ### User Stories (Optional)
 
@@ -158,9 +151,15 @@ kube-apiserver to first send the existing members of the collection as `ADDED` e
 objects changed events. A special `BOOKMARK` event with annotation `k8s.io/initial-events-end=true` will be sent 
 at the end to indicate the completion of the initial object push.
 
-Therefore, where kubectl originally performed a **list** operation using `List`, we can implement a new
-`WatchList` function that is enabled through a new environment variable. In this implementation, we will 
-send a **watch** request with the following parameters:
+This mechanism has been integrated into `client-go` in 1.31, and users who use typed or dynamic client can get
+this for free by setting env `KUBE_FEATURE_WatchListClient=true`. But unfortunately, in current implementation, 
+`kubectl` doesn't not use dynamic or typed client to list resource, it use raw `rest` client. So the auto switching
+mechanism implemented in `client-go` can not work with `kubectl` for now.
+
+To address the issue, a relatively simple method is to borrow the mechanism in `client-go`. Therefore, where 
+`kubectl` originally performed a **list** operation, we can implement a new `WatchList` function that is enabled
+through environment variables. In this implementation, we will send a **watch** request with the following parameters:
+
 ```go
   // rely on the `ConsistentListFromCache` feature. When this parameter is an empty string, 
   // the apiserver will ensure that the resource version is the latest version currently in etcd.
@@ -178,14 +177,28 @@ send a **watch** request with the following parameters:
 	listOptions.ResourceVersionMatch = metav1.ResourceVersionMatchNotOlderThan
 ```
 
+The above parameters can be easily set by reusing the `watchlist.PrepareWatchListOptionsFromListOptions` function, 
+thereby maintaining the same behavior as in `client-go`.
+
 When the **watch** request is initiated and begins responding normally, `kubectl` will aggregate the output events. 
 A detail to note here is that depending on whether the `ServerPrint` is enabled, the output event types may vary.
-They may be output as `metav1.Table` or as the original object types. 
+They may be output as `metav1.Table` or as the original object types. Upon encountering the `k8s.io/initial-events-end`
+event, `kubectl` will proactively close the `watch` and pass the aggregated results to the `VisitorFunc` in one go.
+However, if an exception occurs during the above events, kubectl will directly fallback to the original logic, making
+a new **list** request.
 
-Upon encountering the `k8s.io/initial-events-end` event, `kubectl` will proactively close the `watch` and pass the 
-aggregated results to the `VisitorFunc` in one go. However, if an exception occurs during the above events, 
-kubectl will directly fallback to the original logic, making a new **list** request.
+The above process has been well implemented in `rest.WatchList`, and we can also reuse the implementation. 
 
+In summary, since `kubectl` can't simply use the wrappers provided in `client-go`, it can't benefit from them for free. 
+However, we can port the switching mechanism in `client-go` to `kubectl` to make it work.
+
+In addition, there is an additional enhancement that can be applied to this switching mechanism. And this mechanism
+will be applied to both `client-go` and `kubectl`. In order to prevent multiple requests to the API server during
+a **watchlist** process, and also to make the semantics clear, a hint can be included in the returned error
+when the **watch** fails. This hint tells the client that there is no need to fallback to using **list**, 
+because **list** shall fail even client does the fallback. Also to be clear, this hint is not guaranteed to be
+included in the error. In current considerations, the hint will be included only when the user have no permission
+to **list** resources.
 
 ### Test Plan
 
@@ -401,10 +414,10 @@ well as the [existing list] of feature gates.
 
 - [ ] Feature gate (also fill in values in `kep.yaml`)
 - [x] Other
-  - When the environment variable `KUBECTL_WATCHLIST` is set to true, kubectl
+  - When the environment variable `KUBE_FEATURE_WatchListClient` is set to true, kubectl
     uses a **watch** to fetch collections where possible. When the environment variable
-    `KUBECTL_WATCHLIST` is set to false, kubectl uses the **list** verb (legacy behavior).
-    If `KUBECTL_WATCHLIST` is unset, the kubectl tool uses its compiled-in default.
+    `KUBE_FEATURE_WatchListClient` is set to false, kubectl uses the **list** verb (legacy behavior).
+    If `KUBE_FEATURE_WatchListClient` is unset, the kubectl tool uses its compiled-in default.
     
     Once the feature is generally available, `kubectl` will always attempt to use a **watch**
     first.
@@ -444,7 +457,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-- There will be unit tests for the `kubectl` environment variable KUBECTL_WATCHLIST.
+- There will be unit tests for the `kubectl` environment variable `KUBE_FEATURE_WatchListClient`.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -596,6 +609,10 @@ Focusing mostly on:
 -->
 Yes; `kubectl` will use **watch** rather than **list** to fetch resources list.
 Sometimes `kubectl` will then issue a **list** (for example, when the API server has denied the **watch**).
+
+When **watch** API server fails, a hint could be included in response to tell client **list** will also fail (eg. client
+have no **list** permission) client don't have to give a try by using **list**, because client know the subsequent 
+**list** will fail too.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
