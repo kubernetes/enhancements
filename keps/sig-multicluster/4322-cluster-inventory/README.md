@@ -240,7 +240,7 @@ management. Examples of consumers includes:
   this area.
 * GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
-  concept by themselves or understand cluster API from each different
+  concept by themselves or understand APIs representing a cluster from each 
   cluster management project. A common ClusterProfile API can provide
   a thin compatible layer for different projects.
 * Operation tools or customized external consumers: this API gives a
@@ -449,6 +449,7 @@ below questions:
 * Is the cluster under management?
 * How can I select a cluster?
 * Is the cluster healthy?
+* How to access the cluster?
 * Does the cluster have certain capabilities or properties?
 * Does the cluster have sufficient resources?
 
@@ -506,6 +507,23 @@ With recent conversations about kube-apiserver and enabled featureset version,
 it is possible to incorporate other version relating to the cluster, such as
 minimum kubelet version, maximum kubelet version, and enabled featureset version.
 
+#### Credentials
+
+An array of credentials to access the cluster. Each credential could be assigned 
+to a different consumer. Each credential has: 
+- a consumer field to indicate which consumer it is assigned to. 
+- a server field to store the server URL of the cluster. 
+- an accessRef field to point to the access information location. 
+
+The access information itself is stored in the same Kubernetes cluster on which
+the ClusterProfile API resides. However, the access information for different 
+consumers is stored in different namespaces to ensure that it is only accessible
+to the consumer for which it is intended. We recommend that the access information
+be stored in a secret object to add further protection to the access information.
+
+##### Access information format
+
+
 #### Properties
 
 Name/value pairs to represent properties of the clusters. It could be a
@@ -557,14 +575,27 @@ spec:
   clusterManager:
     name: some-cluster-manager
 status:
- version:
-   kubernetes: 1.28.0
- properties:
+  version:
+    kubernetes: 1.28.0
+  credentials:
+   - consumer: kueue-admin
+     server: https://kueue-cluster-url:433     
+     accessRef:
+       Kind: “Secret”
+       Namespace: “kueue-system”
+       Name: “kueue-demo-admin-1”
+   - consumer: argo-admin
+     server: https://argo-cluster-url:433
+     accessRef:
+       Kind: “Secret”
+       Namespace: “argo-system”
+       Name: “argo-demo-app-developer-1”
+  properties:
    - name: clusterset.k8s.io
      value: some-clusterset
    - name: location
      value: apac
- conditions:
+  conditions:
    - type: ControlPlaneHealthy
      status: True
      lastTransitionTime: "2023-05-08T07:56:55Z"
