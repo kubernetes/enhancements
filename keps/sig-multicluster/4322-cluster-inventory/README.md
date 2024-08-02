@@ -511,9 +511,8 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 An array of credentials to access the cluster. Each credential could be assigned 
 to a different consumer. Each credential has: 
-- a consumer field to indicate which consumer it is assigned to. 
-- a server field to store the server URL of the cluster. 
-- an accessRef field to point to the access information location. 
+- a **consumer** field to indicate which consumer it is assigned to. 
+- an **accessRef** field to point to the access information location. 
 
 The access information itself is stored in the same Kubernetes cluster on which
 the ClusterProfile API resides. However, the access information for different 
@@ -522,7 +521,14 @@ to the consumer for which it is intended. We recommend that the access informati
 be stored in a secret object to add further protection to the access information.
 
 ##### Access information format
+The access information must contain the following fields
+- **Config**: This field contains cluster access information compatible with the 
+  [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/dbc2b0a5c7acc349ea71a14e49913661eaf708d2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
 
+Please note that since a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
+supports access to multiple clusters. Consequently, multiple `ClusterProfile`
+objects can share the same access secret. However, it is crucial to
+ensure that each secret contains access information for only a single customer.
 
 #### Properties
 
