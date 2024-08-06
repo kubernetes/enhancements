@@ -511,7 +511,8 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 An array of credentials to access the cluster. Each credential could be assigned 
 to a different consumer. Each credential has: 
-- a **consumer** field to indicate which consumer it is assigned to. 
+- a **consumer** field to indicate which consumer it is assigned to.
+- a **context** field to indicate the context name in the access information that should be used to access the cluster.
 - an **accessRef** field to point to the access information location. 
 
 The access information itself is stored in the same Kubernetes cluster on which
@@ -577,7 +578,7 @@ metadata:
  labels:
    x-k8s.io/cluster-manager: some-cluster-manager
 spec:
-  displayName: some-cluster
+  displayName: cluster-us-east
   clusterManager:
     name: some-cluster-manager
 status:
@@ -585,13 +586,13 @@ status:
     kubernetes: 1.28.0
   credentials:
    - consumer: kueue-admin
-     server: https://kueue-cluster-url:433     
+     context: cluster-us-east
      accessRef:
        Kind: “Secret”
        Namespace: “kueue-system”
        Name: “kueue-demo-admin-1”
    - consumer: argo-admin
-     server: https://argo-cluster-url:433
+     context: cluster-us-east
      accessRef:
        Kind: “Secret”
        Namespace: “argo-system”
