@@ -526,7 +526,7 @@ The access information must contain the following fields
 - **Config**: This field contains cluster access information compatible with the 
   [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/dbc2b0a5c7acc349ea71a14e49913661eaf708d2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
 
-Please note that since a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
+Please note that a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
 supports access to multiple clusters. Consequently, multiple `ClusterProfile`
 objects can share the same access secret. However, it is crucial to
 ensure that each secret contains access information for only a single customer.
