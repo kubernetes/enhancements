@@ -104,6 +104,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Cluster Manager](#cluster-manager)
   - [Status](#status)
     - [Version](#version)
+    - [Credentials](#credentials)
+      - [Access information format](#access-information-format)
     - [Properties](#properties)
     - [Conditions](#conditions)
 - [API Example](#api-example)
