@@ -1,0 +1,25 @@
+id: "4590"
+prnumber: "4583"
+name: schema-cel-variables
+title: SchemaCELVariables
+kep-number: draft
+authors: ['@alexzielenski']
+owning-sig: sig-api-machinery
+participating-sigs: [sig-api-machinery]
+reviewers: ['@sttts', '@apelisse', '@jpbetz']
+approvers: ['@jpbetz', '@deads2k']
+creation-date: "2024-04-16"
+last-updated: v1.31
+status: implementable
+stage: alpha
+latest-milestone: "1.31"
+milestone:
+    alpha: "1.31"
+    beta: ""
+    stable: ""
+feature-gates:
+  - name: SchemaCELVariables
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics: []
