@@ -14,6 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Discovering CPU topology](#discovering-cpu-topology)
+    - [Windows CPU Discovery](#windows-cpu-discovery)
   - [CPU Manager interfaces (sketch)](#cpu-manager-interfaces-sketch)
   - [Configuring the CPU Manager](#configuring-the-cpu-manager)
     - [Policy 1: &quot;none&quot; cpuset control [default]](#policy-1-none-cpuset-control-default)
@@ -207,6 +208,78 @@ Alternate options considered for discovering topology:
    contains code to build a ThreadSet from the output of `lscpu -p`.
 1. Execute a mature external topology program like [`mpi-hwloc`][hwloc] --
    potentially adding support for the hwloc file format to the Kubelet.
+
+#### Windows CPU Discovery
+
+The Windows Kubelet provides an implementation for the [cadvisor api](https://github.com/kubernetes/kubernetes/blob/fbaf9b0353a61c146632ac195dfeb1fbaffcca1e/pkg/kubelet/cadvisor/cadvisor_windows.go#L50) 
+in order to provide Windows stats to other components without modification.  
+The ability to provide the `cadvisorapi.MachineInfo` api is already partially mapped
+in on the Windows client.  By mapping the Windows specific topology API's to 
+cadvisor API, no changes are required to the CPU Manager.
+
+The [Windows concepts](https://learn.microsoft.com/windows/win32/procthread/processor-groups) are mapped to [Linux concepts](https://github.com/kubernetes/kubernetes/blob/cede96336a809a67546ca08df0748e4253ec270d/pkg/kubelet/cm/cpumanager/topology/topology.go#L34-L39) with the following:
+
+| Kubelet Term | Description | Cadvisor term | Windows term |
+| --- | --- | --- | --- |
+| CPU | logical CPU | thread | Logical processor |
+| Core | physical CPU | Core | Core |
+| Socket | socket | Socket | Physical Processor |
+| NUMA Node | NUMA cell | Node | Numa node |
+
+The Windows API's used will be
+-	[getlogicalprocessorinformationex](https://learn.microsoft.com/windows/win32/api/sysinfoapi/nf-sysinfoapi-getlogicalprocessorinformationex)
+-	[nf-winbase-getnumaavailablememorynodeex](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnumaavailablememorynodeex) 
+
+One difference between the Windows API and Linux is the concept of [Processor groups](https://learn.microsoft.com/windows/win32/procthread/processor-groups).
+On Windows systems with more than 64 cores the CPU's will be split into groups, 
+each processor is identified by its group number and its group-relative processor number. 
+
+In Cri we will add the following structure to the `WindowsContainerResources` in CRI:
+
+```
+message WindowsCpuGroupAffinity {
+    // CPU mask relative to this CPU group.
+    uint64 cpu_mask = 1;
+    // CPU group that this CPU belongs to.
+    uint32 cpu_group = 2;
+}
+```
+
+Since the Kubelet API's are looking for a distinct ProcessorId, the processorid's will be calculated by looping 
+through the mask and calculating the ids with `(group *64) + procesorid` resulting in unique processor id's from `group 0` as `0-63` and 
+processor Id's from `group 1` as `64-127` and so on. This translation will be done only in kubelet, the `cpu_mask` will be used when 
+communicating with the container runtime.
+
+```
+for i := 0; i < 64; i++ {
+		if GROUP_AFFINITY.Mask&(1<<i) != 0 {
+			processors = append(processors, i+(int(a.Group)*64))
+		}
+	}
+}
+```
+
+Using this logic, a cpu bit mask of `0000111` (leading zero's removed) would result in cpu's: 
+
+- `0,1,2` in `group 0` 
+- `64,65,66` in `group 1`.
+
+When converting back to the Windows Group Affinity we will divide the cpu number by 64 to get the group number then 
+use mod of 64 to calculate the location of the cpu in mask:
+
+```
+group := cpu / 64
+mask := 1 << (cpu % 64)
+
+groupaffinity.Mask |= mask
+```
+
+There are some scenarios where cpu count might be greater than 64 cores but in each group it is less
+than 64. For instance, you could have 2 CPU groups with 35 processors each.  The unique ID's using the strategy 
+above would give you: 
+
+- CPU group 0 : 0 to 34
+- CPU group 2: 64 to 99
 
 ### CPU Manager interfaces (sketch)
 

@@ -58,6 +58,8 @@
     - [Mechanism I (pod eviction by kubelet)](#mechanism-i-pod-eviction-by-kubelet)
     - [Mechanism II (Out-of-Memory (OOM) killer by kernel/OS)](#mechanism-ii-out-of-memory-oom-killer-by-kernelos)
     - [Mechanism III (obey cgroup limit, by OOM killer)](#mechanism-iii-obey-cgroup-limit-by-oom-killer)
+  - [Windows considerations](#windows-considerations)
+    - [Kubelet memory management](#kubelet-memory-management)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -778,3 +780,23 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 [hugepage-issue]: https://github.com/kubernetes/kubernetes/issues/80716
 [memory-issue]: https://github.com/kubernetes/kubernetes/issues/81009
 
+### Windows considerations
+
+Numa nodes can not be directly assigned or guaranteed via the Windows API.  Another limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
+does not support setting multiple Numa nodes for a single Job object (i.e. Container).
+To work around this limitation, the container runtime will query the OS to get the affinity masks associated with each of the Numa nodes passed in via CRI and use 
+SetInformationJobObjectEx to set affinities for the Job object. This will result in the memory from the Numa node being used. 
+
+Using Memory manager's internal mapping this should provide the desired behavior in most cases. It is possible that a CPU could access memory from a different Numa 
+Node than it is currently in, resulting in decreased performance. For this reason, we will add documentation, a log warning message in kubelet, and an warning event 
+to help raise awareness of this possibility. If access from the CPUs different than the assigned Numa Node is undesirable then `single-numa-node` 
+and the CPU manager should be configured in the Topology Manager policy setting which would force Kubelet to only select a Numa node if it will have enough memory 
+and CPU's available.  In the future, in the case of workloads that span multiple Numa nodes, it may be desirable for Topology manager to have a new policy specific 
+for Windows. This would require a separate KEP to add a new policy.
+
+#### Kubelet memory management 
+
+There is work to [enable kubelet's eviction](https://github.com/kubernetes/kubernetes/pulls/marosset) which would follow the same patterns
+as [Mechanism I](#mechanism-i-pod-eviction-by-kubelet).
+Windows does not have an OOM killer and so Mechanisms II and III are out of scope in the section 
+related to the [Kubernetes Node Memory Management](#kubernetes-nodes-memory-management-mechanisms-and-their-relation-to-the-memory-manager).
