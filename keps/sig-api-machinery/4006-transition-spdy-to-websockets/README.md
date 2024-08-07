@@ -754,6 +754,8 @@ in back-to-back releases.
 
 #### GA
 
+- Add WebSocket support for HTTPS proxies.
+  - See (https://github.com/kubernetes/kubernetes/issues/126134)
 - Conformance tests for `RemoteCommand` completed and enabled.
 - Conformance tests for `RemoteCommand` have been stable and
   non-flaky for two weeks.
