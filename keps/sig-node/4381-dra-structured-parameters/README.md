@@ -302,7 +302,7 @@ address limitations of the current approach for the following use cases:
   better match workload needs. Sharing the devices in this way can greatly
   increase HW utilization / reduce costs.
 
-- *Limitation*: currently there's no API to request partial device
+  *Limitation*: currently there's no API to request partial device
   allocation. With the current device plugin API, devices need to be
   pre-partitioned and advertised in the same way a full / static devices
   are. User must then select a pre-partitioned device instead of having one
