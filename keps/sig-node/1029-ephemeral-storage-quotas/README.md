@@ -269,6 +269,11 @@ and attaching the ID to one or more files.  By default (and as
 utilized herein), if a project ID is attached to a directory, it is
 inherited by any files created under that directory.
 
+To use quotas to track a pod's resource usage, the pod must be in 
+a user namespace. Within user namespaces, the kernel restricts changes 
+to projectIDs on the filesystem, ensuring the reliability of storage 
+metrics calculated by quotas.
+
 _If we elect to use the quota as enforcing, we impose a quota
 consistent with the desired limit._  If we elect to use it as
 non-enforcing, we impose a large quota that in practice cannot be
@@ -279,7 +284,7 @@ below](#implementation-detailsnotesconstraints-optional).
 
 ### Control over Use of Quotas
 
-At present, two feature gates control operation of quotas:
+At present, three feature gates control operation of quotas:
 
 * `LocalStorageCapacityIsolation` must be enabled for any use of
   quotas.
@@ -288,6 +293,9 @@ At present, two feature gates control operation of quotas:
   enabled, quotas are used for monitoring, but not enforcement.  At
   present, this defaults to False, but the intention is that this will
   default to True by initial release.
+
+* Ensure the `UserNamespacesSupport` 
+  is enabled, and that the kernel, CRI implementation and OCI runtime support user namespaces.
 
 ### Operation Flow -- Applying a Quota
 
