@@ -299,7 +299,7 @@ newReplicaSetReplicas = replicasBeforeScale * \frac{deploymentMaxReplicas}{deplo
 $$
 
 This is currently done in the [getReplicaSetFraction](https://github.com/kubernetes/kubernetes/blob/1cfaa95cab0f69ecc62ad9923eec2ba15f01fc2a/pkg/controller/deployment/util/deployment_util.go#L492-L512)
-function. The leftover pods are added to the newest ReplicaSet.
+function. The leftover pods are added to the largest ReplicaSet (or newest if more than one ReplicaSet has the largest number of pods).
 
 This results in the following scaling behavior. 
 
@@ -364,7 +364,7 @@ As we can see, we will get a slightly different result when compared to the firs
 due to the consecutive scales and the fact that the last scale is not yet fully completed.
 
 The consecutive partial scaling behavior is a best effort. We still adhere to all deployment
-constraints and have a bias toward scaling the newest ReplicaSet. To implement this properly we
+constraints and have a bias toward scaling the largest ReplicaSet. To implement this properly we
 would have to introduce a full scaling history, which is probably not worth the added complexity.
 
 ### kubectl Changes
