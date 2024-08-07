@@ -637,7 +637,6 @@ ancestor in the schema of one of these types will not be ratcheted:
 - not: Supporting negation of rules for ratcheting would require a complete 
 rewrite of the validation system.
 - oneOf: Requires EXACTLY one alternative, so it is not allowed for the same reason as `not`  rules.
-- allOf: Blacklisted until we can understand the semantics better and see a large need to add support.
 - anyOf: Blacklisted until we can understand the semantics better and see a large need to add support.
 - x-kubernetes-validations which make use of `oldSelf`: To get ratcheting to 
 work in an intuitive way with transition  rules would require a copy of the 
@@ -719,7 +718,7 @@ Supporting validation code within kube-openapi which spawn a new `SchemaValidato
 will need to be refactored to find the old value and use `RatchetingSchemaValidator`
 when `RatchetingSchemaValidator.ValidateUpdate` is in its callstack.
 
-anyOf, allOf, not, allOf sections of logic will remain using the normal 
+anyOf, not, oneOf sections of logic will remain using the normal 
 `SchemaValidator`.
 
 ### Structural-Schema-based validation changes
@@ -824,14 +823,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-1. Show normal creation path is unaffected
-2. Tests that ratchet different classes of validations:
-    - JSON-Schema fields (minItems, dependencies, etc.)
-    - CRD-Validation Rules
-    - ListSets/Maps
-3. Tests that certain classes of valdiations are not ratcheted:
-    - Nested Validations (not, oneOf, allOf, anyOf)
-    - Transition Rules
+- [k8s.io/apiextensions-apiserver/test/integration.TestRatchetingFunctionality](https://github.com/kubernetes/kubernetes/blob/3ee81787685e47a7a5da22423c8ca4455577ecb3/staging/src/k8s.io/apiextensions-apiserver/test/integration/ratcheting_test.go#L428)
+
 
 ##### e2e tests
 
@@ -845,10 +838,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-It would be nice to have a e2e test that tests ratcheting over a k8s upgrade
-which tightens a validation.
-
-- <test>: <link to test coverage>
+- [test/e2e/apimachinery/crd_validation_ratcheting](https://github.com/kubernetes/kubernetes/blob/7353f52bc8ce110c78082690fc9c269465cbbaf9/test/e2e/apimachinery/crd_validation_ratcheting.go#L44): 
 
 ### Graduation Criteria
 
@@ -868,8 +858,10 @@ which tightens a validation.
 - CEL expressivity to specify custom ratcheting validation
 
 #### GA
-- Upgrade/Downgrade e2e tests
-- Scalability Tests
+- [x] Upgrade/Downgrade e2e tests
+- [ ] Scalability Tests
+- [ ] Ratcheting to include `allOf` subschemas
+- [x] No non-infra related flakes in the last month
 
 <!--
 **Note:** *Not required until targeted at a release.*
