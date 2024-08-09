@@ -1,4 +1,4 @@
-# KEP-4680: Add Resource Health Status to the Pod Status for Device Plugin and DRA
+# KEP-4781: Fix inconsistent container ready state after kubelet restart
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
