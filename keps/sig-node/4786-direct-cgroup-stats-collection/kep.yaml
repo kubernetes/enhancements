@@ -1,0 +1,23 @@
+title: direct cgroup stats collection
+kep-number: 4786
+authors:
+  - "@linxiulei"
+owning-sig: sig-node
+participating-sigs:
+status: provisional
+creation-date: 2024-08-12
+reviewers:
+  - "@haircommander"
+approvers:
+  - "@SergeyKanzhelev"
+see-also:
+  - "/keps/sig-node/2371-cri-pod-container-stats"
+stage: alpha
+latest-milestone: "v1.32"
+milestone:
+  alpha: "v1.32"
+feature-gates:
+  - name: KubeletNodeCgroupStats
+    components:
+      - kubelet
+disable-supported: true
