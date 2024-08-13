@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
     - [Well-Known Label](#well-known-label)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
+    - [Story 1: Services Over Secondary Networks](#story-1-services-over-secondary-networks)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -73,7 +73,7 @@ This proposal adds a new well-known label `service.kubernetes.io/endpoint-contro
 
 As of now, a service can be delegated to a custom Service-Proxy/Gateway if the label `service.kubernetes.io/service-proxy-name` is set. Introduced in [KEP-2447](https://github.com/kubernetes/enhancements/issues/2447), this allows custom Service-Proxies/Gateways to implement services in different ways to address different purposes / use-cases. However, the EndpointSlices attached to this service will still be reconciled in the same way as any other service. Addressing more purposes / use-cases, for example, different pod IP addresses, is therefore not natively possible.
 
-Delegating EndpointSlice control would allow custom controllers to define their own criteria for pod availability, selecting different pod IPs than the pod.status.PodIPs and more. As a reference implementation, and since [KEP-3685](https://github.com/kubernetes/enhancements/issues/3685), the reconciler logic used by Kubernetes can be reused by custom EndpointSlice controllers.
+Delegating EndpointSlice control would allow custom controllers to define their own criteria for pod availability, selecting different pod IPs than the pod.status.PodIPs and more. As a reference implementation, and since the EndpointSlice Reconciler has been moved into Staging in [KEP-3685](https://github.com/kubernetes/enhancements/issues/3685), the reconciler logic used by Kubernetes can be reused by custom EndpointSlice controllers.
 
 ### Goals
 
@@ -84,7 +84,7 @@ Delegating EndpointSlice control would allow custom controllers to define their 
 * Change / Replace / Deprecate the existing behavior of the Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers.
 * Introduce additional supported types of the EndpointSlice controllers/Reconciler as part of Kubernetes.
 * Modify the Service / EndpointSlice / Endpoints Specs.
-* Add new features to the EndpointSlice Mirroring Controller.
+* Changing the behavior of kube-proxy.
 
 ## Proposal
 
@@ -92,13 +92,13 @@ Delegating EndpointSlice control would allow custom controllers to define their 
 
 `service.kubernetes.io/endpoint-controller-name` will be added as a well-known label applying on the Service object. When set on a service, no matter the service specs, the Endpoint, EndpointSlice, and EndpointSlice Mirroring controllers for that service will be disabled, thus Endpoints and EndpointSlices for this service will not be created by the Kubernetes Controller Manager. If the label is not set, the Endpoint, EndpointSlice, and EndpointSlice Mirroring controllers will be enabled for that service and the Endpoints and EndpointSlices will be handled as of today.
 
-The Kubernetes Controller Manager will implement this label both at object creation and on dynamic addition/removal/updates of this label.
+The EndpointSlice, EndpointSlice Mirroring and Endpoints controllers will obey this label both at object creation and on dynamic addition/removal/updates of this label.
 
 ### User Stories (Optional)
 
-#### Story 1
+#### Story 1: Services Over Secondary Networks
 
-As a Cloud Native Network Function (CNF) vendor, some of my services are handled by custom Service-Proxies/Gateways over secondary networks provided by, for example, [Multus](https://github.com/k8snetworkplumbingwg/multus-cni). IPs configured in the service and registered by the EndpointSlice controller must be only the secondary IPs provided by the secondary network provider (e.g. [Multus](https://github.com/k8snetworkplumbingwg/multus-cni)).
+As a Cloud Native Network Function (CNF) vendor, some of my Kubernetes services are handled by custom Service-Proxies/Gateways (using `service.kubernetes.io/service-proxy-name`) over secondary networks provided by, for example, [Multus](https://github.com/k8snetworkplumbingwg/multus-cni). IPs configured in the service and registered by the EndpointSlice controller must be only the secondary IPs provided by the secondary network provider.
 
 Therefore, it must be possible to disable the default Kubernetes Endpoints and EndpointSlice Controller for certain services and use a specialized EndpointSlice reconciler implementation to create a controller for secondary network providers.
 
@@ -135,12 +135,14 @@ TDB
 ##### Integration tests
 
 - Usage of `service.kubernetes.io/endpoint-controller-name` on services
-    * A service is created with the label and the service has then no endpoints neither endpointslices. Then service is updated removing the label and the service has now endpoints and endpointslices.
-    * A service is created without the label, the service has endpoints and endpointslices. Then service is updated with the label and the service has no longer any endpoints nor endpointslices.
+    * With the feature gate enable, a service is created with the label and the service has then no Endpoints neither EndpointSlices. Then service is updated removing the label and the service has now Endpoints and EndpointSlices.
+    * With the feature gate enable, a service is created without the label, the service has Endpoints and EndpointSlices. Then service is updated with the label and the service has no longer any Endpoints nor EndpointSlices.
+    * With the feature gate disabled, a service is created with the label and the service has EndpointSlices as it would have had without the label.
 
 ##### e2e tests
 
-TDB
+- Usage of `service.kubernetes.io/endpoint-controller-name` on services
+    * A service is created with the label, an EndpointSlice is manually created with an endpoint (simulating an external controller). The test verifies the service is reachable. 
 
 ### Graduation Criteria
 
@@ -178,8 +180,8 @@ N/A
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `EndpointControllerNameWellKnownLabel`
   - Components depending on the feature gate: kube-controller-manager
-- [x] Other
-  - Describe the mechanism: setting the label `service.kubernetes.io/endpoint-controller-name` on a service disables the Kubernetes endpointslice controller for that particular service. So no EndpointSlices/Enpoints for this service from the kube-controller-manager will be existing.
+- [ ] Other
+  - Describe the mechanism: 
   - Will enabling / disabling the feature require downtime of the control
     plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -187,19 +189,19 @@ N/A
 
 ###### Does enabling the feature change any default behavior?
 
-When the feature-gate `EndpointControllerNameWellKnownLabel` is enabled, the label `service.kubernetes.io/endpoint-controller-name` will work as described in this KEP.
+When the feature-gate `EndpointControllerNameWellKnownLabel` is enabled, the label `service.kubernetes.io/endpoint-controller-name` will work as described in this KEP. Otherwise, no, for the existing services without the `service.kubernetes.io/endpoint-controller-name` label, the EndpointSlice, EndpointSlice Mirroring and Endpoints controllers will continue to generate Endpoints and EndpointSlices for all services.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-N/A
+If a service is labeled with `service.kubernetes.io/endpoint-controller-name`, and the feature is disabled, then the Kubernetes Controller Manager will start reconciling the Endpoints and EndpointSlices for this service. This could potentially cause traffic disturbance for the service as unexpected IPs (Pod.Status.PodIPs) will be registered to the EndpointSlices/Endpoints.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A
+If a service is labeled with `service.kubernetes.io/endpoint-controller-name`, and the feature is re-enabled, then the Kubernetes Controller Manager (KCM) will stop reconciling the Endpoints and EndpointSlices for this service and will delete the existing KCM managed ones.
 
 ###### Are there any tests for feature enablement/disablement?
 
-N/A
+Enablement/disablement of this feature is tested as part of the integration tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
