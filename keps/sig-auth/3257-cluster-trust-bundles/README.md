@@ -89,6 +89,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Configuration Object Definition](#configuration-object-definition)
     - [Volume Content Generation and Refresh](#volume-content-generation-and-refresh)
   - [Canarying Changes to a ClusterTrustBundle](#canarying-changes-to-a-clustertrustbundle)
+  - [Publishing the kube-apiserver-serving Trust Bundle](#publishing-the-kube-apiserver-serving-trust-bundle)
+    - [The kube-apiserver-serving signer](#the-kube-apiserver-serving-signer)
+    - [Kubelet and KCM API discovery](#kubelet-and-kcm-api-discovery)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -179,6 +182,10 @@ Additionally, this KEP introduces a new `clusterTrustBundle` kubelet projected
 volume source that gives workloads easy filesystem-based access to trust anchor
 sets that they might need.
 
+A new ClusterTrustBundle with a new signer `kubernetes.io/kube-apiserver-serving` also gets created
+for all clusters. In combination with the new projected volume source,
+this trust bundle can be eventually used to replace the use of `kube-root-ca.crt` configMaps
+that nowadays live in all namespaces.
 ## Motivation
 
 In the absence of a standard mechanism for trust distribution, a few different
@@ -228,12 +235,17 @@ distributing trust anchor sets.
 * Handle trust anchors expressed in other forms than PEM-wrapped, DER-formatted
   X.509.
 
+* Have the kube-apiserver consume ClusterTrustBundles as a part of service/webhook APIs.
+  This enhancement does not specify a revocation mechanism for a trust represented
+  by a ClusterTrustBundle. Having this mechanism would be a natural follow-up
+  candidate to this KEP.
+
 ## Proposal
 
 This proposal is centered around a new cluster-scoped ClusterTrustBundle
 resource, initially in the certificates/v1alpha1 API group.  The
 ClusterTrustBundle object can be thought of as a specialized configmap tailored
-to the X.509 trust anchor use case.  Introducing a dedicated type allows us to
+to the X.509 trust anchor use case. Introducing a dedicated type allows us to
 attach different RBAC policies to ClusterTrustBundle objects, which will
 typically be wide-open for reading, but locked-down for writing.
 
@@ -252,6 +264,10 @@ To enable consumption by workloads, the new `clusterTrustBundle` Kubelet
 projected volume source writes the certificates from a ClusterTrustBundle into
 the container filesystem, with the contents of the projected files updating as
 the corresponding trust anchor sets are updated.
+
+Finally, the ClusterTrustBundle API is exercised to create an object for
+distributing the serving trust to the kube-apiserver, currently represented by
+the `kube-root-ca.crt`configMap that's synced into every namespace.
 
 ### User Stories
 
@@ -563,6 +579,65 @@ For example, if I maintain `example.com/my-signer`, I can use the following stra
   canary object first, and assess the health of the canary workloads.
 * Once I am satisfied that the change is safe, I edit the live object.
 
+### Publishing the kube-apiserver-serving Trust Bundle
+
+Today, the trust bundle that allows verifying kube-apiserver serving certificate(s)
+at its internal endpoints is distributed into every namespace using a configMap.
+This is so that it can be mounted along with the ServiceAccount token in order
+for the workloads to be able to communicate with the kube-apiserver.
+
+In the future, we should be able to replace mounting these configMaps in pods for
+for kube-apiserver trust with the projected volume from this feature, and so a
+ClusterTrustBundle API object will be created for all clusters:
+
+```yaml
+apiVersion: v1beta1
+kind: ClusterTrustBundle
+metadata:
+  generateName: kubernetes.io:kube-apiserver-serving:
+spec:
+  signerName: kubernetes.io/kube-apiserver-serving
+  trustBundle: "<... PEM CA ...>"
+```
+
+This object is managed by the Kubernetes Controller Manager in the existing
+`root-ca-certificate-publisher-controller`. It serves the same purpose
+and contains the same content as the `ca.crt` data in the `kube-root-ca.crt` configMap - to verify internal kube-apiserver
+endpoints. There is currently no in-tree signer designated for these purposes,
+and so the signer with name `kubernetes.io/kube-apiserver-serving` is introduced
+along with this bundle.
+
+This behavior is feature-gated by the `ClusterTrustBundle` KCM feature gate.
+
+#### The kube-apiserver-serving signer
+
+The signer signs certificates that can be used to verify kube-apiserver serving
+certificates. Signing and approval are handled outside kube-controller-manager.
+
+**Trust distribution** - signed certificates are used by the kube-apiserver for TLS
+server authentication. The CA bundle is distributed using a ClusterTrustBundle object
+identifiable by the `kubernetes.io/kube-apiserver-serving` signer name.
+**Permitted subjects** - "Subject" itself is deprecated for TLS server authentication. However,
+it should still follow the same rules on DNS/IP SANs from the "Permitted x509 extensions" section
+below.
+**Permitted x509 extensions** - honors subjectAltName and key usage extensions. At
+least one DNS or IP subjectAltName must be present. The SAN DNS/IP of the certificates
+must resolve/point to kube-apiserver's hostname/IP.
+**Permitted key usages** - ["key encipherment", "digital signature", "server auth"] or ["digital signature", "server auth"].
+**Expiration/certificate lifetime** - The recommended maximum lifetime is 30 days.
+**CA bit allowed/disallowed** - not recommended.
+
+#### Kubelet and KCM API discovery
+
+Functionalities in both the kubelet and KCM depend on the presence of the ClusterTrustBundle
+API. If the `ClusterTrustBundleProjection` (kubelet) and `ClusterTrustBundle` (KCM) feature
+gates are enabled, the kubelet and the KCM perform API discovery at startup to check for the
+API presence at the version they need. If the API is not present, neither kubelet nor KCM
+will enable the new behavior, and the check won't be performed until they restart again.
+
+If the API gets disabled on the kube-apiserver side, both the kubelet and KCM must be
+restarted in order for the feature to be disabled there, too.
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -739,15 +814,44 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-At present, there are no upgrade / downgrade concerns.  The ClusterTrustBundle
-feature gate controls overall availability of the feature.
+The feature is gated by these feature flags:
+- kube-apiserver
+    - `ClusterTrustBundle` controls availability of the ClusterTrustBundle API and
+      presence of the relevant rules in cluster roles for the kubelet and KCM.
+    - `ClusterTrustBundleProjection` controls availability of the `ClusterTrustBundle`
+      projected volume source in the Pod API.
+- kubelet
+  - `ClusterTrustBundleProjection` controls the availability of the kubelet being
+    able to mount the volumes. If disabled, kubelet will error out on any attempt to
+    mount a ClusterTrustBundle projected volume.
+- KCM - `ClusterTrustBundle` controls the availability of the kube-apiserver-serving's
+  signer ClusterTrustBundle.
+
+The proper order at which the feature should be enabled is to start with the
+kube-apiserver's feature flags. Aside from enabling the API, the `ClusterTrustBundle`
+feature gate also creates the necessary rules in the `system:node` cluster role.
+
+Once the kube-apiserver feature gates are enabled, the order of enabling the feature
+at kubelet or KCM does not matter.
 
 ### Version Skew Strategy
 
-Both kubelet and kube-apiserver will need to be at 1.29 for the full featureset
-to be present.  If only kube-apiserver is at 1.29 and kubelet is lower, then the
-the pod mounting feature will be cleanly unavailable, but all other aspects of
-the feature will work.
+The ClusterTrustBundle volume projection was implemented in 1.29 and kubelet would fail to mount CTB
+volumes if it was requested via the Pod API while the feature gate is disabled on
+kubelet side. This means that pods will fail to become ready in version-skewed environments where the
+`ClusterTrustBundleProjection` kubelet feature gate is disabled, independently of the
+API version.
+
+If the `ClusterTrustBundleProjection` kubelet feature gate is enabled but the API is at a different
+version than the kubelet expects, the kubelet will behave as if the feature gate was disabled.
+This will cause pods trying to mount a ClusterTrustBundle to fail to become ready as kubelet
+won't be able to create the mount. If the API eventually appears at the desired version, the kubelet
+must be restarted in order to enable the new behavior.
+
+Enabling the `ClusterTrustBundle` feature gate at KCM while a different-than-KCM-expected
+API version is being served will make the KCM to act as if the feature gate was disabled.
+If the API eventually appears at the desired version, the KCM must be restarted in order
+to enable the new behavior.
 
 ## Production Readiness Review Questionnaire
 
@@ -887,6 +991,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [x] Other (treat as last resort)
   - Users can see that pods that use ClusterTrustBundle projected volume sources are able to begin running.
   - This doesn't cover showing that running pods are having their mounted trust bundles updated properly, so we need to think about how to cover them with events or conditions.
+  - Users can see that a ClusterTrustBundle for the signer `kubernetes.io/kube-apiserver-serving` exists in the cluster
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -935,7 +1040,7 @@ None beyond kube-apiserver.
 Yes.
 
 Kubelet will open a watch on ClusterTrustBundle objects.  This watch will be
-low-throughput.
+low-throughput. A similar watch is also opened from the KCM side.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -947,8 +1052,8 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No, except for the additional pod fields that the user sets to make use of the
-feature.
+A new API ClusterTrustBundle API object is created for the new `kubernetes.io/kube-apiserver-serving` signer, and there are
+additional pod fields that the user sets to make use of the feature.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
