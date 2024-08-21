@@ -42,6 +42,7 @@
     - [KubeConfig addition](#kubeconfig-addition)
     - [CRI Changes](#cri-changes)
     - [Swap Metrics](#swap-metrics)
+    - [Add swap support to NFD](#add-swap-support-to-nfd)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -734,6 +735,30 @@ pods:
 ```
 
 (This output is simplified, for full examples please look at the description of: https://github.com/kubernetes/kubernetes/pull/118865)
+
+#### Add swap support to NFD
+
+Although not directly related to API changes since NFD is out-of-tree, bringing swap support to NFD is extremely
+valuable and relevant.
+It allows deferring the API changes discussion to the follow-up KEP that will focus on this subject specifically
+(for more info on the scope of this KEP and the follow-up KEPs look at the summary section above).
+
+With NFD, the end-user would be able to easily understand which nodes have swap enabled.
+In the following example, only worker nodes 1 and 3 have swap enabled.
+The user would be possible to easily check which nodes have swap enabled by performing the following:
+
+```shell
+> kubectl get nodes
+NAME                    STATUS   ROLES           AGE   VERSION
+k8s-dev-control-plane   Ready    control-plane   78s   v1.30.0
+k8s-dev-worker1         Ready    <none>          66s   v1.30.0
+k8s-dev-worker2         Ready    <none>          66s   v1.30.0
+k8s-dev-worker3         Ready    <none>          66s   v1.30.0
+
+> kubectl get nodes -o custom-columns=NAME:.metadata.name,LABELS:.metadata.labels | grep memory-swap:true | cut -d" " -f1
+k8s-dev-worker1
+k8s-dev-worker3
+```
 
 ### Test Plan
 
