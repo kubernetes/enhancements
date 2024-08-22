@@ -107,8 +107,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Extensively validate the updated <code>volumeClaimTemplates</code>](#extensively-validate-the-updated-volumeclaimtemplates)
   - [Support for updating arbitrary fields in <code>volumeClaimTemplates</code>](#support-for-updating-arbitrary-fields-in-volumeclaimtemplates)
-  - [Patch PVCs regardless of the immutable fields](#patch-pvcs-regardless-of-the-immutable-fields)
-- [Support for automatically skip not managed PVCs](#support-for-automatically-skip-not-managed-pvcs)
+  - [Patch PVC size regardless of the immutable fields](#patch-pvc-size-regardless-of-the-immutable-fields)
+  - [Support for automatically skip not managed PVCs](#support-for-automatically-skip-not-managed-pvcs)
+  - [Reconcile all PVCs regardless of Pod revision labels](#reconcile-all-pvcs-regardless-of-pod-revision-labels)
+  - [Treat all incompatible PVCs as unavailable replicas](#treat-all-incompatible-pvcs-as-unavailable-replicas)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -395,7 +397,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 When designing the `InPlace` update strategy, we update the PVC like how we re-create the Pod.
 i.e. we update the PVC whenever we would re-create the Pod;
-we wait for the PVC to be compatible whenever we would wait for the Pod to be ready.
+we wait for the PVC to be compatible whenever we would wait for the Pod to be available.
 
 The StatefulSet controller should also keeps the current and updated revision of the `volumeClaimTemplates`,
 so that a StatefulSet can still re-create Pods and PVCs that are yet-to-be-updated.
@@ -428,6 +430,9 @@ proposal will be implemented, this is the place to discuss them.
 We can use Server Side Apply to patch the PVCs,
 so that we will not interfere with the user's manual changes,
 e.g. to `metadata.labels` and `metadata.annotations`.
+
+New invariants established about PVCs:
+If the Pod has revision A label, all its PVCs are either not existing yet, or updated to revision A.
 
 ### Test Plan
 
@@ -1031,9 +1036,9 @@ However, this have saveral drawbacks:
 No technical limitations. Just that we want to be careful and keep the changes small, so that we can move faster.
 This is just an extra validation in APIServer. We may remove it later if we find it is not needed.
 
-### Patch PVCs regardless of the immutable fields
+### Patch PVC size regardless of the immutable fields
 
-We propose to patch the PVCs only when the immutable fields match.
+We propose to patch the PVC as a whole, so it can only succeed if the immutable fields matches.
 
 If only expansion is supported, patching regardless of the immutable fields can be a logical choice.
 But this KEP also integrates with VAC. VAC is closely coupled with storage class.
@@ -1041,15 +1046,35 @@ Only patching VAC if storage class matches is a very logical choice.
 And we'd better follow the same operation model for all mutable fields.
 
 
-## Support for automatically skip not managed PVCs
+### Support for automatically skip not managed PVCs
 
 Introduce a new field in StatefulSet `spec.updateStrategy.rollingUpdate`: `volumeClaimSyncStrategy`.
 If it is set to `Async`, then we skip patching the PVCs that are not managed by the StatefulSet (e.g. StorageClass does not match).
 
 The rules to determine what PVCs are managed are a little bit tricky.
 We have to check each field, and determine what to do for each field.
+This makes us deeply coupled with the PVC implementation.
 
 And still, we want to keep the changes small.
+
+### Reconcile all PVCs regardless of Pod revision labels
+
+Like Pods, we only update the PVCs if the Pod revision labels is not the update revision.
+
+We need to unmarshal all revisions used by Pods to determine the desired PVC spec.
+Even if we do so, we don't want to send a apply request for each PVC at each reconcile iteration.
+We also don't want to replicate the SSA merging/extraction and validation logic, which can be complex and CPU-intensive.
+
+
+### Treat all incompatible PVCs as unavailable replicas
+
+Currently, incompatible PVCs only blocks the rolling update, not scaling up or down.
+Only the update revision is used for checking.
+
+We need to unmarshal all revisions used by Pods to determine the compatibility.
+Even if we do so, old StatefulSets do not have claim info in its history.
+If we just use the latest version, then all replicas may suddenly become unavailable,
+and all operations are blocked.
 
 [KEP-0661]: https://github.com/kubernetes/enhancements/pull/3412
 
