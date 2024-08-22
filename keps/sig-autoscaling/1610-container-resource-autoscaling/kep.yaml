@@ -13,7 +13,7 @@ approvers:
   - "@gjtempleton"
 creation-date: 2020-02-18
 last-updated: 2024-01-15
-status: implementable
+status: implemented
 
 latest-milestone: "1.30"
 stage: "stable"
