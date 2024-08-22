@@ -252,7 +252,7 @@ nitty-gritty.
 
 Changes to StatefulSet `spec`:
 
-Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
+Introduce a new field in StatefulSet `spec`: `volumeClaimUpdatePolicy` to
 specify how to coordinate the update of PVCs and Pods. Possible values are:
 - `OnDelete`: the default value, only update the PVC when the the old PVC is deleted.
 - `InPlace`: patch the PVC in-place if possible. Also includes the `OnDelete` behavior.
@@ -270,7 +270,7 @@ For each PVC in the template:
 
 Some fields in the `status` are also updated to reflect the staus of the PVCs:
 - readyReplicas: in addition to pods, also consider the PVCs status. A PVC is not ready if:
-  - `volumeClaimUpdateStrategy` is `InPlace` and the PVC is updating;
+  - `volumeClaimUpdatePolicy` is `InPlace` and the PVC is updating;
 - availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
@@ -281,7 +281,7 @@ both for automated patching and for the PVCs that need manual intervention.
 ### Updated Reconciliation Logic
 
 How to update PVCs:
-1. If `volumeClaimUpdateStrategy` is `InPlace`,
+1. If `volumeClaimUpdatePolicy` is `InPlace`,
    and if `volumeClaimTemplates` and actual PVC only differ in mutable fields
    (`spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations` currently),
    patch the PVC to the extent possible.
@@ -664,7 +664,7 @@ automations, so be extremely careful here.
 The update to StatefulSet `volumeClaimTemplates` will be accepted by the API server while it is previously rejected.
 
 Otherwise No.
-If `volumeClaimUpdateStrategy` is `OnDelete` (the default values),
+If `volumeClaimUpdatePolicy` is `OnDelete` (the default values),
 the behavior of StatefulSet controller is almost the same as before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -687,7 +687,7 @@ The `volumeClaimTemplates` will be kept as the latest version, and the history o
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the `volumeClaimUpdateStrategy` is already set to `InPlace` reenable the feature
+If the `volumeClaimUpdatePolicy` is already set to `InPlace` reenable the feature
 will kick off the update process immediately.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -705,7 +705,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 Will add unit tests for the StatefulSet controller with and without the feature gate,
-`volumeClaimUpdateStrategy` set to `InPlace` and `OnDelete` respectively.
+`volumeClaimUpdatePolicy` set to `InPlace` and `OnDelete` respectively.
 
 ### Rollout, Upgrade and Rollback Planning
 
