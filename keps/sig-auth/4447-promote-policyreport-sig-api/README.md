@@ -230,7 +230,7 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
-- Report controller, producer, or consumer implementations. The intent is to document the API and allow projects and tools to specify their own
+- Report controller, producer, or consumer implementations. The intent is to document the API and allow projects and tools to specify their own implementation.
 
 ## Proposal
 
