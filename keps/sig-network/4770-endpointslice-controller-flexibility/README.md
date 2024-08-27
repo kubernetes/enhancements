@@ -148,7 +148,7 @@ TDB
 
 #### Alpha
 
-- Feature implemented behind feature gates (`EndpointControllerNameWellKnownLabel`). Feature Gates are disabled by default.
+- Feature implemented behind feature gates (`ExternalEndpointController`). Feature Gates are disabled by default.
 - Documentation provided.
 - Initial unit, integration and e2e tests completed and enabled.
 
@@ -178,7 +178,7 @@ N/A
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `EndpointControllerNameWellKnownLabel`
+  - Feature gate name: `ExternalEndpointController`
   - Components depending on the feature gate: kube-controller-manager
 - [ ] Other
   - Describe the mechanism: 
@@ -189,7 +189,7 @@ N/A
 
 ###### Does enabling the feature change any default behavior?
 
-When the feature-gate `EndpointControllerNameWellKnownLabel` is enabled, the label `service.kubernetes.io/endpoint-controller-name` will work as described in this KEP. Otherwise, no, for the existing services without the `service.kubernetes.io/endpoint-controller-name` label, the EndpointSlice, EndpointSlice Mirroring and Endpoints controllers will continue to generate Endpoints and EndpointSlices for all services.
+When the feature-gate `ExternalEndpointController` is enabled, the label `service.kubernetes.io/endpoint-controller-name` will work as described in this KEP. Otherwise, no, for the existing services without the `service.kubernetes.io/endpoint-controller-name` label, the EndpointSlice, EndpointSlice Mirroring and Endpoints controllers will continue to generate Endpoints and EndpointSlices for all services.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 

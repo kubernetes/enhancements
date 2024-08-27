@@ -8,7 +8,11 @@ participating-sigs:
 status: provisional
 creation-date: 2024-07-19
 reviewers:
-  - TBD
+  - "@danwinship"
+  - "@robscott"
+  - "@dougbtv"
+  - "@aojea"
+  - "@plwhite"
 approvers:
   - TBD
 
@@ -39,7 +43,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: EndpointControllerNameWellKnownLabel
+  - name: ExternalEndpointController
     components:
       - kube-controller-manager
 disable-supported: true
