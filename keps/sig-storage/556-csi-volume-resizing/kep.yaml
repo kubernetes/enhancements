@@ -13,7 +13,7 @@ approvers:
   - "@childsb"
 creation-date: 2019-01-29
 last-updated: 2019-01-29
-status: implementable
+status: implemented
 see-also:
   - "[Kubernetes Volume expansion](https://github.com/kubernetes/enhancements/issues/284)"
   - "[Online resizing design](https://github.com/kubernetes/enhancements/pull/737)"
@@ -21,4 +21,4 @@ replaces:
 superseded-by:
 
 latest-milestone: "0.0"
-stage: "alpha"
+stage: "stable"
