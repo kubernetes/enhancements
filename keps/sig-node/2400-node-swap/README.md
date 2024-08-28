@@ -95,7 +95,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -1423,14 +1423,25 @@ nodes that do not use swap memory.
 
 ## Implementation History
 
+This is a partial list of everything that was done, but contains the most significant implementations.
+
 - **2015-04-24:** Discussed in [#7294](https://github.com/kubernetes/kubernetes/issues/7294).
 - **2017-10-06:** Discussed in [#53533](https://github.com/kubernetes/kubernetes/issues/53533).
 - **2021-01-05:** Initial design discussion document for swap support and use cases.
 - **2021-04-05:** Alpha KEP drafted for initial node-level swap support and implementation (KEP-2400).
 - **2021-08-09:** New in Kubernetes v1.22: alpha support for using swap memory: https://kubernetes.io/blog/2021/08/09/run-nodes-with-swap-alpha/.
 - **2023-04-17:** KEP update for beta1 [#3957](https://github.com/kubernetes/enhancements/pull/3957).
+- **2023-07-18:** Add full cgroup v2 swap support with automatically calculated swap limit for LimitedSwap [#118764](https://github.com/kubernetes/kubernetes/pull/118764).
+- **2023-07-18:** Add swap to stats to Summary API and Prometheus endpoints (/stats/summary and /metrics/resource) [#118865](https://github.com/kubernetes/kubernetes/pull/118865).
 - **2023-08-15:** Beta1 released in kubernetes 1.28
 - **2024-01-12:** Updates to Beta2 KEP.
+- **2024-01-08:** Beta2 released in kubernetes 1.30.
+- **2024-03-06:** Add no swap as the default option for swap [#122745](https://github.com/kubernetes/kubernetes/pull/122745).
+- **2024-03-14:** Add swap-specific (a.k.a. swap conformance) test lanes [#32263](https://github.com/kubernetes/test-infra/pull/32263).
+- **2024-05-21:** Add swap serial stress tests, improve NodeConformance tests and adapt NoSwap behavior [#123557](https://github.com/kubernetes/kubernetes/pull/123557).
+- **2024-05-23:** Mount tmpfs memory-backed volumes with a noswap option if supported [#124060](https://github.com/kubernetes/kubernetes/pull/124060).
+- **2024-07-22:** Restrict access to swap for containers in high priority Pods [#125277](https://github.com/kubernetes/kubernetes/pull/125277).
+- **2024-08-28:** Updates to KEP, GA requirements and intention to release in version 1.32.
 
 ## Drawbacks
 
