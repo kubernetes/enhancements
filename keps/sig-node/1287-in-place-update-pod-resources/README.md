@@ -904,51 +904,50 @@ Previous versions of clients that are unaware of the new ResizePolicy fields wou
 to nil. API server mutates such updates by copying non-nil values from old Pod to the current
 Pod.
 
-A previous version of kubelet interprets mutation to Pod Resources as a Container definition
-change and will restart the container with the new Resources. This could lead to Node resource
-over-subscription. In order to address this, the feature-gate will remain default false for
-atleast two versions after v1.27 alpha release. i.e: beta is planned for v1.29 and
-InPlacePodVerticalScaling feature-gate will be true in versions v1.29+
+Prior to v1.31, with InPlacePodVerticalScaling disabled, the kubelet interprets mutation to Pod
+Resources as a Container definition change and will restart the container with the new Resources.
+This could lead to Node resource over-subscription. In v1.31, the kubelet no longer considers
+resource changes a change in the pod definition and doesn't restart the container. In this case, the
+change to the new resource value happens if the container is restart for any other reason, making
+the change non-deterministic and not reflected in the API. Both of these cases are undesirable, so
+the API server should reject a resize request if the Kubelet does not support it
+(InPlacePodVerticalScaling enabled).
 
-kubelet: When feature-gate is disabled, if kubelet sees a Proposed resize, it rejects the
-resize as Infeasible.
+To achieve this, the apiserver will check if the `.status.containerStatuses[*].resources` field is
+non-nil on any running containers. This field is set by the kubelet on running containers if and
+only if IPPVS is enabled, and can therefore be used as a proxy to determine if the Kubelet running
+the pod has the feature enabled. The apiserver logic to determine if a resource mutation is allowed
+then becomes:
 
-scheduler: If PodStatus.Resize field is not empty, scheduler uses max(AllocatedResources, Requests)
-even if the feature-gate is disabled.
+```go
+if !InPlacePodVerticalScaling {
+  return false
+}
+for _, c := range pod.Status.ContainerStatuses {
+  if c.State.Running != nil {
+    return c.Resources != nil
+  }
+}
+// No running containers
+return true
+```
 
-Allowed [version skews](https://kubernetes.io/releases/version-skew-policy/) are handled as below:
+Note that even if the container does not specify any resources requests, the status
+Resources is still set to the non-nill empty value `{}`.
 
-| apiserver ver -> |    v1.27    |    v1.28     |    v1.29    |    v1.30    |
-|------------------|-------------|--------------|-------------|-------------|
-| kubelet v1.25    |     N       |     X        |     X       |     X       |
-| kubelet v1.26    |     N       |     N        |     X       |     X       |
-| kubelet v1.27    |     N       |     N        |     A       |     X       |
-| kubelet v1.28    |     X       |     N        |     A       |     A       |
-| kubelet v1.29    |     X       |     X        |     A       |     N       |
-| kubelet v1.30    |     X       |     X        |     X       |     N       |
-| scheduler v1.26  |     N       |     X        |     X       |     X       |
-| scheduler v1.27  |     N       |     N        |     X       |     X       |
-| scheduler v1.28  |     X       |     N        |     B       |     X       |
-| scheduler v1.29  |     X       |     X        |     N       |     N       |
-| scheduler v1.30  |     X       |     X        |     X       |     N       |
-| kubectl v1.26    |     C       |     X        |     X       |     X       |
-| kubectl v1.27    |     N       |     N        |     X       |     X       |
-| kubectl v1.28    |     N       |     N        |     N       |     X       |
-| kubectl v1.29    |     X       |     N        |     N       |     N       |
-| kubectl v1.30    |     X       |     X        |     N       |     N       |
-| kubectl v1.31    |     X       |     X        |     X       |     N       |
+If a pod has not yet been scheduled, the resize is allowed, and the new values are used when
+scheduling & starting the pod.
 
-**X**: Not allowed
+If a pod has been scheduled but does not have any running containers, there is no signal indicating
+whether the assigned node supports resize, so we default to allowing resize. If the node does not
+have resize enabled in this case, then a resized container will be started with the new resource
+value. It is possible that the node could end up over-provisioned in this case.
 
-**N**: No special handling needed.
-
-**A**: kubelet sets PodStatus.Resize=Infeasible if it sees PodStatus.Resize=Proposed
-       when feature-gate is disabled on kubelet
-
-**B**: Use max(AllocatedResources, Requests) if PodStatus.Resize != "" (empty)
-
-**C**: dropDisabledPodFields/dropDisabledPodStatusFields function sets ResizePolicy,
-       AllocatedResources, and ContainerStatus.Resources fields to nil.
+It is also possible for a race condition to occur: resize on a non-running container is allowed, but
+the Kubelet simultaneously starts the container. The resulting behavior would depend on the version:
+prior to v1.31, the container is restarted with the new values. After v1.31, the container continues
+running with the old resource values. Since this race condition only exists during enablement skew,
+we choose to accept it as a known-issue.
 
 ## Production Readiness Review Questionnaire
 
