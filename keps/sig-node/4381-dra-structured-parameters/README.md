@@ -1960,10 +1960,33 @@ through objects with that device class does not exceed the specified limit. When
 define device classes so that they select specific device types, this quota mechanism
 can be used to limit access to those device types.
 
-A single request may cause the allocation of multiple devices. For exact
-counts, the quota limit is based on the sum of those exact counts. For requests
-asking for "all" matching devices, the maximum number of allocated devices per
-claim is used as a worst-case upper bound.
+A single request may cause the allocation of multiple devices:
+```
+requests:
+- name: gpus
+  allocationMode: exactCount
+  count: 5
+```
+
+For such exact counts, the quota limit is based on the sum of those exact
+counts.
+
+Users may also ask for all devices matching the request:
+```
+requests:
+- name: largeGPUs
+  allocationMode: all
+  selectors:
+  - cel:
+      expression: device.capacity["dra.example.com"].memory.isGreaterThan(quantity("4G"))
+```
+
+In this case, the exact count is not known at admission time because it depends
+on what information the driver is publishing in ResourceSlices, which will be
+checked during the actual allocation attempt. The number of allocated devices
+per claim is limited to `AllocationResultsMaxSize = 32`. The quota mechanism
+uses that as the worst-case upper bound, so `allocationMode: all` is treated
+like `allocationMode: exactCount` with `count: 32`.
 
 Requests asking for "admin access" contribute to the quota. In practice,
 namespaces where such access is allowed will typically not have quotas
