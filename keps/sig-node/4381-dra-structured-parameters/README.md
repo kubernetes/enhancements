@@ -532,8 +532,7 @@ because the allocation result is tracked in those claims, not the
 
 #### Devices as a named list
 
-Embedded inside each `ResourceSlice` is a list of one or more devices, each with sets of attributes
-and quantities.
+Embedded inside each `ResourceSlice` is a list of one or more devices, each of which contains separate sets of attributes and capacities (represented as quantities).
 
 ```yaml
 kind: ResourceSlice
@@ -1950,15 +1949,15 @@ type PodResourceClaimStatus struct {
 ##### ResourceQuota
 
 The core ResourceQuota mechanism checks at admission time whether creating a
-resource in the apiserver would exceed per-namespace limits. This mechanism
-gets extended to support limiting the number of ResourceClaims based on what
+resource in the apiserver would exceed per-namespace limits. We extend this
+mechanim to support limiting the number of ResourceClaims based on what
 gets requested.
 
-A resource entry in ResourceQuota with the special
+A resource entry in ResourceQuota with the name
 `<device-class-name>.deviceclass.resource.k8s.io/devices` limits the number of
 ResourceClaim objects in a namespace such that the number of devices requested
-through those objects with that class does not exceed the limit. When admins
-define classes so that they select specific device types, this quota mechanism
+through objects with that device class does not exceed the specified limit. When admins
+define device classes so that they select specific device types, this quota mechanism
 can be used to limit access to those device types.
 
 A single request may cause the allocation of multiple devices. For exact
