@@ -1950,7 +1950,7 @@ type PodResourceClaimStatus struct {
 
 The core ResourceQuota mechanism checks at admission time whether creating a
 resource in the apiserver would exceed per-namespace limits. We extend this
-mechanim to support limiting the number of ResourceClaims based on what
+mechanism to support limiting the number of ResourceClaims based on what
 gets requested.
 
 A resource entry in ResourceQuota with the name
