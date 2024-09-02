@@ -16,7 +16,7 @@ approvers:
   - "@dongjiang1989"
 
 see-also:
-  - "/keps/sig-node/4788-mountpath-replacing-env-variable"
+  - "/keps/sig-node/4788-volume-mountpath-env-expansion"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
