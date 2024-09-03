@@ -682,6 +682,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Use WatchProgressRequester to request progress notifications directly from etcd.
   This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
   and will reduce the overall latency for watchlist requests.
+- The watchlist call, which serves as a drop-in replacement for list calls in client libraries, 
+  must properly set the kind and apiVersion fields. 
+  These fields are important for the correct decoding of the objects.
+  See also: https://github.com/kubernetes/kubernetes/pull/126191
 
 #### GA
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
