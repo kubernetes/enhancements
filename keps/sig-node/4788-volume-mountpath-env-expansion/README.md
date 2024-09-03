@@ -131,7 +131,7 @@ bogged down.
 
 I used a configMap to store the mount path value, but when i call in my pod it doesn't work it seems that the mountPath property can not be assigned to an env variable.
 
-```
+```yaml
 spec:
   containers:
   - env:
