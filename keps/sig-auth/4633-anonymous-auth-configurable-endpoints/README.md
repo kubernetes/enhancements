@@ -96,6 +96,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,9 +109,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Open Questions for BETA](#open-questions-for-beta)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Possible Future Improvements](#possible-future-improvements)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -131,8 +133,8 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -477,6 +479,11 @@ We will add unit tests for the following scenarios:
 2. Making sure that the flag and the config are mutually exclusive.
 3. Behavior of the path restricted anonymous authenticator.
 
+Unit tests were added to the following:
+
+* pkg/kubeapiserver/options/authentication_test.go
+* staging/src/k8s.io/apiserver/pkg/authentication/request/anonymous/anonymous_test.go 
+
 ##### Integration tests
 
 <!--
@@ -501,6 +508,10 @@ based authentication scenarios:
 1. anonymous auth enabled and unrestricted in the auth-config file.
 1. anonymous auth enabled and restricted to certain paths in the auth-config
    file.
+
+The following integration tests were added:
+
+test/integration/apiserver/anonymous/anonymous_test.go
 
 ##### e2e tests
 
@@ -587,6 +598,14 @@ in back-to-back releases.
 - Feature implemented behind a feature flag
 - Full unit and integration test coverage
 
+#### Beta
+
+- Feature gate set to true by default
+
+#### GA
+
+- Examples of real-world usage
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -600,6 +619,10 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+When the feature-gate is enabled none of the defaults or current settings
+regarding anonymous auth are changed. The feature-gate enables the ability for
+users to set the `anonymous` field using the `AuthenticationConfiguration` file.
 
 ### Version Skew Strategy
 
@@ -615,6 +638,11 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature only impacts kube-apiserver and does not introduce any changes that
+would be impacted by version skews. All changes are local to kube-apiserver and
+are controlled by the `AuthenticationConfiguration` file passed to
+kube-apiserver as a parameter.
 
 ## Production Readiness Review Questionnaire
 
@@ -747,12 +775,24 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Enabling the feature flag alone does not change kube-apiserver defaults. However
+if different API servers have different AuthenticationConfiguration for
+Anonymous then some requests that would be denied by one API server could be
+allowed by another. 
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+kube-apiserver fails to start when AuthenticationConfiguration file has 
+`anonymous` field set.
+
+If audit logs indicate that endpoints other than the ones configured in the
+AuthenticationConfiguration file using the `anonymous.conditions` field are 
+reachable by anonymous users.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -761,6 +801,8 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -785,6 +827,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+N/A
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -796,13 +840,18 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+If a user sets AuthenticationConfig file and sets the `anonymous.enabled` to
+`true` and sets `anonymous.conditions` to allow only certain endpoints. Then 
+they can check if the feature is working by:
+
+* making an anonymous request to an endpoint that is not in the list of 
+endpoints they allowed. Such a request should fail with http status code 401.
+
+* making an anoymous request to an endpoint that is in the list of endpoints
+they allowed. Such a request should either succeed with http status code 200 (if
+authz is configured to allow acees to that endpoint) or
+fail with http statis code 403 (if authz is not configured to allow access to
+that endpoint)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -821,6 +870,9 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+SLOs for actual requests should not change in any way compared to the flag-based
+Anonymous configuration.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -834,12 +886,16 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 
+N/A
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+N/A
 
 ### Dependencies
 
@@ -863,6 +919,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -891,6 +949,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -900,6 +960,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -907,6 +969,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -916,6 +980,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -927,6 +993,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -940,6 +1008,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -951,6 +1021,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -966,6 +1038,9 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+This feature is about for API Server handles Authentication for anonymous
+requests. If API server is unavailable then this feature is also unavailable.
 
 ###### What are other known failure modes?
 
@@ -984,31 +1059,28 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+After observing an issue (e.g. uptick in denied authentication requests),
+kube-apiserver logs from the authenticator may be used to debug.
+
+Additionally, manually attempting to exercise the affected codepaths would 
+surface information that'd aid debugging. For example, attempting to issue an
+anonymous request to an endpoint that is allowed or disallowed based on the
+contraints set in the anonymous config in the AuthenticationConfiguration file.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- [x] 2024-05-13 - KEP introduced
+- [x] 2024-06-07 - KEP Accepted as implementable
+- [x] 2024-06-27 - Alpha implementation merged https://github.com/kubernetes/kubernetes/pull/124917
+- [x] 2024-07-15 - Integration tests merged https://github.com/kubernetes/kubernetes/pull/125967
+- [x] 2024-08-13 - First release (1.31) when feature available
+- [x] 2024-08-16 - Targeting beta in 1.32
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
-
-## Open Questions for BETA
-
-The following should be resolved before this goes to `beta`:
-
-- Should we apply any restrictions here to anonymous `userInfo` that comes back
-after all authenticators and impersonation have run
 
 ## Alternatives
 
@@ -1038,3 +1110,16 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+## Possible Future Improvements
+
+We decided not to apply any restrictions here to anonymous `userInfo` that comes
+back after all authenticators and impersonation have run because we think that
+the scope of this KEP is to provide cluster admins with a way to restrict actual
+anonymous requests. A request that was considered authenticated and as permitted
+to impersonate `system:anonymous` is not actually anonymous.
+
+If we want to allow cluster admins the ability to add  such restrictions we
+think its better to give them the capability to configure webhook authenticators
+and add `userValidationRules` capabilities. But doing so would expand the scope
+of this KEP and it should likely be a separate effort.
