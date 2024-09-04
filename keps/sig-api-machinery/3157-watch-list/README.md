@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Results with WATCH-LIST](#results-with-watch-list)
   - [Required changes for a WATCH request with the RV set to the last observed value (RV &gt; 0)](#required-changes-for-a-watch-request-with-the-rv-set-to-the-last-observed-value-rv--0)
   - [Provide a fix for the long-standing issue <a href="https://github.com/kubernetes/kubernetes/issues/59848">https://github.com/kubernetes/kubernetes/issues/59848</a>](#provide-a-fix-for-the-long-standing-issue-httpsgithubcomkuberneteskubernetesissues59848)
+  - [Replacing standard List request with WatchList mechanism for client-go's List method.](#replacing-standard-list-request-with-watchlist-mechanism-for-client-gos-list-method)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -637,7 +638,7 @@ Content-Type: application/json
 <followed by regular watch stream starting>
 ```
 
-## Alternatives
+**Alternatives**
 
 We could modify the type of the object passed in the last bookmark event to include the list. 
 This approach would require changes to the reflector, as it would need to recognize the new object type in the bookmark event. 
