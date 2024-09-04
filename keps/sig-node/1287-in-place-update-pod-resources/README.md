@@ -371,11 +371,10 @@ message ContainerResources {
 When a new Pod is created, Scheduler is responsible for selecting a suitable
 Node that accommodates the Pod.
 
-For a newly created Pod, the apiserver will set the `AllocatedResources` field
-to match `Resources.Requests` for each container. When Kubelet admits a
-Pod, values in `AllocatedResources` are used to determine if there is enough
-room to admit the Pod. Kubelet does not set `AllocatedResources` when admitting
-a Pod.
+For a newly created Pod, `(Init)ContainerStatuses` will be nil until the Pod is
+scheduled to a node. When Kubelet admits a Pod, it will record the admitted
+requests & limits to its internal allocated resources checkpoint, and write the
+admitted requests to the `AllocatedResources` field in the container status.
 
 When a Pod resize is requested, Kubelet attempts to update the resources
 allocated to the Pod and its Containers. Kubelet first checks if the new
@@ -444,7 +443,7 @@ T=0: A new pod is created
 
 T=1: apiserver defaults are applied
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1
+    - `status.containerStatuses` = unset
     - `status.resize[cpu]` = unset
 
 T=2: kubelet runs the pod and updates the API
@@ -645,6 +644,24 @@ Pod Status in response to user changing the desired resources in Pod Spec.
   determine if in-place resize is possible.
 * At this time, Vertical Pod Autoscaler should not be used with Horizontal Pod
   Autoscaler on CPU, memory. This enhancement does not change that limitation.
+
+### Atomic Resizes
+
+A single resize request can change multiple values, including any or all of:
+* Multiple resource types
+* Requests & Limits
+* Multiple containers
+
+These resource requests & limits can have interdependencies that Kubernetes may not be aware of. For
+example, two containers coordinating work may need to be scaled in tandem. It probably doesn't makes
+sense to scale limits independently of requests, and scaling CPU without memory could just waste
+resources. To mitigate these issues and simplify the design, the Kubelet will treat the requests &
+limits for all containers in the spec as a single atomic request, and won't accept any of the
+changes unless all changes can be accepted. If multiple requests mutate the resources spec before
+the Kubelet has accepted any of the changes, it will treat them as a single atomic request.
+
+`AllocatedResources` only accounts for accepted requests, so the Kubelet will need to record
+allocated limits in its internal checkpoint.
 
 ### Affected Components
 
