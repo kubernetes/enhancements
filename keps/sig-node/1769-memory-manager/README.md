@@ -782,12 +782,19 @@ The Memory Manager sets and enforces cgroup memory limit for ("on behalf of") a 
 
 ### Windows considerations
 
-Numa nodes can not be directly assigned or guaranteed via the Windows API.  Another limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
-does not support setting multiple Numa nodes for a single Job object (i.e. Container).
-To work around this limitation, the container runtime will query the OS to get the affinity masks associated with each of the Numa nodes passed in via CRI and use 
-SetInformationJobObjectEx to set affinities for the Job object. This will result in the memory from the Numa node being used. 
+[Numa nodes](https://learn.microsoft.com/en-us/windows/win32/procthread/numa-support) can not be directly assigned or guaranteed via the Windows API but the windows sub system attempts to use memory assigned to the CPU to improve performance.  
+It is possible to indicate to a process which Numa node is preferred but a limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
+does not support setting multiple Numa nodes for a single Job object (i.e. Container) so is not usable in the context of Windows containers which have multiple processes.  
 
-Using Memory manager's internal mapping this should provide the desired behavior in most cases. It is possible that a CPU could access memory from a different Numa 
+To work around these limitations, the kubelet will query the OS to get the affinity masks associated with each of the Numa nodes selected by the memory manager and update the CPU Group affinity accordingly in the CRI field. This will result in the memory from the Numa node being used. There are a couple scenarios that need to be considered:
+
+- Memory manager is enabled, cpu manager is not: kubelet will look up all the cpu's associated with the selected Numa nodes and assign the CPU Group affinity.  For example if NumaNode 0 is selected by memory manager, and NumaNode 0 has the first four CPU's in Windows CPU group 0 the result would be `cpu affinity: 0000001111, group 0`.  
+- Memory manager is enabled, CPU manager is enabled
+  - cpu manager selects fewer CPU's than Numa nodes and CPU's fall with in Numa node: Kubelet will only set only the CPU's selected by the cpu-manager as the memory from the memory manager will be used by default.  
+  - cpu manager selects more CPU's than Numa nodes and CPU's fall within/or outside Numa node: kubelet will set selected only CPU's from cpu-manager
+  - cpu manager selects few CPU's than Numa nodes and CPU's fall outside the Numa Node: Kubelet would set the CPU's by cpu-manager plus all the CPU's associated with the Numa node.  
+
+Using Memory manager's internal mapping this should provide the desired behavior in most cases. Since Memory affinity isn't guaranteed, It is possible that a CPU could access memory from a different Numa 
 Node than it is currently in, resulting in decreased performance. For this reason, we will add documentation, a log warning message in kubelet, and an warning event 
 to help raise awareness of this possibility. If access from the CPUs different than the assigned Numa Node is undesirable then `single-numa-node` 
 and the CPU manager should be configured in the Topology Manager policy setting which would force Kubelet to only select a Numa node if it will have enough memory 
@@ -796,7 +803,7 @@ for Windows. This would require a separate KEP to add a new policy.
 
 #### Kubelet memory management 
 
-There is work to [enable kubelet's eviction](https://github.com/kubernetes/kubernetes/pulls/marosset) which would follow the same patterns
+Windows support for [kubelet's memory eviction](https://github.com/kubernetes/kubernetes/pull/122922) was enabled in 1.31 and would follow the same patterns
 as [Mechanism I](#mechanism-i-pod-eviction-by-kubelet).
 Windows does not have an OOM killer and so Mechanisms II and III are out of scope in the section 
 related to the [Kubernetes Node Memory Management](#kubernetes-nodes-memory-management-mechanisms-and-their-relation-to-the-memory-manager).
