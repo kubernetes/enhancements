@@ -145,7 +145,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -957,6 +957,7 @@ Major milestones might include:
 -->
 - 2023-10-13: Kep is proposed as alpha feature
 - 2024-06-04: Kep is promoted to beta
+- 2024-09-05: Kep is promoted to stable
 
 ## Drawbacks
 
