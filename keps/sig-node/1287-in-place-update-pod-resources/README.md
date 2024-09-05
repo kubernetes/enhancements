@@ -216,6 +216,16 @@ larger of `Spec.Containers[i].Resources` and
 `Status.ContainerStatuses[i].AllocatedResources` when considering available
 space on a node.
 
+#### Validation
+
+The following additional API validation rules will be applied on resource update:
+
+1. Resource requests and limits cannot be added or removed. Only modifications to requests and
+   limits already present are permitted.
+2. Guaranteed pods must maintain `requests == limits`. See [QOS Class](#qos-class) for more details.
+3. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
+   See [Version Skew Strategy](#version-skew-strategy) for more details.
+
 #### Subresource
 
 For alpha, resource changes will be made by updating the pod spec.  For beta
@@ -662,6 +672,17 @@ the Kubelet has accepted any of the changes, it will treat them as a single atom
 
 `AllocatedResources` only accounts for accepted requests, so the Kubelet will need to record
 allocated limits in its internal checkpoint.
+
+### QOS Class
+
+A pod's QOS class cannot be changed once the pod is started. For in place vertical scaling, this
+means that a pod's resources can be changed to fit with a higher-tier QOS class, but not a lower.
+Even if the resources fit the higher tier, it's QOS class will still remain at the original value.
+
+Concretely, this only places restrictions on Guaranteed pods, which must maintain
+`requests == limits`. Burstable pods _can_ be resized such that `requests == limits`, but their QOS
+class will stay burstable. BestEffort pods cannot be resized, since doing so would require adding a
+request.
 
 ### Affected Components
 
