@@ -178,11 +178,11 @@ Pod which failed in-place resource resizing. This should be handled by actors
 which initiated the resizing.
 
 Other identified non-goals are:
-* allow to change Pod QoS class without a restart,
-* to change resources of Init Containers without a restart,
-* eviction of lower priority Pods to facilitate Pod resize,
-* updating extended resources or any other resource types besides CPU, memory,
-* support for CPU/memory manager policies besides the default 'None' policy.
+* allow to change Pod QoS class
+* to change resources of non-restartable InitContainers
+* eviction of lower priority Pods to facilitate Pod resize
+* updating extended resources or any other resource types besides CPU, memory
+* support for CPU/memory manager policies besides the default 'None' policy
 
 Definition of expected behavior of a Container runtime when it handles CRI APIs
 related to a Container's resources is intended to be a high level guide.  It is
@@ -194,9 +194,8 @@ bounds of expected behavior.
 
 ### API Changes
 
-PodSpec becomes mutable with regards to Container resources requests and
-limits. PodStatus is extended to show the resources allocated for and applied
-to the Pod and its Containers.
+Container resource requests & limits can now be mutated by via the `/resize` pod subresource.
+PodStatus is extended to show the resources allocated for and applied to the Pod and its Containers.
 
 Thanks to the above:
 * Pod.Spec.Containers[i].Resources becomes purely a declaration, denoting the
@@ -216,26 +215,33 @@ larger of `Spec.Containers[i].Resources` and
 `Status.ContainerStatuses[i].AllocatedResources` when considering available
 space on a node.
 
-#### Validation
-
-The following additional API validation rules will be applied on resource update:
-
-1. Resource requests and limits cannot be added or removed. Only modifications to requests and
-   limits already present are permitted.
-2. Guaranteed pods must maintain `requests == limits`. See [QOS Class](#qos-class) for more details.
-3. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
-   See [Version Skew Strategy](#version-skew-strategy) for more details.
+Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
+`[]v1.ContainerResizePolicy`) governs whether containers need to be restarted on resize. See
+[Container Resize Policy](#container-resize-policy) for more details.
 
 #### Subresource
 
-For alpha, resource changes will be made by updating the pod spec.  For beta
-(or maybe a followup in alpha), a new subresource, /resize, will be defined.
-This subresource could eventually apply to other resources that carry
-PodTemplates, such as Deployments, ReplicaSets, Jobs, and StatefulSets.  This
-will allow users to grant RBAC access to controllers like VPA without allowing
-full write access to pod specs.
+Resource changes can only be made via the new `/resize` subresource. The request & response types
+for this subresource are the full pod object, but only the following fields are allowed to be
+modified:
 
-The exact API here is TBD.
+* `.spec.containers[*].resources`
+* `.spec.initContainers[*].resources` (only for sidecars)
+* `.spec.resizePolicy`
+
+The `.status.resize` field will be reset to `Proposed` in the response, but cannot be modified in the
+request.
+
+#### Validation
+
+Resource fields remain immutable via pod update.
+
+The following API validation rules will be applied for updates via the `/resize` subresource:
+
+1. Resources & ResizePolicy must be valid under pod create validation.
+1. Computed QOS class cannot be lowered. See [QOS Class](#qos-class) for more details.
+2. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
+   See [Version Skew Strategy](#version-skew-strategy) for more details.
 
 #### Container Resize Policy
 
@@ -264,6 +270,9 @@ If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
+The `ResizePolicy` field is **mutable**, but must have an entry for every resizable resource type
+with a request or limit on the container.
+
 #### Resize Status
 
 In addition to the above, a new field `Pod.Status.Resize[]`
@@ -273,20 +282,24 @@ proposed resize operation for a given resource.  Any time the
 `Pod.Status.ContainerStatuses[i].Resources` field, this new field explains why.
 
 This field can be set to one of the following values:
-* Proposed - the proposed resize (in Spec...Resources) has not been accepted or
-  rejected yet.
-* InProgress - the proposed resize has been accepted and is being actuated.
-* Deferred - the proposed resize is feasible in theory (it fits on this node)
+* `Proposed` - the proposed resize (in Spec...Resources) has not been accepted or
+  rejected yet. `resources != allocatedResources`
+* `InProgress` - the proposed resize has been accepted and is being actuated. A new resize request
+  will reset the status to `Proposed`.
+  `resources == allocatedResources && allocatedResources != status.resources`
+* `Deferred` - the proposed resize is feasible in theory (it fits on this node)
   but is not possible right now; it will be re-evaluated.
-* Infeasible - the proposed resize is not feasible and is rejected; it will not
+  `resources != allocatedResources`
+* `Infeasible` - the proposed resize is not feasible and is rejected; it will not
   be re-evaluated.
+  `resources != allocatedResources`
 * (no value) - there is no proposed resize
 
 Any time the apiserver observes a proposed resize (a modification of a
-`Spec...Resources` field), it will automatically set this field to "Proposed".
+`Spec...Resources` field), it will automatically set this field to `Proposed`.
 
 To make this field future-safe, consumers should assume that any unknown value
-means the same as "Deferred".
+means the same as `Deferred`.
 
 #### CRI Changes
 
@@ -655,6 +668,14 @@ Pod Status in response to user changing the desired resources in Pod Spec.
 * At this time, Vertical Pod Autoscaler should not be used with Horizontal Pod
   Autoscaler on CPU, memory. This enhancement does not change that limitation.
 
+### Lifecycle Nuances
+
+* Terminated containers can be "resized" in that the resize is permitted by the API, and the Kubelet
+  will accept the changes. This makes race conditions where the container terminates around the
+  resize "fail open", and prevents a resize of a terminated container from blocking the resize of a
+  running container (see [Atomic Resizes](#atomic-resizes)).
+* Resizing pods in a graceful shutdown state is permitted.
+
 ### Atomic Resizes
 
 A single resize request can change multiple values, including any or all of:
@@ -673,16 +694,39 @@ the Kubelet has accepted any of the changes, it will treat them as a single atom
 `AllocatedResources` only accounts for accepted requests, so the Kubelet will need to record
 allocated limits in its internal checkpoint.
 
+Note: If a second infeasible resize is made before the Kubelet allocates the first resize, there can
+be a race condition where the Kubelet may or may not accept the first resize, depending on whether
+it admits the first change before seeing the second. This race condition is accepted as working as
+intended.
+
+### Sidecars
+
+Sidecars, a.k.a. resizeable InitContainers can be resized the same as regular containers. There are
+no special considerations here. Non-restartable InitContainers cannot be resized.
+
 ### QOS Class
 
 A pod's QOS class cannot be changed once the pod is started. For in place vertical scaling, this
 means that a pod's resources can be changed to fit with a higher-tier QOS class, but not a lower.
 Even if the resources fit the higher tier, it's QOS class will still remain at the original value.
 
-Concretely, this only places restrictions on Guaranteed pods, which must maintain
-`requests == limits`. Burstable pods _can_ be resized such that `requests == limits`, but their QOS
-class will stay burstable. BestEffort pods cannot be resized, since doing so would require adding a
-request.
+Concretely, this only places the following restrictions on resizes:
+* Guaranteed pods: must maintain `requests == limits`
+* Burstable pods: _can_ be resized such that `requests == limits`, but their QOS
+class will stay burstable. Must retain at least one CPU or memory request or limit.
+* BestEffort pods: can be freely resized, but stay BestEffort.
+
+### Resource Quota
+
+With InPlacePodVerticalScaling enabled, resource quota needs to consider pending resizes. Similarly
+to how this is handled by scheduling, resource quota will use the maximum of
+`.spec.container[*].resources.requests` and `.status.containerStatuses[*].allocatedResources` to
+determine the effective request values. Allocated limits are not reported by the API, so resource
+quota instead uses the larger of `.spec.container[*].resources.limits` and
+`.status.containerStatuses[*].resources.limits`.
+
+To properly handle scale-down, this means that the resource quota controller now needs to evaluate
+pod updates where either `.status...allocatedResources` or `.status...resources` changed.
 
 ### Affected Components
 
@@ -805,6 +849,8 @@ E2E test cases for Guaranteed class Pod with one container:
 1. Increase, decrease Requests & Limits for CPU and memory.
 1. Increase CPU and decrease memory.
 1. Decrease CPU and increase memory.
+1. Add memory request & limit for CPU only container.
+1. Remove memory request & limit for CPU & memory container.
 
 E2E test cases for Burstable class single container Pod that specifies
 both CPU & memory:
@@ -825,6 +871,7 @@ both CPU & memory:
 1. Decrease memory Requests while increasing memory Limits.
 1. CPU: increase Requests, decrease Limits, Memory: increase Requests, decrease Limits.
 1. CPU: decrease Requests, increase Limits, Memory: decrease Requests, increase Limits.
+1. Set requests == limits, ensure QOS class remains Burstable
 
 E2E tests for Burstable class single container Pod that specifies CPU only:
 1. Increase, decrease CPU - Requests only.
@@ -835,6 +882,10 @@ E2E tests for Burstable class single container Pod that specifies memory only:
 1. Increase, decrease memory - Requests only.
 1. Increase, decrease memory - Limits only.
 1. Increase, decrease memory - both Requests & Limits.
+
+E2E tests for BestEffort class single container Pod:
+1. Add CPU requests & limits, QOS class remains BestEffort
+2. Add Memory requests & limits, QOS class remains BestEffort
 
 E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
 1. Increase CPU & memory for all three containers.
@@ -847,6 +898,11 @@ E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
 1. Increase memory for c1, decrease c2 & c3 - net memory decrease for Pod.
 1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
 1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
+
+E2E tests for sidecar containers
+1. InitContainer, then sidecar - can increase & decrease CPU & memory of sidecar
+2. Sidecar then InitContainer - can increase & decrease CPU & memory of sidecar
+3. Resize sidecar along with container
 
 #### CRI E2E Tests
 
