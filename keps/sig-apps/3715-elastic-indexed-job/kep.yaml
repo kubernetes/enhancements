@@ -3,7 +3,7 @@ kep-number: 3715
 authors:
   - "@ahg-g"
 owning-sig: sig-apps
-status: implementable
+status: implemented
 creation-date: 2023-01-10
 reviewers:
   - "@alculquicondor"
