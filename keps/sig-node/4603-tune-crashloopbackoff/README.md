@@ -279,6 +279,7 @@ know that this has succeeded?
   node stability
 * Provide a simple UX that does not require changes for the majority of
   workloads
+* <<[UNRESOLVED]>> Must work for Jobs and sidecar containers <<[/UNRESOLVED]>>
 
 ### Non-Goals
 
@@ -610,7 +611,24 @@ does during pod restarts.
  > What conditions lead to a re-download of an image? I wonder if we can eliminate this, or if that's too much of a behavior change.
  > Similar question for image downloads. Although in this case, I think the kubelet should have an informer for any secrets or configmaps used, so it should just pull from cache. Is that true for EnvVarFrom values?
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
+ 
   <<[/UNRESOLVED]>>
+```
+
+```
+ <<[UNRESOLVED>>
+It's because of the way we handle backoff:
+https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1336-L1349
+
+So the first time the container exits, there is no backoff delay recorded, but then it adds a backoff key at line 1348.
+
+So the actual (current) backoff implementation is:
+
+0 seconds delay for first restart
+10 seconds for second restart
+10 * 2^(restart_count - 2) for subsequent restarts
+But those numbers are all delayed up to 10s due to kubernetes/kubernetes#123602
+ <<[UNRESOLVED>>
 ```
 
 ### Benchmarking
@@ -628,7 +646,8 @@ terminating pods, and crashing pods whose `restartPolicy: Always`:
  * what is the load and rate of Pod restart related API requests to the API
    server?
  * what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component?
+   kubelet component? Considering the effects of different plugins (e.g. CSI,
+   CNI)
 
 Today there are alpha SLIs in Kubernetes that can observe that impact in
 aggregate:
@@ -825,7 +844,8 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
  * what is the load and rate of Pod restart related API requests to the API
    server?
  * what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component?
+   kubelet component? Considering the effects of different plugins (e.g. CSI,
+   CNI)
 
 ### Graduation Criteria
 
