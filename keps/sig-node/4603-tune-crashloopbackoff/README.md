@@ -605,7 +605,13 @@ does during pod restarts.
 * Logs information about all those container operations (utilizing disk IO and
   “spamming” logs)
 
- <<[UNRESOLVED add the rest of the analysis since 1.31]>>  <<[/UNRESOLVED]>>
+```
+ <<[UNRESOLVED add the rest of the analysis since 1.31 and answer these questions from original PR]>> 
+ > What conditions lead to a re-download of an image? I wonder if we can eliminate this, or if that's too much of a behavior change.
+ > Similar question for image downloads. Although in this case, I think the kubelet should have an informer for any secrets or configmaps used, so it should just pull from cache. Is that true for EnvVarFrom values?
+ >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
+  <<[/UNRESOLVED]>>
+```
 
 ### Benchmarking
 
