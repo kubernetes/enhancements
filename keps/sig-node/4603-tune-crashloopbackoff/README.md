@@ -791,9 +791,11 @@ spec:
 
 The implementation of KEP-3329 is entirely in the Job controller, and the
 restarts are not handled by kubelet at all; in fact, use of this API is only
-available if the `restartPolicy` is set to `Never`. As a result, to expose the
-new backoff curve Jobs using this feature, the updated backoff curve must also
-be implemented in the Job controller.
+available if the `restartPolicy` is set to `Never` (though
+[kubernetes#125677](https://github.com/kubernetes/kubernetes/issues/125677)
+wants to relax this validation to allow it to be used with other `restartPolicy`
+values). As a result, to expose the new backoff curve Jobs using this feature,
+the updated backoff curve must also be implemented in the Job controller.
 
 ### Relationship with ImagePullBackOff
 
@@ -1577,6 +1579,35 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+CrashLoopBackoff behavior has been stable and untouched for most of the
+Kubernetes lifetime. It could be argued that it "isn't broken", that most people
+are ok with it or have sufficient and architecturally well placed workarounds
+using third party reaper processes or application code based solutions, and
+changing it just invites high risk to the platform as a whole instead of
+individual end user deployments. However, per the [Motivation](#motivation)
+section, there are emerging workload use cases and a long history of a vocal
+minority in favor of changes to this behavior, so trying to change it now is
+timely. Obviously we could still decide not to graduate the change out of alpha
+if the risks are determined to be too high or the feedback is not positive.
+
+Though the issue is highly upvoted, on an analysis of the comments presented in
+the canonical tracking issue
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), 22
+unique commenters were requesting a constant or instant backoff for `Succeeded`
+Pods, 19 for earlier recovery tries, and 6 for better late recovery behavior;
+the latter is arguably even more highly requested when also considering related
+issue [Kubernetes#50375](https://github.com/kubernetes/kubernetes/issues/50375).
+Though an early version of this KEP also addressed the `Success` case, in its
+current version this KEP really only addresses the early recovery case, which by
+our quantitative data is actually the least requested option. That being said,
+other use cases described in [User Stories](#user-stories) that don't have
+quantitative counts are also driving forces on why we should address the early
+recovery cases now. On top of that, compared to the late recovery cases, early
+recovery is more approachable and easily modelable and improving benchmarking
+and insight can help us improve late recovery later on (see also the related
+discussion in Alternatives [here](#more-complex-heuristics) and
+[here](#late-recovery)).
 
 CrashLoopBackoff behavior has been stable and untouched for most of the
 Kubernetes lifetime. It could be argued that it "isn't broken", that most people
