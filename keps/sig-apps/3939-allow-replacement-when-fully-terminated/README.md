@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Job API Definition](#job-api-definition)
     - [Defaulting and validation](#defaulting-and-validation)
+    - [Tracking the terminating pods](#tracking-the-terminating-pods)
   - [Implementation](#implementation)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -406,6 +407,22 @@ is in use:
 When `podFailurePolicy` is in use, the only allowed value for `podFailurePolicy`
 is `Failed`.
 
+#### Tracking the terminating pods
+
+In order to allow the quota management for Job-level controllers [story 3](#story-3)
+we introduced the `.status.terminating` field which tracks the number of
+terminating pods. However, in the initial Beta implementation the field stops
+tracking the number of terminating pods as soon as the Job is marked as Failed
+with the `Failed` condition (see (issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775]).
+The remaining pods may be occupying resources for an arbitrary amount of time.
+
+In 1.31 we are going to fix this issue by delaying the
+addition of the `Failed` or `Complete` conditions until all pods are fully
+terminated. To indicate that a Job is doomed to fail or succeed, as soon as
+possible, we extend the scope of pre-existing conditions: `FailureTarget`, and
+`SuccessCriteriaMet`, respectively, See more details in
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
+
 ### Implementation
 
 As part of this KEP, we need to track pods that are terminating (`deletionTimestamp != nil` and `phase` is `Pending` or `Running`).
@@ -466,6 +483,11 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - `gc_controller.go`: `April 3rd 2023` - `82.4`
    a. Set `PodPhase` to `failed` when `JobPodReplacementPolicy` true but `PodDisruptionConditions` is false
 
+The following scenarios related to [tracking the terminating pods](#tracking-the-terminating-pods) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
+
 ##### Integration tests
 
 <!--
@@ -515,8 +537,13 @@ Case for disable and reenable `JobPodReplacementPolicy`
   11. Verify that pod creation only occurs once pod is fully terminated.
   12. Verify that pod creation only occurs once deletion happens.
 
-To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.  
-Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.  
+To cover cases with `PodDisruptionCondition` we really only need to worry about tracking terminating fields.
+Tests will verify counting of terminating fields regardless of `PodDisruptionCondition` being on or off.
+
+The following scenarios related to [tracking the terminating pods](#tracking-the-terminating-pods) are covered:
+- `Failed` or `Complete` conditions are not added while there are still terminating pods
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
+- `SuccessCriteriaMet` is added when the `completions` are satisfied
 
 ##### e2e tests
 
@@ -571,6 +598,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### GA
 
 - Address reviews and bug reports from Beta users
+- Allow Job API clients tracking the number of the terminating pods until all
+  the resources are released (see [tracking the terminating pods](#tracking-the-terminating-pods)).
+  Also, link provide links for the relevant integration tests in the KEP.
 - Lock the `JobPodReplacementPolicy` feature-gate to true
 
 #### Deprecation

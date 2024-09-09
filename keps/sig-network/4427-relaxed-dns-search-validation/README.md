@@ -86,14 +86,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 Currently, Kubernetes validates search string in the `dnsConfig.searches` according to [RFC-1123](https://datatracker.ietf.org/doc/html/rfc1123)
-which defines restrictions for hostnames. While most DNS names identify hosts, there are record types (like SRV) that don't. For these, it's less clear
+which defines restrictions for hostnames. However, there are reasons why this validation is too strict for the use in `dnsConfig.searches`.
+
+Firstly, while most DNS names identify hosts, there are record types (like SRV) that don't. For these, it's less clear
 whether hostname restrictions apply, for example [RFC-1035 Section 2.3.1](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.1) points out
 that it's better to stick with valid host names but also states that labels must meet the hostname requirements.
 
 In practice, legacy workloads sometimes include an underscore (`_`) in DNS names and DNS servers will generally allow this.
 
+Secondly, users may require setting `dnsConfig.searches` to a single dot character (`.`) should they wish to avoid unnessesary DNS lookup calls to internal Kubernetes domain names.
+
 This KEP proposes relaxing the checks on DNS search strings only. Allowing these values in the `searches` field of `dnsConfig` allows pods to
-resolve short names properly in cases where the search string contains an underscore.
+resolve short names properly in cases where the search string contains an underscore or is a single dot character.
 
 ## Motivation
 
@@ -131,15 +135,47 @@ Allowing underscores in the search string allows integration with legacy workloa
 these names within Kubernetes. Since having underscores in a name creates other issues (such as inability to obtain a publicly trusted TLS certificate),
 search strings seem like the only area where this is likely to occur.
 
+Should a user require a DNS query to resolve to an external domain first (before the internal Kubernetes domain names) they would require adding a dot to the `dnsConfig.searches` list.
+
+An example of this configuration could look like this:
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: default
+  name: dns-example
+spec:
+  containers:
+    - name: test
+      image: nginx
+  dnsPolicy: "None"
+  dnsConfig:
+    nameservers:
+      - 1.2.3.4
+    searches:
+      - .
+      - default.svc.cluster.local
+      - svc.cluster.local
+      - cluster.local
+  ```
+
+Applying the above Pod spec will result in the following error:
+
+```
+The Pod "dns-example" is invalid: spec.dnsConfig.searches[0]: Invalid value: "": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
+```
+
 ### Goals
 
 - Support workloads that need to resolve DNS short names where the full DNS name includes an underscore (`_`).
+- Allow users to use a single dot character `.` as a search string
 
 ## Proposal
 
 Introduce a RelaxedDNSSearchValidation feature gate which is disabled by default. When the feature gate is enabled,
 a new DNS name validation function will be used, which keeps the existing validation logic but also allows an underscore (`_`) in any place
-where a dash (`-`) would be allowed currently.
+where a dash (`-`) would be allowed currently and allowing a single dot (`.`) character.
 
 Since the relaxed check allows previously invalid values, care must be taken to support cluster downgrades safely. To accomplish this, the validation will distinguish between new resources and updates to existing resources:
 - When the feature gate is disabled:
@@ -199,20 +235,20 @@ with a value that contains an underscore.
 
 - Gate On
   - New value
-    - Underscore (expect validation to pass)
-    - No Underscore (expect validation to pass)
+    - Underscore and/or dot (expect validation to pass)
+    - No Underscore and/or dot (expect validation to pass)
   - Existing value
-    - Underscore (expect validation to pass)
-    - No Underscore (expect validation to pass)
+    - Underscore and/or dot (expect validation to pass)
+    - No Underscore and/or dot (expect validation to pass)
 - Gate Off
   - New value
-    - Underscore (expect validation to fail)
-    - No Underscore (expect validation to pass)
+    - Underscore and/or dot (expect validation to fail)
+    - No Underscore and/or dot (expect validation to pass)
   - Existing value
-    - Underscore (expect validation to pass)
-    - No Underscore (expect validation to pass)
+    - Underscore and/or dot (expect validation to pass)
+    - No Underscore and/or dot (expect validation to pass)
 - Ratcheting
-   - Turn gate on, write search string with underscore, turn gate off, change unrelated property on the object and verify that it passes validation, remove search value with the underscore, verify that saving a search string with an underscore is now prevented
+   - Turn gate on, write search string with underscore and/or dot, turn gate off, change unrelated property on the object and verify that it passes validation, remove search value with the underscore and/or dot, verify that saving a search string with an underscore and/or dot is now prevented
 
 In addition to the Pod itself, each integration test should be repeated with objects that contain a pod spec template:
 -	Deployment
@@ -221,7 +257,7 @@ In addition to the Pod itself, each integration test should be repeated with obj
 
 ##### e2e tests
 
-- Add a test that verifies successful creation of a pod whose `dnsConfig.searches` contains an underscore
+- Add a test that verifies successful creation of a pod whose `dnsConfig.searches` contains an underscore and/or dot
 - Add tests that verify successful creation of objects with a podTemplate whose `dnsConfig.searches`
   contains an underscore
 

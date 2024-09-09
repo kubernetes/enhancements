@@ -65,7 +65,7 @@ aliases:
     - upodroid
   sig-multicluster-leads:
     - jeremyot
-    - pmorie
+    - skitt
   sig-network-leads:
     - aojea
     - danwinship
@@ -77,6 +77,7 @@ aliases:
     - dchen1107
     - derekwaynecarr
     - mrunalp
+    - haircommander
   sig-release-leads:
     - Verolop
     - cpanato

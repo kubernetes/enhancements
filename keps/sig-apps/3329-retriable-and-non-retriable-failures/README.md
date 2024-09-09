@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Job-level vs. pod-level spec](#job-level-vs-pod-level-spec)
     - [Relationship with Pod.spec.restartPolicy](#relationship-with-podspecrestartpolicy)
+    - [The scope of the FailureTarget condition](#the-scope-of-the-failuretarget-condition)
     - [Current state review](#current-state-review)
       - [Preemption](#preemption)
       - [Taint-based eviction](#taint-based-eviction)
@@ -521,6 +522,20 @@ Job controller. For example, Kubelet could restart a failed container before the
 Job controller decides to terminate the corresponding job due to a rule using
 `onExitCodes`.
 
+#### The scope of the FailureTarget condition
+
+As part of this KEP we introduced the
+[FailureTarget condition](#interim-failuretarget-job-condition) scoped to the
+failures due to pod failure policy.
+
+However, we are going to extend the scope of the condition to all Job failure
+scenarios (covering also backoffLimit exceeded and ActiveDeadlineSeconds
+exceeded), as part of fixing
+(issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
+
+See more details in the
+[Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
+
 #### Current state review
 
 Here we review the current state of kubernetes (version 1.24) regarding its
@@ -786,6 +801,10 @@ in terms of retriability and evolving Pod condition types
 (see [evolving condition types](#evolving-condition-types)) are a concern we decide
 to do not add any pod condition in this case. It should be re-considered in the
 future if there is a good motivating use-case.
+
+The reported issue which could be addressed by the new condition for exceeding
+the active deadline timeout:
+[Pod Failure Policy Edge Case: Job Retries When Pod Finishes Successfully](https://github.com/kubernetes/kubernetes/issues/115688).
 
 ##### Admission failures
 
@@ -1613,19 +1632,31 @@ The core packages (with their unit test coverage) which are going to be modified
 - `k8s.io/kubernetes/pkg/controller/job`: `13 June 2022` - `88%`  <!--(handling of failed pods with regards to the configured podFailurePolicy)-->
 - `k8s.io/kubernetes/pkg/apis/batch/validation`: `13 June 2022` - `94.4%` <!--(validation of the job configuration with regards to the podFailurePolicy)-->
 - `k8s.io/kubernetes/pkg/apis/batch/v1`: `13 June 2022` - `83.6%`  <!--(extension of JobSpec)-->
+- `k8s.io/kubernetes/pkg/controller/podgc`: `4 June 2024` - `81.0%`  <!--(pod deletion by PodGC)-->
+- `k8s.io/kubernetes/pkg/controller/tainteviction`: `4 June 2024` - `81.8%`  <!--(pod eviction by taints)-->
+- `k8s.io/kubernetes/pkg/registry/core/pod/storage`: `4 June 2024` - `78.8%`  <!--(pod eviction by API)-->
+- `k8s.io/kubernetes/pkg/controller/disruption`: `4 June 2024` - `79.3%`  <!--(cleanup of stale DisruptionTarget conditions)-->
+- `k8s.io/kubernetes/pkg/scheduler/framework/preemption`: `4 June 2024` - `30.1%`  <!--(pod preemption by kube-scheduler)-->
 
 The kubelet packages (with their unit test coverage) which are going to be modified during implementation:
 - `k8s.io/kubernetes/pkg/kubelet/nodeshutdown`: `13 Sep 2022` - `74.9%`  <!--(handling of nodeshutdown)-->
 - `k8s.io/kubernetes/pkg/kubelet/eviction`: `13 Sep 2022` - `67.7%`  <!--(handling of node-pressure eviction)-->
+- `k8s.io/kubernetes/pkg/kubelet/preemption`: `4 June 2024` - `73.7%`  <!--(handling of preemption for a critical pod)-->
 
 ##### Integration tests
 
 The following scenarios will be covered with integration tests:
-- enabling, disabling and re-enabling of the feature gate
+- enabling, disabling and re-enabling of the feature gate [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/job/job_test.go#L257)
 - pod failure is triggered by a delete API request along with appending a
   Pod condition indicating termination originated by a kubernetes component
   (we aim to cover all such scenarios)
-- pod failure is caused by a failed container with a non-zero exit code
+  * PreemptionByKubeScheduler [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/scheduler/preemption/preemption_test.go#L212-L237)
+  * DeletionByTaintManager [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/node/lifecycle_test.go#L48)
+  * EvictionByEvictionAPI [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/evictions/evictions_test.go#L347)
+  * DeletionByPodGC [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/podgc/podgc_test.go#L41) and [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/podgc/podgc_test.go#L171)
+
+- pod failure is caused by a failed container with a non-zero exit code [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/job/job_test.go#L357-L372)
+- cleanup of a stale DisruptionTarget condition [link](https://github.com/kubernetes/kubernetes/blob/ff5b5f9b2c15c1bef2a7449295f0a6e8fa0bfb59/test/integration/disruption/disruption_test.go#L638)
 
 More integration tests might be added to ensure good code coverage based on the
 actual implementation.
@@ -1669,6 +1700,7 @@ The following scenarios are covered with node e2e tests
 [sig-node-presubmits#pr-node-kubelet-serial-containerd](https://testgrid.k8s.io/sig-node-presubmits#pr-node-kubelet-serial-containerd)):
   - GracefulNodeShutdown [Serial] [NodeFeature:GracefulNodeShutdown] [NodeFeature:GracefulNodeShutdownBasedOnPodPriority] graceful node shutdown when PodDisruptionConditions are enabled [NodeFeature:PodDisruptionConditions] should add the DisruptionTarget pod failure condition to the evicted pods
   - PriorityPidEvictionOrdering [Slow] [Serial] [Disruptive][NodeFeature:Eviction] when we run containers that should cause PIDPressure; PodDisruptionConditions enabled [NodeFeature:PodDisruptionConditions] should eventually evict all of the correct pods
+  - CriticalPod [Serial] [Disruptive] [NodeFeature:CriticalPod] when we need to admit a critical pod should add DisruptionTarget condition to the preempted pod [NodeFeature:PodDisruptionConditions]
 
 More e2e test scenarios might be considered during implementation if practical.
 
@@ -1738,7 +1770,7 @@ Third iteration (1.28):
   Also, backport this fix to 1.26 and 1.27 release branches, and update the user-facing documentation to reflect this change.
 - Avoid creation of replacement Pods for terminating Pods until they reach
   the terminal phase. Update user-facing documentation.
-  Might be considered for backport to 1.27.
+  It was back-ported to [1.27](https://github.com/kubernetes/kubernetes/pull/118219).
 
 Fourth iteration (1.29):
 - Fix the [Pod Garbage collector fails to clean up PODs from nodes that are not running anymore](https://github.com/kubernetes/kubernetes/issues/118261).
@@ -1746,10 +1778,13 @@ Fourth iteration (1.29):
   We will reconsider returning to SSA if the issue is fixed, but we consider the
   transition as a technical detail, not impacting the API, which can be done
   independently of the KEP graduation cycles.
+  The fix was back-ported to [1.28](https://github.com/kubernetes/kubernetes/pull/121379), [1.27](https://github.com/kubernetes/kubernetes/pull/118219), and [1.26](https://github.com/kubernetes/kubernetes/pull/121381).
 
 #### GA
 
 - Address reviews and bug reports from Beta users
+- Improved tests coverage:
+  * unit test for preemption by kube-scheduler, if feasible
 - Write a blog post about the feature
 - Graduate e2e tests as conformance tests
 - Lock the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates
@@ -1769,10 +1804,8 @@ in back-to-back releases.
 
 #### Deprecation
 
-In GA+1 release:
-- Modify the code to ignore the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
-
 In GA+2 release:
+- Modify the code to ignore the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
 - Remove the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
 
 ### Upgrade / Downgrade Strategy

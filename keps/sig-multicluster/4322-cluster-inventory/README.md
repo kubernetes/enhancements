@@ -88,7 +88,12 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1: Multicluster Workload Distribution](#story-1-multicluster-workload-distribution)
     - [Story 2: Operations and Management](#story-2-operations-and-management)
     - [Story 3: Transparent to Consumers](#story-3-transparent-to-consumers)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [What's the relationship between the ClusterProfile API and Cluster Inventory?](#whats-the-relationship-between-the-clusterprofile-api-and-cluster-inventory)
+    - [What's the relationship between a cluster inventory and clusterSet?](#whats-the-relationship-between-a-cluster-inventory-and-clusterset)
+    - [How should the API be consumed?](#how-should-the-api-be-consumed)
+    - [How should we organize ClusterProfile objects on a hub cluster?](#how-should-we-organize-clusterprofile-objects-on-a-hub-cluster)
+    - [Uniqueness of the ClusterProfile object](#uniqueness-of-the-clusterprofile-object)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Cluster Name](#cluster-name)
@@ -193,7 +198,8 @@ updates.
 Currently, there is a lack of a standardized approach to define a
 cluster inventory. However, with the growing number of users managing
 multiple clusters and deploying applications across them, projects like
-Open Cluster Management (OCM), Karmada, Clusternet, and Fleet Manager
+[Open Cluster Management (OCM)](https://open-cluster-management.io/),
+[Clusternet](https://clusternet.io/), [Kubernetes Fleet Manager](https://github.com/Azure/fleet) or [Karmada](https://karmada.io/)
 have emerged. This document introduces a proposal for a new universal
 ClusterProfile API. The objective is to establish a shared interface
 for cluster inventory, defining a standard for status reporting while
@@ -299,22 +305,19 @@ the API proposed by this KEP aims to
   clusters under management.
 
 ### Terminology
+- **Cluster Inventory**: A conceptual term referring to a collection of clusters.
 
-- **Cluster Manager**: An entity that creates the ClusterProfile API
-  object per member cluster, and keeps their status up-to-date. Each
-  cluster manager SHOULD be identified with a unique name. Each cluster
-  profile resource SHOULD be managed by only one cluster manager. Examples
-  of cluster manager are projects like OCM, Karmada, Clusternet or Azure
-  fleet manager.
+- **Member Cluster**: A kubernetes cluster that is part of a cluster inventory.
+
+- **Cluster Manager**: An entity that creates the ClusterProfile API object per member cluster,
+  and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.  
+  Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD 
+  have sufficient permission to access the member cluster to fetch the information so it can update the status
+  of the ClusterProfile API resource.
 
 - **ClusterProfile API Consumer**: the person running the cluster managers
   or the person developing extensions for cluster managers for the purpose of
   workload distribution, operation management etc.
-
-- **Member Cluster**: A kubernetes cluster that is managed by the cluster
-  manager. A cluster manager SHOULD have sufficient permission to access
-  the member cluster to fetch the information so it can update the status
-  of the ClusterProfile API resource.
 
 ### User Stories (Optional)
 
@@ -379,14 +382,37 @@ command or function to work in the same way in another tool. This can
 further enhance the usability and adoption of different cluster
 manager.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
+#### What's the relationship between the ClusterProfile API and Cluster Inventory?
+The ClusterProfile API represents a single member cluster in a cluster inventory.
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+#### What's the relationship between a cluster inventory and clusterSet?
+A cluster inventory may or may not represent a ClusterSet. A cluster inventory is considered a [clusterSet](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#terminology)
+if all its member clusters adhere to the [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) principle.
+Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
+
+#### How should the API be consumed?
+We recommend that all ClusterProfile objects within the same cluster inventory reside on 
+a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration 
+point to access all the information within a cluster inventory. Additionally, a multi-cluster aware
+controller can be run on the dedicated  cluster to offer high-level functionalities over this inventory of clusters.
+
+####  How should we organize ClusterProfile objects on a hub cluster?
+While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object. 
+This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to 
+certain clusters within the inventory.  
+
+However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
+and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
+and the value as the name of the clusterSet. 
+
+#### Uniqueness of the ClusterProfile object
+While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
+on a hub cluster. 
+
+However, a ClusterProfile object can only be in one ClusterSet since the namespace sameness property is transitive, therefore 
+it can only be in the namespace of that clusterSet if it is in a ClusterSet.
+
 
 ### Risks and Mitigations
 

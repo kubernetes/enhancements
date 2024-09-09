@@ -19,26 +19,30 @@
     - [Selecting a Project ID](#selecting-a-project-id)
     - [Determine Whether a Project ID Applies To a Directory](#determine-whether-a-project-id-applies-to-a-directory)
     - [Return a Project ID To the System](#return-a-project-id-to-the-system)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Implementation Strategy](#implementation-strategy)
       - [Future](#future)
     - [Notes on Implementation](#notes-on-implementation)
     - [Notes on Code Changes](#notes-on-code-changes)
-  - [Test Plan](#test-plan)
-    - [Testing Strategy](#testing-strategy)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Implementation details of using Xfs-Quota in User Namespace](#implementation-details-of-using-xfs-quota-in-user-namespace)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Graduation Criteria](#graduation-criteria)
-  - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
-  - [Phase 2: Beta (v1.29)](#phase-2-beta-v129)
-  - [Phase 3: GA](#phase-3-ga)
-- [Performance Benchmarks](#performance-benchmarks)
-  - [Elapsed Time](#elapsed-time)
-  - [User CPU Time](#user-cpu-time)
-  - [System CPU Time](#system-cpu-time)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
+    - [Performance Benchmarks](#performance-benchmarks)
+      - [Elapsed Time](#elapsed-time)
+      - [User CPU Time](#user-cpu-time)
+      - [System CPU Time](#system-cpu-time)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+    - [Kubelet and API Server Skew:](#kubelet-and-api-server-skew)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -419,7 +423,7 @@ this KEP that this mode of operation will be used, at least initially,
 this can be detected even on kubelet restart by looking at the
 reference count in `/etc/projects`.
 
-### Implementation Details/Notes/Constraints [optional]
+### Notes/Constraints/Caveats (Optional)
 
 #### Implementation Strategy
 
@@ -576,53 +580,33 @@ required elsewhere:
   future allow adding additional data without having to change code
   other than that which uses the new information.
 
-### Test Plan
+#### Implementation details of using Xfs-Quota in User Namespace
 
+* Using user namespaces prevents users from changing projectIDs on 
+  the filesystem, which is essential for preserving the reliability 
+  of xfs-quota metrics under user namespaces.
 
-#### Testing Strategy
+* When LocalStorageCapacityIsolationFSQuotaMonitoring is enabled,
+  kubelet utilizes xfs-quota to monitor disk usage. With user namespaces 
+  enforced, any changes that might manipulate projectIDs are inherently 
+  restricted, avoiding any inaccuracies in collected metrics.
 
-The quota code is by an large not very amendable to unit tests.  While
-there are simple unit tests for parsing the mounts file, and there
-could be tests for parsing the projects and projid files, the real
-work (and risk) involves interactions with the kernel and with
-multiple instances of this code (e. g. in the kubelet and the runtime
-manager, particularly under stress).  It also requires setup in the
-form of a prepared filesystem.  It would be better served by
-appropriate end to end tests.
+* During the setup of volumeToMount object, the hostUsersEnabled field 
+  is added, which indicates whether user namespaces are in effect. 
+  This field is critical for determining the environment in which the 
+  volume operates.
 
-[x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+* When mounting the filesystem, before the assignQuota method is invoked,
+  a check for SupportQuota is conducted. This check now should also verify 
+  the hostUsersEnabled status to ensure that quotas are only assigned when 
+  operating within a valid user namespace context.
 
-##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-##### Unit tests
-
-The main unit test is in package under `pkg/volume/util/fsquota/`.
-
-- `pkg/volume/util/fsquota/`: `2022-06-20` - `73%`
-- - project.go 75.7%
-- - quota.go 100%
-- - quota_linux.go 70.6%
-
-See details in https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=fsquota.
-
-##### Integration tests
-
-N/A
-
-##### e2e tests
-
-e2e evolution (LocalStorageCapacityIsolationQuotaMonitoring [Slow] [Serial] [Disruptive] [Feature:LocalStorageCapacityIsolationQuota][NodeFeature:LSCIQuotaMonitoring]) can be found in [`test/e2e_node/quota_lsci_test.go`](https://github.com/kubernetes/kubernetes/blob/8cd689e40d253e520b1698d4bcf33992f0ae1d20/test/e2e_node/quota_lsci_test.go#L93-L103)
-
-The e2e tests are slow and serial and we will not promote them to be conformance test then.
-There is no failure history or flakes in https://storage.googleapis.com/k8s-triage/index.html?test=LocalStorageCapacityIsolationQuotaMonitoring
-
+* Kubelet's behavior must be updated to accommodate these changes. 
+  If LocalStorageCapacityIsolationFSQuotaMonitoring flag is enabled 
+  and hostUsersEnabled is false (i.e., user namespaces are being used), 
+  kubelet should proceed with xfs-quota based monitoring. If user 
+  namespaces are not enabled, kubelet should revert to using the 
+  traditional methods for disk monitoring like du and find.
 
 ### Risks and Mitigations
 
@@ -667,30 +651,55 @@ There is no failure history or flakes in https://storage.googleapis.com/k8s-tria
   non-enforcing.
 
 
-## Graduation Criteria
+## Design Details
 
-The following criteria applies to
-`LocalStorageCapacityIsolationFSMonitoring`:
+### Test Plan
 
-### Phase 1: Alpha (1.15)
 
-- Support integrated in kubelet
-- Alpha-level documentation
-- Unit test coverage
-- Node e2e test
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-### Phase 2: Beta (v1.29)
+#### Prerequisite testing updates
 
-- User feedback
-- Benchmarks to determine latency and overhead of using quotas
-  relative to existing monitoring solution
-- Cleanup
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
 
-### Phase 3: GA
+#### Unit tests
 
-- TBD
+The quota code is by an large not very amendable to unit tests.  While
+there are simple unit tests for parsing the mounts file, and there
+could be tests for parsing the projects and projid files, the real
+work (and risk) involves interactions with the kernel and with
+multiple instances of this code (e. g. in the kubelet and the runtime
+manager, particularly under stress).  It also requires setup in the
+form of a prepared filesystem.  It would be better served by
+appropriate end to end tests.
 
-## Performance Benchmarks
+The main unit test is in package under `pkg/volume/util/fsquota/`.
+
+- `pkg/volume/util/fsquota/`: `2024-06-12` - `73.9%`
+- - project.go 75.7%
+- - quota.go 100%
+- - quota_linux.go 72.2%
+
+See details in https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=fsquota.
+
+#### Integration tests
+
+N/A
+
+#### e2e tests
+
+e2e evolution (LocalStorageCapacityIsolationQuotaMonitoring [Slow] [Serial] [Disruptive] [Feature:LocalStorageCapacityIsolationQuota][NodeFeature:LSCIQuotaMonitoring]) can be found in [`test/e2e_node/quota_lsci_test.go`](https://github.com/kubernetes/kubernetes/blob/8cd689e40d253e520b1698d4bcf33992f0ae1d20/test/e2e_node/quota_lsci_test.go#L93-L103)
+
+The e2e tests are slow and serial and we will not promote them to be conformance test then.
+There is no failure history or flakes in https://storage.googleapis.com/k8s-triage/index.html?test=LocalStorageCapacityIsolationQuotaMonitoring
+
+
+#### Performance Benchmarks
 
 I performed a microbenchmark consisting of various operations on a
 directory containing 4096 subdirectories each containing 2048 1Kbyte
@@ -742,7 +751,7 @@ Other notes:
 * All calls to `xfs_quota` and `mount` consumed less than 0.01 seconds elapsed, user, and CPU time and are not reported here.
 * Removing files was consistently faster with quotas disabled than with quotas enabled.  With ext4fs, du was faster with quotas disabled than with quotas enabled.  With XFS, creating files may have been faster with quotas disabled than with quotas enabled, but the difference was small.  In other cases, the difference was within noise.
 
-### Elapsed Time
+##### Elapsed Time
 
 | *Operation*                | *XFS+Quota* | *XFS*   | *Ext4fs+Quota* | *Ext4fs* |
 |--------------------------|-----------|-------|--------------|--------|
@@ -754,7 +763,7 @@ Other notes:
 | du after umount/mount    | 103.6     | 138.8 | 40.2         | 38.8   |
 | Remove Files             | 196.0     | 159.8 | 105.2        | 90.4   |
 
-### User CPU Time
+##### User CPU Time
 
 All calls to `umount` consumed less than 0.01 second of user CPU time
 and are not reported here.
@@ -767,7 +776,7 @@ and are not reported here.
 | du after umount/mount    | 8.1       | 10.2  | 3.9          | 3.7    |
 | Remove Files             | 4.3       | 4.1   | 4.2          | 4.3    |
 
-### System CPU Time
+##### System CPU Time
 
 | *Operation*                | *XFS+Quota* | *XFS*   | *Ext4fs+Quota* | *Ext4fs* |
 |--------------------------|-----------|-------|--------------|--------|
@@ -778,6 +787,48 @@ and are not reported here.
 | du after umount/mount    | 66.0      | 82.4  | 29.2         | 28.1   |
 | Remove Files             | 188.6     | 156.6 | 90.4         | 81.8   |
 
+
+### Graduation Criteria
+
+The following criteria applies to
+`LocalStorageCapacityIsolationFSMonitoring`:
+
+#### Alpha
+
+- Support integrated in kubelet
+- Alpha-level documentation
+- Unit test coverage
+- Node e2e test
+
+#### Beta
+
+- User feedback
+- Benchmarks to determine latency and overhead of using quotas
+  relative to existing monitoring solution
+- Cleanup
+- Use Ephemeral-Storage-Quotas in User Namespace
+
+#### GA
+
+- TBD
+
+### Upgrade / Downgrade Strategy
+
+Turn off the feature gate to turn off the feature.
+
+### Version Skew Strategy
+
+#### Kubelet and API Server Skew:
+
+1. If the API server is on the latest version with the user namespace feature flag enabled, 
+and the kubelet also has the user namespace feature along with the 
+LocalStorageCapacityIsolationFSQuotaMonitoring feature flag enabled, Pods with hostUsers 
+set to false will have XFS quotas within user namespaces enabled.
+2. If any of the necessary feature flags (user namespace on either the API server or kubelet,
+or LocalStorageCapacityIsolationFSQuotaMonitoring on the kubelet) are not enabled, then, 
+XFS quotas within user namespaces will not be supported
+
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -787,9 +838,12 @@ and are not reported here.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: LocalStorageCapacityIsolationFSQuotaMonitoring
   - Components depending on the feature gate: kubelet
+- [x] Feature gate 
+  - Feature gate name: UserNamespacesSupport
+  - Components depending on the feature gate: kubelet, kube-apiserver
 
 This feature uses project quotas to monitor emptyDir volume storage consumption
-rather than filesystem walk for better performance and accuracy.
+rather than filesystem walk for better performance and accuracy. This feature can be enabled only within user namespace.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -821,7 +875,10 @@ Yes, in `test/e2e_node/quota_lsci_test.go`
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-No. The rollout/rollback will not impact running workloads.
+No. In the event of a rollback, the system would revert to the previous method of disk usage monitoring. This switch should not impact the operational state of already running workloads. 
+Additionally, pods created while the feature was active (created with user namespaces) will have to be re-created to run without user namespaces. If those weren't recreated, they will continue to run in a user namespace.
+
+
 
 ###### What specific metrics should inform a rollback?
 
@@ -835,70 +892,83 @@ Yes. I tested it locally and fixed [a bug after restarting kubelet](https://gith
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-LocalStorageCapacityIsolationFSQuotaMonitoring should be turned on only if LocalStorageCapacityIsolationis enabled as well.
-If LocalStorageCapacityIsolationFSQuotaMonitoring is turned on but LocalStorageCapacityIsolation is false, the check will be skipped.
+No
 
 ### Monitoring Requirements
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?
 
   - In kubelet metrics, an operator can check the histgram metric `kubelet_volume_metric_collection_duration_seconds`
     with metric_source equals "fsquota". If there is no `metric_source=fsquota`, this feature should be disabled.
   - However, to figure out if a workload is use this feature, there is no direct way now and see more in below 
     methods of how to check fsquota settings on a node.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### How can someone using this feature know that it is working for their instance?
 
-  - 99.9% of volume stats calculation will cost less than 1s or even 500ms.
-  It can be calculated by `kubelet_volume_metric_collection_duration_seconds` metrics.
+- `xfs_quota -x -c 'report -h' /path/to/directory` will provide the information on project quota usage and 
+  limits.
+- When trying to change the projectID associated with the directory in a user namespace,
+  `xfs_quota -x -c 'project -s -p newProjectID /path/to/directory' /`, the operation will be denied indicating 
+  the restriction the user namespace imposes.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
+###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+
+99.9% of volume stats calculation will cost less than 1s or even 500ms.
+It can be calculated by `kubelet_volume_metric_collection_duration_seconds` metrics.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: `kubelet_volume_metric_collection_duration_seconds`
   - Aggregation method: histogram
   - Components exposing the metric: kubelet
 
-* **Are there any missing metrics that would be useful to have to improve observability of this feature? **
+###### Are there any missing metrics that would be useful to have to improve observability of this feature? **
 
-  - Yes, there are no histogram metrics for each volume. The above metric was grouped by volume types because
-    the cost for every volume is too expensive. As a result, users cannot figure out if the feature is used by
-    a workload directly by the metrics. A cluster-admin can check kubelet configuration on each node. If the
-    feature gate is disabled, workloads on that node will not use it. 
-    For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device. 
-    Check `spec.containers[].resources.limits.ephemeral-storage` of each container to compare.
+Yes, there are no histogram metrics for each volume. The above metric was grouped by volume types because
+the cost for every volume is too expensive. As a result, users cannot figure out if the feature is used by
+a workload directly by the metrics. A cluster-admin can check kubelet configuration on each node. If the
+feature gate is disabled, workloads on that node will not use it. 
+For example, run `xfs_quota -x -c 'report -h' /dev/sdc` to check quota settings in the device. 
+Check `spec.containers[].resources.limits.ephemeral-storage` of each container to compare.
 
 
 ### Dependencies
-* **Does this feature depend on any specific services running in the cluster? **
+###### Does this feature depend on any specific services running in the cluster?
 
-  -  Yes, the feature depneds on project quotas. Once quotas are enabled, the xfs_quota tool can be used to
-    set limits and report on disk usage.
+Yes, the feature depends on project quotas. Once quotas are enabled, the xfs_quota tool can be used to
+set limits and report on disk usage.
 
 
 ### Scalability
-* **Will enabling / using this feature result in any new API calls?**
-  - No.
+###### Will enabling / using this feature result in any new API calls?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  - No.
+No.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
-  - No.
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  - No.
+No.
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  - No.
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  - Yes. It will use less CPU time and IO during ephemeral storage monitoring. `kubelet` now allows use of XFS quotas (on XFS and suitably configured ext4fs filesystems) to monitor storage consumption for ephemeral storage (currently for emptydir volumes only). This method of monitoring consumption is faster and more accurate than the old method of walking the filesystem tree. It does not enforce limits, only monitors consumption.
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?
+
+No.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+Yes. It will use less CPU time and IO during ephemeral storage monitoring. `kubelet` now allows use of XFS quotas (on XFS and suitably configured ext4fs filesystems) to monitor storage consumption for ephemeral storage (currently for emptydir volumes only). This method of monitoring consumption is faster and more accurate than the old method of walking the filesystem tree. It does not enforce limits, only monitors consumption.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+Enabling XFS quotas within user namespaces is unlikely to result in resource exhaustion of node resources like PIDs or sockets. However, quota settings could potentially lead to inode exhaustion if limits are set too low for the workload.
+
 
 ### Troubleshooting
 
@@ -910,6 +980,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+No changes to current kubelet behaviors. The feature only uses kubelet-local information.
 
 ###### What are other known failure modes?
 

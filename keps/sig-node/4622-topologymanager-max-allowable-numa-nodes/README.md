@@ -1,64 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-# KEP-4438: Restarting sidecar containers during Pod termination
+# KEP-4622: New TopologyManager Policy which configure the value of maxAllowableNUMANodes
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -79,13 +19,12 @@ tags, and then generate with `hack/update-toc.sh`.
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -95,7 +34,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -131,17 +69,17 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [X] (R) Graduation criteria is in place
+- [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [X] (R) Production readiness review completed
-- [X] (R) Production readiness review approved
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -157,125 +95,62 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+In this KEP, we propose a new TopologyManager Policy Option called `max-allowable-numa-nodes` to configure the value of maxAllowableNUMANodes in the TopologyManager. The current hard-coded value of 8 was added as a stop-gap 4 years ago to mitigate the state explosion that occurs when trying to enumerate the possible NUMA affinities and generating their hints. By making this setting configurable, we give users the ability to increase this limit when appropriate.
 
-A good summary is probably at least a paragraph in length.
+## Goals
 
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
+- This proposal does not aim to modify the existing TopologyManager Policies. It focuses solely on introducing a new policy option to let users configure the maximum supported number of NUMA nodes.
+- Support high-end CPUs with more than 8 NUMA nodes.
 
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-Sidecar containers should be restarted if they exit prematurely when a Pod is terminated to ensure that they
-are running while the containers that should terminate prior to its termination are still running.
-This feature was originally planned for beta release in the initial KEP, but after further analysis, 
-we decided to postpone and introduce a separate feature gate for it.
+## Non-Goals
 
-## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-The reason for this KEP is that restarting sidecar containers during Pod termination requires
-fundamental changes to the Pod lifecycle, and such changes cannot be introduced in beta
-(enabled by default) without risking disruption to users.
-
-On the other hand, the code for sidecar containers is already well tested, and we are confident
-that many use cases will benefit from them even without the restart during Pod termination.
-
-For this reason, we are introducing a separate feature gate for the sidecar containers KEP to decouple 
-the two features and allow users to use sidecar containers without the refactoring required for
-the restart during Pod termination.
-
-### Goals
-
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
-### Non-Goals
-
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
-
-## Proposal
-
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-The proposal is to introduce a new feature gate for the sidecar containers KEP to decouple the sidecar feature
-from the restart during Pod termination feature and allow users to use sidecar containers without the refactoring
-required for the restart during Pod termination.
-
-Please refer to the original KEP for the details of the sidecar containers feature:
-https://git.k8s.io/enhancements/keps/sig-node/753-sidecar-containers
+- It does not address other resource allocation or management aspects within Kubernetes.
+- It does not attempt to remove the state explosion that still exists in the TopologyManager.
 
 ### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
+
+As a developer in the AI space, I want to use AI accelerators "super chips" which expose ARM cores with more than 8 NUMA nodes.  
 
 #### Story 2
 
+As a user in the high-performance-computing space, I want to enable the sub-NUMA or NUMA-per-socket option of my high-end x86 CPU, which will bring  
+the count of NUMA nodes to exceed 8.  
+
+#### Story 3
+
+As administrator of edge nodes, I want to use power-efficient yet massively parallel ARM chips which expose more than 8 NUMA nodes.
+
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+Setting values higher than the current default may cause performance degradation at admission time. Users must either be willing to accept this or know that they won't actually be affected by it in their particular setup. Fixing this will require rearchitecting the Topology Manager and it is thus out of scope of this KEP.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+The risk associated with implementing this new proposal is minimal. It pertains only to a distinct policy option within the `TopologyManager` and is safeguarded by the option's inherent security measures, in addition to the default deactivation of the `TopologyManagerPolicyBetaOptions` feature gate.
 
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+| Risk                                             | Impact | Mitigation |
+| -------------------------------------------------| -------| ---------- |
+| Set a value lower 8 causes kubelet crash         | High   | the minimum value legal value should be the current hardcoded value(8), If not, we should log it and fail |
+| Set a value too high                             |  Low   | add a log when starting. If possible, we should mark the node Degraded somehow because allocation performance could be significantly slow |
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+Users can configure the value of maxAllowableNUMANodes in the TopologyManager when the kubelet starts up, It will fail and abort if the user sets the value is lower than the current hardcoded default (8).
+
+```go
+		case MaxAllowableNUMANodes:
+			optValue, err := strconv.Atoi(value)
+			if err != nil {
+				return opts, fmt.Errorf("bad value for option %q: %w", name, err)
+			}
+			opts.MaxAllowableNUMANodes = optValue
+      ...
+
+	if opts.MaxAllowableNUMANodes < defaultMaxAllowableNUMANodes {
+		return opts, fmt.Errorf("value for option %q is lower than defaultMaxAllowableNUMANodes: %d", MaxAllowableNUMANodes, opts.MaxAllowableNUMANodes)
+	}
+```
 
 ### Test Plan
 
@@ -290,12 +165,9 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[X] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
-
-The test plan is currently in progress and will be reflected here as we make progress:
-https://docs.google.com/document/d/14En0jesyZFrDG8Epn1mYcWB0dSZqCLv-HwtIdMuov0o/edit?usp=sharing
 
 ##### Prerequisite testing updates
 
@@ -325,7 +197,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `pkg/kubelet/kuberuntime`: `2024/02/06` - `66.8%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `20240405` - `91.5%`
 
 ##### Integration tests
 
@@ -344,7 +216,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+No new integration tests for kubelet are planned.
 
 ##### e2e tests
 
@@ -356,131 +228,28 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
-
-- <test>: <link to test coverage>
 -->
 
-###### Existing tests
+For beta:
 
-- should respect termination grace period seconds
-- should respect termination grace period seconds with long-running preStop hook https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L536
-- should call the container's preStop hook and terminate it if its startup probe fails https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/container_lifecycle_test.go#L616
-- should call the container's preStop hook and terminate it if its liveness probe fails https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L683
+- Verify the input validation with the existing e2e tests(e.g. 9 or 10 or something bigger than the current default but not "too big")
 
-###### New tests
+For GA:
 
-Probes:
-- Readiness probes are still running while in preStop
-- Readiness status is beings updated for the container and the Pod while in preStop
-- Liveness probes are NOT running for regular containers while the Pod is terminating 
-- SIDECAR: Liveness probes DO run for sidecar containers while the Pod is terminating 
-- SIDECAR: sidecar container will be restarted when liveness probe failed during Pod termination
-
-Not fully started containers:
-- preStop will not be executed for the container that hasn’t started yet
-- preStop will be called on the container even if postStart is still running
-- postStart hook CONTINUE EXECUTE even if container started termination
-- postStart hook will stop once pod passed it’s graceful termination period
-
-Pod with some containers terminated:
-- BUGFIX, SIDECAR: Container can be restarted when there are terminating containers in the Pod A container cannot restart when there is any terminating container in the same pod · Issue #121398
-
-Re-terminating the Pod:
-- When the Pod is terminating, another call to terminate the pod with the smaller grace period will override the grace period to terminate Pod faster
-- When the Pod is terminating, another call to terminate the pod with the greater grace period will override the grace period to allow longer termination
-- BUGFIX: Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
-
-Pre-stop vs. SIGTERM traps:
-- Same as existing and above tests, need to validate that the container that traps the SIGTERM behaves the same way as with preStop:
-- Respect the grace period
-- Liveness probes are not running
-- Readiness probes are running
-
-Test what is available for during preStop:
-- BUGFIX: While the Pod is terminating, service account tokens are rotated Kubelet stops rotating service account tokens when pod is terminating, breaking preStop hooks · Issue #116481
-- BUGFIX: Service account token is valid if the terminating Pod was deleted again Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
-
-Eviction and OOM kills:
-- preStop is called when Pod is evicted
-- preStop is NOT called when Container is OOMkilled
+- degrading the node and checking the node is reported as degraded
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Feature implemented behind the existing static policy feature flag
+- Initial unit tests completed and coverage is improved
+- Documents is improved and enough guidance and examples can be given to potential users.
+- Add a e2e test to verify the input validation.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
-#### Alpha
-
-- Allow sidecar containers to restart during the shutdown of the Pod.
-- Enable `livenessProbe` and `startupProbe` during the shutdown of the Pod for sidecar containers that restart.
-- Enable `postStart` and `preStop` hooks during the shutdown of the Pod for sidecar containers that restart.
-
-#### Beta
-
-TBD
-
-#### GA
-
-TBD
+- Add a metrics: `kubelet_topology_manager_admission_time`.
 
 ### Upgrade / Downgrade Strategy
 
@@ -495,12 +264,12 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
-This feature only concerns the kubelet, so the upgrade and downgrade strategy is limited to the kubelet.
-Moreover, the Pod spec is not altered, so no changes are required for existing workloads to make use of the feature.
-Likewise, no changes are required for these workloads to revert to previous behavior.
+
+We anticipate no repercussions. The new policy option is voluntary and operates independent of the existing options.
 
 ### Version Skew Strategy
 
+No changes needed.
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
@@ -513,8 +282,6 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
-There is no version skew strategy for this feature.
-The kubelet is the only component that needs to be updated to make use of this feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -545,6 +312,15 @@ you need any help or guidance.
 <!--
 This section must be completed when targeting alpha to a release.
 -->
+1.31:
+- enable by default
+- allow gate to disable the feature
+- release note
+
+1.32:
+- promote to GA
+- cannot be disabled
+- release note
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -558,26 +334,24 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: SidecarContainerRestartDuringTermination
-  - Components depending on the feature gate:
-    - kubelet
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
-
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: 
+    - `TopologyManagerPolicyBetaOptions`
+    - `TopologyManagerPolicyOptions`
+  - Components depending on the feature gate: `kubelet`
+- [x] Change the kubelet configuration to set a TopologyManager policy of static and a TopologyManager policy option of `max-allowable-numa-nodes`
+  - Will enabling / disabling the feature require downtime of the control plane? 
+    No
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node? (Do not assume Dynamic Kubelet Config feature is enabled).
+    Yes -- kubelet restart is required.
 ###### Does enabling the feature change any default behavior?
 
 <!--
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Enabling the feature will change the behavior of the kubelet when terminating a Pod with sidecar containers.
-Sidecar containers that exit prematurely will be restarted during the termination of the Pod to ensure they are running
-until the main containers that should terminate prior to the sidecar containers are still running.
+
+No. 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -591,14 +365,16 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes, the feature can be disabled once it has been enabled.
-There is no alteration to the Pod spec, so existing workloads will be terminated according to the current behavior,
-after the kubelet is restarted with the feature gate disabled.
+
+Yes, When it is disabled once (i.e. no value is set), this falls back to the default behavior.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-No side effect, the feature can be switched on or off.
+
+Running containers won't be affected by the rollback of the feature, only newly created will.
 
 ###### Are there any tests for feature enablement/disablement?
+
+This new `TopologyManager` policy option will start immediately from beta stage. The unit tests will test whether the configured value of `max-allowable-numa-nodes` is as expected and whether it is the default recommended value when it is not configured.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -612,16 +388,14 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-Yes, unit tests will be added to ensure the feature can be enabled and disabled.
-The KEP will be updated with the details of the tests as they are added.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+When feature a is not enabled or configured, its value is the default value. and the feature is fully contained in the kubelet, has no dependencies and rollback and upgrades both will affect only newly created pods.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+Rollout or rollout fail do not impact already running workloads, only impact the new workloads.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -640,6 +414,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+We have a metric which records the topology manager admission time: `kubelet_topology_manager_admission_time`.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -648,11 +424,14 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Rollout or upgrade do not impact already running workloads. We plan to add an e2e test for this in the furture.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -662,6 +441,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+We add a metric: `kubelet_topology_manager_admission_time` for kubelet, which can be used to check if the setting is causing unacceptable performance drops.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -670,6 +450,12 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+Examine the kubelet configuration of a node to verify the existence of the feature gate and the utilization of the new policy option. we can use the following command to check the feature if it is enabled:
+
+```
+kubectl get --raw "/api/v1/nodes/<nodename>/proxy/configz" | jq '.kubeletconfig.TopologyManagerPolicyOptions'
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -687,8 +473,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: If their system has more than 8 NUMA nodes, the TopologyManager is turned on and the kubelet is not crashing, then the feature is working.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -707,6 +493,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+The value of max-allowable-numa-nodes does not (in and of itself) affect the latency of pod admission. With the TopologyManager enabled, the time to admit a pod is tied to the number of NUMA nodes on the physical machine. In the past, this was hard-coded at 8 to ensure that pod admission always completed in a reasonable amount of time. If a machine had more than 8 NUMA nodes, the kubelet would crash with a log message stating that the ToplogyManager is unsupported on machines with more than 8 NUMA nodes. With the new max-allowable-numa-nodes option, admins now have the ability to allow nodes with more than 8 NUMA nodes to run with the TopologyManager enabled. However, it is unknown exactly how much this will slow down pod admission on any given system. This feature is therefore to be used at-your-own-risk until we have a proper solution in place to reduce the state explosion that causes pod admission time to slow down as the number of NUMA nodes increases.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -714,11 +502,8 @@ Pick one more of these and delete the rest.
 -->
 
 - [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Metric name: kubelet_topology_manager_admission_time
+  - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -727,11 +512,19 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+The feature is not used by workloads in any way shape or form. and it only (potentially) impacts how long it takes for the kubelet to start a workload. We can easily check if this feature is enabled by looking at the kubelet config, example:
+
+```shell
+kubectl get --raw "/api/v1/nodes/<nodename>/proxy/configz" | jq '.kubeletconfig.TopologyManagerPolicyOptions'
+```
+
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+N/A
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -749,6 +542,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No. It doesn't rely on other Kubernetes components.
 
 ### Scalability
 
@@ -776,6 +571,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -785,6 +581,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -793,6 +590,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -802,6 +600,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -813,6 +612,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+It will slow down pod admission/start time on the node, and the slowdown occurs because the kubelet's TopoolgyManager now has more combinations it needs to consider when deciding where a cpus and devices can be allocated in an aligned way, and the slowdown affects only node configured with the feature, there is not any cluster impact as the feature is at node-level.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -826,6 +627,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+It will increase the kubelet's CPU usage time. If your system has more than 8 NUMA nodes, then you will not be able to run kubernetes on it without this feature. so
+the purpose is then to provide an escape hatch for those that are OK paying the price of increased latency for pod admission (and its associated CPU/RAM costs) in order to allow the kubelet to run on such a node.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -837,6 +641,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+Same answer as above.
 
 ### Troubleshooting
 
@@ -852,23 +658,15 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+N/A
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+Setting a value lower 8 causes kubelet crash.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+ As a cluster administrator you should know the number of NUMA nodes on your nodes and adjust the value of the kubelet's topologyManager options or turn it off.
 
 ## Implementation History
 
@@ -883,15 +681,16 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 2024-01-30: `Summary` and `Motivation` sections merged
-- 2024-02-08: `Proposal` section merged, KEP marked as `implementable`
-- v1.30: Alpha release
+- 2024-05-08 - initial KEP draft created
+- 2024-06-06 - updates per review feedback
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+- increased kubelet's CPU/Memory usage time
+- increase in pod start time
+
+Before this feature: the kubelet would crash.
+With this feature: you get a potential slowdown, but at least the kubelet will run.
 
 ## Alternatives
 
@@ -901,9 +700,10 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-## Infrastructure Needed (Optional)
+Adding a new kubelet configuration option.
 
 <!--
+## Infrastructure Needed (Optional)
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.

@@ -675,6 +675,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   with data obtained through a standard list request. The detector will be added to the reflector 
   and activated when an environment variable is set. The environment variable will be set for all jobs run in the Kube CI. 
 - Update the client-go generated List function to watchList data when the feature gate has been enabled and the ListOptions are satisfied.
+  This change must be applied to the typed, dynamic and metadata clients.
 - Implement a mechanism for automatically detecting etcd configuration
   Whether it is safe to use the RequestWatchProgress API call 
   or if the experimental-watch-progress-notify-interval flag has been set.
@@ -682,6 +683,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Use WatchProgressRequester to request progress notifications directly from etcd.
   This mechanism was developed in [Consistent Reads from Cache KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache#use-requestprogress-to-enable-automatic-watch-updates)
   and will reduce the overall latency for watchlist requests.
+- The watchlist call, which serves as a drop-in replacement for list calls in client libraries, 
+  must properly set the kind and apiVersion fields. 
+  These fields are important for the correct decoding of the objects.
+  See also: https://github.com/kubernetes/kubernetes/pull/126191
 
 #### GA
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 

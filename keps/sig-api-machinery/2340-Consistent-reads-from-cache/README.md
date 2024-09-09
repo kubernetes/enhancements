@@ -263,7 +263,7 @@ case will change how watchcache implementation will be handling the request.
 | _unset_         | _unset_              | _unset_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  | Yes      |
 | _unset_         | _unset_              | _token_           | _unset_ / _N_ | Read request from RV encoded in _token_ | Delegated to etcd                                  |          |
 | _unset_         | _Exact_              | _unset_ / _token_ | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |          |
-| _unset_         | _NotOlderThan_       | _unset_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  | Yes      |
+| _unset_         | _NotOlderThan_       | _unset_           | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |          |
 | _unset_         | _NotOlderThan_       | _token_           | _unset_ / _N_ | Fails [validation]                      | Fails [validation]                                 |          |
 | _0_             | _unset_              | _unset_           | _unset_ / _N_ | Quorum read request                     | List from cache ignoring _limit_                   |          |
 | _0_             | _unset_              | _token_           | _unset_ / _N_ | Quorum read request                     | Delegated to etcd                                  |          |

@@ -212,9 +212,9 @@ The field will support the following initial values:
   "topologically proximate" may vary across implementations and could encompass
   endpoints within the same node, rack, zone, or even region.
 
-Absence of a value indicates no specific routing preference. In this case, the
-user delegates the routing decision to the implementation, allowing it to apply
-its best-effort strategy.
+The absence of a value indicates no specific routing preference. In this case,
+the user delegates the routing decision to the implementation, allowing it to
+apply its best-effort strategy.
 
 Implementations SHOULD support the standard values. While some flexibility in
 interpretation is permitted, implementations should aim to align their behavior
@@ -633,42 +633,179 @@ This would be equivalent to enabling the feature for the first time. Refer
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes we will have unit tests covering the same.
+We have tests at several layers which cover how the system behaves with and
+without the feature being enabled:
+- kube-proxy:
+  https://github.com/kubernetes/kubernetes/blob/073ce0e34bc6529d9dc81fa98a9b3fc75d90f40d/pkg/proxy/topology_test.go#L134-L162
+- kube-controller-manager (EndpointSliceController):
+  https://github.com/kubernetes/kubernetes/blob/073ce0e34bc6529d9dc81fa98a9b3fc75d90f40d/staging/src/k8s.io/endpointslice/reconciler_test.go#L2031-L2129
+
+Tests which exercise the "switch" of the feature gate itself (i.e. what happens
+if I disable a feature gate after having objects written with the new field) are
+missing and will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
-_This section will be completed when targeting beta to a release._
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Partial rollouts and rollbacks which result in some version skew between
+kube-apiserver, kube-controller-manager and kube-proxy should get handled as per
+described in [Version Skew Strategy](#version-skew-strategy). 
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Running workloads should not get affected any differently then how they would in
+the absence of this feature.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- The metric `endpoint_slice_controller_syncs` (within kube-controller-manager)
+  tracks the success and failures of reconciliations performed by the
+  EndpointSlice reconciler. Relative increase in the failures reported by this
+  metric should serve as a signal for rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Yes, testing was done using the following steps:
+
+1. Create a v1.30.0 Kind cluster with the `ServiceTrafficDistribution` feature-gate:
+
+```bash
+kind create cluster --name=traffic-dist --config=<(cat <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  ServiceTrafficDistribution: true
+nodes:
+- role: control-plane
+  image: kindest/node:v1.30.0
+- role: worker
+  image: kindest/node:v1.30.0
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "topology.kubernetes.io/zone=zone-a"
+- role: worker
+  image: kindest/node:v1.30.0
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "topology.kubernetes.io/zone=zone-b"
+EOF
+)
+```
+
+2. Create a Service using the new `trafficDistribution` field.
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-svc
+spec:
+  type: ClusterIP
+  trafficDistribution: PreferClose
+  ports:
+  - name: tcp
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: demo-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: demo-app
+  name: demo
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: demo-app
+  template: 
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      containers:
+      - name: agnhost
+        image: gcr.io/kubernetes-e2e-test-images/agnhost:2.8
+        args: ["serve-hostname", "--port", "8080"]
+EOF
+```
+
+3. Verify that the endpointslice has the correct hints:
+
+```bash
+kubectl get endpointslice -l kubernetes.io/service-name=demo-svc -o yaml
+```
+
+4. Rollback kube-apiserver to v1.29.0
+
+```bash
+docker exec -it traffic-dist-control-plane /bin/bash
+
+# Edit file, remove feature flag and downgrade image to v1.29.0
+```
+
+5. Verify that the endpointslice are still there but no longer have any hints:
+
+```bash
+kubectl get endpointslice -l kubernetes.io/service-name=demo-svc -o yaml
+```
+
+6. Upgrade kube-apiserver back to v1.30.0
+
+```bash
+docker exec -it traffic-dist-control-plane /bin/bash
+
+# Edit file:
+# - Add feature flag: "--feature-gates=ServiceTrafficDistribution=true"
+# - Upgrade image to v1.30.0
+```
+
+7. Verify that the service has the `trafficDistribution` field visible again
+   (since it persisted in etcd) and the hints are back in the EndpointSlices:
+
+```bash
+kubectl get svc demo-svc -o yaml
+kubectl get endpointslice -l kubernetes.io/service-name=demo-svc -o yaml
+```
+
+8. Exec into one of the worker nodes and verify that kube-proxy has correctly
+   programmed the iptable rules for the service. The rules should only contain
+   endpoints which are local to that zone:
+
+```bash
+docker exec -it traffic-dist-worker /bin/bash
+iptables-save
+```
+
+8. Now downgrade the kube-proxy pods to v1.29.0
+
+```bash
+# Edit:
+# - DaemonSet by changing the image to v1.29.0
+# - ConfigMap by removing the ServiceTrafficDistribution feature-flag.
+kubectl edit -n kube-system ds/kube-proxy cm/kube-proxy
+```
+
+9. Observe the iptable rules within some worker node. This time around, the
+   rules should contain all endpoints for the service.
+
+```bash
+docker exec -it traffic-dist-worker /bin/bash
+iptables-save
+```
+
+10. Although kube-proxy was downgraded, the Service should still have the
+    `trafficDistribution` field set and similarly the EndpointSlices should
+    still have the hints.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -679,78 +816,73 @@ heuristics (and only support the existing `Auto`/`Disabled` keywords)
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-_This section will be completed when targeting beta to a release._
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+A new metric `endpoint_slice_controller_services_count_by_traffic_distribution`
+is exposed by kube-controller-manager which can be used to determine if some
+Service is using the `trafficDistribution` field. The metric label
+`traffic_distribution` can further be used to drill down on the number of
+Services using some specific `trafficDistribution`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
+- [X] Events
+  - A failed reconciliation in the EndpointSlice controller should be visible as
+    as Event on the respective Service object.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: A successful reonciliation by the EndpointSlice controller should
+    be visible by checking the EndpointSlices and verifying that is has the
+    `hints` populated. All endpoints within the EndpointSlice must have hints
+    for kube-proxy to consider them (when programming routing rules).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+It's challenging to provide exact figures without specific data, but a "normal"
+quality of service should ensure the following:
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+- The EndpointSlice controller (control-plane) consistently and accurately
+  configures EndpointSlices (including hints).
+- kube-proxy (data-plane) successfully establishes routing rules based on those
+  EndpointSlices.
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+Any significant increase in errors within these processes could indicate a
+degradation in the feature's quality of service.
+
+The following section outlines the metrics that can provide a general indication
+of the quality of service for this feature.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+- [X] Metrics
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Metric name: `endpoint_slice_controller_syncs`
+
+    * [Optional] Aggregation method: Counter (incremented each time EndpointSliceReconciler reconciles an EndpointSlice)
+
+    * Components exposing the metric: kube-controller-manager (or more precisely, the EndpointSlice controller)
+
+    * Detail: The count of this metric for `success` and `failure` label values
+      serves as a useful indicator
+
+  - Metric name: `kubeproxy_sync_proxy_rules_last_timestamp_seconds`
+
+    * [Optional] Aggregation method: Gauge (Updated on each kube-proxy sync)
+
+    * Components exposing the metric: kube-proxy
+
+    * Detail: An unusually old timestamp may signal a problem with kube-proxy's
+      ability to update routing rules based on EndpointSlice information.
+     
+
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
@@ -793,51 +925,46 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
-_This section will be completed when targeting beta to a release._
-
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+Unavailability of those components implies that users will not be able to
+create/update any Services. For already existing Services, they should continue
+to serve traffic in accordance with the value of their `trafficDistribution`
+field.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+**Feature Usage Failure Modes:**
+
+- Ensure the `trafficDistribution` field is present in the Service spec.
+- Check for any events related to the Service that might indicate failures in
+  the EndpointSlice controller's reconciliation process.
+- Confirm that EndpointSlices are being created for the Service.
+- Ensure that the EndpointSlices have the appropriate hints populated. For
+  `PreferClose`, the hints should align with the endpoint zones, which can be
+  verified within the EndpointSlice itself.
+- Having confirmed that ALL endpoints have some hint should ensure that
+  kube-proxy accepts the hints and programs the routing accordingly.
+- If traffic patterns remain unexpected, examine the kube-proxy logs for any
+  error messages that might indicate issues.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+To determine the problem, the logs for the EndpointSlice controller (within
+kube-controller-manager) and kube-proxy can be checked.
+
+In terms of mitigation, there are several options:
+- Remove the `trafficDistribution` field from the Services.
+- Disable the `ServiceTrafficDistribution` feature flag (this should work for
+  now since the feature is in beta and the feature-flag should still exist)
+- Downgrade to a lower version.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- First merged version of the KEP: https://github.com/kubernetes/enhancements/pull/4445
+- Changes released in alpha as part of Kubernetes 1.30
+- KEP updated to rename field names with the choices made during implementation.
+- KEP updated with PRR sections filled, targeting beta release in Kubernetes 1.31
 
 ## Drawbacks
 
