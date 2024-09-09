@@ -1789,6 +1789,7 @@ Fourth iteration (1.29):
 - Graduate e2e tests as conformance tests
 - Lock the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates
 - Declare deprecation of the `PodDisruptionConditions` and `JobPodFailurePolicy` feature-gates in documentation
+- Modify the code to ignore the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
 
 <!--
 **Note:** Generally we also wait at least two releases between beta and
@@ -1805,7 +1806,6 @@ in back-to-back releases.
 #### Deprecation
 
 In GA+2 release:
-- Modify the code to ignore the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
 - Remove the `PodDisruptionConditions` and `JobPodFailurePolicy` feature gates
 
 ### Upgrade / Downgrade Strategy
@@ -2411,6 +2411,14 @@ technics apply):
 - 2023-03-18: PR "API-initiated eviction: handle deleteOptions correctly" ([link](https://github.com/kubernetes/kubernetes/pull/116554))
 - 2023-05-23: PR "Add DisruptionTarget condition when preempting for critical pod" ([link](https://github.com/kubernetes/kubernetes/pull/117586))
 - 2023-10-19: PR "Use Patch instead of SSA for Pod Disruption condition" ([link](https://github.com/kubernetes/kubernetes/pull/121103))
+- 2024-06-18: PR "scheduler: Test that the DisruptionTarget condition is added at preemption time" ([link](https://github.com/kubernetes/kubernetes/pull/125533))
+- 2024-07-09: PR "Graduate PodDisruptionConditions to stable" ([link](https://github.com/kubernetes/kubernetes/pull/125461))
+- 2024-07-12: PR "Graduate JobPodFailurePolicy to stable" ([link](https://github.com/kubernetes/kubernetes/pull/125442))
+- 2024-07-12: PR "Use omitempty for optional fields in Job Pod Failure Policy" ([link](https://github.com/kubernetes/kubernetes/pull/126046))
+- 2024-07-17: PR "Promote JobPodFailurePolicy and PodDisruptionConditions e2e tests to Conformance" ([link](https://github.com/kubernetes/kubernetes/pull/125482))
+- 2024-07-17: PR "clean up codes after PodDisruptionConditions was promoted to GA" ([link](https://github.com/kubernetes/kubernetes/pull/125994))
+- 2024-07-18: PR "cleanup after JobPodFailurePolicy is promoted to GA" ([link](https://github.com/kubernetes/kubernetes/pull/126102))
+- 2024-08-14: PR "Fix a scheduler preemption issue where the victim isn't properly patched, leading to preemption not functioning as expected" ([link](https://github.com/kubernetes/kubernetes/pull/126644))
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
