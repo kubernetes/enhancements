@@ -1154,15 +1154,51 @@ to revisiting the CrashLoopBackoff behaviors for common use cases:
 
 For step (2), the method to allow the Pods to opt-in was by a new enum value,
 `Rapid`, for a Pod's `RestartPolicy`. In this case, Pods and restartable init
-(aka sidecar) containers will be able to set a new OneOf value, `restartPolicy:
+(aka sidecar) containers would be able to set a new OneOf value, `restartPolicy:
 Rapid`, to opt in to an exponential backoff decay that starts at a lower initial
-value and maximizes to a lower cap. This proposal suggests we start with a new
+value and maximizes to a lower cap. This proposal suggested we start with a new
 initial value of 250ms and cap of 1 minute, and analyze its impact on
 infrastructure during alpha.
 
 !["A graph showing today's decay curve against a curve with an initial value of
 250ms and a cap of 1 minute for a workload failing every 10 s"](todayvsrapid.png
 "rapid vs todays' CrashLoopBackoff")
+
+**Why not?**: There was still a general community consensus that even though
+this was opt-in, giving the power to reduce the backoff curve to users in
+control of the pod manifest -- who as a persona are not necessarily users with
+cluster-wide or at least node-wide visibility into load and scheduling -- was
+too risky to global node stability. 
+
+In addition, overriding an existing Pod spec
+enum value, while convenient, required detailed management of the version skew
+period, at minimum across 3 kubelet versions per the [API policy for new enum values in existing fields](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#new-enum-value-in-existing-field). In practice
+this meant the API server and kubelets across all nodes must be coordinated.
+
+Firstly, `Rapid` must be a valid option to the `restartPolicy` in the API server
+(which would only be possible if/when the API server was updated), and secondly,
+the `Rapid` value must be interpretable by all kubelets on every node.
+Unfortunately, it is not possible for the API server to be aware of what version
+each kubelet is on, so it cannot serve `Rapid` as `Always` preferentially to
+each kubelet depending on its version. Instead, each kubelet must be able to
+handle this value properly, both at n-3 kubelet version and -- more easily -- at
+its contemporary kubelet version. For updated kubelet versions, each kubelet
+would be able to detect if it has the feature gate on, and if so, interpret
+`Rapid` to use the new rapid backoff curve; and if the feature gate is off,
+interpret it instead as `Always`. But at earlier kubelet versions, `Rapid` must
+be ignored in favor of `Always`. Unfortunately for this KEP, the default value
+for `restartPolicy` is Never, though even more unfortunately, it looks like
+different code paths use a different default value (thank you
+[@tallclair](https://github.com/tallclair)!!;
+[1](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/container/helpers.go#L105)
+defaults to `Always`,
+[2](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kubelet_pods.go#L1713)
+defaults to `OnFailure`,
+[3](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L838-L859)
+defaults to `Always`, and
+[4](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/status/status_manager.go#L554-L573)
+defaults to `Never`), so if kubelet drops unexpected enum values for
+`restartPolicy`, a Pod with `Rapid` will be misconfigured by an old kubelet.
 
 ### Flat-rate restarts for `Succeeded` Pods
 
@@ -1262,10 +1298,7 @@ to
 
 The author is aware that these solutions still do not address use cases where
 users have taken advantage of the "cleaner" state "guarantees" of a restarted
-pod to alleviate security or privacy concerns between sequenced Pod runs. In
-these cases, during alpha, it is recommended to take advantage of the
-`restartPolicy: Rapid` option, with expectations that on further infrastructure
-analysis this behavior may become even faster.
+pod to alleviate security or privacy concerns between sequenced Pod runs.
 
 This decision here does not disallow the possibility that this is solved in
 other ways, for example:
