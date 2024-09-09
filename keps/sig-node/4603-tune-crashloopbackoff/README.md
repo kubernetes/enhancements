@@ -202,15 +202,7 @@ curve
 Both the decay to 5 minute back-off delay, and the 10 minute recovery threshold,
 are considered too conservative, especially in cases where the exit code was 0
 (Success) and the pod is transitioned into a "Completed" state or the expected
-length of the pod run is less than 10 minutes. This KEP proposes a two-pronged
-approach to revisiting the CrashLoopBackoff behaviors for common use cases:
-1. modifying the standard backoff delay to start faster but decay to the same 5m
-   threshold
-2. allowing Pods to opt-in to an even faster backoff curve with a lower max cap
-
-For each of these changes, the exact values are subject to modification in the
-alpha period in order to empirically derive defaults intended to
-maintain node stability.
+length of the pod run is less than 10 minutes.
 
 ## Motivation
 
@@ -317,10 +309,10 @@ This design seeks to incorporate a two-pronged approach:
 
 1. Change the existing initial value for the backoff curve to stack more retries
    earlier for all restarts (`restartPolicy: OnFailure` and `restartPolicy:
-   Always`)
-2. Provide a `restartPolicy: Rapid` option to configure even faster restarts for
-specific Pod/Container (particularly sidecar containers), regardless of exit
-code, reducing the max wait to 1 minute
+   Always`) <<[UNRESOLVED]>>
+2. Provide a option to configure even faster restarts for specific Pod/Container
+(particularly sidecar containers)/Node/Cluster, regardless of exit code,
+reducing the max wait to 1 minute <<[/UNRESOLVED]>>
 
 In addition, part of the alpha period will be dedicated entirely to
    systematically stress testing kubelet and API Server with different
@@ -328,8 +320,8 @@ In addition, part of the alpha period will be dedicated entirely to
 KEP requires instrumentation of enhanced visibility into pod restart behavior to
 enable Kubernetes benchmarking during the alpha phase. During the benchmarking
 period of alpha, kubelet memory and CPU, API server latency, and pod restart
-latency will be observed and analyzed to define the maximum allowable
-restart rate for fully saturated nodes.
+latency will be observed and analyzed to define the maximum allowable restart
+rate for fully saturated nodes.
 
 Longer term, these
 metrics will also supply cluster operators the data necessary to better analyze
@@ -337,10 +329,11 @@ and anticipate the change in load and node stability as a result of upgrading to
 these changes.
 
 Note that proposal will NOT change:
-* backoff behavior for Pods transitioning from the "Success" state -- see
-  [Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold)
+* backoff behavior for Pods transitioning from the "Success" state -- see [here
+  in Alternatives Considered](#on-success-and-the-10-minute-recovery-threshold)
 * the time Kubernetes waits before resetting the backoff counter -- see the
-  [Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold)
+  [here inAlternatives
+  Considered](#on-success-and-the-10-minute-recovery-threshold)
 * the ImagePullBackoff -- out of scope, see [Design
   Details](#relationship-with-imagepullbackoff)
 * changes that address 'late recovery', or modifications to backoff behavior
@@ -357,19 +350,6 @@ reached. This proposal suggests we start with a new initial value of 1s, and
 analyze its impact on infrastructure during alpha.
 
 ![](todayvs1sbackoff.png)
-
-
-### API opt in for max cap decay curve (`restartPolicy: Rapid`)
-
-Pods and restartable init (aka sidecar) containers will be able to set a new
-OneOf value, `restartPolicy: Rapid`, to opt in to an exponential backoff decay
-that starts at a lower initial value and maximizes to a lower cap. This proposal
-suggests we start with a new initial value of 250ms and cap of 1 minute, and
-analyze its impact on infrastructure during alpha.
-
-!["A graph showing today's decay curve against a curve with an initial value of
-250ms and a cap of 1 minute for a workload failing every 10 s"](todayvsrapid.png
-"rapid vs todays' CrashLoopBackoff")
 
 
 ### User Stories
@@ -436,77 +416,6 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
-#### On Success and the 10 minute recovery threshold
-
-The original version of this proposal included a change specific to Pods
-transitioning through the "Succeeded" phase to have flat rate restarts. On
-further discussion, this was determined to be both too risky and a non-goal for
-Kubernetes architecturally, and moved into the Alternatives section. The risk
-for bad actors overloading the kubelet is described in the Alternatives section
-and is somewhat obvious. The larger point of it being a non-goal within the
-design framework of Kubernetes as a whole is less transparent and discussed
-here.
-
-After discussion with early Kubernetes contributors and members of SIG-Node,
-it's become more clear to the author that the prevailing Kubernetes assumption
-is that that on its own, the Pod API best models long-running containers that
-rarely or never exit themselves with "Success"; features like autoscaling,
-rolling updates, and enhanced workload types like StatefulSets assume this,
-while other workload types like those implemented with the Job and CronJob API
-better model workloads that do exit themselves, running until Success or at
-predictable intervals. In line with this assumption, Pods that run "for a while"
-(longer than 10 minutes) are the ones that are "rewarded" with a reset backoff
-counter -- not Pods that exit with Success. Ultimately, non-Job Pods are not
-intended to exit Successfully in any meaningful way to the infrastructure, and
-quick rerun behavior of any application code is considered to be an application
-level concern instead.
-
-Therefore, even though it is widely desired by commenters on
-[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), this
-KEP is not pursuing a different backoff curve for Pods exiting with Success any
-longer.
-
-For Pods that are today intended to rerun after Success, it is instead suggested
-to 
-
-1. exec the application logic with an init script or shell that reruns it
-   indefinitely, like that described in
-   [Kubernetes#57291#issuecomment-377505620](https://github.com/kubernetes/kubernetes/issues/57291#issuecomment-377505620):
-  ```
-  #!/bin/bash
-
-  while true; do
-      python /code/app.py
-  done
-  ```
-2. or, if a shell in particular is not desired, implement the application such
-   that it starts and monitors the restarting process inline, or as a
-   subprocess/separate thread/routine
-
-The author is aware that these solutions still do not address use cases where
-users have taken advantage of the "cleaner" state "guarantees" of a restarted
-pod to alleviate security or privacy concerns between sequenced Pod runs. In
-these cases, during alpha, it is recommended to take advantage of the
-`restartPolicy: Rapid` option, with expectations that on further infrastructure
-analysis this behavior may become even faster.
-
-This decision here does not disallow the possibility that this is solved in
-other ways, for example:
-1. the Job API, which better models applications with meaningful Success states,
-   introducing a variant that models fast-restarting apps by infrastructure
-   configuration instead of by their code, i.e. Jobs with `restartPolicy:
-   Always` and/or with no completion count target
-2. support restart on exit 0 as a directive in the container runtime or as a
-   common independent tool, e.g. `RESTARTABLE CMD mycommand` or
-   `restart-on-exit-0 -- mycommand -arg -arg -arg`
-3. formalized reaper behavior such as discussed in
-   [Kubernetes#50375](https://github.com/kubernetes/kubernetes/issues/50375)
-
-However, there will always need to be some throttling or quota for restarts to
-protect node stability, so even if these alternatives are pursued separately,
-they will depend on the analysis and benchmarking implementation during this
-KEP's alpha stage to stay within node stability boundaries. 
-
 
 ### Risks and Mitigations
 
@@ -531,14 +440,15 @@ accompanying API request, if the requests become rapid enough due to fast enough
 churn of Pods through CrashLoopBackoff phases, the central API server could
 become unresponsive, effectively taking down an entire cluster.
 
-The same risk exists for the `Rapid` feature, which, while not default, is by
-design a more severe reduction in the decay behavior. It can abused by
-application developers that can edit their Pod template manifests, and in the
-worst case cause nodes to fully saturate with `Rapid`ly restarting pods that
-will never recover, risking similar issues as above: taking down nodes
-or at least nontrivially slowing kubelet, or increasing the API requests to
-store backoff state so significantly that the central API server is unresponsive
-and the cluster fails.
+The same risk exists for the <<[UNRESOLVED]>> per Node <<[/UNRESOLVED]>>
+feature, which, while not default, is by design a more severe reduction in the
+decay behavior. It can abused by <<[UNRESOLVED]>> cluster operators
+<<[/UNRESOLVED]>>, and in the worst case cause nodes to fully saturate with
+<<[UNRESOLVED]>> instantly <<[/UNRESOLVED]>> restarting pods that will never
+recover, risking similar issues as above: taking down nodes or at least
+nontrivially slowing kubelet, or increasing the API requests to store backoff
+state so significantly that the central API server is unresponsive and the
+cluster fails.
 
 During alpha, naturally the first line of defense is that the enhancements, even
 the reduced "default" baseline curve for CrashLoopBackoff, are not usable by
@@ -547,29 +457,31 @@ separately as kubelet flags, so clusters will only be affected by each risk if
 the cluster operator enables the new features during the alpha period.
 
 Beyond this, there are two main mitigations during alpha: conservativism in
-changes to the default behavior, and API opt-in and redeployment required for
-the more aggressive behavior.
+changes to the default behavior, and <<[UNRESOLVED]>> per-node <<[/UNRESOLVED]>>
+opt-in and redeployment required for the more aggressive behavior.
 
 The alpha changes to the default backoff curve were chosen because they are
-minimal -- the proposal maintains the existing rate and max cap, and reduces the
-initial value to the point that only introduces 3 excess restarts per pod, the
-first 2 excess in the first 10 seconds and the last excess following in the next
-30 seconds (see [Design Details](#front-loaded-decay-curve-methodology)). For a
-hypothetical node with the max 110 pods all stuck in a simultaneous
-CrashLoopBackoff, API requests to change the state transition would increase at
-its fastest period from ~110 requests/10s to 330 requests/10s. By passing this
-minimal change through the existing SIG-scalability tests, while pursuing manual
-and more detailed periodic benchmarking during the alpha period, we can increase
-the confidence in this change and in the possibility of reducing further in the
+minimal -- <<[ UNRESOLVED]>>the proposal maintains the existing rate and max
+cap, and reduces the initial value to the point that only introduces 3 excess
+restarts per pod, the first 2 excess in the first 10 seconds and the last excess
+following in the next 30 seconds (see [Design
+Details](#front-loaded-decay-curve-methodology)). For a hypothetical node with
+the max 110 pods all stuck in a simultaneous CrashLoopBackoff, API requests to
+change the state transition would increase at its fastest period from ~110
+requests/10s to 330 requests/10s. <<[/UNRESOLVED]>> By passing this minimal
+change through the existing SIG-scalability tests, while pursuing manual and
+more detailed periodic benchmarking during the alpha period, we can increase the
+confidence in this change and in the possibility of reducing further in the
 future.
 
-For the `Rapid` case, because the change is more significant, including lowering
-the max cap, there is more risk to node stability expected. This change is of
-interest to be tested in the alpha period by end users, and is why it is still
-included with API opt-in even though the risks are higher. That being said it is
-still a relatively conservative change in an effort to minimize the unknown
-changes for fast feedback during alpha, while improved benchmarking and testing
-occurs. For a hypothetical node with the max 110 pods all stuck in a
+For the <<[UNRESOLVED]>> per node <<[/UNRESOLVED]>> case, because the change is
+more significant, including lowering the max cap, there is more risk to node
+stability expected. This change is of interest to be tested in the alpha period
+by end users, and is why it is still included with opt-in even though the risks
+are higher. That being said it is still a relatively conservative change in an
+effort to minimize the unknown changes for fast feedback during alpha, while
+improved benchmarking and testing occurs. <<[UNRESOLVED update with real stress
+test results]>> For a hypothetical node with the max 110 pods all stuck in a
 simultaneous `Rapid` CrashLoopBackoff, API requests to change the state
 transition would increase from ~110 requests/10s to 440 requests/10s, and since
 the max cap would be lowered, would exhibit up to 440 requests in excess every
@@ -579,7 +491,7 @@ configuration required in the Pod manifest, being against an immutable field,
 will require the Pods in question to be redeployed. This means it is unlikely
 that all Pods will be in a simultaneous CrashLoopBackoff even if they are
 designed to quickly crash, since they will all need to be redeployed and
-rescheduled.
+rescheduled. <<[/UNRESOLVED]>>
 
 ## Design Details 
 
@@ -645,6 +557,8 @@ Among these modeled initial values, we would get between 3-7 excess restarts per
 backoff lifetime, mostly within the first three time windows matching today's
 restart behavior.
 
+<<[UNRESOLVED include stress test data now]>> <<[/UNRESOLVED]>>
+
 ### Rapid curve methodology
 
 For some users in
@@ -659,37 +573,18 @@ configure (by container, node, or exit code) the backoff to close to 0 seconds.
 This KEP considers it out of scope to implement fully user-customizable
 behavior, and too risky without full and complete benchmarking to node stability
 to allow legitimately crashing workloads to have a backoff of 0, but it is in
-scope for the first alpha to provide users a way to opt workloads in to a even
-faster restart behavior.
+scope for the first alpha to provide users a way to <<[UNRESOLVED]>> opt nodes
+in <<[/UNRESOLVED]>> to a even faster restart behavior.
 
 The finalization of the initial and max cap can only be done after benchmarking.
 But as a conservative first estimate for alpha in line with maximums discussed
 on [Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291),
-the initial curve is selected at initial=250ms / cap=1 minute, but during
-benchmarking this will be modelled against kubelet capacity, potentially
-targeting something closer to an initial value near 0s, and a cap of 10-30s. To
-further restrict the blast radius of this change before full and complete
-benchmarking is worked up, this is gated by a separate alpha feature gate and is
-opted in to per Pod using a new `restartPolicy: Rapid` value, described below.
-
-
-#### New OneOf for `restartPolicy` -- `Rapid`
-`restartPolicy` is an immutable field in podSpec and containerSpec. If set in
-podSpec, each container in the Pod inherits the Pod's restart policy of either
-`Never` (default), `OnFailure`, or `Always`; for a Job, the only valid options
-are `Never` and `OnFailure`. In containerSpec, it is valid ONLY on init
-containers and ONLY as `Always`, to configure a sidecar container that runs
-continuously alongside the regular containers in the Pod.
-
-This KEP will support a new value for this field, `Rapid`, which on feature flag
-disablement will be interpreted as `Always`. If `restartPolicy: Rapid` is set or
-inherited for a container and the feature flag for this feature is turned on for
-a given cluster, that container will follow the new Rapid backoff curve.
-
-Due to configuring this as another option to this field, this would make Rapid
-backoff possible for restartable init (aka sidecar) containers, Pods,
-Deployments, StatefulSets, ReplicaSets, DaemonSets, but NOT pure init
-containers, Jobs or CronJobs.
+the initial curve is selected at <<[UNRESOLVED]>>initial=250ms / cap=1 minute,
+<<[/UNRESOLVED]>> but during benchmarking this will be modelled against kubelet
+capacity, potentially targeting something closer to an initial value near 0s,
+and a cap of 10-30s. To further restrict the blast radius of this change before
+full and complete benchmarking is worked up, this is gated by a separate alpha
+feature gate and is opted in to per <<[UNRESOLVED]>> node <<[/UNRESOLVED]>>.
 
 ### Kubelet overhead analysis
 
@@ -709,6 +604,8 @@ does during pod restarts.
 * Logs information about all those container operations (utilizing disk IO and
   “spamming” logs)
 
+ <<[UNRESOLVED add the rest of the analysis since 1.31]>>  <<[/UNRESOLVED]>>
+
 ### Benchmarking
 
 Again, let it be known that by definition this KEP will cause pods to restart
@@ -720,8 +617,7 @@ risk posed to their specific clusters on upgrade.
 
 To best reason about the changes in this KEP, we requires the ability to
 determine, for a given percentage of heterogenity between "Succeeded"
-terminating pods, crashing pods whose `restartPolicy: Always`, and crashing pods
-whose `restartPolicy: Rapid`, 
+terminating pods, and crashing pods whose `restartPolicy: Always`:
  * what is the load and rate of Pod restart related API requests to the API
    server?
  * what are the performance (memory, CPU, and pod start latency) effects on the
@@ -760,6 +656,7 @@ container before restarting, and the number of container restarts, to articulate
 the rate and load of restart related API requests and the performance effects on
 kubelet.
 
+<<[UNRESOLVED add initial benchmarking test data]>> <<[/UNRESOLVED]>>
 
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
@@ -854,8 +751,6 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-* Version skew: must have a test to address kubelet handling of noninterpretable
-  `restartPolicy` values; in this specific case, the value `Rapid`
 * Test coverage of proper requeue behavior; see
   https://github.com/kubernetes/kubernetes/issues/123602
 
@@ -918,8 +813,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 - k8s.io/kubernetes/test/e2e/node/kubelet_perf: for a given percentage of
-heterogenity between "Succeeded" terminating pods, crashing pods whose
-`restartPolicy: Always`, and crashing pods whose `restartPolicy: Rapid`, 
+heterogenity between "Succeeded" terminating pods, and crashing pods whose
+`restartPolicy: Always``, 
  * what is the load and rate of Pod restart related API requests to the API
    server?
  * what are the performance (memory, CPU, and pod start latency) effects on the
@@ -930,18 +825,17 @@ heterogenity between "Succeeded" terminating pods, crashing pods whose
 #### Alpha
 
 - Changes to existing backoff curve implemented behind a feature flag 
-    1. Front-loaded decay curve for all workloads with
-       `restartPolicy: Always`
-    3. Front-loaded, low max cap backoff curve for workloads with `restartPolicy:
-       Rapid`
-- New OneOf option `Rapid` for `pod.spec.restartPolicy` and
-  `pod.spec.container.restartPolicy` (restartable init aka sidecar containers
-  only), converted to `Always` on downgrade or without feature flag
+    1. Front-loaded decay curve for all workloads with `restartPolicy: Always`
+       <<[UNRESOLVED]>>
+    2. Front-loaded, low max cap backoff curve for nodes workloads with XYZ
+       config
+- New XYZ kubelet config convertable to ABC on downgrade or without feature flag
+<<[/UNRESOLVED]>>
 - Metrics implemented to expose pod and container restart policy statistics,
   exit states, and runtimes
 - Initial e2e tests completed and enabled
   * Feature flag on or off
-  * pod and container restart policy `Rapid` upgrade and downgrade path
+  * <<[UNRESOLVED]>>node upgrade and downgrade path <<[/UNRESOLVED]>>
 - Fix https://github.com/kubernetes/kubernetes/issues/123602 if this blocks the
   implementation, otherwise beta criteria
 - Low confidence in the specific numbers/decay rate
@@ -963,7 +857,7 @@ heterogenity between "Succeeded" terminating pods, crashing pods whose
 - Remove the feature flag code
 - Confirm the exponential backoff decay curve related tests and code are still
   in use elsewhere and do not need to be removed
-- Conformance test added for pods/sidecar containers with `restartPolicy: Rapid`
+- Conformance test added for <<[UNRESOLVED]>> configured nodes <<[/UNRESOLVED]>>
 
 
 <!--
@@ -1058,26 +952,26 @@ For an existing cluster, no changes are required to configuration, invocations
 or API objects to make an upgrade.
 
 To make use of this enhancement, on upgrade, the feature gate must first be
-turned on. Then, if any Pods want to opt into the `Rapid` backoff decay curve,
-they must be completely redeployed with `restartPolicy: Rapid`, since that field
-cannot be patched.
+turned on. Then, if any <<[UNRESOLVED]>>nodes want to use a different backoff
+curve, their kubelet must be completely redeployed with XYZ kubelet config.
+<<[/UNRESOLVED]>>
 
 To stop use of this enhancement, there are two options. 
 
-On a per-Pod basis, Pods can be completely redeployed with `restartPolicy` set
-to something besides `Rapid`. They will no longer use the `Rapid` backoff curve;
-since the Pods have been completely redeployed, they will lose their prior
-backoff counter anyways and, if restarted, will start from the beginning of
-their backoff curve (either the original one with initial value 10s, or the new
-baseline with initial value 1s, depending on whether they've turned on the
-`ReduceDefaultCrashLoopBackoffDecay` feature gate).
+On a <<[UNRESOLVED]>> per-node basis, nodes can be completely redeployed with
+XYZ kubelet config set to ABC. Since the Pods have been completely redeployed,
+they will lose their prior backoff counter anyways and, if restarted, will start
+from the beginning of their backoff curve (either the original one with initial
+value 10s, or the new baseline with initial value 1s, depending on whether
+they've turned on the `ReduceDefaultCrashLoopBackoffDecay` feature gate).
+<<[/UNRESOLVED]>>
 
 Or, the entire cluster can be restarted with the
 `EnableRapidCrashLoopBackoffDecay` feature gate turned off. In this case, any
-Pod configured with `restartPolicy: Rapid` will instead serve as `restartPolicy:
-Always` and use the default backoff curve. Again, since the cluster was
-restarted and Pods were redeployed, they will not maintain prior state and will
-start at the beginning of their backoff curve.
+<<[UNRESOLVED]>>Node configured with a different backoff curve will instead use
+the default backoff curve. Again, since the cluster was restarted and Pods were
+redeployed, they will not maintain prior state and will start at the beginning
+of their backoff curve.<<[/UNRESOLVED]>>
 
 ### Version Skew Strategy
 
@@ -1098,461 +992,15 @@ For the default backoff curve, no coordination must be done between the control
 plane and the nodes; all behavior changes are local to the kubelet component and
 its start up configuration.
 
-For the `Rapid` case, the API server and kubelets across all nodes must be
-coordinated:
-
-Firstly, `Rapid` must be a valid option to the `restartPolicy` in the API
-server, which will only be possible if the API server is updated to 1.31. 
-
-Secondly, the `Rapid` value must be interpretable by all kubelets on every node.
-Unfortunately, it is not possible for the API server to be aware of what version
-each kubelet is on, so it cannot serve `Rapid` as `Always` preferentially to
-each kubelet depending on its version. Instead, each kubelet must be able to
-handle this value properly, both at n-3 kubelet version and -- more easily -- at
-its contemporary 1.31+ kubelet version. At 1.31+ kubelet version, each kubelet
-will be able to detect if it has the feature gate on, and if so, interpret
-`Rapid` to use the new rapid backoff curve; and if the feature gate is off,
-interpret it instead as `Always`. But at earlier kubelet versions, `Rapid` must
-be ignored in favor of `Always`. Unfortunately for this KEP, the default value
-for `restartPolicy` is Never, so if kubelet drops unexpected enum values for
-`restartPolicy`, a Pod with `Rapid` will be misconfigured by an old kubelet to
-never restart.
-
-There are two options to deal with this version skew issue:
-
-1. Follow the restrictions
-   [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#new-enum-value-in-existing-field),
-   implement the fallback to `Always` in kubelet, and wait 3 releases before the
-   API server is allowed to serve the new enum value to honor the n-3 kubelet
-   restriction, or 
-2. introduce the `Rapid` policy as a different field instead, for example,
-   `backoffCurve: Rapid` or even more transiently, `alphaBackoffCurve: Rapid`.
-   Even though the Pod API is already at v1, adding fields to GA APIs is
-   [allowed](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-a-field)
-   without changing the API version. As this is an alpha field, it can be
-   deprecated later.
+For the  <<[UNRESOLVED]>> node case, since it is local to each kubelet and the
+restart logic is within the responsibility of a node's local kubelet, no
+coordination must b e done between the control plane and the nodes.
+<<[/UNRESOLVED]>>
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
-### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
-###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay`
-    - Components depending on the feature gate: `kubelet`
-  - Feature gate name: `EnableRapidCrashLoopBackoffDecay`
-    - Components depending on the feature gate: `kube-apiserver`, `kubelet`
-
-###### Does enabling the feature change any default behavior?
-
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
-
-Yes, `ReduceDefaultCrashLoopBackoffDecay` changes the default backoff curve for
-exiting Pods and sidecar containers when `restartPolicy` is either `OnFailure`
-or `Always`.
-
-Since we currently only have anecdotal benchmarking, the alpha will implement
-the most conservative modeled initial value, 1s, resulting in 3 excess restarts
-per backoff lifetime. (See [this section](#front-loaded-decay-curve-methodology)
-for the source.]
-
-###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
-
-Yes, disable is supported.
-
-For `ReduceDefaultCrashLoopBackoffDecay`, if this is disabled, once kubelet is
-restarted it will initialize the default backoff to the prior initial value of
-10s, and all restart delays thereafter will be calculated against this equation.
-
-For `EnableRapidCrashLoopBackoffDecay`, if this is disabled, once kube-apiserver
-is restarted it will serve `restartPolicy` fields set to `Rapid` as `Always`.
-
-###### What happens if we reenable the feature if it was previously rolled back?
-
-Both features can also be reenabled.
-
-For `ReduceDefaultCrashLoopBackoffDecay`, if this is reenabled, once kubelet is
-restarted it will initialize the default backoff again to the new initial value
-of 1s, and all restart delays thereafter will be calculated against this
-equation.
-
-For `EnableRapidCrashLoopBackoffDecay`, if this is disabled, once kube-apiserver
-is restarted it will serve `restartPolicy` fields set to `Rapid` again as
-`Rapid`, which kubelet will be able to interpret.
-
-###### Are there any tests for feature enablement/disablement?
-
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
-
-Yes, this requires tests for
-* switching `ReduceDefaultCrashLoopBackoffDecay` on or off
-* switching `EnableRapidCrashLoopBackoffDecay` off when there are workloads with
-  `restartPolicy: Rapid` set
-* switching `EnableRapidCrashLoopBackoffDecay` off when there are no workloads
-  with `restartPolicy: Rapid` set
-* switching `EnableRapidCrashLoopBackoffDecay` off, and then back on again, when
-  there are workloads with `restartPolicy: Rapid` set
-
-### Rollout, Upgrade and Rollback Planning
-
-<!--
-This section must be completed when targeting beta to a release.
--->
-
-###### How can a rollout or rollback fail? Can it impact already running workloads?
-
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
-###### What specific metrics should inform a rollback?
-
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
-This biggest bottleneck expected will be kubelet, as it is expected to get more
-restart requests and have to trigger all the overhead discussed in [Design
-Details](#kubelet-overhead-analysis) more often. Cluster operators should be
-closely watching these existing metrics:
-
-* Kubelet component CPU and memory
-* `kubelet_http_inflight_requests`
-* `kubelet_http_requests_duration_seconds`
-* `kubelet_http_requests_total`
-* `kubelet_pod_worker_duration_seconds`
-* `kubelet_runtime_operations_duration_seconds`
-
-Most important to the perception of the end user is Kubelet's actual ability to
-create pods, which we measure in the latency of a pod actually starting compared
-to its creation timestamp. The following existing metrics are for all pods, not
-just ones that are restarting, but at a certain saturation of restarting pods
-this metric would be expected to become slower and must be watched to determine
-rollback:
-* `kubelet_pod_start_duration_seconds`
-* `kubelet_pod_start_sli_duration_seconds`
-
-
-###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
-
-###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
-
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
-
-### Monitoring Requirements
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-###### How can an operator determine if the feature is in use by workloads?
-
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
-
-###### How can someone using this feature know that it is working for their instance?
-
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
-
-###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
-
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
-
-###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-
-### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
-
-###### Does this feature depend on any specific services running in the cluster?
-
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
-
-### Scalability
-
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-###### Will enabling / using this feature result in any new API calls?
-
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
-
-It will not result in NEW API calls.
-
-###### Will enabling / using this feature result in introducing new API types?
-
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
-
-No, this KEP will not result in any new API types.
-
-###### Will enabling / using this feature result in any new calls to the cloud provider?
-
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
-
-No, this KEP will not result in any new calls to the cloud provider.
-
-###### Will enabling / using this feature result in increasing size or count of the existing API objects?
-
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
-
-No, this KEP will not result in increasing size or count of the existing API objects.
-
-###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
-
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
-
-Maybe! As containers will be restarting more, this may affect "Startup latency
-of schedulable stateless pods", "Startup latency of schedule stateful pods".
-This is directly the type of SLI impact that a) the split between the default
-behavior change and the `Rapid` opt in is trying to mitigate, and b) one of the
-targets of the benchmarking period during alpha.
-
-###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
-
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
-
-Yes! We expect more CPU usage of kubelet as it processes more restarts. During
-the alpha benchmarking period, we will be quantifying that amount in fully and
-partially saturated nodes with both the new default backoff curve and the
-`Rapid` backoff curve.
-
-###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
-
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
-
-It's possible, and is why during this alpha period we must benchmark fully
-saturated nodes with the most aggressive restart characteristics.
-
-### Troubleshooting
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
-###### How does this feature react if the API server and/or etcd is unavailable?
-
-###### What are other known failure modes?
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
-###### What steps should be taken if SLOs are not being met to determine the problem?
+<<[UNRESOLVED removed when changing from 1.31 proposal to 1.32 proposal,
+incoming in a separate PR]>> <<[/UNRESOLVED]>>
 
 ## Implementation History
 
@@ -1573,6 +1021,8 @@ Major milestones might include:
   changes to baseline backoff curve, addition of opt-in `Rapid` curve, and
   change to constant backoff for `Succeeded` Pods
 * 06-06-2024: Removal of constant backoff for `Succeeded` Pods
+* 09-09-2024: Removal of `RestartPolicy: Rapid` in proposal, removal of PRR, in
+  order to merge a provisional and address the new 1.32 design in a cleaner PR
 
 ## Drawbacks
 
@@ -1666,7 +1116,27 @@ These overrides will exist for the following reasons:
 These had been selected because there are known use cases where changed restart
 behavior would benefit workloads epxeriencing these categories of failures.
 
-#### Flat-rate restarts for `Succeeded` Pods
+### `RestartPolicy: Rapid`
+
+In the 1.31 version of this proposal, this KEP proposed a two-pronged approach
+to revisiting the CrashLoopBackoff behaviors for common use cases:
+1. modifying the standard backoff delay to start faster but decay to the same 5m
+   threshold
+2. allowing Pods to opt-in to an even faster backoff curve with a lower max cap
+
+For step (2), the method to allow the Pods to opt-in was by a new enum value,
+`Rapid`, for a Pod's `RestartPolicy`. In this case, Pods and restartable init
+(aka sidecar) containers will be able to set a new OneOf value, `restartPolicy:
+Rapid`, to opt in to an exponential backoff decay that starts at a lower initial
+value and maximizes to a lower cap. This proposal suggests we start with a new
+initial value of 250ms and cap of 1 minute, and analyze its impact on
+infrastructure during alpha.
+
+!["A graph showing today's decay curve against a curve with an initial value of
+250ms and a cap of 1 minute for a workload failing every 10 s"](todayvsrapid.png
+"rapid vs todays' CrashLoopBackoff")
+
+### Flat-rate restarts for `Succeeded` Pods
 
 We start from the assumption that the "Succeeded" phase of a Pod in Kubernetes
 means that all workloads completed as expected. Most often this is colloquially
@@ -1714,6 +1184,78 @@ Something similar is already being taken advantage of by application developers
 via wrapper scripts, but this causes no extra strain on kubelet as it simply
 causes the container to run indefinitely and uses no kubelet overhead for
 restarts.
+
+#### On Success and the 10 minute recovery threshold
+
+The original version of this proposal included a change specific to Pods
+transitioning through the "Succeeded" phase to have flat rate restarts. On
+further discussion, this was determined to be both too risky and a non-goal for
+Kubernetes architecturally, and moved into the Alternatives section. The risk
+for bad actors overloading the kubelet is described in the Alternatives section
+and is somewhat obvious. The larger point of it being a non-goal within the
+design framework of Kubernetes as a whole is less transparent and discussed
+here.
+
+After discussion with early Kubernetes contributors and members of SIG-Node,
+it's become more clear to the author that the prevailing Kubernetes assumption
+is that that on its own, the Pod API best models long-running containers that
+rarely or never exit themselves with "Success"; features like autoscaling,
+rolling updates, and enhanced workload types like StatefulSets assume this,
+while other workload types like those implemented with the Job and CronJob API
+better model workloads that do exit themselves, running until Success or at
+predictable intervals. In line with this assumption, Pods that run "for a while"
+(longer than 10 minutes) are the ones that are "rewarded" with a reset backoff
+counter -- not Pods that exit with Success. Ultimately, non-Job Pods are not
+intended to exit Successfully in any meaningful way to the infrastructure, and
+quick rerun behavior of any application code is considered to be an application
+level concern instead.
+
+Therefore, even though it is widely desired by commenters on
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), this
+KEP is not pursuing a different backoff curve for Pods exiting with Success any
+longer.
+
+For Pods that are today intended to rerun after Success, it is instead suggested
+to 
+
+1. exec the application logic with an init script or shell that reruns it
+   indefinitely, like that described in
+   [Kubernetes#57291#issuecomment-377505620](https://github.com/kubernetes/kubernetes/issues/57291#issuecomment-377505620):
+  ```
+  #!/bin/bash
+
+  while true; do
+      python /code/app.py
+  done
+  ```
+2. or, if a shell in particular is not desired, implement the application such
+   that it starts and monitors the restarting process inline, or as a
+   subprocess/separate thread/routine
+
+The author is aware that these solutions still do not address use cases where
+users have taken advantage of the "cleaner" state "guarantees" of a restarted
+pod to alleviate security or privacy concerns between sequenced Pod runs. In
+these cases, during alpha, it is recommended to take advantage of the
+`restartPolicy: Rapid` option, with expectations that on further infrastructure
+analysis this behavior may become even faster.
+
+This decision here does not disallow the possibility that this is solved in
+other ways, for example:
+1. the Job API, which better models applications with meaningful Success states,
+   introducing a variant that models fast-restarting apps by infrastructure
+   configuration instead of by their code, i.e. Jobs with `restartPolicy:
+   Always` and/or with no completion count target
+2. support restart on exit 0 as a directive in the container runtime or as a
+   common independent tool, e.g. `RESTARTABLE CMD mycommand` or
+   `restart-on-exit-0 -- mycommand -arg -arg -arg`
+3. formalized reaper behavior such as discussed in
+   [Kubernetes#50375](https://github.com/kubernetes/kubernetes/issues/50375)
+
+However, there will always need to be some throttling or quota for restarts to
+protect node stability, so even if these alternatives are pursued separately,
+they will depend on the analysis and benchmarking implementation during this
+KEP's alpha stage to stay within node stability boundaries. 
+
 
 ##### Related: API opt-in for flat rate/quick restarts when transitioning from `Succeeded` phase
 
@@ -1784,8 +1326,8 @@ they have run successfully for 10 minutes. However, user stories exist where
 3. the application knows what to wait for and could communicate that to the
    system (like a restart probe)
 
-As discussed in
-[Notes/Constraints/Caveats](#on-success-and-the-10-minute-recovery-threshold),
+As discussed
+[here in Alternatives Considered](#on-success-and-the-10-minute-recovery-threshold),
 the first case is unlikely to be address by Kubernetes.
 
 The latter two are considered out of scope for this KEP, as the most common use
