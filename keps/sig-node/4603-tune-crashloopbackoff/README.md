@@ -331,8 +331,9 @@ and anticipate the change in load and node stability as a result of upgrading to
 these changes.
 
 Note that proposal will NOT change:
-* backoff behavior for Pods transitioning from the "Success" state -- see [here
-  in Alternatives Considered](#on-success-and-the-10-minute-recovery-threshold)
+* backoff behavior for Pods transitioning from the "Success" state differently
+  from those transitioning from a "Failed" state -- see [here in Alternatives
+  Considered](#on-success-and-the-10-minute-recovery-threshold)
 * the time Kubernetes waits before resetting the backoff counter -- see the
   [here inAlternatives
   Considered](#on-success-and-the-10-minute-recovery-threshold)
