@@ -263,19 +263,18 @@ See the API section for the full API.
 apiVersion: coordination.k8s.io/v1
 kind: LeaseCandidate
 metadata:
-  labels:
-    binary-version: "1.29"
-    compatibility-version: "1.29"
   name: some-custom-controller-0001A
   namespace: kube-system
 spec:
-  canLeadLease: some-custom-controller
+  leaseName: some-custom-controller
+  binary-version: "1.29"
+  compatibility-version: "1.29"
   leaseDurationSeconds: 300
   renewTime: "2023-12-05T02:33:08.685777Z"
 ```
 
 A component "lease candidate" announces candidacy for leadership by specifying
-`spec.canLeadLease` in its lease candidate lease. If the LeaseCandidate object expires, the
+`spec.leaseName` in its lease candidate lease. If the LeaseCandidate object expires, the
 component is considered unavailable for leader election purposes. "Expires" is defined more clearly in the Renewal Interval section.
 
 ### Coordinated Election Controller
@@ -289,10 +288,8 @@ Coordinated Election Controller reconciliation loop:
 - If no leader lease exists for a components:
   - Elect leader from candidates by preparing a freshly renewed `Lease` with:
     - `spec.holderIdentity` set to the identity of the elected leader
-    - `coordination.k8s.io/elected-by: leader-election-controller` (to make
-      lease types easy to disambiguate)
 - If there is a better candidate than current leader:
-  - Sets `endofterm: true` on the leader `Lease`, signaling
+  - Sets `preferredHolder` on the leader `Lease` to the name of the next leader, signaling
     that the leader should stop renewing the lease and yield leadership
 
 ```mermaid
@@ -311,7 +308,6 @@ apiVersion: coordination.k8s.io/v1
 kind: Lease
 metadata:
   annotations:
-    coordination.k8s.io/elected-by: coordinated-election-controller
   name: some-custom-controller
   namespace: kube-system
 spec:
@@ -335,29 +331,30 @@ option.
 
 ### Coordinated Lease Lock
 
-A new `resourceLock` type of `coordinatedleases`, and `CoordinatedLeaseLock`
-implementation of `resourcelock.Interface` will be added to client-go that:
+A new controller `tools/leaderelection/leasecandidate` will be added to client-go that:
 
 - Creates LeaseCandidate Lease when ready to be Leader
 - Renews LeaseCandidate lease infrequently (once every 300 seconds)
-- Watches its LeaseCandidate lease for the `coordination.k8s.io/pending-ack` annotation and updates to remove it. When the annotation is removed, the `renewTime` is subsequently updated.
-
+- Watches its LeaseCandidate lease for the updates to the `pingTime` field. If
+  the `pingTime` field is later than `renewTime`, it signals that the
+  `LeaseCandidate` should be renewed and the `renewTime` is subsequently
+  updated.
 - Watches Leader Lease, waiting to be elected leader by the Coordinated Election
   Controller
 - When it becomes leader:
   - Perform role of active component instance
   - Renew leader lease periodically
-  - Stop renewing if lease is marked `spec.endOfTerm: true`
+  - Stop renewing if lease field `spec.preferredHolder` is non nil
 - If leader lease expires:
-  - Shutdown (yielding leadership) and restart as a candidate component instance
+  - Yield leadership and return to acting as a candidate component instance. For certain components, this may involve shutting down and restarting.
 
 ```mermaid
 flowchart TD
     A[Started] -->|Create LeaseCandidate Lease| B
     B[Candidate] --> |Elected| C[Leader]
     C --> |Renew Leader Lease| C
-    C -->|End of Term / Leader Lease Expired| D[Shutdown]
-    D[Shutdown] -.-> |Restart| A
+    C -->|Better Candidate Available / Leader Lease Expired| D[Yield Leadership]
+    D[Yield Leadership] -.-> |Shutdown/Restart if necessary| A
 ```
 
 ### Renewal Interval and Performance
@@ -366,10 +363,12 @@ The leader lease will have renewal interval and duration (2s and 15s). This is s
 For component leases, keeping a short renewal interval will add many unnecessary writes to the apiserver.
 The component leases renewal interval will default to 5 mins.
 
-When the leader lease is marked as end of term or available, the coordinated leader election controller will
-add an annotation to all component lease candidate objects (`coordination.k8s.io/pending-ack`) and wait up to 5 seconds.
-During that time, components must update their component lease to remove the annotation.
-The leader election controller will then pick the leader based on its criteria from the set of component leases that have ack'd the request.
+When the leader lease is marked as end of term or available, the coordinated
+leader election controller will update the `pingTime` field of all component
+lease candidate objects and wait up to 5 seconds.  During that time, components
+will update their component lease `renewTime`. The leader election controller
+will then pick the leader based on its criteria from the set of component leases
+that have ack'd the request.
 
 ### Strategy
 
@@ -484,27 +483,18 @@ type CoordinatedLeaseStrategy string
 
 // CoordinatedLeaseStrategy defines the strategy for picking the leader for coordinated leader election.
 const (
-  OldestCompatibilityVersion CoordinatedStrategy = "OldestCompatibilityVersion"
-  NoCoordination CoordinatedStrategy = "NoCoordination"
+  OldestEmulationVersion CoordinatedLeaseStrategy = "OldestEmulationVersion"
 )
 
+// LeaseSpec is a specification of a Lease.
 type LeaseSpec struct {
-	// Strategy indicates the strategy for picking the leader for coordinated leader election
-  // This is filled in from LeaseCandidate.Spec.Strategy or defaulted to NoCoordinationStrategy
-  // if the leader was not elected by the CLE controller.
-	Strategy CoordinatedLeaseStrategy `json:"strategy,omitempty" protobuf:"string,6,opt,name=strategy"`
-
-	// EndofTerm signals to a lease holder that the lease should not be
-	// renewed because a better candidate is available.
-	EndOfTerm bool `json:"endOfTerm,omitempty" protobuf:"boolean,7,opt,name=endOfTerm"`
-
-	// EXISTING FIELDS BELOW
-
 	// holderIdentity contains the identity of the holder of a current lease.
+	// If Coordinated Leader Election is used, the holder identity must be
+	// equal to the elected LeaseCandidate.metadata.name field.
 	// +optional
 	HolderIdentity *string `json:"holderIdentity,omitempty" protobuf:"bytes,1,opt,name=holderIdentity"`
 	// leaseDurationSeconds is a duration that candidates for a lease need
-	// to wait to force acquire it. This is measure against time of last
+	// to wait to force acquire it. This is measured against the time of last
 	// observed renewTime.
 	// +optional
 	LeaseDurationSeconds *int32 `json:"leaseDurationSeconds,omitempty" protobuf:"varint,2,opt,name=leaseDurationSeconds"`
@@ -519,29 +509,67 @@ type LeaseSpec struct {
 	// holders.
 	// +optional
 	LeaseTransitions *int32 `json:"leaseTransitions,omitempty" protobuf:"varint,5,opt,name=leaseTransitions"`
+	// Strategy indicates the strategy for picking the leader for coordinated leader election.
+	// If the field is not specified, there is no active coordination for this lease.
+	// (Alpha) Using this field requires the CoordinatedLeaderElection feature gate to be enabled.
+	// +featureGate=CoordinatedLeaderElection
+	// +optional
+	Strategy *CoordinatedLeaseStrategy `json:"strategy,omitempty" protobuf:"bytes,6,opt,name=strategy"`
+	// PreferredHolder signals to a lease holder that the lease has a
+	// more optimal holder and should be given up.
+	// This field can only be set if Strategy is also set.
+	// +featureGate=CoordinatedLeaderElection
+	// +optional
+	PreferredHolder *string `json:"preferredHolder,omitempty" protobuf:"bytes,7,opt,name=preferredHolder"`
 }
 ```
 
 For the LeaseCandidate leases, a new lease will be created
 
 ```go
+// LeaseCandidateSpec is a specification of a Lease.
 type LeaseCandidateSpec struct {
-  // The fields BinaryVersion and CompatibilityVersion will be mandatory labels instead of fields in the spec
-
-	// CanLeadLease indicates the name of the lease that the candidate may lead
-	CanLeadLease string
-
-	// FIELDS DUPLICATED FROM LEASE
-
-	// leaseDurationSeconds is a duration that candidates for a lease need
-	// to wait to force acquire it. This is measure against time of last
-	// observed renewTime.
+	// LeaseName is the name of the lease for which this candidate is contending.
+	// This field is immutable.
+	// +required
+	LeaseName string `json:"leaseName" protobuf:"bytes,1,name=leaseName"`
+	// PingTime is the last time that the server has requested the LeaseCandidate
+	// to renew. It is only done during leader election to check if any
+	// LeaseCandidates have become ineligible. When PingTime is updated, the
+	// LeaseCandidate will respond by updating RenewTime.
 	// +optional
-	LeaseDurationSeconds *int32 `json:"leaseDurationSeconds,omitempty" protobuf:"varint,2,opt,name=leaseDurationSeconds"`
-	// renewTime is a time when the current holder of a lease has last
-	// updated the lease.
+	PingTime *metav1.MicroTime `json:"pingTime,omitempty" protobuf:"bytes,2,opt,name=pingTime"`
+	// RenewTime is the time that the LeaseCandidate was last updated.
+	// Any time a Lease needs to do leader election, the PingTime field
+	// is updated to signal to the LeaseCandidate that they should update
+	// the RenewTime.
+	// Old LeaseCandidate objects are also garbage collected if it has been hours
+	// since the last renew. The PingTime field is updated regularly to prevent
+	// garbage collection for still active LeaseCandidates.
 	// +optional
-	RenewTime *metav1.MicroTime `json:"renewTime,omitempty" protobuf:"bytes,4,opt,name=renewTime"`
+	RenewTime *metav1.MicroTime `json:"renewTime,omitempty" protobuf:"bytes,3,opt,name=renewTime"`
+	// BinaryVersion is the binary version. It must be in a semver format without leading `v`.
+	// This field is required when strategy is "OldestEmulationVersion"
+	// +optional
+	BinaryVersion string `json:"binaryVersion,omitempty" protobuf:"bytes,4,opt,name=binaryVersion"`
+	// EmulationVersion is the emulation version. It must be in a semver format without leading `v`.
+	// EmulationVersion must be less than or equal to BinaryVersion.
+	// This field is required when strategy is "OldestEmulationVersion"
+	// +optional
+	EmulationVersion string `json:"emulationVersion,omitempty" protobuf:"bytes,5,opt,name=emulationVersion"`
+	// PreferredStrategies indicates the list of strategies for picking the leader for coordinated leader election.
+	// The list is ordered, and the first strategy supersedes all other strategies. The list is used by coordinated
+	// leader election to make a decision about the final election strategy. This follows as
+	// - If all clients have strategy X as the first element in this list, strategy X will be used.
+	// - If a candidate has strategy [X] and another candidate has strategy [Y, X], Y supersedes X and strategy Y
+	//   will be used.
+	// - If a candidate has strategy [X, Y] and another candidate has strategy [Y, X], this is a user error and leader
+	//   election will not operate the Lease until resolved.
+	// (Alpha) Using this field requires the CoordinatedLeaderElection feature gate to be enabled.
+	// +featureGate=CoordinatedLeaderElection
+	// +listType=atomic
+	// +required
+	PreferredStrategies []v1.CoordinatedLeaseStrategy `json:"preferredStrategies,omitempty" protobuf:"bytes,6,opt,name=preferredStrategies"`
 }
 ```
 
@@ -556,7 +584,7 @@ a separate LeaseCandidate lease will be required for each lock.
 | Claimed by      | Component instance               | Election Coordinator. (Lease is claimed for to the elected component instance) |
 | Renewed by      | Component instance               | Component instance                                                             |
 | Leader Criteria | First component to claim lease   | Best leader from available candidates at time of election                      |
-| Preemptable     | No                               | Yes, Collaboratively. (Coordinator marks lease as "end of term". Component instance voluntarily stops renewing) |
+| Preemptable     | No                               | Yes, Collaboratively. (Coordinator marks lease's next `preferredHolder`. Component instance voluntarily stops renewing) |
 
 ### User Stories (Optional)
 
@@ -614,7 +642,7 @@ component.
 Example:
 
 - HA cluster with 3 control plane nodes
-- 3 elected components (kube-controller-manager, schedule,
+- 3 elected components (kube-controller-manager, scheduler,
   cloud-controller-manager) per control plane node
 - 9 LeaseCandidate leases are created and renewed by the components
 
