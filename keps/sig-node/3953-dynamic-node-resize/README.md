@@ -74,7 +74,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposal aims at enabling dynamic node resizing. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node or removing existing node from a cluster.
+The proposal aims at enabling dynamic node resizing. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node to a cluster.
 The updated node configurations are to be reflected at the node and cluster levels automatically without the need to reset the kubelet.
 
 This proposal also aims to improve the initialization and reinitialization of resource managers, such as the CPU manager and memory manager, in response to changes in a node's CPU and memory configurations.
@@ -83,15 +83,14 @@ This proposal also aims to improve the initialization and reinitialization of re
 In a typical Kubernetes environment, the cluster resources may need to be altered due to following reasons:
 - Incorrect resource assignment during cluster creation.
 - Increased workload over time, leading to the need for additional resources in the cluster.
-- Decreased workload over time, leading to resource underutilization in the cluster.
 
 To handle these scenarios, we can:
-- Horizontally scale up or down the cluster by adding or removing compute nodes.
-- Vertically scale up or down the cluster by increasing or decreasing node capacity. However, currently, the workaround for capturing node resizing in the cluster involves restarting the Kubelet.
+- Horizontally scale up the cluster by adding compute nodes.
+- Vertically scale up the cluster by increasing node capacity. However, currently, the workaround for capturing node resizing in the cluster involves restarting the Kubelet.
 
 Dynamic node resizing will provide advantages in scenarios such as:
 - Handling resource demand with a limited set of nodes by increasing the capacity of existing nodes instead of creating new nodes.
-- Creating or deleting new nodes takes more time compared to increasing or decreasing the capacity of existing nodes.
+- Creating new nodes takes more time compared to increasing the capacity of existing nodes.
 
 ### Goals
 
@@ -101,8 +100,12 @@ Dynamic node resizing will provide advantages in scenarios such as:
 ### Non-Goals
 
 * Update the autoscaler to utilize dynamic node resize.
+* Dynamically adjust system reserved and kube reserved values.
 
 ## Proposal
+
+This KEP aims to support the dynamic resize of compute resources of node with dynamic scale up of resources.
+Dynamic scale down of resources will be proposed in separate KEP in future.
 
 This KEP adds a polling mechanism in kubelet to fetch the machine-information from cAdvisor's cache, The information will be fetched periodically based on a configured time interval, after which the node status updater is responsible for updating this information at node level in the cluster.
 
@@ -113,10 +116,6 @@ Additionally, this KEP aims to improve the initialization and reinitialization o
 #### Story 1
 
 As a cluster admin, I must be able to increase the cluster resource capacity without adding a new node to the cluster.
-
-#### Story 2
-
-As a cluster admin, I must be able to decrease the cluster resource capacity without removing an existing node from the cluster.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -145,66 +144,42 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
+
 Below diagram is shows the interaction between kubelet and cAdvisor.
 
-```
-+----------+                    +-----------+                   +-----------+                  +--------------+
-|          |                    |           |                   |           |                  |              |
-|   node   |                    |  kubelet  |                   |  cAdvisor |                  | machine-info |
-|          |                    |           |                   |   cache   |                  |              |
-+----+-----+                    +-----+-----+                   +-----+-----+                  +-------+------+
-     |                                |                               |                                |
-     |                                |            poll               |                                |
-     |                                |------------------------------>|                                |
-     |                                |                               |                                |
-     |                                |                               |                                |
-     |                                |                               |             fetch              |
-     |                                |                               |------------------------------->|
-     |                                |                               |                                |
-     |                                |                               |                                |
-     |                                |                               |                                |
-     |                                |                               |             update             |
-     |                                |                               |<-------------------------------|
-     |                                |                               |                                |
-     |                                |            update             |                                |
-     |                                |<------------------------------|                                |
-     |                                |                               |                                |
-     |                                |                               |                                |
-     |                                |                               |                                |
-     |     node status update         |                               |                                |
-     |<-------------------------------|                               |                                |
-     |                                |                               |                                |
-     |      if shrink in resource     |                               |                                |
-     |      re-run pod admission      |                               |                                |
-     |<-------------------------------|                               |                                |                                |
-     |                                |                               |                                |      
-     | re-initialize resource managers|                               |                                |
-     |<-------------------------------|                               |                                |                                |
-     |                                |                               |                                |           
 
+```mermaid
+sequenceDiagram
+    participant node
+    participant kubelet
+    participant cAdvisor-cache
+    participant machine-info
+    kubelet->>cAdvisor-cache: Poll
+    cAdvisor-cache->>machine-info: fetch
+    machine-info->>cAdvisor-cache: update
+    cAdvisor-cache->>kubelet: update
+    kubelet->>node: node status update
+    kubelet->>node: re-initialize resource managers
 ```
 
 The interaction sequence is as follows
-1. Kubelet will be polling in interval of configured time to fetch the machine resource information from cAdvisor's cache, Which is currently updated every 5 minutes.
-3. Kubelet's cache will be updated with the latest machine resource information.
-4. Node status updater will update the node's status with the latest resource information.
-5. In case of a shrink in cluster resources rerun the pod admission and the pod admission will evict pods
-6. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
+1. Kubelet will be polling in interval to fetch the machine resource information from cAdvisor's cache, Which is currently updated every 5 minutes.
+2. Kubelet's cache will be updated with the latest machine resource information.
+3. Node status updater will update the node's status with the latest resource information.
+4. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
 
 Note: In case of increase in cluster resources, the scheduler will automatically schedule any pending pods.
 
 **Kubelet Configuration changes**
 
-* A new boolean variable `dynamicNodeResize` will be added to kubelet configuration.
-* `dynamicNodeResize` will be false by default.
-* User need to set `dynamicNodeResize` to true make use of Dynamic Node Resize.
+* Add a variable to configure the interval to fetch the updated machine information.
 
 **Proposed Code changes**
 
 **Dynamic Node resize and Pod Re-admission logic**
 
-```azure
-	if kl.kubeletConfiguration.DynamicNodeResize {
+```go
+	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicNodeResize) {
 		// Handle the node dynamic resize
 		machineInfo, err := kl.cadvisor.MachineInfo()
 		if err != nil {
@@ -219,12 +194,6 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 				if err := kl.ResyncComponents(machineInfo); err != nil {
 					klog.ErrorS(err, "Error resyncing the kubelet components with machine info")
 				}
-
-				//Rerun pod admission only in case of shrink in cluster resources
-				if machineInfo.NumCores < cachedMachineInfo.NumCores || machineInfo.MemoryCapacity < cachedMachineInfo.MemoryCapacity {
-					klog.InfoS("Observed shrink in nod resources, rerunning pod admission")
-					kl.HandlePodAdditions(activePods)
-				}
 			}
 		}
 	}
@@ -233,7 +202,7 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 **Changes to resource managers to adapt to dynamic resize**
 
 1. Adding ResyncComponents() method to ContainerManager interface
-```azure
+```go
     // Manages the containers running on a machine.
     type ContainerManager interface {
         .
@@ -248,7 +217,7 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 
 2. Adding a method Sync to all the resource managers and will be invoked once there is dynamic resource change.
 
-```azure
+```go
         // Sync will sync the CPU Manager with the latest machine info
 	Sync(machineInfo *cadvisorapi.MachineInfo) error
 ```
