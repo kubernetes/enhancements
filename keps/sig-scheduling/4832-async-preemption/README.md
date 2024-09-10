@@ -85,12 +85,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [When kube-apiserver is unstable](#when-kube-apiserver-is-unstable)
 - [Design Details](#design-details)
-  - [Asynchronous Preemption](#asynchronous-preemption)
   - [Consideration to race condition](#consideration-to-race-condition)
     - [The pod2's scheduling is successful (pod2 is equal or lower priority than pod1)](#the-pod2s-scheduling-is-successful-pod2-is-equal-or-lower-priority-than-pod1)
     - [The pod2's scheduling is successful (pod2 is higher priority than pod1)](#the-pod2s-scheduling-is-successful-pod2-is-higher-priority-than-pod1)
@@ -117,7 +115,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Implement asynchronous preemption only, not introduce a new extension](#implement-asynchronous-preemption-only-not-introduce-a-new-extension)
+  - [Introduce a new extension point](#introduce-a-new-extension-point)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
