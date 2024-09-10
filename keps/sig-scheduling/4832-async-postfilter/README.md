@@ -184,8 +184,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This KEP proposes a new `AsyncPostFilter` extension point to enhance the scheduling throughput in the failure scenarios
-by decoupling the API calls for the preemption from the scheduling cycle.
+This KEP proposes decoupling the API calls for the preemption from the scheduling cycle, to enhance the scheduling throughput of the scheduling failure scenarios.
 
 ## Motivation
 
@@ -214,9 +213,7 @@ This flow allows us to decouple the API call to assign Pod to the Node from the 
 But, we have the similar problem with the preemption; the preemption is run at PostFilter extension point which is the part of the scheduling cycle.
 The preemption has to make some API calls to update Pods' condition and delete Pods after all, which could block the scheduling throughput.
 
-Similarly, DRA's PostFilter also makes some API calls to update ResourceClaim's status for the deallocation.
-
-This KEP proposes introducing a new extension point to run something asynchronously so that we address this common problem with the existing PostFilter.
+scheduler-perf [actually shows](https://github.com/kubernetes/kubernetes/blob/342da505bdefbd849b808cca3cb76c24a993025f/test/integration/scheduler_perf/config/performance-config.yaml#L641) currently the preemption scenario takes too long time, compared to others.
 
 ### Goals
 
@@ -225,10 +222,8 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Introduce a new `AsyncPostFilter` extension point in the scheduling framework.
-  - `AsyncPostFilter` is literally run asynchronously after `PostFilter` extension point.
-  - Until `AsyncPostFilter` is done, the Pod won't be rescheduled.
-- Move API calls of `DefaultPreemption` plugin from `PostFilter` to `AsyncPostFilter`.
+- The preemption plugin makes API calls for the preemption asynchronously after `PostFilter` extension point so that the scheduler can continue to other Pods' scheduling while making API calls for preemption.
+  - Until the preemption goroutine is done, the Pod won't be rescheduled.
 
 ### Non-Goals
 
@@ -237,7 +232,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Moving DRA's logic from `PostFilter` to `AsyncPostFilter` is not a goal of this KEP because it's an under-construction feature yet.
+- Making the same enhancement for DRA is not a goal of this KEP because it's an under-construction feature yet.
   - If DRA maintainers want, technically they can along with this KEP. But, at least in this KEP, we don't discuss how.
 
 ## Proposal
@@ -267,14 +262,7 @@ but we don't want to make any API calls at PostFilter because it slows down the 
 
 After this KEP is implemented, we determine which Pod(s) to preempt at `PostFilter`,
 nominate the Pod based on the calculation,
-and actually makes the API calls at `AsyncPostFilter`.
-
-#### Story 2
-
-We have a plugin running the dealocation of resource claim,
-which requires some API calls.
-
-After this KEP is implemented, we can move the whole logic to `AsyncPostFilter`.
+and actually makes the API calls in the goroutine.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -301,15 +289,15 @@ Consider including folks who also work outside the SIG or subproject.
 
 #### When kube-apiserver is unstable
 
-When kube-apiserver is unstable and API calls at `AsyncPostFilter` fails frequently,
+When kube-apiserver is unstable and API calls at the preemption goroutine fails frequently,
 the scheduler could make a non-best scheduling result 
 because the scheduler nominates pods at `PostFilter` though, those Pods won't be scheduled on nodes because the preemption API calls fail.
 
 Let's say many mid-priority Pods are making the preemption API calls.
-During `AsyncPostFilter` for them are runnning, the scheduler assumes they'll be scheduled at the Nodes eventually
+During the preemption goroutine for them are runnning, the scheduler assumes they'll be scheduled at the Nodes eventually
 that the preemptions are targeting via `.Status.NominatedNodeName`.
 So, other mid-priority or lower priority Pods' scheduling take those preempter Pods into consideration, 
-which is correct if `AsyncPostFilter` finishes successful actually, while which results in non-best scheduling results.
+which is correct if the preemption goroutine finishes successful actually, while which results in non-best scheduling results.
 (Higher priority Pods won't be affected; Pods can take place of reserved for lower priority Pods via `.Status.NominatedNodeName`)
 
 But, in the first place though, when kube-apiserver is unstable, the scheduler doesn't behave well 
@@ -327,26 +315,14 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We'll introduce a new extension point `AsyncPostFilter`.
-`AsyncPostFilter` is placed after `PostFilter` so that we can do something which should be done synchronously at `PostFilter`
-and then proceed to `AsyncPostFilter`.
+To achieve an asynchronous preemption, we will change the preemption plugin's implementation like the following:
+1. The preemption PostFilter plugin calculates the preemption target and nominate the Pod for the Node. (We'll use `AddNominatedPod` API exposed from the scheduling framework to plugins.)
+2. The preemption PostFilter plugin starts the goroutine to make API calls inside, and return success status (= not wait for the goroutine to finish).
+3. The preemption plugin gates the Pod, which the preemption is in-progress, at PreEnqueue extension point so that the target Pod won't be retried during the preemption.
 
-The target Pod won't be queued back to the scheduling queue during `AsyncPostFilter` is running for them.
-
-### Asynchronous Preemption
-
-To achieve an asynchronous preemption, we'll calculate which Pods to preempt at `PostFilter`,
-and then make API calls actually at `AsyncPostFilter`
-
-Preemption `PostFilter` calculates which Pods to preempt like it does currently.
-And, after the calculation, `PostFilter` nominates the preempter Pod for the Node via `AddNominatedPod`,
-which makes the next scheduling cycle take this preempter Pod into consideration.
-
-This `AddNominatedPod` only operates the scheduler's internal cache, and doesn't make any API calls, which means light weight.
-
-Then, afterwards `AsyncPostFilter` makes actual API calls. 
-If `AsyncPostFilter` fails at some point, it reverts the nomination via `AddNominatedPod` with [`clearNominatedNode`](https://github.com/kubernetes/kubernetes/blob/f5c538418189e119a8dbb60e2a2b22394548e326/pkg/scheduler/schedule_one.go#L135).
-If `AsyncPostFilter` succeeds, the Pod is queued back to the queue, and (hopefully) scheduled on the nominated node.
+Then, afterwards the preemption goroutine makes actual API calls. 
+If the preemption goroutine fails at some point, it reverts the nomination via `AddNominatedPod` with [`clearNominatedNode`](https://github.com/kubernetes/kubernetes/blob/f5c538418189e119a8dbb60e2a2b22394548e326/pkg/scheduler/schedule_one.go#L135).
+If the preemption goroutine succeeds, the Pod is queued back to the queue, and (hopefully) scheduled on the nominated node.
 
 ### Consideration to race condition
 
@@ -354,7 +330,7 @@ Thanks to the nomination at `PostFilter`, this new asynchronous preemption shoul
 
 Here, I'll discuss what happens in which scenario, and make sure there's no worry.
 
-Let's say pod1 is during the preemption process (node1) at `AsyncPostFilter`, the next scheduling cycle is scheduling pod2. 
+Let's say pod1 is during the preemption process (node1) at the preemption goroutine, the next scheduling cycle is scheduling pod2. 
 
 #### The pod2's scheduling is successful (pod2 is equal or lower priority than pod1)
 
@@ -567,7 +543,7 @@ enhancement:
 
 **Upgrade**
 
-During the alpha period, users have to enable the feature gate `SchedulerAsyncPostFilter` to opt in this feature.
+During the alpha period, users have to enable the feature gate `SchedulerAsyncPreemption` to opt in this feature.
 This is purely internal feature for kube-scheduler, so no other special actions are required outside the scheduler.
 
 **Downgrade**
@@ -634,7 +610,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `SchedulerAsyncPostFilter`
+  - Feature gate name: `SchedulerAsyncPreemption`
   - Components depending on the feature gate:
 - [ ] Other
   - Describe the mechanism:
@@ -721,9 +697,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Maybe something goes wrong with the preemption if
-- `plugin_execution_duration_seconds{extension_point=AsyncPostFilter, plugin=DefaultPreemption}` takes too long time.
-- `framework_extension_point_duration_seconds{extension_point=AsyncPostFilter}`: takes too long time.
+Maybe something goes wrong with the preemption if `goroutines_duration_seconds{operation=preemption}` takes too long time.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -795,7 +769,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-- The failure rate of AsyncPostFilter (`plugin_execution_total{status=error, extension_point=AsyncPostFilter, plugin=DefaultPreemption}`/`plugin_execution_total{extension_point=AsyncPostFilter, plugin=DefaultPreemption}`) should be < 0.01.
+- The failure rate of the preemption goroutine (`goroutines_execution_total{result=error, operation=preemption}`/`goroutines_execution_total{operation=preemption}`) should be < 0.01.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -804,7 +778,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: `plugin_execution_total{status=error, extension_point=AsyncPostFilter, plugin=DefaultPreemption}` 
+  - Metric name: `goroutines_execution_total{result=error, operation=preemption}` 
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -814,7 +788,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-- `plugin_execution_total` (w/ labels: `status`, `extension_point`, `plugin`): to observe how many times a new preemption plugin fails to run.
+- `goroutines_duration_seconds` (w/ label: `operation`): to observe how many preemption goroutines have failed.
+- `goroutines_execution_total` (w/ labels: `operation`, `result`): to observe how long each preemption goroutine takes to complete.
 
 ### Dependencies
 
@@ -868,7 +843,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-No. Just move the existing API calls from `PostFilter` to `AsyncPostFilter`.
+No. Just move the existing API calls from `PostFilter` into goroutines.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -927,7 +902,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-The scheduler starts to run more goroutines for `AsyncPostFilter`, so maybe the CPU usage go up.
+The scheduler starts to run more goroutines in the preemption plugin, so maybe the CPU usage go up.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -958,7 +933,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-In such cases, the preemption fails at `AsyncPostFilter`.
+In such cases, API calls for the preemption fails in the preemption goroutines.
 But, the scheduler cannot perform not only the preemption, but anything essentially because it cannot get objects, bind Pods to Nodes, etc.
 
 ###### What are other known failure modes?
@@ -1007,15 +982,15 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Implement asynchronous preemption only, not introduce a new extension
+### Introduce a new extension point
 
-If we target the preemption plugin only, we can implement -
-1. The preemption PostFilter plugin calculates the preemption target and nominate the Pod for the Node.
-2. The preemption PostFilter plugin starts the goroutine to run API calls, and return success status (= not wait for the goroutine to finish).
-3. The preemption plugin gates the Pod, which the preemption is in-progress, at PreEnqueue extension point.
+To make this kind of scenario easier to implement for other plugins, we can implement a new extension point `AsyncPostFilter`.
+We calculate the preemption target and nominate the Pod for the Node at `PostFilter`, and then `AsyncPostFilter` starts asynchronously, in which the preemption plugin makes API calls for the preemption.
 
-But, we have in-tree DRA plugin that also makes API calls at PostFilter, and maybe custom plugins also do.
-Therefore, this KEP proposes `AsyncPostFilter` extension point to enable all plugins to implement this kind of async behaviour.
+The Pod won't be queued back to the queue until `AsyncPostFilter` is done.
+
+We don't go with this idea because we can implement the async preemption without introducing a new extension point.
+Adding a new extension point unnecessarily may result in the regret in the future, and also we can implement it if it's really necessary.
 
 ## Infrastructure Needed (Optional)
 
