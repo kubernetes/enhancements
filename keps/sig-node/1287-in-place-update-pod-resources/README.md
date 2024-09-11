@@ -713,15 +713,34 @@ no special considerations here. Non-restartable InitContainers cannot be resized
 
 ### QOS Class
 
-A pod's QOS class cannot be changed once the pod is started. For in place vertical scaling, this
-means that a pod's resources can be changed to fit with a higher-tier QOS class, but not a lower.
-Even if the resources fit the higher tier, it's QOS class will still remain at the original value.
+A pod's QOS class cannot be changed once the pod is started, independent of any resizes.
 
-Concretely, this only places the following restrictions on resizes:
+To clarify the discussion of QOS Class changes, the following terms are defined:
+
+* "Original QOS Class" - The QOS class that was computed based on the original resource requests &
+  limits when the pod was first created.
+* "Suggested QOS Class" - The QOS class that would be computed based on the current resource
+  requests & limits.
+
+With in-place vertical scaling, the _suggested QOS Class_ must be greater than or equal to the
+_original QOS Class_:
+
 * Guaranteed pods: must maintain `requests == limits`
-* Burstable pods: _can_ be resized such that `requests == limits`, but their QOS
+* Burstable pods: _can_ be resized such that `requests == limits`, but their original QOS
 class will stay burstable. Must retain at least one CPU or memory request or limit.
 * BestEffort pods: can be freely resized, but stay BestEffort.
+
+Even though the suggested QOS Class is allowed to change, the original QOS class is used for all
+decisions based on QOS class:
+
+* `.status.qosClass` always reports the original QOS class
+* Pod cgroup hierarchy is static, using the original QOS class
+* Non-guaranteed pods remain ineligible for guaranteed CPUs or NUMA pinning
+* Preemption uses the original QOS Class
+* OOMScoreAdjust is calculated with the original QOS Class
+* Memory pressure eviction is unaffected (doesn't consider QOS Class)
+
+In order to maintain the original QOS class, the Kubelet will checkpoint the original QOS class.
 
 ### Resource Quota
 
