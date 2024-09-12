@@ -8,11 +8,12 @@ participating-sigs:
 status: implementable
 creation-date: 2024-08-27
 reviewers:
-  - "@logicalhan"
   - "@dgrisonnet"
+  - "@logicalhan"
+  - "@mrueg"
 approvers:
-  - "@logicalhan"
   - "@dgrisonnet"
+  - "@logicalhan"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
