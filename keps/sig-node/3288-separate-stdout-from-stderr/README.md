@@ -502,7 +502,7 @@ There is no extra work required for users to maintain previous behavior, the cha
 caused by this enhancement are backwards compatible.
 
 To make use of the enhancement, users will need to update the `kube-apiserver` and `kubelet`
-to at least `v1.25` and turn on feature gate `SplitStdoutAndStderr` in both components.
+to at least `v1.32` and turn on feature gate `SplitStdoutAndStderr` in both components.
 
 ### Version Skew Strategy
 
