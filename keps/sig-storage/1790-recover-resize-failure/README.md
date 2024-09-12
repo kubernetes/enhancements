@@ -291,6 +291,7 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 
 * *Alpha* in 1.23 behind `RecoverVolumeExpansionFailure` feature gate with set to a default of `false`.
 * *Beta* in 1.29: We are going to move this to beta with enhanced e2e and more stability improvements.
+  -  There are already e2e tests running that verify correctness of this feature - https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
 
 ### Test Plan
 
@@ -375,7 +376,7 @@ _This section must be completed when targeting beta graduation to a release._
   
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  - [ ] Metrics
+  - [X] Metrics
     - controller expansion operation duration:
         - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
         - [Optional] Aggregation method: percentile
@@ -491,6 +492,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 - 2020-01-27 Initial KEP pull request submitted
 - 2023-02-03 Changing the APIs of `pvc.Status.ResizeStatus` by renaming it to `pvc.Status.AllocatedResourceStatus` and converting it to a map.
+- 2024-09-12 Propose move to beta status.
 
 ## Drawbacks
 
