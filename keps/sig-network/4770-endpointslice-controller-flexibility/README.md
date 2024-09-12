@@ -78,6 +78,8 @@ Delegating EndpointSlice control would allow custom controllers to define their 
 ### Goals
 
 * Provide the ability to disable the Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for particular services.
+* Allow custom EndpointSlice Controllers to re-use the Service Selector field.
+* Offer an explicit and standard way to indicate which component is managing the EndpointSlices for a particular service.
 
 ### Non-Goals
 
@@ -85,6 +87,7 @@ Delegating EndpointSlice control would allow custom controllers to define their 
 * Introduce additional supported types of the EndpointSlice controllers/Reconciler as part of Kubernetes.
 * Modify the Service / EndpointSlice / Endpoints Specs.
 * Changing the behavior of kube-proxy.
+* Provide a new way to select backends for a Service.
 
 ## Proposal
 
