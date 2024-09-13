@@ -180,6 +180,12 @@ When the privileged Pod starts, it does not initiate any relabeling, and at the 
 
 ## Proposal
 
+_Purpose of the API is to allow users to declare "I will run all Pods that use a given volume with the same SELinux label (or all of them privileged), and it's my fault if they have a different label".
+In that case, kubelet can use `-o context` and user gets instant relabeling.
+Some Pods may get stuck `ContainerCreating` when the user cannot keep the promise.
+If the user wants to mix different labels and/or privileged and unprivileged Pods, they need to use the recursive relabeling.
+For RWOP volumes, "all Pods that use a given volume in parallel" can actually be only a single Pod, the user can't break that promise._
+
 Introduce a new PodSpec field `Spec.SecurityContext.SELinuxChangePolicy` with the following values:
 * `UseMountOptionForReadWriteOncePod`: mount RWOP volumes with `-o context` (see other conditions below), all other volumes are relabeled recursively by the container runtime.
   This is the new default. It's safe, because a single RWOP volume can be used only by a single Pod and can't conflict with other Pods running with potentially different SELinux labels.
@@ -191,7 +197,13 @@ Introduce a new PodSpec field `Spec.SecurityContext.SELinuxChangePolicy` with th
   It is responsibility of the Pod author to set the same SELinux label + to all Pods that use the same volumes in parallel!
   * _Other suggestions were: `Mount`, `MountAll`, `OnMount`._
 * `null`: Implies `UseMountOptionForReadWriteOncePod`.
-  
+
+Reason for PodSpec:
+* `FSGroupChangePolicy` with a similar purpose is there already.
+* While it feels like a property of volume / PVC (all Pods that use a volume should use the same setting), we don't allow platform specific fields in PVCs.
+* Another place would be a PV, but users can't edit it.
+
+
 Kubelet will mount a Pod's volume with `-o context=XYZ` when *all* these conditions are met:
 * Pod has `Pod.Spec.SecurityContext.SELinuxChangePolicy: UseMountOptionForReadWriteOncePod` (when the volume is a RWOP PV) or `UseMountOption` (for all other volumes).
 * Pod has SELinux label set, at least in `Spec.SecurityContext.SELinuxOptions.Level` or all containers have `Spec.Containers[*].SecurityContext.SELinuxOptions.Level`.
