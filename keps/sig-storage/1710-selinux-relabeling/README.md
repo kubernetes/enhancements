@@ -81,20 +81,20 @@ The enhancement describes situations when such option can/cannot be used, why it
 
 ## SELinux intro
 On Linux machines with SELinux in enforcing mode, SELinux tries to prevent users that escaped from a container to access the host OS and also to access other containers running on the host.
-It does so by running each container with unique *SELinux context* (such as `system_u:system_r:container_t:s0:c309,c383`) and labeling all content on all volumes with the corresponding label (`system_u:object_r:container_file_t:s0:c309,c383`).
-Only process with the context `...:container_t:s0:c309,c383` can access files with label `container_file_t:s0:c309,c383`.
+It does so by running each container with unique *SELinux label* (sometimes called *SELinux context*), such as `system_u:system_r:container_t:s0:c309,c383`, and labeling all content on all volumes with the corresponding label (`system_u:object_r:container_file_t:s0:c309,c383`).
+Only process with the label `...:container_t:s0:c309,c383` can access files with label `container_file_t:s0:c309,c383`.
 Therefore, a rogue user who escaped boundaries of its container cannot access data of other containers, because volumes of each container have different label.
-Even processes running as root (UID 0) are denied access to these files, unless they run with the right SELinux context.
+Even processes running as root (UID 0) are denied access to these files, unless they run with the right SELinux label.
 
 Further in this KEP we assume that the SELinux is enabled on the system. This KEP has absolutely no effect on systems that run without SELinux. Kubelet already knows if SELinux is enabled and does not do anything with it if it's disabled or not available (e.g. on Windows).
 
 See [SELinux documentation](https://selinuxproject.org/page/NB_MLS) for more details.
 
 
-### SELinux context assignment
-In Kubernetes, the SELinux context of a pod is assigned in two ways:
+### SELinux label assignment
+In Kubernetes, the SELinux label of a pod is assigned in two ways:
 1. Either it is set by user in PodSpec or Container: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/.
-1. If not set in Pod/Container, the container runtime will allocate a new unique SELinux context and assign it to a pod (container) by itself.
+1. If not set in Pod/Container, the container runtime will allocate a new unique SELinux label and assign it to a pod (container) by itself.
 
 ### Volume mounting
 Linux kernel, with SELinux compiled in, allows `mount -o context=system_u:system_r:container_t:s0:c309,c383 <what> <where>` to mount a volume and pretend that all files on the volume have given SELinux label.
@@ -136,12 +136,12 @@ Note that we'll use docker ":Z" option as shortcut for `selinux_relabel` CRI opt
 * File relabeling in CRI can be slow for big volumes.
 * Avoiding out-of-space issues when relabeling almost full volumes. When a volume is almost full, CRI can fail to relabel volumes on it, since SELinux labels may need some little space on the volume.
 * Allowing access to read-only volumes. A read-only volume can still be mounted with `-o context=XYZ` and provide files with the right labels to a Pod.
-* Mounting volumes with the right SELinux context is a bit safer. Consider [CVE-2021-25741](https://access.redhat.com/security/cve/cve-2021-25741) - here a user can cause Kubernetes to provide host's filesystem to an innocent pod. Without this KEP, CRI will actually relabel the host's files so the Pod can access them. With this KEP, the attacker could still fool Kubernetes to mount host filesystem to the Pod, but the pod would not be able to access it, because (unprivileged) pods are denied accessing files on the host due to SELinux policy.
+* Mounting volumes with the right SELinux label is a bit safer. Consider [CVE-2021-25741](https://access.redhat.com/security/cve/cve-2021-25741) - here a user can cause Kubernetes to provide host's filesystem to an innocent pod. Without this KEP, CRI will actually relabel the host's files so the Pod can access them. With this KEP, the attacker could still fool Kubernetes to mount host filesystem to the Pod, but the pod would not be able to access it, because (unprivileged) pods are denied accessing files on the host due to SELinux policy.
 
 
 ### Goals
 
-* If possible, mount volumes with the correct SELinux context using `-o context=XYZ` mount option and avoid recursive change of all files on the volume.
+* If possible, mount volumes with the correct SELinux label using `-o context=XYZ` mount option and avoid recursive change of all files on the volume.
 
 ### Non-Goals
 
@@ -149,22 +149,22 @@ Note that we'll use docker ":Z" option as shortcut for `selinux_relabel` CRI opt
 
 ## Proposal
 
-* When kubelet *knows* SELinux context of a pod (i.e. at least `Pod.Spec.SecurityContext.SELinuxOptions.Level` is set) AND kubelet *knows* that a volume supports mounting with `-o context`:
+* When kubelet *knows* SELinux label of a pod (i.e. at least `Pod.Spec.SecurityContext.SELinuxOptions.Level` is set) AND kubelet *knows* that a volume supports mounting with `-o context`:
   * kubelet passes `-o context=XYZ` to `MountDevice()` and `SetUp()` calls of the volume.
     * A volume plugin / CSI driver will get these as regular mount options and use them to mount the volume.
     * Especially for shared filesystems, it's task of a CSI driver to:
-      * Detect `context` mount option and add any other mount option that allow mount options that's needed to allow mounting one volume with multiple SELinux contexts on the same node.
+      * Detect `context` mount option and add any other mount option that allow mount options that's needed to allow mounting one volume with multiple SELinux labels on the same node.
         E.g. add `nosharesock` to `mount -t cifs -o context=XYZ`.
       * Either not support `NodeStageVolume` CSI call or use different VolumeHandle for each PV, even though they lead to the same volume in the storage backend.
-        * This is because kubelet / VolumeManager can track only one global volume mount (created by `NodeStageVolume`) and that mount can have only one SELinux context.
-          Volumes with different VolumeHandles have different global mounts and therefore can have different SELinux contexts.
+        * This is because kubelet / VolumeManager can track only one global volume mount (created by `NodeStageVolume`) and that mount can have only one SELinux label.
+          Volumes with different VolumeHandles have different global mounts and therefore can have different SELinux labels.
   * kubelet does not pass any special SELinux option to the container runtime (explicitly, no `:Z`).
-    Files on the volume already have the right SELinux context, no recursive relabeling happens there.
+    Files on the volume already have the right SELinux label, no recursive relabeling happens there.
   * When a `PodSecurityContext` specifies incomplete SELinux label (i.e. omits `SELinuxOptions.User`, `.Role` or `.Type`), kubelet fills the blanks from the system defaults provided by [ContainerLabels() from go-selinux bindings](https://github.com/opencontainers/selinux/blob/621ca21a5218df44259bf5d7a6ee70d720a661d5/go-selinux/selinux_linux.go#L770).
     [See Story 2 below](#story-2).
 
-* When kubelet does not know SELinux context of a pod, it falls back to the current behavior.
-  Based on [the heuristics described above](#SELinux-support-in-volumes), it may pass `:Z` option to pod volumes, the container runtime allocates a new SELinux context for the pod and relabel all the volumes recursively.
+* When kubelet does not know SELinux label of a pod, it falls back to the current behavior.
+  Based on [the heuristics described above](#SELinux-support-in-volumes), it may pass `:Z` option to pod volumes, the container runtime allocates a new SELinux label for the pod and relabel all the volumes recursively.
 
 * When kubelet knows that the volume does not support mounting with `-o context` (or when it is not sure), it falls back to the current behavior.
   Based on [the heuristics described above](#SELinux-support-in-volumes), it may pass `:Z` option to pod volumes, and the container will relabel the volume recursively.
@@ -217,17 +217,17 @@ Note that we'll use docker ":Z" option as shortcut for `selinux_relabel` CRI opt
 ### Implementation Details/Notes/Constraints [optional]
 
 #### Behavioral changes
-This KEP changes behavior of Kubernetes when two pods with different SELinux contexts use the same volume.
-Let Pod A with SELinux context X runs and Pod B with SELinux context Y is about to start on the same node and both use the same volume.
+This KEP changes behavior of Kubernetes when two pods with different SELinux labels use the same volume.
+Let Pod A with SELinux label X runs and Pod B with SELinux label Y is about to start on the same node and both use the same volume.
 
 * *Before this KEP*: Pod A suddenly starts getting "permission denied" errors when accessing files on the volume, because the container runtime re-labeled all files on it with label Y when starting pod B. Pod B will start just fine and can access the volume.
 * *As proposed in this KEP*: Pod B won't even start, because the volume is already mounted with `-o context=X`.
-  Since kubelet tracks SELinux contexts of all mounts it manages, it will see that a new pod wants to use an already mounted volume with a different context, and it will fail with a message like `volume X is already used by pod Y with another SELinux context`.
+  Since kubelet tracks SELinux labels of all mounts it manages, it will see that a new pod wants to use an already mounted volume with a different label, and it will fail with a message like `volume X is already used by pod Y with another SELinux context`.
   Note that this will not work for mounts of the volume done by something else than kubelet.
   In that case, kubelet will pass `-o context=X` to the CSI driver, the driver will pass it to kernel and kernel will fail with a generic `mount: wrong fs type, bad option, bad superblock on /dev/sdb, missing codepage or helper program, or other error`.
   `/bind/mount` / kernel is not able to tell which mount option is wrong.
 
-A special case of the previous example is when two pods with different SELinux contexts use the same volume, but different subpaths of it.
+A special case of the previous example is when two pods with different SELinux labels use the same volume, but different subpaths of it.
 The container runtime then re-labels only these subpaths and as long as the subpaths are different, both pods can run today.
 **This will not be possible with this KEP** - while the container runtime operates on subpaths, kubelet always mounts the whole volume. The first mount with `-o context=X` will succeed, the second with `-o context=Y` will fail. The second Pod will be `ContainerCreating` as described above.
 
@@ -245,13 +245,13 @@ Following table captures interaction between actual filesystems on a volume and 
 | NFS1 CSI        | true                            | `-o context=XYZ,noshareacache` |               | 4) |
 | NFS2 CSI        | unset or false                  |                                |               | 5) |
 
-1) Kubelet knows that the in-tree AWS EBS plugin supports mounting with `-o context`. The mount option is then used (if pod context is known) and the container runtime does not relabel the volume.
+1) Kubelet knows that the in-tree AWS EBS plugin supports mounting with `-o context`. The mount option is then used (if pod label is known) and the container runtime does not relabel the volume.
 2) AWS EBS CSI driver ships CSIDriver instance with `SELinuxMountSupported: true`. The behavior is the same as for in-tree volume plugin.
 3) Here we show behavior of "old" CSI drivers, that ship their `CSIDriver` with `SELinuxMountSupported` unset (or `false`). Kubelet mounts the volume without any `-o context` option and detects that the volume supports SELinux (by inspecting mount options - it can find `seclabel` there). Therefore, it passes `:Z` to the container runtime to recursively relabel files on the volume.
 
-4) This must be a NFS CSI driver that detects `-o context` mount option and automatically adds `nosharecache` to allow mounting the same volume with different SELinux context on the same node.
+4) This must be a NFS CSI driver that detects `-o context` mount option and automatically adds `nosharecache` to allow mounting the same volume with different SELinux label on the same node.
    The CSI driver announces this capability by setting `SELinuxMountSupported: true` in its CSIDriver instance.
-   Kubelet will mount the volumes with proper context.
+   Kubelet will mount the volumes with proper label.
 5) This is a NFS CSI driver that does not support `-o context` mount option.
    Kubelet then mounts the volume without any extra options.
 
@@ -281,7 +281,7 @@ spec:
 
 No change from current Kubernetes behavior:
 
-1. Kubelet does not see any SELinux context set for the pod thus mounts `myclaim` PVC as usual and if the underlying volume supports SELinux, it passes it to the container runtime with ":Z".
+1. Kubelet does not see any SELinux label set for the pod thus mounts `myclaim` PVC as usual and if the underlying volume supports SELinux, it passes it to the container runtime with ":Z".
    Kubelet passes also implicit Secret token volume with token with ":Z".
 2. Container runtime allocates a new unique SELinux label for the pod and recursively relabels all volumes with ":Z" to this label.
 
@@ -311,14 +311,14 @@ spec:
           claimName: myclaim
 ```
 
-1. Kubelet sees SELinux context in the pod. It files rest of the label from system defaults and gets `system_u:object_r:container_file_t:s0:c10,c0`.
-2. Kubelet calls MountDevice() / SetUp() calls of the volume plugin with this explicit SELinux context.
+1. Kubelet sees SELinux label in the pod. It files rest of the label from system defaults and gets `system_u:object_r:container_file_t:s0:c10,c0`.
+2. Kubelet calls MountDevice() / SetUp() calls of the volume plugin with this explicit SELinux label.
 3. The volume plugin (or CSI driver underneath), if it supports SELinux, adds `-o context=system_u:object_r:container_file_t:s0:c10,c0` to all its mount calls.
     * Here the CSI volume plugin checks `CSIDriver.SELinuxMountSupported` of the corresponding CSI driver.
 4. Kubelet passes no SELinux option to CRI, resulting in no recursive `chcon` in the container runtime.
 
-For example, OpenShift as a Kubernetes distribution, deploys a webhook that can inject SELinux context from namespace annotation into all Pods in the namespace.
-Therefore, if configured properly, all Pods in the same namespace run with the same context and they can access data of each other.
+For example, OpenShift as a Kubernetes distribution, deploys a webhook that can inject SELinux label from namespace annotation into all Pods in the namespace.
+Therefore, if configured properly, all Pods in the same namespace run with the same label and they can access data of each other.
 
 ### CSI driver considerations
 
@@ -332,7 +332,7 @@ We will document this requirement in our documentation that faces CSI driver ven
 
 ### Risks and Mitigations
 
-This KEP changes behavior of Kubernetes when two pods with different SELinux contexts use the same volume. See [Behavioral changes](#behavioral-changes) above.
+This KEP changes behavior of Kubernetes when two pods with different SELinux labels use the same volume. See [Behavioral changes](#behavioral-changes) above.
 There is a risk that existing applications will get broken when the feature is enabled.
 To mitigate this risk, we propose:
 
@@ -346,16 +346,16 @@ To mitigate this risk, we propose:
 Apart from the obvious API change and behavior described above, kubelet + volume plugins need not so obvious changes:
 
 * Kubelet's VolumeManager needs to track which SELinux label should get a volume in global mount (to call `MountDevice()` with the right mount options).
-  * It must call `UnmountDevice()` even when another pod wants to re-use a mounted volume, but it has a different SELinux context.
+  * It must call `UnmountDevice()` even when another pod wants to re-use a mounted volume, but it has a different SELinux label.
   * After kubelet restart, kubelet must reconstruct the original SELinux label it used to SetUp and MountDevice of each volume.
     See Volume Reconstruction below.
-  * Reconciler must check also SELinux context used to mount a volume (both mounted devices and volumes) before considering what operation to take on a volume (`MountVolume` or `UnmountVolume`/`UnmountDevice` or nothing).
-    It must throw proper error message telling that a Pod can't start because its volume is used by another Pod with a different SELinux context.
+  * Reconciler must check also SELinux label used to mount a volume (both mounted devices and volumes) before considering what operation to take on a volume (`MountVolume` or `UnmountVolume`/`UnmountDevice` or nothing).
+    It must throw proper error message telling that a Pod can't start because its volume is used by another Pod with a different SELinux label.
     * This is a good point to capture any metrics proposed below.
-* Volume plugins will get SELinux context as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
+* Volume plugins will get SELinux label as a new parameter of `MountDevice` and `SetUp`/`SetupAt` calls (resp. as a new field in `DeviceMounterArgs` / `MounterArgs`).
   * Each volume plugin can choose to use the mount option `-o context=` (e.g. when `CSIDriver.SELinuxRelabelPolicy` is `true`) or ignore it (e.g. in-tree volume plugins for shared filesystems or when `CSIDriver.SELinuxRelabelPolicy` is `false` or `nil`).
   * Each volume plugin then returns `SupportsSELinux` from `GetAttributes()` call, depending on if it wants the container runtime to relabel the volume (`true`) or not (`false`; the volume was already mounted with the right label or it does not support SELinux at all).
-    It will report error when the context in `/proc/mounts` does not match the expected value.
+    It will report error when the label in `/proc/mounts` does not match the expected value.
 * When a CSI driver announces `SELinuxMountSupported: true`, kubelet will check that `-o context=X` was correctly applied after `NodePublish()`.
   It is a failure on CSI driver side, that it announces something that it is not able to fulfill.
   All pods that use such a volume will be ContainerCreating until the CSI driver fixes the mount (i.e., probably forever), with a message that it's CSI driver fault.
@@ -375,13 +375,13 @@ Today, volume reconstruction works in this way:
    volumes to the ASW and lets regular reconciler to unmount them.
 
 This approach does not work for SELinux, because at step 1. above, the volume manager needs to know *if* a volume is mounted and with
-*what SELinux context mount option*. If the required and existing SELinux contexts of a volume match, the volume manager can continue
-mounting the volume. If they don't, volume manager needs to unmount the volume with the wrong SELinux context first and mount it again
+*what SELinux context mount option*. If the required and existing SELinux labels of a volume match, the volume manager can continue
+mounting the volume. If they don't, volume manager needs to unmount the volume with the wrong SELinux label first and mount it again
 with the right one.
 
 We need to populate the ASW as soon as possible after kubelet starts. Suggested changes:
 
-1. When kubelet starts, the volume manager will reconstruct all volumes incl. their SELinux contexts and put them to the DSW as *uncertain*.
+1. When kubelet starts, the volume manager will reconstruct all volumes incl. their SELinux labels and put them to the DSW as *uncertain*.
    At this point, kubelet may not have connection to the API server yet, hence this phase of volume reconstruction must work without it.
    Kubelet will store all reconstructed volumes in a separate array, to finish the reconstruction when the API server is available.
    * This implies that volume plugins can't expect that the API server is available in `ConstructVolumeSpec`, `ConstructBlockVolumeSpec`,
@@ -398,7 +398,7 @@ We need to populate the ASW as soon as possible after kubelet starts. Suggested 
 
 This work was separated into its own KEP + Feature [#3756](https://github.com/kubernetes/enhancements/issues/3756).
 
-Here in this KEP we will need only to add SELinux context to reconstructed volumes.
+Here in this KEP we will need only to add SELinux label to reconstructed volumes.
 
 ### Implementation phases
 
@@ -407,7 +407,7 @@ Due to change of Kubernetes behavior, we will implement the feature only for cas
 #### Phase 1
 - Implement the feature only for volumes that are backed by PersistentVolumeClaims with `ReadWriteOncePod` access mode.
   Such volumes can be used only in a single pod and two pods can't ever conflict when using it.
-- Collect metrics of how many other pods would fail because they use a RWO/RWX volume that's used by a pod with different SELinux context on the same node.
+- Collect metrics of how many other pods would fail because they use a RWO/RWX volume that's used by a pod with different SELinux label on the same node.
   TBD: create Info level alert ("please consider re-architecting your app not to share volumes this way and/or report it to sig-storage")?
 This phase can go Beta (be enabled by default) or even GA without breaking anything.
 
@@ -442,7 +442,7 @@ No existing / new tests for volume mounting there.
 
 * Check no recursive `chcon` is done on a volume when not needed.
 * Check recursive `chcon` is done on a volume when needed.
-* Check that proper metric + alert is emitted when kubelet can't start two pods with different SELinux contexts using the same volume on the same node._
+* Check that proper metric + alert is emitted when kubelet can't start two pods with different SELinux labels using the same volume on the same node._
   * These tests might use only CSI volumes, GCE PD in-tree volume plugin that we use for e2e tests might be already migrated to CSI by that time.
 * Prepare e2e job that runs with SELinux in Enforcing mode!
 
@@ -593,14 +593,14 @@ _This section must be completed when targeting beta graduation to a release._
       - It applies to all volumes when both `ReadWriteOncePod` and `SELinuxMount` feature gate is enabled.
     - All `warnings_total` metrics below are reported when only `SELinuxMountReadWriteOncePod` feature gate is enabled and shows **future** errors that would appear after both `SELinuxMountReadWriteOncePod` and `SELinuxMount` feature gates are enabled.
       This will be evaluated in Phase 2.
-    - 1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux context for a container.
-        This indicates an error converting SELinux context into SELinux label by github.com/opencontainers/selinux/go-selinux library.
+    - 1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux label for a container.
+        This indicates an error converting SELinux label into SELinux label by github.com/opencontainers/selinux/go-selinux library.
         Reading its source code, this should never happen, but one never knows.
-      1. `volume_manager_selinux_pod_context_mismatch_errors_total` + `volume_manager_selinux_pod_context_mismatch_warnings_total`: Number of errors when a Pod defines different SELinux contexts for its containers that use the same volume.
+      1. `volume_manager_selinux_pod_context_mismatch_errors_total` + `volume_manager_selinux_pod_context_mismatch_warnings_total`: Number of errors when a Pod defines different SELinux labels for its containers that use the same volume.
          Before this feature, only one container in such a Pod could access the volume.
          With this feature, the Pod won't even start.
          This metric captures nr. of failed Pod starts, including periodic retries.
-      1. `volume_manager_selinux_volume_context_mismatch_errors_total` + `volume_manager_selinux_volume_context_mismatch_warnings_total`: Number of errors when a Pod uses a volume that is already mounted with a different SELinux context than the Pod needs.
+      1. `volume_manager_selinux_volume_context_mismatch_errors_total` + `volume_manager_selinux_volume_context_mismatch_warnings_total`: Number of errors when a Pod uses a volume that is already mounted with a different SELinux label than the Pod needs.
          Before this feature, both pods would start, but only one such pod could access the volume.
          With this feature, one of the Pods won't even start.
     - `pod_start_sli_duration_seconds`: Duration in seconds to start a pod, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch.
@@ -622,7 +622,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 - `pod_start_sli_duration_seconds` is the same or better than before this feature, because CRI does not need to relabel (some) volume mounts.
 
-All the other metrics above mostly indicate that *user* has made a mistake and use the same volume in two Pods with the same SELinux context.
+All the other metrics above mostly indicate that *user* has made a mistake and use the same volume in two Pods with the same SELinux label.
 This did not work even before this KEP (except for the case where two pods use different subpaths), now it's just more obvious.
 IMO we can't base SLO on this.
 
@@ -684,7 +684,7 @@ previous answers based on experience in the field._
   [supported limits][].
 
   No. Kubelet already has a cache of desired / existing mounts, we need to add
-  a string with SELinux context to each one, which should be negligible.
+  a string with SELinux label to each one, which should be negligible.
 
 * **Can enabling / using this feature result in resource exhaustion of some node
   resources (PIDs, sockets, inodes, etc.)?**
@@ -692,7 +692,7 @@ previous answers based on experience in the field._
   Not in Kubernetes.
 
   A CSI driver may need to use a specific mount option to allow mounting the
-  same volume with different SELinux context on the same node, which may have
+  same volume with different SELinux label on the same node, which may have
   negative impact on memory, CPU or sockets. For example, NFS may require
   `nosharecache` mount option that disables sharing of caches between mounts of
   the same volume.
@@ -727,7 +727,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
       Workloads that run keep running, only new Pods can't start.
-    - Diagnostics: Kubelet emits events to Pod why the metrics are growing. Admin must find the affected Pods and check why they can't run, typically there is another Pod on the node that uses the same volume, but with a different SELinux context.
+    - Diagnostics: Kubelet emits events to Pod why the metrics are growing. Admin must find the affected Pods and check why they can't run, typically there is another Pod on the node that uses the same volume, but with a different SELinux label.
     - Testing: Yes, see e2e tests above.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
@@ -740,7 +740,7 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 * 1.25: Partial implementation of alpha.
-  * Volume reconstruction after kubelet start does not reconstruct SELinux contexts.
+  * Volume reconstruction after kubelet start does not reconstruct SELinux labels.
 * 1.26: Alpha with everything implemented.
 * 1.27: Targeting beta.
   * Volume reconstruction separated into its own KEP + Feature [#3756](https://github.com/kubernetes/enhancements/issues/3756).
@@ -760,7 +760,7 @@ _This section must be completed when targeting beta graduation to a release._
 The same approach & API as in `FSGroupChangePolicy` can be used.
 **This is a viable option!**
 
-If kubelet knows SELinux context that should be applied to a volume && hypothetical `SELinuxChangePolicy` is `OnRootMismatch`, it would check context only of the top-level directory of a volume and recursively `chcon` all files only when the top level dir does not match.
+If kubelet knows SELinux label that should be applied to a volume && hypothetical `SELinuxChangePolicy` is `OnRootMismatch`, it would check label only of the top-level directory of a volume and recursively `chcon` all files only when the top level dir does not match.
 This could be done together with recursive change for `fsGroup`.
 Kubelet would not use ":Z" when passing the volume to container runtime.
 
@@ -780,13 +780,13 @@ It would do the same as `PodFSGroupChangePolicy: OnRootMismatch` in [fsGroup KEP
 
 This approach cannot work because of `SubPath`.
 If a Pod uses a volume with SubPath, container runtime gets only a subdirectory of the volume.
-It could check the top-level of this subdir only and recursively change SELinux context there, however, this could leave different subdirectories of the volume with different SELinux labels and checking top-level directory only does not work.
-With solution implemented in kubelet, we can always check top level directory of the whole volume and change context on the whole volume too.
+It could check the top-level of this subdir only and recursively change SELinux label there, however, this could leave different subdirectories of the volume with different SELinux labels and checking top-level directory only does not work.
+With solution implemented in kubelet, we can always check top level directory of the whole volume and change label on the whole volume too.
 
 ### Move SELinux label management to kubelet
 Right now, it's the container runtime who assigns labels to containers that don't have any specific `SELinuxOptions`.
 We could move SELinux label assignment to kubelet.
-This change would require significant changes both in kubelet (to manage the contexts) and CRI (to list used context after kubelet restart).
+This change would require significant changes both in kubelet (to manage the labels) and CRI (to list used label after kubelet restart).
 As benefit, kubelet would mount volumes for *all* pods quickly, not only those that have explicit `SELinuxOptions`.
 We are not sure if it's possible to change the default behavior to `OnVolumeMount`, without any field in `PodSecurityPolicy`.
 
@@ -818,20 +818,20 @@ With a single `VolumeChangePolicy`, user has to fall back to `Recursive` policy 
 
 ### Implement kubelet admission
 
-It's not really an alternative, but it's worth mentioning that we originally proposed to implement kubelet admission for Pods with SELinux contexts.
+It's not really an alternative, but it's worth mentioning that we originally proposed to implement kubelet admission for Pods with SELinux labels.
 
-Kubelet _could_ reject a Pod that uses a volume with a different SELinux context than the volume is currently mounted with on the node, right during Pod admission.
+Kubelet _could_ reject a Pod that uses a volume with a different SELinux label than the volume is currently mounted with on the node, right during Pod admission.
 Such a Pod would end in `Failed` state with appropriate message, and it would never reach kubelet internal states (e.g. DSW, ASW, MountDevice, SetUp, etc.).
 
 We thought it would send a clear message to the user that such a pod can't start, and why.
 During implementation and testing it has shown that it's very noisy. Consider this experiment:
 
-1. User runs a single-replica Deployment with no SELinux context set. The Deployment uses a single volume. The Deployment runs a Pod A on Node 1.
-1. User edits the Deployment and sets the SELinux context of the Pod, because they want to benefit from `SELinuxMount` feature.
-1. Deployment / ReplicaSet controllers start a new Pod B with the new SELinux context.
+1. User runs a single-replica Deployment with no SELinux label set. The Deployment uses a single volume. The Deployment runs a Pod A on Node 1.
+1. User edits the Deployment and sets the SELinux label of the Pod, because they want to benefit from `SELinuxMount` feature.
+1. Deployment / ReplicaSet controllers start a new Pod B with the new SELinux label.
 1. Scheduler (accidentally?) puts Pod B to Node 1, where Pod A still runs.
-1. Kubelet rejects the new Pod, because the volume is already mounted without any SELinux context, while the new Pod wants a specific one.
-1. Deployment / ReplicaSet controllers start another Pod with the new SELinux context. Scheduler puts it to Node 1 again.
+1. Kubelet rejects the new Pod, because the volume is already mounted without any SELinux label, while the new Pod wants a specific one.
+1. Deployment / ReplicaSet controllers start another Pod with the new SELinux label. Scheduler puts it to Node 1 again.
 1. Kubelet rejects the Pod again. This loop can continue forever, as longs as the scheduler picks Node 1 and Pod A still runs there.
 
 I got hundreds Pods just created and rejected in a minute or so. While it sends a clear message to the user that something is wrong, it's just too noisy for the API server.
@@ -839,5 +839,5 @@ I got hundreds Pods just created and rejected in a minute or so. While it sends 
 **As result, we decided to remove pod admission in kubelet from this KEP.**
 
 Expected behavior without Pod admission is that kubelet admits the Pod B and eventually its volumes reach DSW.
-The Pod B will be `ContainerCreating` until Pod A terminates and the volume can be mounted with the right SELinux context.
+The Pod B will be `ContainerCreating` until Pod A terminates and the volume can be mounted with the right SELinux label.
 The same behavior was already implemented for `ReadWriteOncePod` AccessMode.
