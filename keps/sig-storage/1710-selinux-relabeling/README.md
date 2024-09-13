@@ -83,13 +83,12 @@ The enhancement describes situations when such option can/cannot be used, why it
 On Linux machines with SELinux in enforcing mode, SELinux tries to prevent users that escaped from a container to access the host OS and also to access other containers running on the host.
 It does so by running each container with unique *SELinux label* (sometimes called *SELinux context*), such as `system_u:system_r:container_t:s0:c309,c383`, and labeling all content on all volumes with the corresponding label (`system_u:object_r:container_file_t:s0:c309,c383`).
 Only process with the label `...:container_t:s0:c309,c383` can access files with label `container_file_t:s0:c309,c383`.
-Therefore, a rogue user who escaped boundaries of its container cannot access data of other containers, because volumes of each container have different label.
-Even processes running as root (UID 0) are denied access to these files, unless they run with the right SELinux label.
+Therefore, a rogue user who escaped boundaries of its container, with label say `container_file_t:s0:c68,c222`, cannot access data of other containers, because the label of the attacker's process does not match any other container on the system.
+Even processes running as root (UID 0) are denied access to these files, unless they run with the right SELinux label or as privileged containers.
 
 Further in this KEP we assume that the SELinux is enabled on the system. This KEP has absolutely no effect on systems that run without SELinux. Kubelet already knows if SELinux is enabled and does not do anything with it if it's disabled or not available (e.g. on Windows).
 
 See [SELinux documentation](https://selinuxproject.org/page/NB_MLS) for more details.
-
 
 ### SELinux label assignment
 In Kubernetes, the SELinux label of a pod is assigned in two ways:
@@ -130,6 +129,20 @@ For CSI, kubelet currently uses following heuristics:
 2. Check mount options of the volume mount dir. If and only if it contains `seclabel` mount option, the volume supports SELinux and kubelet will pass ":Z" to the container runtime, which then relabels all files there.
 
 Note that we'll use docker ":Z" option as shortcut for `selinux_relabel` CRI option further in the text.
+
+### Privileged containers
+
+Privileged containers get SELinux label `system_u:system_r:spc_t:s0`, where `spc` means "super privileged container".
+Such a container can access any file on the host, regardless of its SELinux label, and any file of any other container.
+From SELinux perspective, a rogue process, escaping privileged container boundary, can do anything to any file on the host.
+Regular UID / GID checks still apply, so the process either needs to run as root or exploit a CVE to get such permissions.
+Privileged Pods also have exception in the container runtime, the runtime does not perform any no recursive relabeling for them.
+
+As consequence of the aboce, it's possible to run an unprivileged Pod with a SELinux label say `c309,c383` and a privileged Pod with `spc_t` and both can access the same volume in parallel.
+When the unprivileged Pod starts, its volumes are relabeled with `c309,c383` and the pod can access its volumes.
+When the privileged Pod starts, it does not initiate any relabeling, and at the same time it can access files with any labels, incl. `c309,c383`.
+
+**This was discovered in 1.30 - 1.31, when SELinuxMountReadWriteOncePod was beta + enabled by default.**
 
 ## Motivation
 
