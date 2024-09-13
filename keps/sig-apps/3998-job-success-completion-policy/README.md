@@ -452,6 +452,8 @@ to implement this enhancement.
 #### GA
 
 - No negative feedback.
+- Verify reason for the Job's `Complete` condition in all e2e conformance tests
+  (see [example](https://github.com/kubernetes/kubernetes/blob/e5dd48efd07e8a052604b3073e0fafe7361ca689/test/e2e/apps/job.go#L804))
 
 ### Upgrade / Downgrade Strategy
 
