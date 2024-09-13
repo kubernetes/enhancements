@@ -931,3 +931,10 @@ That use case would not be possible if all mount used `-o context`:
    It needs to wait for Pod A to get deleted + its volume unmounted.
 
 That's not what user wants, they want A and B to run at the same time and access the same data, which is possible with recursive relabeling.
+
+### Allow opt-in (or opt-out) globally via kubelet flags
+
+Instead of `SELinuxChangePolicy` in every PodSpec, we considered having a global flag to enable or disable the feature for all Pods in a cluster.
+For example by a new kubelet flag `--enable-selinux-mount`.
+
+This is a good "plan B", if the API changes proposed here are not acceptable.
