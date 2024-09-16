@@ -777,6 +777,8 @@ in back-to-back releases.
 
 - Address reviews and bug reports from Beta users
 - Write a blog post about the feature
+- Revisit extending the [hands-on guide for Pod failure policy](https://kubernetes.io/docs/tasks/job/pod-failure-policy/)
+  to use `FailIndex`
 - Graduate e2e tests as conformance tests
 - Lock the `JobBackoffLimitPerIndex` feature gate
 - Declare deprecation of the `JobBackoffLimitPerIndex` feature gate in documentation
