@@ -460,8 +460,9 @@ cluster fails.
 During alpha, naturally the first line of defense is that the enhancements, even
 the reduced "default" baseline curve for CrashLoopBackoff, are not usable by
 default and must be opted into. In this specific case they are opted into
-separately as kubelet flags, so clusters will only be affected by each risk if
-the cluster operator enables the new features during the alpha period.
+separately with different alpha feature gates, so clusters will only be affected
+by each risk if the cluster operator enables the new features during the alpha
+period.
 
 Beyond this, there are two main mitigations during alpha: conservativism in
 changes to the default behavior, and <<[UNRESOLVED]>> per-node <<[/UNRESOLVED]>>
