@@ -167,6 +167,8 @@ The Sleep action is implemented with the time package from Go’s standard libra
 
 The implementation in KEP 3960 supports only non-zero values for the sleep duration. It is semantically correct to support a zero value for this field since time.After() also supports zero and negative durations. Negative values as well as zero have the same effect with time.After(), they both return immediately. We don’t need to support negative values since they have the same effect as setting the duration to zero.
 
+A potential use case for this behaviour is when you need a PreStop hook to be defined for the validation of your resource, but don't really need to sleep as part of the PreStop hook. An example of this is described by a user [here](https://github.com/kubernetes/enhancements/issues/3960#issuecomment-2208556397) in the parent KEP. They add a PreStop sleep hook in via an admission webhoook by default if the PreStop is hook is not specified by the user. In order to opt-out from this, a no-op PreStop hook with a duration of zero seconds can be used.
+
 ### Goals
 
 - Update the validation for the Sleep action to allow zero as a valid sleep duration.
@@ -227,7 +229,7 @@ See the entire code changes in the WIP PR: [https://github.com/kubernetes/kubern
 
 #### Story 1
 
-#### Story 2
+As a Kubernetes user, I want to to be able to have a PreStop hook defined in my spec without needing to sleep during the execution of the PreStop hook. This no-op behaviour can be used for validation purposes with admission webhooks ([Reference](https://github.com/kubernetes/enhancements/issues/3960#issuecomment-2208556397)).
 
 ### Notes/Constraints/Caveats (Optional)
 
