@@ -17,6 +17,9 @@ milestone:
     alpha: ""
     beta: ""
     stable: ""
-feature-gates: ["PodLifecycleSleepActionAllowZero"]
+feature-gates:
+  - name: PodLifecycleSleepActionAllowZero
+    components:
+      - kube-apiserver
 disable-supported: false
 metrics: []
