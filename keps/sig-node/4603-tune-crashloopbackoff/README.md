@@ -307,6 +307,8 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+<<[UNRESOLVED changing from 1.31 proposal to 1.32 proposal,
+incoming in a separate PR]>>
 This design seeks to incorporate a two-pronged approach:
 
 1. Change the existing initial value for the backoff curve to stack more retries
@@ -342,6 +344,8 @@ Note that proposal will NOT change:
 * changes that address 'late recovery', or modifications to backoff behavior
   once the max cap has been reached -- see
   [Alternatives](#more-complex-heuristics)
+
+<<[/UNRESOLVED]>>
 
 
 ### Existing backoff curve change: front loaded decay
@@ -504,6 +508,8 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+<<[UNRESOLVED changing from 1.31 to 1.32 proposal, incoming in separate PR]>>
 
 ### Front loaded decay curve methodology
 As mentioned above, today the standard backoff curve is a 2x exponential decay
@@ -739,7 +745,7 @@ completely different pattern, as unlike with CrashLoopBackoff the types of
 errors with ImagePullBackoff are less variable and better interpretable by the
 infrastructure as recovereable or non-recoverable (i.e. 404s).
 
-
+<<[/UNRESOLVED]>>
 ### Test Plan
 
 <!--
