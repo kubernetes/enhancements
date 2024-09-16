@@ -99,8 +99,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -393,7 +393,7 @@ For that we plan to follow the approach described [below](#terminating-pods-and-
 which extend the scope of the interim `FailureTarget` and `SuccessCriteriaMet`
 conditions. We will also validate that the transition to `Failed` or `Complete`
 condition is preceded by adding the `FailureTarget` or `SuccessCriteriaMet`
-condition, respecively.
+condition, respectively.
 
 Additionally, we are going to introduce a validation rule that the count of
 ready `status.ready` pods is lower or equal than the number of active `status.active`
@@ -480,21 +480,21 @@ The following scenarios related to [Terminating pods and terminal Job conditions
 ##### Integration tests
 
 The following scenarios are covered:
-- the Job controller reconciles jobs with the "managedBy" field equal to `kubernetes.io/job-controller`
-- the Job controller reconciles jobs without the "managedBy" field
+- the Job controller reconciles jobs with the "managedBy" field equal to `kubernetes.io/job-controller` ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2016))
+- the Job controller reconciles jobs without the "managedBy" field ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000))
 - the Job controller does not reconcile a job with any other value of the "managedBy" field. In particular:
-  - it does not reset the status for a Job with `.spec.suspend=false`,
-  - it does not add the Suspended condition for a Job with `.spec.suspend=true`.
-- the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled
+  - it does not reset the status for a Job with `.spec.suspend=false` ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2044)),
+  - it does not add the Suspended condition for a Job with `.spec.suspend=true` ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2059)).
+- the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2030))
 - the Job controller handles correctly re-enablement of the feature gate [link](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)
-- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created
-- the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value
-- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy")
+- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2044-L2058))
+- the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029))
+- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy") (tested indirectly as [here](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029) the Job controller updates the Job status)
 
 The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
-- `Failed` or `Complete` conditions are not added while there are still terminating pods
-- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
-- `SuccessCriteriaMet` is added when the `completions` are satisfied
+- `Failed` or `Complete` conditions are not added while there are still terminating pods ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L1183))
+- `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded ([link](https://github.com/kubernetes/kubernetes/blob/master/test/integration/job/job_test.go#L1253))
+- `SuccessCriteriaMet` is added when the `completions` are satisfied ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L1355))
 
 During the implementation more scenarios might be covered.
 
@@ -542,7 +542,7 @@ Second Alpha (1.31):
 - Address reviews and bug reports from Beta users
 - Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
 - Re-evaluate the support for mutability of the field
-- Asses the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
+- Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
 - Lock the feature gate
 
 #### Deprecation
@@ -1080,6 +1080,10 @@ N/A.
 - 2024-03-08 - Merged [Follow up fix to the job status update test](https://github.com/kubernetes/kubernetes/pull/123815)
 - 2024-03-11 - Merged [Adjust the Job field API comments and validation to the current state](https://github.com/kubernetes/kubernetes/pull/123792)
 - 2024-05-16 - Merged [Fix the comment for the Job managedBy field](https://github.com/kubernetes/kubernetes/pull/124793)
+- 2024-06-11 - Merged [Count terminating pods when deleting active pods for failed jobs](https://github.com/kubernetes/kubernetes/pull/1251753)
+- 2024-06-21 - Merged [Update the count of ready pods when deleting pods](https://github.com/kubernetes/kubernetes/pull/125546)
+- 2024-07-12 - Merged [Delay setting terminal Job conditions until all pods are terminal](https://github.com/kubernetes/kubernetes/pull/125510)
+- 2024-07-30 - Merged [Update the docs for JobManagedBy and JobPodReplacementPolicy related to pod termination](https://github.com/kubernetes/website/pull/46808)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
