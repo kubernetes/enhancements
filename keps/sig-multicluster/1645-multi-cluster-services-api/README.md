@@ -438,6 +438,11 @@ const {
       // Users should not expect detailed per-cluster information in the
       // conflict message.
       ServiceExportConflict = "Conflict"
+      // ServiceExportLocalConflict means that the service export is directly
+      // involved in a conflict. This condition should be "True" if the local
+      // service export if involved in the conflict whether or not
+      // the conflict is resolved in the favor of this service export.
+      ServiceExportLocalConflict = "LocalConflict"
 }
 ```
 ```yaml
@@ -452,7 +457,6 @@ status:
     status: "True"
     reason: Ready
     lastTransitionTime: "2020-03-30T01:33:51Z"
-    reason: "Ready"
   - type: Valid
     status: "False"
     reason: Valid
@@ -464,6 +468,11 @@ status:
     reason: Conflict
     lastTransitionTime: "2020-03-30T01:33:55Z"
     message: "Conflicting type. 2/5 clusters disagree. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\"."
+  - type: LocalConflict
+    status: "True"
+    reason: LocalConflict
+    lastTransitionTime: "2020-03-30T01:33:55Z"
+    message: "This ServiceExport is directly involved in the conflict."
 ```
 
 To export a service, a `ServiceExport` should be created within the cluster and
