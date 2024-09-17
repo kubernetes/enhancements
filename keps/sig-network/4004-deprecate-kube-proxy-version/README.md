@@ -18,7 +18,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -148,10 +147,7 @@ to implement this enhancement.
 
 - Created the feature gate, disabled by default.
 - Started looking for components that might be using the deprecated field.
-
-#### Beta
-
-- Make sure that upgrades to the Beta version will work across supported levels of [version skew](https://kubernetes.io/releases/version-skew-policy/).
+- Make sure it works fine on supported versions of [version skew](https://kubernetes.io/releases/version-skew-policy/).
 
 #### GA
 
@@ -191,7 +187,7 @@ I manually confirmed that restarting kubelet behaves as expected with feature ga
 
 I've tried to simulate this manually by running (using `local-cluster-up.sh).
 
-Cluster Version v1.31+, `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (manual setting):
+Cluster Version v1.31+, `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (default value):
 
 ```
 ~ kubectl get nodes 127.0.0.1 -oyaml
@@ -290,7 +286,7 @@ N/A
    
    * The value of the `kubeProxyVersion` field in nodeInfo is not empty.
    
-2. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=true` (default value)
+2. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=true` (manual setting)
 
    ```
    git checkout master
@@ -338,7 +334,7 @@ N/A
    
    * The value of the `kubeProxyVersion` field in nodeInfo is empty.
    
-4. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (manual setting)
+4. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (default value)
 
    ```
    git checkout master
@@ -422,6 +418,8 @@ N/A.
 \- 2023-05-15: Initial draft KEP
 
 \- 2024-06-10: Promoted to beta and add manual upgrade and rollback tests
+
+\- 2024-08-25: Replace with Deprecated feature gates.
 
 ## Drawbacks
 
