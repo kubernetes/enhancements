@@ -246,8 +246,8 @@ Resource fields remain immutable via pod update.
 The following API validation rules will be applied for updates via the `/resize` subresource:
 
 1. Resources & ResizePolicy must be valid under pod create validation.
-1. Computed QOS class cannot be lowered. See [QOS Class](#qos-class) for more details.
-2. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
+2. Computed QOS class cannot be lowered. See [QOS Class](#qos-class) for more details.
+3. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
    See [Version Skew Strategy](#version-skew-strategy) for more details.
 
 #### Container Resize Policy
@@ -277,8 +277,8 @@ If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
-The `ResizePolicy` field is **mutable**, but must have an entry for every resizable resource type
-with a request or limit on the container.
+The `ResizePolicy` field is append-only. Appending the policy is allowed to accommodate a resize
+adding a request or a limit for a resource that wasn't previously present.
 
 #### Resize Status
 
@@ -708,29 +708,29 @@ intended.
 
 ### Sidecars
 
-Sidecars, a.k.a. resizeable InitContainers can be resized the same as regular containers. There are
+Sidecars, a.k.a. restartable InitContainers can be resized the same as regular containers. There are
 no special considerations here. Non-restartable InitContainers cannot be resized.
 
 ### QOS Class
 
-A pod's QOS class cannot be changed once the pod is started, independent of any resizes.
+A pod's QOS class **cannot be changed** once the pod is started, independent of any resizes.
 
 To clarify the discussion of QOS Class changes, the following terms are defined:
 
-* "Original QOS Class" - The QOS class that was computed based on the original resource requests &
-  limits when the pod was first created.
-* "Suggested QOS Class" - The QOS class that would be computed based on the current resource
-  requests & limits.
+* "QOS Class" - The QOS class that was computed based on the original resource requests & limits
+  when the pod was first created.
+* "QOS Shape" - The QOS class that _would_ be computed based on the current resource requests &
+  limits.
 
-With in-place vertical scaling, the _suggested QOS Class_ must be greater than or equal to the
-_original QOS Class_:
+On creation, the QOS Class is equal to the QOS Shape. After a resize, the QOS Shape must be greater
+than or equal to the original QOS Class:
 
-* Guaranteed pods: must maintain `requests == limits`
+* Guaranteed pods: must maintain `requests == limits`, and must be set for both CPU & memory
 * Burstable pods: _can_ be resized such that `requests == limits`, but their original QOS
 class will stay burstable. Must retain at least one CPU or memory request or limit.
 * BestEffort pods: can be freely resized, but stay BestEffort.
 
-Even though the suggested QOS Class is allowed to change, the original QOS class is used for all
+Even though the QOS Shape is allowed to change, the original QOS class is used for all
 decisions based on QOS class:
 
 * `.status.qosClass` always reports the original QOS class
@@ -740,7 +740,12 @@ decisions based on QOS class:
 * OOMScoreAdjust is calculated with the original QOS Class
 * Memory pressure eviction is unaffected (doesn't consider QOS Class)
 
-In order to maintain the original QOS class, the Kubelet will checkpoint the original QOS class.
+The original QOS Class is persisted to the status. On restart, the Kubelet is allowed to read the
+QOS class back from the status.
+
+See [future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) for a possible
+change to make QOS class explicit and improve semantics around
+[workload resource resize](#design-sketch-workload-resource-resize).
 
 ### Resource Quota
 
@@ -819,8 +824,65 @@ time, irrespective of scrape interval.
 1. Extend controllers (Job, Deployment, etc) to propagate Template resources
    update to running Pods.
 1. Allow resizing local ephemeral storage.
-1. Allow resource limits to be updated (VPA feature).
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
+
+#### Design Sketch: Workload resource resize
+
+The following [workload resources](https://kubernetes.io/docs/concepts/workloads/) are considered
+for in-place resize support:
+
+* Deployment
+* ReplicaSet
+* StatefulSet
+* DaemonSet
+* Job
+* CronJob
+
+Each of these resources will have a new `ResizePolicy` field added to the spec. In the case of
+Deployments or Cronjobs, the child (ReplicaSet/Job) will inherit the policy. The resize policy is
+set to one of: `InPlace` or `Recreate` (default). If the policy is set to recreate, the behavior is
+unchanged, and generally induces a rolling update.
+
+If the policy is set to in-place, the controller will *attempt* to issue an in-place resize to all
+the child pods. If the resize is not a legal in-place resize, such as changing from guaranteed to
+burstable, the replicas will be recreated.
+
+Open Questions:
+* Will resizes be issued through a new `/resize` subresource? If so, what happens if a resize is
+  made that doesn't go through the subresource?
+* Does ResizePolicy need to be per-resource type (similar to the resize restart policy on pods)?
+* Can you do a rolling-in-place-resize, or are all child pod resizes issued more or less
+  simultaneously?
+
+#### Design Sketch: Explicit QOS Class
+
+Workload resource resize presents a problem for QOS handling. For example:
+
+1. ReplicaSet created with a burstable pod shape
+2. Initial burstable replicas created
+3. Resize to a guaranteed shape
+4. Initial replicas are still burstable, but with a guaranteed shape
+5. Horizontally scale the RS to add additional replicas
+6. New replicas are created with the guaranteed resource shape, and assigned the guaranteed QOS class
+7. Resize back to a burstable shape (undoing step 3)
+
+After step 6, there are a mix of burstable & guaranteed replicas. In step 7, the burstable pods can
+be resized in-place, but the guaranteed pods will need to be recreated.
+
+To mitigate this, we can introduce an explicit QOSClass field to the pod spec. If set, it must be
+less than or equal to the QOS shape. In other words, you can set a guaranteed resource shape but an
+explicit QOSClass of burstable, but not the other way around. If set, the status QOSClass is synced
+to the explicit QOSClass, and the rest of the behavior is unchanged from the
+[QOS Class Proposal](#qos-class).
+
+Going back to the earlier example, if the original ReplicaSet set an explicit Burstable QOSClass,
+then the heterogeneity in step 6 is avoided. Alternatively, if there was a real desire to switch to
+guaranteed in step 3, then the explicit QOSClass can be changed, triggering a recreation of all
+replicas.
+
+#### Design Sktech: Pod-level Limits
+
+TODO
 
 ### Test Plan
 
