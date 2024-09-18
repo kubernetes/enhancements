@@ -407,7 +407,7 @@ metadata:
 spec:
   selectors:
   - cel:
-      expression: device.driverName == "gpu.acme.example.com"
+      expression: device.driver == "gpu.acme.example.com"
   config:
   - opaque:
       driver: gpu.acme.example.com
@@ -427,8 +427,14 @@ spec:
 As a user, I want to use a GPU as accelerator, but don't need exclusive access
 to that GPU. Running my workload with just 2Gb of memory is sufficient. This is
 supported by the ACME GPU hardware. I know that the administrator has created
-an "acme-gpu" DeviceClass and that such devices have a
-`gpu.acme.example.com/memory` attribute.
+an "acme-gpu" DeviceClass and set up the hardware such that each card is
+partitioned into slices of different sizes. Each slice is represented as
+a device with a `gpu.acme.example.com/memory` attribute that describes how
+much memory is assigned to it.
+
+**Note:** This partitioning is static. Dynamically reconfiguring a card to
+match demand is not part of this KEP. It's covered by the ["partitionable
+devices" extension](https://github.com/kubernetes/enhancements/issues/4815).
 
 For a simple trial, I create a Pod directly where two containers share the same subset
 of the GPU:
@@ -449,7 +455,7 @@ spec:
         deviceClassName: acme-gpu
         selectors:
         - cel:
-            expression: device.attributes["gpu.acme.example.com/memory"].isGreaterThan(quantity("2Gi")) # Always set for ACME GPUs.
+            expression: device.attributes["gpu.acme.example.com"].memory.isGreaterThan(quantity("2Gi")) # Always set for ACME GPUs.
 ---
 apiVersion: v1
 kind: Pod
