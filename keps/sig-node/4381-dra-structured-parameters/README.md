@@ -400,7 +400,7 @@ root privileges that does some cluster-specific initialization of a device
 each time it is prepared on a node:
 
 ```yaml
-apiVersion: resource.k8s.io/v1alpha3
+apiVersion: resource.k8s.io/v1beta1
 kind: DeviceClass
 metadata:
   name: acme-gpu
@@ -440,7 +440,7 @@ For a simple trial, I create a Pod directly where two containers share the same 
 of the GPU:
 
 ```yaml
-apiVersion: resource.k8s.io/v1alpha2
+apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaimTemplate
 metadata:
   name: device-consumer-gpu-template
@@ -542,7 +542,7 @@ Embedded inside each `ResourceSlice` is a list of one or more devices, each of w
 
 ```yaml
 kind: ResourceSlice
-apiVersion: resource.k8s.io/v1alpha3
+apiVersion: resource.k8s.io/v1beta1
 ...
 spec:
   # The node name indicates the node.
@@ -940,12 +940,26 @@ set when it is enabled. Initially, they are declared as alpha. Even though they
 are alpha, changes to their schema are discouraged and would have to be done by
 using new field names.
 
-ResourceClaim, DeviceClass and ResourceClaimTemplate are new built-in types
-in `resource.k8s.io/v1alpha3`. This alpha group must be explicitly enabled in
+After promotion to beta they are still disabled by default unless the feature
+gate explicitly gets enabled. The feature gate remains off by default because
+DRA depends on a new API group which following the
+[convention](https://github.com/kubernetes/enhancements/tree/master/keps/sig-architecture/3136-beta-apis-off-by-default)
+is off by default.
+
+ResourceClaim, DeviceClass and ResourceClaimTemplate are built-in types
+in `resource.k8s.io/v1beta1`. This beta group must be explicitly enabled in
 the apiserver's runtime configuration. Using builtin types was chosen instead
 of using CRDs because core Kubernetes components must interact with the new
 objects and installation of CRDs as part of cluster creation is an unsolved
 problem.
+
+The storage version of this API group is `v1beta1`. This enables a potential
+future removal of the `v1alpha3` version. `v1alpha3` is still supported for
+clients via conversion. This enables version skew testing (kubelet from 1.31
+with 1.32 control plane, incremental update) and makes DRA drivers written for
+1.31 immediately usable with 1.32. Cluster upgrades from 1.31 are supported,
+downgrades only if DRA is not enabled in the downgraded cluster or no resources
+exist in the cluster which use the `v1beta1` format.
 
 Secrets are not part of this API: if a DRA driver needs secrets, for
 example to access its own backplane, then it can define custom parameters for
@@ -1159,6 +1173,10 @@ type BasicDevice struct {
     // Attributes defines the set of attributes for this device.
     // The name of each attribute must be unique in that set.
     //
+    // To ensure this uniqueness, attributes defined by the vendor
+    // must be listed without the driver name as domain prefix in
+    // their name. All others must be listed with their domain prefix.
+    //
     // The maximum number of attributes and capacities combined is 32.
     //
     // +optional
@@ -1167,13 +1185,18 @@ type BasicDevice struct {
     // Capacity defines the set of capacities for this device.
     // The name of each capacity must be unique in that set.
     //
+    // To ensure this uniqueness, capacities defined by the vendor
+    // must be listed without the driver name as domain prefix in
+    // their name. All others must be listed with their domain prefix.
+    //
     // The maximum number of attributes and capacities combined is 32.
     //
     // +optional
-    Capacity map[QualifiedName]resource.Quantity
+    Capacity map[QualifiedName]DeviceCapacity
 }
 
-// Limit for the sum of the number of entries in both ResourceSlices.
+// Limit for the sum of the number of entries in both ResourceSlices.Attributes
+// and ResourceSlices.Capacity.
 const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 
 // QualifiedName is the name of a device attribute or capacity.
@@ -1188,6 +1211,7 @@ const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 // (e.g. "dra.example.com/theName"). Names which do not include the
 // domain prefix are assumed to be part of the driver's domain. Attributes
 // or capacities defined by 3rd parties must include the domain prefix.
+//
 //
 // The maximum length for the DNS subdomain is 63 characters (same as
 // for driver names) and the maximum length of the C identifier
@@ -1234,7 +1258,21 @@ type DeviceAttribute struct {
 
 // DeviceAttributeMaxValueLength is the maximum length of a string or version attribute value.
 const DeviceAttributeMaxValueLength = 64
+
+// DeviceCapacity describes a quantity associated with a device.
+type DeviceCapacity struct {
+    // Quantity defines how much of a certain device capacity is available.
+    Quantity resource.Quantity
+
+    // potential future addition: fields which define how to "consume"
+    // capacity (= share a single device between different consumers).
 ```
+
+The `v1alpha3` API directly mapped to a `resource.Quantity` instead of this
+`DeviceCapacity`. Semantically the two are currently equivalent, therefore
+custom conversion code makes it possible to continue supporting `v1alpha3`. At
+the time that "consumable capacity" gets added (if it gets added!) the alpha
+API probably can be removed because all clients will use the beta API.
 
 ###### ResourceClaim
 
@@ -1407,11 +1445,41 @@ type DeviceRequest struct {
     // all ordinary claims to the device with respect to access modes and
     // any resource allocations.
     //
+    // This is an alpha field and requires enabling the DRAAdminAccess
+    // feature gate.
+    //
     // +optional
     // +default=false
+    // +featureGate=DRAAdminAccess
     AdminAccess bool
 }
+```
 
+Admin access to devices is a privileged operation because it grants users
+access to devices that are in use by other users. Drivers might also remove
+other restrictions when preparing the device.
+
+In Kubernetes 1.31, an example validating admission policy [was
+provided](https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/test/e2e/dra/test-driver/deploy/example/admin-access-policy.yaml#L1-L11)
+which restricts access to this option. It is the responsibility of cluster
+admins to ensure that such a policy is installed if the cluster shouldn't allow
+unrestricted access.
+
+Long term, a Kubernetes cluster should disable usage of this field by default
+and only allow it for users with additional privileges. More time is needed to
+figure out how that should work, therefore the field is placed behind a
+separate `DRAAdminAccess` feature gate which remains in alpha. A separate
+KEP will be created to push this forward.
+
+The `DRAAdminAccess` feature gate controls whether users can set the field to
+true when requesting devices. That is checked in the apiserver. In addition,
+the scheduler refuses to allocate claims with admin access when the feature is
+turned off and somehow the field was set (for example, set in 1.31 when it
+was available unconditionally, or set while the feature gate was enabled).
+A similar check in the kube-controller-manager prevents creating a
+ResourceClaim when the ResourceClaimTemplate has admin access enabled.
+
+```yaml
 const (
     DeviceSelectorsMaxSize = 32
 )
@@ -1482,9 +1550,33 @@ type CELDeviceSelector struct {
     //
     //     cel.bind(dra, device.attributes["dra.example.com"], dra.someBool && dra.anotherBool)
     //
+    // The length of the expression must be smaller or equal to 10 Ki. The
+    // cost of evaluating it is also limited based on the estimated number
+    // of logical steps. Validation against those limits happens only when
+    // setting an expression for the first time or when changing
+    // it. Therefore it is possible to change these limits without
+    // affecting stored expressions. Those remain valid.
+    //
     // +required
     Expression string
 }
+
+// CELSelectorExpressionMaxCost specifies the cost limit for a single CEL selector
+// evaluation.
+//
+// There is no overall budget for selecting a device, so the actual time
+// required for that is proportional to the number of CEL selectors and how
+// often they need to be evaluated, which can vary depending on several factors
+// (number of devices, cluster utilization, additional constraints).
+//
+// According to
+// https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/staging/src/k8s.io/apiserver/pkg/apis/cel/config.go#L20-L22,
+// this gives roughly 0.1 second for each expression evaluation.
+// However, this depends on how fast the machine is.
+const CELSelectorExpressionMaxCost = 1000000
+
+// CELSelectorExpressionMaxLength is the maximum length of a CEL selector expression string.
+const CELSelectorExpressionMaxLength = 10 * 1024
 
 // DeviceConstraint must have exactly one field set besides Requests.
 type DeviceConstraint struct {
@@ -1777,6 +1869,22 @@ type DeviceRequestAllocationResult struct {
     //
     // +required
     Device string
+
+    // AdminAccess is a copy of the AdminAccess value in the
+    // request which caused this device to be allocated.
+    //
+    // New allocations are required to have this set when the DRAAdminAccess
+    // feature gate is enabled. Old allocations made
+    // by Kubernetes 1.31 do not have it yet. Clients which want to
+    // support Kubernetes 1.31 need to look up the request and retrieve
+    // the value from there if this field is not set.
+    //
+    // This is an alpha field and requires enabling the DRAAdminAccess
+    // feature gate.
+    //
+    // +required
+    // +featureGate=DRAAdminAccess
+    AdminAccess *bool
 }
 
 // DeviceAllocationConfiguration gets embedded in an AllocationResult.
@@ -2023,6 +2131,13 @@ tells it that it can use the capacity set aside for the claim
 again. kube-controller-manager itself doesn't need to support specific structured
 models.
 
+Because the controller is already tracking ResourceClaims and is aware of their
+semantic, it's a good place to calculate and publish metrics about them:
+
+- `resourceclaim_controller_resource_claims`: total number of claims
+- `resourceclaim_controller_allocated_resource_claims`: number of claims which currently are allocated
+
+
 ### kube-scheduler
 
 The scheduler plugin for ResourceClaims ("claim plugin" in this section)
@@ -2035,6 +2150,10 @@ for some unlikely edge cases (see below) there are no API calls during the main
 scheduling cycle. Instead, the plugin collects information and updates the
 cluster in the separate goroutine which invokes PreBind.
 
+When started with DRA enabled, the scheduler should check whether DRA is also
+enabled in the API server. Without such an explicit check, syncing the informer
+caches would fail when the feature gate is enabled but the API group is
+disabled. How to implement such a check reliably still needs to be determined.
 
 #### EventsToRegister
 
@@ -2166,6 +2285,16 @@ k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
 [CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
 with “volume” replaced by “resource” and volume specific parts removed.
 
+Versions v1alpha4 and v1beta1 are supported by kubelet. Both are identical.
+DRA drivers should implement both because support for v1alpha4 might get
+removed.
+
+The following metric mirrors the `csi_operations_seconds`:
+- Metric name: `dra_operations_seconds`
+- Description: Dynamic Resource Allocation interface operation duration with gRPC error code status total
+- Type: Histogram
+- Labels: `driver_name`, `grpc_status_code`, `method_name`
+
 #### Version skew
 
 Previously, kubelet retrieved ResourceClaims and published ResourceSlices on
@@ -2189,7 +2318,7 @@ desired.
 
 The daemonset of a DRA driver must be configured to have a service account
 which grants the following permissions:
-- get/list/watch/create/update/oatch/delete ResourceSlice
+- get/list/watch/create/update/patch/delete ResourceSlice
 - get ResourceClaim
 - get Node
 
@@ -2198,7 +2327,8 @@ to the node. This is possible with a [validating admission
 policy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/). As
 this is not a core feature of the DRA KEP, instructions for how to do that will
 not be included here. Instead, the DRA example driver will provide an example
-and documentation.
+and documentation. The in-tree driver already [has
+that](https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/test/e2e/dra/test-driver/deploy/example/plugin-permissions.yaml#L38-L71).
 
 #### Managing resources
 
@@ -2252,7 +2382,7 @@ MAY choose to call `NodePrepareResource` again, or choose to call
 
 On a successful call this RPC should return set of fully qualified
 CDI device names, which kubelet MUST pass to the runtime through the CRI
-protocol. For version v1alpha3, the RPC should return multiple sets of
+protocol. As of v1alpha3, the RPC should return multiple sets of
 fully qualified CDI device names, one per claim that was sent in the input parameters.
 
 ```protobuf
@@ -2518,6 +2648,20 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+The scheduler plugin and resource claim controller are covered by the workloads
+in
+https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler_perf/config/performance-config.yaml
+with "Structured" in the name. Those tests run in:
+
+- [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration) and [periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master) integration testing under `k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf`
+- [periodic performance testing](https://testgrid.k8s.io/sig-scalability-benchmarks#scheduler-perf) which populates [http://perf-dash.k8s.io](http://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfResults&Metric=SchedulingThroughput&Name=SchedulingBasic%2F5000Nodes_10000Pods%2Fnamespace-2&extension_point=not%20applicable&plugin=not%20applicable&result=not%20applicable&event=not%20applicable)
+
+**TODO**: link to "Structured" once https://github.com/kubernetes/kubernetes/pull/127277) is merged.
+
+The periodic performance testing prevents performance regressions by tracking
+performance over time and by failing the test if performance drops below a
+threshold defined for each workload.
+
 ##### e2e tests
 
 <!--
@@ -2549,12 +2693,9 @@ All tests that don't involve actually running a Pod can become part of
 conformance testing. Those tests that run Pods cannot be because CDI support in
 runtimes is not required.
 
-For beta:
-- pre-merge with kind (optional, triggered for code which has an impact on DRA): https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-kind-dra
-- periodic with kind: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra
-- pre-merge with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-node-dra
-- periodic with CRI-O: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-node-e2e-crio-dra
-
+Test links:
+- [E2E](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra): https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra
+- [E2E node](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/dra_test.go): see "ci-node*" in https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#Summary
 
 ### Graduation Criteria
 
@@ -2573,6 +2714,7 @@ For beta:
 
 - 3 examples of real-world usage
 - Allowing time for feedback
+- Scalability and performance analysis done and published
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
@@ -2595,6 +2737,9 @@ skew are less likely to occur.
 
 ### Feature Enablement and Rollback
 
+The initial answer in this section is for the core DRA. The second answer is
+marked with DRAAdminAccess and applies to that sub-feature.
+
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate
@@ -2604,10 +2749,18 @@ skew are less likely to occur.
     - kubelet
     - kube-scheduler
     - kube-controller-manager
+- [X] Feature gate
+  - Feature gate name: DRAAdminAccess
+  - Components depending on the feature gate:
+    - kube-apiserver
+
+
 
 ###### Does enabling the feature change any default behavior?
 
 No.
+
+DRAAdminAccess: no.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -2615,10 +2768,22 @@ Yes. Applications that were already deployed and are running will continue to
 work, but they will stop working when containers get restarted because those
 restarted containers won't have the additional resources.
 
+DRAAdminAccess: Workloads which were deployed with admin access will continue
+to run with it. They need to be deleted to remove usage of the feature.
+If they were not running, then the feature gate checks in kube-scheduler will prevent
+scheduling and in kube-controller-manager will prevent creating the ResourceClaim from
+a ResourceClaimTemplate. In both cases, usage of the feature is prevented.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Pods might have been scheduled without handling resources. Those Pods must be
 deleted to ensure that the re-created Pods will get scheduled properly.
+
+DRAAdminAccess: Workloads which were deployed with admin access enabled are not
+affected by a rollback. If the pods were already running, they keep running. If
+they pods where kept as unschedulable because the scheduler refused to allocate
+claims, they might now get scheduled.
+
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -2639,44 +2804,49 @@ Tests for apiserver will cover disabling the feature. This primarily matters
 for the extended PodSpec: the new fields must be preserved during updates even
 when the feature is disabled.
 
-### Rollout, Upgrade and Rollback Planning
+DRAAdminAccess: Tests for apiserver will cover disabling the feature. A test
+that the DaemonSet controller tolerates keeping pods as pending is needed.
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Workloads not using ResourceClaims should not be impacted because the new code
+will not do anything besides checking the Pod for ResourceClaims.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+When kube-controller-manager fails to create ResourceClaims from
+ResourceClaimTemplates, those Pods will not get scheduled. Bugs in
+kube-scheduler might lead to not scheduling Pods that could run or worse,
+schedule Pods that should not run. Those then will get stuck on a node where
+kubelet will refuse to start them. None of these scenarios affect already
+running workloads.
+
+Failures in kubelet might affect running workloads, but only if containers for
+those workloads need to be restarted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+One indicator are unexpected restarts of the cluster control plane
+components (kube-scheduler, apiserver, kube-controller-manager).
+
+If the `scheduler_pending_pods` metric in the kube-scheduler suddenly
+increases, then perhaps scheduling no longer works as intended.  Another are an
+increase in the number of pods that fail to start, as indicated by the
+`kubelet_started_containers_errors_total` metric.
+
+In all cases further analysis of logs and pod events is needed to
+determine whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+This will be done manually before transition to beta by bringing up a KinD
+cluster with kubeadm and changing the feature gate for individual components.
+
+Roundtripping of API types is covered by unit tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -2689,26 +2859,13 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+There will be pods which have a non-empty PodSpec.ResourceClaims field and ResourceClaim objects.
 
-Metrics in kube-scheduler (names to be decided):
-- number of classes using structured parameters
-- number of claims which currently are allocated with structured parameters
+Metrics in kube-controller-manager about total
+(`resourceclaim_controller_resource_claims`) and allocated ResourceClaims
+(`resourceclaim_controller_allocated_resource_claims`).
 
 ###### How can someone using this feature know that it is working for their instance?
-
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
 
 - [X] API .status
   - Other field: ".status.allocation" will be set for a claim using structured parameters
@@ -2716,63 +2873,80 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+For Pods not using ResourceClaims, the same SLOs apply as before.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+For kube-controller-manager, metrics for the new controller could be checked to
+ensure that work items do not remain in the queue for too long, for some
+definition of "too long".
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+Pod scheduling and startup are more important. However, expected performance
+will depend on how resources are used (for example, how often new Pods are
+created), therefore it is impossible to predict what reasonable SLOs might be.
+
+The resource manager component will do its work similarly to the
+existing volume manager, but the overhead and complexity should
+be lower:
+
+* Resource preparation should be fairly quick as in most cases it simply
+  creates CDI file 1-3 Kb in size. Unpreparing resource usually means
+  deleting CDI file, so it should be quick as well.
+
+* The complexity is lower than in the volume manager
+  because there is only one global operation needed (prepare vs.
+  attach + publish for each pod).
+
+* Reconstruction after a kubelet restart is simpler (call
+  NodePrepareResource again vs. trying to determine whether
+  volumes are mounted).
+
+Because allocation should never over-subscribe resources, preparing resources
+on a node by the DRA driver should never fail. A reasonable SLO is that
+`NodePrepareResources` and `NodeUnprepareResources` calls by the kubelet never
+fail, which can be monitored with the `dra_operations_seconds` and its
+`grpc_status_code` label.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+For kube-controller-manager, metrics similar to the generic ephemeral volume
+controller [were added](https://github.com/kubernetes/kubernetes/blob/163553bbe0a6746e7719380e187085cf5441dfde/pkg/controller/resourceclaim/metrics/metrics.go#L32-L47):
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `resourceclaim_controller_create_total`
+  - Metric name: `resourceclaim_controller_create_failures_total`
+  - Metric name: `resourceclaim_controller_resource_claims`
+  - Metric name: `resourceclaim_controller_allocated_resource_claims`
+  - Metric name: `workqueue` with `name="resource_claim"`
+
+For kube-scheduler and kubelet, existing metrics for handling Pods already
+cover most aspects. For example, in the scheduler the
+["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/6f5fa2eb2f4dc731243b00f7e781e95589b5621f/pkg/scheduler/metrics/metrics.go#L200-L206)
+metric will call out pods that are currently unschedulable because of the
+`DynamicResources` plugin.
+
+To track the interaction between the kubelet and DRA drivers, the following
+metric records gRPC call duration. Because it uses the gRPC status code and
+driver name as labels, it's possible to identify failures and which driver is
+involved:
+
+- [X] Metrics:
+  - Metric name: `dra_operations_seconds`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+The container runtime must support CDI. The kubelet [cannot
+discover](https://github.com/kubernetes/kubernetes/issues/121350) whether the
+runtime supports it. When kubelet tells the runtime to add some resources
+through the CDI fields in the CRI messages, a runtime without support will
+silently ignore those and containers will not have those resources.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+A third-party DRA driver is required for publishing resource information and
+preparing resources on a node.
 
 ### Scalability
 
@@ -2788,79 +2962,75 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+For Pods not using ResourceClaims, not much changes. The following components
+need to watch additional resources:
+- kube-controller-manager: ResourceClaimTemplate
+- kube-scheduler: ResourceClaim, DeviceClass, ResourceSlice
+
+If the feature isn't used, those watches will not cause much overhead.
+
+If the feature is used, kube-scheduler needs to update ResourceClaim during Pod
+scheduling. kube-controller-manager creates it (optional, only
+when using ResourceClaimTemplate) during Pod creation and updates and
+optionally deletes it after Pod termination.
+
+Once a ResourceClaim is allocated and the Pod runs, there will be no periodic
+API calls. How much this impacts performance of the apiserver therefore mostly
+depends on how often this feature is used for new ResourceClaims and
+Pods. Because it is meant for long-running applications, the impact should not
+be too high.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+For DeviceClass, only a few (something like 10 to 20)
+objects per cluster are expected. Admins need to create those.
+
+The number of ResourceClaim objects depends on how much the feature is
+used. They are namespaced and get created directly or indirectly by users. In
+the most extreme case, there will be one or more ResourceClaim for each Pod.
+But that seems unlikely for the intended use cases.
+
+How many ResourceSlice objects get published depends on third-party drivers and
+how much hardware is installed in the cluster. Typically, each driver will
+publish one ResourceSlice per node where it manages hardware.
+
+Kubernetes itself will not impose specific limitations for the number of these
+objects.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+Only if the third-party resource driver uses features of the cloud provider.
+
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+The PodSpec potentially changes and thus all objects where it is embedded as
+template. Merely enabling the feature does not change the size, only using it
+does.
+
+In the simple case, a Pod references an existing ResourceClaim or
+ResourceClaimTemplate by name, which will add some short strings to the PodSpec
+and to the ContainerSpec.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+Startup latency of schedulable stateless pods may be affected by enabling the
+feature because some CPU cycles are needed for each Pod to determine whether it
+uses ResourceClaims.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Actively using the feature will increase load on the apiserver, so latency of
+API calls may get affected.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+Merely enabling the feature is not expected to increase resource usage much.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+How much using it will increase resource usage depends on the usage patterns
+and is hard to predict.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+The kubelet needs a gRPC connection to each DRA driver running on the node.
 
 ### Troubleshooting
 
@@ -2877,20 +3047,71 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The Kubernetes control plane will be down, so no new Pods get
+scheduled. kubelet may still be able to start or or restart containers if it
+already received all the relevant updates (Pod, ResourceClaim, etc.).
+
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- kube-scheduler cannot allocate ResourceClaims.
+
+  - Detection: When pods fail to get scheduled, kube-scheduler reports that
+    through events and pod status. For DRA, messages include "cannot allocate
+    all claims" (insufficient resources) and "ResourceClaim not created yet"
+    (user or kube-controller-manager haven't created the ResourceClaim yet).
+    The
+    ["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/9fca4ec44afad4775c877971036b436eef1a1759/pkg/scheduler/metrics/metrics.go#L200-L206)
+    metric will have pods counted under the "dynamicresources" plugin label.
+
+    To troubleshoot, "kubectl describe" can be used on (in this order) Pod
+    and ResourceClaim.
+
+  - Mitigations: When resources should be available but don't get
+    advertised in ResoureSlices, debugging must focus on the DRA driver,
+    with trouble-shooting instructions provided by the vendor.
+
+    When ResourceClaims for ResourceClaimTemplates don't get created, the log
+    output of the kube-controller-manager will have more information.
+
+  - Diagnostics: In kube-scheduler, -v=4 enables simple progress reporting
+    in the "dynamicresources" plugin. -v=5 provides more information about
+    each plugin method. The special status results mentioned above also get
+    logged.
+
+  - Testing: E2E testing covers various scenarios that involve waiting
+    for a DRA driver. This also simulates partial allocation of node-local
+    resources in one driver and then failing to allocate the remaining
+    resources in another driver (the "need to deallocate" fallback).
+
+- A Pod gets scheduled without allocating resources.
+
+  - Detection: The Pod either fails to start (when kubelet has DRA
+    enabled) or gets started without the resources (when kubelet doesn't
+    have DRA enabled), which then will fail in an application specific
+    way.
+
+  - Mitigations: DRA must get enabled properly in kubelet and kube-controller-manager.
+
+  - Diagnostics: kubelet will log pods without allocated resources as errors
+    and emit events for them.
+
+  - Testing: An E2E test covers the expected behavior of kubelet and
+    kube-controller-manager by creating a pod with `spec.nodeName` already set.
+
+- A DRA driver kubelet plugin fails to prepare resources or is not running
+  on the node.
+
+  - Detection: The Pod fails to start after being scheduled.
+
+  - Mitigations: This depends on the specific DRA driver and has to be documented
+    by vendors.
+
+  - Diagnostics: kubelet will log pods with such errors and emit events for them.
+
+  - Testing: An E2E test covers the expected retry mechanism in kubelet when
+    `NodePrepareResources` fails intermittently.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
