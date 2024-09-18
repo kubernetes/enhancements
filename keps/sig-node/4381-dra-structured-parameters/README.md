@@ -2067,7 +2067,7 @@ event handlers, so not everything is checked.
 #### Pre-filter
 
 This is a more thorough version of the checks done by PreEnqueue. It ensures
-that all information that is needed (ResourceClaim, ResourceClass, parameters)
+that all information that is needed (ResourceClaim, DeviceClass, parameters)
 is available.
 
 Another reason why a Pod might not be schedulable is when it depends on claims
@@ -2075,7 +2075,7 @@ which are in the process of being allocated. That process starts in Reserve and
 ends in PreBind or Unreserve (see below).
 
 It then prepares for filtering by converting information stored in various
-places (node filter in ResourceClass, available resources in ResourceSlices,
+places (node filter in DeviceClass, available resources in ResourceSlices,
 allocated resources in ResourceClaim statuses, in-flight allocations) into a
 format that can be used efficiently by Filter.
 
@@ -2535,7 +2535,7 @@ with CDI support. A [test driver](https://github.com/kubernetes/kubernetes/tree/
 was developed in parallel to developing the
 code in Kubernetes.
 
-That test driver simply takes parameters from ResourceClass
+That test driver simply takes parameters from DeviceClass
 and ResourceClaim and turns them into environment variables that then get
 checked inside containers. Tests for different behavior of an driver in various
 scenarios can be simulated by running the control-plane part of it in the E2E
