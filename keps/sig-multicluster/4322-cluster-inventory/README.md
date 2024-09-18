@@ -511,7 +511,7 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Credentials
 
-An array of credentials to access the cluster. Each credential could be assigned 
+An array of credentials to access the cluster. Each credential should be assigned 
 to a different consumer. Each credential has: 
 - a **consumer** field to indicate which consumer it is assigned to.
 - a **context** field to indicate the context name in the access information that should be used to access the cluster.
@@ -531,7 +531,7 @@ The access information must contain the following fields
 Please note that a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
 supports access to multiple clusters. Consequently, multiple `ClusterProfile`
 objects can share the same access secret. However, it is crucial to
-ensure that each secret contains access information for only a single customer.
+ensure that each secret contains access information for only a single consumer API.
 
 #### Properties
 
