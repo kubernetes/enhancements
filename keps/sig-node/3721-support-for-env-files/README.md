@@ -121,7 +121,11 @@ will be able to load env vars from a file.
 environment variable refers to another.
 
 2. We do not intend to update env vars if the file content has changed after the
-container consuming it has started.
+container consuming it has started, unless the container is restarted for some
+other reason
+
+3. We do not intend to use a change in the file content to trigger a container
+restart.
 
 ## Proposal
 
@@ -129,19 +133,22 @@ container consuming it has started.
 
 #### Story 1
 
-The user is using a container offered by a vendors that requires configuring
-env vars. [Some
-vendors](https://developer.hashicorp.com/vault/docs/platform/k8s/injector/examples#environment-variable-example)
-have to couple their app with Kubernetes to allow setting env vars in their
-container.
+Distroless containers, known for their minimal footprint, lack a shell, making
+traditional environment variable configuration via env files impossible. While
+Kubernetes ConfigMaps and Secrets can be used to set env vars, they fall short
+the user needs to set per-pod replica env vars.
 
-Instead, k8s can provide a new mechanism that will be used to instantiate
-env vars from the specified file. The user can generate an env file using an
-`initContainer`. The container can then use the `fileKeyRef` field to reference
-the file from which it should initialize the env vars. Behind the scene, kubelet will
-parse the env file and instantiate these env vars during container creation. It
-does not mount this file onto the main container. In the example below,
-the Pod's output includes `CONFIG_VAR=HELLO`.
+To address this, Kubernetes can introduce a new mechanism allowing env vars to
+be populated directly from a file. Users can employ an `initContainer` to
+generate this file, then utilize the `fileKeyRef` field within their main
+container definition to specify its location. Kubernetes will then handle parsing
+the file and setting the env vars during container creation, eliminating the need
+to mount the file.
+
+
+This approach provides a streamlined solution for env var configuration in
+distroless containers. In the example below, the Pod's distroless container will
+be instantiated with `CONFIG_VAR=HELLO`.
 
 ```
 apiVersion: v1
@@ -158,8 +165,7 @@ spec:
       mountPath: /data
    containers:
   - name: use-envfile
-    image: registry.k8s.io/busybox
-    command: [ "/bin/sh", "-c", "env" ]
+    image: registry.k8s.io/distroless-app
     env:
     - name: CONFIG_VAR
       valueFrom:
@@ -175,16 +181,18 @@ spec:
 
 #### Story 2
 
-The user's workload needs to consume secrets of a service. Usually, they can
-store it in k8s Secret resource and use it to instantiate the env var. But it
-can become difficult to manage if each Pod needs to consume unique secrets.
+Managing unique secrets for each Pod in Kubernetes can be cumbersome. Traditionally,
+Kubernetes Secrets are used to store sensitive information and populate env vars,
+but this approach becomes less efficient when dealing with per-pod secrets.
 
-Instead, k8s can provide a new mechanism to fetch secrets in initContainer and
-store it in a file. The container can then use the `fileKeyRef` field to
-instantiate the env var from the file. Behind the scene, kubelet will parse
-the env file and instantiate these env vars during container creation. It
-does not mount this file onto the main container. In the example below,
-the Pod's output includes `JWT=token`.
+To simplify this process, Kubernetes can introduce a new mechanism where an `initContainer`
+can fetch secrets and store them in a file. The main application container then utilizes
+the `fileKeyRef` field to reference this file and populate its env vars. Kubernetes
+automatically parses the file and sets the env vars during container creation without
+mounting the file directly.
+
+This enhancement offers a more manageable way to handle per-pod secrets in Kubernetes.
+In the example below, the Pod's output includes `JWT=token`.
 
 ```
 apiVersion: v1
@@ -195,7 +203,7 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo "JWT=token" > /data/config.env']
+    command: ['sh', '-c', 'echo "SECRET=token" > /data/config.env']
     volumeMounts:
     - name: config
       mountPath: /data
@@ -204,12 +212,12 @@ spec:
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
     env:
-    - name: CONFIG_VAR
+    - name: JWT
       valueFrom:
         fileKeyRef:
           path: config.env
           volumeName: config
-          key: JWT
+          key: SECRET
   restartPolicy: Never
   volumes:
   - name: config
@@ -282,23 +290,20 @@ KEY2=VALUE2
 
 ### Failure and Fallback Strategy
 
-There are different scenarios in which applying `FileEnvSource` and
-`FileKeySelector` fields may fail. We plan to provide an erorr message that is
-descriptive enough to troubleshoot the issue but it will not contain the env
-file as it can contain sensitive information.
+There are different scenarios in which applying `FileKeySelector` fields may fail.
+We plan to provide an erorr message that is descriptive enough to troubleshoot the
+issue but it will not contain the env file as it can contain sensitive information.
 
 Below are the ones we mapped and their outcome once this KEP is implemented.
 
 |Scenario| API Server Result | Kubelet Result |
 |--------|-------------------|----------------|
-|1. The volumeName specified in `FileEnvSource` or `FileKeySelector` field does not exist | Pod creation fails with an error |  |
-|2. The volumeName specified in `FileEnvSource` or `FileKeySelector` is not an emptyDir | Pod creation fails with an error |  |
-|3. The filepath specified in `FileEnvSource` field does not exist | Pod created | Container fails to start and error message in event.|
-|4. The filepath specified in `FileEnvSource` field does not exist but `optional` field is set to true. | Pod created | Container starts and env vars are not populated.|
-|5. Either the filepath or key specified in `FileKeySelector` field does not exist | Pod created | Container fails to start and error message in event.|
-|6. Either the filepath or key specified in `FileKeySelector` field does not exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
-|7. The specified file is not a parsable env file. | Pod created | Container fails to start and error message is reported in the events.|
-|8. The specified file contains invalid env var names. | Pod created | Container fails to start and erorr message is reported in the events.|
+|1. The volumeName specified in `FileKeySelector` field does not exist | Pod creation fails with an error |  |
+|2. The volumeName specified in `FileKeySelector` is not an emptyDir | Pod creation fails with an error |  |
+|3. Either the filepath or key specified in `FileKeySelector` field does not exist | Pod created | Container fails to start and error message in event.|
+|4. Either the filepath or key specified in `FileKeySelector` field does not exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
+|5. The specified file is not a parsable env file. | Pod created | Container fails to start and error message is reported in the events.|
+|6. The specified file contains invalid env var names. | Pod created | Container fails to start and erorr message is reported in the events.|
 
 
 ### Test Plan

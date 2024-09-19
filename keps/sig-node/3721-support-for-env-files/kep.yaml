@@ -12,7 +12,7 @@ reviewers:
   - "@sftim"
   - "@SergeyKanzhelev"
 approvers:
-  - "@dchen1107"
+  - "@SergeyKanzhelev"
 see-also:
 
 # The target maturity stage in the current dev cycle for this KEP.
