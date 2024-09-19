@@ -84,17 +84,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -600,8 +600,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/apis/core/validation`: `<date>(t.b.d.)` - `<test coverage>(t.b.d.)`
-  - validation tests for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User`
+- `k8s.io/kubernetes/pkg/api/pod/util.go`: `2024-08-13` - `68.7%`
+  - It tests `dropDisabledFields` for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User` fields
+  - Note: The test these field values when enabling/disabling this feature.
 
 ##### Integration tests
 
@@ -613,12 +614,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- Kubernetes API
-  - When `SupplementalGroupsPolicy=Strict`, groups of the container process must be ones specified by API: <link to test coverage(t.b.d.)>
-  - When `SupplementalGroupsPolicy=Merge`, groups of the container process contains both groups specified by API and groups of the primary user from the image: <link to test coverage(t.b.d.)>
-  - For running pods, `ContainerStatus.User` contains the correct identities of the containers: <link to test coverage(t.b.d.)>
-- CRI
-  - I will also add symmetrical integration tests to https://github.com/kubernetes-sigs/cri-tools
+See [e2e tests](#e2e-tests) below.
 
 ##### e2e tests
 
@@ -632,9 +628,21 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- When creating a Pod with `SupplementalGroupsPolicy=Strict`, the pods will run with only groups specified by API: <link to test coverage(t.b.d.)>
-- When creating a Pod with `SupplementalGroupsPolicy=Merge`, the pods will run with groups specified by API and groups from the image: <link to test coverage(t.b.d.)>
-- When creating a Pod and it starts, each `ContainerStatus.User` contain the correct identities of the containers: <link to test coverage(t.b.d.)>
+- Kubernetes: <https://github.com/kubernetes/kubernetes/blob/v1.31.0/test/e2e/node/security_context.go>
+  - When creating a Pod with `SupplementalGroupsPolicy=Strict`
+    - the containers in the pod will run with only groups specified by the API, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - When creating a Pod with `SupplementalGroupsPolicy=Merge`
+    - the containers in the pod will run with groups specified by API and groups from the container image, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers, and
+  - When creating a Pod without `SupplementalGroupsPolicy` (equivalent behaviour with `Merge`)
+    - the pod will run with with groups specified by API and groups from the image
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - _Note: above e2e tests will self-skip if the node does not support `SupplementalGroupsPolicyFeature` detected by `Node.Status.Featuers.SupplementalGroupsPolicy` field._
+- critools(critest): <https://github.com/kubernetes-sigs/cri-tools/blob/v1.31.0/pkg/validate/security_context_linux.go>
+  - Symmetric test cases with Kubernetes e2e tests except for the case of _without `SupplementalGroupsPolicy`_ because `SupplementalGroupsPolicy` always has value(default is `Merge`).
+  - _Note: above tests will self-skip if the runtime does not support `SupplementalGroupsPolicyFeature` detected by `StatusResponse.features.supplemental_groups_policy` field._
+
 
 ### Graduation Criteria
 
@@ -762,7 +770,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Planned for Alpha.
+Yes, see [Unit tests](#unit-tests) section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1047,6 +1055,7 @@ Major milestones might include:
 -->
 
 - 2023-02-10: Initial KEP published.
+- v1.31.0(2024-08-13): Alpha
 
 ## Drawbacks
 
