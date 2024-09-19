@@ -22,6 +22,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -44,9 +45,9 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -94,7 +95,10 @@ Exposing unhealthy devices in Pod Status will provide a generic way to understan
 
 As part of the InPlacePodVerticalScaling KEP, the two new fields were introduced in Pod Status to reflect the currently allocated resources for the Pod:
 
-```
+```go
+type ContainerStatus struct {
+	...
+
 	// AllocatedResources represents the compute resources allocated for this container by the
 	// node. Kubelet sets this value to Container.Resources.Requests upon successful pod admission
 	// and after successfully admitting desired pod resize.
@@ -107,6 +111,9 @@ As part of the InPlacePodVerticalScaling KEP, the two new fields were introduced
 	// +featureGate=InPlacePodVerticalScaling
 	// +optional
 	Resources *ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,11,opt,name=resources"`
+
+	...
+}
 ```
 
 One field reflects the resource requests and limits and the other actual allocated resources.
@@ -117,60 +124,106 @@ The proposal is to keep this structure as-is to simplify parsing of well-known R
 
 The proposal is to introduce an additional field:
 
-```
-// AllocatedResourcesStatus represents the status of various resources
-// allocated for this Pod.
-AllocatedResourcesStatus ResourcesStatus 
+```go
+type ContainerStatus struct {
+	...
 
-type ResourcesStatus map[ResourceName]ResourceStatus
+	// AllocatedResourcesStatus represents the status of various resources
+	// allocated for this Container. In case of DRA, the same resource health
+	// can be reported multiple times if it is associated with the multiple containers.
+	// +featureGate=ResourceHealthStatus
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	AllocatedResourcesStatus []ResourceStatus `json:"allocatedResourcesStatus,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,14,rep,name=allocatedResourcesStatus"`
 
-type ResourceStatus struct {
-    // map of unique Resource ID to its health.
-    // At a minimum, ResourceID must uniquely identify the Resource
-    // allocated to the Pod on the Node for the lifetime of a Pod.
-    // See ResourceID type for it's definition.
-    Resources map[ResourceID] ResourceHealth
-    
-    // allow to extend this struct in future with the overall health fields or things like Device Plugin version
+	...
 }
+```
+
+The `ResourceStatus` is defined as:
+
+```go
+type ResourceStatus struct {
+	// Name of the resource. Must be unique within the pod and in case of non-DRA resource, match one of the resources from the pod spec.
+	// For DRA resources, the value must be claim:claim_name/request.
+	// The claim_name must match one of the claims from resourceClaims field in the podSpec.
+	// +required
+	Name ResourceName `json:"name" protobuf:"bytes,1,opt,name=name"`
+	// List of unique Resources health. Each element in the list contains an unique resource ID and resource health.
+	// At a minimum, ResourceID must uniquely identify the Resource
+	// allocated to the Pod on the Node for the lifetime of a Pod.
+	// See ResourceID type for it's definition.
+	// +listType=map
+	// +listMapKey=resourceID
+	Resources []ResourceHealth `json:"resources,omitempty" protobuf:"bytes,2,rep,name=resources"`
+}
+
+type ResourceHealthStatus string
+
+const (
+	ResourceHealthStatusHealthy   ResourceHealthStatus = "Healthy"
+	ResourceHealthStatusUnhealthy ResourceHealthStatus = "Unhealthy"
+	ResourceHealthStatusUnknown   ResourceHealthStatus = "Unknown"
+)
 
 // ResourceID is calculated based on the source of this resource health information.
 // For DevicePlugin:
-//   deviceplugin:DeviceID, where DeviceID is from the Device structure of DevicePlugin's ListAndWatchResponse type: https://github.com/kubernetes/kubernetes/blob/eda1c780543a27c078450e2f17d674471e00f494/staging/src/k8s.io/kubelet/pkg/apis/deviceplugin/v1alpha/api.proto#L61-L73
+//
+//	DeviceID, where DeviceID is from the Device structure of DevicePlugin's ListAndWatchResponse type: https://github.com/kubernetes/kubernetes/blob/eda1c780543a27c078450e2f17d674471e00f494/staging/src/k8s.io/kubelet/pkg/apis/deviceplugin/v1alpha/api.proto#L61-L73
+//
 // DevicePlugin ID is usually a constant for the lifetime of a Node and typically can be used to uniquely identify the device on the node.
 // For DRA:
-//   dra:<driver name>/<pool name>/<device name>: such a device can be looked up in the information published by that DRA driver to learn more about it. It is designed to be globally unique in a cluster.
+//
+//	<driver name>/<pool name>/<device name>: such a device can be looked up in the information published by that DRA driver to learn more about it. It is designed to be globally unique in a cluster.
 type ResourceID string
 
+// ResourceHealth represents the health of a resource. It has the latest device health information.
+// This is a part of KEP https://kep.k8s.io/4680 and historical health changes are planned to be added in future iterations of a KEP.
 type ResourceHealth struct {
-    // List of conditions with the transition times
-    Conditions []ResourceHealthCondition
+	// ResourceID is the unique identifier of the resource. See the ResourceID type for more information.
+	ResourceID ResourceID `json:"resourceID" protobuf:"bytes,1,opt,name=resourceID"`
+	// Health of the resource.
+	// can be one of:
+	//  - Healthy: operates as normal
+	//  - Unhealthy: reported unhealthy. We consider this a temporary health issue
+	//               since we do not have a mechanism today to distinguish
+	//               temporary and permanent issues.
+	//  - Unknown: The status cannot be determined.
+	//             For example, Device Plugin got unregistered and hasn't been re-registered since.
+	//
+	// In future we may want to introduce the PermanentlyUnhealthy Status.
+	Health ResourceHealthStatus `json:"health,omitempty" protobuf:"bytes,2,name=health"`
 }
+```
 
-// This condition type is replicating other condition types exposed by various status APIs
-type ResourceHealthCondition struct {
-    // can be one of:
-    //  - Healthy: operates as normal
-    //  - Unhealthy: reported unhealthy. We consider this a temporary health issue
-    //               since we do not have a mechanism today to distinguish
-    //               temporary and permanent issues.
-    //  - Unknown: The status cannot be determined.
-    //             For example, Device Plugin got unregistered and hasn't been re-registered since.
-    //
-    // In future we may want to introduce the PermanentlyUnhealthy Status.
-    Type string 
+In alpha2 in order to support pod level DRA resources, the following field will be added to the PodStatus:
 
-    // Status of the condition, one of True, False, Unknown.
-    Status ConditionStatus
-    // The last time the condition transitioned from one status to another.
-    // +optional
-    LastTransitionTime metav1.Time
-    // The reason for the condition's last transition.
-    // +optional
-    Reason string
-    // A human readable message indicating details about the transition.
-    // +optional
-    Message string
+```go
+// PodStatus represents information about the status of a pod. Status may trail the actual
+// state of a system.
+type PodStatus struct {
+
+	...
+
+	// Status of resource claims.
+	// +featureGate=DynamicResourceAllocation
+	// +optional
+	ResourceClaimStatuses []PodResourceClaimStatus
+
+	...
+
+	// AllocatedResourcesStatus represents the status of various resources
+	// allocated for this Pod, but not associated with any of containers.
+	// +featureGate=ResourceHealthStatus
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	AllocatedResourcesStatus []ResourceStatus `json:"allocatedResourcesStatus,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,14,rep,name=allocatedResourcesStatus"`
 }
 ```
 
@@ -233,7 +286,6 @@ We should consider introducing another field to the Status that will be a free f
 ### DRA implementation details
 
 Today DRA does not return the health of the device back to kubelet. The proposal is to extend the
-
 type `NamedResourcesInstance` (from [pkg/apis/resource/namedresources.go](https://github.com/kubernetes/kubernetes/blob/790dfdbe386e4a115f41d38058c127d2dd0e6f44/pkg/apis/resource/namedresources.go#L29-L37)) to include the Health field the same way it is done in 
 the Device Plugin as well as a device ID.
 
@@ -245,7 +297,41 @@ The API will be limited to "prepared" devices and include the claim `name/namesp
 
 Kubelet will react on this field the same way as we propose to do it for the Device Plugin.
 
-Specific implementation details will be added for the beta.
+The new method will be added to the same gRPC server that serves the [Node service](https://github.com/kubernetes/kubernetes/blob/04bba3c222bb2c5b1b1565713de4bf334ee7fbe4/staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto#L34) interface (Node service exposes
+`NodePrepareResources` and `NodeUnprepareResources`). The new interface will have a `Device` structure similar to Node Service's device, with the added `health` field:
+
+``` proto
+service NodeHealth {
+  ...
+
+	// WatchDevicesStatus returns a stream of List of Devices
+	// Whenever a Device state change or a Device disappears, WatchDevicesStatus
+	// returns the new list.
+  // This method is optional and may not be implemented.
+	rpc WatchDevicesStatus(Empty) returns (stream DevicesStatusResponse) {}
+}
+
+// ListAndWatch returns a stream of List of Devices
+// Whenever a Device state change or a Device disappears, ListAndWatch
+// returns the new list
+message DevicesStatusResponse {
+	repeated Device devices = 1;
+}
+
+message Device {
+  ... existing fields ...
+    // The device itself. Required.
+    string device_name = 3;
+  ... existing fields ...
+
+  // Health of the device, can be Healthy or Unhealthy.
+  string Health = 5;
+}
+```
+
+Implementation will ignore the `Unimplemented` error when the DRA plugin doesn't have this interface implemented.
+
+Note, the gRPC details are still a subject to change and will go thru API review during the implementation.
 
 ### Test Plan
 
@@ -296,9 +382,13 @@ Test coverage will be listed once tests are implemented.
 - Feature implemented in Device Manager behind a feature flag
 - Initial e2e tests completed and enabled
 
+#### Alpha2
+
+- Feature implemented in DRA behind a feature flag
+- e2e tests completed and enabled for DRA
+
 #### Beta
 
-- Feature is implemented in DRA behind the feature flag
 - Complete e2e tests coverage
 
 #### GA
