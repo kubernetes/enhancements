@@ -286,7 +286,7 @@ KEY2=VALUE2
     
     a. **Startup**: At container startup, the kubelet will parse the env file from the emptyDir volume and inject the defined variables into the container's environment. To avoid race condition with another container updating the env file, we will restrict mounting the emptyDir volume (containing the env file) in initContainer only. The env file can either be mounted or consumed in a container.
     
-    b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration.
+    b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration. kubelet will ensure that the container's UID has read permission on the env file before instantiating it.
 
 ### Failure and Fallback Strategy
 
@@ -304,6 +304,7 @@ Below are the ones we mapped and their outcome once this KEP is implemented.
 |4. Either the filepath or key specified in `FileKeySelector` field does not exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
 |5. The specified file is not a parsable env file. | Pod created | Container fails to start and error message is reported in the events.|
 |6. The specified file contains invalid env var names. | Pod created | Container fails to start and erorr message is reported in the events.|
+|7. The container's UID does not have permission to read the env file. | Pod created | Container fails to start and erorr message is reported in the events.|
 
 
 ### Test Plan
