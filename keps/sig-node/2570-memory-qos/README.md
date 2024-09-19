@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
     - [Alpha v1.22](#alpha-v122)
     - [Alpha v1.27](#alpha-v127)
-    - [Beta v1.28](#beta-v128)
+    - [Beta v1.28 - Cancelled](#beta-v128---cancelled)
   - [User Stories (Optional)](#user-stories-optional)
     - [Memory Sensitive Workload](#memory-sensitive-workload)
     - [Node Availability](#node-availability)
@@ -70,6 +70,7 @@
 
 Work around Memory QoS has been halted because of the issues uncovered during the beta promotion process 
 in K8s 1.28. This section is added to document the valuable lessons learned from this experience. 
+Note: Kubernetes 1.28 did not receive the beta promotion.
 
 Initial Plan: Use cgroup v2 memory.high knob to set memory throttling limit. As per the initial understanding, 
 setting memory.high would have caused memory allocation to be slowed down once the memory usage level in the containers
@@ -294,9 +295,8 @@ Alternative solutions that were discussed (but not preferred) before finalizing 
   * It is simple to understand as it requires setting only 1 kubelet configuration for setting memory throttling factor.
   * It doesn't involve API changes, and doesn't expose low-level detail to customers.
 
-#### Beta v1.28
-The feature is graduated to Beta in v1.28. Its implementation in Beta is same as Alpha
-v1.27.
+#### Beta v1.28 - Cancelled
+The feature was planned to be graduated to Beta in v1.28, but was backed out. See the [Latest Update [Stalled]](#latest-update-stalled) section for more details.
 
 ### User Stories (Optional)
 #### Memory Sensitive Workload
