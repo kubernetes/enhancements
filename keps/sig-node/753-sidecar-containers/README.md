@@ -181,10 +181,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -401,8 +401,10 @@ startup will NOT be restarted and the whole Pod will fail. If Pod
 
 Once sidecar container is started (`postStart` completed and startup probe
 succeeded), this containers will be restarted even when the Pod `restartPolicy`
-is `Never` or `OnFailure`. Furthermore, sidecar containers will be restarted
-even during Pod termination.
+is `Never` or `OnFailure`. 
+
+Note, a separate KEP https://github.com/kubernetes/enhancements/issues/4438 will enable
+sidecar containers to be restarted even during Pod termination.
 
 In order to minimize OOM kills of sidecar containers, the OOM adjustment for
 these containers will match or exceed the OOM score adjustment of regular
@@ -1281,68 +1283,6 @@ to know in early stages of the KEP IMHO.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 #### Alpha
 
 - Feature implemented behind a feature flag
@@ -1357,23 +1297,10 @@ in back-to-back releases.
 
 #### GA
 
-- Allow to apply security policies on all containers in `initContainers`
-    collection. Example may be disabling `kubectl exec` on containers in
-    `initContainers` collection.
+- All known issues are fixed
+- Production use feedback addressed
 
 ### Upgrade / Downgrade Strategy
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
 
 #### Upgrade strategy
 
@@ -1612,9 +1539,10 @@ that might indicate a serious problem?
     - Labels:code, container_type (should be `init_container`)
     - Components exposing the metric: `kubelet-metrics`
     - Symptoms: high number of errors indicates that the kubelet is unable to start the sidecar containers
-- [X] Events
-  - Event name: TBD
-  - Symptoms: high number of events indicates that the TGPS has been exceeded and sidecars have been terminated not gracefully
+- [X] API objects
+  - Pods stuck in Pending state of Init container running.
+    - Type: API objects
+    - Symptoms: when the new field `restartPolicy:Always` was mistakenly stripped out by a webhook, Pod will get stuck.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1742,9 +1670,6 @@ Pick one more of these and delete the rest.
     - Type: Counter 
     - Labels:code, container_type (should be `init_container`)
     - Components exposing the metric: `kubelet-metrics`
-- [X] Events
-  - Event name: TBD
-  - should not appear, unless TGPS is exceeded and sidecars are terminated
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1955,7 +1880,7 @@ Major milestones might include:
 - 2018-05-14: First proposal.
 - 2023-06-09: Target 1.28 for Alpha.
 - 2023-07-08: Alpha implementation merged.
-- TODO: PRR completed and graduation to beta proposed.
+- 1.29: feature is in Beta
 
 ## Drawbacks
 
