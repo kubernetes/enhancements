@@ -148,7 +148,7 @@ resulting in lower availability or higher cost of running.
 Allowing Resources to be changed without recreating the Pod or restarting the
 Containers addresses this issue directly.
 
-Additioally, In-Place Pod Vertical Scaling feature relies on Container Runtime
+Additionally, In-Place Pod Vertical Scaling feature relies on Container Runtime
 Interface (CRI) to update CPU and/or memory requests/limits for a Pod's Container(s).
 
 The current CRI API set has a few drawbacks that need to be addressed:
@@ -206,21 +206,21 @@ PodStatus is extended to show the resources allocated for and applied to the Pod
 
 Thanks to the above:
 * Pod.Spec.Containers[i].Resources becomes purely a declaration, denoting the
-  **desired** state of Pod resources,
+  **desired** state of Pod resources
 * Pod.Status.ContainerStatuses[i].AllocatedResources (new field, type
-  v1.ResourceList) denotes the Node resources **allocated** to the Pod and its
-  Containers,
+  v1.ResourceRequirements) denotes the Node resources **allocated** to the Pod and its
+  Containers, or the **Kubelet's desired** state of Pod resources.
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers.
 * Pod.Status.Resize (new field, type map[string]string) explains what is
   happening for a given resource on a given container.
 
-The new `AllocatedResources` field represents in-flight resize operations and
-is driven by state kept in the node checkpoint.  Schedulers should use the
-larger of `Spec.Containers[i].Resources` and
-`Status.ContainerStatuses[i].AllocatedResources` when considering available
-space on a node.
+When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
+are copied to AllocatedResources. The actual resources are reported by the container runtime in some
+cases, and for all other resources are copied from the AllocatedResources. Currently, the resources
+reported by the runtime are CPU Limit (translated from quota & period), CPU Request (translated from
+shares), and Memory Limit.
 
 Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
 `[]v1.ContainerResizePolicy`) governs whether containers need to be restarted on resize. See
@@ -310,72 +310,55 @@ means the same as `Deferred`.
 
 #### CRI Changes
 
-Kubelet calls UpdateContainerResources CRI API which currently takes
-*runtimeapi.LinuxContainerResources* parameter that works for Docker and Kata,
-but not for Windows. This parameter changes to *runtimeapi.ContainerResources*,
-that is platform agnostic, and will contain platform-specific information. This
-would make UpdateContainerResources API work for Windows, and any other future
-runtimes, besides Linux by making the resources parameter passed in the API
-specific to the target runtime.
+As of Kubernetes v1.20, the CRI has included support for in-place resizing of containers via the
+`UpdateContainerResources` API, which is implemented by both containerd and CRI-O. Additionally, the
+`ContainerStatus` message includes a `ContainerResources` field, which reports the current resource
+configuration of the container.
 
-Additionally, ContainerStatus CRI API is extended to hold
-*runtimeapi.ContainerResources* so that it allows Kubelet to query Container's
-CPU and memory limit configurations from runtime. This expects runtime to respond
-with CPU and memory resource values currently applied to the Container.
+Even though pod-level cgroups are currently managed by the Kubelet, runtimes may rely need to be
+notified when the resource configuration changes. For example, this information should be passed
+through to NRI plugins. To this end, we will add a new `UpdatePodSandboxResources` API:
 
-These CRI changes are a separate effort that does not affect the design
-proposed in this KEP.
+```proto
+service RuntimeService {
+  ...
 
-To accomplish aforementioned CRI changes:
-
-* A new protobuf message object named *ContainerResources* that encapsulates
-LinuxContainerResources and WindowsContainerResources is introduced as below.
-  - This message can easily be extended for future runtimes by simply adding a
-    new runtime-specific resources struct to the ContainerResources message.
-```
-// ContainerResources holds resource configuration for a container.
-message ContainerResources {
-    // Resource configuration specific to Linux container.
-    LinuxContainerResources linux = 1;
-    // Resource configuration specific to Windows container.
-    WindowsContainerResources windows = 2;
+  // UpdatePodSandboxResources synchronously updates the PodSandboxConfig with
+  // the pod-level resource configuration. This method is called _after_ the
+  // Kubelet reconfigures the pod-level cgroups.
+  // This request is treated as best effort, and failure will not block the
+  // Kubelet with proceeding with a resize.
+  rpc UpdatePodSandboxResources(UpdatePodSandboxResourcesRequest) returns (UpdatePodSandboxResourcesResponse) {}
 }
+
+message UpdatePodSandboxResourcesRequest {
+    // ID of the PodSandbox to update.
+    string pod_sandbox_id = 1;
+
+    // Optional overhead represents the overheads associated with this sandbox
+    LinuxContainerResources overhead = 2;
+    // Optional resources represents the sum of container resources for this sandbox
+    LinuxContainerResources resources = 3;
+
+    // Unstructured key-value map holding arbitrary additional information for
+    // sandbox resources updating. This can be used for specifying experimental
+    // resources to update or other options to use when updating the sandbox.
+    map<string, string> annotations = 4;
+}
+
+message UpdatePodSandboxResourcesResponse {}
 ```
 
-* ContainerStatus message is extended to return ContainerResources as below.
-  - This enables Kubelet to query the runtime and discover resources currently
-    applied to a Container using ContainerStatus CRI API.
-```
-@@ -914,6 +912,8 @@ message ContainerStatus {
-     repeated Mount mounts = 14;
-     // Log path of container.
-     string log_path = 15;
-+    // Resource configuration of the container.
-+    ContainerResources resources = 16;
- }
-```
+The Kubelet will call `UpdatePodSandboxResources` _after_ it has reconfigured the pod-level cgroups.
+This ordering is consistent with pod creation, where the Kubelet configures the pod-level cgroups
+before calling `RunPodSandbox`.
 
-* ContainerManager CRI API service interface is modified as below.
-  - UpdateContainerResources takes ContainerResources parameter instead of
-    LinuxContainerResources.
-```
---- a/staging/src/k8s.io/cri-api/pkg/apis/services.go
-+++ b/staging/src/k8s.io/cri-api/pkg/apis/services.go
-@@ -43,8 +43,10 @@ type ContainerManager interface {
-        ListContainers(filter *runtimeapi.ContainerFilter) ([]*runtimeapi.Container, error)
-        // ContainerStatus returns the status of the container.
-        ContainerStatus(containerID string) (*runtimeapi.ContainerStatus, error)
--       // UpdateContainerResources updates the cgroup resources for the container.
--       UpdateContainerResources(containerID string, resources *runtimeapi.LinuxContainerResources) error
-+       // UpdateContainerResources updates ContainerConfig of the container synchronously.
-+       // If runtime fails to transactionally update the requested resources, an error is returned.
-+       UpdateContainerResources(containerID string, resources *runtimeapi.ContainerResources) error
-        // ExecSync executes a command in the container, and returns the stdout output.
-        // If command exits with a non-zero exit code, an error is returned.
-        ExecSync(containerID string, cmd []string, timeout time.Duration) (stdout []byte, stderr []byte, err error)
-```
+For now, the `UpdatePodSandboxResources` call will be treated as best-effort by the Kubelet. This
+means that in the case of an error, Kubelet will log the the error but otherwise ignore it and
+proceed with the resize.
 
-* Kubelet code is modified to leverage these changes.
+Note: Windows resources are not included here since they are not present in the
+WindowsPodSandboxConfig.
 
 ### Risks and Mitigations
 
