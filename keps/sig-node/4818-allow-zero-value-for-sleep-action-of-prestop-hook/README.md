@@ -296,7 +296,9 @@ extending the production code to implement this enhancement.
 Alpha:
 
 - Test that the runSleepHandler function returns immediately when given a duration of zero.
-- Test that the validation returns an error when given an invalid duration value (e.g., a negative value).
+- Test that the validation succeeds when given a zero duration with the feature gate enabled.
+- Test that the validation fails when given a zero duration with the feature gate disabled.
+- Test that the validation returns the appropriate error messages when given an invalid duration value (e.g., a negative value) with the feature gate disabled and enabled.
 
 Current coverages:
 
