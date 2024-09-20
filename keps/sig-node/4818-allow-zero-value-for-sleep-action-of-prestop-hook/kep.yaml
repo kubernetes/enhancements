@@ -1,25 +1,31 @@
-id: ""
-prnumber: ""
-name: Allow zero value for Sleep Action of PreStop Hook
 title: Allow zero value for Sleep Action of PreStop Hook
-kep-number: "4818"
-authors: ['@sreeram-venkitesh']
+kep-number: 4818
+authors: 
+  - "@sreeram-venkitesh"
 owning-sig: sig-node
-participating-sigs: [sig-node]
+participating-sigs: []
+status: implementable
+creation-date: "2024-09-16"
+
 reviewers: []
 approvers: []
-creation-date: "2024-09-16"
-last-updated: v1.19
-status: provisional
+
+see-also:
+  - "/keps/sig-node/3960-pod-lifecycle-sleep-action"
+
 stage: alpha
-latest-milestone: ""
+
+latest-milestone: "v1.32"
+
 milestone:
-    alpha: ""
-    beta: ""
-    stable: ""
+  alpha: "v1.32"
+  beta: ""
+  stable: ""
+
 feature-gates:
   - name: PodLifecycleSleepActionAllowZero
     components:
       - kube-apiserver
 disable-supported: false
+
 metrics: []
