@@ -175,20 +175,19 @@ A potential use case for this behaviour is when you need a PreStop hook to be de
 
 ### Non-Goals
 
-N/A
+- This KEP does not support adding negative values for the sleep duration.
+- This KEP does not aim to provide a way to pause or delay pod termination indefinitely.
 
 ## Proposal
 
 Introduce a `PodLifecycleSleepActionAllowZero` feature gate which is disabled by default. When the feature gate is enabled, the `validateSleepAction` method would allow values greater than or equal to zero as a valid sleep duration.
 
-
 Since this update to the validation allows previously invalid values, care must be taken to support cluster downgrades safely. To accomplish this, the validation will distinguish between new resources and updates to existing resources:
-
 
 - When the feature gate is disabled:
   - (a) New resources will no longer allow setting zero as the sleep duration second for the PreStop hook. (no change to current validation)
   - (b) Existing resources cannot be updated to have a sleep duration of zero seconds
-  - (c) Existing resources with a PreStop sleep duration set to zero will continue to run and use a sleep duration of zero seconds. These resources however cannot be updated without also updating the sleep duration to a non-zero value, since the validation would now fail.
+  - (c) Existing resources with a PreStop sleep duration set to zero will continue to run and use a sleep duration of zero seconds. These can be updated and the zero sleep duration would continue to work.
 - When the feature gate is enabled:
   - (c) New resources allow zero as a valid sleep duration.
   - (d) Updates to existing resources will allow zero as a valid sleep duration.
@@ -220,7 +219,7 @@ The proposed change adds another layer to the `validateSleepAction` function to 
 }
 ```
 
-If the feature gate must be turned off after it was turned on initially, users should take care to update all their resources with a PreStop sleep duration of zero seconds to a non-zero value. This can be done after the feature gate is disabled too.
+Currently, the kubelet accepts `0` as a valid duration. There is no validation done at the kubelet level. All the validation for the duration itself is done at the kube-apiserver. The [runSleepHandler](https://github.com/AxeZhan/kubernetes/blob/3a96afdfefdf329c637623ae31a61d20dbdb0393/pkg/kubelet/lifecycle/handlers.go#L129-L141) in the kubelet uses the `time.After()` function from the [time](https://pkg.go.dev/time) package, which supports a `0` duration input. `time.After` also accepts negative values which are also returned immediately similar to zero. We don't support negative values however.
 
 See the entire code changes in the WIP PR: [https://github.com/kubernetes/kubernetes/pull/127094](https://github.com/kubernetes/kubernetes/pull/127094)
 
@@ -294,6 +293,16 @@ extending the production code to implement this enhancement.
 
 - `<package>`: `<date>` - `<test coverage>`
 
+Alpha:
+
+- Test that the runSleepHandler function returns immediately when given a duration of zero.
+- Test that the validation returns an error when given an invalid duration value (e.g., a negative value).
+
+Current coverages:
+
+- `k8s.io/kubernetes/pkg/apis/core/validation` : 2024-09-20 - 84.3 
+- `k8s.io/kubernetes/pkg/kubelet/lifecycle/handlers` :2024-09-20 - 86.4
+
 ##### Integration tests
 
 <!--
@@ -311,7 +320,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+N/A
 
 ##### e2e tests
 
@@ -325,7 +334,12 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+Basic functionality
+
+- Create a simple pod with a container that runs a long-running process.
+- Add a preStop hook to the container configuration, using the new sleepAction with a sleep duration of `0`.
+- Delete the pod and observe the time it takes for the container to terminate.
+- Verify that the container terminates immediately without sleeping.
 
 ### Graduation Criteria
 
