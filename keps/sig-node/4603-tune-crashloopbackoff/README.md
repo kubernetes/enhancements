@@ -194,16 +194,18 @@ Currently it is a subjectively conservative, fixed behavior regardless of
 container failure type: when a Pod has a restart policy besides `Never`, after
 containers in a Pod exit, the kubelet restarts them with an exponential back-off
 delay (10s, 20s, 40s, …), that is capped at five minutes. The delay for restarts
-will stay at 5 minutes until a container has executed for 10 minutes without any
-problems, in which case the kubelet resets the restart backoff timer for that
-container and further crash loops start again at the beginning of the delay
-curve
+will stay at 5 minutes until a container has executed for 2x the maximum backoff
+-- that is, 10 minutes -- without any problems, in which case the kubelet resets
+the backoff count for that container and further crash loops start again at the
+beginning of the delay curve
 ([ref](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)). 
 
 Both the decay to 5 minute back-off delay, and the 10 minute recovery threshold,
 are considered too conservative, especially in cases where the exit code was 0
 (Success) and the pod is transitioned into a "Completed" state or the expected
 length of the pod run is less than 10 minutes.
+
+<<[UNRESOLVED summarize the proposal as well]>> <<[/UNRESOLVED]>>
 
 ## Motivation
 
@@ -331,17 +333,16 @@ metrics will also supply cluster operators the data necessary to better analyze
 and anticipate the change in load and node stability as a result of upgrading to
 these changes.
 
-Note that proposal will NOT change:
+While they are more deeply rationalized in the Alternatives Considered section,
+because they are commonly inquired about at this point, note that this proposal
+will NOT change:
 * backoff behavior for Pods transitioning from the "Success" state differently
   from those transitioning from a "Failed" state -- see [here in Alternatives
   Considered](#on-success-and-the-10-minute-recovery-threshold)
-<<[ UNRESOLVED ifttt late recovery ]>> * the time Kubernetes waits before resetting the backoff counter -- see the
-  [here in Alternatives
-  Considered](#on-success-and-the-10-minute-recovery-threshold) <<[/UNRESOLVED]>>
 * the ImagePullBackoff -- out of scope, see [Design
   Details](#relationship-with-imagepullbackoff)
 * changes that address 'late recovery', or modifications to backoff behavior
-  once the max cap has been reached -- see
+  once the maximum backoff has been reached -- see
   [Alternatives](#more-complex-heuristics)
 
 
@@ -358,15 +359,6 @@ on prior research <<[ UNRESOLVED link to benchmarking results
 ]>>here<<[/UNRESOLVED]>>, and further analyze its impact on infrastructure
 during alpha. 
 
-A simple change to maximum backoff would naturally come with a modification of
-the backoff counter reset threshold -- as it is currently calculated based on 2x
-the max cap -- so without any other modification, containers would be "rewarded"
-by having their backoff counter set to 0 for running successfully for 1 minute
-(instead of for 10 minutes like it is today). <<[ UNRESOLVED ifttt late recovery:
-what is better?]>>As late recovery is expressly a non-goal of this KEP, as part
-of this implementation the late recovery threshold for restart backoffs will be
-factored out separately and remain 10 minutes. <<[/UNRESOLVED]>>
-
 <<[ UNRESOLVED new pic with updated modeling re: max cap values
 ]>>![](todayvs1sbackoff.png)<<[ /UNRESOLVED]>>
 
@@ -378,6 +370,14 @@ maximum backoff as an opt-in. The configuration for this will be per node, by an
 integer representing seconds (notably NOT resulting in subsecond granularity).
 The minimum allowable value will be 1 second. This per node configuration will
 be configurable only by a user with awareness of the node holistically.
+
+
+### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
+
+Finally, this KEP proposes factoring out the backoff counter reset threshold
+into a new constant. Instead of being proportional to the configured maximum
+backoff, it will instead be a flat rate equivalent to the current
+implementation, 10 minutes.
 
 
 ### User Stories
@@ -531,8 +531,6 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-<<[UNRESOLVED changing from 1.31 to 1.32 proposal, incoming in further commits]>>
-
 ### Front loaded decay curve methodology
 As mentioned above, today the standard backoff curve is a 2x exponential decay
 starting at 10s and capping at 5 minutes, resulting in a composite of the
@@ -571,26 +569,38 @@ behavior, we modeled the change in the starting value of the decay from 10s to
 !["A graph showing the decay curves for different initial values"](differentinitialvalues.png
 "Alternate CrashLoopBackoff initial values")
 
-For today's decay rate, the first restart is within the
-first 10s, the second within the first 30s, the third within the first 70s.
-Using those same time windows to compare alternate initial values, for example
-changing the initial rate to 1s, we would instead have 3 restarts in the first
-time window, 1  restart within the time window, and two more restarts within the
-third time window. As seen below, this type of change gives us more restarts
-earlier, but even at 250ms or 25ms initial values, each approach a similar rate
-of restarts after the third time window.
+For today's decay rate, the first restart is within the first 10s, the second
+within the first 30s, the third within the first 70s. Using those same time
+windows to compare alternate initial values, for example changing the initial
+rate to 1s, we would instead have 3 restarts in the first time window, 1 restart
+within the second time window, and two more restarts within the third time
+window. As seen below, this type of change gives us more restarts earlier, but
+even at 250ms or 25ms initial values, each approach a similar rate of restarts
+after the third time window.
 
+<<[UNRESOLVED ifttt front loaded images: remake this graph with axes too]>>
 ![A graph showing different exponential backoff decays for initial values of
 10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png "Changes to decay
 with different initial values")
+TODO: remake graph!
+<<[/UNRESOLVED]>>
 
 Among these modeled initial values, we would get between 3-7 excess restarts per
 backoff lifetime, mostly within the first three time windows matching today's
 restart behavior.
 
-<<[UNRESOLVED ifttt benchmarking: include stress test data now]>> <<[/UNRESOLVED]>>
+The above modeled values converge like this because of the harshly increasing
+rate caused by the exponential growth, but also because they grow to the same
+maximum value -- 5 minutes. By layering on alternate models for maximum backoff,
+we observe more restarts for longer:
 
-### Rapid curve methodology
+<<[UNRESOLVED ifttt front loaded images: add graph here with proper axes]>>
+TODO: new graph! <<[/UNRESOLVED]>>
+
+<<[UNRESOLVED ifttt benchmarking: include stress test data now]>>TODO: stress
+test data paragraph<<[/UNRESOLVED]>>
+
+### Per node config
 
 For some users in
 [Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), any
@@ -604,18 +614,55 @@ configure (by container, node, or exit code) the backoff to close to 0 seconds.
 This KEP considers it out of scope to implement fully user-customizable
 behavior, and too risky without full and complete benchmarking to node stability
 to allow legitimately crashing workloads to have a backoff of 0, but it is in
-scope for the first alpha to provide users a way to <<[UNRESOLVED]>> opt nodes
-in <<[/UNRESOLVED]>> to a even faster restart behavior.
+scope for the first alpha to provide users a way to opt nodes in to a even
+faster restart behavior.
 
-The finalization of the initial and max cap can only be done after benchmarking.
-But as a conservative first estimate for alpha in line with maximums discussed
-on [Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291),
-the initial curve is selected at <<[UNRESOLVED]>>initial=250ms / cap=1 minute,
-<<[/UNRESOLVED]>> but during benchmarking this will be modelled against kubelet
-capacity, potentially targeting something closer to an initial value near 0s,
-and a cap of 10-30s. To further restrict the blast radius of this change before
-full and complete benchmarking is worked up, this is gated by a separate alpha
-feature gate and is opted in to per <<[UNRESOLVED]>> node <<[/UNRESOLVED]>>.
+As a first estimate for alpha in line with maximums discussed on
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291) and
+the benchmarking analysis <<[UNRESOLVED ifttt benchmarking: include stress test
+data now]>>here<<[/UNRESOLVED]>>, the initial curve is selected at initial=1s /
+max=1 minute. During the alpha period this will be further investigated against
+kubelet capacity, potentially targeting something closer to an initial value
+near 0s, and a cap of 10-30s. To further restrict the blast radius of this
+change before full and complete benchmarking is worked up, this is gated by a
+separate alpha feature gate and is opted in to per node.
+
+<<[UNRESOLVED more details of per node config re: kubelet config api]>> TODO:
+API <<[/UNRESOLVED]>>
+
+### Refactor of recovery threshold
+
+A simple change
+to maximum backoff would naturally come with a modification of the backoff
+counter reset threshold -- as it is currently calculated based on 2x the maximum
+backoff. Without any other modification, as a result of this KEP, default
+containers would be "rewarded" by having their backoff counter set back to 0 for
+running successfully for 2\*1 minute=2 minutes (instead of for 2\*5minutes=10
+minutes like it is today); containers on nodes with an override could be
+rewarded for running successfully for as low as 2 seconds if they are configured
+with the minimum allowable backoff of 1s. 
+
+From a technical persepctive, granularity of the associated worker polling loops
+governing restart behavior is between 1 and 10 seconds, so a reset value under
+10 seconds is effectively meaningless (until and unless those loops increase in
+speed or we move to evented PLEG). From a user perspective, it does not seem
+that there is any particular end user value in artificially preserving the
+current 10 minute recovery threshold as part of this implementation, since it
+was an arbitrary value in the first place. However, since late recovery as a
+category of problem space is expressly a non-goal of this KEP, and in the
+interest of reducing the number of changed variables during the alpha period to
+better observe the ones previously enumerated, this proposal intends to maintain
+that 10 minute recovery threshold anyways. 
+
+Forecasting that the recovery threshold for CrashLoopBackOff may be better
+served by being configurable in the future, or at least separated in the code
+from all other uses of `client_go.Backoff` for whatever future enhancements
+address the late recovery problem space, the mechanism proposed here is to
+redefine  `client_go.Backoff` to accept alternate functions for
+[`client_go.Backoff.hasExpired`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/client-go/util/flowcontrol/backoff.go#L178),
+and configure the `client_go.Backoff` object created for use by the kube runtime
+manager for container restart bacoff with a function that compares to a flat
+rate of 300 seconds.
 
 ### Kubelet overhead analysis
 
