@@ -758,7 +758,8 @@ container before restarting, and the number of container restarts, to articulate
 the rate and load of restart related API requests and the performance effects on
 kubelet.
 
-<<[UNRESOLVED ifttt benchmarking: link initial benchmarking test data]>> <<[/UNRESOLVED]>>
+<<[UNRESOLVED ifttt benchmarking: link initial benchmarking test data]>>TODO:
+link benchmarking data<<[/UNRESOLVED]>>
 
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
@@ -814,7 +815,6 @@ completely different pattern, as unlike with CrashLoopBackoff the types of
 errors with ImagePullBackoff are less variable and better interpretable by the
 infrastructure as recovereable or non-recoverable (i.e. 404s).
 
-<<[/UNRESOLVED]>>
 ### Test Plan
 
 <!--
