@@ -32,6 +32,10 @@
     - [Security risk](#security-risk)
     - [Cgroupv1 support](#cgroupv1-support)
     - [Memory-backed volumes](#memory-backed-volumes)
+    - [Evictions](#evictions)
+      - [Brief technical overview of swap and evictions](#brief-technical-overview-of-swap-and-evictions)
+      - [Current eviction limitations](#current-eviction-limitations)
+      - [Advanced best-practices for manually setting memory evictions](#advanced-best-practices-for-manually-setting-memory-evictions)
 - [Design Details](#design-details)
   - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
   - [API Changes](#api-changes)
@@ -486,6 +490,94 @@ Linux distributions can decide to backport this options to older versions of the
 
 In the longer term, when this option would be very widely supported, this would no longer be a concern, hence this logic
 could be dropped.
+
+#### Evictions
+
+Since this KEP aims to revolve around basic swap enablement and leave more advanced features to
+follow-up KEPs, swap-based evictions are out-of-scope for this KEP
+(see the [summary](#summary) section above for more info).
+
+##### Brief technical overview of swap and evictions
+
+With swap being disabled, the memory eviction threshold should be set in a way that will let kubelet's
+eviction manager identify memory spikes in time so it can execute custom logic and take care of reclaiming
+memory and evicting pods before the kernel's OOM killer is invoked.
+
+However, with swap enabled, the situation is fundamentally different.
+In order for the kernel to start swapping memory, either the pod must breach its memory limits
+(that are not relevant for kubelet-level evictions) or the node must use all of its physical memory.
+Since swapping is a heavy operation in terms of performance, the kernel will try avoiding
+it as long as it can, and will start swapping only when it lacks physical memory.
+
+Therefore, when swap is enabled, it is acceptable to use all the available RAM which will result in the node
+using some of the swap memory.
+
+##### Current eviction limitations
+
+Because evictions are out-of-scope for this KEP, the eviction manager would remain swap-unaware.
+
+Let's say that on a specific node, the kernel would start swapping when there is less than X free physical memory
+available (see more detailed explanation [below](#advanced-best-practices-for-manually-setting-memory-evictions)).
+This means either one of the two behaviors will take place:
+1. Memory evictions threshold > X: In this scenario, kubelet's eviction manager would kick in before the kernel has
+   a chance to swap memory.
+   This means that the kernel would generally not be able to swap memory (unless the memory spike
+   is fast enough for the eviction manager to handle).
+1. Memory evictions threshold <= X: In this scenario, the kernel would start swapping memory before the memory threshold 
+   would be met. This practically means that the eviction manager would never kick in, hence it is turned off (unless
+   for extreme cases where the memory spike is faster than the kernel's ability to swap memory).
+   If the cluster admin sees this as a desirable state, the `--experimental-allocatable-ignore-eviction` kubelet flag
+   can be used in order to emphasize that memory evictions are indeed turned off. 
+
+The cluster admin can choose which of the above is the desired behavior.
+If the first is applied, kubelet would be able to evict pods but pods would be able to swap only if memory limits
+are breached.
+If the second is applied, kubelet evictions would be practically disabled but node-level pressure would result in
+swapping.
+
+Advanced cluster admins can use the approach outlined [below](#advanced-best-practices-for-manually-setting-memory-evictions).
+
+##### Advanced best-practices for manually setting memory evictions
+
+Let's simplistically explain how the kernel decides to start swapping.
+The kernel uses three "watermarks" (i.e. thresholds), which are called "high", "min", and "low", such that high > low > min.
+When the "min" threshold is met, the kernel enters an "indirect reclaim" state, which basically means that the `kswapd`
+daemon becomes active and asynchronously starts to reclaim memory.
+If the "low" threshold is being met, the kernel enters a "direct reclaim" state, in which `kswapd` would aggressively
+reclaim memory and memory would be throttled for most of the processes.
+Later, when the "min" threshold is reached, the kernel goes back to "indirect reclaim", then when the "high" threshold
+is met the node is not considered under pressure anymore.
+
+![swap_watermarks](swap_watermarks.png)
+
+To figure out what's the value of the different watermarks, one can do the following (the output is trimmed
+for simplicity. values are in memory pages):
+```shell
+> cat /proc/zoneinfo
+--
+Node 0, zone    DMA32
+        min      569
+        low      1120
+        high     1671
+--
+Node 0, zone   Normal
+        min      16322
+        low      32138
+        high     47954
+--
+...
+```
+
+This is a real example from a 64GB RAM machine with the default kernel configurations. On such a machine:
+* The `high` watermark is at `187.32Mi`.
+* The `low` watermark is at `125.54Mi`.
+* The `min` watermark is at `63.76Mi`.
+
+An advanced cluster-admin can choose to set kubelet's memory eviction threshold according to these values on nodes
+with swap enabled.
+For example, the threshold can be set to a value between the low and min watermarks.
+Bear in mind that the default memory eviction threshold of `100Mi` is between the low and min watermarks as well,
+which means that by default evictions are expected to work decently.
 
 ## Design Details
 
