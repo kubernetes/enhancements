@@ -1,4 +1,4 @@
-# KEP-4817: Resource Claim Device Status
+# KEP-4817: Resource Claim Status With Possible Standardized Network Interface Data
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -75,14 +75,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This proposal enhances the `ResourceClaim.Status` by adding a new field
 `DeviceStatuses`. The new field allows drivers to report driver-specific device
-status data for each allocated devices in a resource claim. Allowing the
+status data for each allocated device in a resource claim. Allowing the
 drivers to report the device statuses will improve both observability and
 troubleshooting as well as enabling new functionalities such as, for example,
 if the IPs of a network device are reported, network services.
 
-This extension also lays the foundation for a potential future standardization
-of specific type device data, such as, for example, networking devices
-information.
+This extension also establishes a standardization for specific type device data, 
+such as, for example, networking devices information.
 
 ## Motivation
 
@@ -106,8 +105,7 @@ management of resources.
 
 * Allow arbitrary, driver-specific information to be reported from the DRA
   drivers for each allocated device in a ResourceClaim.
-* Establish a foundation for potential future standardization (e.g. Network
-  Devices status).
+* Establish a standardization for device status (e.g. Network Devices status).
 * Enable 3rd party implementation of new functionalities based on the Device
   Status (e.g. Secondary Network Services if the IPs of a network device are
 reported).
@@ -150,96 +148,100 @@ by using the Kubernetes API.
 // ResourceClaimStatus tracks whether the resource has been allocated and what
 // the result of that was.
 type ResourceClaimStatus struct {
-	...
+    ...
 
-	// DeviceStatuses contains the status of each device allocated for this
-	// claim, as reported by the driver. This can include driver-specific
-	// information. Entries are owned by their respective drivers.
-	//
-	// +optional
-	// +listType=map
-	// +listMapKey=devicePoolName
-	// +listMapKey=deviceName
-	DeviceStatuses []AllocatedDeviceStatus `json:"deviceStatuses,omitempty" protobuf:"bytes,4,opt,name=deviceStatuses"`
+    // DeviceStatuses contains the status of each device allocated for this
+    // claim, as reported by the driver. This can include driver-specific
+    // information. Entries are owned by their respective drivers.
+    //
+    // +optional
+    // +listType=map
+    // +listMapKey=driver
+    // +listMapKey=device
+    // +listMapKey=pool
+    DeviceStatuses []AllocatedDeviceStatus `json:"deviceStatuses,omitempty" protobuf:"bytes,4,opt,name=deviceStatuses"`
 }
 
 
 // AllocatedDeviceStatus contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
 type AllocatedDeviceStatus struct {
-	// Request is the name of the request in the claim which caused this
-	// device to be allocated. Multiple devices may have been allocated
-	// per request.
-	//
-	// +required
-	Request string `json:"request" protobuf:"bytes,1,rep,name=request"`
+    // Driver specifies the name of the DRA driver whose kubelet
+    // plugin should be invoked to process the allocation once the claim is
+    // needed on a node.
+    //
+    // Must be a DNS subdomain and should end with a DNS domain owned by the
+    // vendor of the driver.
+    //
+    // +required
+    Driver string `json:"driver" protobuf:"bytes,2,rep,name=driver"`
 
-	// Driver specifies the name of the DRA driver whose kubelet
-	// plugin should be invoked to process the allocation once the claim is
-	// needed on a node.
-	//
-	// Must be a DNS subdomain and should end with a DNS domain owned by the
-	// vendor of the driver.
-	//
-	// +required
-	Driver string `json:"driver" protobuf:"bytes,2,rep,name=driver"`
+    // This name together with the driver name and the device name field
+    // identify which device was allocated (`<driver name>/<pool name>/<device name>`).
+    //
+    // Must not be longer than 253 characters and may contain one or more
+    // DNS sub-domains separated by slashes.
+    //
+    // +required
+    Pool string `json:"pool" protobuf:"bytes,3,rep,name=pool"`
 
-	// This name together with the driver name and the device name field
-	// identify which device was allocated (`<driver name>/<pool name>/<device name>`).
-	//
-	// Must not be longer than 253 characters and may contain one or more
-	// DNS sub-domains separated by slashes.
-	//
-	// +required
-	Pool string `json:"pool" protobuf:"bytes,3,rep,name=pool"`
+    // Device references one device instance via its name in the driver's
+    // resource pool. It must be a DNS label.
+    //
+    // +required
+    Device string `json:"device" protobuf:"bytes,4,rep,name=device"`
 
-	// Device references one device instance via its name in the driver's
-	// resource pool. It must be a DNS label.
-	//
-	// +required
-	Device string `json:"device" protobuf:"bytes,4,rep,name=device"`
+    // Conditions contains the latest observation of the device's state.
+    // If the device has been configured according to the class and claim
+    // config references, the `Ready` condition should be True.
+    //
+    // +optional
+    // +listType=atomic
+    Conditions []metav1.Condition `json:"conditions" protobuf:"bytes,5,rep,name=conditions"`
 
-	// Conditions contains the latest observation of the device's state.
-	// If the device has been configured according to the class and claim
-	// config references, the `Ready` condition should be True.
-	//
-	// +optional
-	// +listType=atomic
-	Conditions []metav1.Condition `json:"conditions" protobuf:"bytes,5,rep,name=conditions"`
-
-	// DeviceInfo contains Arbitrary driver-specific data.
-	//
-	// +optional
-	// +listType=atomic
-	DeviceInfo []runtime.RawExtension `json:"deviceInfo,omitempty" protobuf:"bytes,6,rep,name=deviceInfo"`
+    // DeviceInfo contains arbitrary driver-specific data.
+    //
+    // +optional
+    // +listType=atomic
+    DeviceInfo []runtime.RawExtension `json:"deviceInfo,omitempty" protobuf:"bytes,6,rep,name=deviceInfo"`
 
     // NetworkDeviceInfo contains network-related information specific to the device.
-	//
-	// +optional
-	NetworkDeviceInfo NetworkDeviceInfo `json:"networkDeviceInfo,omitempty" protobuf:"bytes,7,rep,name=networkDeviceInfo"`
+    //
+    // +optional
+    NetworkDeviceInfo NetworkDeviceInfo `json:"networkDeviceInfo,omitempty" protobuf:"bytes,7,rep,name=networkDeviceInfo"`
 }
 
 // NetworkDeviceInfo provides network-related details for the allocated device.
 // This information may be filled by drivers or other components to configure
 // or identify the device within a network context.
 type NetworkDeviceInfo struct {
-	// Interface specifies the name of the network interface associated with
-	// the allocated device. This might be the name of a physical or virtual
-	// network interface.
-	//
-	// +optional
-	Interface string `json:"interface,omitempty" protobuf:"bytes,1,rep,name=interface"`
+    // Interface specifies the name of the network interface associated with
+    // the allocated device. This might be the name of a physical or virtual
+    // network interface.
+    //
+    // +optional
+    Interface string `json:"interface,omitempty" protobuf:"bytes,1,rep,name=interface"`
 
-	// IPs lists the IP addresses assigned to the device's network interface.
-	// This can include both IPv4 and IPv6 addresses.
-	//
-	// +optional
-	IPs []string `json:"ips,omitempty" protobuf:"bytes,2,rep,name=ips"`
+    // NetworkAddresses lists the network addresses assigned to the device's network interface.
+    // This can include both IPv4 and IPv6 addresses.
+    //
+    // +optional
+    NetworkAddresses []NetworkAddress `json:"networkAddresses,omitempty" protobuf:"bytes,2,rep,name=networkAddresses"`
 
-	// Mac represents the MAC address of the device's network interface.
-	//
-	// +optional
-	Mac string `json:"mac,omitempty" protobuf:"bytes,3,rep,name=mac"`
+    // Mac represents the MAC address of the device's network interface.
+    //
+    // +optional
+    Mac string `json:"mac,omitempty" protobuf:"bytes,3,rep,name=mac"`
+}
+
+// NetworkAddress provides a network address related details such as IP and Mask.
+type NetworkAddress struct {
+    // CIDR contains the network address in CIDR notation, which includes
+    // both the address and the associated subnet mask.
+    // e.g.: "192.0.2.0/24" for IPv4 and "2001:db8::/64" for IPv6.
+    //
+    // +required
+    CIDR string `json:"cidr,omitempty" protobuf:"bytes,1,rep,name=cidr"`
 }
 ```
 
@@ -536,15 +538,15 @@ list in a json format in the annotation of the `Pod`.
 // NetworkStatus is for network status annotation for pod
 // +k8s:deepcopy-gen=false
 type NetworkStatus struct {
-	Name       string      `json:"name"`
-	Interface  string      `json:"interface,omitempty"`
-	IPs        []string    `json:"ips,omitempty"`
-	Mac        string      `json:"mac,omitempty"`
-	Mtu        int         `json:"mtu,omitempty"`
-	Default    bool        `json:"default,omitempty"`
-	DNS        DNS         `json:"dns,omitempty"`
-	DeviceInfo *DeviceInfo `json:"device-info,omitempty"`
-	Gateway    []string    `json:"gateway,omitempty"`
+    Name       string      `json:"name"`
+    Interface  string      `json:"interface,omitempty"`
+    IPs        []string    `json:"ips,omitempty"`
+    Mac        string      `json:"mac,omitempty"`
+    Mtu        int         `json:"mtu,omitempty"`
+    Default    bool        `json:"default,omitempty"`
+    DNS        DNS         `json:"dns,omitempty"`
+    DeviceInfo *DeviceInfo `json:"device-info,omitempty"`
+    Gateway    []string    `json:"gateway,omitempty"`
 }
 ```
 
@@ -579,23 +581,23 @@ type PodStatus struct {
 
 // NetworkStatus provides the status of specific PodNetwork in a Pod.
 type NetworkStatus struct {
-        // Name is name of PodNetwork
-        Name string `json:"name"`
+    // Name is name of PodNetwork
+    Name string `json:"name"`
 
-        // InterfaceName is the network interface name inside the Pod for this attachment.
-        // Examples: eth1 or net1
-        //
-        // +optional
-        InterfaceName string `json:"interfaceName"`
+    // InterfaceName is the network interface name inside the Pod for this attachment.
+    // Examples: eth1 or net1
+    //
+    // +optional
+    InterfaceName string `json:"interfaceName"`
 
-        // ip is an IP address (IPv4 or IPv6) assigned to the pod
-        IP string `json:"ip,omitempty"`
+    // ip is an IP address (IPv4 or IPv6) assigned to the pod
+    IP string `json:"ip,omitempty"`
 
-        // IsDefaultGW is a flag indicating that the interface with this IP
-        // inside the Pod holds the Default Gateway.
-        //
-        // +optional
-        IsDefaultGW bool `json:"isDefaultGW,omitempty"`
+    // IsDefaultGW is a flag indicating that the interface with this IP
+    // inside the Pod holds the Default Gateway.
+    //
+    // +optional
+    IsDefaultGW bool `json:"isDefaultGW,omitempty"`
 }
 ```
 
