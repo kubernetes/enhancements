@@ -73,38 +73,78 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal enhances the `ResourceClaim.Status` by adding a new field `DeviceStatuses`. The new field allows drivers to report driver-specific device status data for each allocated devices in a resource claim. Allowing the drivers to report the device statuses will improve both observability and troubleshooting as well as enabling new functionalities such as, for example, if the IPs of a network device are reported, network services.
+This proposal enhances the `ResourceClaim.Status` by adding a new field
+`DeviceStatuses`. The new field allows drivers to report driver-specific device
+status data for each allocated devices in a resource claim. Allowing the
+drivers to report the device statuses will improve both observability and
+troubleshooting as well as enabling new functionalities such as, for example,
+if the IPs of a network device are reported, network services.
 
-This extension also lays the foundation for a potential future standardization of specific type device data, such as, for example, networking devices information.
+This extension also lays the foundation for a potential future standardization
+of specific type device data, such as, for example, networking devices
+information.
 
 ## Motivation
 
-As of now, when a device is configured in a pod/container, the state and characteristics of the device set during the configuration stage are invisible. The lack of this information is then a challenge for the users and developers to diagnose issues, verify configurations, and integrate the allocated resources into higher-level services. Reporting this information is then crucial in environments where device specific configurations are necessary.
+As of now, when a device is configured in a pod/container, the state and
+characteristics of the device set during the configuration stage are invisible.
+The lack of this information is then a challenge for the users and developers
+to diagnose issues, verify configurations, and integrate the allocated
+resources into higher-level services. Reporting this information is then
+crucial in environments where device specific configurations are necessary.
 
-For certain types of devices, such as network interfaces, knowing the detailed characteristics of what has been allocated is particularly useful and crucial. For example, reporting the interface Name, MAC address and IP addresses of network interfaces in the status of a ResourceClaim can significantly help in configuring and managing network services, as well as in debugging network related issues. By including such device specific information, this proposal addresses existing gaps in visibility and facilitates better integration and management of resources.
+For certain types of devices, such as network interfaces, knowing the detailed
+characteristics of what has been allocated is particularly useful and crucial.
+For example, reporting the interface Name, MAC address and IP addresses of
+network interfaces in the status of a ResourceClaim can significantly help in
+configuring and managing network services, as well as in debugging network
+related issues. By including such device specific information, this proposal
+addresses existing gaps in visibility and facilitates better integration and
+management of resources.
 
 ### Goals
 
-* Allow arbitrary, driver-specific information to be reported from the DRA drivers for each allocated device in a ResourceClaim.
-* Establish a foundation for potential future standardization (e.g. Network Devices status).
-* Enable 3rd party implementation of new functionalities based on the Device Status (e.g. Secondary Network Services if the IPs of a network device are reported).
+* Allow arbitrary, driver-specific information to be reported from the DRA
+  drivers for each allocated device in a ResourceClaim.
+* Establish a foundation for potential future standardization (e.g. Network
+  Devices status).
+* Enable 3rd party implementation of new functionalities based on the Device
+  Status (e.g. Secondary Network Services if the IPs of a network device are
+reported).
 
 ### Non-Goals
 
-* Implement new functionalities based on the Device Status (e.g. Kubernetes EndpointSlice Controller supporting IPs reported by networking DRA drivers).
+* Implement new functionalities based on the Device Status (e.g. Kubernetes
+  EndpointSlice Controller supporting IPs reported by networking DRA drivers).
 * Modifying the Resource Claim workflow to include the device status report.
 
 ## Proposal
 
 ### API - ResourceClaim.Status
 
-The API changes define a new `DeviceStatuses` field in the existing `ResourceClaimStatus` struct. `DeviceStatuses` is a slice of a new struct `AllocatedDeviceStatus` which holds device specific information. 
+The API changes define a new `DeviceStatuses` field in the existing
+`ResourceClaimStatus` struct. `DeviceStatuses` is a slice of a new struct
+`AllocatedDeviceStatus` which holds device specific information. 
 
-A device, identified by `<driver name>/<pool name>/<device name>` can be represented only once in the `DeviceStatuses` slice and will also mention which request caused the device to be allocated. The state and characteristics of the device are reported in the `Conditions`, representing the operational state of the device and in the `DeviceInfo`, an arbitrary data slice representing device specific characteristics. Additionally, for networking devices, a field `NetworkDeviceInfo` can be used to report the IPs, the MAC address and the interface name.
+A device, identified by `<driver name>/<pool name>/<device name>` can be
+represented only once in the `DeviceStatuses` slice and will also mention which
+request caused the device to be allocated. The state and characteristics of the
+device are reported in the `Conditions`, representing the operational state of
+the device and in the `DeviceInfo`, an arbitrary data slice representing device
+specific characteristics. Additionally, for networking devices, a field
+`NetworkDeviceInfo` can be used to report the IPs, the MAC address and the
+interface name.
 
-`DeviceInfo` being a slice of arbitrary data allows the DRA Driver to store device specific data in different formats. For example, a Network Device being configured by via a CNI plugin could get its `DeviceInfo` filled with the CNI result for troubleshooting purpose and with a Network result in a modern standard format (closer to Pod.Status.PodIPs for example) used by 3rd party controllers.
+`DeviceInfo` being a slice of arbitrary data allows the DRA Driver to store
+device specific data in different formats. For example, a Network Device being
+configured by via a CNI plugin could get its `DeviceInfo` filled with the CNI
+result for troubleshooting purpose and with a Network result in a modern
+standard format (closer to Pod.Status.PodIPs for example) used by 3rd party
+controllers.
 
-For each device, if required, the DRA Driver processing the device allocation can report the status of it in the `Status.DeviceStatuses` of the ResourceClaim by using the Kubernetes API.
+For each device, if required, the DRA Driver processing the device allocation
+can report the status of it in the `Status.DeviceStatuses` of the ResourceClaim
+by using the Kubernetes API.
 
 ```golang
 // ResourceClaimStatus tracks whether the resource has been allocated and what
@@ -207,31 +247,58 @@ type NetworkDeviceInfo struct {
 
 #### Story 1 - Network Device Status for Network Services
 
-As a Cloud Native Network Function (CNF) vendor, my network services must be integrated with the network devices configured in Pods. The configuration properties of these network devices are therefore essential to configure the network services. For example, the network services must be able to route traffic to pods over networks attached via the network devices, the IP addresses of the network device(s) must then be reflected in the `ResourceClaim.Status` allowing the network service controller(s) to access them.
+As a Cloud Native Network Function (CNF) vendor, my network services must be
+integrated with the network devices configured in Pods. The configuration
+properties of these network devices are therefore essential to configure the
+network services. For example, the network services must be able to route
+traffic to pods over networks attached via the network devices, the IP
+addresses of the network device(s) must then be reflected in the
+`ResourceClaim.Status` allowing the network service controller(s) to access
+them.
 
 #### Story 2 - Network Device Status for Troubleshooting
 
-As a Network Administrator, troubleshooting networking issues can be complex and time consuming especially when the device characteristics and operational status are not readily accessible. The `DeviceStatuses` field in the `ResourceClaim.Status` provides access to comprehensive details regarding network interfaces helping to quickly and efficiently identify the issues such as error messages on failed network interface configuration, incorrect IP assignments or misconfigured network interfaces.
+As a Network Administrator, troubleshooting networking issues can be complex
+and time consuming especially when the device characteristics and operational
+status are not readily accessible. The `DeviceStatuses` field in the
+`ResourceClaim.Status` provides access to comprehensive details regarding
+network interfaces helping to quickly and efficiently identify the issues such
+as error messages on failed network interface configuration, incorrect IP
+assignments or misconfigured network interfaces.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The content of `DeviceInfo` is driver specific and not standardized as part of DRA, the interpretation of this field may then vary between controllers and users reading it. 
+The content of `DeviceInfo` is driver specific and not standardized as part of
+DRA, the interpretation of this field may then vary between controllers and
+users reading it. 
 
-The accuracy of the information depends on the implementation of the DRA Drivers, the reported status of the device may not always reflect the real time changes of the state of the device.
+The accuracy of the information depends on the implementation of the DRA
+Drivers, the reported status of the device may not always reflect the real time
+changes of the state of the device.
 
 ### Risks and Mitigations
 
-As stated, 3rd party DRA drivers will set and update the `DeviceStatuses` for the device they manage. An access control must be set in place to restrict the write access to the appropriate driver (A device status can only be updated by the driver which allocated and configured this device).
+As stated, 3rd party DRA drivers will set and update the `DeviceStatuses` for
+the device they manage. An access control must be set in place to restrict the
+write access to the appropriate driver (A device status can only be updated by
+the driver which allocated and configured this device).
 
-Adding `DeviceInfo` as an arbitrary data slice may introduce extra processing and storage overhead which might impact performance in a cluster with many devices and frequent status updates. In large-scale clusters where many devices are allocated, this impact must be considered.
+Adding `DeviceInfo` as an arbitrary data slice may introduce extra processing
+and storage overhead which might impact performance in a cluster with many
+devices and frequent status updates. In large-scale clusters where many devices
+are allocated, this impact must be considered.
 
 ## Design Details
 
 ### API
 
-The `ResourceClaimStatus` struct in `pkg/apis/resource/types.go` will be extended to include the slice of `DeviceStatuses`.
+The `ResourceClaimStatus` struct in `pkg/apis/resource/types.go` will be
+extended to include the slice of `DeviceStatuses`.
 
-`ResourceClaim` validation of the status in `pkg/apis/resource/validation/validation.go` will be covered to allow a device to be reported only once in the slice, a device is being identified  by `<driver name>/<pool name>/<device name>`.
+`ResourceClaim` validation of the status in
+`pkg/apis/resource/validation/validation.go` will be covered to allow a device
+to be reported only once in the slice, a device is being identified  by
+`<driver name>/<pool name>/<device name>`.
 
 ### Test Plan
 
@@ -252,7 +319,8 @@ to implement this enhancement.
 
 - Usage of the `DeviceStatuses` field in the `ResourceClaimStatus`:
     * With the feature gate enabled, the field exists in the `ResourceClaim`.
-    * With the feature gate disabled, the field does not exist in the `ResourceClaim`.
+    * With the feature gate disabled, the field does not exist in the
+      `ResourceClaim`.
 
 ##### e2e tests
 
@@ -262,16 +330,19 @@ TBD
 
 #### Alpha
 
-- Feature implemented behind feature gates (`ResourceClaimDeviceStatus`). Feature Gates are disabled by default.
+- Feature implemented behind feature gates (`ResourceClaimDeviceStatus`).
+  Feature Gates are disabled by default.
 - Documentation provided.
 - Initial unit, integration and e2e tests completed and enabled.
 
 #### Beta
 
 - Feature Gates are enabled by default.
-- Authorization implemented to allow only the driver managing the device to write the status.
+- Authorization implemented to allow only the driver managing the device to
+  write the status.
 - No major outstanding bugs.
-- Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
+- Feedback collected from the community (developers and users) with adjustments
+  provided, implemented and tested.
 
 #### GA
 
@@ -280,13 +351,16 @@ TBD
 
 ### Upgrade / Downgrade Strategy
 
-This feature only exposes a new field in the `ResourceClaim.Status`, the field will either be present or not.
+This feature only exposes a new field in the `ResourceClaim.Status`, the field
+will either be present or not.
 
-DRA implementation requires DRA interfaces change. DRA is in alpha and in active development. The feature will follow the DRA upgrade/downgrade strategy.
+DRA implementation requires DRA interfaces change. DRA is in alpha and in
+active development. The feature will follow the DRA upgrade/downgrade strategy.
 
 ### Version Skew Strategy
 
-This feature affects only the kube-apiserver, so there is no issue with version skew with other Kubernetes components.
+This feature affects only the kube-apiserver, so there is no issue with version
+skew with other Kubernetes components.
 
 ## Production Readiness Review Questionnaire
 
@@ -301,8 +375,8 @@ This feature affects only the kube-apiserver, so there is no issue with version 
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+  - Will enabling / disabling the feature require downtime or reprovisioning of
+    a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -310,14 +384,16 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, with no side effects except for missing the new field in `ResourceClaim.Status`. 
-Re-enabling this feature will not guarantee to keep the values written before the feature has been disabled.
+Yes, with no side effects except for missing the new field in
+`ResourceClaim.Status`. Re-enabling this feature will not guarantee to keep
+the values written before the feature has been disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 ###### Are there any tests for feature enablement/disablement?
 
-Enablement/disablement of this feature is tested as part of the integration tests.
+Enablement/disablement of this feature is tested as part of the integration
+tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -387,7 +463,9 @@ No
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes, DRA Drivers will update the `ResourceClaim.Status` to report the allocated device status. Depending on the driver the size and frequency of these updates can vary.
+Yes, DRA Drivers will update the `ResourceClaim.Status` to report the allocated
+device status. Depending on the driver the size and frequency of these updates
+can vary.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -407,7 +485,8 @@ No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Depending on the content of the `DeviceInfo` set by the DRA drivers, the disk usage could increase.
+Depending on the content of the `DeviceInfo` set by the DRA drivers, the disk
+usage could increase.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -433,15 +512,24 @@ N/A
 
 ## Drawbacks
 
-If the Network device (network interface) characteristics (e.g. IP) and status is reported as part of the `Resource.Claim.Status`, it should be ensured the `ResourceClaim` is not used by several `Pod` at a time. Additionally, if a controller needs to gather IPs for a specific network to which Pods are attached via networking devices, it will need to query each `Pod` and then access the corresponding `ResourceClaim` for every Pod.
+If the Network device (network interface) characteristics (e.g. IP) and status
+is reported as part of the `Resource.Claim.Status`, it should be ensured the
+`ResourceClaim` is not used by several `Pod` at a time. Additionally, if a
+controller needs to gather IPs for a specific network to which Pods are
+attached via networking devices, it will need to query each `Pod` and then
+access the corresponding `ResourceClaim` for every Pod.
 
 ## Alternatives
 
 ### Annotations
 
-An option the DRA drivers can currently use to report the status of the device allocated in the `ResourceClaim` is the annotation of the `ResourceClaim` or of the `Pod` itself. As a reference, the [k8snetworkplumbingwg/Multus-CNI](https://github.com/k8snetworkplumbingwg/multus-cni) project is utilizing annotation to describe the network attachments/interfaces and report the status.
+An option the DRA drivers can currently use to report the status of the device
+allocated in the `ResourceClaim` is the annotation of the `ResourceClaim` or of
+the `Pod` itself. As a reference, the [k8snetworkplumbingwg/Multus-CNI](https://github.com/k8snetworkplumbingwg/multus-cni) project is utilizing annotation to describe the network attachments/interfaces
+and report the status.
 
-Here is the API below representing a network attachment. This is stored as a list in a json format in the annotation of the `Pod`.
+Here is the API below representing a network attachment. This is stored as a
+list in a json format in the annotation of the `Pod`.
 
 [k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1/types.go](https://github.com/k8snetworkplumbingwg/network-attachment-definition-client/blob/v1.7.3/pkg/apis/k8s.cni.cncf.io/v1/types.go#L103):
 ```golang
@@ -462,11 +550,19 @@ type NetworkStatus struct {
 
 ### Pod.Status.PodIPs Enhancement
 
-As part of the [Multi-Network (KEP-3698)](https://github.com/kubernetes/enhancements/issues/3698), the idea was to use the existing `Pod.Status.PodIPs` and save the data about the different network interfaces/devices attached to the `Pod`. As part of the review of the KEP, it has been indicated ([here](https://github.com/kubernetes/enhancements/pull/3700#discussion_r1501690793) and [here](https://github.com/kubernetes/kubernetes/pull/123112#issuecomment-1925957930)) that it would be an API breaking change if the `Pod.Status.PodIPs` contains more than 1 value per IP family.
+As part of the [Multi-Network (KEP-3698)](https://github.com/kubernetes/enhancements/issues/3698), 
+the idea was to use the existing `Pod.Status.PodIPs` and save the data about the
+different network interfaces/devices attached to the `Pod`. As part of the
+review of the KEP, it has been indicated ([here](https://github.com/kubernetes/enhancements/pull/3700#discussion_r1501690793) and [here](https://github.com/kubernetes/kubernetes/pull/123112#issuecomment-1925957930))
+that it would be an API breaking change if the `Pod.Status.PodIPs` contains
+more than 1 value per IP family.
 
 ### New Pod.Status Field
 
-Still as part of the [KEP-3698 - Multi-Network](https://github.com/kubernetes/enhancements/issues/3698), and in the continuation of the previous alternative, the idea was to add a new field `Networks` in the `Pod.Status` so each networking DRA driver could report the status for each network interface/device directly in the `Pod.Status`.
+Still as part of the [KEP-3698 - Multi-Network](https://github.com/kubernetes/enhancements/issues/3698), and in
+the continuation of the previous alternative, the idea was to add a new field
+`Networks` in the `Pod.Status` so each networking DRA driver could report the
+status for each network interface/device directly in the `Pod.Status`.
 
 Here is below the proposed API:
 ```golang
@@ -505,7 +601,11 @@ type NetworkStatus struct {
 
 ### KEP-4680 extension
 
-During the WG Device Management meeting on 17th of September 2024 ([Slack summary](https://kubernetes.slack.com/archives/C0409NGC1TK/p1726679433650409)), the idea was to extend the [KEP-4680 about resource health status in the `Pod.Status` ](https://github.com/kubernetes/enhancements/issues/4680) in order to expose device information and not just the health.
+During the WG Device Management meeting on 17th of September 2024 ([Slack
+summary](https://kubernetes.slack.com/archives/C0409NGC1TK/p1726679433650409)),
+the idea was to extend the [KEP-4680 about resource health status in the
+`Pod.Status` ](https://github.com/kubernetes/enhancements/issues/4680) in order
+to expose device information and not just the health.
 
 ## Infrastructure Needed (Optional)
 
