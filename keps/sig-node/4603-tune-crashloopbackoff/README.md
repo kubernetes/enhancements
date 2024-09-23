@@ -667,26 +667,63 @@ rate of 300 seconds.
 
 ### Kubelet overhead analysis
 
-As it's likely that in some deployments pods will restart more often that in
-current Kubernetes, for this KEP, it's important to understand what the kubelet
-does during pod restarts. 
+As it's intended that, after this KEP, pods will restart more often that in
+current Kubernetes, it's important to understand what the kubelet does during
+pod restarts. The most informative code path for that is through (all links to
+1.31) [`kubelet/kubelet.go
+SyncPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go),
+[`kubelet/kuberuntime/kuberuntime_manager.go
+SyncPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1052),
+[`kubelet/kuberuntime/kuberuntime_container.go
+startContainer`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_container.go#L195)
+and [`kubelet/kubelet.go SyncTerminatingPod`](),
+[`kubelet/kuberuntime/kuberuntime_container.go
+killContainer`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_container.go#L761),
+[`kubelet/kuberuntime/kuberuntime_manager.go
+killPodWithSyncResult`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1466),
+and [`kubelet/kubelet.go
+SyncTerminatedPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go#L1996).
+
+!["A sequence diagram showing Kubelet and Container Runtime code paths responsible for behaviors common to all pod restarts"](kubeletvsruntime-restartresponsibility.png
+"High level Kubelet and Container Runtime restart code paths")
+
+
+As you might imagine this is a very critical code path with hooks to many
+in-flight features; <<[!UNRESOLVED make a link]>>Appendix A<<[/UNRESOLVED]>>
+includes a more complete list (yet still not as exhaustive as the source code),
+but the following are selected as the most important behaviors of kubelet during
+a restart to know about, that are not currently behind a feature gate.
+
+After a Pod is in Terminating phase, kubelet:
+
+* Clears up old containers using container runtime
+* Stops probes and pod sandbox, and unmounts volumes and unregisters secrets/configmaps (since Pod was in a terminal phase)
+* While still in the backoff window, wait for network / attach volumes / register pod to secret and configmap managers / re-download image secrets if necessary
+
+Once the current backoff window has passed, kubelet:
 
 * Potentially re-downloads the image (utilizing network + IO and blocks other
-  image downloads)
-* Clears up old container using Containerd
-* Redownloads secrets and configs if needed
-* Recreates the container using Containerd
-* Runs startup probes until container started (startup probes may be more
+  image downloads) if image pull policy specifies it
+  ([ref]([`imageManager.EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/images/image_manager.go#L135))).
+* Recreates the pod sandbox and probe workers
+* Recreates the containers using container runtime
+* Runs user configured prestart and poststart hooks for each container
+* Runs startup probes until containers have started (startup probes may be more
   expensive than the readiness probes as they often configured to run more
   frequently)
-* Application runs thru initialization logic (typically utilizing more IO)
-* Logs information about all those container operations (utilizing disk IO and
+* Redownloads all secrets and configmaps, as the pod has been unregistered and
+  reregistered to the managers, while computing container environment/EnvVarFrom
+* Application runs through its own initialization logic (typically utilizing more IO)
+* Logs information about all container operations (utilizing disk IO and
   “spamming” logs)
+
+The following diagram showcases these same highlights more visually and in context of the responsible API surface (Kubelet or Runtime aka CRI).
+
+!["A diagram showing Kubelet and Container Runtime code paths responsible for behaviors common to all pod restarts"](code-diagram-for-restarts.png
+"Kubelet and Container Runtime restart code paths")
 
 ```
  <<[UNRESOLVED add the rest of the analysis since 1.31 and answer these questions from original PR]>> 
- > What conditions lead to a re-download of an image? I wonder if we can eliminate this, or if that's too much of a behavior change.
- > Similar question for image downloads. Although in this case, I think the kubelet should have an informer for any secrets or configmaps used, so it should just pull from cache. Is that true for EnvVarFrom values?
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
  
   <<[/UNRESOLVED]>>
