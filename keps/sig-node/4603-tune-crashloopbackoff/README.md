@@ -374,10 +374,10 @@ be configurable only by a user with awareness of the node holistically.
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
 
-Finally, this KEP proposes factoring out the backoff counter reset threshold
-into a new constant. Instead of being proportional to the configured maximum
-backoff, it will instead be a flat rate equivalent to the current
-implementation, 10 minutes.
+Finally, this KEP proposes factoring out the backoff counter reset threshold for
+CrashLoopBackoff behavior induced restarts into a new constant. Instead of being
+proportional to the configured maximum backoff, it will instead be a flat rate
+equivalent to the current implementation, 10 minutes.
 
 
 ### User Stories
@@ -471,7 +471,7 @@ become unresponsive, effectively taking down an entire cluster.
 The same risk exists for the per Node feature, which, while not default, is by
 design allowing a more severe reduction in the decay behavior. In the worst
 case, it could cause nodes to fully saturate with near-instantly restarting pods
- that will never recover, risking similar issues as above: taking down nodes or
+that will never recover, risking similar issues as above: taking down nodes or
 at least nontrivially slowing kubelet, or increasing the API requests to store
 backoff state so significantly that the central API server is unresponsive and
 the cluster fails.
@@ -511,16 +511,17 @@ pursuing manual and more detailed periodic benchmarking during the alpha period,
 we can increase the confidence in this change and in the possibility of reducing
 further in the future.
 
-For the per node case, because the change is more significant, including
-lowering the max backoff, there is more risk to node stability expected. This
-change is of particular interest to be tested in the alpha period by end users,
-and is why it is still included with opt-in even though the risks are higher.
-<<[UNRESOLVED update with real stress test results]>> For a hypothetical node
-with the max 110 pods all stuck in a simultaneous 1s maximum CrashLoopBackoff,
-API requests to change the state transition would increase from ABC requests/10s
-to NNN requests/10s, and since the maximum backoff would be lowered, would
-exhibit up to NNN requests in excess every 300s (5 minutes), or an extra A.B
-requests per second once all pods reached their max cap backoff.
+For the per node case, because the change could be more significant, with nearly
+trivial (when compared to pod startup metrics) max allowable backoffs of 1s,
+there is more risk to node stability expected. This change is of particular
+interest to be tested in the alpha period by end users, and is why it is still
+included with opt-in even though the risks are higher. <<[UNRESOLVED update with
+real stress test results]>> For a hypothetical node with the max 110 pods all
+stuck in a simultaneous 1s maximum CrashLoopBackoff, API requests to change the
+state transition would increase from ABC requests/10s to NNN requests/10s, and
+since the maximum backoff would be lowered, would exhibit up to NNN requests in
+excess every 300s (5 minutes), or an extra A.B requests per second once all pods
+reached their max cap backoff. <<[/UNRESOLVED]>>
 
 ## Design Details 
 
