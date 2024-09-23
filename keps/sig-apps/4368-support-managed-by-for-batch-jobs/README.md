@@ -49,6 +49,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Skip reconciliation in the event handler](#skip-reconciliation-in-the-event-handler)
   - [Reserved controller name value](#reserved-controller-name-value)
   - [Defaulting of the for newly created jobs](#defaulting-of-the-for-newly-created-jobs)
   - [Alternative names for field](#alternative-names-for-field)
@@ -207,8 +208,15 @@ a blocker.
 
 It would also complicate debuggability of the feature.
 
-We decide to keep the field immutable, at least for [Alpha](#alpha), we will
-re-evaluate the decision for [Beta](#beta).
+Also, we already observe the adoption of the mechanism in other batch projects,
+such as:
+- [JobSet](https://github.com/kubernetes-sigs/jobset/blob/665bc42e0a33a0ebdf7fc09b2b6ae5d88eb7d33c/api/jobset/v1alpha2/jobset_types.go#L121-L133)
+- [Kubeflow training-operators](https://github.com/kubeflow/training-operator/blob/da11d1116c29322c481d0b8f174df8d6f05004aa/pkg/apis/kubeflow.org/v1/common_types.go#L238-L239).
+
+These projects for now follow the decision taken in the core k8s to make the
+field immutable to avoid complication of the support for mutability.
+
+All together, we decide to keep the field immutable.
 
 #### Use for MultiKueue
 
@@ -358,17 +366,15 @@ We skip synchronization of the Jobs with the "managedBy" field, if it has any
 different value than `kubernetes.io/job-controller`. When the synchronization is skipped,
 the name of the controller managing the Job object is logged.
 
-We leave the particular place at which the synchronization is skipped as
-implementation detail which can be determined during the implementation phase,
-however, two candidate places are:
-1. inside `syncJob` function
-2. inside `enqueueSyncJobInternal` function
+We skip the reconciliation inside the `syncJob` function
+(see [here](https://github.com/kubernetes/kubernetes/blob/15d08bf7c8813b0533dc147a03d9f42aae735ecd/pkg/controller/job/job_controller.go#L819-L822)).
 
-Note that, if we skip inside `enqueueSyncJobInternal` we may save on some memory
-needed to needlessly enqueue the Job keys.
+We will re-evaluate for [GA](#ga) to also skip the reconciliation within the
+`enqueueSyncJobInternal` for optimal performance. See discussion in the
+[Skip reconciliation in the event handler](#skip-reconciliation-in-the-event-handler).
 
-There is no validation for the values of the field beyond that of standard
-permitted field values.
+There is no validation for a value of the field beyond its format as described
+in the [API](#API) comment above.
 
 #### Job status validation
 
@@ -541,7 +547,7 @@ Second Alpha (1.31):
 
 - Address reviews and bug reports from Beta users
 - Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
-- Re-evaluate the support for mutability of the field
+- Re-evaluate the need to skip reconciliation in the event handlers to optimize performance
 - Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
 - Lock the feature gate
 
@@ -775,10 +781,10 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-The Upgrade->downgrade->upgrade testing will be done manually prior to release
-as Beta, with the following steps:
+The Upgrade->downgrade->upgrade was tested manually using the 1.31 release
+(Alpha), with the following steps:
 
-1. Start the cluster with the `JobManagedBy` enabled for api server and control-plane.
+1. Start the cluster with the `JobManagedBy` enabled for kube-apiserver and kube-controller-manager.
 
 Then, create two-long running Jobs:
 - `job-managed` with custom value of the "managedBy" field
@@ -788,13 +794,13 @@ Then, verify that:
 - the `job-managed` does not get status updates from built-in controller. Update the status manually and observe it is not reset by the built-in controller.
 - the `job-regular` starts making progress (creates pods and updates the status accordingly by the built-in controller)
 
-2. Simulate downgrade by disabling the feature for api server and control-plane.
+2. Simulate downgrade by disabling the feature for kube-apiserver and kube-controller-manager.
 
 Then, verify that:
 - the `job-managed` starts to make progress, the status is reset, and updated to some new values
 - the `job-regular` continues making progress
 
-3. Simulate upgrade by re-enabling the feature for api server and control-plane.
+3. Simulate upgrade by re-enabling the feature for kube-apiserver and kube-controller-manager.
 
 Then, verify that:
 - the `job-managed` stops getting status updates from the built-in controller. Update the status manually and observe it is not reset by the built-in controller.
@@ -1103,6 +1109,26 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### Skip reconciliation in the event handler
+
+We discussed to skip the reconciliation only within the
+[`enqueueSyncJobInternal`](https://github.com/kubernetes/kubernetes/blob/15d08bf7c8813b0533dc147a03d9f42aae735ecd/pkg/controller/job/job_controller.go#L575).
+
+However, it was noted that it would cause race conditions when the Job with the
+same name and namespace is re-created, but with the `managedBy` field. The
+race condition was reproduced by the
+[TestManagedBy_RecreatedJob](https://github.com/kubernetes/kubernetes/blob/15d08bf7c8813b0533dc147a03d9f42aae735ecd/test/integration/job/job_test.go#L2229)
+integration test which demonstrated the issue with such an implementation.
+
+Still, it is a potential improvement to skip the reconciliation inside
+`syncJob` and skip queuing within the `enqueueSyncJobInternal` function for
+optimal performance (by saving memory and off-loading the reconciliation queue).
+
+**Reasons for discarding/deferring**
+
+Potentially a premature optimization which would complicate the code. We will
+prefer to base the introduction of the optimization on users' feedback.
 
 ### Reserved controller name value
 
