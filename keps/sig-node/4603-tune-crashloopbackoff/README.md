@@ -684,8 +684,10 @@ killPodWithSyncResult`](https://github.com/kubernetes/kubernetes/blob/release-1.
 and [`kubelet/kubelet.go
 SyncTerminatedPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go#L1996).
 
-!["A sequence diagram showing Kubelet and Container Runtime code paths responsible for behaviors common to all pod restarts"](kubeletvsruntime-restartresponsibility.png
-"High level Kubelet and Container Runtime restart code paths")
+!["A sequence diagram showing Kubelet and Container Runtime code paths
+responsible for behaviors common to all pod
+restarts"](kubeletvsruntime-restartresponsibility.png "High level Kubelet and
+Container Runtime restart code paths")
 
 
 As you might imagine this is a very critical code path with hooks to many
@@ -697,8 +699,11 @@ a restart to know about, that are not currently behind a feature gate.
 After a Pod is in Terminating phase, kubelet:
 
 * Clears up old containers using container runtime
-* Stops probes and pod sandbox, and unmounts volumes and unregisters secrets/configmaps (since Pod was in a terminal phase)
-* While still in the backoff window, wait for network / attach volumes / register pod to secret and configmap managers / re-download image secrets if necessary
+* Stops probes and pod sandbox, and unmounts volumes and unregisters
+  secrets/configmaps (since Pod was in a terminal phase)
+* While still in the backoff window, wait for network / attach volumes /
+  register pod to secret and configmap managers / re-download image secrets if
+  necessary
 
 Once the current backoff window has passed, kubelet:
 
@@ -713,14 +718,17 @@ Once the current backoff window has passed, kubelet:
   frequently)
 * Redownloads all secrets and configmaps, as the pod has been unregistered and
   reregistered to the managers, while computing container environment/EnvVarFrom
-* Application runs through its own initialization logic (typically utilizing more IO)
+* Application runs through its own initialization logic (typically utilizing
+  more IO)
 * Logs information about all container operations (utilizing disk IO and
   “spamming” logs)
 
-The following diagram showcases these same highlights more visually and in context of the responsible API surface (Kubelet or Runtime aka CRI).
+The following diagram showcases these same highlights more visually and in
+context of the responsible API surface (Kubelet or Runtime aka CRI).
 
-!["A diagram showing Kubelet and Container Runtime code paths responsible for behaviors common to all pod restarts"](code-diagram-for-restarts.png
-"Kubelet and Container Runtime restart code paths")
+!["A diagram showing Kubelet and Container Runtime code paths responsible for
+behaviors common to all pod restarts"](code-diagram-for-restarts.png "Kubelet
+and Container Runtime restart code paths")
 
 ```
  <<[UNRESOLVED add the rest of the analysis since 1.31 and answer these questions from original PR]>> 
