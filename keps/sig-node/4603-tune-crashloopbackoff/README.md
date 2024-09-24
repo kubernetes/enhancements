@@ -714,6 +714,13 @@ and configure the `client_go.Backoff` object created for use by the kube runtime
 manager for container restart bacoff with a function that compares to a flat
 rate of 300 seconds.
 
+### Conflict resolution
+
+Depending on the enablement state of the alpha gates and the configuration of an
+individual node, some conflicts may need to be resolved. See the
+[Upgrade/Downgrade Strategy section](#upgrade--downgrade-strategy) for more
+details.
+
 ### Kubelet overhead analysis
 
 As it's intended that, after this KEP, pods will restart more often that in
@@ -1162,34 +1169,27 @@ use will be either the original one with initial value 10s, or the per-node
 configured maximum backoff if the `EnableKubeletCrashLoopBackoffMax` feature
 gate is turned on. 
 
-If on a given node the per-node configured maximum backoff is lower than the
-initial value, the initial value for that node will instead be set to the
-configured maximum. For example, if `ReduceDefaultCrashLoopBackoffDecay` is
-turned off so the initial value is 10s, but `EnableKubeletCrashLoopBackoffMax`
-is turned on and a given node is configured to a maximum of `1s`, then the
-initial value for that node will be configured to 1s.
-
-
-
 For `EnableKubeletCrashLoopBackoffMax`:
 
 For an existing cluster, no changes are required to configuration, invocations
 or API objects to make an upgrade.
 
-To make use of this enhancement, on upgrade, the feature gate must first be
-turned on. Then, if any <<[UNRESOLVED]>>nodes need to use a different backoff
-curve, their kubelet must be completely redeployed with XYZ kubelet config.
-<<[/UNRESOLVED]>>
+To make use of this enhancement, on cluster upgrade, the
+`EnableKubeletCrashLoopBackoffMax` feature gate must first be turned on for the
+cluster. Then, if any nodes need to use a different backoff curve, their kubelet
+must be completely redeployed either in the same upgrade or after that upgrade
+with the `NodeMaxCrashLoopBackOff` kubelet command line flag set.
 
 To stop use of this enhancement, there are two options. 
 
-On a <<[UNRESOLVED]>> per-node basis, nodes can be completely redeployed with
-XYZ kubelet config set to ABC. <<[/UNRESOLVED]>> Since the Pods have been
-completely redeployed, they will lose their prior backoff counter anyways and,
-if they go on to be restarted, will start from the beginning of their backoff
-curve (either the original one with initial value 10s, or the new baseline with
-initial value 1s, depending on whether they've turned on the
-`ReduceDefaultCrashLoopBackoffDecay` feature gate).
+On a per-node basis, nodes can be completely redeployed with
+`NodeMaxCrashLoopBackOff` kubelet command line flag unset. <<[UNRESOLVED is this
+true if kubelet restarts tho]>>Since the Pods must be completely redeployed,
+they will lose their prior backoff counter anyways and, if they go on to be
+restarted, will start from the beginning of their backoff curve (either the
+original one with initial value 10s, or the new baseline with initial value 1s,
+depending on whether they've turned on the `ReduceDefaultCrashLoopBackoffDecay`
+feature gate). <</UNRESOLVED>>
 
 Or, the entire cluster can be restarted with the
 `EnableKubeletCrashLoopBackoffMax` feature gate turned off. In this case, any
@@ -1200,6 +1200,30 @@ of their backoff curve. Also, again the exact backoff curve they will use will
 be either the original one with initial value 10s, or the new baseline with
 initial value 1s, depending on whether they've turned on the
 `ReduceDefaultCrashLoopBackoffDecay` feature gate.<<[/UNRESOLVED]>>
+
+#### Conflict resolution
+
+If on a given node at a given time, the per-node configured maximum backoff is
+lower than the initial value, the initial value for that node will instead be
+set to the configured maximum. For example, if
+`ReduceDefaultCrashLoopBackoffDecay` is turned off so the initial value is 10s,
+but `EnableKubeletCrashLoopBackoffMax` is turned on and a given node is
+configured to a maximum of `1s`, then the initial value for that node will be
+configured to 1s. In other words, operator-invoked configuration will have
+precedence over the default if it is faster.
+
+If on a given node at a given time, the per-node configured maximum backoff is
+higher than the 300s, it will be dropped in favor of the default. In other
+words, operator-invoked configuration will not have precedence over the default
+if it is longer than 300s.
+
+If on a given node at a given time, the per-node configured maximum backoff is
+higher than the current initial value, but still lower than 300s, it will be
+honored. In other words, operator-invoked configuration will have precedence
+over the default, even if it is slower, as long as it does not go over 300s.
+
+<<[UNRESOLVED]>>TODO: a table describing the conflict resolution would probably
+help <<[/UNRESOLVED]>>
 
 ### Version Skew Strategy
 
@@ -1220,9 +1244,15 @@ For the default backoff curve, no coordination must be done between the control
 plane and the nodes; all behavior changes are local to the kubelet component and
 its start up configuration.
 
-For the  <<[UNRESOLVED]>> node case, since it is local to each kubelet and the
+For the per-node case, since it is local to each kubelet and the
 restart logic is within the responsibility of a node's local kubelet, no
-coordination must b e done between the control plane and the nodes.
+coordination must be done between the control plane and the nodes.
+
+<<[UNRESOLVED]>>
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
+- Will any other components on the node change? For example, changes to CSI,
+  CRI or CNI may require updating that component before the kubelet.
 <<[/UNRESOLVED]>>
 
 ## Production Readiness Review Questionnaire
