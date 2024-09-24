@@ -1024,19 +1024,27 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 
 #### Alpha
 
-- Changes to existing backoff curve implemented behind a feature flag 
-    1. 1s initial value, 1 minute maximum backoff for all workloads with
-       `restartPolicy: Always` or `restartPolicy: OnFailure`
-    2. Low max cap configurable for nodes with XYZ config
-- <<[UNRESOLVED]>>New XYZ kubelet config convertable to ABC on downgrade or
-  without feature flag <<[/UNRESOLVED]>>
+- New `int32 NodeMaxCrashLoopBackOff` field in `KubeletFlags` struct, validated
+        to a minimum of 1 and a maximum of 300, naturally ignored by older
+  kubelets/on downgrade and explicitly dropped by current and future kubelets
+  when new `EnableKubeletCrashLoopBackoffMax` feature flag disabled
+- New `ReduceDefaultCrashLoopBackoffDecay` feature flag which, when enabled, changes
+  CrashLoopBackOff behavior (and ONLY the CrashLoopBackOff behavior) to a
+  2x decay curve starting at 1s initial value, 1 minute maximum backoff
+  for all workloads, therefore affecting workload configured with
+  `restartPolicy: Always` or `restartPolicy: OnFailure`
+    - Requires a refactor of image pull backoff from container restart backoff
+      object
+- Maintain current 10 minute recovery threshold by refactoring backoff counter
+  reset threshold and explicitly implementing container restart backoff behavior
+  at the current 10 minute recovery threshold
 - Metrics implemented to expose pod and container restart policy statistics,
   exit states, and runtimes
 - Initial e2e tests completed and enabled
   * Feature flag on or off
-  * <<[UNRESOLVED in 1.31 review, suggested not necessary]>>node upgrade and
-    downgrade path <<[/UNRESOLVED]>>
-- Fix https://github.com/kubernetes/kubernetes/issues/123602 if this blocks the
+- Test coverage of proper requeue behavior; see
+  https://github.com/kubernetes/kubernetes/issues/123602
+- Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this blocks the
   implementation, otherwise beta criteria
 - Low confidence in the specific numbers/decay rate
 
@@ -1057,7 +1065,7 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 - Remove the feature flag code
 - Confirm the exponential backoff decay curve related tests and code are still
   in use elsewhere and do not need to be removed
-- Conformance test added for <<[UNRESOLVED]>> configured nodes <<[/UNRESOLVED]>>
+- Conformance test added for per-node configuration
 
 
 <!--
