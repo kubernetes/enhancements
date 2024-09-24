@@ -660,9 +660,25 @@ system.<<[/UNRESOLVED]>> Therefore, to simplify both the implementation and the
 API surface, this 1.32 proposal puts forth that the opt-in will be configured per
 node via kubelet configuration.
 
+Kubelet configuration is governed by two main input points, 1) command-line flag
+based config and 2) configuration following the API specification of the
+`kubelet.config.k8s.io/v1beta1 KubeletConfiguration` Kind, which is passed to
+kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
+([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
+Since this is a per-node configuration that likely will be set on a subset of
+nodes, or potentially even differently per node, it's important that it can be
+manipulated with a command-line flag, as 1KubeletConfiguration1 is intended to
+be shared between nodes, and so lifecycle tooling that configures nodes can
+expose it more transparently.
 
-<<[UNRESOLVED more details of per node config re: kubelet config api]>> 
-<<[/UNRESOLVED]>>
+Exposed command-line configuration for Kubelet are defined by [`struct
+KubeletFlags`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L54)
+and merged with configuration files in [`kubelet/server.go
+NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
+To expose the configuration of this feature, a new field will be added to the
+`KubeletFlags` struct called `NodeMaxCrashLoopBackOff` of `int32` type that will
+be validated <<[UNRESOLVED]>>at runtime, or otherwise dropped,
+<<[/UNRESOLVED]>>as a value over `1` and under 300s.
 
 ### Refactor of recovery threshold
 
