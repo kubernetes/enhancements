@@ -383,7 +383,7 @@ Only the kube-apiserver will need to enable the feature gate for the full featur
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: PodLifecycleSleepActionAllowZero
-  - Components depending on the feature gate:
+  - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control

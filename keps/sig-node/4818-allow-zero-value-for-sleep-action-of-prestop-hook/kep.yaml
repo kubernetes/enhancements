@@ -7,8 +7,10 @@ participating-sigs: []
 status: implementable
 creation-date: "2024-09-16"
 
-reviewers: []
-approvers: []
+reviewers:
+  - "@kannon92"
+approvers:
+  - "@SergeyKanzhelev"
 
 see-also:
   - "/keps/sig-node/3960-pod-lifecycle-sleep-action"
