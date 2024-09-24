@@ -320,7 +320,7 @@ This design seeks to incorporate a two-pronged approach:
 
 1. Change the existing initial value for the backoff curve to 1s to stack more
    retries earlier, and reduce the maximum backoff for a given restart from 5
-   minutes to 30 seconds, for all restarts (`restartPolicy: OnFailure` and
+   minutes to 1 minute, for all restarts (`restartPolicy: OnFailure` and
    `restartPolicy: Always`)
 2. Provide an option to cluster operators to configure an even lower maximum
 backoff for all containers on a specific Node, down to 1s
@@ -375,8 +375,9 @@ during alpha.
 This KEP also proposes providing a more flexible mechanism for modifying the
 maximum backoff as an opt-in. The configuration for this will be per node, by an
 integer representing seconds (notably NOT resulting in subsecond granularity).
-The minimum allowable value will be 1 second. This per node configuration will
-be configurable only by a user with awareness of the node holistically.
+The minimum allowable value will be 1 second. The maximum allowable value will
+be 300 seconds. This per node configuration will be configurable only by a user
+with awareness of the node holistically.
 
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
@@ -384,7 +385,8 @@ be configurable only by a user with awareness of the node holistically.
 Finally, this KEP proposes factoring out the backoff counter reset threshold for
 CrashLoopBackoff behavior induced restarts into a new constant. Instead of being
 proportional to the configured maximum backoff, it will instead be a flat rate
-equivalent to the current implementation, 10 minutes.
+equivalent to the current implementation, 10 minutes. This will only apply to
+backoff counter resets from CrashLoopBackoff behavior.
 
 
 ### User Stories
@@ -434,9 +436,9 @@ There are cases when the Pod consists of a user container implementing business
 logic and a sidecar providing networking access (Istio), logging (opentelemetry
 collector), or orchestration features. In some cases sidecar containers are
 critical for the user container functioning as they provide a basic
-infrastructure for the user container to run in. In such cases it is beneficial
-to not apply the exponential backoff to the sidecar container restarts and keep
-it at a low constant value.
+infrastructure for the user container to run in. In such cases it is considered
+beneficial to not apply the exponential backoff to the sidecar container
+restarts and keep it at a low constant value.
 
 This is especially true for cases when the sidecar is killed by infrastructure
 (e.g. OOMKill) as it may have happened for reasons independent from the sidecar
@@ -617,9 +619,7 @@ max=1 minute. During the alpha period this will be further investigated against
 kubelet capacity, potentially targeting something closer to an initial value
 near 0s, and a cap of 10-30s. To further restrict the blast radius of this
 change before full and complete benchmarking is worked up, this is gated by its
-own feature gate, `ReduceDefaultCrashLoopBackoffDecay`, which when enabled for a
-cluster, reduces the global backoff values for CrashLoopBackOff behavior to
-initial=1s / max=1 minute.
+own feature gate, `ReduceDefaultCrashLoopBackoffDecay`.
 
 ### Per node config
 
@@ -667,7 +667,7 @@ kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
 ([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
 Since this is a per-node configuration that likely will be set on a subset of
 nodes, or potentially even differently per node, it's important that it can be
-manipulated with a command-line flag, as 1KubeletConfiguration1 is intended to
+manipulated with a command-line flag, as `KubeletConfiguration` is intended to
 be shared between nodes, and so lifecycle tooling that configures nodes can
 expose it more transparently.
 
@@ -677,8 +677,8 @@ and merged with configuration files in [`kubelet/server.go
 NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
 To expose the configuration of this feature, a new field will be added to the
 `KubeletFlags` struct called `NodeMaxCrashLoopBackOff` of `int32` type that will
-be validated <<[UNRESOLVED]>>at runtime, or otherwise dropped,
-<<[/UNRESOLVED]>>as a value over `1` and under 300s.
+be validated <<[UNRESOLVED ifttt conflict resolution]>>at runtime, or otherwise
+dropped, <<[/UNRESOLVED]>>as a value over `1` and under 300s.
 
 ### Refactor of recovery threshold
 
@@ -692,7 +692,7 @@ minutes like it is today); containers on nodes with an override could be
 rewarded for running successfully for as low as 2 seconds if they are configured
 with the minimum allowable backoff of 1s. 
 
-From a technical persepctive, granularity of the associated worker polling loops
+From a technical perspective, granularity of the associated worker polling loops
 governing restart behavior is between 1 and 10 seconds, so a reset value under
 10 seconds is effectively meaningless (until and unless those loops increase in
 speed or we move to evented PLEG). From a user perspective, it does not seem
@@ -717,9 +717,9 @@ rate of 300 seconds.
 ### Conflict resolution
 
 Depending on the enablement state of the alpha gates and the configuration of an
-individual node, some conflicts may need to be resolved. See the
-[Upgrade/Downgrade Strategy section](#upgrade--downgrade-strategy) for more
-details.
+individual node, some conflicts may need to be resolved to determine the initial
+value or maximum backoff for a given node. See the [Upgrade/Downgrade Strategy
+section](#upgrade--downgrade-strategy) for more details.
 
 ### Kubelet overhead analysis
 
@@ -765,7 +765,7 @@ Once the current backoff window has passed, kubelet:
 
 * Potentially re-downloads the image (utilizing network + IO and blocks other
   image downloads) if image pull policy specifies it
-  ([ref]([`imageManager.EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/images/image_manager.go#L135))).
+  ([ref](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/images/image_manager.go#L135)).
 * Recreates the pod sandbox and probe workers
 * Recreates the containers using container runtime
 * Runs user configured prestart and poststart hooks for each container
@@ -818,14 +818,15 @@ period, we reevaluate the SLIs and SLOs and benchmarks related to this change an
 expose clearly the methodology needed for cluster operators to be able to quantify the
 risk posed to their specific clusters on upgrade.
 
-To best reason about the changes in this KEP, we requires the ability to
+To best reason about the changes in this KEP, we require the ability to
 determine, for a given percentage of heterogenity between "Succeeded"
-terminating pods, and crashing pods whose `restartPolicy: Always`:
+terminating pods, and "Failed" (aka crashing) terminating pods whose
+`restartPolicy: Always`:
  * what is the load and rate of Pod restart related API requests to the API
    server?
  * what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component? Considering the effects of different plugins (e.g. CSI,
-   CNI)
+   kubelet component? What about when considering the effects of different
+   plugins (e.g. CSI, CNI)
 
 Today there are alpha SLIs in Kubernetes that can observe that impact in
 aggregate:
@@ -844,7 +845,7 @@ factors in specific changes to the backoff curves. Since the changes in this
 proposal are deterministic, this is pre-calculatable for a given heterogenity of
 quantity and rate of restarting pods.
 
-In addition, the `kube-state-metrics`, project already implements
+In addition, the `kube-state-metrics` project already implements
 restart-specific metadata for metrics that can be used to observe pod restart
 latency in more detail, including:
 * `kube_pod_container_status_restarts_total`
@@ -854,11 +855,11 @@ latency in more detail, including:
 
 During the alpha period, these metrics, the SIG-Scalability benchmarking tests,
 added kubelet performance tests, and manual benchmarking by the author against
-`kube-state-metrics` will be used to answer the above questions, tying together the
-container restart policy (inherited or declared), the terminal state of a
+`kube-state-metrics` will be used to answer the above questions, tying together
+the container restart policy (inherited or declared), the terminal state of a
 container before restarting, and the number of container restarts, to articulate
-the rate and load of restart related API requests and the performance effects on
-kubelet.
+the observed rate and load of restart related API requests and the performance
+effects on kubelet.
 
 <<[UNRESOLVED ifttt benchmarking: link initial benchmarking test data]>>TODO:
 link benchmarking data<<[/UNRESOLVED]>>
@@ -896,13 +897,15 @@ restarts are not handled by kubelet at all; in fact, use of this API is only
 available if the `restartPolicy` is set to `Never` (though
 [kubernetes#125677](https://github.com/kubernetes/kubernetes/issues/125677)
 wants to relax this validation to allow it to be used with other `restartPolicy`
-values). As a result, to expose the new backoff curve Jobs using this feature,
-the updated backoff curve must also be implemented in the Job controller.
+values). As a result, to expose the new backoff curve to Jobs using this
+feature, the updated backoff curve must also be implemented in the Job
+controller. This is currently considered out of scope of the first alpha
+implementation of this design.
 
 ### Relationship with ImagePullBackOff
 
 ImagePullBackoff is used, as the name suggests, only when a container needs to
-pull a new image. If the iamge pull fails, a backoff decay is used to make later
+pull a new image. If the image pull fails, a backoff decay is used to make later
 retries on the image download wait longer and longer. This is configured
 internally independently
 ([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L606))
@@ -915,7 +918,7 @@ number of variables during the benchmarking period for the restart counter, and
 because the problem space of ImagePullBackoff could likely be handled by a
 completely different pattern, as unlike with CrashLoopBackoff the types of
 errors with ImagePullBackoff are less variable and better interpretable by the
-infrastructure as recovereable or non-recoverable (i.e. 404s).
+infrastructure as recoverable or non-recoverable (i.e. 404s).
 
 ### Test Plan
 
@@ -939,14 +942,16 @@ This feature requires two levels of testing: the regular enhancement testing
 increase confidence in ongoing node stability given heterogeneous backoff timers
 and timeouts.
 
-Some stress/benchmark testing will still be developed as part of this enhancement,
-including the kubelet_perf tests indicated in the e2e section below.
+Some stress/benchmark testing will still be developed as part of the
+implementatino of this enhancement, including the kubelet_perf tests indicated
+in the e2e section below.
 
 Some of the benefit of pursuing this change in alpha is to also have the
 opportunity to run against the existing SIG-Scalability performance and
 benchmarking tests within an alpha candidate. In addition, manual benchmark
-testing with GKE clusters can be performed by the author and evaluated as
-candidates for formal, periodic benchmark testing in the Kubernetes testgrid.
+testing with GKE clusters can be performed by the author as described in [Design
+Details](#benchmarking), and evaluated as candidates for formal, periodic
+benchmark testing in the Kubernetes testgrid.
 
 ##### Prerequisite testing updates
 
@@ -979,11 +984,12 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-<<[UNRESOLVED whats up with this]>>
-- `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
+
+- <<[UNRESOLVED whats up with this]>>
+  `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
   coverage run on
   [prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-coverage-unit/1800947623675301888)**
-<<[/UNRESOLVED]>>
+  <<[/UNRESOLVED]>>
 
 ##### Integration tests
 
@@ -1021,11 +1027,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - k8s.io/kubernetes/test/e2e/node/kubelet_perf: for a given percentage of
 heterogenity between "Succeeded" terminating pods, and crashing pods whose
 `restartPolicy: Always` or `restartPolicy: OnFailure`, 
- * what is the load and rate of Pod restart related API requests to the API
+ - what is the load and rate of Pod restart related API requests to the API
    server?
- * what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component? Considering the effects of different plugins (e.g. CSI,
-   CNI)
+ - what are the performance (memory, CPU, and pod start latency) effects on the
+   kubelet component? 
+ - With different plugins (e.g. CSI, CNI)
 
 ### Graduation Criteria
 
