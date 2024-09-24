@@ -665,11 +665,12 @@ based config and 2) configuration following the API specification of the
 `kubelet.config.k8s.io/v1beta1 KubeletConfiguration` Kind, which is passed to
 kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
 ([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
-Since this is a per-node configuration that likely will be set on a subset of
-nodes, or potentially even differently per node, it's important that it can be
-manipulated with a command-line flag, as `KubeletConfiguration` is intended to
-be shared between nodes, and so lifecycle tooling that configures nodes can
-expose it more transparently.
+<<[UNRESOLVED consider KubeletConfiguration again, and/or motivate per node or
+per node pool cases better]>> Since this is a per-node configuration that likely
+will be set on a subset of nodes, or potentially even differently per node, it's
+important that it can be manipulated with a command-line flag, as
+`KubeletConfiguration` is intended to be shared between nodes, and so lifecycle
+tooling that configures nodes can expose it more transparently.
 
 Exposed command-line configuration for Kubelet are defined by [`struct
 KubeletFlags`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L54)
@@ -678,7 +679,7 @@ NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/c
 To expose the configuration of this feature, a new field will be added to the
 `KubeletFlags` struct called `NodeMaxCrashLoopBackOff` of `int32` type that will
 be validated <<[UNRESOLVED ifttt conflict resolution]>>at runtime, or otherwise
-dropped, <<[/UNRESOLVED]>>as a value over `1` and under 300s.
+dropped, <<[/UNRESOLVED]>>as a value over `1` and under 300s. <<[/UNRESOLVED]>>
 
 ### Refactor of recovery threshold
 
@@ -1209,6 +1210,11 @@ initial value 1s, depending on whether they've turned on the
 
 #### Conflict resolution
 
+<<[UNRESOLVED]>>
+
+TODO: consider making one feature gate dependent on the other to minimize the matrix multiplication, and/or to depend fully on kubelet validation (which may mean crashing kubelets/nodes on misconfiguration) instead of catching internally
+
+
 If on a given node at a given time, the per-node configured maximum backoff is
 lower than the initial value, the initial value for that node will instead be
 set to the configured maximum. For example, if
@@ -1219,14 +1225,14 @@ configured to 1s. In other words, operator-invoked configuration will have
 precedence over the default if it is faster.
 
 If on a given node at a given time, the per-node configured maximum backoff is
-higher than the 300s, it will be dropped in favor of the default. In other
-words, operator-invoked configuration will not have precedence over the default
-if it is longer than 300s.
+lower than 1 second or higher than the 300s, <<[UNRESOLVED]>>validation will
+fail and the kubelet will crash. <<[/UNRESOLVED]>>
 
 If on a given node at a given time, the per-node configured maximum backoff is
-higher than the current initial value, but still lower than 300s, it will be
-honored. In other words, operator-invoked configuration will have precedence
-over the default, even if it is slower, as long as it does not go over 300s.
+higher than the current initial value, but within validation limits as it is
+lower than 300s, it will be honored. In other words, operator-invoked
+configuration will have precedence over the default, even if it is slower, as
+long as it is valid. <<[/UNRESOLVED]>>
 
 <<[UNRESOLVED]>>TODO: a table describing the conflict resolution would probably
 help <<[/UNRESOLVED]>>
