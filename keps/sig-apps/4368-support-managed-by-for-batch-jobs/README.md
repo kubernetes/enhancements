@@ -211,7 +211,7 @@ It would also complicate debuggability of the feature.
 Also, we already observe the adoption of the mechanism in other batch projects,
 such as:
 - [JobSet](https://github.com/kubernetes-sigs/jobset/blob/665bc42e0a33a0ebdf7fc09b2b6ae5d88eb7d33c/api/jobset/v1alpha2/jobset_types.go#L121-L133)
-- [Kubeflow training-operators](https://github.com/kubeflow/training-operator/blob/da11d1116c29322c481d0b8f174df8d6f05004aa/pkg/apis/kubeflow.org/v1/common_types.go#L238-L239).
+- [Kubeflow Training Operator](https://github.com/kubeflow/training-operator/blob/da11d1116c29322c481d0b8f174df8d6f05004aa/pkg/apis/kubeflow.org/v1/common_types.go#L238-L239).
 
 These projects for now follow the decision taken in the core k8s to make the
 field immutable to avoid complication of the support for mutability.
