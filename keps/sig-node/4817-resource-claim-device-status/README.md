@@ -74,7 +74,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This proposal enhances the `ResourceClaim.Status` by adding a new field
-`DeviceStatuses`. The new field allows drivers to report driver-specific device
+`Devices`. The new field allows drivers to report driver-specific device
 status data for each allocated device in a resource claim. Allowing the
 drivers to report the device statuses will improve both observability and
 troubleshooting as well as enabling new functionalities such as, for example,
@@ -120,28 +120,28 @@ reported).
 
 ### API - ResourceClaim.Status
 
-The API changes define a new `DeviceStatuses` field in the existing
-`ResourceClaimStatus` struct. `DeviceStatuses` is a slice of a new struct
+The API changes define a new `Devices` field in the existing
+`ResourceClaimStatus` struct. `Devices` is a slice of a new struct
 `AllocatedDeviceStatus` which holds device specific information. 
 
 A device, identified by `<driver name>/<pool name>/<device name>` can be
-represented only once in the `DeviceStatuses` slice and will also mention which
+represented only once in the `Devices` slice and will also mention which
 request caused the device to be allocated. The state and characteristics of the
 device are reported in the `Conditions`, representing the operational state of
-the device and in the `DeviceInfo`, an arbitrary data slice representing device
+the device and in the `Info`, an arbitrary data slice representing device
 specific characteristics. Additionally, for networking devices, a field
-`NetworkDeviceInfo` can be used to report the IPs, the MAC address and the
+`NetworkInfo` can be used to report the IPs, the MAC address and the
 interface name.
 
-`DeviceInfo` being a slice of arbitrary data allows the DRA Driver to store
+`Info` being a slice of arbitrary data allows the DRA Driver to store
 device specific data in different formats. For example, a Network Device being
-configured by via a CNI plugin could get its `DeviceInfo` filled with the CNI
+configured by via a CNI plugin could get its `Info` filled with the CNI
 result for troubleshooting purpose and with a Network result in a modern
 standard format (closer to Pod.Status.PodIPs for example) used by 3rd party
 controllers.
 
 For each device, if required, the DRA Driver processing the device allocation
-can report the status of it in the `Status.DeviceStatuses` of the ResourceClaim
+can report the status of it in the `Status.Devices` of the ResourceClaim
 by using the Kubernetes API.
 
 ```golang
@@ -150,7 +150,7 @@ by using the Kubernetes API.
 type ResourceClaimStatus struct {
     ...
 
-    // DeviceStatuses contains the status of each device allocated for this
+    // Devices contains the status of each device allocated for this
     // claim, as reported by the driver. This can include driver-specific
     // information. Entries are owned by their respective drivers.
     //
@@ -159,9 +159,8 @@ type ResourceClaimStatus struct {
     // +listMapKey=driver
     // +listMapKey=device
     // +listMapKey=pool
-    DeviceStatuses []AllocatedDeviceStatus `json:"deviceStatuses,omitempty" protobuf:"bytes,4,opt,name=deviceStatuses"`
+    Devices []AllocatedDeviceStatus `json:"devices,omitempty" protobuf:"bytes,4,opt,name=devices"`
 }
-
 
 // AllocatedDeviceStatus contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
@@ -199,39 +198,40 @@ type AllocatedDeviceStatus struct {
     // +listType=atomic
     Conditions []metav1.Condition `json:"conditions" protobuf:"bytes,5,rep,name=conditions"`
 
-    // DeviceInfo contains arbitrary driver-specific data.
+    // Info contains arbitrary driver-specific data.
     //
     // +optional
     // +listType=atomic
-    DeviceInfo []runtime.RawExtension `json:"deviceInfo,omitempty" protobuf:"bytes,6,rep,name=deviceInfo"`
+    Info []runtime.RawExtension `json:"info,omitempty" protobuf:"bytes,6,rep,name=info"`
 
-    // NetworkDeviceInfo contains network-related information specific to the device.
+    // NetworkInfo contains network-related information specific to the device.
     //
     // +optional
-    NetworkDeviceInfo NetworkDeviceInfo `json:"networkDeviceInfo,omitempty" protobuf:"bytes,7,rep,name=networkDeviceInfo"`
+    // +oneOf=DeviceInfoType
+    NetworkInfo NetworkDeviceInfo `json:"networkInfo,omitempty" protobuf:"bytes,7,rep,name=networkInfo"`
 }
 
 // NetworkDeviceInfo provides network-related details for the allocated device.
 // This information may be filled by drivers or other components to configure
 // or identify the device within a network context.
 type NetworkDeviceInfo struct {
-    // Interface specifies the name of the network interface associated with
+    // InterfaceName specifies the name of the network interface associated with
     // the allocated device. This might be the name of a physical or virtual
     // network interface.
     //
     // +optional
-    Interface string `json:"interface,omitempty" protobuf:"bytes,1,rep,name=interface"`
+    InterfaceName string `json:"interfaceName,omitempty" protobuf:"bytes,1,rep,name=interfaceName"`
 
-    // NetworkAddresses lists the network addresses assigned to the device's network interface.
+    // Addresses lists the network addresses assigned to the device's network interface.
     // This can include both IPv4 and IPv6 addresses.
     //
     // +optional
-    NetworkAddresses []NetworkAddress `json:"networkAddresses,omitempty" protobuf:"bytes,2,rep,name=networkAddresses"`
+    Addresses []NetworkAddress `json:"addresses,omitempty" protobuf:"bytes,2,rep,name=addresses"`
 
-    // Mac represents the MAC address of the device's network interface.
+    // HWAddress represents the hardware address (e.g. MAC Address) of the device's network interface.
     //
     // +optional
-    Mac string `json:"mac,omitempty" protobuf:"bytes,3,rep,name=mac"`
+    HWAddress string `json:"hwAddress,omitempty" protobuf:"bytes,3,rep,name=hwAddress"`
 }
 
 // NetworkAddress provides a network address related details such as IP and Mask.
@@ -262,7 +262,7 @@ them.
 
 As a Network Administrator, troubleshooting networking issues can be complex
 and time consuming especially when the device characteristics and operational
-status are not readily accessible. The `DeviceStatuses` field in the
+status are not readily accessible. The `Devices` field in the
 `ResourceClaim.Status` provides access to comprehensive details regarding
 network interfaces helping to quickly and efficiently identify the issues such
 as error messages on failed network interface configuration, incorrect IP
@@ -270,7 +270,7 @@ assignments or misconfigured network interfaces.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The content of `DeviceInfo` is driver specific and not standardized as part of
+The content of `Info` is driver specific and not standardized as part of
 DRA, the interpretation of this field may then vary between controllers and
 users reading it. 
 
@@ -280,12 +280,12 @@ changes of the state of the device.
 
 ### Risks and Mitigations
 
-As stated, 3rd party DRA drivers will set and update the `DeviceStatuses` for
+As stated, 3rd party DRA drivers will set and update the `Devices` for
 the device they manage. An access control must be set in place to restrict the
 write access to the appropriate driver (A device status can only be updated by
 the driver which allocated and configured this device).
 
-Adding `DeviceInfo` as an arbitrary data slice may introduce extra processing
+Adding `Info` as an arbitrary data slice may introduce extra processing
 and storage overhead which might impact performance in a cluster with many
 devices and frequent status updates. In large-scale clusters where many devices
 are allocated, this impact must be considered.
@@ -295,7 +295,7 @@ are allocated, this impact must be considered.
 ### API
 
 The `ResourceClaimStatus` struct in `pkg/apis/resource/types.go` will be
-extended to include the slice of `DeviceStatuses`.
+extended to include the slice of `Devices`.
 
 `ResourceClaim` validation of the status in
 `pkg/apis/resource/validation/validation.go` will be covered to allow a device
@@ -319,7 +319,7 @@ to implement this enhancement.
 
 ##### Integration tests
 
-- Usage of the `DeviceStatuses` field in the `ResourceClaimStatus`:
+- Usage of the `Devices` field in the `ResourceClaimStatus`:
     * With the feature gate enabled, the field exists in the `ResourceClaim`.
     * With the feature gate disabled, the field does not exist in the
       `ResourceClaim`.
@@ -332,7 +332,7 @@ TBD
 
 #### Alpha
 
-- Feature implemented behind feature gates (`ResourceClaimDeviceStatus`).
+- Feature implemented behind feature gates (`DRAResourceClaimDeviceStatus`).
   Feature Gates are disabled by default.
 - Documentation provided.
 - Initial unit, integration and e2e tests completed and enabled.
@@ -371,7 +371,7 @@ skew with other Kubernetes components.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ResourceClaimDeviceStatus
+  - Feature gate name: DRAResourceClaimDeviceStatus
   - Components depending on the feature gate: kube-apiserver
 - [ ] Other
   - Describe the mechanism:
@@ -421,7 +421,7 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Check the `ResourceClaim.Status.DeviceStatuses`.
+Check the `ResourceClaim.Status.Devices`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -429,7 +429,7 @@ Check the `ResourceClaim.Status.DeviceStatuses`.
   - Event Reason: 
 - [x] API .status
   - Condition name: 
-  - Other field: `ResourceClaim.Status.DeviceStatuses`
+  - Other field: `ResourceClaim.Status.Devices`
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -487,7 +487,7 @@ No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Depending on the content of the `DeviceInfo` set by the DRA drivers, the disk
+Depending on the content of the `Info` set by the DRA drivers, the disk
 usage could increase.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
