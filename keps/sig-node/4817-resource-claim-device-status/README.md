@@ -15,6 +15,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
+  - [Write Permission](#write-permission)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -40,6 +41,7 @@
   - [Pod.Status.PodIPs Enhancement](#podstatuspodips-enhancement)
   - [New Pod.Status Field](#new-podstatus-field)
   - [KEP-4680 extension](#kep-4680-extension)
+  - [Custom Resources](#custom-resources)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -283,7 +285,7 @@ changes of the state of the device.
 As stated, 3rd party DRA drivers will set and update the `Devices` for
 the device they manage. An access control must be set in place to restrict the
 write access to the appropriate driver (A device status can only be updated by
-the driver which allocated and configured this device).
+the entities that have a direct control over the device(s) being reported).
 
 Adding `Info` as an arbitrary data slice may introduce extra processing
 and storage overhead which might impact performance in a cluster with many
@@ -301,6 +303,85 @@ extended to include the slice of `Devices`.
 `pkg/apis/resource/validation/validation.go` will be covered to allow a device
 to be reported only once in the slice, a device is being identified  by
 `<driver name>/<pool name>/<device name>`.
+
+### Write Permission
+
+To prevent unauthorized or accidental modifications by entities that do not 
+have access to a particular resource, a `ValidatingAdmissionPolicy` will be 
+created to validate the entities attempting to update the devices in the 
+`ResourceClaim.Status`.
+
+The `ValidatingAdmissionPolicy` will restrict `ResourceClaim.Status.Devices` 
+to be set only during updates, as the object will have first to be created and 
+allocated, then configured inside the pods. It will also restrict the 
+`ResourceClaim.Status.Devices` to be set only for when the `ResourceClaim` is 
+allocated to a node. Additionally, the allocated node where the `ResourceClaim` 
+is assigned will be used to check if the user/entity updating the 
+`ResourceClaim.Status.Devices` is running on the same node.
+
+Here is a `ResourceClaim` allocated on a node. This would only work for now if 
+exactly one node is set:
+```yaml
+apiVersion: resource.k8s.io/v1alpha3
+kind: ResourceClaim
+metadata:
+  ...
+spec:
+  ...
+status:
+  allocation:
+    ...
+    nodeSelector:
+      nodeSelectorTerms:
+      - matchFields:
+        - key: metadata.name
+          operator: In
+          values:
+          - my-node
+  ...
+```
+
+Here is an example of how the `ValidatingAdmissionPolicy` could look like:
+```yaml
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "resourceclaim-device-status-update"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["resource.k8s.io"]
+      apiVersions: ["*"]
+      operations: ["UPDATE"]
+      resources: ["resourceclaims"]
+  matchConditions:
+    - name: 'device-status-update'
+      expression: >- # Validation only for objects with their .status.devices updated.
+        object.status.devices != oldObject.status.devices
+  validations:
+  - expression: >- # User node must be the same node as the one where the ResourceClaim is allocated.
+      variables.userNodeName != variables.objectNodeName
+    messageExpression: >-
+      "User '" + request.userInfo.username + "' on node '" + variables.userNodeName + "' is not allowed to update the .status.devices of a ResourceClaim allocated on node '" + variables.objectNodeName + "'."
+    reason: Forbidden
+  variables:
+  - name: userNodeName
+    expression: >-
+      request.userInfo.extra[?'authentication.kubernetes.io/node-name'][0].orValue('')
+  - name: objectNodeName
+    expression: >-
+      object.status.allocation.nodeSelector.nodeSelectorTerms[0].matchFields[0].values[0].orValue('')
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "resourceclaim-device-status-update-binding"
+spec:
+  policyName: "resourceclaim-device-status-update"
+  validationActions: [Deny]
+```
 
 ### Test Plan
 
@@ -323,6 +404,8 @@ to implement this enhancement.
     * With the feature gate enabled, the field exists in the `ResourceClaim`.
     * With the feature gate disabled, the field does not exist in the
       `ResourceClaim`.
+    * With the feature gate enabled, the `ValidatingAdmissionPolicy` exists and
+      restricts the write access of the `ResourceClaim.Status.Devices`.
 
 ##### e2e tests
 
@@ -336,12 +419,12 @@ TBD
   Feature Gates are disabled by default.
 - Documentation provided.
 - Initial unit, integration and e2e tests completed and enabled.
+- Authorization implemented to allow only the user on the same node as the 
+  allocated `ResourceClaim` to write the status of the devices.
 
 #### Beta
 
 - Feature Gates are enabled by default.
-- Authorization implemented to allow only the driver managing the device to
-  write the status.
 - No major outstanding bugs.
 - Feedback collected from the community (developers and users) with adjustments
   provided, implemented and tested.
@@ -527,7 +610,8 @@ access the corresponding `ResourceClaim` for every Pod.
 
 An option the DRA drivers can currently use to report the status of the device
 allocated in the `ResourceClaim` is the annotation of the `ResourceClaim` or of
-the `Pod` itself. As a reference, the [k8snetworkplumbingwg/Multus-CNI](https://github.com/k8snetworkplumbingwg/multus-cni) project is utilizing annotation to describe the network attachments/interfaces
+the `Pod` itself. As a reference, the [k8snetworkplumbingwg/Multus-CNI](https://github.com/k8snetworkplumbingwg/multus-cni) 
+project is utilizing annotation to describe the network attachments/interfaces
 and report the status.
 
 Here is the API below representing a network attachment. This is stored as a
@@ -555,14 +639,15 @@ type NetworkStatus struct {
 As part of the [Multi-Network (KEP-3698)](https://github.com/kubernetes/enhancements/issues/3698), 
 the idea was to use the existing `Pod.Status.PodIPs` and save the data about the
 different network interfaces/devices attached to the `Pod`. As part of the
-review of the KEP, it has been indicated ([here](https://github.com/kubernetes/enhancements/pull/3700#discussion_r1501690793) and [here](https://github.com/kubernetes/kubernetes/pull/123112#issuecomment-1925957930))
+review of the KEP, it has been indicated ([here](https://github.com/kubernetes/enhancements/pull/3700#discussion_r1501690793) 
+and [here](https://github.com/kubernetes/kubernetes/pull/123112#issuecomment-1925957930))
 that it would be an API breaking change if the `Pod.Status.PodIPs` contains
 more than 1 value per IP family.
 
 ### New Pod.Status Field
 
-Still as part of the [KEP-3698 - Multi-Network](https://github.com/kubernetes/enhancements/issues/3698), and in
-the continuation of the previous alternative, the idea was to add a new field
+Still as part of the [KEP-3698 - Multi-Network](https://github.com/kubernetes/enhancements/issues/3698), 
+and in the continuation of the previous alternative, the idea was to add a new field
 `Networks` in the `Pod.Status` so each networking DRA driver could report the
 status for each network interface/device directly in the `Pod.Status`.
 
@@ -608,6 +693,13 @@ summary](https://kubernetes.slack.com/archives/C0409NGC1TK/p1726679433650409)),
 the idea was to extend the [KEP-4680 about resource health status in the
 `Pod.Status` ](https://github.com/kubernetes/enhancements/issues/4680) in order
 to expose device information and not just the health.
+
+### Custom Resources
+
+In the `ResourceClaim.Status.Devices`, instead of having opaque field (`Info`) and
+specific type fields, an object reference could be used for each device. The custom 
+object would be created and maintained by the driver to report the status of the 
+devices.
 
 ## Infrastructure Needed (Optional)
 
