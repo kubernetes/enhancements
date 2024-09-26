@@ -263,7 +263,9 @@ type DeviceClaim struct {
 	Requests []DeviceRequest
 
 	// RankedRequests represents groups of requests, where exactly one
-	// request in each group must be satisfied.
+	// request in each group must be satisfied. All entries in this list
+    // must be satisfied, using exactly one of the DeviceRequests listed
+    // in each RankedDeviceRequest.
 	//
 	// +optional
 	// +listType=atomic
@@ -328,6 +330,87 @@ const (
 	RankedDeviceRequestsMaxSize    = 8
 )
 ```
+
+Let's take a look at an example.
+
+```yaml
+apiVersion: resource.k8s.io/v1alpha4
+kind: ResourceClaim
+metadata:
+  name: device-consumer-claim
+spec:
+  devices:
+    requests:
+    - name: nic
+      deviceClassName: rdma-nic
+    rankedRequests:
+    - name: gpu
+      requests:
+      - name: big-gpu
+    deviceClassName: big-gpu
+      - name: mid-gpu
+    deviceClassName: mid-gpu
+      - name: small-gpu
+        deviceClassName: small-gpu
+        count: 2
+    constraints:
+    - requests: ["nic", gpu"]
+      matchAttribute:
+      - dra.k8s.io/pcieRoot
+    config:
+    - requests: ["small-gpu"]
+      opaque:
+        driver: gpu.acme.example.com
+        parameters:
+          apiVersion: gpu.acme.example.com/v1
+          kind: GPUConfig
+          mode: multipleGPUs
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: device-consumer
+spec:
+  resourceClaims:
+  - name: "gpu-and-nic"
+    resourceClaimName: device-consumer-claim
+  containers:
+  - name: workload
+    image: my-app
+    command: ["/bin/program"]
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+      claims:
+      - name: "gpu-and-nic"
+        request: "gpu" # the 'nic' request is pod-level, no need to attach to container
+```
+
+There are a few things to note here. First, the "nic" request is listed in
+`requests`, because it has no alternative request types. The "gpu" request could
+be met by serveral different types of GPU, in an order of preference. Each of
+those is a separate `DeviceRequest`, and thus also has its own name. This allow
+us to apply constraints or configuration to specific, individual requests, in
+the event even that it is the chosen alternative. In this example, the
+"small-gpu" choice requires a configuration option that the other two choices do
+not need. Thus, if the resolution of the "gpu" request is made using the
+"small-gpu" subrequest, then that configuration will be attached to the
+allocation. Otherwise, it will not.
+
+Similarly, for `Constraints`, the list of requests can include the ranked
+request name ("gpu" in this case), in which case the constraint applies
+regardless of which alternative is chosen. Or, it can include the subrequest
+name, in which case that constraint only applies if that particular subrequest
+is chosen.
+
+In the PodSpec, however, the subrequest names are not valid. Only the main
+request name may be used.
+
+### Resource Quota
 
 ResourceQuota will be enforced such that the user must have quota for each
 `DeviceRequest` under every `RankedDeviceRequest`. Thus, this "pick one"
