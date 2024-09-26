@@ -281,7 +281,7 @@ Spec CSIDriverSpec
 The default value is `false` to ensure backward compatibility.
 
 ##### `PodSecurityContext`
-Feature gate `FSGroupChangePolicy`, **proposing alpha in 1.32.**
+Feature gate `SELinuxChangePolicy`, **proposing alpha in 1.32.**
 
 ```go
 // PodSecurityContext holds pod-level security attributes and common container settings.
