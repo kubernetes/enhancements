@@ -107,6 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Resource Claim Indirection](#resource-claim-indirection)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -217,21 +218,23 @@ know that this has succeeded?
 
 * Allow workload authors, when specifying a `ResourceClaim`, to provide a list
   of ways to satisfy the claim, with a preference ranking.
-* Enable the scheduler to evaluate those preferences and allocate devices for the
+* Enable schedulers to evaluate those preferences and allocate devices for the
   claim based on them.
-* Enable the cluster autoscaler to evaluate those preferences and make scaling
+* Enable cluster autoscalers to evaluate those preferences and make scaling
   choices based on them.
+* Provide some measure of ResourceQuota controls when users utilize claims with
+  these types of requests.
 
 ### Non-Goals
-
-* Enable cross-claim consistency of request choices. For example, guaranteeing
-  that all `ResourceClaim`s associated with a given `Deployment` are satisfied
-  using the same choice from the list of possible alternatives.
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+* Enable cross-claim consistency of request choices. For example, guaranteeing
+  that all `ResourceClaim`s associated with a given `Deployment` are satisfied
+  using the same choice from the list of possible alternatives.
 
 ## Proposal
 
@@ -243,6 +246,95 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+
+The proposal adds a new type, called `RankedDeviceRequest`, which allows the
+user to list `DeviceRequest`s, exactly one of which must be satisfied. The
+`DeviceClaim` then gets a new field listing all of these such requests that must
+be satisfied. There is no change to the existing `DeviceRequest` type.
+
+```go
+// DeviceClaim defines how to request devices with a ResourceClaim.
+type DeviceClaim struct {
+	// Requests represent individual requests for distinct devices which
+	// must all be satisfied. If empty, nothing needs to be allocated.
+	//
+	// +optional
+	// +listType=atomic
+	Requests []DeviceRequest
+
+	// RankedRequests represents groups of requests, where exactly one
+	// request in each group must be satisfied.
+	//
+	// +optional
+	// +listType=atomic
+	RankedRequests []RankedDeviceRequest
+
+	// These constraints must be satisfied by the set of devices that get
+	// allocated for the claim.
+	//
+	// +optional
+	// +listType=atomic
+	Constraints []DeviceConstraint
+
+	// This field holds configuration for multiple potential drivers which
+	// could satisfy requests in this claim. It is ignored while allocating
+	// the claim.
+	//
+	// +optional
+	// +listType=atomic
+	Config []DeviceClaimConfiguration
+
+	// Potential future extension, ignored by older schedulers. This is
+	// fine because scoring allows users to define a preference, without
+	// making it a hard requirement.
+	//
+	// Score *SomeScoringStruct
+}
+
+const (
+	DeviceRequestsMaxSize    = AllocationResultsMaxSize
+	DeviceConstraintsMaxSize = 32
+	DeviceConfigMaxSize      = 32
+)
+
+// RankedDeviceRequest is a list of DeviceRequests, in the user's order of
+// preference for allocation.
+//
+type RankedDeviceRequest struct {
+	// Name can be used to reference this request in a pod.spec.containers[].resources.claims
+	// entry, or in Constraints or Config.
+	//
+	// In the container spec, this is the name that must be used, rather
+	// the names of the underlying requests.
+	//
+	// In the Contraints or Config, this name may be used, or the underlying request
+	// names may be used to provide additional specificity.
+	//
+	// Must be a DNS label.
+	//
+	// +required
+	Name string
+
+
+	// Requests represent individual requests for distinct devices, exactly
+	// one of which must be satisfied. If empty, nothing needs to be allocated.
+	//
+	// +optional
+	// +listType=atomic
+	Requests []DeviceRequest
+}
+
+const (
+	RankedDeviceRequestsMaxSize    = 8
+)
+```
+
+ResourceQuota will be enforced such that the user must have quota for each
+`DeviceRequest` under every `RankedDeviceRequest`. Thus, this "pick one"
+behavior cannot be used to circumvent quota. This reduces the usefuleness of the
+feature, as it no longer services as a quota-management feature. However, the
+primary goal of the feature is about flexibility across clusters and
+obtainability of underlying devices, not quota management.
 
 ### User Stories (Optional)
 
@@ -832,6 +924,11 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### Resource Claim Indirection
+
+Rather than embedding a list of alternative request objects, we could use an
+umbrella `ResourceClaim` that instead references other `ResourceClaim`s.
 
 ## Infrastructure Needed (Optional)
 
