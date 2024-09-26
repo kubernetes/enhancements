@@ -255,79 +255,79 @@ be satisfied. There is no change to the existing `DeviceRequest` type.
 ```go
 // DeviceClaim defines how to request devices with a ResourceClaim.
 type DeviceClaim struct {
-	// Requests represent individual requests for distinct devices which
-	// must all be satisfied. If empty, nothing needs to be allocated.
-	//
-	// +optional
-	// +listType=atomic
-	Requests []DeviceRequest
+    // Requests represent individual requests for distinct devices which
+    // must all be satisfied. If empty, nothing needs to be allocated.
+    //
+    // +optional
+    // +listType=atomic
+    Requests []DeviceRequest
 
-	// RankedRequests represents groups of requests, where exactly one
-	// request in each group must be satisfied. All entries in this list
+    // RankedRequests represents groups of requests, where exactly one
+    // request in each group must be satisfied. All entries in this list
     // must be satisfied, using exactly one of the DeviceRequests listed
     // in each RankedDeviceRequest.
-	//
-	// +optional
-	// +listType=atomic
-	RankedRequests []RankedDeviceRequest
+    //
+    // +optional
+    // +listType=atomic
+    RankedRequests []RankedDeviceRequest
 
-	// These constraints must be satisfied by the set of devices that get
-	// allocated for the claim.
-	//
-	// +optional
-	// +listType=atomic
-	Constraints []DeviceConstraint
+    // These constraints must be satisfied by the set of devices that get
+    // allocated for the claim.
+    //
+    // +optional
+    // +listType=atomic
+    Constraints []DeviceConstraint
 
-	// This field holds configuration for multiple potential drivers which
-	// could satisfy requests in this claim. It is ignored while allocating
-	// the claim.
-	//
-	// +optional
-	// +listType=atomic
-	Config []DeviceClaimConfiguration
+    // This field holds configuration for multiple potential drivers which
+    // could satisfy requests in this claim. It is ignored while allocating
+    // the claim.
+    //
+    // +optional
+    // +listType=atomic
+    Config []DeviceClaimConfiguration
 
-	// Potential future extension, ignored by older schedulers. This is
-	// fine because scoring allows users to define a preference, without
-	// making it a hard requirement.
-	//
-	// Score *SomeScoringStruct
+    // Potential future extension, ignored by older schedulers. This is
+    // fine because scoring allows users to define a preference, without
+    // making it a hard requirement.
+    //
+    // Score *SomeScoringStruct
 }
 
 const (
-	DeviceRequestsMaxSize    = AllocationResultsMaxSize
-	DeviceConstraintsMaxSize = 32
-	DeviceConfigMaxSize      = 32
+    DeviceRequestsMaxSize    = AllocationResultsMaxSize
+    DeviceConstraintsMaxSize = 32
+    DeviceConfigMaxSize      = 32
 )
 
 // RankedDeviceRequest is a list of DeviceRequests, in the user's order of
 // preference for allocation.
 //
 type RankedDeviceRequest struct {
-	// Name can be used to reference this request in a pod.spec.containers[].resources.claims
-	// entry, or in Constraints or Config.
-	//
-	// In the container spec, this is the name that must be used, rather
-	// the names of the underlying requests.
-	//
-	// In the Contraints or Config, this name may be used, or the underlying request
-	// names may be used to provide additional specificity.
-	//
-	// Must be a DNS label.
-	//
-	// +required
-	Name string
+    // Name can be used to reference this request in a pod.spec.containers[].resources.claims
+    // entry, or in Constraints or Config.
+    //
+    // In the pod spec, this is the name that must be used, rather
+    // the names of the underlying requests.
+    //
+    // In the Contraints or Config, this name may be used, or the underlying request
+    // names may be used to provide additional specificity.
+    //
+    // Must be a DNS label.
+    //
+    // +required
+    Name string
 
 
-	// Requests represent individual requests for distinct devices, exactly
-	// one of which must be satisfied. If empty, nothing needs to be allocated.
-	//
-	// +optional
-	// +listType=atomic
-	Requests []DeviceRequest
+    // Requests represent individual requests for distinct devices, exactly
+    // one of which must be satisfied. If empty, nothing needs to be allocated.
+    //
+    // +optional
+    // +listType=atomic
+    Requests []DeviceRequest
 }
 
 const (
-	RankedDeviceRequestsMaxSize    = 8
+    RankedDeviceRequestsMaxSize    = 8
 )
 ```
 
@@ -347,9 +347,9 @@ spec:
     - name: gpu
       requests:
       - name: big-gpu
-    deviceClassName: big-gpu
+        deviceClassName: big-gpu
       - name: mid-gpu
-    deviceClassName: mid-gpu
+        deviceClassName: mid-gpu
       - name: small-gpu
         deviceClassName: small-gpu
         count: 2
