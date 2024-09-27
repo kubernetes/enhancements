@@ -247,87 +247,114 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal adds a new type, called `RankedDeviceRequest`, which allows the
-user to list `DeviceRequest`s, exactly one of which must be satisfied. The
-`DeviceClaim` then gets a new field listing all of these such requests that must
-be satisfied. There is no change to the existing `DeviceRequest` type.
+The proposal adds a new field to the `DeviceRequest`, called `FirstOf` which
+will contain an ordered list of `DeviceRequest` objects. In order to satisfy the
+main (containing) request, exactly one of the requests listed in `FirstOf` must
+be satisfied. They order listed is considered a priority order, such that the
+scheduler will only try to use the second item in the list if it is unable to
+satsify the first item, and so on.
+
+A `DeviceRequest` that populates the `FirstOf` field must *not* populate the
+`DeviceClassName` field. The `required` validation on this field will be
+relaxed. This allows existing clients to differentiate between claims they
+understand (with `DeviceClassName`) and those they do not (without
+`DeviceClassName` but with the new field). Clients written for 1.31, when
+`DeviceClassName` was required, were requested to include this logic, and the
+in-tree components have been built in this way.
 
 ```go
-// DeviceClaim defines how to request devices with a ResourceClaim.
-type DeviceClaim struct {
-    // Requests represent individual requests for distinct devices which
-    // must all be satisfied. If empty, nothing needs to be allocated.
-    //
-    // +optional
-    // +listType=atomic
-    Requests []DeviceRequest
-
-    // RankedRequests represents groups of requests, where exactly one
-    // request in each group must be satisfied. All entries in this list
-    // must be satisfied, using exactly one of the DeviceRequests listed
-    // in each RankedDeviceRequest.
-    //
-    // +optional
-    // +listType=atomic
-    RankedRequests []RankedDeviceRequest
-
-    // These constraints must be satisfied by the set of devices that get
-    // allocated for the claim.
-    //
-    // +optional
-    // +listType=atomic
-    Constraints []DeviceConstraint
-
-    // This field holds configuration for multiple potential drivers which
-    // could satisfy requests in this claim. It is ignored while allocating
-    // the claim.
-    //
-    // +optional
-    // +listType=atomic
-    Config []DeviceClaimConfiguration
-
-    // Potential future extension, ignored by older schedulers. This is
-    // fine because scoring allows users to define a preference, without
-    // making it a hard requirement.
-    //
-    // Score *SomeScoringStruct
-}
-
-const (
-    DeviceRequestsMaxSize    = AllocationResultsMaxSize
-    DeviceConstraintsMaxSize = 32
-    DeviceConfigMaxSize      = 32
-)
-
-// RankedDeviceRequest is a list of DeviceRequests, in the user's order of
-// preference for allocation.
-//
-type RankedDeviceRequest struct {
+// DeviceRequest is a request for devices required for a claim.
+// This is typically a request for a single resource like a device, but can
+// also ask for several identical devices.
+type DeviceRequest struct {
     // Name can be used to reference this request in a pod.spec.containers[].resources.claims
-    // entry, or in Constraints or Config.
-    //
-    // In the pod spec, this is the name that must be used, rather
-    // the names of the underlying requests.
-    //
-    // In the Contraints or Config, this name may be used, or the underlying request
-    // names may be used to provide additional specificity.
+    // entry and in a constraint of the claim.
     //
     // Must be a DNS label.
     //
     // +required
     Name string
 
+    // DeviceClassName references a specific DeviceClass, which can define
+    // additional configuration and selectors to be inherited by this
+    // request.
+    //
+    // Either a class or FirstOf requests are required in DeviceClaim.Requests.
+    // When this request is part of the FirstOf list, a class is required. Nested
+    // FirstOf requests are not allowed
+    //
+    // Which classes are available depends on the cluster.
+    //
+    // Administrators may use this to restrict which devices may get
+    // requested by only installing classes with selectors for permitted
+    // devices. If users are free to request anything without restrictions,
+    // then administrators can create an empty DeviceClass for users
+    // to reference.
+    //
+    // +optional
+    // +oneOf=deviceRequestType
+    DeviceClassName string
 
-    // Requests represent individual requests for distinct devices, exactly
-    // one of which must be satisfied. If empty, nothing needs to be allocated.
+    // FirstOf contains subrequests, exactly one of which must be satisfied
+    // in order to satisfy this request. This field may only be set in the
+    // entries of DeviceClaim.Requests. It must not be set in DeviceRequest
+    // instances that themselves are part of a FirstOf.
+    //
+    // +optional
+    // +oneOf=deviceRequestType
+    FirstOf []DeviceRequest
+
+    // Selectors define criteria which must be satisfied by a specific
+    // device in order for that device to be considered for this
+    // request. All selectors must be satisfied for a device to be
+    // considered.
     //
     // +optional
     // +listType=atomic
-    Requests []DeviceRequest
+    Selectors []DeviceSelector
+
+    // AllocationMode and its related fields define how devices are allocated
+    // to satisfy this request. Supported values are:
+    //
+    // - ExactCount: This request is for a specific number of devices.
+    //   This is the default. The exact number is provided in the
+    //   count field.
+    //
+    // - All: This request is for all of the matching devices in a pool.
+    //   Allocation will fail if some devices are already allocated,
+    //   unless adminAccess is requested.
+    //
+    // If AlloctionMode is not specified, the default mode is ExactCount. If
+    // the mode is ExactCount and count is not specified, the default count is
+    // one. Any other requests must specify this field.
+    //
+    // More modes may get added in the future. Clients must refuse to handle
+    // requests with unknown modes.
+    //
+    // +optional
+    AllocationMode DeviceAllocationMode
+
+    // Count is used only when the count mode is "ExactCount". Must be greater than zero.
+    // If AllocationMode is ExactCount and this field is not specified, the default is one.
+    //
+    // +optional
+    // +oneOf=AllocationMode
+    Count int64
+
+    // AdminAccess indicates that this is a claim for administrative access
+    // to the device(s). Claims with AdminAccess are expected to be used for
+    // monitoring or other management services for a device.  They ignore
+    // all ordinary claims to the device with respect to access modes and
+    // any resource allocations.
+    //
+    // +optional
+    // +default=false
+    AdminAccess bool
 }
 
 const (
-    RankedDeviceRequestsMaxSize    = 8
+    DeviceSelectorsMaxSize    = 32
+    FirstOfDeviceRequestMaxSize = 8
 )
 ```
 
@@ -343,9 +370,8 @@ spec:
     requests:
     - name: nic
       deviceClassName: rdma-nic
-    rankedRequests:
     - name: gpu
-      requests:
+      firstOf:
       - name: big-gpu
         deviceClassName: big-gpu
       - name: mid-gpu
@@ -390,22 +416,22 @@ spec:
         request: "gpu" # the 'nic' request is pod-level, no need to attach to container
 ```
 
-There are a few things to note here. First, the "nic" request is listed in
-`requests`, because it has no alternative request types. The "gpu" request could
-be met by serveral different types of GPU, in an order of preference. Each of
-those is a separate `DeviceRequest`, and thus also has its own name. This allow
-us to apply constraints or configuration to specific, individual requests, in
-the event even that it is the chosen alternative. In this example, the
-"small-gpu" choice requires a configuration option that the other two choices do
-not need. Thus, if the resolution of the "gpu" request is made using the
-"small-gpu" subrequest, then that configuration will be attached to the
-allocation. Otherwise, it will not.
+There are a few things to note here. First, the "nic" request is listed with a
+`deviceClassName`, because it has no alternative request types. The "gpu"
+request could be met by several different types of GPU, in the listed order of
+preference. Each of those is a separate `DeviceRequest`, with both a
+`deviceClassName` and also its own name. The fact that these subrequests also
+have their own names allows us to apply constraints or configuration to
+specific, individual subrequests, in the event that it is the chosen
+alternative. In this example, the "small-gpu" choice requires a configuration
+option that the other two choices do not need. Thus, if the resolution of the
+"gpu" request is made using the "small-gpu" subrequest, then that configuration
+will be attached to the allocation. Otherwise, it will not.
 
-Similarly, for `Constraints`, the list of requests can include the ranked
-request name ("gpu" in this case), in which case the constraint applies
-regardless of which alternative is chosen. Or, it can include the subrequest
-name, in which case that constraint only applies if that particular subrequest
-is chosen.
+Similarly, for `Constraints`, the list of requests can include the main request
+name ("gpu" in this case), in which case the constraint applies regardless of
+which alternative is chosen. Or, it can include the subrequest name, in which
+case that constraint only applies if that particular subrequest is chosen.
 
 In the PodSpec, however, the subrequest names are not valid. Only the main
 request name may be used.
@@ -413,11 +439,11 @@ request name may be used.
 ### Resource Quota
 
 ResourceQuota will be enforced such that the user must have quota for each
-`DeviceRequest` under every `RankedDeviceRequest`. Thus, this "pick one"
-behavior cannot be used to circumvent quota. This reduces the usefuleness of the
-feature, as it no longer services as a quota-management feature. However, the
-primary goal of the feature is about flexibility across clusters and
-obtainability of underlying devices, not quota management.
+`DeviceRequest` under every `FirstOf`. Thus, this "pick one" behavior cannot be
+used to circumvent quota. This reduces the usefulness of the feature, as it
+means it will not serve as a quota management feature. However, the primary goal
+of the feature is about flexibility across clusters and obtainability of
+underlying devices, not quota management.
 
 ### User Stories (Optional)
 
