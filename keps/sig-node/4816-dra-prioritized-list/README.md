@@ -250,7 +250,7 @@ nitty-gritty.
 The proposal adds a new field to the `DeviceRequest`, called `FirstOf` which
 will contain an ordered list of `DeviceRequest` objects. In order to satisfy the
 main (containing) request, exactly one of the requests listed in `FirstOf` must
-be satisfied. They order listed is considered a priority order, such that the
+be satisfied. The order listed is considered a priority order, such that the
 scheduler will only try to use the second item in the list if it is unable to
 satsify the first item, and so on.
 
