@@ -3,63 +3,64 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [SELinux intro](#selinux-intro)
-  - [SELinux label assignment](#selinux-label-assignment)
-  - [Volume mounting](#volume-mounting)
-  - [SELinux support in Kubernetes volumes](#selinux-support-in-kubernetes-volumes)
-  - [Privileged containers](#privileged-containers)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [API changes](#api-changes)
-      - [<code>CSIDriver</code>](#csidriver)
-      - [<code>PodSecurityContext</code>](#podsecuritycontext)
-    - [Conflicts with other Pods](#conflicts-with-other-pods)
-  - [<code>CSIDriver</code> examples](#csidriver-examples)
-  - [User Stories [optional]](#user-stories-optional)
-    - [Story 1: default Pod](#story-1-default-pod)
-    - [Story 2: Mount with <code>-o context</code> option](#story-2-mount-with--o-context-option)
-    - [Story 3: cluster upgrade](#story-3-cluster-upgrade)
-  - [CSI driver considerations](#csi-driver-considerations)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Required kubelet changes](#required-kubelet-changes)
-    - [Volume Reconstruction](#volume-reconstruction)
-  - [kube-state-metrics](#kube-state-metrics)
-  - [Implementation phases](#implementation-phases)
-    - [Phase 1](#phase-1)
-    - [Phase 1.5](#phase-15)
-    - [Phase 2](#phase-2)
-  - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature enablement and rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
-  - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-  - [<code>FSGroupChangePolicy</code> approach](#fsgroupchangepolicy-approach)
-  - [Change container runtime](#change-container-runtime)
-  - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
-  - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
-  - [Implement kubelet admission](#implement-kubelet-admission)
-  - [Mount <strong>all</strong> volumes with <code>-o context</code>, without any <code>SELinuxChangePolicy</code>](#mount-all-volumes-with--o-context-without-any-selinuxchangepolicy)
-  - [Make SELinuxMount opt-in and not opt-out](#make-selinuxmount-opt-in-and-not-opt-out)
-  - [Allow opt-in (or opt-out) globally via kubelet flags](#allow-opt-in-or-opt-out-globally-via-kubelet-flags)
+  - [Release Signoff Checklist](#release-signoff-checklist)
+  - [Summary](#summary)
+  - [SELinux intro](#selinux-intro)
+    - [SELinux label assignment](#selinux-label-assignment)
+    - [Volume mounting](#volume-mounting)
+    - [SELinux support in Kubernetes volumes](#selinux-support-in-kubernetes-volumes)
+    - [Privileged containers](#privileged-containers)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+      - [API changes](#api-changes)
+        - [<code>CSIDriver</code>](#csidriver)
+        - [<code>PodSecurityContext</code>](#podsecuritycontext)
+      - [Conflicts with other Pods](#conflicts-with-other-pods)
+    - [<code>CSIDriver</code> examples](#csidriver-examples)
+    - [User Stories [optional]](#user-stories-optional)
+      - [Story 1: default Pod](#story-1-default-pod)
+      - [Story 2: Mount with <code>-o context</code> option](#story-2-mount-with--o-context-option)
+      - [Story 3: cluster upgrade](#story-3-cluster-upgrade)
+    - [CSI driver considerations](#csi-driver-considerations)
+    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Design Details](#design-details)
+    - [Required kubelet changes](#required-kubelet-changes)
+      - [Volume Reconstruction](#volume-reconstruction)
+    - [kube-state-metrics](#kube-state-metrics)
+    - [Implementation phases](#implementation-phases)
+      - [Phase 1](#phase-1)
+      - [Phase 1.5](#phase-15)
+      - [Phase 2](#phase-2)
+    - [Test Plan](#test-plan)
+        - [Prerequisite testing updates](#prerequisite-testing-updates)
+        - [Unit tests](#unit-tests)
+        - [Integration tests](#integration-tests)
+        - [e2e tests](#e2e-tests)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+    - [Feature enablement and rollback](#feature-enablement-and-rollback)
+    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [Monitoring requirements](#monitoring-requirements)
+    - [Dependencies](#dependencies)
+    - [Scalability](#scalability)
+    - [Troubleshooting](#troubleshooting)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks [optional]](#drawbacks-optional)
+  - [Alternatives [optional]](#alternatives-optional)
+    - [<code>FSGroupChangePolicy</code> approach](#fsgroupchangepolicy-approach)
+    - [Change container runtime](#change-container-runtime)
+    - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
+    - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
+    - [Implement kubelet admission](#implement-kubelet-admission)
+    - [Mount <strong>all</strong> volumes with <code>-o context</code>, without any <code>SELinuxChangePolicy</code>](#mount-all-volumes-with--o-context-without-any-selinuxchangepolicy)
+    - [Make SELinuxMount opt-in and not opt-out](#make-selinuxmount-opt-in-and-not-opt-out)
+    - [Allow opt-in (or opt-out) globally via kubelet flags](#allow-opt-in-or-opt-out-globally-via-kubelet-flags)
+- [Appendix 1: promQL queries](#appendix-1-promql-queries)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -541,21 +542,13 @@ Today, kube-state-metrics exports metrics that allow users to join Pods with the
 
 We need to add:
 
-* SELinux label of pod containers: `kube_pod_container_selinux_labels`, with labels `container=<container-name>`, `pod=<pod-name>`, `namespace=<pod-namespace>`, `selinux_label=<label>`.
-  When a container does not have a SELinux label set (in `Containers[x].SecurityContext`), the metric fills it from `PodSecurityContext`.
-  When the container is privileged, `spc_t` should be used as the label.
-* Usage of volumes by containers.
-  Today, `kube_pod_spec_volumes_persistentvolumeclaims_info` tracks usage of volumes by pods.
-  But each container in a pod can  have a different SELinux label, so we need to track it per container.
-  `kube_pod_container_volumes_persistentvolumeclaims_info` with labels `pod=<pod-name>`, `namespace=<pod-namespace>`, `container=<container name>`, `volume=<volume-name>`, `persistentvolumeclaim=<persistentvolumeclaim-claimname>`, `uid=<pod UID>`.
-* Volume Unique ID in PVs. Today, `kube_persistentvolume_info` exports properties of PVs that make it hard to find two PVs that point to the same volume in the storage backend.
-  For example, for iSCSI volume we would need to match `iscsi_target_portal`, `iscsi_iqn` and `iscsi_lun` labels, while for CSI volume we need to match `csi_driver` and `csi_volume_handle` labels.
-  We propose adding a new `unique_volume_id` label that can uniquely identify volume of any plugin.
-  We use that unique volume ID all over the place in Kubernetes, e.g. in node `Status.VolumesInUse`, however, its code is scattered around volume plugins, and it's not exported from k/k.
-  We would need to *copy* the code to generate this unique volume id to `kube_persistentvolume_info`.
-  It's a few lines of code per volume plugin.
-  We're not adding new volume plugins to k/k that often, so it's not a big maintenance burden.
-* CSIDriver info, `kube_csidriver_info` with labels `csi_driver` and `selinux_mount` (and maybe all other fields).
+* `kube_pod_security_context`: fields from pod's `spec.securityContext`. Especially `seLinuxOptions` and future `selinuxChangePolicy`. 
+* `kube_pod_container_security_context`: pod's `spec.containers[*].securityContext` fields. We will need at least `privileged` and `seLinuxOptions`.
+* `kube_pod_container_volume_mount`: report volumes used by containers. The existing `kube_pod_spec_volumes_persistentvolumeclaims_info` tracks volumes used in pods, we need *containers*.
+* `kube_csidriver_info`: report CSIDriver object fields. At least `seLinuxMount` flag.
+* *Maybe* `kube_persistentvolume_unique_volume_id`, because `kube_persistentvolume_info` misses some volume plugins (in-tree vSphere, Cinder, AzureFile) and it's clumsy to work with in general.
+
+There is a proof of concept code in https://github.com/kubernetes/kube-state-metrics/pull/2513.
 
 All these changes do not need any feature gate. They may be useful also when SELinuxMount feature is removed from k/k.
 
@@ -970,6 +963,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * The API is slightly different that `FSGroupChangePolicy`, which may create confusion.
 * The feature changes the default behavior.
+* The proposed metrics may be complex to gather (see Appendix) *and* they may miss a short-living Pods. 
 
 ## Alternatives [optional]
 
@@ -1088,3 +1082,113 @@ Instead of `SELinuxChangePolicy` in every PodSpec, we considered having a global
 For example by a new kubelet flag `--enable-selinux-mount`.
 
 This is a good "plan B", if the API changes proposed here are not acceptable.
+
+
+# Appendix 1: promQL queries
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: selinuxmount-test
+spec:
+  groups:
+    - name: selinuxmount.rules
+      rules:
+      # Add unique_volume_id label to kube_persistentvolume_info that identifies a volume in the storage backend.
+      # PVs A and B represent the same volume in the storage backend if and only if they have the same unique_volume_id.
+      # The string is not very human friendly.
+      - record: kube_persistentvolume_info:unique_volume_id
+        expr: |
+          label_join(kube_persistentvolume_info, "unique_volume_id", "#", "gce_persistent_disk_name", "ebs_volume_id", "azure_disk_name", "fc_wwids", "fc_lun", "fc_target_wwns", "iscsi_target_portal", "iscsi_iqn", "iscsi_lun", "nfs_server", "nfs_path", "csi_driver", "csi_volume_handle", "local_path", "host_path")
+
+      # Add pod's SecurityContext to kube_pod_container_security_context
+      - record: kube_pod_container_security_context:pod_selinux
+        expr: |
+          kube_pod_security_context * on (pod, namespace, uid) group_right(pod_selinux_user, pod_selinux_role, pod_selinux_type, pod_selinux_level) kube_pod_container_security_context
+
+      # Compute correct SELinux label of a container in final_selinux_* labels and join it into final_selinux_label label that looks like "system_r:system_u:container_t:s0:c1,c92".
+      - record: kube_pod_container_security_context:final_selinux_label
+        expr: |
+          # Rules:
+          # - for privileged containers, the label is hardcoded to system_r:system_u:spc_t:s0
+          # - if set in a container, use that
+          # - if set in pod, use that
+          # - if not set at all and the level is set, set the missing value as system_r:system_u:container_t:<level>
+          # We use label_replace below and thus the conditions are in the opposite order - start with container_t, overwrite it with the value from pod, the value from container container, and spc_t, when their conditions are met
+          label_replace(
+          label_join(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+          label_replace(
+            # Compute level first, other replaces will depend on it.
+            # Start with pod_selinux_level as final_selinux_level
+            kube_pod_container_security_context:pod_selinux, "final_selinux_level", "$1", "pod_selinux_level", "(.*)"),
+            # replace it by container_selinux_user if it is set
+            "final_selinux_level", "$1", "container_selinux_level", "(.+)"),
+            # replace it by s0 for privileged pods
+            "final_selinux_level", "s0", "privileged", "true"),
+            
+            # user: start with system_u if level is set
+            "final_selinux_user", "system_u", "final_selinux_level", "(.+)"),
+            # replace it by pod_selinux_user, if set
+            "final_selinux_user", "$1", "pod_selinux_user","(.+)"),
+            # replace it by container_selinux_user if it is set
+            "final_selinux_user", "$1", "container_selinux_user", "(.+)"),
+            # replace it by system_u for privileged pods
+            "final_selinux_user", "system_u", "privileged", "true"),
+            
+            # same for _role
+            "final_selinux_role", "system_r", "final_selinux_level", "(.+)"),
+            "final_selinux_role", "$1", "pod_selinux_role","(.+)"),
+            "final_selinux_role", "$1", "container_selinux_role", "(.+)"),
+            "final_selinux_role", "system_r", "privileged", "true"),
+            
+            # same for _type
+            "final_selinux_type", "container_t", "final_selinux_level", "(.+)"),
+            "final_selinux_type", "$1", "pod_selinux_type","(.+)"),
+            "final_selinux_type", "$1", "container_selinux_type", "(.+)"),
+            "final_selinux_type", "spc_t", "privileged", "true"),
+            
+            # This is label_join(): join all final_selinux_ labels into one string as final_selinux_label
+            "final_selinux_label", ":", "final_selinux_user", "final_selinux_role", "final_selinux_type", "final_selinux_level"),
+            # label_replace(): replace ":::" from the label_join above (= no label set in a pod) with "", just because it looks better
+            "final_selinux_label", "", "final_selinux_label", "^:::$")
+
+      # Add final_selinux_label to kube_pod_container_volume_mount.
+      # Augmented by csidriver.SELinuxMount, if set.
+      # This does a massive join from container -> pod -> pvc -> pv -> csidriver.
+      - record: kube_pod_container_volume_mount:selinux_label
+        expr: |
+          label_replace(
+            kube_pod_container_volume_mount
+              # Join final_selinux_label
+              * on(uid, pod, container) group_left (final_selinux_label) kube_pod_container_security_context:final_selinux_label
+              # Join CSIDriver.Spec.SELinuxMount by joining pvc -> pv -> csidriver
+              * on (uid, volume) group_left(persistentvolumeclaim) kube_pod_spec_volumes_persistentvolumeclaims_info
+              * on (namespace, persistentvolumeclaim) group_left(volumename) kube_persistentvolumeclaim_info
+              * on (volumename) group_left (csi_driver, csi_volume_handle, unique_volume_id) label_replace(kube_persistentvolume_info:unique_volume_id, "volumename", "$1", "persistentvolume", "(.+)")
+              * on(csi_driver) group_left (selinux_mount) kube_csidriver_info,
+                    
+            # label_replace: set final_selinux_label to "" when the CSI driver does not support SELinuxMount
+            "final_selinux_label", "", "selinux_mount", "false")
+```
+
+* List volumes that are used with two or more SELinux labels:
+  `sum by(unique_volume_id) (max by (unique_volume_id, final_selinux_label) (kube_pod_container_volume_mount:selinux_label)) > 1`
+* For each volume, list PVCs + pods + containers that use it:
+  `kube_pod_container_volume_mount:selinux_label{unique_volume_id="<volume ID from the previous query>"}`
+
+TODO:
+* Augment it by `SELinuxChangePolicy` field.
