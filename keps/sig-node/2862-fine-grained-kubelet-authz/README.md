@@ -731,6 +731,12 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes, but a workload that is only authorized to use the new authorization subresource
 will lose access and will need to update its RBAC Role to use `nodes/proxy`.
 
+Having the feature-gate enabled in kubelet and disabled in kube-apiserver or
+vice versa will not impact kube-apiserver's ability to talk to the kubelet API.
+This is because whether the feature-gate is enabled or disabled kube-apiserver
+will always have `nodes/proxy` permissions in it's RBAC. So either the first or
+the second SubjectAccessReview request will authorize kube-apiserver.
+ 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 If the kubelet feature-gate is re-enabled then kubelet will again start sending 
@@ -738,6 +744,10 @@ If the kubelet feature-gate is re-enabled then kubelet will again start sending
 
 If the kube-apiserver feature-gate is re-enabled then the ClusterRole `system:kubelet-api-admin`
 will be updated as described in the (Design Details section)[#design-details].
+
+Readers might wonder if the order in which the feature-gate is disabled matters?
+It does not because no matter what the state kube-apiserver will always have `nodes/proxy`
+permissions in it's RBAC.
 
 ###### Are there any tests for feature enablement/disablement?
 
