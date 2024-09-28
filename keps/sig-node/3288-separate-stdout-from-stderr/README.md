@@ -189,6 +189,11 @@ Add a new field `Stream` to `PodLogOptions` to allow users to indicate which log
 they want to retrieve. To maintain backward compatibility, if this field is not set,
 the combined stdout and stderr from the container will be returned to users.
 
+Users are enabled to fetch the stderr log stream of a given container using kubectl as following:
+```bash
+kubectl logs --stream=stderr -c container pod
+```
+
 ### User Stories
 
 Bob runs a service "foo" that continuously prints informational messages to stdout,
@@ -201,12 +206,51 @@ This problem could be resolved if Bob is able to specify that he only wants stde
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+It can be tricky when `Stream` and `TailLines` of `PodLogOptions` are both specified.
+
+For instance, users might want to fetch the last 10 lines of the stderr log stream for a container, but
+this is prohibitively expensive to implement from kubelet's perspective:
+
+At present, container's logs are stored in an encoded format, either "json-file" or "cri" format:
+
+```
+# json-file
+{"log":"out1\n","stream":"stdout","time":"2024-08-20T09:31:37.985370552Z"}
+{"log":"err1\n","stream":"stderr","time":"2024-08-20T09:31:37.985370552Z"}
+
+# cri
+2016-10-06T00:17:09.669794202Z stdout F out1
+2016-10-06T00:17:09.669794202Z stderr F err1
+```
+
+Please note that the log stream is encoded in each log line. Let's see what will happen if kubelet needs to return 
+the last 10 lines of the stderr log stream:
+1. Kubelet has to decode each line of the log file from the bottom to determine whether it is from the stderr stream or not, 
+which is a CPU-intensive operation in practice.
+2. What's worse, once kubelet identifies that a line is from the stderr stream, it must keep track of the matched lines 
+until a specified number of lines are found. This can be time-consuming, especially when only few lines of stderr logs 
+amidst a large number of stdout logs.
+
+In conclusion, it is not practical for kubelet to return the last N lines of a specific log stream.
+
+Alternatively, kubelet could return logs that match the given stream within the last N lines. For example, consider the following logs:
+```
+{"log":"out1\n","stream":"stdout","time":"2024-08-20T09:31:37.985370552Z"}
+{"log":"err1\n","stream":"stderr","time":"2024-08-20T09:31:37.985370552Z"}
+{"log":"out2\n","stream":"stdout","time":"2024-08-20T09:31:37.985370552Z"}
+{"log":"err2\n","stream":"stderr","time":"2024-08-20T09:31:37.985370552Z"}
+```
+
+If users run `kubectl logs --stream=stderr --tail=2 pod`, kubelet would only return the following:
+```
+err2
+```
+
+This approach is more efficient, as kubelet only needs to parse a deterministic number of lines of log lines once
+rather than potentially all of them. However, this may go against users' expectations and could lead to confusion.
+
+Taking all these considerations into account, I propose that we do not support the combination of `Stream` and `TailLines`
+in the first iteration.
 
 ### Risks and Mitigations
 
