@@ -391,14 +391,10 @@ and more details can be found in the section
 Sidecar containers will not block Pod completion - if all regular containers
 complete, sidecar containers will be terminated.
 
-During the sidecar startup stage the restart behavior will be similar to init
-containers. If Pod `restartPolicy` is `Never`, sidecar container failed during
-startup will NOT be restarted and the whole Pod will fail. If Pod
-`restartPolicy` is `Always` or `OnFailure`, it will be restarted.
-
-Once sidecar container is started (`postStart` completed and startup probe
-succeeded), this containers will be restarted even when the Pod `restartPolicy`
-is `Never` or `OnFailure`. 
+The `restartPolicy` field for individual init containers can override the
+Pod-level `restartPolicy` for sidecar containers. As a result, even if the Pod's
+`restartPolicy` is set to `Never` or `OnFailure`, sidecar containers will still
+be restarted.
 
 Note, a separate KEP https://github.com/kubernetes/enhancements/issues/4438 will enable
 sidecar containers to be restarted even during Pod termination.
