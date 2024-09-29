@@ -178,10 +178,9 @@ retrieve certain log stream of a container, so it is great to implement this lon
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Supporting the combination of a specific `Stream`(stdout or stderr) and `TailLines` in the first iteration. However, 
+if `Stream` is set to `all`, both `Stream` and `TailLines` can be specified together.
+- Implementing a new log format
 
 ## Proposal
 
@@ -246,11 +245,13 @@ If users run `kubectl logs --stream=stderr --tail=2 pod`, kubelet would only ret
 err2
 ```
 
-This approach is more efficient, as kubelet only needs to parse a deterministic number of lines of log lines once
+This approach is more efficient, as kubelet only needs to parse a deterministic number of log lines once,
 rather than potentially all of them. However, this may go against users' expectations and could lead to confusion.
 
-Taking all these considerations into account, I propose that we do not support the combination of `Stream` and `TailLines`
-in the first iteration.
+Taking all these considerations into account, I propose that we do not support the combination of specific `Stream` 
+and `TailLines`in the first iteration. 
+Additionally, the apiserver should validate the `PodLogOptions` to ensure that a specific `Stream` and `TailLines` 
+are mutually exclusive.
 
 ### Risks and Mitigations
 
