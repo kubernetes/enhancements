@@ -4,3 +4,5 @@
 kep-number: 4369
 alpha:
   approver: "@jpbetz"
+beta:
+  approver: "@jpbetz"
