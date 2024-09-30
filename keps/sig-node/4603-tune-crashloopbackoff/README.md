@@ -533,6 +533,11 @@ every 300s (5 minutes), or an extra A.B requests per second once all pods
 reached their max cap backoff. <<[/UNRESOLVED]>> <<[UNRESOLVED ifttt
 benchmarking: add benchmarking details for this case too]>> <<[/UNRESOLVED]>>
 
+For both of these changes, by passing these changes through the existing
+SIG-scalability tests, while pursuing manual and more detailed periodic
+benchmarking during the alpha period, we can increase the confidence in the
+changes and explore the possibility of reducing the values further in the future.
+
 ## Design Details 
 
 <!--
@@ -650,7 +655,7 @@ manifest permissions in their namespace but not for other namespaces in the same
 cluster and which might be dependent on the same kubelet. For 1.32, we were
 looking to address the second issue by moving the configuration somewhere we
 could better guarantee a cluster operator type persona would have exclusive
-access to. In addition, <<[UNRESOLVED ifttt bencharmking: linkies]>>initial
+access to. In addition, <<[UNRESOLVED ifttt benchmarking: linkies]>>initial
 benchmarking indicated that even in the unlikely case of mass pathologically
 crashing and instantly restarting pods across an entire node, cluster operations
 proceeded with acceptable latency, disk, cpu and memory. Worker polling loops,
@@ -678,8 +683,7 @@ and merged with configuration files in [`kubelet/server.go
 NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
 To expose the configuration of this feature, a new field will be added to the
 `KubeletFlags` struct called `NodeMaxCrashLoopBackOff` of `int32` type that will
-be validated <<[UNRESOLVED ifttt conflict resolution]>>at runtime, or otherwise
-dropped, <<[/UNRESOLVED]>>as a value over `1` and under 300s. <<[/UNRESOLVED]>>
+be validated in kubelet at runtime, as a value over `1` and under 300s.
 
 ### Refactor of recovery threshold
 
@@ -788,14 +792,10 @@ behaviors common to all pod restarts"](code-diagram-for-restarts.png "Kubelet
 and Container Runtime restart code paths")
 
 ```
- <<[UNRESOLVED add the rest of the analysis since 1.31 and answer these questions from original PR]>> 
+ <<[UNRESOLVED answer these question from original PR]>> 
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
  
-  <<[/UNRESOLVED]>>
-```
-
-```
- <<[UNRESOLVED>>
+ > RE: The exactness of the current behavior
 It's because of the way we handle backoff:
 https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1336-L1349
 
@@ -807,7 +807,7 @@ So the actual (current) backoff implementation is:
 10 seconds for second restart
 10 * 2^(restart_count - 2) for subsequent restarts
 But those numbers are all delayed up to 10s due to kubernetes/kubernetes#123602
- <<[UNRESOLVED>>
+ <<[/UNRESOLVED]>>
 ```
 
 ### Benchmarking
@@ -1200,20 +1200,19 @@ feature gate). <</UNRESOLVED>>
 
 Or, the entire cluster can be restarted with the
 `EnableKubeletCrashLoopBackoffMax` feature gate turned off. In this case, any
-<<[UNRESOLVED]>>Node configured with a different backoff curve will instead use
+Node configured with a different backoff curve will instead use
 the default backoff curve. Again, since the cluster was restarted and Pods were
 redeployed, they will not maintain prior state and will start at the beginning
 of their backoff curve. Also, again the exact backoff curve they will use will
 be either the original one with initial value 10s, or the new baseline with
 initial value 1s, depending on whether they've turned on the
-`ReduceDefaultCrashLoopBackoffDecay` feature gate.<<[/UNRESOLVED]>>
+`ReduceDefaultCrashLoopBackoffDecay` feature gate.
 
 #### Conflict resolution
 
 <<[UNRESOLVED]>>
-
-TODO: consider making one feature gate dependent on the other to minimize the matrix multiplication, and/or to depend fully on kubelet validation (which may mean crashing kubelets/nodes on misconfiguration) instead of catching internally
-
+TODO: consider making one feature gate dependent on the other to minimize the matrix multiplication
+ <<[/UNRESOLVED]>>
 
 If on a given node at a given time, the per-node configured maximum backoff is
 lower than the initial value, the initial value for that node will instead be
@@ -1225,14 +1224,14 @@ configured to 1s. In other words, operator-invoked configuration will have
 precedence over the default if it is faster.
 
 If on a given node at a given time, the per-node configured maximum backoff is
-lower than 1 second or higher than the 300s, <<[UNRESOLVED]>>validation will
-fail and the kubelet will crash. <<[/UNRESOLVED]>>
+lower than 1 second or higher than the 300s, validation will
+fail and the kubelet will crash.
 
 If on a given node at a given time, the per-node configured maximum backoff is
 higher than the current initial value, but within validation limits as it is
 lower than 300s, it will be honored. In other words, operator-invoked
 configuration will have precedence over the default, even if it is slower, as
-long as it is valid. <<[/UNRESOLVED]>>
+long as it is valid.
 
 <<[UNRESOLVED]>>TODO: a table describing the conflict resolution would probably
 help <<[/UNRESOLVED]>>
@@ -1260,7 +1259,7 @@ For the per-node case, since it is local to each kubelet and the
 restart logic is within the responsibility of a node's local kubelet, no
 coordination must be done between the control plane and the nodes.
 
-<<[UNRESOLVED]>>
+<<[UNRESOLVED confirm the following have been answered fully]>>
 - How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
 - How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
