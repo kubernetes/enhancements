@@ -330,14 +330,13 @@ This design seeks to incorporate a two-pronged approach:
 backoff for all containers on a specific Node, down to 1s
 
 To derive these values, manual stress testing observing the behavior of kubelet,
-   API server, and overall cluster operations and behavior were performed, as
-   described below in <<[ UNRESOLVED ifttt benchmarking: link to benchmarking results ]>>
-<<[/UNRESOLVED]>>. In addition, part of the alpha period will be dedicated
-entirely to systematically stress testing kubelet and API Server with different
-distributions of workloads utilizing the new backoff curves. During the
-benchmarking period in alpha, kubelet memory and CPU, API server latency, and
-pod restart latency will be observed and analyzed to further refine the maximum
-allowable restart rate for fully saturated nodes.
+   API server, and overall cluster operations and behavior were performed. In
+addition, part of the alpha period will be dedicated entirely to systematically
+stress testing kubelet and API Server with different distributions of workloads
+utilizing the new backoff curves. During the benchmarking period in alpha,
+kubelet memory and CPU, API server latency, and pod restart latency will be
+observed and analyzed to further refine the maximum allowable restart rate for
+fully saturated nodes.
 
 Longer term, these
 metrics will also supply cluster operators the data necessary to better analyze
@@ -365,10 +364,8 @@ earlier by changing the initial value of the exponential backoff, and to retry
 periodically more often by reducing the maximum for the backoff. A number of
 alternate initial values and maximum backoff values are modelled below. This
 proposal suggests we start with a new initial value of 1s (changed from 10s
-today) and a maximum backoff of 30 seconds (changed from 5 minutes today) based
-on prior research <<[ UNRESOLVED link to benchmarking results
-]>>here<<[/UNRESOLVED]>>, and further analyze its impact on infrastructure
-during alpha. 
+today) and a maximum backoff of 1 minute (changed from 5 minutes today) based on
+prior research, and further analyze its impact on infrastructure during alpha. 
 
 ![A graph showing the change in elapsed time for observed restarts with the
 CrashLoopBackOffBehavior of today vs the proposed new
@@ -547,10 +544,6 @@ behavior, so each crashing pod would be adding an excess of 25 pod state
 transition AIP requests, for a total of 2750 excess API requests for a node
 fully saturated with crashing pods.
 
-<<[UNRESOLVED ifttt benchmarking: add benchmarking details]>>For more thorough
-methodology and results from the manual benchmarking tests, see the
-[Benchmarking results section](#). <<[/UNRESOLVED]>>
-
 For the per node case, because the change could be more significant, with nearly
 trivial (when compared to pod startup metrics) max allowable backoffs of 1s,
 there is more risk to node stability expected. This change is of particular
@@ -653,18 +646,14 @@ the first time window, 1 excess in the second time window, 3 excess in the
 fourth time window and 4 excess in the fifth time window for a total of 10
 excess restarts compared to today's behavior.
 
-<<[UNRESOLVED ifttt benchmarking: include stress test data now]>>TODO: stress
-test data paragraph<<[/UNRESOLVED]>>
-
 As a first estimate for alpha in line with maximums discussed on
-[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291) and
-the benchmarking analysis <<[UNRESOLVED ifttt benchmarking: include stress test
-data now]>>here<<[/UNRESOLVED]>>, the initial curve is selected at initial=1s /
-max=1 minute. During the alpha period this will be further investigated against
-kubelet capacity, potentially targeting something closer to an initial value
-near 0s, and a cap of 10-30s. To further restrict the blast radius of this
-change before full and complete benchmarking is worked up, this is gated by its
-own feature gate, `ReduceDefaultCrashLoopBackoffDecay`.
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), the
+initial curve is selected at initial=1s / max=1 minute. During the alpha period
+this will be further investigated against kubelet capacity, potentially
+targeting something closer to an initial value near 0s, and a cap of 10-30s. To
+further restrict the blast radius of this change before full and complete
+benchmarking is worked up, this is gated by its own feature gate,
+`ReduceDefaultCrashLoopBackoffDecay`.
 
 ### Per node config
 
@@ -695,15 +684,14 @@ manifest permissions in their namespace but not for other namespaces in the same
 cluster and which might be dependent on the same kubelet. For 1.32, we were
 looking to address the second issue by moving the configuration somewhere we
 could better guarantee a cluster operator type persona would have exclusive
-access to. In addition, <<[UNRESOLVED ifttt benchmarking: linkies]>>initial
-benchmarking indicated that even in the unlikely case of mass pathologically
-crashing and instantly restarting pods across an entire node, cluster operations
-proceeded with acceptable latency, disk, cpu and memory. Worker polling loops,
-context timeouts, the interaction between various other backoffs, as well as API
-server rate limiting made up the gap to the stability of the
-system.<<[/UNRESOLVED]>> Therefore, to simplify both the implementation and the
-API surface, this 1.32 proposal puts forth that the opt-in will be configured per
-node via kubelet configuration.
+access to. In addition, initial manual stress testing and benchmarking indicated
+that even in the unlikely case of mass pathologically crashing and instantly
+restarting pods across an entire node, cluster operations proceeded with
+acceptable latency, disk, cpu and memory. Worker polling loops, context
+timeouts, the interaction between various other backoffs, as well as API server
+rate limiting made up the gap to the stability of the system.Therefore, to
+simplify both the implementation and the API surface, this 1.32 proposal puts
+forth that the opt-in will be configured per node via kubelet configuration.
 
 Kubelet configuration is governed by two main input points, 1) command-line flag
 based config and 2) configuration following the API specification of the
@@ -889,9 +877,6 @@ the container restart policy (inherited or declared), the terminal state of a
 container before restarting, and the number of container restarts, to articulate
 the observed rate and load of restart related API requests and the performance
 effects on kubelet.
-
-<<[UNRESOLVED ifttt benchmarking: link initial benchmarking test data]>>TODO:
-link benchmarking data<<[/UNRESOLVED]>>
 
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
