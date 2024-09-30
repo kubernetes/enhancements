@@ -84,8 +84,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -136,7 +134,7 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -191,9 +189,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-Add support for CPU and memory affinity on windows by enabling the cpu, memory and topology managers for Windows, which are currently not enabled.
 
-Enables Low latency workloads co-hosted on the same nodes in Windows Server show noisy neighbor behavior preventing them to achieve their performance goals. This feature is needed to add the necessary isolation to accomplish both high performance and co-hosting efficiency.  The feature is enabled and available in Linux and Windows users are asking for the same features on Windows.
+Add support for CPU and memory affinity for Windows nodes by enabling the cpu, memory and topology managers for Windows, 
+which are currently not enabled.
+
+Enabling Low latency workloads co-hosted on the same nodes in Windows Server show noisy neighbor behaviors 
+preventing them from achieving their expected performance goals. 
+This feature is needed to add the necessary isolation to accomplish both high performance and co-hosting efficiency.  
+The feature is enabled and available in Linux and Windows users are asking for the same features on Windows.
 
 ### Goals
 
@@ -201,9 +204,9 @@ Enables Low latency workloads co-hosted on the same nodes in Windows Server show
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-- Enable CPU manager for Windows allowing for CPU affinity 
-- Enable Memory Manager for Windows allowing for Memory Affinity
-- Enable Topology Manager for Windows allowing for coordination of Memory and CPU affinity
+- Enable CPU manager for Windows allowing for CPU affinity for configured pods
+- Enable Memory Manager for Windows allowing for memory affinity for configured pods
+- Enable Topology Manager for Windows allowing for coordination of Memory and CPU affinity at the node level for scheduled pods
 
 ### Non-Goals
 
@@ -229,7 +232,7 @@ nitty-gritty.
 The proposal requires very little changes to the code for the managers and instead extends the [Windows](https://learn.microsoft.com/en-us/windows/win32/procthread/processor-groups) concepts to a CAdvisor mapping to enable the [topology structure in kubelet](https://github.com/kubernetes/kubernetes/blob/cede96336a809a67546ca08df0748e4253ec270d/pkg/kubelet/cm/cpumanager/topology/topology.go#L34-L39).
 
 There are no plans to change the core logic for selecting CPU's and NUMA nodes in the CPU/Memory/Tolopology managers from the existing KEPS ([memory-manager](keps/sig-node/1769-memory-manager)/[cpu-manager](keps/sig-node/3570-cpu-manager)/[topology-manager](keps/sig-node/693-topology-manager")).  The logic is currently in platform agnostic 
-structure so the selection process is does not require changes to adapt for Windows.  The Windows specific considerations for each of the managers will be covered in separate sections in this document.  
+structures so the selection process is does not require changes for adoption on Windows.  The Windows specific considerations for each of the managers will be covered in separate sections in this document.  
 
 
 ### User Stories (Optional)
@@ -241,9 +244,11 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+The User stories on Windows are similar to Linux:
 
-#### Story 2
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#user-stories-optional
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#user-stories
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager#user-stories-optional
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -330,7 +335,7 @@ each processor is identified by its group number and its group-relative processo
 
 In Cri we will add the following structure to the `WindowsContainerResources` in CRI:
 
-```golang
+```protobuf
 message WindowsCpuGroupAffinity {
     // CPU mask relative to this CPU group.
     uint64 cpu_mask = 1;
@@ -477,6 +482,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+Integration tests do not run on Windows. Functionality will be covered by unit and e2e tests.
 
 ##### e2e tests
 
@@ -490,7 +496,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
--  e2e_node will need to be enabled for windows to add 
+-  e2e_node will need to be enabled for windows to add coverage
 
 ### Graduation Criteria
 
@@ -525,6 +531,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Feature implemented behind a feature flag
 - Initial basic e2e tests in Windows e2e suite are added
+- unit tests for Windows specific components are added
 
 #### Beta
 
