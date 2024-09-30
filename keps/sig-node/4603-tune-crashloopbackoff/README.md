@@ -1013,7 +1013,7 @@ increase confidence in ongoing node stability given heterogeneous backoff timers
 and timeouts.
 
 Some stress/benchmark testing will still be developed as part of the
-implementatino of this enhancement, including the kubelet_perf tests indicated
+implementation of this enhancement, including the kubelet_perf tests indicated
 in the e2e section below.
 
 Some of the benefit of pursuing this change in alpha is to also have the
