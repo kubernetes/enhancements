@@ -10,6 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API Changes](#api-changes)
+    - [Allocated Resources](#allocated-resources)
     - [Subresource](#subresource)
     - [Validation](#validation)
     - [Container Resize Policy](#container-resize-policy)
@@ -62,6 +63,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Allocated Resources](#allocated-resources-1)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -113,8 +115,7 @@ in-place, without a need to restart the Pod or its Containers.
 
 The **core idea** behind the proposal is to make PodSpec mutable with regards to
 Resources, denoting **desired** resources. Additionally, PodStatus is extended to
-reflect resources **allocated** to a Pod and to provide information about
-**actual** resources applied to the Pod and its Containers.
+provide information about **actual** resources applied to the Pod and its Containers.
 
 This document builds upon [proposal for live and in-place vertical scaling][]
 and [Vertical Resources Scaling in Kubernetes][].
@@ -205,30 +206,39 @@ bounds of expected behavior.
 
 ### API Changes
 
-Container resource requests & limits can now be mutated by via the `/resize` pod subresource.
-PodStatus is extended to show the resources allocated for and applied to the Pod and its Containers.
+Container resource requests & limits can now be mutated via the `/resize` pod subresource.
+PodStatus is extended to show the resources applied to the Pod and its Containers.
 
-Thanks to the above:
 * Pod.Spec.Containers[i].Resources becomes purely a declaration, denoting the
   **desired** state of Pod resources
-* Pod.Status.ContainerStatuses[i].AllocatedResources (new field, type
-  v1.ResourceRequirements) denotes the Node resources **allocated** to the Pod and its
-  Containers, or the **Kubelet's desired** state of Pod resources.
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers.
 * Pod.Status.Resize (new field, type map[string]string) explains what is
   happening for a given resource on a given container.
 
-When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
-are copied to AllocatedResources. The actual resources are reported by the container runtime in some
-cases, and for all other resources are copied from the AllocatedResources. Currently, the resources
+The actual resources are reported by the container runtime in some cases, and for all other
+resources are copied from the latest snapshot of allocated resources. Currently, the resources
 reported by the runtime are CPU Limit (translated from quota & period), CPU Request (translated from
 shares), and Memory Limit.
 
 Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
 `[]v1.ContainerResizePolicy`) governs whether containers need to be restarted on resize. See
 [Container Resize Policy](#container-resize-policy) for more details.
+
+#### Allocated Resources
+
+When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
+are cached and checkpointed locally. When a container is (re)started, these are the requests and
+limits used.
+
+The alpha implementation of In-Place Pod Vertical Scaling included `AllocatedResources` in the
+container status, but only included requests. This field will remain in alpha, guarded by the
+separate `InPlacePodVerticalScalingAllocatedStatus` feature gate, and is a candidate for future
+removal. With the allocated status feature gate enabled, Kubelet will continue to populate the field
+with the allocated requests from the checkpoint.
+
+See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
 
 #### Subresource
 
@@ -367,19 +377,15 @@ WindowsPodSandboxConfig.
 ### Risks and Mitigations
 
 1. Backward compatibility: When Pod.Spec.Containers[i].Resources becomes
-   representative of desired state, and Pod's true resource allocations are
-   tracked in Pod.Status.ContainerStatuses[i].AllocatedResources, applications
+   representative of desired state, and Pod's actual resource configurations are
+   tracked in Pod.Status.ContainerStatuses[i].Resources, applications
    that query PodSpec and rely on Resources in PodSpec to determine resource
-   allocations will see values that may not represent actual allocations. As a
+   configurations will see values that may not represent actual configurations. As a
    mitigation, this change needs to be documented and highlighted in the
    release notes, and in top-level Kubernetes documents.
 1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
    could be in use, and approaches such as setting limit near current usage may
    be required. This issue needs further investigation.
-1. Older client versions: Previous versions of clients that are unaware of the
-   new AllocatedResources and ResizePolicy fields would set them to nil. To
-   keep compatibility, PodResourceAllocation admission controller mutates such
-   an update by copying non-nil values from the old Pod to current Pod.
 
 ## Design Details
 
@@ -390,17 +396,17 @@ Node that accommodates the Pod.
 
 For a newly created Pod, `(Init)ContainerStatuses` will be nil until the Pod is
 scheduled to a node. When Kubelet admits a Pod, it will record the admitted
-requests & limits to its internal allocated resources checkpoint, and write the
-admitted requests to the `AllocatedResources` field in the container status.
+requests & limits to its internal allocated resources checkpoint.
 
 When a Pod resize is requested, Kubelet attempts to update the resources
-allocated to the Pod and its Containers. Kubelet first checks if the new
-desired resources can fit the Node allocable resources by computing the sum of
-resources allocated (Pod.Spec.Containers[i].AllocatedResources) for all Pods in
-the Node, except the Pod being resized. For the Pod being resized, it adds the
-new desired resources (i.e Spec.Containers[i].Resources.Requests) to the sum.
-* If new desired resources fit, Kubelet accepts the resize by updating
-  Status...AllocatedResources field and setting Status.Resize to
+allocated to the Pod and its Containers. Kubelet first checks if the new desired
+resources can fit the Node allocable resources by computing the sum of resources
+allocated for all Pods in the Node, except the Pod being resized. For the Pod
+being resized, it adds the new desired resources (i.e
+Spec.Containers[i].Resources.Requests) to the sum.
+
+* If new desired resources fit, Kubelet accepts the resize, updates
+  the allocated resourcesa, and sets Status.Resize to
   "InProgress".  It then invokes the UpdateContainerResources CRI API to update
   Container resource limits.  Once all Containers are successfully updated, it
   updates Status...Resources to reflect new resource values and unsets
@@ -428,9 +434,9 @@ statement about Kubernetes and is outside the scope of this KEP.
 #### Kubelet Restart Tolerance
 
 If Kubelet were to restart amidst handling a Pod resize, then upon restart, all
-Pods are admitted at their current Status...AllocatedResources
-values, and resizes are handled after all existing Pods have been added. This
-ensures that resizes don't affect previously admitted existing Pods.
+Pods are re-admitted based on their current allocated resources (restored from
+ checkpoint). Pending resizes are handled after all existing Pods have been
+added. This ensures that resizes don't affect previously admitted existing Pods.
 
 ### Scheduler and API Server Interaction
 
@@ -439,13 +445,13 @@ scheduling new Pods, and continues to watch Pod updates, and updates its cache.
 To compute the Node resources allocated to Pods, it must consider pending
 resizes, as described by Status.Resize.
 
-For containers which have Status.Resize = "InProgress" or "Infeasible", it can
-simply use Status.ContainerStatus[i].AllocatedResources.
+For containers which have `Status.Resize = "Infeasible"`, it can
+simply use `Status.ContainerStatus[i].Resources`.
 
-For containers which have Status.Resize = "Proposed", it must be pessimistic
+For containers which have `Status.Resize = "Proposed"` or `"InProgress"`, it must be pessimistic
 and assume that the resize will be imminently accepted.  Therefore it must use
-the larger of the Pod's Spec...Resources.Requests and
-Status...AllocatedResources values
+the larger of the Pod's `Spec...Resources.Requests` and
+`Status...Resources.Requests` values.
 
 ### Flow Control
 
@@ -648,7 +654,7 @@ Pod Status in response to user changing the desired resources in Pod Spec.
   for a Node with 'static' CPU Manager policy, that resize is rejected, and
   an error message is logged to the event stream.
 * To avoid races and possible gamification, all components will use Pod's
-  Status.ContainerStatuses[i].AllocatedResources when computing resources used
+  Status.ContainerStatuses[i].Resources when computing resources used
   by Pods.
 * If additional resize requests arrive when a Pod is being resized, those
   requests are handled after completion of the resize that is in progress. And
@@ -685,9 +691,6 @@ limits for all containers in the spec as a single atomic request, and won't acce
 changes unless all changes can be accepted. If multiple requests mutate the resources spec before
 the Kubelet has accepted any of the changes, it will treat them as a single atomic request.
 
-`AllocatedResources` only accounts for accepted requests, so the Kubelet will need to record
-allocated limits in its internal checkpoint.
-
 Note: If a second infeasible resize is made before the Kubelet allocates the first resize, there can
 be a race condition where the Kubelet may or may not accept the first resize, depending on whether
 it admits the first change before seeing the second. This race condition is accepted as working as
@@ -714,13 +717,11 @@ resize](#design-sketch-workload-resource-resize).
 
 With InPlacePodVerticalScaling enabled, resource quota needs to consider pending resizes. Similarly
 to how this is handled by scheduling, resource quota will use the maximum of
-`.spec.container[*].resources.requests` and `.status.containerStatuses[*].allocatedResources` to
-determine the effective request values. Allocated limits are not reported by the API, so resource
-quota instead uses the larger of `.spec.container[*].resources.limits` and
-`.status.containerStatuses[*].resources.limits`.
+`.spec.container[*].resources.requests` and `.status.containerStatuses[*].resources` to
+determine the effective request values.
 
 To properly handle scale-down, this means that the resource quota controller now needs to evaluate
-pod updates where either `.status...allocatedResources` or `.status...resources` changed.
+pod updates where `.status...resources` changed.
 
 ### Affected Components
 
@@ -728,7 +729,6 @@ Pod v1 core API:
 * extend API
 * auto-reset Status.Resize on changes to Resources
 * added validation allowing only CPU and memory resource changes,
-* init AllocatedResources on Create (but not update)
 * set default for ResizePolicy
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
@@ -746,7 +746,7 @@ Kubelet:
 * change UpdateContainerResources CRI API to work for both Linux & Windows.
 
 Scheduler:
-* compute resource allocations using AllocatedResources.
+* compute resource allocations using actual Status...Resources.
 
 Other components:
 * check how the change of meaning of resource requests influence other
@@ -764,7 +764,7 @@ Label: `state` - Count resize request state transitions. This closely tracks the
   - `proposed` - Initial request state
   - `infeasible` - Resize request cannot be completed.
   - `deferred` - Resize request cannot initially be completed, but will retry
-  - `completed` - Resize operation completed successfully (`spec.Resources == status.Allocated == status.Resources`)
+  - `completed` - Resize operation completed successfully (`spec.Resources == allocated resources == status.Resources`)
   - `canceled` - Pod was terminated before resize was completed, or a new resize request was started.
 
 In steady state, `proposed` should equal `infeasible + completed + canceled`.
@@ -1394,3 +1394,61 @@ information to express the idea and why it was not acceptable.
 
 We considered having scheduler approve the resize. We also considered PodSpec as
 the location to checkpoint allocated resources.
+
+### Allocated Resources
+
+If we need allocated resources & limits in the pod status API, the following options have been
+considered:
+
+**Option 1: New field "AcceptedResources"**
+
+We can't change the type of the existing field, so instead we
+introduce a new field `ContainerStatus.AcceptedResources` of type `ResourceRequirements`, to track both
+allocated requests & limits, and remove the old `AllocatedResources` field. For consistency, we also
+add `AcceptedResourcesStatus` and remove `AllocatedResourcesStatus`.
+
+Pros:
+- Consistent type across PodSpec.Container.Resources (desired), ContainerStatus.AcceptedResources (allocated), and ContainerStatus.Resources (actual)
+- If/when we implement in-place resize for DRA resources, Claims are already included in the API.
+- No need for local checkpointing, if the Kubelet can read back from the status API.
+
+Cons:
+- No path to beta without waiting a release (new fields need to start in alpha)
+- Extra code churn to migrate to the new fields
+- Inconsistent with PVC API (which has AllocatedResources), and the Node Allocatable resources.
+- The Claims field is currently unnecessary, and needs its behavior defined.
+
+Variations:
+- Use an alternative type that is a subset of the ResourceRequirements type without Claims, adding back Claims only when needed.
+- Field name ContainerStatus.Allocated, as a struct holding both the allocated resources and and the allocated resource status
+
+**Option 2: New field "AllocatedResourceLimits"**
+
+Rather than changing the type with a new field, we could use a flattened API structure and just add
+`ContainerStatus.AllocatedResourceLimits` alongside `AllocatedResources` (requests).
+
+Pros:
+- Preserves the "Allocated" name
+- Less churn to implement
+- Does not prematurely import Claims into the problem space
+
+Cons:
+- Uglier API: unnested fields adds noise to the documentation and makes it harder for humans to read the status.
+- Inconsistent types between Allocated* and Resources
+- We will want to mirror the same structure in the PodStatus for pod-level resources, and may eventually want to add AllocatedResourceClaims for DRA resource resize
+
+**Option 3: Pod-level "AllocatedResources", drop container-level API**
+
+If we assume that outside the node, controllers and people only care about pod-level allocated
+resources, then we could drop the container-level allocated resources, and just add a
+`PodStatus.AllocatedResources` field of type `ResourceRequirements`. The Kubelet still needs to track
+container-level allocation, and would use a checkpoint to do so.
+
+Pros:
+- Minimalist API, without unnecessary or redundant information
+- Preserve the "Allocated" name while still getting the advantages of type consistency
+- Similar path to beta as Option 2
+
+Cons:
+- Requires long-term checkpointing to track container allocation
+- Extra risk in assuming nothing outside the node ever needs to know container-level allocated resources.
