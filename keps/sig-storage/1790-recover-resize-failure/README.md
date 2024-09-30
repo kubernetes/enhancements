@@ -408,11 +408,17 @@ after expansion is complete even with older kubelet. No recovery from expansion 
 
 ### Monitoring requirements
 
-* **How can an operator determine if the feature is in use by workloads?**
+###### How can an operator determine if the feature is in use by workloads?**
   Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
   
-* **What are the SLIs (Service Level Indicators) an operator can use to
-  determine the health of the service?**
+  
+###### How can someone using this feature know that it is working for their instance?  
+
+Since feature requires user interaction, reducing the size of the PVC is only supported
+if this feature-gate is enabled.
+  
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service
+
   - [X] Metrics
     - controller expansion operation duration:
         - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
@@ -433,13 +439,14 @@ after expansion is complete even with older kubelet. No recovery from expansion 
   - [ ] Other (treat as last resort)
     - Details:
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+
   After this feature is rolled out, there should not be any increase in 95-99 percentile of
   both `expand_volume` and `volume_fs_resize` durations. Also the error rate should not increase for 
   `storage_operation_errors_total` metric.
 
-* **Are there any missing metrics that would be useful to have to improve
-  observability if this feature?**
+###### Are there any missing metrics that would be useful to have to improve observability if this feature?
+
   We are planning to add new counter metrics that will record success and failure of recovery operations.
   In cases where recovery fails, the counter will forever be increasing until an admin action resolves the error.
 
@@ -461,36 +468,42 @@ _For beta, this section is required: reviewers must answer these questions._
 _For GA, this section is required: approvers should be able to confirms the
 previous answers based on experience in the field._
 
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls
+
   Potentially yes. If user expands a PVC and expansion fails on the node, then
   expansion controller in control-plane must intervene and verify if it is safe
   to retry expansion on the kubelet.This requires round-trips between kubelet
   and control-plane and hence more API calls.
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in introducing new API types
   None
 
-* **Will enabling / using this feature result in any new calls to cloud
-  provider?**
+###### Will enabling / using this feature result in any new calls to cloud provider
+
   Potentially yes. Since expansion operation is idempotent and expansion controller
   must verify if it is safe to retry expansion with lower values, there could be 
   additional calls to CSI drivers (and hence cloudproviders).
 
-* **Will enabling / using this feature result in increasing size or count
-  of the existing API objects?**
-  Since this feature adds a new field to PersistentVolumeClaim object it will increase size of the object.
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+Since this feature adds a new field to PersistentVolumeClaim object it will increase size of the object.
   Describe them providing:
   - API type(s): PersistentVolumeClaim
   - Estimated increase in size: 40B
 
-* **Will enabling / using this feature result in increasing time taken by any
-  operations covered by [existing SLIs/SLOs][]?**
-  In some cases if expansion fails on the node, then since it requires now correction
+###### Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?
+
+In some cases if expansion fails on the node, then since it requires now correction
   from control-plane, it may require longer time for entire expansion.
 
-* **Will enabling / using this feature result in non-negligible increase of
-  resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  It should not result in increase of resource usage.
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components
+
+It should not result in increase of resource usage.
+  
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+Enabling this feature should not result in resource exhaustion of node resources.
+
 
 ### Troubleshooting
 
