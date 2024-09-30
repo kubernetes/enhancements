@@ -33,6 +33,10 @@
   - [Affected Components](#affected-components)
   - [Instrumentation](#instrumentation)
   - [Future Enhancements](#future-enhancements)
+    - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
+    - [Design Sketch: Workload resource resize](#design-sketch-workload-resource-resize)
+    - [Design Sketch: Explicit QOS Class](#design-sketch-explicit-qos-class)
+    - [Design Sktech: Pod-level Limits](#design-sktech-pod-level-limits)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
@@ -696,39 +700,15 @@ no special considerations here. Non-restartable InitContainers cannot be resized
 
 ### QOS Class
 
-A pod's QOS class **cannot be changed** once the pod is started, independent of any resizes.
+A pod's QOS class is immutable. This is enforced during validation, which requires that after a
+resize the computed QOS Class matches the previous QOS class.
 
-To clarify the discussion of QOS Class changes, the following terms are defined:
+[Future enhancements: Mutable QOS Class "Shape"](#mutable-qos-class-shape) proposes a potential
+change to partially relax this restriction, but is removed from Beta scope.
 
-* "QOS Class" - The QOS class that was computed based on the original resource requests & limits
-  when the pod was first created.
-* "QOS Shape" - The QOS class that _would_ be computed based on the current resource requests &
-  limits.
-
-On creation, the QOS Class is equal to the QOS Shape. After a resize, the QOS Shape must be greater
-than or equal to the original QOS Class:
-
-* Guaranteed pods: must maintain `requests == limits`, and must be set for both CPU & memory
-* Burstable pods: _can_ be resized such that `requests == limits`, but their original QOS
-class will stay burstable. Must retain at least one CPU or memory request or limit.
-* BestEffort pods: can be freely resized, but stay BestEffort.
-
-Even though the QOS Shape is allowed to change, the original QOS class is used for all
-decisions based on QOS class:
-
-* `.status.qosClass` always reports the original QOS class
-* Pod cgroup hierarchy is static, using the original QOS class
-* Non-guaranteed pods remain ineligible for guaranteed CPUs or NUMA pinning
-* Preemption uses the original QOS Class
-* OOMScoreAdjust is calculated with the original QOS Class
-* Memory pressure eviction is unaffected (doesn't consider QOS Class)
-
-The original QOS Class is persisted to the status. On restart, the Kubelet is allowed to read the
-QOS class back from the status.
-
-See [future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) for a possible
-change to make QOS class explicit and improve semantics around
-[workload resource resize](#design-sketch-workload-resource-resize).
+[Future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) proposes an alternative
+enhancement on that, to make QOS class explicit and improve semantics around [workload resource
+resize](#design-sketch-workload-resource-resize).
 
 ### Resource Quota
 
@@ -808,6 +788,45 @@ time, irrespective of scrape interval.
    update to running Pods.
 1. Allow resizing local ephemeral storage.
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
+
+#### Mutable QOS Class "Shape"
+
+This change was originally proposed for Beta, but moved out of the scope. It may still be considered
+for a future enhancement to relax the constraints on resizes.
+
+A pod's QOS class **cannot be changed** once the pod is started, independent of any resizes.
+
+To clarify the discussion of the proposed QOS Class changes, the following terms are defined:
+
+* "QOS Class" - The QOS class that was computed based on the original resource requests & limits
+  when the pod was first created.
+* "QOS Shape" - The QOS class that _would_ be computed based on the current resource requests &
+  limits.
+
+On creation, the QOS Class is equal to the QOS Shape. After a resize, the QOS Shape must be greater
+than or equal to the original QOS Class:
+
+* Guaranteed pods: must maintain `requests == limits`, and must be set for both CPU & memory
+* Burstable pods: _can_ be resized such that `requests == limits`, but their original QOS
+class will stay burstable. Must retain at least one CPU or memory request or limit.
+* BestEffort pods: can be freely resized, but stay BestEffort.
+
+Even though the QOS Shape is allowed to change, the original QOS class is used for all
+decisions based on QOS class:
+
+* `.status.qosClass` always reports the original QOS class
+* Pod cgroup hierarchy is static, using the original QOS class
+* Non-guaranteed pods remain ineligible for guaranteed CPUs or NUMA pinning
+* Preemption uses the original QOS Class
+* OOMScoreAdjust is calculated with the original QOS Class
+* Memory pressure eviction is unaffected (doesn't consider QOS Class)
+
+The original QOS Class is persisted to the status. On restart, the Kubelet is allowed to read the
+QOS class back from the status.
+
+See [future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) for a possible
+change to make QOS class explicit and improve semantics around
+[workload resource resize](#design-sketch-workload-resource-resize).
 
 #### Design Sketch: Workload resource resize
 
