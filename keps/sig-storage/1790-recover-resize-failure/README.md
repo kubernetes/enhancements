@@ -11,7 +11,6 @@
 - [Proposal](#proposal)
   - [Making allocatedResourceStatus not change unnecessarily for every error in 1.31](#making-allocatedresourcestatus-not-change-unnecessarily-for-every-error-in-131)
   - [Making resizeStatus more general in v1.28](#making-resizestatus-more-general-in-v128)
-  - [Implementation](#implementation)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
       - [Case 1 (controller+node expandable):](#case-1-controllernode-expandable)
@@ -20,8 +19,16 @@
       - [Case 4(Malicious User and rounding to GB/GiB bounaries)](#case-4malicious-user-and-rounding-to-gbgib-bounaries)
       - [Case 5(Rapid successive expansion and shrink)](#case-5rapid-successive-expansion-and-shrink)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Graduation Criteria](#graduation-criteria)
+- [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [E2E tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
   - [Monitoring](#monitoring)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -45,12 +52,15 @@
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
 ## Summary
@@ -92,6 +102,7 @@ is only done by resize-controller after previously issued expansion has failed w
 ### Non-Goals
 
 - As part of this KEP we do not intend to actually support shrinking of underlying volume.
+- As part of this KEP when user intends to recover from volume expansion failures, they must recover to a size slightly larger than original size of the volume. For example - if user expanded a volume from `10Gi` to `100Gi` and expansion to `100Gi` is failing, then we only permit recovery to a size greater than `10Gi`, for example - `11Gi` or anything higher than `10Gi`.
 
 ## Proposal
 
@@ -169,30 +180,6 @@ type PersistentVolumeClaimStatus struct {
 ```
 
 
-### Implementation
-
-We propose that by relaxing validation on PVC update to allow users to reduce `pvc.Spec.Resources`, it becomes possible to cancel previously issued expansion requests or retry expansion with a lower value if previous request has not been successful. In general - we know that volume plugins are designed to never perform actual shrinking of the volume, for both in-tree and CSI volumes. Moreover if a previously issued expansion has been successful and user
-reduces the PVC request size, for both CSI and in-tree plugins they are designed to return a successful response with NO-OP. So, reducing requested size will be a safe operation and will never result in data loss or actual shrinking of volume.
-
-We however do have a problem with quota calculation because if a previously issued expansion is successful but is not recorded(or partially recorded) in api-server and user reduces requested size of the PVC, then quota controller will assume it as actual shrinking of volume and reduce used storage size by the user(incorrectly). Since we know actual size of the volume only after performing expansion(either on node or controller), allowing quota to be reduced on PVC size reduction will allow an user to abuse the quota system.
-
-To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Status.AllocatedResources`. When user expands the PVC, and when expansion-controller starts volume expansion - it will set `pvc.Status.AllocatedResources` to user requested value in `pvc.Spec.Resources` before performing expansion and it will set `pvc.Status.AllocatedResourceStatus[storage]` to `ControllerResizeInProgress`. The quota calculation will be updated to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` which will ensure that abusing quota will not be possible.
-
-Resizing operation in external resize controller will always work towards full-filling size recorded in `pvc.Status.AllocatedResources` and only when previous operation has finished(i.e `pvc.Status.AllocatedResourceStatus[storage]` is nil) or when previous operation has failed with a terminal error - it will use new user requested value from `pvc.Spec.Resources`.
-
-Kubelet on the other hand will only expand volumes for which `pvc.Status.AllocatedResourceStatus[storage]` is in `NodeResizePending` or `NodeResizeInProgress` state and `pv.Spec.Cap > pvc.Status.Cap`. If a volume expansion fails in kubelet with a terminal error(which will set `NodeResizeFailed` state) - then it must wait for resize controller in external-resizer to reconcile the state and put it back in `NodeResizePending`.
-
-When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value only if one of the following is true:
-
-1. If `pvc.Status.AllocatedResourceStatus[storage]` is `ControllerResizeFailed` (indicating that previous expansion to last known `allocatedResources` failed with a final error) and previous control-plane has not succeeded.
-2. If `pvc.Status.AllocatedResourceStatus[storage]` is `NodeResizeFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
-3. If `pvc.Status.AllocatedResourceStatus[storage]` is `nil` or `empty` and previous `ControllerExpandVolume` has not succeeded.
-
-![Determining new size](./get_new_size.png)
-
-**Note**: Whenever resize controller or kubelet modifies `pvc.Status` (such as when setting both `AllocatedResources` and `pvc.Status.AllocatedResourceStatus`) - it is expected that all changes to `pvc.Status` are submitted as part of same patch request to avoid race conditions.
-
-The complete expansion and recovery flow of both control-plane and kubelet is documented in attached PDF. The attached pdf - documents complete volume expansion flow via state diagrams and is much more exhaustive than the text above.
 
 
 #### User flow stories
@@ -286,22 +273,74 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 ### Risks and Mitigations
 
 - Once expansion is initiated, the lowering of requested size is only allowed upto a value *greater* than `pvc.Status`. It is not possible to entirely go back to previously requested size. This should not be a problem however in-practice because user can retry expansion with slightly higher value than `pvc.Status` and still recover from previously failing expansion request.
- 
-## Graduation Criteria
 
-* *Alpha* in 1.23 behind `RecoverVolumeExpansionFailure` feature gate with set to a default of `false`.
-* *Beta* in 1.29: We are going to move this to beta with enhanced e2e and more stability improvements.
-  -  There are already e2e tests running that verify correctness of this feature - https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
+## Design Details
+
+We propose that by relaxing validation on PVC update to allow users to reduce `pvc.Spec.Resources`, it becomes possible to cancel previously issued expansion requests or retry expansion with a lower value if previous request has not been successful. In general - we know that volume plugins are designed to never perform actual shrinking of the volume, for both in-tree and CSI volumes. Moreover if a previously issued expansion has been successful and user
+reduces the PVC request size, for both CSI and in-tree plugins they are designed to return a successful response with NO-OP. So, reducing requested size will be a safe operation and will never result in data loss or actual shrinking of volume.
+
+We however do have a problem with quota calculation because if a previously issued expansion is successful but is not recorded(or partially recorded) in api-server and user reduces requested size of the PVC, then quota controller will assume it as actual shrinking of volume and reduce used storage size by the user(incorrectly). Since we know actual size of the volume only after performing expansion(either on node or controller), allowing quota to be reduced on PVC size reduction will allow an user to abuse the quota system.
+
+To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Status.AllocatedResources`. When user expands the PVC, and when expansion-controller starts volume expansion - it will set `pvc.Status.AllocatedResources` to user requested value in `pvc.Spec.Resources` before performing expansion and it will set `pvc.Status.AllocatedResourceStatus[storage]` to `ControllerResizeInProgress`. The quota calculation will be updated to use `max(pvc.Spec.Resources, pvc.Status.AllocatedResources)` which will ensure that abusing quota will not be possible.
+
+Resizing operation in external resize controller will always work towards full-filling size recorded in `pvc.Status.AllocatedResources` and only when previous operation has finished(i.e `pvc.Status.AllocatedResourceStatus[storage]` is nil) or when previous operation has failed with a terminal error - it will use new user requested value from `pvc.Spec.Resources`.
+
+Kubelet on the other hand will only expand volumes for which `pvc.Status.AllocatedResourceStatus[storage]` is in `NodeResizePending` or `NodeResizeInProgress` state and `pv.Spec.Cap > pvc.Status.Cap`. If a volume expansion fails in kubelet with a terminal error(which will set `NodeResizeFailed` state) - then it must wait for resize controller in external-resizer to reconcile the state and put it back in `NodeResizePending`.
+
+When user reduces `pvc.Spec.Resources`, expansion-controller will set `pvc.Status.AllocatedResources` to lower value only if one of the following is true:
+
+1. If `pvc.Status.AllocatedResourceStatus[storage]` is `ControllerResizeFailed` (indicating that previous expansion to last known `allocatedResources` failed with a final error) and previous control-plane has not succeeded.
+2. If `pvc.Status.AllocatedResourceStatus[storage]` is `NodeResizeFailed` and SP supports node-only expansion (indicating that previous expansion to last known `allocatedResources` failed on node with a final error).
+3. If `pvc.Status.AllocatedResourceStatus[storage]` is `nil` or `empty` and previous `ControllerExpandVolume` has not succeeded.
+
+![Determining new size](./get_new_size.png)
+
+**Note**: Whenever resize controller or kubelet modifies `pvc.Status` (such as when setting both `AllocatedResources` and `pvc.Status.AllocatedResourceStatus`) - it is expected that all changes to `pvc.Status` are submitted as part of same patch request to avoid race conditions.
+
+The complete expansion and recovery flow of both control-plane and kubelet is documented in attached PDF. The attached pdf - documents complete volume expansion flow via state diagrams and is much more exhaustive than the text above.
 
 ### Test Plan
 
-[x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+##### Unit tests
 
-* Basic unit tests for storage strategy of PVC and quota system.
-* E2e tests using mock driver to cause failure on expansion and recovery.
-* Also verify quota usage when this happens.
+In external-resizer:
+- pkg/controller/expand_and_recover.go: 09/30/2024 - 78.3%
+
+##### Integration tests
+
+None
+
+##### E2E tests
+
+There are already e2e tests running that verify correctness of this feature - https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
+
+### Graduation Criteria
+
+#### Alpha
+
+- *Alpha* in 1.23 behind `RecoverVolumeExpansionFailure` feature gate with set to a default of `false`.
+
+#### Beta
+
+- *Beta* in 1.29: We are going to move this to beta with enhanced e2e and more stability improvements.
+  -  There are already e2e tests running that verify correctness of this feature -
+  https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
+  
+### Upgrade / Downgrade Strategy
+
+Not Applicable
+
+### Version Skew Strategy
+
+To use this feature `RecoverVolumeExpansionFailure` should be enabled in `kubelet`, `external-resizer`, `api-server` and
+`kube-controller-manager`. 
+
+If for some reason - `external-resizer` is running with older version and while core kubernetes components have been upgraded, then volume expansion will follow old behaviour and no recovery from volume expansion failure will be possible.
+
+If `external-resizer` has been upgraded to latest version (and feature-gate is enabled), but core kubernetes components such as `api-server` or `kubelet` has not been updated, then as well no recovery will be possible, because `api-server` will not allow users to reduce size of `pvc`. 
+
+If `api-server` and `external-resizer` has been upgraded and has feature-gate enabled but `kubelet` is still 
+older then for volume types which require expansion on kubelet, resize status will not be updated correctly until `kubelet` version is upgraded. This will not block volume from being mounted but it does mean that resize operation will not fully finish.
 
 ### Monitoring
 
@@ -368,8 +407,6 @@ after expansion is complete even with older kubelet. No recovery from expansion 
   This feature deprecates no existing functionality.
 
 ### Monitoring requirements
-
-_This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
   Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
