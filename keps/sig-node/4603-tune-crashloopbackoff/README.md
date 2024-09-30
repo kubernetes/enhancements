@@ -213,6 +213,10 @@ This KEP proposes the following changes:
 * Formally split backoff counter reset threshold for container restart backoff
   behavior and maintain the current 10 minute recovery threshold
 
+![A graph showing the change in elapsed time for observed restarts with the
+CrashLoopBackOffBehavior of today, with the proposed new default, and with the
+proposed minimum per node configuration](./restarts-vs-elapsed-all.png "KEP-4603
+CrashLoopBackoff proposal comparison")
 
 ## Motivation
 
@@ -366,8 +370,9 @@ on prior research <<[ UNRESOLVED link to benchmarking results
 ]>>here<<[/UNRESOLVED]>>, and further analyze its impact on infrastructure
 during alpha. 
 
-<<[ UNRESOLVED new pic with updated modeling re: max cap values
-]>>![](todayvs1sbackoff.png)<<[ /UNRESOLVED]>>
+![A graph showing the change in elapsed time for observed restarts with the
+CrashLoopBackOffBehavior of today vs the proposed new
+default](./restarts-vs-elapsed-new-default.png "Default backoff curve change")
 
 
 ### Node specific kubelet config for maximum backoff down to 1 second
@@ -378,6 +383,11 @@ integer representing seconds (notably NOT resulting in subsecond granularity).
 The minimum allowable value will be 1 second. The maximum allowable value will
 be 300 seconds. This per node configuration will be configurable only by a user
 with awareness of the node holistically.
+
+![A graph showing the change in elapsed time for observed restarts with the
+CrashLoopBackOffBehavior of today vs the proposed minimum for per node
+configuration](./restarts-vs-elapsed-minimum-per-node.png "Per node minimum backoff
+curve allowed")
 
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
@@ -594,12 +604,9 @@ window. As seen below, this type of change gives us more restarts earlier, but
 even at 250ms or 25ms initial values, each approach a similar rate of restarts
 after the third time window.
 
-<<[UNRESOLVED ifttt front loaded images: remake this graph with axes too]>>
 ![A graph showing different exponential backoff decays for initial values of
 10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png "Changes to decay
 with different initial values")
-TODO: remake graph!
-<<[/UNRESOLVED]>>
 
 Among these modeled initial values, we would get between 3-7 excess restarts per
 backoff lifetime, mostly within the first three time windows matching today's
@@ -610,8 +617,20 @@ rate caused by the exponential growth, but also because they grow to the same
 maximum value -- 5 minutes. By layering on alternate models for maximum backoff,
 we observe more restarts for longer:
 
-<<[UNRESOLVED ifttt front loaded images: add graph here with proper axes]>>
-TODO: new graph! <<[/UNRESOLVED]>>
+![A graph showing different exponential backoff decays for 2 initial values and
+2 different maximum backoff
+thresholds](initialvaluesandmaxonnumberofrestarts.png "Changes to decay with
+different initial and maximum backoff values")
+
+While this graph includes several variations -- initial values of 10s in red and
+pink, initial values of 1s in purple and lilac, and both of these initial values
+modeled either 60s or 30s maximum backoff -- hopefully it can impress upon the
+reader how including a reduction to maximum backoff increases the number of
+excess restarts later in the cycle. In the most extreme case modeled above, with
+initial value of 1s and a maximum backoff of 30s, there are 2 excess restarts in
+the first time window, 1 excess in the second time window, 3 excess in the
+fourth time window and 4 excess in the fifth time window for a total of 10
+excess restarts compared to today's behavior.
 
 <<[UNRESOLVED ifttt benchmarking: include stress test data now]>>TODO: stress
 test data paragraph<<[/UNRESOLVED]>>
@@ -670,11 +689,12 @@ based config and 2) configuration following the API specification of the
 `kubelet.config.k8s.io/v1beta1 KubeletConfiguration` Kind, which is passed to
 kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
 ([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
-<<[UNRESOLVED consider KubeletConfiguration again, and/or motivate per node or
-per node pool cases better]>> Since this is a per-node configuration that likely
-will be set on a subset of nodes, or potentially even differently per node, it's
-important that it can be manipulated with a command-line flag, as
-`KubeletConfiguration` is intended to be shared between nodes, and so lifecycle
+Since this is a per-node configuration that likely will be set on a subset of
+nodes, or potentially even differently per node, it's important that it can be
+manipulated per node. By default `KubeletConfiguration` is intended to be shared
+between nodes, but the beta feature for drop-in configuration files in a
+colocated config directory cirumvent this. However, it is still the opinion of
+the author it is better manipulated with a command-line flag, so lifecycle
 tooling that configures nodes can expose it more transparently.
 
 Exposed command-line configuration for Kubelet are defined by [`struct
@@ -752,10 +772,10 @@ Container Runtime restart code paths")
 
 
 As you might imagine this is a very critical code path with hooks to many
-in-flight features; <<[!UNRESOLVED make a link]>>Appendix A<<[/UNRESOLVED]>>
-includes a more complete list (yet still not as exhaustive as the source code),
-but the following are selected as the most important behaviors of kubelet during
-a restart to know about, that are not currently behind a feature gate.
+in-flight features; [Appendix A](#appendix-a) includes a more complete list (yet
+still not as exhaustive as the source code), but the following are selected as
+the most important behaviors of kubelet during a restart to know about, that are
+not currently behind a feature gate.
 
 After a Pod is in Terminating phase, kubelet:
 
@@ -1631,6 +1651,61 @@ review may be useful to such efforts in the future.
   * Subsidize successful running time/readinessProbe/livenessProbe seconds in
     current backoff delay
   * Detect anomalous workload crashes
+
+## Appendix A
+
+### Kubelet SyncPod
+
+* Update API status
+* Wait for network ready
+* Register pod to secrets and configmap managers
+* Create/update QOS cgroups for a restarting, unkilled pod if enabled
+* Create mirror pod for static pod if deleted
+* Make pod data directories
+* Wait for volumes to attach/mount, up to 2 minutes per sync loop
+* Get image pull secrets
+* Add pod to probe manager (start probe workers)
+* Vertical pod scaling; potentially do a resize on podmanager/statusmanager
+
+### Runtime SyncPod
+
+* Fix/create pod sandbox if necessary
+* Start ephemeral containers
+* Start init/sidecar containers
+* Start normal containers
+* Start =
+  * Get image volumes
+  * If still in backoff, error; will come back next round
+    * Error caught by kubelet, isTerminal=False
+  * Pull image volumes if enabled
+  * Pull image
+  * Generate container config, including generating env and pulling secrets
+  * Create container
+  * User Pre start hook
+  * Start container
+  * User Post start hook
+
+### Kubelet SyncTerminatingPod + runtime killPod
+
+* Update Pod status
+* Stop probes
+* Kill pod (with grace if enabled)
+  * Send kill signals and wait
+  * Stop sandboxes
+  * update QOS cgroups if enabled
+* Remove probes
+* Deallocate DRA resources, if enabled
+* Set the Pod status again with exit codes
+
+### Kubelet SyncTerminatedPod
+
+* Update Pod status
+* Unmount volumes (up to 2 minutes 3 seconds per sync loop)
+* Unregister secret and configmap
+* Remove cgroups for qos if enabled
+* Release user namespace (if enabled, needs I/O)
+* Update Pod status again
+
 
 
 ## Infrastructure Needed (Optional)
