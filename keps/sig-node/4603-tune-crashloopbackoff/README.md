@@ -1253,8 +1253,19 @@ lower than 300s, it will be honored. In other words, operator-invoked
 configuration will have precedence over the default, even if it is slower, as
 long as it is valid.
 
-<<[UNRESOLVED]>>TODO: a table describing the conflict resolution would probably
-help <<[/UNRESOLVED]>>
+scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value
+---------|---------|----------|---------
+_today's behavior_ | disabled | disabled | 10s
+_new default only_ | enabled | disabled | 1s
+_faster per node config_ | disabled | 2s | 2s
+" | enabled | 2s | 2s
+_slower per node config_ | enabled | 10s | 10s
+" |  enabled | 300s | 300s
+" |  disabled | 11s | 11s
+" |  disabled | 300s | 300s
+_invalid per node config_ | enabled | 301s | kubelet crashes
+" | disabled | 301s | kubelet crashes
+
 
 ### Version Skew Strategy
 
