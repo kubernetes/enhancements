@@ -783,8 +783,8 @@ and [`kubelet/kubelet.go SyncTerminatingPod`](),
 killContainer`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_container.go#L761),
 [`kubelet/kuberuntime/kuberuntime_manager.go
 killPodWithSyncResult`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1466),
-and [`kubelet/kubelet.go
-SyncTerminatedPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go#L1996).
+ [`kubelet/kubelet.go
+SyncTerminatingPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go#L1996), and [`kubelet/kubelet.go SyncTerminatedPod`](https://github.com/kubernetes/kubernetes/blob/release-1.31/pkg/kubelet/kubelet.go#L2143).
 
 !["A sequence diagram showing Kubelet and Container Runtime code paths
 responsible for behaviors common to all pod
@@ -835,6 +835,7 @@ and Container Runtime restart code paths")
 ```
  <<[UNRESOLVED answer these question from original PR]>> 
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
+ to answer question: looks like it is per runtime. need to check about leasees. also part of the value of this is to restart the sandbox.
 ```
 
 ### Benchmarking
@@ -1282,10 +1283,6 @@ initial value 1s, depending on whether they've turned on the
 
 #### Conflict resolution
 
-<<[UNRESOLVED]>>
-TODO: consider making one feature gate dependent on the other to minimize the matrix multiplication
- <<[/UNRESOLVED]>>
-
 If on a given node at a given time, the per-node configured maximum backoff is
 lower than the initial value, the initial value for that node will instead be
 set to the configured maximum. For example, if
@@ -1334,25 +1331,22 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-For the default backoff curve, no coordination must be done between the control
-plane and the nodes; all behavior changes are local to the kubelet component and
-its start up configuration.
+For both the default backoff curve and the per-node, no coordination must be
+done between the control plane and the nodes; all behavior changes are local to
+the kubelet component and its start up configuration. An n-3 kube-proxy, n-1
+kube-controller-manager, or n-1 kube-scheduler without this feature available is
+not affected when this feature is used, since it does not depend on
+kube-controller-manager or kube-scheduler. Code paths that will be touched are
+exclusively in kubelet component.
 
-For the per-node case, since it is local to each kubelet and the
-restart logic is within the responsibility of a node's local kubelet, no
-coordination must be done between the control plane and the nodes.
-
-<<[UNRESOLVED confirm the following have been answered fully]>>
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
-<<[/UNRESOLVED]>>
+An n-3 kubelet without this feature available will behave like normal, with the
+original CrashLoopBackOff behavior. It cannot ingest flags for per node config
+and if one is specified on start up, kubelet flag validation will fail.
 
 ## Production Readiness Review Questionnaire
 
 <<[UNRESOLVED removed when changing from 1.31 proposal to 1.32 proposal,
-incoming in further commits]>> <<[/UNRESOLVED]>>
+incoming in separate PR]>> <<[/UNRESOLVED]>>
 
 ## Implementation History
 
