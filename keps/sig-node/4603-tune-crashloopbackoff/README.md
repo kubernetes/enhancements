@@ -835,20 +835,6 @@ and Container Runtime restart code paths")
 ```
  <<[UNRESOLVED answer these question from original PR]>> 
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
- 
- > RE: The exactness of the current behavior
-It's because of the way we handle backoff:
-https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1336-L1349
-
-So the first time the container exits, there is no backoff delay recorded, but then it adds a backoff key at line 1348.
-
-So the actual (current) backoff implementation is:
-
-0 seconds delay for first restart
-10 seconds for second restart
-10 * 2^(restart_count - 2) for subsequent restarts
-But those numbers are all delayed up to 10s due to kubernetes/kubernetes#123602
- <<[/UNRESOLVED]>>
 ```
 
 ### Benchmarking
@@ -961,6 +947,51 @@ because the problem space of ImagePullBackoff could likely be handled by a
 completely different pattern, as unlike with CrashLoopBackoff the types of
 errors with ImagePullBackoff are less variable and better interpretable by the
 infrastructure as recoverable or non-recoverable (i.e. 404s).
+
+### Relationship with k/k#123602
+
+It was observed that there is a bug with the current requeue behavior, described
+in https://github.com/kubernetes/kubernetes/issues/123602. The first restart
+will have 0 seconds delay instead of the advertised initial value delay, because
+the backoff object will not be initialized until a key is generated, which
+doesn't happen until after the first restart of a pod (see
+[ref](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1336-L1349)).
+That first restart will also not impact future backoff calculations, so the
+observed behavior is closer to:
+
+* 0 seconds delay for first restart
+* 10 seconds for second restart
+* 10 * 2^(restart_count - 2) for subsequent restarts
+
+By watching a crashing pod, we can observe that it does not enter a
+CrashLoopBackoff state or behave as advertised until after that first "free"
+restart:
+
+```
+# a pod that crashes every 10s
+thing  0/1  Pending  0 29s
+thing  0/1  Pending  0 97s
+thing  0/1  ContainerCreating  0 97s
+thing  1/1  Running  0 110s           
+thing  0/1  Completed  0 116s                       # first run completes
+thing  1/1  Running  1 (4s ago)  118s               # no crashloopbackoff observed, 1 restart tracked
+thing  0/1  Completed  1 (10s ago)  2m4s            # second runc ompletes
+thing  0/1  CrashLoopBackOff 1 (17s ago)  2m19s     # crashloopbackoff observed
+thing  1/1  Running  2 (18s ago)  2m20s             # third run starts
+thing  0/1  Completed  2 (23s ago)  2m25s
+thing  0/1  CrashLoopBackOff 2 (14s ago)  2m38s     # crashloopbackoff observed again
+thing  1/1  Running  3 (27s ago)  2m51s
+thing  0/1  Completed  3 (32s ago)  2m56s
+```
+
+Ultimately, being able to predict the exact number of restarts or remedying up
+to 10 seconds delay for the advertised behavior is not the ultimate goal of this
+KEP, though certain assumptions were made when calculating risks, mitigations,
+and analyzing existing behavior that are affected by this bug. Since the
+behavior is already changing as part of this KEP, and similar code paths will be
+changed, it is within scope of this KEP to address this bug if it is a blocker
+to implementation for alpha; it can wait until beta otherwise. This is
+represented below in the [Graduation Criteria](#graduation-criteria).
 
 ### Test Plan
 
