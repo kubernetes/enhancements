@@ -495,12 +495,28 @@ at least nontrivially slowing kubelet, or increasing the API requests to store
 backoff state so significantly that the central API server is unresponsive and
 the cluster fails.
 
-During alpha, naturally the first line of defense is that the enhancements, even
-the reduced "default" baseline curve for CrashLoopBackoff, are not usable by
-default and must be opted into. In this specific case they are opted into
-separately with different alpha feature gates, so clusters will only be affected
-by each risk if the cluster operator enables the new features during the alpha
-period.
+Some observations and analysis were made to quantify these risks going into
+alpha. In the [Kubelet Overhead Analysis](#kubelet-overhead-analysis), the code
+paths all restarting pods go through result in 5 obvious `/pods` API server
+status updates; when observed empirically in an active cluster, while we do see
+an initial surges in `/pods` API traffic to ~5 QPS when deploying 110 mass
+crashing pods for our tests, even with instantly crashing pods and
+intantaneously restarting CrashLoopBackOff behavior, `/pods` API requests
+quickly normalized to ~2 QPS due to rate limiting. In the same tests, runtime
+CPU usage increased by x10 and the API server CPU usage increased by 2x.
+
+For both of these changes, by passing these changes through the existing
+SIG-scalability tests, while pursuing manual and more detailed periodic
+benchmarking during the alpha period, we can increase the confidence in the
+changes and explore the possibility of reducing the values further in the
+future.
+
+In the meantime, during alpha, naturally the first line of defense is that the
+enhancements, even the reduced "default" baseline curve for CrashLoopBackoff,
+are not usable by default and must be opted into. In this specific case they are
+opted into separately with different alpha feature gates, so clusters will only
+be affected by each risk if the cluster operator enables the new features during
+the alpha period.
 
 Beyond this, there are two main mitigations during alpha: conservativism in
 changes to the default behavior based on prior stress testing, and limiting any
@@ -511,42 +527,47 @@ persona.
 The alpha changes to the _default_ backoff curve were chosen because they meet
 emerging use cases and user sentiment from the canonical feature request issue
 and research by the author, AND because they are indicated to be safe changes
-based on initial benchmarking and analysis, described below in context and
-<<[UNRESOLVED ifttt benchmarking: add benchmarking link]>>here more
-broadly<<[/UNRESOLVED]>>.
+based on initial benchmarking and analysis. The reduction of the initial value
+from 10s to 1s and the reduction of the backoff maximum from 5 minutes to 1
+minute introduces 
 
-<<[UNRESOLVED fix details for new proposal]>>the proposal maintains the existing
-rate of 2x, reduces the initial value to the point that introduces N excess
-restarts per pod, the first XYZ excess in Y time window and the last ABC excess
-following in the next Z time window (see [Design
-Details](#front-loaded-decay-curve-methodology)). For a hypothetical node with
-the max 110 pods all stuck in a simultaneous CrashLoopBackoff, API requests to
-change the state transition would increase at its fastest period from ABC
-requests/10s to NNN requests/10s. <<[/UNRESOLVED]>>  <<[UNRESOLVED ifttt
-benchmarking: add benchmarking details]>>This has also been empirically observed
-in benchmarking analysis described XYZ HERE XYZ. <<[/UNRESOLVED]>> In addition,
-by passing these changes through the existing SIG-scalability tests, while
-pursuing manual and more detailed periodic benchmarking during the alpha period,
-we can increase the confidence in this change and in the possibility of reducing
-further in the future.
+* 5 excess restarts per pod in the first five minutes
+  * the first 3 excess in the first 30 seconds
+  * and the last 2 excess between 150 and 300 seconds
+  * an excess 5 restarts every five minutes compared to today given the change
+    in the backoff maximum
+
+For a hypothetical node with the default maximum 110 pods all stuck in a
+simultaneous 10s CrashLoopBackoff, at its most efficient this would result in a
+new restart for each pod every second, and API requests to the API server to
+change the state transition would increase at its fastest period from ~550
+requests/10s to ~5500 requests/10s, or 10x. In conjunction, the lowered backoff
+would continuously add 5 excess restarts every five minutes compared to today's
+behavior, so each crashing pod would be adding an excess of 25 pod state
+transition AIP requests, for a total of 2750 excess API requests for a node
+fully saturated with crashing pods.
+
+<<[UNRESOLVED ifttt benchmarking: add benchmarking details]>>For more thorough
+methodology and results from the manual benchmarking tests, see the
+[Benchmarking results section](#). <<[/UNRESOLVED]>>
 
 For the per node case, because the change could be more significant, with nearly
 trivial (when compared to pod startup metrics) max allowable backoffs of 1s,
 there is more risk to node stability expected. This change is of particular
 interest to be tested in the alpha period by end users, and is why it is still
-included with opt-in even though the risks are higher. <<[UNRESOLVED update with
-new findings]>> For a hypothetical node with the max 110 pods all stuck in a
-simultaneous 1s maximum CrashLoopBackoff, API requests to change the state
-transition would increase from ABC requests/10s to NNN requests/10s, and since
-the maximum backoff would be lowered, would exhibit up to NNN requests in excess
-every 300s (5 minutes), or an extra A.B requests per second once all pods
-reached their max cap backoff. <<[/UNRESOLVED]>> <<[UNRESOLVED ifttt
-benchmarking: add benchmarking details for this case too]>> <<[/UNRESOLVED]>>
+included, but only by opt-in. In this case, for a hypothetical node with the
+default maximum 110 pods all stuck in a simultaneous 1s maximum
+CrashLoopBackoff, as above, at its most efficient this would result in a new
+restart for each pod every second, and therefore the API requests to change the
+state transition would be expected to increase from ~550 requests/10s to 5500
+requests/10s, or 10x. In addition, since the maximum backoff would be lowered,
+an ideal pod would continue to restart more often than today's behavior, adding
+305 excess restarts within the first 5 minutes and 310 excess restarts every 5
+minutes after that; each crashing pod would be contributing an excess of ~1550
+pod state transition API requests, and fully saturated node with a full 110
+crashing pods would be adding 170,500 new pod transition API requests every five
+minutes, which is an an excess of ~568 requests/10s.
 
-For both of these changes, by passing these changes through the existing
-SIG-scalability tests, while pursuing manual and more detailed periodic
-benchmarking during the alpha period, we can increase the confidence in the
-changes and explore the possibility of reducing the values further in the future.
 
 ## Design Details 
 
