@@ -696,7 +696,7 @@ type NetworkStatus struct {
 During the WG Device Management meeting on 17th of September 2024 ([Slack
 summary](https://kubernetes.slack.com/archives/C0409NGC1TK/p1726679433650409)),
 the idea was to extend the [KEP-4680 about resource health status in the
-`Pod.Status` ](https://github.com/kubernetes/enhancements/issues/4680) in order
+`Pod.Status`](https://github.com/kubernetes/enhancements/issues/4680) in order
 to expose device information and not just the health.
 
 ### Custom Resources
