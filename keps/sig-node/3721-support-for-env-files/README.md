@@ -127,6 +127,9 @@ other reason
 3. We do not intend to use a change in the file content to trigger a container
 restart.
 
+4. We do not intend to support instantiating all variables from an env file,
+   without knowing their names a priori.
+
 ## Proposal
 
 ### User Stories (Optional)
@@ -181,18 +184,18 @@ spec:
 
 #### Story 2
 
-Managing unique secrets for each Pod in Kubernetes can be cumbersome. Traditionally,
-Kubernetes Secrets are used to store sensitive information and populate env vars,
-but this approach becomes less efficient when dealing with per-pod secrets.
+Managing unique configs for each Pod in Kubernetes can be cumbersome. Traditionally,
+Kubernetes ConfigMap are used to store configs and populate env vars,
+but this approach becomes less efficient when dealing with per-pod configs.
 
 To simplify this process, Kubernetes can introduce a new mechanism where an `initContainer`
-can fetch secrets and store them in a file. The main application container then utilizes
+can build a config file. The main application container then utilizes
 the `fileKeyRef` field to reference this file and populate its env vars. Kubernetes
 automatically parses the file and sets the env vars during container creation without
 mounting the file directly.
 
-This enhancement offers a more manageable way to handle per-pod secrets in Kubernetes.
-In the example below, the Pod's output includes `JWT=token`.
+This enhancement offers a more manageable way to handle per-pod config in Kubernetes.
+In the example below, the Pod's output includes `CONFIG_MAIN=hello`.
 
 ```
 apiVersion: v1
@@ -203,7 +206,7 @@ spec:
   initContainers:
   - name: setup-envfile
     image: registry.k8s.io/busybox
-    command: ['sh', '-c', 'echo "SECRET=token" > /data/config.env']
+    command: ['sh', '-c', 'echo "CONFIG_INIT=hello" > /data/config.env']
     volumeMounts:
     - name: config
       mountPath: /data
@@ -212,12 +215,12 @@ spec:
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
     env:
-    - name: JWT
+    - name: CONFIG_MAIN
       valueFrom:
         fileKeyRef:
           path: config.env
           volumeName: config
-          key: SECRET
+          key: CONFIG_INIT
   restartPolicy: Never
   volumes:
   - name: config
@@ -253,7 +256,9 @@ type FileKeySelector struct {
     VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
     // The relative file path inside the volume mount to select from.
     Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
-    // The key of the env file to select from.  Must be a valid key.
+    // The key of the env file to select from. It must be a valid key within the
+    // env file. An invalid key will prevent the pod from starting, even if it's
+    // successfully created.
     Key string `json:"key" protobuf:"bytes,3,opt,name=key"`
     // Specify whether the file or its key must be defined. If the file or key
     // does not exist, then the env var is not published.
@@ -286,7 +291,7 @@ KEY2=VALUE2
     
     a. **Startup**: At container startup, the kubelet will parse the env file from the emptyDir volume and inject the defined variables into the container's environment. To avoid race condition with another container updating the env file, we will restrict mounting the emptyDir volume (containing the env file) in initContainer only. The env file can either be mounted or consumed in a container.
     
-    b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration. kubelet will ensure that the container's UID has read permission on the env file before instantiating it.
+    b. **File Access**: The env file itself is not directly accessible within the container unless explicitly mounted by the container configuration. Since the env file must be in the `emptyDir` volume, it should be safe to instantiate the pod container with the specified env vars from this file.
 
 ### Failure and Fallback Strategy
 
