@@ -301,6 +301,10 @@ The complete expansion and recovery flow of both control-plane and kubelet is do
 
 ### Test Plan
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
 ##### Unit tests
 
 In external-resizer:
