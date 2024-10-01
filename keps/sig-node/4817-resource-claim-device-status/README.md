@@ -130,14 +130,14 @@ A device, identified by `<driver name>/<pool name>/<device name>` can be
 represented only once in the `Devices` slice and will also mention which
 request caused the device to be allocated. The state and characteristics of the
 device are reported in the `Conditions`, representing the operational state of
-the device and in the `Info`, an arbitrary data slice representing device
+the device and in the `Data`, an arbitrary data slice representing device
 specific characteristics. Additionally, for networking devices, a field
-`NetworkInfo` can be used to report the IPs, the MAC address and the
+`NetworkData` can be used to report the IPs, the MAC address and the
 interface name.
 
-`Info` being a slice of arbitrary data allows the DRA Driver to store
+`Data` being a slice of arbitrary data allows the DRA Driver to store
 device specific data in different formats. For example, a Network Device being
-configured by via a CNI plugin could get its `Info` filled with the CNI
+configured by via a CNI plugin could get its `Data` field filled with the CNI
 result for troubleshooting purpose and with a Network result in a modern
 standard format (closer to Pod.Status.PodIPs for example) used by 3rd party
 controllers.
@@ -161,6 +161,7 @@ type ResourceClaimStatus struct {
     // +listMapKey=driver
     // +listMapKey=device
     // +listMapKey=pool
+	  // +featureGate=DRAResourceClaimDeviceStatus
     Devices []AllocatedDeviceStatus `json:"devices,omitempty" protobuf:"bytes,4,opt,name=devices"`
 }
 
@@ -175,7 +176,7 @@ type AllocatedDeviceStatus struct {
     // vendor of the driver.
     //
     // +required
-    Driver string `json:"driver" protobuf:"bytes,2,rep,name=driver"`
+    Driver string `json:"driver" protobuf:"bytes,1,rep,name=driver"`
 
     // This name together with the driver name and the device name field
     // identify which device was allocated (`<driver name>/<pool name>/<device name>`).
@@ -184,13 +185,13 @@ type AllocatedDeviceStatus struct {
     // DNS sub-domains separated by slashes.
     //
     // +required
-    Pool string `json:"pool" protobuf:"bytes,3,rep,name=pool"`
+    Pool string `json:"pool" protobuf:"bytes,2,rep,name=pool"`
 
     // Device references one device instance via its name in the driver's
     // resource pool. It must be a DNS label.
     //
     // +required
-    Device string `json:"device" protobuf:"bytes,4,rep,name=device"`
+    Device string `json:"device" protobuf:"bytes,3,rep,name=device"`
 
     // Conditions contains the latest observation of the device's state.
     // If the device has been configured according to the class and claim
@@ -198,42 +199,43 @@ type AllocatedDeviceStatus struct {
     //
     // +optional
     // +listType=atomic
-    Conditions []metav1.Condition `json:"conditions" protobuf:"bytes,5,rep,name=conditions"`
+    Conditions []metav1.Condition `json:"conditions" protobuf:"bytes,4,opt,name=conditions"`
 
-    // Info contains arbitrary driver-specific data.
+    // Data contains arbitrary driver-specific data.
     //
     // +optional
     // +listType=atomic
-    Info []runtime.RawExtension `json:"info,omitempty" protobuf:"bytes,6,rep,name=info"`
+    Data []runtime.RawExtension `json:"data,omitempty" protobuf:"bytes,5,opt,name=data"`
 
-    // NetworkInfo contains network-related information specific to the device.
+    // NetworkData contains network-related information specific to the device.
     //
     // +optional
-    // +oneOf=DeviceInfoType
-    NetworkInfo NetworkDeviceInfo `json:"networkInfo,omitempty" protobuf:"bytes,7,rep,name=networkInfo"`
+    // +oneOf=DeviceDataType
+    NetworkData NetworkDeviceData `json:"networkData,omitempty" protobuf:"bytes,6,opt,name=networkData"`
 }
 
-// NetworkDeviceInfo provides network-related details for the allocated device.
+// NetworkDeviceData provides network-related details for the allocated device.
 // This information may be filled by drivers or other components to configure
 // or identify the device within a network context.
-type NetworkDeviceInfo struct {
+type NetworkDeviceData struct {
     // InterfaceName specifies the name of the network interface associated with
     // the allocated device. This might be the name of a physical or virtual
     // network interface.
     //
     // +optional
-    InterfaceName string `json:"interfaceName,omitempty" protobuf:"bytes,1,rep,name=interfaceName"`
+    InterfaceName string `json:"interfaceName,omitempty" protobuf:"bytes,1,opt,name=interfaceName"`
 
     // Addresses lists the network addresses assigned to the device's network interface.
     // This can include both IPv4 and IPv6 addresses.
     //
     // +optional
-    Addresses []NetworkAddress `json:"addresses,omitempty" protobuf:"bytes,2,rep,name=addresses"`
+    // +listType=atomic
+    Addresses []NetworkAddress `json:"addresses,omitempty" protobuf:"bytes,2,opt,name=addresses"`
 
     // HWAddress represents the hardware address (e.g. MAC Address) of the device's network interface.
     //
     // +optional
-    HWAddress string `json:"hwAddress,omitempty" protobuf:"bytes,3,rep,name=hwAddress"`
+    HWAddress string `json:"hwAddress,omitempty" protobuf:"bytes,3,opt,name=hwAddress"`
 }
 
 // NetworkAddress provides a network address related details such as IP and Mask.
@@ -272,7 +274,7 @@ assignments or misconfigured network interfaces.
 
 ### Notes/Constraints/Caveats (Optional)
 
-The content of `Info` is driver specific and not standardized as part of
+The content of `Data` is driver specific and not standardized as part of
 DRA, the interpretation of this field may then vary between controllers and
 users reading it. 
 
@@ -287,7 +289,7 @@ the device they manage. An access control must be set in place to restrict the
 write access to the appropriate driver (A device status can only be updated by
 the entities that have a direct control over the device(s) being reported).
 
-Adding `Info` as an arbitrary data slice may introduce extra processing
+Adding `Data` as an arbitrary data slice may introduce extra processing
 and storage overhead which might impact performance in a cluster with many
 devices and frequent status updates. In large-scale clusters where many devices
 are allocated, this impact must be considered.
@@ -397,6 +399,9 @@ to implement this enhancement.
     - A device can only be reported once in the `ResourceClaim`.
     - The reported device is allocated in the `ResourceClaim`.
     - Properties set in `AllocatedDeviceStatus` are in the correct format.
+
+Coverage:
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `9/30/2024` - `77.1`
 
 ##### Integration tests
 
@@ -570,7 +575,7 @@ No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Depending on the content of the `Info` set by the DRA drivers, the disk
+Depending on the content of the `Data` set by the DRA drivers, the disk
 usage could increase.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
@@ -696,7 +701,7 @@ to expose device information and not just the health.
 
 ### Custom Resources
 
-In the `ResourceClaim.Status.Devices`, instead of having opaque field (`Info`) and
+In the `ResourceClaim.Status.Devices`, instead of having opaque field (`Data`) and
 specific type fields, an object reference could be used for each device. The custom 
 object would be created and maintained by the driver to report the status of the 
 devices.
