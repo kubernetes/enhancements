@@ -560,17 +560,19 @@ trivial (when compared to pod startup metrics) max allowable backoffs of 1s,
 there is more risk to node stability expected. This change is of particular
 interest to be tested in the alpha period by end users, and is why it is still
 included, but only by opt-in. In this case, for a hypothetical node with the
-default maximum 110 pods all stuck in a simultaneous 1s maximum
-CrashLoopBackoff, as above, at its most efficient this would result in a new
-restart for each pod every second, and therefore the API requests to change the
-state transition would be expected to increase from ~550 requests/10s to 5500
-requests/10s, or 10x. In addition, since the maximum backoff would be lowered,
-an ideal pod would continue to restart more often than today's behavior, adding
-305 excess restarts within the first 5 minutes and 310 excess restarts every 5
-minutes after that; each crashing pod would be contributing an excess of ~1550
-pod state transition API requests, and fully saturated node with a full 110
-crashing pods would be adding 170,500 new pod transition API requests every five
-minutes, which is an an excess of ~568 requests/10s.
+default maximum 110 pods each with one crashing container all stuck in a
+simultaneous 1s maximum CrashLoopBackoff, as above, at its most efficient this
+would result in a new restart for each pod every second, and therefore the API
+requests to change the state transition would be expected to increase from ~550
+requests/10s to 5500 requests/10s, or 10x. In addition, since the maximum
+backoff would be lowered, an ideal pod would continue to restart more often than
+today's behavior, adding 305 excess restarts within the first 5 minutes and 310
+excess restarts every 5 minutes after that; each crashing pod would be
+contributing an excess of ~1550 pod state transition API requests, and fully
+saturated node with a full 110 crashing pods would be adding 170,500 new pod
+transition API requests every five minutes, which is an an excess of ~568
+requests/10s. <<[!UNRESOLVED kubernetes default for the kubelet client rate
+limit and how this changes by machine size]>> <<[UNRESOLVED]>>
 
 
 ## Design Details 
@@ -1094,41 +1096,42 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
+- Crashlooping container that restarts some number of times (ex 10 times),
+  timestamp the logs and read it back in the test, and expect the diff in those
+  time stamps to be minimum the backoff, with a healthy timeout
 - k8s.io/kubernetes/test/e2e/node/kubelet_perf: for a given percentage of
 heterogenity between "Succeeded" terminating pods, and crashing pods whose
 `restartPolicy: Always` or `restartPolicy: OnFailure`, 
- - what is the load and rate of Pod restart related API requests to the API
-   server?
- - what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component? 
- - With different plugins (e.g. CSI, CNI)
+  - what is the load and rate of Pod restart related API requests to the API
+    server?
+  - what are the performance (memory, CPU, and pod start latency) effects on the
+    kubelet component? 
+  - With different plugins (e.g. CSI, CNI)
 
 ### Graduation Criteria
 
 #### Alpha
 
 - New `int32 NodeMaxCrashLoopBackOff` field in `KubeletFlags` struct, validated
-        to a minimum of 1 and a maximum of 300, naturally ignored by older
-  kubelets/on downgrade and explicitly dropped by current and future kubelets
-  when new `EnableKubeletCrashLoopBackoffMax` feature flag disabled
-- New `ReduceDefaultCrashLoopBackoffDecay` feature flag which, when enabled, changes
-  CrashLoopBackOff behavior (and ONLY the CrashLoopBackOff behavior) to a
-  2x decay curve starting at 1s initial value, 1 minute maximum backoff
-  for all workloads, therefore affecting workload configured with
-  `restartPolicy: Always` or `restartPolicy: OnFailure`
+  to a minimum of 1 and a maximum of 300, used when
+  `EnableKubeletCrashLoopBackoffMax` feature flag enabled, to customize
+  CrashLoopBackOff per node
+- New `ReduceDefaultCrashLoopBackoffDecay` feature flag which, when enabled,
+  changes CrashLoopBackOff behavior (and ONLY the CrashLoopBackOff behavior) to
+  a 2x decay curve starting at 1s initial value, 1 minute maximum backoff for
+  all workloads, therefore affecting workload configured with `restartPolicy:
+  Always` or `restartPolicy: OnFailure`
     - Requires a refactor of image pull backoff from container restart backoff
       object
 - Maintain current 10 minute recovery threshold by refactoring backoff counter
   reset threshold and explicitly implementing container restart backoff behavior
   at the current 10 minute recovery threshold
-- Metrics implemented to expose pod and container restart policy statistics,
-  exit states, and runtimes
 - Initial e2e tests completed and enabled
   * Feature flag on or off
 - Test coverage of proper requeue behavior; see
   https://github.com/kubernetes/kubernetes/issues/123602
-- Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this blocks the
-  implementation, otherwise beta criteria
+- Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this
+  blocks the implementation, otherwise beta criteria
 - Low confidence in the specific numbers/decay rate
 
 
@@ -1138,6 +1141,7 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 - High confidence in the specific numbers/decay rate
 - Benchmark restart load methodology and analysis published and discussed with
   SIG-Node
+- Discuss PLEG polling loops and its effect on specific decay rates
 - Additional e2e and benchmark tests, as identified during alpha period, are in
   Testgrid and linked in KEP
 
@@ -1237,13 +1241,13 @@ To use the enhancement, the alpha feature gate is turned on. In the future when
 made, and the default behavior of the baseline backoff curve would -- by design
 -- be changed.
 
-To stop use of this enhancement, the entire cluster must be restarted with the
-`ReduceDefaultCrashLoopBackoffDecay` feature gate turned off. In this case, all
-Pods will be redeployed, so they will not maintain prior state and will start at
-the beginning of their backoff curve. The exact backoff curve a given Pod will
-use will be either the original one with initial value 10s, or the per-node
-configured maximum backoff if the `EnableKubeletCrashLoopBackoffMax` feature
-gate is turned on. 
+To stop use of this enhancement, the entire cluster must be restarted or just
+kubelet must restarts with the `ReduceDefaultCrashLoopBackoffDecay` feature gate
+turned off. Since kubelet does not cache the backoff object, on kubelet restart
+Pods will start at the beginning of their backoff curve. The exact backoff curve
+a given Pod will use will be either the original one with initial value 10s, or
+the per-node configured maximum backoff if the
+`EnableKubeletCrashLoopBackoffMax` feature gate is turned on. 
 
 For `EnableKubeletCrashLoopBackoffMax`:
 
@@ -1259,13 +1263,15 @@ with the `NodeMaxCrashLoopBackOff` kubelet command line flag set.
 To stop use of this enhancement, there are two options. 
 
 On a per-node basis, nodes can be completely redeployed with
-`NodeMaxCrashLoopBackOff` kubelet command line flag unset. <<[UNRESOLVED is this
-true if kubelet restarts tho]>>Since the Pods must be completely redeployed,
-they will lose their prior backoff counter anyways and, if they go on to be
-restarted, will start from the beginning of their backoff curve (either the
-original one with initial value 10s, or the new baseline with initial value 1s,
-depending on whether they've turned on the `ReduceDefaultCrashLoopBackoffDecay`
-feature gate). <</UNRESOLVED>>
+`NodeMaxCrashLoopBackOff` kubelet command line flag unset. Since kubelet does
+not cache the backoff object, on kubelet restart they will start from the
+beginning of their backoff curve (either the original one with initial value
+10s, or the new baseline with initial value 1s, depending on whether they've
+turned on the `ReduceDefaultCrashLoopBackoffDecay` feature gate).
+
+<<[UNRESOLVED]>>Say what happens when `NodeMaxCrashLoopBackOff` exists but
+`EnableKubeletCrashLoopBackoffMax is off, log a warning but drop it (because
+peeps might set it and be like why it no work)<<[/UNRESOLVED]>>
 
 Or, the entire cluster can be restarted with the
 `EnableKubeletCrashLoopBackoffMax` feature gate turned off. In this case, any
