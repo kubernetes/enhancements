@@ -803,18 +803,21 @@ _This section must be completed when targeting beta graduation to a release._
   This has a grpc_status_code that shows the operation status. A grpc_status_code
   of "OK" indicates the operation is successful, otherwise, it is a failure.
 
-* **How can someone using this feature know that it is working for their instance?
- * Events
-  * Event Reason: A GroupSnapshotCreated Normal Event with a message:
-    GroupSnapshot <name> was successfully created by the CSI driver.
- * API .status
-  * Condition name:
-  * Other field: VolumeGroupSnapshot Status has CreationTime != nil and
-    ReadyToUse = true.
- * Other (treat as last resort)
-  * Details:
+* **How can someone using this feature know that it is working for their instance?**
+  * Events
+    * Event Reason: A GroupSnapshotCreated Normal Event with a message:
+      GroupSnapshot <name> was successfully created by the CSI driver.
+  * API .status
+    * Condition name:
+    * Other field: VolumeGroupSnapshot Status has CreationTime != nil and
+      ReadyToUse = true.
+  * Other (treat as last resort)
+    * Details:
+      Metric `snapshot_controller_operation_total_seconds` for the
+      snapshot-controller and the metric `csi_sidecar_operations_seconds` for
+      the csi-snapshotter sidecar.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?**
   <!--
   At a high level, this usually will be in the form of "high percentile of SLI
   per day <= X". It's impossible to provide comprehensive guidance, but at the very
