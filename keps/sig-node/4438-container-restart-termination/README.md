@@ -277,6 +277,14 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+The main risk of this proposal is that the lifecycle of sidecar containers will be changed, which could
+potentially break existing behavior. To mitigate this risk, we will introduce several e2e tests
+and peer review to ensure that the changes are safe.
+
+There is no security impact of this proposal.
+
+The UX impact of this proposal is minimal, as it adds an expected behavior to the lifecycle of sidecar containers.
+
 ## Design Details
 
 <!--
@@ -902,6 +910,11 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+The main drawback of this KEP is that it introduces a new feature gate for the sidecars,
+which can be confusing for users. However, we believe that the current behavior of sidecar containers
+is already useful and that the restart during Pod termination feature is not critical for many use cases.
+This is why this feature is introduced as a separate feature gate, so that KEP-753 can reach GA faster.
+
 ## Alternatives
 
 <!--
@@ -909,6 +922,11 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+The alternative would be to introduce KEP-753 with the restart during Pod termination feature.
+However, this would have required a significant refactoring of the kubelet
+and the Pod lifecycle, which would introduce a risk of disruption to users. This is why we decided to
+introduce a separate feature gate for the sidecar containers feature.
 
 ## Infrastructure Needed (Optional)
 
