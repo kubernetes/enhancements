@@ -882,9 +882,19 @@ then the heterogeneity in step 6 is avoided. Alternatively, if there was a real 
 guaranteed in step 3, then the explicit QOSClass can be changed, triggering a recreation of all
 replicas.
 
-#### Design Sktech: Pod-level Limits
+#### Design Sktech: Pod-level Resources
 
-TODO
+Adding resize capabilities to [Pod-level Resources](https://github.com/kubernetes/enhancements/issues/2837)
+should largely mirror container-level resize. This includes:
+- Add actual resources to `PodStatus.Resources`
+- Track allocated pod-level resources
+- Factor pod-level resource resize into ResizeStatus logic
+- Pod-level resizes are treated as atomic with container level resizes.
+
+Open questions:
+- Details around defaulting logic, pending finalization in the pod-level resources KEP
+- If the resize policy is `RestartContainer`, are all containers restarted on pod-level resize? Or
+  does it depend on whether container-level cgroups are changing?
 
 ### Test Plan
 
