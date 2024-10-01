@@ -10,10 +10,10 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Risk Mitigation (Option 1)](#risk-mitigation-option-1)
-  - [Risk Mitigation (Option 2)](#risk-mitigation-option-2)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Archived Risk Mitigation (Option 1)](#archived-risk-mitigation-option-1)
+    - [Archived Risk Mitigation (Option 2)](#archived-risk-mitigation-option-2)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -97,23 +97,9 @@ This issue is particularly bad in all-in-one deployments where workloads are pla
 #### Story 2
 Silently allowing workloads running on the reserved CPUs makes benchmarking infrastructure and workloads both inaccurate.
 
-### Risks and Mitigations
-
-The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default.
-
-Concern for feature impact on best-effort workloads, the workloads that do not have resource requests, is brought up.
-
-Kube-scheduler schedules pods on node allocatable (total - reserved). For best-effort pods, kube-scheduler uses default request values when scoring the nodes, see https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/util/pod_resources.go#L32 and https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/noderesources/resource_allocation.go#L123, but the scheduler does not use the default request values when fitting the nodes i.e. best-effort pods are always admitted.
-
-The concern is, when the feature graduates to `Stable`, it will be enabled by default, best-effort workloads could be starved on the node when the node runs out of non-reserved CPU cores.
-
-However, this is exactly the feature intent, best-effort workloads have no KPI requirement, they are meant to consume whatever CPU resources left on the node including starving from time to time. Best-effort workloads are not scheduled to run on the `reservedSystemCPUs` so they shall not be run on the `reservedSystemCPUs` to destablize the whole node.
-
-Nevertheless, risk mitigation, or the need for it, is under discussion.
-
 ## Design Details
 
-In Kubelet, when `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the shared pool at the stage of calculation DefaultCPUSet and remove the `MinSharedCPUs` from the list of available cores for exclusive allocation.
+In Kubelet, when `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the shared pool at the stage of calculation DefaultCPUSet.
 
 Feature impact can be illustrated as following:
 
@@ -145,9 +131,30 @@ When `strict-cpu-reservation` is enabled:
 {"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
 ```
 
-### Risk Mitigation (Option 1)
+### Risks and Mitigations
 
-The first option is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement.
+The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default.
+
+Concern for feature impact on best-effort workloads, the workloads that do not have resource requests, is brought up.
+
+Kube-scheduler schedules pods on node allocatable (total - reserved). For best-effort pods, kube-scheduler uses default request values when scoring the nodes, see https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/util/pod_resources.go#L32 and https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/noderesources/resource_allocation.go#L123, but the scheduler does not use the default request values when fitting the nodes i.e. best-effort pods are always admitted.
+
+The concern is, when the feature graduates to `Stable`, it will be enabled by default, best-effort workloads could be starved on the node when the node runs out of CPU cores.
+
+However, this is exactly the feature intent, best-effort workloads have no KPI requirement, they are meant to consume whatever CPU resources left on the node including starving from time to time. Best-effort workloads are not scheduled to run on the `reservedSystemCPUs` so they shall not be run on the `reservedSystemCPUs` to destablize the whole node.
+
+Nevertheless, risk mitigation has been discussed in details and agreement is reached to add node metrics about cpu pool sizes for Alpha stage so we can evaluate the real impacts of this scenario and postpone any further action to Beta stage or later.
+
+https://github.com/kubernetes/kubernetes/pull/127506
+- report shared pool size, in millicores (e.g. 13500m)
+- report exclusively allocated cores, counting full cores (e.g. 16)
+
+
+#### Archived Risk Mitigation (Option 1)
+
+This option is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement.
+
+In Kubelet, when `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the shared pool at the stage of calculation DefaultCPUSet and remove the `MinSharedCPUs` from the list of available cores for exclusive allocation.
 
 ![MinSharedCPUs](./strict-cpu-allocation.png)
 
@@ -254,9 +261,9 @@ A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeRes
         }
 ```
 
-### Risk Mitigation (Option 2)
+#### Archived Risk Mitigation (Option 2)
 
-Another proposal is brought up which to force the cpu requests for best effort pods to 1 MilliCPU in kubelet. This option is meant to be simpler than option-1, but the different resource accounting in kubelet and kube-scheduler can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869.
+Another proposal brought up is to force the cpu requests for best effort pods to 1 MilliCPU in kubelet. This option is meant to be simpler than option-1, but the different resource accounting in kubelet and kube-scheduler can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869.
 
 
 ### Test Plan
