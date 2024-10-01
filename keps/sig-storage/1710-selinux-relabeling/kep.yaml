@@ -26,6 +26,7 @@ milestone:
   stable: "v1.31" # Very optimistic plan for SELinuxMountReadWriteOncePod GA
 
   # alpha: "v1.30"  # SELinuxMount
+  # alpha: "v1.32"  # SELinuxChangePolicy
 
 feature-gates:
   - name: SELinuxMountReadWriteOncePod
@@ -36,6 +37,9 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
+  - name: SELinuxChangePolicy
+    components:
+      - kube-apiserver
 disable-supported: true
 metrics:
   - volume_manager_selinux_container_errors_total
