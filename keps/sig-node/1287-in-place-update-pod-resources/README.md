@@ -37,7 +37,7 @@
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
     - [Design Sketch: Workload resource resize](#design-sketch-workload-resource-resize)
     - [Design Sketch: Explicit QOS Class](#design-sketch-explicit-qos-class)
-    - [Design Sktech: Pod-level Limits](#design-sktech-pod-level-limits)
+    - [Design Sktech: Pod-level Resources](#design-sktech-pod-level-resources)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
@@ -260,7 +260,7 @@ Resource fields remain immutable via pod update.
 The following API validation rules will be applied for updates via the `/resize` subresource:
 
 1. Resources & ResizePolicy must be valid under pod create validation.
-2. Computed QOS class cannot be lowered. See [QOS Class](#qos-class) for more details.
+2. Computed QOS class cannot change. See [QOS Class](#qos-class) for more details.
 3. Running pods without the `Pod.Status.ContainerStatuses[i].Resources` field set cannot be resized.
    See [Version Skew Strategy](#version-skew-strategy) for more details.
 
