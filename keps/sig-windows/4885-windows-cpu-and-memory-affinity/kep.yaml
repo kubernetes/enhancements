@@ -8,10 +8,12 @@ participating-sigs:
 status: implementable
 creation-date: 2024-09-03
 reviewers:
-  - TBD
-  - "@marosset"
+  - "@ffromani"
+  - "@aravindhp"
+  - "@kiashok"
 approvers:
-  - TBD
+  - "@mrunalp"
+  - "@marosset"
 
 see-also:
   - "keps/sig-node/1769-memory-manager"
