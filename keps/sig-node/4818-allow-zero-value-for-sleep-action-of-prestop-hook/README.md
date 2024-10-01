@@ -211,7 +211,7 @@ The proposed change adds another layer to the `validateSleepAction` function to 
 +		}
 +	} else {
 +		if gracePeriod != nil && sleep.Seconds <= 0 || sleep.Seconds > *gracePeriod {
-+			invalidStr := fmt.Sprintf("must be greater than 0 and less than terminationGracePeriodSeconds (%d)", *gracePeriod)
++			invalidStr := fmt.Sprintf("must be greater than 0 and less than terminationGracePeriodSeconds (%d). Please enable PodLifecycleSleepActionAllowZero feature gate if you need a sleep of zero duration.", *gracePeriod)
 +			allErrors = append(allErrors, field.Invalid(fldPath, sleep.Seconds, invalidStr))
 +		}
 	}
@@ -291,19 +291,18 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
-
 Alpha:
 
 - Test that the runSleepHandler function returns immediately when given a duration of zero.
 - Test that the validation succeeds when given a zero duration with the feature gate enabled.
 - Test that the validation fails when given a zero duration with the feature gate disabled.
 - Test that the validation returns the appropriate error messages when given an invalid duration value (e.g., a negative value) with the feature gate disabled and enabled.
+- Unit tests for testing the disabling of the feature gate after it was enabled and the feature was used.
 
 Current coverages:
 
-- `k8s.io/kubernetes/pkg/apis/core/validation` : 2024-09-20 - 84.3 
-- `k8s.io/kubernetes/pkg/kubelet/lifecycle/handlers` :2024-09-20 - 86.4
+- `k8s.io/kubernetes/pkg/apis/core/validation` : 2024-09-20 - 84.3
+- `k8s.io/kubernetes/pkg/kubelet/lifecycle/handlers` : 2024-09-20 - 86.4
 
 ##### Integration tests
 
@@ -366,10 +365,9 @@ The previous PreStop Sleep Action behavior will not be broken. Users can continu
 
 #### Downgrade
 
-If the kube-apiserver is downgraded to a version where the feature gate is not supported (<v1.32), no new resources can be created with a PreStop sleep duration of zero seconds. Existing resources will continue to function, but they cannot be updated since the validation for the sleep duration would fail if the value is set to zero. Cluster admins can update their resources to have a non-zero value for the sleep duration and migrate their resources if they want to update it.
+If the kube-apiserver is downgraded to a version where the feature gate is not supported (<v1.32), no new resources can be created with a PreStop sleep duration of zero seconds. Existing resources created with a sleep duration of zero will continue to function.
 
-If the feature gate is turned off after being enabled, no new resources can be created with PreStop sleep duration of zero seconds. Existing resources will continue to function, but as discussed in the Proposal section, the sleep duration will need to be updated to a non-zero value if the resource has to be updated.
-
+If the feature gate is turned off after being enabled, no new resources can be created with PreStop sleep duration of zero seconds. Existing resources will continue to run and use a sleep duration of zero seconds. These resources can be updated and the zero sleep duration would continue to work.
 
 ### Version Skew Strategy
 
