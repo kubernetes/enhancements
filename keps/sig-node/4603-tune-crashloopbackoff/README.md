@@ -584,7 +584,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-### Front loaded decay curve methodology
+### Front loaded decay curve, modified maximum backoff methodology
 As mentioned above, today the standard backoff curve is a 2x exponential decay
 starting at 10s and capping at 5 minutes, resulting in a composite of the
 standard hockey-stick exponential decay graph followed by a linear rise until
@@ -702,7 +702,7 @@ that even in the unlikely case of mass pathologically crashing and instantly
 restarting pods across an entire node, cluster operations proceeded with
 acceptable latency, disk, cpu and memory. Worker polling loops, context
 timeouts, the interaction between various other backoffs, as well as API server
-rate limiting made up the gap to the stability of the system.Therefore, to
+rate limiting made up the gap to the stability of the system. Therefore, to
 simplify both the implementation and the API surface, this 1.32 proposal puts
 forth that the opt-in will be configured per node via kubelet configuration.
 
@@ -715,17 +715,13 @@ Since this is a per-node configuration that likely will be set on a subset of
 nodes, or potentially even differently per node, it's important that it can be
 manipulated per node. By default `KubeletConfiguration` is intended to be shared
 between nodes, but the beta feature for drop-in configuration files in a
-colocated config directory cirumvent this. However, it is still the opinion of
-the author it is better manipulated with a command-line flag, so lifecycle
-tooling that configures nodes can expose it more transparently.
-
-Exposed command-line configuration for Kubelet are defined by [`struct
-KubeletFlags`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L54)
-and merged with configuration files in [`kubelet/server.go
-NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
-To expose the configuration of this feature, a new field will be added to the
-`KubeletFlags` struct called `NodeMaxCrashLoopBackOff` of `int32` type that will
-be validated in kubelet at runtime, as a value over `1` and under 300s.
+colocated config directory cirumvent this. In addition, `KubeletConfiguration`
+drops fields unrecognized by the current kubelet's schema, making it a good
+choice to circumvent compatability issues with n-3 kubelets. While there is an
+argument that this could be better manipulated with a command-line flag, so
+lifecycle tooling that configures nodes can expose it more transparently, the
+advantages to backwards compatability outweigh this consideration for the alpha
+period and will be revisted before beta.
 
 ### Refactor of recovery threshold
 
@@ -1112,7 +1108,7 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 
 #### Alpha
 
-- New `int32 NodeMaxCrashLoopBackOff` field in `KubeletFlags` struct, validated
+- New `int32 crashloopbackoff.max` field in `KubeletConfiguration` API, validated
   to a minimum of 1 and a maximum of 300, used when
   `EnableKubeletCrashLoopBackoffMax` feature flag enabled, to customize
   CrashLoopBackOff per node
@@ -1258,12 +1254,12 @@ To make use of this enhancement, on cluster upgrade, the
 `EnableKubeletCrashLoopBackoffMax` feature gate must first be turned on for the
 cluster. Then, if any nodes need to use a different backoff curve, their kubelet
 must be completely redeployed either in the same upgrade or after that upgrade
-with the `NodeMaxCrashLoopBackOff` kubelet command line flag set.
+with the `crashloopbackoff.max` `KubeletConfiguration` set.
 
 To stop use of this enhancement, there are two options. 
 
 On a per-node basis, nodes can be completely redeployed with
-`NodeMaxCrashLoopBackOff` kubelet command line flag unset. Since kubelet does
+`crashloopbackoff.max` `KubeletConfiguration` unset. Since kubelet does
 not cache the backoff object, on kubelet restart they will start from the
 beginning of their backoff curve (either the original one with initial value
 10s, or the new baseline with initial value 1s, depending on whether they've
@@ -1291,8 +1287,9 @@ configured to 1s. In other words, operator-invoked configuration will have
 precedence over the default if it is faster.
 
 If on a given node at a given time, the per-node configured maximum backoff is
-lower than 1 second or higher than the 300s, validation will
-fail and the kubelet will crash.
+lower than 1 second or higher than the 300s, validation will fail and the
+kubelet will crash/be unable to start, like it does with other invalid kubelet
+configuration today.
 
 If on a given node at a given time, the per-node configured maximum backoff is
 higher than the current initial value, but within validation limits as it is
@@ -1300,10 +1297,11 @@ lower than 300s, it will be honored. In other words, operator-invoked
 configuration will have precedence over the default, even if it is slower, as
 long as it is valid.
 
-If `NodeMaxCrashLoopBackOff` exists but `EnableKubeletCrashLoopBackoffMax` is
-off, kubelet will log a warning but will not honor the
-`NodeMaxCrashLoopBackOff`. In other words, operator-invoked per node
-configuration will not be honored if the overall feature gate is turned off.
+If `crashloopbackoff.max` `KubeletConfiguration` exists but
+`EnableKubeletCrashLoopBackoffMax` is off, kubelet will log a warning but will
+not honor the `crashloopbackoff.max` `KubeletConfiguration`. In other words,
+operator-invoked per node configuration will not be honored if the overall
+feature gate is turned off.
 
 scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value
 ---------|---------|----------|---------
@@ -1315,8 +1313,8 @@ _slower per node config_ | enabled | 10s | 10s
 " |  enabled | 300s | 300s
 " |  disabled | 11s | 11s
 " |  disabled | 300s | 300s
-_invalid per node config_ | enabled | 301s | kubelet crashes
-" | disabled | 301s | kubelet crashes
+_invalid per node config_ | disabled | 301s | kubelet crashes
+" | enabled | 301s | kubelet crashes
 
 
 ### Version Skew Strategy
@@ -1338,18 +1336,25 @@ For both the default backoff curve and the per-node, no coordination must be
 done between the control plane and the nodes; all behavior changes are local to
 the kubelet component and its start up configuration. An n-3 kube-proxy, n-1
 kube-controller-manager, or n-1 kube-scheduler without this feature available is
-not affected when this feature is used, since it does not depend on
-kube-controller-manager or kube-scheduler. Code paths that will be touched are
-exclusively in kubelet component.
+not affected when this feature is used, nor will different CSI or CNI
+implementations. Code paths that will be touched are exclusively in kubelet
+component.
 
 An n-3 kubelet without this feature available will behave like normal, with the
-original CrashLoopBackOff behavior. It cannot ingest flags for per node config
-and if one is specified on start up, kubelet flag validation will fail.
+original CrashLoopBackOff behavior. It will drop unrecognized fields in
+`KubeletConfiguration` by default for per node config so if one is specified on
+start up in a past kubelet version, it will not break kubelet (though the
+behavior will, of course, not change).
+
+While the CRI is a consumer of the result of this change (as it will recieve
+more requests to start containers), it does not need to be updated at all to
+take advantage of this feature as the restart logic is entirely in process of
+the kubelet component.
 
 ## Production Readiness Review Questionnaire
 
 <<[UNRESOLVED removed when changing from 1.31 proposal to 1.32 proposal,
-incoming in separate PR]>> <<[/UNRESOLVED]>>
+incoming in separate commit]>> <<[/UNRESOLVED]>>
 
 ## Implementation History
 
@@ -1372,6 +1377,8 @@ Major milestones might include:
 * 06-06-2024: Removal of constant backoff for `Succeeded` Pods
 * 09-09-2024: Removal of `RestartPolicy: Rapid` in proposal, removal of PRR, in
   order to merge a provisional and address the new 1.32 design in a cleaner PR
+* 09-20-2024: Rewrite for 1.32 design focused on per-node config in place of
+  `RestartPolicy: Rapid`
 
 ## Drawbacks
 
@@ -1637,6 +1644,28 @@ restarting failed containers is to take maximum advantage of quickly recoverable
 situations, while the goal of restarting successful containers is only to get
 them to run again sometime and not penalize them with longer waits later when
 they've behaving as expected.
+
+### Exposing per-node config as command-line flags
+
+Command-line configuration is more easily and transparently exposed in tooling
+used to bootstrap nodes via templating. Exposed command-line configuration for
+Kubelet are defined by [`struct
+KubeletFlags`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L54)
+and merged with configuration files in [`kubelet/server.go
+NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
+To expose configuration as a command-line flag, a new field would be added to
+the `KubeletFlags` struct to be validated in kubelet at runtime.
+
+**Why not?**: Per comments in the code at [this
+location](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L52),
+it seems we don't want to continue to expose configuration at this location. In
+addition, since config directories for kubelet config are now in beta
+([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)),
+there is a reasonable alternative to per-node configuration using the
+`KubeletConfiguration` API object instead. By using the API, we can take
+advantage of API machinery level lifecycle, validation and guarantees, including
+that unrecognized fields will be dropped in older versions of kubelet, which is
+valuable for version skew requirements we must meet back to kubelet n-3. 
 
 ### Front loaded decay with interval
 In an effort
