@@ -210,7 +210,6 @@ type AllocatedDeviceStatus struct {
     // NetworkData contains network-related information specific to the device.
     //
     // +optional
-    // +oneOf=DeviceDataType
     NetworkData NetworkDeviceData `json:"networkData,omitempty" protobuf:"bytes,6,opt,name=networkData"`
 }
 
@@ -320,6 +319,12 @@ allocated, then configured inside the pods. It will also restrict the
 allocated to a node. Additionally, the allocated node where the `ResourceClaim` 
 is assigned will be used to check if the user/entity updating the 
 `ResourceClaim.Status.Devices` is running on the same node.
+
+The allocated node for the `ResourceClaim` must be unique in the form of 
+`nodeSelector.nodeSelectorTerms[0].matchFields[0].values[0] = <NodeName>` and
+`nodeSelector.nodeSelectorTerms[0].matchFields[0].key = metadata.name` and
+`nodeSelector.nodeSelectorTerms[0].matchFields[0].operator = In`. Without this
+unique format, the update of the devices in the status will be rejected.
 
 Here is a `ResourceClaim` allocated on a node. This would only work for now if 
 exactly one node is set:
