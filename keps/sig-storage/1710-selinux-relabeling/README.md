@@ -34,8 +34,8 @@
     - [kube-state-metrics](#kube-state-metrics)
     - [Implementation phases](#implementation-phases)
       - [Phase 1](#phase-1)
-      - [Phase 1.5](#phase-15)
       - [Phase 2](#phase-2)
+      - [Phase 3](#phase-3)
     - [Test Plan](#test-plan)
         - [Prerequisite testing updates](#prerequisite-testing-updates)
         - [Unit tests](#unit-tests)
@@ -92,13 +92,16 @@ Currently, the container runtime recursive relabels all files on a volume before
 We propose to use mount option `-o context=XYZ` to set SELinux context of all files on a volume, without recursive walk through the volume.
 The enhancement describes situations when such option can/cannot be used, why it's Kubernetes who must care about such a mount option, and possible breaking changes of the new Kubernetes behavior.
 
-This KEP is split into two phases:
+This KEP is split into three phases:
 1. ReadWriteOncePod volumes are mounted with `-o context` by default.
    All other volumes are recursively relabeled by the container runtime.
    With feature gate `SELinuxMountReadWriteOncePod`, beta + on by default in v1.28.
-2. All volumes are mounted with `-o context` by default, users can opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
+2. Same as 1., but we provide metrics that show what Pods will break when *all* volumes are mounted with `-o context` and provide a proactive opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
+   With feature gate `SELinuxChangePolicy`.
+   Alpha in 1.32.
+3. All volumes are mounted with `-o context` by default, users can opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
    With feature gate `SELinuxMount`, alpha without opt-out since 1.30, adding the opt-out field as alpha in 1.32.
-
+   
 Initially, we thought we could do 2. without opt-out, but we found that it may break valid use cases.
 
 ## SELinux intro
@@ -212,8 +215,10 @@ spec:
 
 
 * Update kubelet to mount all volumes with `-o context` mount option, unless a Pod explicitly opts out.
-  * **Phase I**: limited to ReadWriteOncePod (RWOP) volumes, under `SELinuxMountReadWriteOncePod` feature gate. RWOP volumes can't be used by multiple Pods and thus this cannot break any workload that mixes usage of the same volume by multiple Pods in parallel.
-  * **Phase II**: all volumes are mounted, under `SELinuxMount` feature gate. It can break existing applications that need to mix privileged and unprivileged Pods using the same volume in parallel.
+  * **Phase 1**: limited to ReadWriteOncePod (RWOP) volumes, under `SELinuxMountReadWriteOncePod` feature gate. RWOP volumes can't be used by multiple Pods and thus this cannot break any workload that mixes usage of the same volume by multiple Pods in parallel.
+  * **Phase 2**: same as Phase 1, the feature is still limited to RWOP volumes.
+    This phase enables opt-out that becomes active in Phase 3.
+  * **Phase 3**: all volumes are mounted, under `SELinuxMount` feature gate. It can break existing applications that need to mix privileged and unprivileged Pods using the same volume in parallel.
     * We propose to send Pod events to immediately show why such Pods are stuck `ContainerCreating`.
     * We propose metrics to identify such Pods before the `SELinuxMount` feature gate is enabled, to identify potential issues before a cluster upgrade / enabling the feature gate.
     * We propose metrics to identify such Pods _after_ the `SELinuxMount` feature gate is enabled, to identify pods that are running only because they run on different nodes. If they landed on the same node, one of them would be stuck `ContainerCreating`, because they mix privileged and unprivileged pods.
@@ -232,8 +237,8 @@ Reason for `MountOption` as the new default:
 * Current telemetry numbers from OpenShift show that only a small number of clusters would be broken by this change. See [risks and mitigations](#risks-and-mitigations) for numbers.
 
 To sum it up from a different perspective, we propose that kubelet mounts a Pod's volume with `-o context=XYZ` when *all* these conditions are met:
-* Pod has `Pod.Spec.SecurityContext.SELinuxChangePolicy: MountOption` or `null` and `SELinuxMount` feature gate is enabled.
-  * Or the volume is RWOP and only feature gate `SELinuxMountReadWriteOncePod` is enabled.
+* Pod has `Pod.Spec.SecurityContext.SELinuxChangePolicy: MountOption` or `null` and `SELinuxMount` feature gate is enabled (Phase 3).
+  * Or the volume is RWOP and only feature gate `SELinuxMountReadWriteOncePod` is enabled (Phase 1 and Phase 2).
 * Pod has SELinux label set, at least in `Spec.SecurityContext.SELinuxOptions.Level` or all containers have `Spec.Containers[*].SecurityContext.SELinuxOptions.Level`.
   * When a `PodSecurityContext` or `SecurityContext` specifies incomplete SELinux label (i.e. omits `SELinuxOptions.User`, `.Role` or `.Type`), kubelet fills the blanks from the system defaults provided by [ContainerLabels() from go-selinux bindings](https://github.com/opencontainers/selinux/blob/621ca21a5218df44259bf5d7a6ee70d720a661d5/go-selinux/selinux_linux.go#L770).
     [See Story 2 below](#story-2).
@@ -507,7 +512,7 @@ We will document this requirement in our documentation that faces CSI driver ven
 This KEP changes the default behavior of Kubernetes.
 We provide set of metrics to detect potential issues before the feature is enabled by default, so users can fix their workloads before the change.
 
-Phase I (no breaking change yet):
+Phase 1 + 2 (no breaking change yet):
 * `volume_manager_selinux_volume_context_mismatch_warnings_total`: nr. of Pods that would not start if `SELinuxMount` feature gate is enabled.
   * It is emitted only when the `SELinuxMountReadWriteOncePod` feature gate is enabled (on by default in 1.28).
   * It is emitted by kubelet, in the code path that will really block starting a pod when `SELinuxMount` feature gate is enabled.
@@ -516,7 +521,7 @@ Phase I (no breaking change yet):
 As of 2024-09-04, telemetry numbers from OpenShift show that less than 2% of the clusters have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
 More than 50% of these potentially-broken clusters have less than 10 of such Pods.
 
-Phase II:
+Phase 3:
 * `volume_manager_selinux_volume_context_mismatch_errors_total`: nr. of Pods that did not start.
   * It is emitted only when the `SELinuxMount` feature gate is enabled.
   * It is emitted by kubelet when a Pod really cannot start.
@@ -596,20 +601,16 @@ Due to change of Kubernetes behavior, we will implement the feature only for cas
 
 This phase went Beta (enabled by default) in Kubernetes 1.28, without `SELinuxChangePolicy` field in PodSpec!
 
-#### Phase 1.5
-
+#### Phase 2
+Based on Phase 1 results:
 - Introduce `SELinuxChangePolicy` field, under `SELinuxChangePolicy` feature gate.
   - In this phase, the only allowed value is `Recursive`.
   - The field is not interpreted, it's used only by cluster admins to proactively opt-out from `SELinuxMount`
   - We need to graduate it to Beta / enabled by default before enabling `SELinuxMount` feature gate.
 - Implement missing metrics in kube-state-metrics.
 
-#### Phase 2
-Based on Phase 1 results:
-- Introduce `SELinuxChangePolicy` field in PodSpec
-  - We discovered that sharing volumes between privileged and unprivileged containers as described [here](#privileged-containers) is a valid use case.
-    We expect nr. of such Pods will be low and we provide **opt-out** from mount with `-o context`.
-  - Implement it as an alpha field + graduate it with `SELinuxMount` feature gate to beta + GA.
+#### Phase 3
+- Actually interpret `SELinuxChangePolicy` field in PodSpec.
 
 ### Test Plan
 
@@ -652,10 +653,10 @@ No existing / new tests for volume mounting there.
 * Evaluation:
   * During the next release after Phase 1 is beta (= the feature is enabled by default), collect reports from users about possible breakage.
   * KEP author has access to usage data from OpenShift, a Kubernetes distro that runs with SELinux in enforcing mode.
-* Alpha of Phase 1.5 + 2:
+* Alpha of Phase 2 + 3:
   * Implemented `SELinuxChangePolicy` **with a separate alpha feature gate `SELinuxChangePolicy`** as preparation for `SELinuxMount` feature gate graduation.
   * Implemented metrics in kube-state-metrics.
-* Beta of Phase 1.5, alpha of phase 2:
+* Beta of Phase 2, alpha of phase 3:
   * Telemetry numbers from OpenShift show that <5% of clusters would need to change any of their Pods.
 * GA:
   * All known issues fixed. Otherwise, we will GA Phase 1 only.
