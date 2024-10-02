@@ -1,4 +1,4 @@
-title: OCI objects as VolumeSource
+title: OCI images as VolumeSource
 kep-number: 4639
 authors:
   - "@sallyom"
@@ -46,13 +46,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.31"
+latest-milestone: "v1.32"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.31"
-  beta: "v1.32"
-  stable: "v1.33"
+  beta: "v1.33"
+  stable: "v1.34"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -65,3 +65,7 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics: []
+# Enable when promoting to beta
+# - "image_volume_requested_total"
+# - "image_volume_mounted_success"
+# - "image_volume_mounted_error"

@@ -107,6 +107,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -144,20 +147,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -170,26 +173,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images and/or OCI artifacts.
+The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images.
 This allows users to package files and share them among containers in a pod without including them in the main image,
 thereby reducing vulnerabilities and simplifying image creation.
 
-While OCI images are well-supported by Kubernetes and CRI, extending support to
-OCI artifacts involves recognizing additional media types within container
-runtimes, implementing custom lifecycle management, resolution of artifact
-registry referrers use pattern for artifacts, and ensuring appropriate
-validation and security measures.
-
 ## Motivation
 
-Supporting OCI images and artifacts directly as a `VolumeSource` allows
+Supporting OCI images directly as a `VolumeSource` allows
 Kubernetes to focus on OCI standards as well as allows to store and distribute
 any content using OCI registries. This allows the project to grow into use cases
 which go beyond running particular images.
 
 ### Goals
 
-- Introduce a new `VolumeSource` type that allows mounting OCI images and/or artifacts.
+- Introduce a new `VolumeSource` type that allows mounting OCI images.
 - Simplify the process of sharing files among containers in a pod.
 - Providing a runtime guideline of how artifact files and directories should be
   mounted.
@@ -198,11 +195,11 @@ which go beyond running particular images.
 
 - This proposal does not aim to replace existing `VolumeSource` types.
 - This proposal does not address other use cases for OCI objects beyond directory sharing among containers in a pod.
-- Mounting thousands of images and artifacts in a single pod.
+- Mounting thousands of images in a single pod.
 - The enhancement leaves single file use case out for now and restrict the mount
   output to directories.
 - The runtimes (CRI-O, containerd, others) will have to agree on the
-  implementation of how artifacts are manifested as directories. We don't want
+  implementation of how images are manifested as directories. We don't want
   to over-spec on selecting based on media types or other attributes now and can
   consider that for later.
     - We don't want to tie too strongly to how models are hosted on a particular
@@ -220,10 +217,9 @@ which go beyond running particular images.
   now as it is easily worked around by creating a different image/artifact for
   each instance/format/quantization of a model.
 
-
 ## Proposal
 
-We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI object
+We propose to add a new `VolumeSource` that supports OCI images. This `VolumeSource` will allow users to mount an OCI image
 directly into a pod, making the files within the image accessible to the containers without the need to include them in the main image and to be able to host them in OCI compatible registries.
 
 ### User Stories (Optional)
@@ -273,7 +269,7 @@ the OS or version of the scanning software.
 
 - This enhancement assumes that the cluster has access to the OCI registry.
 - The implementation must handle image pull secrets and other registry authentication mechanisms.
-- Performance considerations must be taken into account, especially for large images or artifacts.
+- Performance considerations must be taken into account, especially for large images.
 
 ### Vocabulary: OCI Images, Artifacts, and Objects
 
@@ -301,14 +297,14 @@ the OS or version of the scanning software.
 - **Security Risks:**:
     - Allowing direct mounting of OCI objects introduces potential attack
       vectors. Mitigation includes thorough security reviews and limiting access
-      to trusted registries. Limiting to OCI artifacts (non-runnable content)
+      to trusted registries. Limiting to non-runnable content
       and read-only mode will lessen the security risk.
     - Path traversal attacks are a high risk for introducing security
       vulnerabilities. Container Runtimes should re-use their existing
       implementations to merge layers as well as secure join symbolic links in
       the container storage prevent such issues.
 - **Compatibility Risks:** Existing webhooks watching for the images used by the pod using some policies will need to be updated to expect the image to be specified as a `VolumeSource`.
-- **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
+- **Performance Risks:** Large images could impact performance. Mitigation includes optimizations in the implementation and providing
   guidance on best practices for users.
 
 ## Design Details
@@ -317,12 +313,10 @@ The new `VolumeSource` will be defined in the Kubernetes API, and the implementa
 to support this source type. Key design aspects include:
 
 - API changes to introduce the new `VolumeSource` type.
-- Modifications to the Kubelet to handle mounting OCI images and artifacts.
+- Modifications to the Kubelet to handle mounting OCI images.
 - Handling image pull secrets and registry authentication.
 - The regular OCI images (that are used to create container rootfs today) can
   be setup similarly as a directory and mounted as a volume source.
-- For OCI artifacts, we want to convert and represent them as a directory with
-  files. A single file could also be nested inside a directory.
 
 ### Kubernetes API
 
@@ -483,7 +477,7 @@ Technically it means that we need to pull in [`SyncPod`](https://github.com/kube
 for OCI objects on a pod level and not for each container during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
 before they get started.
 
-If users want to re-pull artifacts when referencing moving tags like `latest`,
+If users want to re-pull images when referencing moving tags like `latest`,
 then they need to restart / evict the pod.
 
 The [AlwaysPullImages](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#alwayspullimages)
@@ -498,7 +492,7 @@ container image.
 #### CRI
 
 The CRI API is already capable of managing container images [via the `ImageService`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L146-L161).
-Those RPCs will be re-used for managing OCI artifacts, while the [`Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L220-L247)
+Those RPCs will be re-used for the KEP, while the [`Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L220-L247)
 message will be extended to mount an OCI object using the existing [`ImageSpec`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L798-L813)
 on container creation:
 
@@ -583,7 +577,7 @@ sequenceDiagram
 
 8. **Security and Performance Optimization**:
    - Implement thorough security checks to mitigate risks such as path traversal attacks.
-   - Optimize performance for handling large OCI artifacts, including caching strategies and efficient retrieval methods.
+   - Optimize performance for handling large OCI images, including caching strategies and efficient retrieval methods.
 
 #### Container Runtimes
 
@@ -594,6 +588,10 @@ supported container runtime version will fail to run on the node, because the
 
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
+
+Note: in the process of mounting images into the container's rootfs, there may need to be intermediate mounts created. This is especially relevant if
+the CRI implementation wishes to support one image being mounted with multiple different SELinux labels. If that's done, the CRI implementation is responsible
+for cleaning up that additional mount.
 
 ##### Filesystem representation
 
@@ -759,26 +757,13 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/kubelet/images`: `2-10-2024` - `83.8`
+- `pkg/kubelet/kuberuntime`: `2-10-2024` - `66.6`
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+Integration tests for the kubelet are not existing yet and will be covered by
+extending the e2e_node, e2e and unit tests.
 
 ##### e2e tests
 
@@ -792,7 +777,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should fail if image volume is not existing
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed if image volume is not existing but unused
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with multiple pods and same image on the same node
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and multiple volumes
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and pull policy of Always
+
+https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
 
 ### Graduation Criteria
 
@@ -858,6 +849,37 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Initial implementation added
+- CRI implementations starting to add support
+
+#### Beta
+
+- Add support for [`subPath`](https://kubernetes.io/docs/concepts/storage/volumes/#using-subpath):
+    - By adding a new CRI string `image_sub_path` field to the
+      [`Mount`](https://github.com/kubernetes/cri-api/blob/010fdf8/pkg/apis/runtime/v1/api.proto#L221)
+      message. Alternatively it would be possible to re-use the existing
+      [`Mount.host_path`] field which is empty right now if an image volume is
+      being used.
+    - If the sub path does not exist in the image, then runtimes should fail and
+      return an error.
+- Expand unit and e2e tests.
+- Add three kubelet metrics for an admin to see the success of their image volumes:
+    - `image_volume_requested_total`
+    - `image_volume_mounted_success`
+    - `image_volume_mounted_error`
+- Production support in at least one of CRI-O and containerd, and a release
+  candidate is available in the other.
+    - However, until both CRI-O and containerd have a released RC with support, this feature will be off by default
+
+#### GA
+
+- Multiple examples of real world uses
+- Production support in both CRI-O and containerd
+- Allowing time for feedback
+
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -871,6 +893,12 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+kube-apiserver, kubelet and CRI implementation have to support the feature for it to work e2e.
+If any of these components downgrades or turns it off, the volume will not be mounted, and the pod creation will fail.
+The images that were previously pulled with this feature will be deemed unused by the kubelet's ImageGCManager
+and will be garbage collected when the node hits sufficient utilization (or have been unused a certain amount of time
+if the ImageGCMaxAge feature is used).
 
 ### Version Skew Strategy
 
@@ -886,6 +914,16 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Same as above: all the components must have support for it to work.
+Specifically, kube-apiserver will filter this field if it doesn't recognize/support it.
+If the kubelet doesn't support the field, it will not pull the image, and the path will not be present for the volume manager
+to mount it in, and the pod will fail.
+if the CRI implementation doesn't support it, then the PullImage request will fail and the pod creation will fail.
+
+If the kubelet does not support the feature because it's too old, then the
+container creation will fail because the volume manager is unable to mount the
+volume because no volume plugin is available for the provided source.
 
 ## Production Readiness Review Questionnaire
 
@@ -1008,12 +1046,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+kube-apiserver must support it, and every node that has a pod scheduled that
+attempts to mount image volumes must have a kubelet and CRI that support it.
+If any don't, the volume won't be enabled and containers will not start. If the
+kubelet does not support it but will be upgraded, then the container will become
+available after the upgrade.
+
+Since this field only applies on a per node basis, once the control plane agrees
+on the feature gates, any kubelet with the feature on will have access to it,
+not needing to wait for other workers.
+
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+A sharp increase in high `kubelet_image_pull_duration_seconds_bucket`, potentially showing registry unavailability or delays.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1023,11 +1068,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Not yet but they will be.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+N/A
 
 ### Monitoring Requirements
 
@@ -1046,6 +1095,12 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+There was not any metric added for alpha.
+For beta, three metrics can be added to report the state of image volume:
+- total image volumes requested
+- successful image mounts
+- failed image mounts
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1057,13 +1112,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics: The added metrics `image_volume_requested_total` `image_volume_mounted_success` `image_volume_mounted_error`
+  will signal to an admin that this feature is working or not.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1088,12 +1138,18 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [x] Metrics
+  - Metric name: `kubelet_image_pull_duration_seconds_bucket`
+  - Components exposing the metric: kubelet
+- [x] Metrics
+  - Metric name: `pod_start_sli_duration_seconds`
+  - Components exposing the metric: kubelet
 - [ ] Other (treat as last resort)
   - Details:
+
+Note: the pod's start SLI may be affected if the image that is being pulled is large. An accurate comparison in pod start time is
+if the contents of the image mount are stored in the container's image, rather than present on a different volume type, as the
+cost of pulling from a registry needs to be controlled for.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1101,6 +1157,10 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+A metric to show volume type so admins could find when their image volumes were requested
+as well as a success/error metric for showing that volumes did or did not get mounted
+These will be added in beta.
 
 ### Dependencies
 
@@ -1124,6 +1184,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+A CRI implementation with support, and an available registry that has the requested image.
 
 ### Scalability
 
@@ -1152,6 +1214,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No new API calls, but yes new image pulls from an OCI registry.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1161,6 +1225,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1168,6 +1234,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+Potentially for credential plugins to give node image pull credentials, but it doesn't need to.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1177,6 +1245,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+A new type of volume in the pods, which will have the same size as other volume types.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1188,6 +1258,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Not technically because there is no defined SLI
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1201,6 +1273,10 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+CPU/Memory/Disk will be used when pulling an image volume, proportional to the
+size of the image. An image could be pulled using a constant sized memory
+buffer depending on the runtime implementation.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1212,6 +1288,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+Yes, in the same way a large image used to run a container could use these resources (so no additional risk).
 
 ### Troubleshooting
 
@@ -1228,6 +1306,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Pods won't be able to be created, so the feature won't be accessible.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1243,7 +1323,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Registry unavailability
+- They can be found in the pod's events and look like image pull failures
+- No tests at the time of writing
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+At the time of writing, check the pod events. If metrics are added for image pull issues, then checking those would help as well.
 
 ## Implementation History
 
@@ -1257,6 +1343,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 16-05-2024 Issue opened 
+- 21-06-2024 KEP merged, targeted at alpha
+- 2-10-2024 KEP updated
+
 
 ## Drawbacks
 
@@ -1332,4 +1423,4 @@ An out-of-tree CSI plugin can provide flexibility and modularity, but there are 
 
 The in-tree implementation of an OCI VolumeSource offers significant advantages by leveraging existing core mechanisms,
 ensuring deep integration, and simplifying management. This approach avoids the complexity, duplication, and other potential inefficiencies
-of out-of-tree CSI plugins, providing a more reliable solution for mounting OCI images and artifacts.
+of out-of-tree CSI plugins, providing a more reliable solution for mounting OCI images.
