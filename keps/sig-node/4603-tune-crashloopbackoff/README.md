@@ -1269,10 +1269,6 @@ beginning of their backoff curve (either the original one with initial value
 10s, or the new baseline with initial value 1s, depending on whether they've
 turned on the `ReduceDefaultCrashLoopBackoffDecay` feature gate).
 
-<<[UNRESOLVED]>>Say what happens when `NodeMaxCrashLoopBackOff` exists but
-`EnableKubeletCrashLoopBackoffMax is off, log a warning but drop it (because
-peeps might set it and be like why it no work)<<[/UNRESOLVED]>>
-
 Or, the entire cluster can be restarted with the
 `EnableKubeletCrashLoopBackoffMax` feature gate turned off. In this case, any
 Node configured with a different backoff curve will instead use
@@ -1303,6 +1299,11 @@ higher than the current initial value, but within validation limits as it is
 lower than 300s, it will be honored. In other words, operator-invoked
 configuration will have precedence over the default, even if it is slower, as
 long as it is valid.
+
+If `NodeMaxCrashLoopBackOff` exists but `EnableKubeletCrashLoopBackoffMax` is
+off, kubelet will log a warning but will not honor the
+`NodeMaxCrashLoopBackOff`. In other words, operator-invoked per node
+configuration will not be honored if the overall feature gate is turned off.
 
 scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value
 ---------|---------|----------|---------
