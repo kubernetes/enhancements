@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4742: Expose Node Labels to Pods via Downward API
+# KEP-4742: Expose Node Labels to pods via Downward API
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -161,6 +161,9 @@ to extract information.
 ## Motivation
 
 We’d like to change the runtime behavior of containers based on node labels.
+In our case, we’re using a CNI with DaemonSets to perform network setup, and
+would like to configure the network differently based on the presence of a node
+label.
 
 A number of other use cases exist for providing node labels to pods. One
 example is utilizing topology data from cloud providers, which are automatically
@@ -169,45 +172,78 @@ transfers and reduce costs. Having an easy way for pods to access these node
 topology labels would provide users a straightforward, maintainable way to
 optimize their workloads given topology constraints.
 
+While "topology" is usually associated with the physical layout of a cluster,
+it can also be used to describe other types of information about the cluster.
+This KEP proposes to allow the expansion of the concept of topology to include
+user-defined aspects about their cluster nodes, and in turn provide a way for
+pods to receive this information.
+
 Workarounds today typically involve using an initContainer to query the
 Kubernetes API and then pass data via shared volume to other containers within
-the same pod. This adds additional demand on the API server and is burdensome
-compared to the ease of using downwardAPI for pod labels and metadata.
+the same pod. By comparison, this proposal would reduce the number of service
+accounts and API server clients. Another workaround is to use webhooks to inject
+labels into pods, but this relies on advance knowledge of where the pod is going
+to be scheduled and requires the webhook to be running and available at the time
+of pod creation. This proposal would provide an easier way to access node labels
+from pods, and would be more efficient than the current workarounds.
 
 ### Goals
 
-* Gain access to node labels in form of `topology.k8s.io/*` on pods through volume mounts
-* Gain access to node labels in form of `topology.k8s.io/*` on pods through environmental variables
+* Gain access to node labels in form of `topology.k8s.io/*` and
+  `*.topology.k8s.io/*` on pods through volume mounts
+* Gain access to node labels in form of `topology.k8s.io/*` and
+  `*.topology.k8s.io/*` on pods through environmental variables
 
 ### Non-Goals
 
 * Not to expose additional node info outside of labels
-* Not to pass any additional node labels other than `topology.k8s.io/*` to pods
-* Not to guarantee the label value assigned at pod creation is the most recent node label value because it is assigned at pod creation time
+* Not to pass any additional node labels other than `topology.k8s.io/*` and
+  `*.topology.k8s.io/*` to pods
+* Not to update pod labels after the initial node -> pod copy has been made
+* Not to make assurances regarding timing and availability of the label beyond
+  the initial pod label copy at scheduling time
+* Not to make assurances about the immutability of the pod label after the
+  initial copy. As with other labels, the pod label can be updated by the user
+  after the pod is created.
 
 ## Proposal
 
-The initial design includes:
+KEP 1659 defines the following labels: `topology.kubernetes.io/region` and
+`topology.kubernetes.io/zone` to be used for topology information. These labels
+are useful for pods as well to be able to make application decisions based on
+the region or zone the pod is running in. This KEP proposes to make these labels
+available to pods while also expanding upon KEP 1659 to allow for user-defined
+labels in the `*.topology.kubernetes.io` namespace.
 
-In KEP 1659, the following labels are defined:
-* topology.kubernetes.io/region
-* topology.kubernetes.io/zone
+This KEP expands on KEP 1659 in the following ways:
 
-In addition to the above labels, KEP 1659 declares the entire `topology.kubernetes.io` prefix space as reserved for use by the Kubernetes project.
+1. Label prefixes of the form `<domain>.topology.kubernetes.io` are allocated
+   for use by end users. The Kubernetes project itself will not define any
+   labels with this prefix.
+2. Labels of the form `<domain>.topology.kubernetes.io/<field>` will be passed
+   to pods.
+3. Labels of the form `topology.kubernetes.io/*` will be passed to pods but will
+   continue to be reserved by the Kubernetes project.
+4. All labels with `topology.kubernetes.io` and `*.topology.kubernetes.io`
+   prefixes should be considered safe for pods and should only contain
+   information that pods and containers can safely consume.
 
-This KEP expands upon KEP 1659 in the following ways:
-- The `x.topology.kubernetes.io` prefix is allocated for use by end users. The kubernetes project itself will not define any standard labels with that prefix.
-- The `<domain>.x.topology.kubernetes.io` prefix is likewise allocated for use by end users or third-parties. The `<domain>` portion is treated the same as a "normal" label prefix. For example, `example.com.x.topology.k8s.io/label-name`.
-- All labels using the `topology.kubernetes.io` or `*.topology.kubernetes.io` prefix spaces are considered "safe" for workloads. A workload may be exposed to the values of these labels which directly apply to the workload. For example, a pod may learn the topology of the node on which it is running.
-
-The idea is that we will expose those labels from nodes to pods via a literal copy from the Node, for instance using the method `GetNode` from Kubelet in the `podFieldSelectorRuntimeValue` function and `volume.VolumeHost` `GetNodeLabels` function in the `CollectData` function in the downward API.
+The idea is that we will expose those labels from nodes to pods via a literal
+copy from the node. From that point, the topology labels can be used in the same
+way as any other label.
 
 ### User Stories
 
 * As a cluster operator, I want to make decisions based on node topology labels.
-* As a cluster operator, I want to access node topology labels inside of my pod
-* As a cluster operator, I want to access node instance types labels inside of my pod
-* As a developer, I want to know which region my app is serving, to be able to diagnose problems they may face in certain AZs or regions
+* As a cluster operator, I want to access node topology labels inside of my pod.
+* As a cluster operator, I want to access node instance types labels inside of
+  my pod.
+* As a developer, I want to know which region my app is serving, to be able to
+  diagnose problems they may face in certain AZs or regions.
+* As a cloud service provider, I want to make sure that this feature goes
+  through the standard k8s feature graduation criteria to ensure that it is
+  production-ready and that the exposure of `topology.k8s.io/*` and
+  `*.topology.k8s.io/*` is widely accepted.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -227,7 +263,7 @@ form `topology.k8s.io/*`.
 
 * Exposing sensitive data as node labels to pods. This is mitigated by ensuring
 node labels contain the specific pattern `topology.k8s.io/*` in order to be
-available to Pods.
+available to pods.
 
 * Stale data. Information obtained through node labels is like information
 attained through a configmap or secret mounted to a pod, being passed on
@@ -706,7 +742,7 @@ Describe them, providing:
 Describe them, providing:
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  - Estimated amount of new objects: (e.g., new Object X for every existing pod)
 -->
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
