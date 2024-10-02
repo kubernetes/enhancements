@@ -55,9 +55,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -184,7 +184,7 @@ Environment variables previously set by the user will not change. To use this en
 
 #### Downgrade
 
-users need to reset their environment variables for special characters to normal characters.
+After downgrade, environment variables containing special characters will continue to work as expected, but any writes to resources to add or change environment variables must set the environment variable names to only use normal characters.
 
 ### Version Skew Strategy
 
@@ -211,7 +211,7 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-If close the feature gate, already running workloads will not be affected in any way, 
+If disable the feature gate, already running workloads will not be affected in any way, 
 but cannot create workloads that use special characters as environment variables.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -224,9 +224,7 @@ Yes.
 
 ### Rollout, Upgrade and Rollback Planning
 
-###### How can a rollout or rollback fail? Can it impact already running workloads?
-
-When a feature gate is closed, already running workloads are not affected in any way, but update fields for workload will cause the workload to fail.
+When the feature gate is disabled, workloads that are already running will not be affected. If environment variables contain special characters, changes to fields other than the environment variables will not cause workloads to fail. However, if the environment variable fields are modified, they may fail to recreate Pods or ReplicaSets due to the Apiserver's validation logic, which could result in workload failures.
 
 ###### What specific metrics should inform a rollback?
 
@@ -242,7 +240,24 @@ No.
 
 ### Monitoring Requirements
 
-- We will investigate in the beta version how to monitor kubelet/CRI implementations could fail on pods using this enhancement.
+###### How can an operator determine if the feature is in use by workloads?
+
+  Yes, operators can use the Kubenetes API to achieve this. They need to get all pods in the cluster and check if any pod has set a field other than `[-._a-zA-Z][-._a-zA-Z0-9]*` as an environment variable name. For example, we can find the namespaces and names of pods using this feature and their environment variable names using the following command:
+
+```
+kubectl get pods --all-namespaces -o json | jq -r '.items[] | select(.spec.containers[].env[]?.name | test("^[a-zA-Z_][a-zA-Z0-9_]*$") | not) | [.metadata.namespace, .metadata.name, .spec.containers[].env[]?.name] | @tsv'
+```
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+According to the test results in https://github.com/HirazawaUi/verfiy-container-env, the container runtime is very lenient with using special characters as environment variables, and almost no failures will occur. However, if unexpected boundary conditions occur, `run_podsandbox_errors_total` can still help us record some problems.
+
+- [x] Metrics
+  - Metric name: run_podsandbox_errors_total
+  - [Optional] Aggregation method:
+  - Components exposing the metric:  kubelet
+- [ ] Other (treat as last resort)
+  - Details:
 
 ### Dependencies
 
@@ -293,6 +308,10 @@ No
 ## Implementation History
 
 \- 2023-12-21: Initial draft KEP
+
+\- 2024-02-06: KEP promoted to implementable.
+
+\- 2024-08-26: Promote to beta
 
 ## Drawbacks
 

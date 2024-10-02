@@ -737,7 +737,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 ## GA
 
-- Add field selection support to informers
+- Add test coverage for informers
+- Promote e2e tests to conformance
 
 <!--
 #### GA

@@ -4,13 +4,14 @@ authors:
   - "@SergeyKanzhelev"
   - "@matthyx"
   - "@jpbetz"
+  - "@gjkim42"
 owning-sig: sig-node
 participating-sigs:
   - sig-scheduler
   - sig-apps
 status: implementable
 creation-date: 2018-05-14
-last-updated: 2024-01-25
+last-updated: 2024-09-12
 reviewers:
   - "@mrunalp"      # overall
   - "@ffromani"     # resource management
@@ -37,7 +38,7 @@ latest-milestone: "v1.29"
 milestone:
   alpha: "v1.28"
   beta: "v1.29"
-  stable: "v1.32"
+  stable: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

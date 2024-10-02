@@ -1,0 +1,15 @@
+title: Kubernetes-etcd interface
+kep-number: 4743
+authors:
+  - "@serathius"
+owning-sig: sig-etcd
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2024-06-28
+reviewers:
+  - "@dims"
+approvers:
+  - "@jpbetz"
+  - "@ahrtr"
+  - "@wojtek-t"

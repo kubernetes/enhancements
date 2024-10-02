@@ -234,11 +234,29 @@ are the only PVCs modified with an ownerRef. Other PVCs referenced by the Statef
 template are not affected by this behavior.
 
 OwnerReferences are used to manage PVC deletion. All such references used for
-this feature will set the controller field to the StatefulSet. This will be used
-to distinguish references added by the controller from, for example,
-user-created owner references. When ownerRefs is removed, it is understood that
-only those ownerRefs whose controller field matches the StatefulSet in question
-are affected.
+this feature will set the controller field to the StatefulSet or Pod as
+appropriate. This will be used to distinguish references added by the controller
+from, for example, user-created owner references. When ownerRefs is removed, it
+is understood that only those ownerRefs whose controller field matches the
+StatefulSet or Pod in question are affected.
+
+The controller flag will be set for these references. If there is already a
+different (non-StatefulSet) controller set for a PVC, an ownerRef will not be
+added. This will mean that the autodelete functionality will not be operative. An
+event will be created to reflect this.
+
+To summarize,
+
+**If the StatefulSet is a controller owner**,
+  * the PVC lifecycle will be full managed by the StatefulSet controller
+  * old owner references will be updated with `controller=false` to `controller=true`
+    (see Upgrade / Downgrade Strategy, below).
+  * remove itself as the owner and controller when the retain policy is specified in the StatefulSet.
+
+**If someone else is the controller**, 
+  * the PVC lifecycle will not be touched by the StatefulSet controller. The PVC
+    will stay when the delete policy is specified in the StatefulSet.
+  * old StatefulSet owner references will be removed.
 
 ### Volume delete policy for the StatefulSet created PVCs
 
@@ -394,9 +412,24 @@ This features adds a new field to the StatefulSet. The default value for the new
 maintains the existing behavior of StatefulSets.
 
 On a downgrade, the `PersistentVolumeClaimRetentionPolicy` field will be hidden on
-any StatefulSets. The behavior in this case will be identical to mutating they
+any StatefulSets. The behavior in this case will be identical to mutating the
 policy field to `Retain`, as described above, including the edge cases
 introduced if this is done during a scale-down or StatefulSet deletion.
+
+The initial beta version did not set the controller flag in the owner
+reference. This was fixed in later versions, so that the controller flag is
+set. The behavior is then as follows.
+
+* If the StatefulSet or one of its Pods is a controller, owner references are
+  updated as specified by the retention policy.
+* If the StatefulSet or one of its Pods is an owner but not a controller,
+  * if there is no other controller, the StatefulSet or Pod owners will be set
+    as controller (ie, they are assumed to be from the initial beta version and
+    updated).
+  * The controller will be updated as specified by the retention policy.
+* If there is another resource that is a controller,
+  * any (non-controler) StatefulSet or Pod owner reference is removed.
+  * The retention policy is ignored.
 
 ### Version Skew Strategy
 There are only kube-controller-manager changes involved (in addition to the
@@ -590,6 +623,7 @@ stateful set controller lives) should be examined and/or restarted.
   - 1.21, KEP created.
   - 1.23, alpha implementation.
   - 1.27, graduation to beta.
+  - 1.31, fix controller references.
 
 ## Drawbacks
 The StatefulSet field update is required.

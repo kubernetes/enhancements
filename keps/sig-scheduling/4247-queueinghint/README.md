@@ -528,7 +528,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler/internal/queue`: `10-01 20:28 JST` - `88.4`
+- `k8s.io/kubernetes/pkg/scheduler/internal/queue`: `2024-09-26` - `92.8`
 
 ##### Integration tests
 
@@ -594,15 +594,16 @@ n/a
 - The feature gate is implemented. (disabled by default) 
 - QueueingHint implementation in all plugins.
 - The integration tests are implemented for requeueing scenarios in all plugins.
-- `PreCheck` feature in the scheduling queue is completely removed.
-- No significant degradation in memory comsumption.
-- No performance degradation is confirmed via scheduler_perf.
+- `PreCheck` feature in the scheduling queue is disabled when SchedulerQueueingHints is enabled.
+- No significant degradation in memory comsumption based on `scheduler_inflight_events` metric.
+- scheduler_perf covers the performance of most QueueingHintFn for in-tree plugins.
+- scheduler_perf runs with QueueingHint both enabled and disabled for all test cases and throughput when enabled is better or, at least, comparable.
+- Event handling duration is monitored using scheduler_perf.
 - The feature gate is enabled by default.
-- No bug report for a while after enabling it by default.
 
 #### GA
 
-- No bug report for a while after reaching Beta.
+- No bug report for a while after reaching Beta and enabling it by default.
 
 ### Upgrade / Downgrade Strategy
 
@@ -777,6 +778,10 @@ that might indicate a serious problem?
 Maybe something goes wrong with QueueingHint and Pods are stuck in the queue if 
 - `scheduler_pending_pods` metric with `queue: unschedulable` label grows and keeps high number abnormally 
 - `pod_scheduling_sli_duration_seconds` metric grows abnormally
+Probably inFlightEvents list is not cleaning up properly when
+- `scheduler_inflight_events` metric grows abnormally as well as isn't close to 0 when no scheduling is happening
+There could be a problem with QueueingHint performance if
+- `scheduler_queueing_hint_execution_duration_seconds` and `scheduler_event_handling_duration_seconds` metrics are unexpectedly high
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -864,6 +869,9 @@ Pick one more of these and delete the rest.
     - `schedule_attempts_total` 
     - `scheduling_algorithm_duration_seconds` 
     - `scheduler_pending_pods` with `queue: unschedulable`
+    - `scheduler_inflight_events`
+    - `scheduler_queueing_hint_execution_duration_seconds`
+    - `scheduler_event_handling_duration_seconds`
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1063,6 +1071,7 @@ Major milestones might include:
 - Oct 01, 2023: The initial KEP is submitted.
 - Dec 13, 2023: The feature gate is changed to be disabled by default.
 - Dec 31, 2023: The KEP is updated based on the situation as of v1.30 release cycle. The beta/GA criteria is sorted.
+- Sep 26, 2024: The KEP is updated as QueueingHint is targeting to be enabled by default in the v1.32 release.
 
 ## Drawbacks
 

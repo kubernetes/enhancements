@@ -1,4 +1,4 @@
-title: KEP Template
+title: Kubelet limit of Parallel Image Pulls
 kep-number: 3673
 authors:
   - "@pacoxu"

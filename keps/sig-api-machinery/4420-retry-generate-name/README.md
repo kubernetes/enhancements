@@ -530,6 +530,7 @@ high retry load.
 - 2024-01-31: KEP merged as implementable
 - Kubernetes v1.30 - Implementation available as an off-by-default alpha feature
 - Kubernetes v1.31 - Implementation available as an on-by-default beta feature
+- Kubernetes v1.32 - Implementation available as a locked-to-enabled stable feature
 
 ## Drawbacks
 

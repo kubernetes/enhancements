@@ -6,3 +6,5 @@ alpha:
   approver: "@wojtek-t"
 beta:
   approver: "@wojtek-t" # temptative
+stable:
+  approver: "@wojtek-t"
