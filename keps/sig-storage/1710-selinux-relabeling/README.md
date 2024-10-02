@@ -19,6 +19,8 @@
         - [<code>CSIDriver</code>](#csidriver)
         - [<code>PodSecurityContext</code>](#podsecuritycontext)
       - [Conflicts with other Pods](#conflicts-with-other-pods)
+      - [Single-node conflicts](#single-node-conflicts)
+      - [Multiple-node conflicts](#multiple-node-conflicts)
     - [<code>CSIDriver</code> examples](#csidriver-examples)
     - [User Stories [optional]](#user-stories-optional)
       - [Story 1: default Pod](#story-1-default-pod)
@@ -318,6 +320,8 @@ const (
 
 It is Pod (Deployment, StatefulSet, DaemonSet) author responsibility to set the `SELinuxChangePolicy` and SELinux labels on Pods correctly.
 For example, these cases can happen if they are careless.
+
+#### Single-node conflicts
 All these cases assume that the volume used in the examples does support mount with `-o context` and all Pods run on the same node, and they access the same volume.
 
 **Mixing Pods with different SELinux labels**: In both cases we can see that only one of the pods can run and access the volume, but they differ in which Pod it is.
@@ -338,6 +342,26 @@ All these cases assume that the volume used in the examples does support mount w
   * Kubelet mounted the volume without `-o context` for Pod A (`spc_t` does not have any `cX,cY` categories) and the volume was not relabeled. When Pod B starts, the container runtime relabels all files on the volume to `c8,c9`. **Both pods can run in parallel** and access the volume (A is privileged / `spc_t`, B has the right label).
 * A privileged pod A runs with *any* `SELinuxChangePolicy`, Pod B with `SELinuxChangePolicy: MountOption` with label `c8,c9` is about to start.
   * Kubelet mounted the volume without `-o context` for Pod A (`spc_t` does not have any `cX,cY` categories) and the volume was not relabeled. Pod B wants the same volume mounted with `-o context=c8,c9`. Pod B will stay in `ContainerCreating` state until Pod A finishes and kubelet unmounts the volume, so it can be re-mounted for Pod B. **A and B cannot run in parallel**.
+
+**Mixing Pods with different SELinux labels and subpaths**: This is a behavior change in this KEP. We expect that it does not affect anyone or only a very small number of users.
+* Pod A with `SELinuxChangePolicy: Recursive` and label `c1,c2` runs and uses subpath `/dir1` in its Pod definition, Pod B with `SELinuxChangePolicy: Recursive` with label `c8,c9`, using subpath `/dir2` of the volume is about to start.
+    * This is the behavior before this KEP. The container runtime relabelled only the subpath `/dir1` with `c1,c2` when A started. When Pod B starts, the container runtime relabels only the subpath `dir2` with `c8,c9`. Both Pod A and Pod B can run in parallel and access their subpaths.
+  * This situation will be reported in the metrics proposed below, so the user can fix it before `SELinuxMount` is enabled by default. Actually, the metrics won't care about subpaths, it will look like two pods sharing the whole volume. 
+* Pod A with `SELinuxChangePolicy: MountOption` and label `c1,c2` runs and uses subpath `/dir1` in its Pod definition, Pod B with `SELinuxChangePolicy: MountOption` with label `c8,c9`, using subpath `/dir2` of the volume is about to start.
+    * Kubelet mounted **the whole volume** with `-o context=c1,c2` for Pod A. Pod B will stay in `ContainerCreating` state until Pod A finishes and kubelet unmounts the volume, so it can be re-mounted for Pod B.
+    * This situation will be reported in the metrics proposed below.
+
+#### Multiple-node conflicts
+
+**Mixing Pods with different SELinux labels on different nodes**: There is a slight difference in behavior.
+* Pod A with `SELinuxChangePolicy: Recursive` and label `c1,c2` runs on Node Alpha, Pod B with `SELinuxChangePolicy: Recursive` with label `c8,c9` is about to start on node Beta.
+    * This is the behavior before this KEP. All files on the volume were relabeled to `c1,c2` when A started. When Pod B starts, the container runtime relabels all files on the volume to `c8,c9` and Pod A loses access to data on the volume (i.e. it will get `EPERM` to all OS calls).
+* Pod A with `SELinuxChangePolicy: MountOption` and label `c1,c2` runs on Node Alpha, Pod B with `SELinuxChangePolicy: MountOption` with label `c8,c9` is about to start on node Beta.
+    * Both pods can run. Mounting the volume with `-o context` is node-local operation, so the volume can be mounted with different `-o context` options on different nodes.
+    * This situation will be reported in the metrics proposed below, so the user can fix it before the pods end up on the same node.
+* Pod A with `SELinuxChangePolicy: Recursive` and label `c1,c2` runs on Node Alpha, Pod B with `SELinuxChangePolicy: MountOption` with label `c8,c9` is about to start on node Beta.
+    * Both pods can run. On node Alpha, the volume will be recursively relabeled and Pod A can access it. On node Beta, the volume will be mounted with `-o context=c8,c9`, ignoring how the files are labeled in the storage backend. Pod B can access it.
+  * This situation will be reported in the metrics proposed below, so the user can fix it before the pods end up on the same node.
 
 Those are only examples, more cases can happen. In general, a Pod that wants the volume mounted with a different `-o context` option than it's currently used must wait for all pods that use the volume to get deleted and the volume unmounted.
 
