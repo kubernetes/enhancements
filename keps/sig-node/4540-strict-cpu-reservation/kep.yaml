@@ -5,13 +5,14 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
-status: provisional
+status: implementable
 creation-date: 2024-03-06
 reviewers:
   - "@klueska"                                                                          
   - "@swatisehgal"                                                                      
 approvers:
   - "@sig-node-tech-leads"                                                              
+  - "@soltysh"
 see-also: []
 replaces: []
 
