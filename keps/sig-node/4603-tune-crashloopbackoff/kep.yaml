@@ -10,9 +10,8 @@ status: provisional
 creation-date: 2024-04-29
 reviewers:
   - "@tallclair"
-  - "@pehunt"
 approvers:
-  - "SergeyKanzhelev"
+  - "dchen1107"
 
 # see-also:
 #   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
@@ -39,12 +38,10 @@ milestone:
 feature-gates:
   - name: ReduceDefaultCrashLoopBackoffDecay
     components:
-      - kube-apiserver
       - kubelet
-  # - name: EnableRapidCrashLoopBackoffDecay
-  #   components:
-  #     - kube-apiserver
-  #     - kubelet
+  - name: EnableKubeletCrashLoopBackoffMax
+    components:
+      - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release

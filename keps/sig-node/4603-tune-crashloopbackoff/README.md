@@ -508,10 +508,10 @@ Some observations and analysis were made to quantify these risks going into
 alpha. In the [Kubelet Overhead Analysis](#kubelet-overhead-analysis), the code
 paths all restarting pods go through result in 5 obvious `/pods` API server
 status updates; when observed empirically in an active cluster, while we do see
-an initial surges in `/pods` API traffic to ~5 QPS when deploying 110 mass
-crashing pods for our tests, even with instantly crashing pods and
-intantaneously restarting CrashLoopBackOff behavior, `/pods` API requests
-quickly normalized to ~2 QPS due to rate limiting. In the same tests, runtime
+an initial surges in `/pods` API traffic to the kubelet client side rate limit
+of ~5 QPS when deploying 110 mass crashing pods for our tests, even with
+instantly crashing pods and intantaneously restarting CrashLoopBackOff behavior,
+`/pods` API requests quickly normalized to ~2 QPS. In the same tests, runtime
 CPU usage increased by x10 and the API server CPU usage increased by 2x.
 
 For both of these changes, by passing these changes through the existing
@@ -553,7 +553,7 @@ change the state transition would increase at its fastest period from ~550
 requests/10s to ~5500 requests/10s, or 10x. In conjunction, the lowered backoff
 would continuously add 5 excess restarts every five minutes compared to today's
 behavior, so each crashing pod would be adding an excess of 25 pod state
-transition AIP requests, for a total of 2750 excess API requests for a node
+transition API requests, for a total of 2750 excess API requests for a node
 fully saturated with crashing pods.
 
 For the per node case, because the change could be more significant, with nearly
@@ -1123,8 +1123,13 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 - Maintain current 10 minute recovery threshold by refactoring backoff counter
   reset threshold and explicitly implementing container restart backoff behavior
   at the current 10 minute recovery threshold
-- Initial e2e tests completed and enabled
-  * Feature flag on or off
+- Initial e2e tests setup and enabled
+- Initial unit tests covering new behavior
+  - Especially confirming the backoff object is set properly depending on the
+feature gates set as per the [Conflict Resolution](#conflict-resolution) policy
+- Test proving `KubeletConfiguration` objects will silently drop unrecognized
+  fields in the `config.validation_test` package
+  ([ref](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go)).
 - Test coverage of proper requeue behavior; see
   https://github.com/kubernetes/kubernetes/issues/123602
 - Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this
@@ -1239,7 +1244,7 @@ made, and the default behavior of the baseline backoff curve would -- by design
 -- be changed.
 
 To stop use of this enhancement, the entire cluster must be restarted or just
-kubelet must restarts with the `ReduceDefaultCrashLoopBackoffDecay` feature gate
+kubelet must restart with the `ReduceDefaultCrashLoopBackoffDecay` feature gate
 turned off. Since kubelet does not cache the backoff object, on kubelet restart
 Pods will start at the beginning of their backoff curve. The exact backoff curve
 a given Pod will use will be either the original one with initial value 10s, or
@@ -1354,8 +1359,486 @@ the kubelet component.
 
 ## Production Readiness Review Questionnaire
 
-<<[UNRESOLVED removed when changing from 1.31 proposal to 1.32 proposal,
-incoming in separate commit]>> <<[/UNRESOLVED]>>
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+<!--
+This section must be completed when targeting alpha to a release.
+-->
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+<!--
+Pick one of these and delete the rest.
+
+Documentation is available on [feature gate lifecycle] and expectations, as
+well as the [existing list] of feature gates.
+
+[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
+[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
+-->
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay`
+    - Components depending on the feature gate: `kubelet`
+  - Feature gate name: `EnableKubeletCrashLoopBackoffMax`
+    - Components depending on the feature gate: `kubelet`
+
+###### Does enabling the feature change any default behavior?
+
+<!--
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+-->
+
+Yes, `ReduceDefaultCrashLoopBackoffDecay` changes the default backoff curve for
+exiting Pods (including sidecar containers) when `restartPolicy` is either `OnFailure`
+or `Always`.
+
+Since we currently only have anecdotal benchmarking, the alpha will implement
+more conservative modeled initial value and maximum backoff, though less
+conservative from the 1.31 proposal as initial manual data indicated faster
+maximum backoff caps were safe. The new values for all CrashLoopBackOff behavior
+for all workloads will be intial value=1s, max=60s. (See [this
+section](#front-loaded-decay-curve-modified-maximum-backoff-methodology) for
+more rationale.)
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+<!--
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+
+Feature gates are typically disabled by setting the flag to `false` and
+restarting the component. No other changes should be necessary to disable the
+feature.
+
+NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+-->
+
+Yes, disable is supported.
+
+For `ReduceDefaultCrashLoopBackoffDecay`, if this is disabled, once kubelet is
+restarted it will initialize the default backoff to the prior initial value of
+10s, and all restart delays thereafter will be calculated against this equation.
+Since changing this configuration will at minimum require a restart of kubelet
+to take effect, restart delays will begin at the beginning of their backoff
+curve since the backoff is not cached between kubelet restarts.
+
+For `EnableKubeletCrashLoopBackoffMax`, similarly, if this is disabled, once
+kubelet is restarted it will initialize the default backoff based on the global
+default -- which will itself depend on whether
+`ReduceDefaultCrashLoopBackoffDecay` is independently turned on or not. For a
+complete workup of the various conflicts possible and how they will be handled,
+see the [Conflict Resolution](#conflict-resolution) section in Design Details.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Both features can also be reenabled.
+
+For `ReduceDefaultCrashLoopBackoffDecay`, if this is reenabled, once kubelet is
+restarted it will initialize the default backoff again to the new initial value
+of 1s and maximum backoff to 1 minute, and all restart delays thereafter will be
+calculated against this equation.
+
+For `EnableRapidCrashLoopBackoffDecay`, if this is disabled, once kubelet is
+restarted it will -- again, as above -- initialize the default backoff based on
+the global default -- which will itself depend on whether
+`ReduceDefaultCrashLoopBackoffDecay` is independently turned on or not. For a
+complete workup of the various conflicts possible and how they will be handled,
+see the [Conflict Resolution](#conflict-resolution) section in Design Details..
+
+###### Are there any tests for feature enablement/disablement?
+
+<!--
+The e2e framework does not currently support enabling or disabling feature
+gates. However, unit tests in each component dealing with managing data, created
+with and without the feature, are necessary. At the very least, think about
+conversion tests if API types are being modified.
+
+Additionally, for features that are introducing a new API field, unit tests that
+are exercising the `switch` of feature gate itself (what happens if I disable a
+feature gate after having objects written with the new field) are also critical.
+You can take a look at one potential example of such test in:
+https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
+-->
+
+At minimum, unit tests will be included confirming the backoff object is set
+properly depending on the feature gates set as per the [Conflict
+Resolution](#conflict-resolution) policy.
+
+In this version of the proposal, there are no API schema changes or conversions
+necessary. However it is worth nothing tere is one addition to an API object,
+which is a new field in the `KubeletConfiguration` Kind. Based on manual tests
+by the author, adding an unknown field to `KubeletConfiguration` is safe and the
+unknown config field is dropped before addition to the
+`kube-system/kubelet-config` object which is its final destination (for example,
+in the case of n-3 kubelets facing a configuration introduced by this KEP). This
+is not currently tested as far as I can tell in the tests for
+`KubeletConfiguration` (in either the most likely location, in
+[validation_test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go),
+nor other tests in the [config
+package](https://github.com/kubernetes/kubernetes/tree/005f184ab631e52195ed6d129969ff3914d51c98/pkg/kubelet/apis/config))
+and discussions with other contributors indicate that while little in core
+kubernetes does strict parsing, it's not well tested. At minimum as part of this
+implementation a test covering this for `KubeletConfgiuration` objects will be
+included in the `config.validation_test` package.
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+<!--
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+###### What specific metrics should inform a rollback?
+
+<!--
+What signals should users be paying attention to when the feature is young
+that might indicate a serious problem?
+-->
+
+This biggest bottleneck expected will be kubelet, as it is expected to get more
+restart requests and have to trigger all the overhead discussed in [Design
+Details](#kubelet-overhead-analysis) more often. Cluster operators should be
+closely watching these existing metrics:
+
+* Kubelet component CPU and memory
+* `kubelet_http_inflight_requests`
+* `kubelet_http_requests_duration_seconds`
+* `kubelet_http_requests_total`
+* `kubelet_pod_worker_duration_seconds`
+* `kubelet_runtime_operations_duration_seconds`
+
+Most important to the perception of the end user is Kubelet's actual ability to
+create pods, which we measure in the latency of a pod actually starting compared
+to its creation timestamp. The following existing metrics are for all pods, not
+just ones that are restarting, but at a certain saturation of restarting pods
+this metric would be expected to become slower and must be watched to determine
+rollback:
+* `kubelet_pod_start_duration_seconds`
+* `kubelet_pod_start_sli_duration_seconds`
+
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+<!--
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+<!--
+Even if applying deprecation policies, they may still surprise some users.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+<!--
+Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+checking if there are objects with field X set) may be a last resort. Avoid
+logs or events for this purpose.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release.
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
+  <<[/UNRESOLVED]>>
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+<!--
+Pick one more of these and delete the rest.
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release.
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
+  
+<<[/UNRESOLVED]>>
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+<!--
+Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+implementation difficulties, etc.).
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+### Dependencies
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### Does this feature depend on any specific services running in the cluster?
+
+<!--
+Think about both cluster-level services (e.g. metrics-server) as well
+as node-level agents (e.g. specific version of CRI). Focus on external or
+optional services that are needed. For example, if this feature depends on
+a cloud provider API, or upon an external software-defined storage or network
+control plane.
+
+For each of these, fill in the following—thinking about running existing user workloads
+and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+-->
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+### Scalability
+
+<!--
+For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them.
+
+For beta, this section is required: reviewers must answer these questions.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+<!--
+Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+Focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+-->
+
+It will not result in NEW API calls but it will result in MORE API calls. See
+the [Risks and Mitigations](#risks-and-mitigations) section for the
+back-of-the-napkin math on the increase in especially /pods API endpoint calls,
+which initial benchmarking showed an aggressive case (110 instantly restarting
+single-contaier pods) reaching 5 QPS before slowing down to 2 QPS.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+<!--
+Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+-->
+
+No, this KEP will not result in any new API types.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+<!--
+Describe them, providing:
+  - Which API(s):
+  - Estimated increase:
+-->
+
+No, this KEP will not result in any new calls to the cloud provider.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+<!--
+Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+-->
+
+No, this KEP will not result in increasing size or count of the existing API objects.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+<!--
+Look at the [existing SLIs/SLOs].
+
+Think about adding additional work or introducing new steps in between
+(e.g. need to do X to start a container), etc. Please describe the details.
+
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+-->
+
+Maybe! As containers will be restarting more, this may affect "Startup latency
+of schedulable stateless pods", "Startup latency of schedule stateful pods".
+This is directly the type of SLI impact that a) the split between the default
+behavior change and the per node opt in is trying to mitigate, and b) one of the
+targets of the benchmarking period during alpha.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+<!--
+Things to keep in mind include: additional in-memory state, additional
+non-trivial computations, excessive access to disks (including increased log
+volume), significant amount of data sent and/or received over network, etc.
+This through this both in small and large cases, again with respect to the
+[supported limits].
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+-->
+
+Yes! We expect more CPU usage of kubelet as it processes more restarts. In
+initial manual benchmarking tests, CPU usage of kubelet increased 2x on nodes
+saturated with 110 instantly crashing single-container pods. During the alpha
+benchmarking period, we will be quantifying that amount in fully and partially
+saturated nodes with both the new default backoff curve and the minimum per node
+backoff curve.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+Based on the initial benchmarking, no, which was based on manual benchmarking
+tests on nodes saturated with 110 instantly crashing single-container pods.
+However, more "normal" cases (with lower percentage of crashing pods) and even
+more pathological cases (with higher container-density Pods, sidecars, n/w
+traffic, and large image downloads) will be tested further during this alpha
+period to better articulate the risk against the most aggressive restart
+characteristics.
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ## Implementation History
 
@@ -1380,6 +1863,7 @@ Major milestones might include:
   order to merge a provisional and address the new 1.32 design in a cleaner PR
 * 09-20-2024: Rewrite for 1.32 design focused on per-node config in place of
   `RestartPolicy: Rapid`
+* 10-02-2024: PRR added for 1.32 design
 
 ## Drawbacks
 
