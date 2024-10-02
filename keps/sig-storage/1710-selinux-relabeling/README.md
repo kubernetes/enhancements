@@ -978,8 +978,8 @@ _This section must be completed when targeting beta graduation to a release._
   * Implement bare minimum of `SELinuxMount` for experiments, including:
     * Extend SELinux mount to all volume access modes.
     * Add label with volume access mode to `volume_manager_selinux_volume_context_mismatch_errors_total` and similar metrics.
-* 1.32: `SELinuxMountReadWriteOncePod` still beta, SELinuxMount alpha.
-  * We discovered that sharing volumes between privileged and unprivileged containers as desceribed [here](#privileged-containers) is a valid use case.
+* 1.32: `SELinuxMountReadWriteOncePod` still beta, `SELinuxMount` alpha, `SELinuxChangePolicy` alpha.
+  * We discovered that sharing volumes between privileged and unprivileged containers as described [here](#privileged-containers) is a valid use case.
     we cannot mount *all* volumes with `-o context` and it must be an explicit opt-out using `SELinuxChangePolicy: Recursive`.
   * Implement `SELinuxChangePolicy` as an alpha field.
 
