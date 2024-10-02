@@ -115,6 +115,12 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Conflict resolution](#conflict-resolution-1)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -718,10 +724,10 @@ manipulated per node. By default `KubeletConfiguration` is intended to be shared
 between nodes, but the beta feature for drop-in configuration files in a
 colocated config directory cirumvent this. In addition, `KubeletConfiguration`
 drops fields unrecognized by the current kubelet's schema, making it a good
-choice to circumvent compatability issues with n-3 kubelets. While there is an
+choice to circumvent compatibility issues with n-3 kubelets. While there is an
 argument that this could be better manipulated with a command-line flag, so
 lifecycle tooling that configures nodes can expose it more transparently, the
-advantages to backwards compatability outweigh this consideration for the alpha
+advantages to backwards compatibility outweigh this consideration for the alpha
 period and will be revisted before beta.
 
 ### Refactor of recovery threshold
@@ -1352,7 +1358,7 @@ original CrashLoopBackOff behavior. It will drop unrecognized fields in
 start up in a past kubelet version, it will not break kubelet (though the
 behavior will, of course, not change).
 
-While the CRI is a consumer of the result of this change (as it will recieve
+While the CRI is a consumer of the result of this change (as it will receive
 more requests to start containers), it does not need to be updated at all to
 take advantage of this feature as the restart logic is entirely in process of
 the kubelet component.
@@ -1420,7 +1426,7 @@ Since we currently only have anecdotal benchmarking, the alpha will implement
 more conservative modeled initial value and maximum backoff, though less
 conservative from the 1.31 proposal as initial manual data indicated faster
 maximum backoff caps were safe. The new values for all CrashLoopBackOff behavior
-for all workloads will be intial value=1s, max=60s. (See [this
+for all workloads will be initial value=1s, max=60s. (See [this
 section](#front-loaded-decay-curve-modified-maximum-backoff-methodology) for
 more rationale.)
 
