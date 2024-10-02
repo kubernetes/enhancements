@@ -107,6 +107,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -144,20 +147,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -759,7 +762,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/kubelet/images`: `2-10-2024` - `83.8`
+- `pkg/kubelet/kuberuntime`: `2-10-2024` - `66.6`
 
 ##### Integration tests
 
@@ -779,6 +783,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - <test>: <link to test coverage>
+Integration tests for the kubelet are not existing yet and will be covered by extending the e2e_node, e2e and unit tests.
 
 ##### e2e tests
 
@@ -792,7 +797,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should fail if image volume is not existing
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed if image volume is not existing but unused
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with multiple pods and same image on the same node
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and multiple volumes
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and pull policy of Always
+
+https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
 
 ### Graduation Criteria
 
@@ -858,6 +869,27 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Initial implementation added
+- CRI implementations add support
+
+#### Beta
+
+- Add support for [`subPath`](https://kubernetes.io/docs/concepts/storage/volumes/#using-subpath)
+- Expand unit and e2e tests
+- Add three metrics for an admin to see the success of their image volumes
+    - `image_volume_requested_total`
+    - `image_volume_mounted_success`
+    - `image_volume_mounted_error`
+
+#### GA
+
+- Multiple examples of real world uses
+- support in both CRI-O and containerd
+- Allowing time for feedback
+
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -871,6 +903,12 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+kube-apiserver, kubelet and CRI implementation have to support the feature for it to work e2e.
+If any of these components downgrades or turns it off, the volume will not be mounted, and the pod creation will fail.
+The images that were previously pulled with this feature will be deemed unused by the kubelet's ImageGCManager
+and will be garbage collected when the node hits sufficient utilization (or have been unused a certain amount of time
+if the ImageGCMaxAge feature is used).
 
 ### Version Skew Strategy
 
@@ -886,6 +924,14 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Same as above: all the components must have support for it to work.
+Specifically, kube-apiserver will filter this field if it doesn't recognize/support it.
+If the kubelet doesn't support the field, it will not pull the image, and the path will not be present for the volume manager
+to mount it in, and the pod will fail.
+if the CRI implementation doesn't support it, then the PullImage request will fail and the pod creation will fail.
+
+TODO: check what happens when kubelet is too old to support the feature
 
 ## Production Readiness Review Questionnaire
 
@@ -1008,12 +1054,15 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+kube-apiserver must support it, and every node that has a pod scheduled that attempts to mount image volumes must have a kubelet and CRI that support it.
+If any don't, the volume won't be enabled.
+
+Since this field only applies on a per node basis, once the control plane agrees on the feature gates, any kubelet with the feature on will have access to it, not needing
+to wait for other workers.
+
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+A sharp increase in high `kubelet_image_pull_duration_seconds_bucket`, potentially showing registry unavailability or delays.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1023,11 +1072,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Not yet but they will be.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+N/A
 
 ### Monitoring Requirements
 
@@ -1046,6 +1099,12 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+There was not any metric added for alpha.
+For beta, three metrics can be added to report the state of image volume:
+- total image volumes requested
+- successful image mounts
+- failed image mounts
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1057,13 +1116,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: Pod running event
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1088,12 +1142,19 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [x] Metrics
+  - Metric name: `kubelet_image_pull_duration_seconds_bucket`
+  - Components exposing the metric: kubelet
+- [x] Metrics
+  - Metric name: `pod_start_sli_duration_seconds`
+  - Components exposing the metric: kubelet
 - [ ] Other (treat as last resort)
   - Details:
+
+Note: there is not currently a well defined SLI[1] for stateful pods, and it's likely this feature will drastically affect that if a big
+image needs to be pulled from a registry.
+
+1: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md#footnote3
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1101,6 +1162,10 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+A metric to show volume type so admins could find when their image volumes were requested
+as well as a success/error metric for showing that volumes did or did not get mounted
+These will be added in beta.
 
 ### Dependencies
 
@@ -1124,6 +1189,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+A CRI implementation with support, and an available registry that has the requested image
 
 ### Scalability
 
@@ -1152,6 +1219,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No new API calls, but yes new image pulls from an OCI registry.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1161,6 +1230,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+new type of volume: image
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1168,6 +1239,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+Potentially for credential plugins to give node image pull credentials, but it doesn't need to.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1177,6 +1250,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+A new type of volume in the pods, which will have the same size as other volume types
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1188,6 +1263,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Not technically because stateful pods don't have a defined SLI
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1201,6 +1278,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+CPU/Memory/Disk will be used when pulling an image volume, proportional to the size of the image.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1212,6 +1291,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+Yes, in the same way a large image used to run a container could use these resources (so no additional risk)
 
 ### Troubleshooting
 
@@ -1228,6 +1309,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Pods won't be able to be created, so the feature won't be accessible
+
 ###### What are other known failure modes?
 
 <!--
@@ -1243,7 +1326,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Registry unavailability
+- They can be found in the pod's events and look like image pull failures
+- No tests at the time of writing
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+At the time of writing, check the pod events. If metrics are added for image pull issues, then checking those would help as well.
 
 ## Implementation History
 
@@ -1257,6 +1346,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 16-05-2024 Issue opened 
+- 21-06-2024 KEP merged, targeted at Alpha
+- 2-10-2024 KEP updated to beta
+
 
 ## Drawbacks
 
