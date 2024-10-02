@@ -696,8 +696,12 @@ Yes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Images pulled during the period the feature was disabled will not be present in the cache, and thus could incur redundant pulls/container creation failures.
-However, the cache may still be present, and thus it will retain information from when it was previously enabled.
+Images pulled during the period the feature was disabled will not be present in the cache and will be treated
+as preloaded. Depending on the policy configured, this could either incur redundant pulls and thus container
+creation failures if the image registry is unavailable, or it might cause that these images will be available
+to all pods on the node that pulled them.
+
+Only images that don't expect any credential verification should be kept on the node before the feature is reenabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -715,17 +719,17 @@ the behavior of the pull policies will revert to the previous behavior.
 
 ###### What specific metrics should inform a rollback?
 
-If the feature gate is enabled, but the kubelet configuration field is not enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
-`image_pull_secret_recheck_hit` which will be both be a histogram counting the number of images that had a cache miss (despite the image potentially being present).
+If the feature gate is enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
+`image_pull_secret_recheck_hit` which are both histograms counting the number of images that had a cache miss/hit.
 
-This will allow an admin to see how many images would have reauthorization checks done.
+This will allow an admin to see how many images have authorization checks done.
 
 A histogram was chosen to allow an admin to compare registry uptime with cache misses, as the main failure scenerio is registry unavailability
 could cause pods not to come up, because the kubelet doesn't have credentials cached.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-They can be. The presence of a feature gate and kubelet configuration will make this path safe. Plus, there are no API objects that cause issue
+No. The feature does not exist at the time of writing.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -769,15 +773,11 @@ TBD needed for Beta
 
 ### Dependencies
 
-TBD
-
 ###### Does this feature depend on any specific services running in the cluster?
 
 No.
 
 ### Scalability
-
-TBD
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -785,7 +785,7 @@ No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No.
+No REST API types, only kubelet configuration API is being extended.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -793,7 +793,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No existing API objects will be unchanged.
+No, existing API objects will be unchanged.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -834,7 +834,6 @@ Why should this KEP _not_ be implemented. TBD
 
 ## Alternatives [optional]
 
-- Make the behavior change enabled by default by changing the feature gate to true by default instead of false by default.
 - Discussions went back and forth on whether this should go directly to GA as a fix or alpha as a feature gate. It seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated. But after further review and discussion with MrunalP we'll go ahead and have a kubelet feature gate with default off for alpha in v1.23.
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
 - For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
