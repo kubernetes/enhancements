@@ -3,6 +3,7 @@ kep-number: 3221
 authors:
   - "@100mik"
   - "@palnabarun"
+  - "@ritazh"
 owning-sig: sig-auth
 status: implementable
 creation-date: 2022-06-21
@@ -14,11 +15,12 @@ approvers:
   - "@liggitt"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
-stage: alpha
-latest-milestone: "v1.30"
+stage: stable
+latest-milestone: "v1.32"
 milestone:
   alpha: "v1.29"
   beta: "v1.30"
+  stable: "v1.32"
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:

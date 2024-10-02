@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Results with WATCH-LIST](#results-with-watch-list)
   - [Required changes for a WATCH request with the RV set to the last observed value (RV &gt; 0)](#required-changes-for-a-watch-request-with-the-rv-set-to-the-last-observed-value-rv--0)
   - [Provide a fix for the long-standing issue <a href="https://github.com/kubernetes/kubernetes/issues/59848">https://github.com/kubernetes/kubernetes/issues/59848</a>](#provide-a-fix-for-the-long-standing-issue-httpsgithubcomkuberneteskubernetesissues59848)
+  - [Replacing standard List request with WatchList mechanism for client-go's List method.](#replacing-standard-list-request-with-watchlist-mechanism-for-client-gos-list-method)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -580,6 +581,73 @@ Then on the server side we:
 2. use the existing waitUntilFreshAndBlock function to wait for the watch to catch up to the revision requested in the previous step.
 3. reject the request if waitUntilFreshAndBlock times out, thus forcing informers to retry.
 4. otherwise, construct the final list and send back to a client.
+
+### Replacing standard List request with WatchList mechanism for client-go's List method.
+
+Replacing the underlying implementation of the List method for client-go based clients (like typed or dynamic client) 
+with the WatchList mechanism requires ensuring that the data returned by both the standard List request and 
+the new WatchList mechanism remains identical. The challenge is that WatchList no longer retrieves the entire 
+list from the server at once but only receives individual items, which forces us to "manually" reconstruct 
+the list object on the client side.
+
+To correctly construct the list object on the client side, we need ListKind information.
+However, simply reconstructing the list object based on these data is not enough. 
+In the case of a standard List request, the server's response (a versioned list) is processed through a chain of decoders, 
+which can potentially modify the resulting list object. 
+A good example is the WithoutVersionDecoder, which removes the GVK information from the list object.
+Thus the "manually" constructed list object may not be consistent 
+with the transformations applied by the decoders, leading to differences.
+
+To ensure full compatibility, the server must provide a versioned empty list in the format requested by the client (e.g., protobuf representation). 
+We don't know how the client's decoder behaves for different encodings, i.e., whether the decoder actually supports 
+the encoding we intend to use for reconstruction. Therefore, to ensure maximal compatibility, we will ensure that 
+the encoding used for the reconstruction of the list matches the format that the client originally requested. 
+This guarantees that the returned list object can be correctly decoded by the client, 
+preserving the actual encoding format as intended.
+
+The proposed solution is to add a new annotation (`k8s.io/initial-events-list-blueprint`) to the object returned 
+in the bookmark event (The bookmark event is sent when the state is synced and marks the end of WatchList stream). 
+This annotation will store an empty, versioned list encoded as a Base64 string. 
+This annotation will be added to the same object/place the `k8s.io/initial-events-end` annotation is added.
+
+When the client receives such a bookmark, it will base64 decode the empty list and pass it to the decoder chain. 
+Only after a successful response from the decoders the list will be populated with data received from subsequent 
+watch events and returned.
+
+For example:
+```
+GET /api/v1/namespaces/test/pods?watch=1&sendInitialEvents=true&allowWatchBookmarks=true&resourceVersion=&resourceVersionMatch=NotOlderThan
+---
+200 OK
+Transfer-Encoding: chunked
+Content-Type: application/json
+
+{
+  "type": "ADDED",
+  "object": {"kind": "Pod", "apiVersion": "v1", "metadata": {"resourceVersion": "8467", "name": "foo"}, ...}
+}
+{
+  "type": "ADDED",
+  "object": {"kind": "Pod", "apiVersion": "v1", "metadata":     {"resourceVersion": "5726", "name": "bar"}, ...}
+}
+{
+"type":"BOOKMARK",
+"object":{"kind":"Pod","apiVersion":"v1","metadata":{"resourceVersion":"13519","annotations":{"k8s.io/initial-events-end":"true","k8s.io/initial-events-embedded-list":"eyJraW5kIjoiUG9kTGlzdCIsImFwaVZlcnNpb24iOiJ2MSIsIm1ldGFkYXRhIjp7fSwiaXRlbXMiOm51bGx9Cg=="}} ...}
+}
+...
+<followed by regular watch stream starting>
+```
+
+**Alternatives**
+
+We could modify the type of the object passed in the last bookmark event to include the list. 
+This approach would require changes to the reflector, as it would need to recognize the new object type in the bookmark event. 
+However, this could potentially break other clients that are not expecting a different object in the bookmark event.
+
+Another option would be to issue an empty list request to the API server to receive a list response from the client. 
+This approach would involve modifying client-go and implementing some form of caching mechanism, 
+possibly with invalidation policies. 
+Non-client-go clients that want to use this new feature would need to rebuild this mechanism as well.
 
 ### Test Plan
 <!--

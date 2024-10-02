@@ -225,6 +225,9 @@ However, we are going to extend the scope of the condition to the scenario when
 the Job completes by reaching the `.spec.completions`, as part of fixing
 (issue #123775)[https://github.com/kubernetes/kubernetes/issues/123775].
 
+Additionally, we introduce a new `CompletionsReached` condition reason for the `Complete` and `SuccessCriteriaMet` condition
+so that we can represent the place where the `SuccessCriteriaMet` condition when the number of succeeded Job Pods reached the `.spec.completions`.
+
 See more details in the
 [Job API managed-by mechanism](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/4368-support-managed-by-for-batch-jobs/README.md).
 
@@ -311,6 +314,20 @@ const (
 	JobSucceessCriteriaMet JobConditionType = "SuccessCriteriaMet"
 	...
 )
+...
+
+const (
+	...
+	// JobReasonSuccessPolicy reason indicates SuccessCriteriaMet condition is added due to 
+	// a Job met successPolicy.
+	// https://kep.k8s.io/3998
+	JobReasonSuccessPolicy string = "SuccessPolicy"
+	// JobReasonCompletionsReached reason indicates SuccessCriteriaMet condition is added due to 
+	// a number of succeeded Job Pods met completions.
+	// https://kep.k8s.io/3998
+	JobReasonCompletionsReached string = "CompletionsReached"
+)
+...
 ```
 
 Moreover, we validate the following constraints for the `rules` and `status.conditions`:
@@ -341,8 +358,8 @@ Every time the pod condition are updated, the job-controller evaluates the succe
 - `succeededIndexes`: the job-controller evaluates `.status.completedIndexes` to see if a set of indexes is there.
 - `succeededCount`: the job-controller evaluates `.status.succeeded` to see if the value is `succeededCount` or more.
 
-After that, the job-controller adds a `SuccessCriteriaMet` condition instead of a `Failed` condition to `.status.conditions`
-and the job-controller terminates the lingering pods. At that time, `JobSuccessPolicy` is set to the `status.reason` field.
+After that, the job-controller adds a `SuccessCriteriaMet` condition instead of a `FailureTarget` condition to `.status.conditions`
+and the job-controller terminates the lingering pods. At that time, `SuccessPolicy` is set to the `status.reason` field.
 
 Note that when the job meets one of successPolicies, other successPolicies are ignored.
 
@@ -431,9 +448,9 @@ to implement this enhancement.
 ##### e2e tests
 
 - Test scenarios:
-  - handling of successPolicy when all indexes succeeded
-  - handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending
-  - handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L524-L530)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L563-L569)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L602-L608)
 
 ### Graduation Criteria
 
@@ -445,13 +462,16 @@ to implement this enhancement.
 #### Beta
 
 - E2E tests passed as designed in [TestPlan](#test-plan).
-- Introduced a new `job_succeeded_total` metric in [Monitoring Requirements](#monitoring-requirements).
+- Introduced new `CompletionsReached` and `SuccessPolicy` reason labels to the `jobs_finished_total` metric in [Monitoring Requirements](#monitoring-requirements).
+- Introduced a new `CompletionsReached` condition reason for the `Complete` and `SuccessCriteriaMet` condition type.
 - Feature is enabled by default.
 - Address all issues reported by users.
 
 #### GA
 
 - No negative feedback.
+- Verify reason for the Job's `Complete` condition in all e2e conformance tests
+  (see [example](https://github.com/kubernetes/kubernetes/blob/e5dd48efd07e8a052604b3073e0fafe7361ca689/test/e2e/apps/job.go#L804))
 
 ### Upgrade / Downgrade Strategy
 
@@ -614,16 +634,19 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-We will introduce the new `job_succeeded_total` metric with `JobSuccessPolicy` and `Completions` reasons,
-which indicates the following situations: 
+We will introduce the new `CompletionsReached` and `SuccessPolicy` reason labels to the `jobs_finished_total`, 
+which indicates the following situations:
 
-- `JobSuccessPolicy` indicates a job is declared as `SuccessCriteriaMet` because the job meets `spec.succesPolicy`.
-- `Completions` indicates a job is declared as `SuccessCriteriaMet` because the job meets `spec.completions`.
+- `CompletionsReached` indicates a job is declared as `Complete` because the number of succeeded job pods meet `.spec.completions`.
+- `SuccessPolicy` indicates a job is declared as `Complete` because the job meets `.spec.successPolicy`.
+
+As we discussed in [this thread](https://github.com/kubernetes/kubernetes/pull/126075#discussion_r1677411216), 
+the new `CompletionsReached` reason label is used to count the successful jobs instead of existing "" reason label.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Job API .status
-  - The Job controller will add a condition with `JobSuccessPolicy` reason to `conditions`.
+  - The Job controller will add a `SuccessCriteriaMet` condition with `SuccessPolicy` reason to `conditions`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -717,6 +740,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2024.02.07: API is finalized for the alpha stage.
 - 2024.03.09: "Criteria" is replaced with "Rules".
 - 2024.06.11: Beta Graduation.
+- 2024.07.26: "CompletionsReached" reason is added and new reason labels are added to the "jobs_finished_total" metric.
 
 ## Drawbacks
 

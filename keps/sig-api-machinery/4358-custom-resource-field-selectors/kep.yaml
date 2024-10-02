@@ -16,7 +16,7 @@ see-also:
   - "/keps/sig-api-machinery/95-custom-resource-definitions"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -27,6 +27,7 @@ latest-milestone: "v1.31"
 milestone:
   alpha: "v1.30"
   beta: "v1.31"
+  stable: "v1.32"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
