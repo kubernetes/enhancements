@@ -242,9 +242,9 @@ See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternativ
 
 #### Subresource
 
-Resource changes can only be made via the new `/resize` subresource. The request & response types
-for this subresource are the full pod object, but only the following fields are allowed to be
-modified:
+Resource changes can only be made via the new `/resize` subresource, which accepts Update and Patch
+verbs. The request & response types for this subresource are the full pod object, but only the
+following fields are allowed to be modified:
 
 * `.spec.containers[*].resources`
 * `.spec.initContainers[*].resources` (only for sidecars)
@@ -255,9 +255,9 @@ request.
 
 #### Validation
 
-Resource fields remain immutable via pod update.
-
-The following API validation rules will be applied for updates via the `/resize` subresource:
+Resource fields remain immutable via pod update (a change from the alpha behavior), but are mutable
+via the new `/resize` subresource. The following API validation rules will be applied for updates via
+the `/resize` subresource:
 
 1. Resources & ResizePolicy must be valid under pod create validation.
 2. Computed QOS class cannot change. See [QOS Class](#qos-class) for more details.
@@ -304,17 +304,16 @@ proposed resize operation for a given resource.  Any time the
 
 This field can be set to one of the following values:
 * `Proposed` - the proposed resize (in Spec...Resources) has not been accepted or
-  rejected yet. `resources != allocatedResources`
+  rejected yet. Desired resources != Allocated resources.
 * `InProgress` - the proposed resize has been accepted and is being actuated. A new resize request
-  will reset the status to `Proposed`.
-  `resources == allocatedResources && allocatedResources != status.resources`
+  will reset the status to `Proposed`. Desired resources == Allocated resources != Actual resources.
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
   but is not possible right now; it will be re-evaluated.
-  `resources != allocatedResources`
+  Desired resources != Allocated resources.
 * `Infeasible` - the proposed resize is not feasible and is rejected; it will not
-  be re-evaluated.
-  `resources != allocatedResources`
-* (no value) - there is no proposed resize
+  be re-evaluated. Desired resources != Allocated resources.
+* (no value) - there is no proposed resize.
+  Desired resources == Allocated resources == Acutal resources.
 
 Any time the apiserver observes a proposed resize (a modification of a
 `Spec...Resources` field), it will automatically set this field to `Proposed`.
@@ -674,7 +673,7 @@ Pod Status in response to user changing the desired resources in Pod Spec.
   will accept the changes. This makes race conditions where the container terminates around the
   resize "fail open", and prevents a resize of a terminated container from blocking the resize of a
   running container (see [Atomic Resizes](#atomic-resizes)).
-* Resizing pods in a graceful shutdown state is permitted.
+* Resizing pods in a graceful shutdown state is permitted, and will be actuated best-effort.
 
 ### Atomic Resizes
 
@@ -1069,7 +1068,6 @@ TODO: Identify more cases
 - ContainerStatus API changes are done. Tests are ready but not enforced.
 
 #### Beta
-- VPA alpha integration of feature completed and any bugs addressed.
 - E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added.
 - Negative tests are identified and added.
 - A "/resize" subresource is defined and implemented.

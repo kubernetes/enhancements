@@ -1,3 +1,5 @@
 kep-number: 1287
 alpha:
   approver: "@ehashman"
+beta:
+  approver: "@jpbetz"
