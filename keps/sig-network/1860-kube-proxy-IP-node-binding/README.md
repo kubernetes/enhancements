@@ -30,6 +30,7 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -134,9 +135,13 @@ Unit tests:
 - unit tests for the ipvs and iptables rules
 - unit tests for the validation
 
+Integration tests:
+- https://github.com/kubernetes/kubernetes/pull/125237
+
 E2E tests:
 - The default behavior for `ipMode` does not break any existing e2e tests
 - The default `VIP` value is already tested
+- https://github.com/kubernetes/kubernetes/pull/124876
 
 ## Graduation Criteria
 
@@ -378,3 +383,9 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 N/A
+
+## Implementation History
+
+- 2020-06-18: Initial KEP
+- 2023-12-14: Alpha release with Kubernetes 1.29
+- 2024-04-18: Beta release with Kubernetes 1.30
