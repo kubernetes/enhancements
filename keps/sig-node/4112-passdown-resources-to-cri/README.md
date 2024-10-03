@@ -616,6 +616,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 For alpha, no new e2e tests are planned.
 
+For Beta: a suite of NRI tests will be added to verify that the runtime
+receives the resource information correctly and passes it down to the NRI
+plugins.
+
 ### Graduation Criteria
 
 <!--
@@ -696,8 +700,6 @@ in back-to-back releases.
 #### GA
 
 - No bugs reported in the previous cycle
-- N examples of real-world usage
-- N installs
 
 ### Upgrade / Downgrade Strategy
 
@@ -784,15 +786,10 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate
+  - Feature gate name: KubeletContainerResourcesInPodSandbox
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 

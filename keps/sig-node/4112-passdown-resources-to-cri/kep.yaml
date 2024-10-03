@@ -8,9 +8,9 @@ participating-sigs: []
 status: provisional
 creation-date: 2023-06-28
 reviewers:
-  - TBD
+  - "@mikebrow"
 approvers:
-  - TBD
+  - "@haircommander"
 
 see-also: []
 replaces: []
@@ -30,7 +30,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TBD
+  - name: KubeletContainerResourcesInPodSandbox
     components:
       - kubelet
 disable-supported: true
