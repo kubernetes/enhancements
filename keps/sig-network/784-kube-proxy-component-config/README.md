@@ -157,18 +157,19 @@ The mitigations to those risks:
 | v1alpha1           | v1alpha2                 | DataType     | Comments                                                                                                       |
 |--------------------|--------------------------|--------------|----------------------------------------------------------------------------------------------------------------|
 | ClusterCIDR        | DetectLocal.ClusterCIDRs | list[string] | list of CIDR ranges for detecting local traffic                                                                |
-| BindAddress        | NodeIPOverride           | list[string] | list of primary node IPs                                                                                       |
 | MetricsBindAddress | MetricsBindAddresses     | list[string] | list of CIDR ranges that contain valid node IPs to expose metrics server, instead of host port(ip:port) format |
 | HealthzBindAddress | HealthzBindAddresses     | list[string] | list of CIDR ranges that contain valid node IPs to expose healthz server, instead of host port(ip:port) format |                                      |
 
 ### Following fields will be added
-| Field                | DataType         | Default Value | Comments                                                                       |
-|----------------------|------------------|---------------|--------------------------------------------------------------------------------|
-| IPVS.MasqueradeBit   | integer (32-bit) | 14            | IPVS will use this field instead of IPTables.MasqueradeBit                     |
-| Windows.RunAsService | boolean          | false         | new field for existing --windows-service command line flag                     |
-| ConfigHardFail       | boolean          | true          | if set to true, kube-proxy will exit rather than just warning on config errors |
-| MetricsBindPort      | integer (32-bit) | 10249         | port on which metrics server will be exposed                                   |
-| HealthzBindPort      | integer (32-bit) | 10256         | port on which helathz server will be exposed                                   |
+| Field                | DataType         | Default Value | Comments                                                                                                 |
+|----------------------|------------------|---------------|----------------------------------------------------------------------------------------------------------|
+| IPVS.MasqueradeBit   | integer (32-bit) | 14            | IPVS will use this field instead of IPTables.MasqueradeBit                                               |
+| Windows.RunAsService | boolean          | false         | new field for existing --windows-service command line flag                                               |
+| ConfigHardFail       | boolean          | true          | if set to true, kube-proxy will exit rather than just warning on config errors                           |
+| NodeIPOverride       | list[string]     |               | list of primary node IPs                                                                                 |
+| IPFamilyPolicy       | string           |               | controls nodeIP(s) detection, allowed values: [`SingleStack` \| `PreferDualStack` \| `RequireDualStack`] |
+| MetricsBindPort      | integer (32-bit) | 10249         | port on which metrics server will be exposed                                                             |
+| HealthzBindPort      | integer (32-bit) | 10256         | port on which helathz server will be exposed                                                             |
 
 ### Following fields will have different default values
 | Field                       | v1alpha1 (default) | v1alpha2 (default) | 
@@ -178,9 +179,10 @@ The mitigations to those risks:
 
 
 ### Following fields will be dropped
-| Key       | Comments                                |
-|-----------|-----------------------------------------|
-| PortRange | dropped as no longer used by kube-proxy |
+| Key          | Comments                                 |
+|--------------|------------------------------------------|
+| PortRange    | dropped as no longer used by kube-proxy  |
+| BindAddress  | dropped in favor of NodeIPOverride       |
 
 
 ### Test Plan
