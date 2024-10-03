@@ -399,6 +399,25 @@ extending the production code to implement this enhancement.
 -->
 
 - `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/apis/admissionregistration/validation/validation_test.go`
+- `k8s.io/kubernetes/pkg/apis/authorization/validation/validation_test.go`
+- `k8s.io/kubernetes/pkg/controlplane/import_known_versions_test.go`
+- `k8s.io/kubernetes/pkg/registry/authorization/subjectaccessreview/rest_test.go`
+- `k8s.io/kubernetes/pkg/registry/authorization/util/helpers_test.go`
+- `k8s.io/kubernetes/plugin/pkg/auth/authorizer/node/node_authorizer_test.go`
+- `k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac/rbac_test.go`
+- `k8s.io/apimachinery/pkg/apis/metav1/validation/validation_test.go`
+- `k8s.io/apiserver/pkg/admission/plugin/cel/filter_test.go`
+- `k8s.io/apiserver/pkg/admission/plugin/policy/validating/caching_authorizer_test.go`
+- `k8s.io/apiserver/pkg/cel/library/cost_test.go`
+- `k8s.io/apiserver/pkg/cel/library/library_compatibility_test.go`
+- `k8s.io/apiserver/pkg/endpoints/filters/authorization_test.go`
+- `k8s.io/apiserver/pkg/endpoints/request/requestinfo_test.go`
+- `k8s.io/apiserver/plugin/pkg/authorizer/webhook/round_trip_test.go`
+- `k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook_test.go`
+- `k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook_v1_test.go`
+- `k8s.io/apiserver/plugin/pkg/authorizer/webhook/round_trip_test.go`
+- `k8s.io/apiserver/dynamic-resource-allocation/structured/namedresources/cel/compile_test.go`
 
 ##### Integration tests
 
@@ -418,6 +437,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - <test>: <link to test coverage>
+- k8s.io/kubernetes/test/integration/apiserver/cel/authorizerselector: selectordisabled: TestAuthzSelectorsLibraryEnabled
+- k8s.io/kubernetes/test/integration/apiserver/cel/authorizerselector: selectorenabled: TestAuthzSelectorsLibraryDisabled
+- k8s.io/kubernetes/test/integration/apiserver/cel/authorizerselector: selectordisabled: TestMultiWebhookAuthzConfig
 
 ##### e2e tests
 
@@ -473,7 +495,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Beta
 
-- Determine if additional tests are necessary
+- Discussion in sig with @liggitt, @enj, and @deads2k agrees the unit and integration testing are sufficient.
+  In particular, e2es cannot be written because we do not control the list of authorization webhooks.
+  We have tested authorization webhooks using integration testing.
 - Ensure reliability of existing tests
 
 #### GA
@@ -544,7 +568,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: AuthorizeWithSelectors
+  - Feature gate name: AuthorizeWithSelectors, AuthorizeNodeWithSelectors
   - Components depending on the feature gate:
     - kube-apiserver
 
@@ -586,12 +610,20 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+If the node authorizer is bugged (we do have tests that give us confidence it is not bugged), then kubelets could face rejections.
+
+If an authorization webhook is configured that honors these new fields and the authorization webhook doesn't follow our
+best practices, then it may start rejecting.  This does require ignoring our best practices of only using field and label
+selectors to allow otherwise denied requests.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+The rate of webhook_evaluations_total with the result=error should not increase.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -601,11 +633,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+There is no persisted data.  The kube-apiserver can be restarted without the featuregates.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -624,6 +660,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Using this feature is a cluster-admin activity with `AuthorizeNodeWithSelectors` controlling usage in the node authorizer
+and the authorization webhook selection indicating whether the field and label selectors are honored.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -640,8 +679,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: Not applicable for workload users becuase this is a cluster-admin feature.  No workloads can use this.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -660,16 +699,18 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Authorization checks don't get worse.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: webhook_evaluations_total with the result=error
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -679,6 +720,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -702,6 +745,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No, it is in the kube-apiserver and is not a persisted item.
 
 ### Scalability
 
@@ -730,6 +775,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -739,6 +786,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -746,6 +795,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -755,6 +806,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -766,6 +819,9 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+There is additional time parsing field and label selectors as part of determining requestInfo.
+This expected to be nearly zero compared to the request handling.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -779,6 +835,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -790,6 +848,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -806,6 +866,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+It's a non-persisted kube-apiserver feature.  The feature isn't available.
+
 ###### What are other known failure modes?
 
 <!--
@@ -821,6 +883,10 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+If a field or label selector cannot be parsed, then the request is authorized as though it had no field or label selector.
+This means that a request with an invalid field or label selector, that would later fail anyway, may be rejected early.
+Failing in this direction is safe.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
@@ -835,6 +901,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+Disable the FeatureGate and submit an issue.
 
 ## Drawbacks
 
