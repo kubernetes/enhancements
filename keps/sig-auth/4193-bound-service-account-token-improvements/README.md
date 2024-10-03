@@ -54,9 +54,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -494,7 +494,7 @@ New metrics that can be used to identify if the feature is in use:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30):**
+**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30, GA v1.32):**
 
 *Without* the feature gate enabled, issued service account tokens *will not* have their `jti` field set to a random UUID,
 and the audit log will not persist the issued credential identifier when issuing a token.
@@ -510,7 +510,7 @@ as part of the UserInfo in the audit event.
 As none of these fields are actually used for validating/verifying a token is valid, enabling & disabling the feature
 does not cause any adverse side effects.
 
-**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30) feature:**
+**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30, GA v1.32) feature:**
 
 *Without* the feature gate enabled, service account tokens that have been bound to Node objects will not have their
 node reference claims validated (to ensure the referenced node exists).
@@ -529,7 +529,7 @@ than `ServiceAccountTokenNodeBinding`.
 
 Tokens that are bound to objects other than Nodes are unaffected.
 
-**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30):**
+**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30, GA v1.32):**
 
 *Without* the feature gate enabled, tokens that are bound to Pod objects will not include information about the Node
 that the pod is scheduled/assigned to.
@@ -699,6 +699,7 @@ For example, attempting to issue a node bound token, or attempting to authentica
 * Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
 * `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
 * Promoted `ServiceAccountTokenNodeBinding` promoted to beta for v1.31 release
+* Promoted `ServiceAccountTokenJTI`, `ServiceAccountTokenPodNodeInfo`, `ServiceAccountTokenNodeBindingValidation` to stable for v1.32 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
