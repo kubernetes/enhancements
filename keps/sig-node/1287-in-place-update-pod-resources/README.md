@@ -1174,7 +1174,10 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: `InPlacePodVerticalScaling`
-    - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
+      - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
+    - Feature gate name: `InPlacePodVerticalScalingAllocatedStatus`
+      - Components depending on the feature gate: kubelet, kube-apiserver
+      - Requires `InPlacePodVerticalScaling` be enabled
 
 * **Does enabling the feature change any default behavior?**
 
@@ -1183,7 +1186,9 @@ _This section must be completed when targeting alpha to a release._
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?** Yes
 
-  - The feature should not be disabled on a running node (create a new node instead).
+  - Feature can be disabled without issue in the control plane.
+  - Can be disabled on nodes, but if there are any pending resizes container resource configurations
+    may be left in an unknown state.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   - API will once again permit modification of Resources for 'cpu' and 'memory'.
@@ -1357,7 +1362,13 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
 
-  - TBD
+  - Race condition with scheduler can cause pods to be (temporarily) rejected with `OutOfCPU` or
+    `OutOfMemory`.
+  - Race condition with pod startup on version-skewed clusters can lead to pods running in an
+    unknown resource configuration. See [Version Skew Strategy](#version-skew-strategy) for more
+    details.
+  - Shrinking memory limit below memory usage can leave the resize in an `InProgress` state
+    indefinitely. Race conditions around reading usage info could cause container to OOM on resize.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
