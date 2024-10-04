@@ -524,7 +524,7 @@ in back-to-back releases.
 
 #### GA
 
-- Feature gate (i.e. `KUBECTL_DEBUG_CUSTOM_PROFILE`) is locked to true and will be removed in 1.33.
+- Feature gate (i.e. `KUBECTL_DEBUG_CUSTOM_PROFILE`) is locked to true and will be removed in 1.34.
 - e2e tests are implemented and enabled.
 
 ### Upgrade / Downgrade Strategy
