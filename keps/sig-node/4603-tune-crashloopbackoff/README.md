@@ -404,6 +404,15 @@ CrashLoopBackOffBehavior of today vs the proposed minimum for per node
 configuration](./restarts-vs-elapsed-minimum-per-node.png "Per node minimum backoff
 curve allowed")
 
+While the complete information is saved for [Design Details](#per-node-config),
+its expedient to see the exact config proposed here:
+
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  max: 4
+```
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
 
@@ -740,6 +749,15 @@ was an acceptable design change given the introduction of `KubeletConfiguration`
 in the first place. In any case, the advantages to backwards and forward
 compatibility by far outweigh this consideration for the alpha period and can be
 revisted before beta.
+
+The proposed configuration explicitly looks like this:
+
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  max: 4
+```
 
 ### Refactor of recovery threshold
 
