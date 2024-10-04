@@ -404,6 +404,15 @@ CrashLoopBackOffBehavior of today vs the proposed minimum for per node
 configuration](./restarts-vs-elapsed-minimum-per-node.png "Per node minimum backoff
 curve allowed")
 
+While the complete information is saved for [Design Details](#per-node-config),
+its expedient to see the exact config proposed here:
+
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  max: 4
+```
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
 
@@ -718,17 +727,37 @@ based config and 2) configuration following the API specification of the
 `kubelet.config.k8s.io/v1beta1 KubeletConfiguration` Kind, which is passed to
 kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
 ([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
+
 Since this is a per-node configuration that likely will be set on a subset of
 nodes, or potentially even differently per node, it's important that it can be
-manipulated per node. By default `KubeletConfiguration` is intended to be shared
+manipulated per node. Expected use cases of this type of heterogeneity in
+configuration include
+
+* Dedicated node pool for workloads that are expected to rapidly restart
+* Config aligned with node labels/pod affinity labels for workloads that are
+  expected to rapidly restart
+* Machine size adjusted config
+
+By default `KubeletConfiguration` is intended to be shared
 between nodes, but the beta feature for drop-in configuration files in a
 colocated config directory cirumvent this. In addition, `KubeletConfiguration`
 drops fields unrecognized by the current kubelet's schema, making it a good
 choice to circumvent compatibility issues with n-3 kubelets. While there is an
 argument that this could be better manipulated with a command-line flag, so
-lifecycle tooling that configures nodes can expose it more transparently, the
-advantages to backwards compatibility outweigh this consideration for the alpha
-period and will be revisted before beta.
+lifecycle tooling that configures nodes can expose it more transparently, that
+was an acceptable design change given the introduction of `KubeletConfiguration`
+in the first place. In any case, the advantages to backwards and forward
+compatibility by far outweigh this consideration for the alpha period and can be
+revisted before beta.
+
+The proposed configuration explicitly looks like this:
+
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  max: 4
+```
 
 ### Refactor of recovery threshold
 
@@ -1147,6 +1176,7 @@ feature gates set as per the [Conflict Resolution](#conflict-resolution) policy
 
 - Gather feedback from developers and surveys
 - High confidence in the specific numbers/decay rate
+  - Including revisiting 300s maximum for node specific config
 - Benchmark restart load methodology and analysis published and discussed with
   SIG-Node
 - Discuss PLEG polling loops and its effect on specific decay rates
@@ -1500,7 +1530,7 @@ which is a new field in the `KubeletConfiguration` Kind. Based on manual tests
 by the author, adding an unknown field to `KubeletConfiguration` is safe and the
 unknown config field is dropped before addition to the
 `kube-system/kubelet-config` object which is its final destination (for example,
-in the case of n-3 kubelets facing a configuration introduced by this KEP). This
+in the case of n-3 kubelets facing a configuration introduced by this KEP). Ultimately this is supported by the configuratinon of a given Kind's `fieldValidation` strategy in API machinery ([ref](https://github.com/kubernetes/kubernetes/blob/release-1.31/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L584)) which, in 1.31+, is set to "warn" by default and is only valid for API objects and it turns out is not explicitly set as `strict` for `KuberntesConfiguration` object so they ultimately bypass this ([ref](https://github.com/kubernetes/kubectl/issues/1663#issuecomment-2392453716)). This
 is not currently tested as far as I can tell in the tests for
 `KubeletConfiguration` (in either the most likely location, in
 [validation_test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go),
@@ -1508,7 +1538,7 @@ nor other tests in the [config
 package](https://github.com/kubernetes/kubernetes/tree/005f184ab631e52195ed6d129969ff3914d51c98/pkg/kubelet/apis/config))
 and discussions with other contributors indicate that while little in core
 kubernetes does strict parsing, it's not well tested. At minimum as part of this
-implementation a test covering this for `KubeletConfgiuration` objects will be
+implementation a test covering this for `KubeletConfiguration` objects will be
 included in the `config.validation_test` package.
 
 ### Rollout, Upgrade and Rollback Planning
