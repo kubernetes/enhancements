@@ -1186,9 +1186,11 @@ _This section must be completed when targeting alpha to a release._
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?** Yes
 
-  - Feature can be disabled without issue in the control plane.
-  - Can be disabled on nodes, but if there are any pending resizes container resource configurations
-    may be left in an unknown state.
+  - `InPlacePodVerticalScaling` can be disabled without issue in the control plane.
+  - `InPlacePodVerticalScaling` can be disabled on nodes, but if there are any pending resizes
+    container resource configurations may be left in an unknown state. This can be avoided by
+    draining the node before disabling in-place resize.
+  - `InPlacePodVerticalScalingAllocatedStatus` can be disabled and reenabled without consequence.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   - API will once again permit modification of Resources for 'cpu' and 'memory'.
