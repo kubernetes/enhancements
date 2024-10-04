@@ -156,6 +156,14 @@ parameters" KEP](../4381-dra-structured-parameters/README.md) added an
 extension. Now the roles are reversed: #4381 defines the base functionality
 and this KEP is an optional extension.
 
+In Kubernetes 1.32, this KEP has been **withdrawn** and all code related to it
+gets removed. #4381 continues. The main objections against this KEP that
+led to this decision were:
+- Lack of support for cluster autoscaling because a cluster autoscaler cannot
+  reason about resource availability when adding or removing nodes.
+- Complex back-and-forth through the apiserver while scheduler and DRA
+  drivers negotiate how to allocate a ResourceClaim.
+
 With #4381, DRA drivers are limited by what the structured parameter model(s)
 defined by Kubernetes support. New requirements for future hardware may depend
 on changing Kubernetes first.
