@@ -1176,6 +1176,7 @@ feature gates set as per the [Conflict Resolution](#conflict-resolution) policy
 
 - Gather feedback from developers and surveys
 - High confidence in the specific numbers/decay rate
+  - Including revisiting 300s maximum for node specific config
 - Benchmark restart load methodology and analysis published and discussed with
   SIG-Node
 - Discuss PLEG polling loops and its effect on specific decay rates
