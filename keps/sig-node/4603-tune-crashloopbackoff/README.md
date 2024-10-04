@@ -528,6 +528,10 @@ of ~5 QPS when deploying 110 mass crashing pods for our tests, even with
 instantly crashing pods and intantaneously restarting CrashLoopBackOff behavior,
 `/pods` API requests quickly normalized to ~2 QPS. In the same tests, runtime
 CPU usage increased by x10 and the API server CPU usage increased by 2x.
+<<[UNRESOLVED non blocking]If you were testing this on a small cluster without a lot of
+additional load, the 2x increase in apiserver cpu usage is probably not a
+particularly useful metric. Might be worth mentioning the raw numbers here
+instead.>> <<[/UNRESOLVED]>>
 
 For both of these changes, by passing these changes through the existing
 SIG-scalability tests, while pursuing manual and more detailed periodic
@@ -587,8 +591,8 @@ excess restarts every 5 minutes after that; each crashing pod would be
 contributing an excess of ~1550 pod state transition API requests, and fully
 saturated node with a full 110 crashing pods would be adding 170,500 new pod
 transition API requests every five minutes, which is an an excess of ~568
-requests/10s. <<[!UNRESOLVED kubernetes default for the kubelet client rate
-limit and how this changes by machine size]>> <<[UNRESOLVED]>>
+requests/10s. <<[!UNRESOLVED non blocking: kubernetes default for the kubelet
+client rate limit and how this changes by machine size]>> <<[UNRESOLVED]>>
 
 
 ## Design Details 
@@ -866,7 +870,7 @@ behaviors common to all pod restarts"](code-diagram-for-restarts.png "Kubelet
 and Container Runtime restart code paths")
 
 ```
- <<[UNRESOLVED answer these question from original PR]>> 
+ <<[UNRESOLVED non blocking answer these question from original PR or make new bugs]>> 
  >Does this [old container cleanup using containerd] include cleaning up the image filesystem? There might be room for some optimization here, if we can reuse the RO layers.
  to answer question: looks like it is per runtime. need to check about leasees. also part of the value of this is to restart the sandbox.
 ```
@@ -1089,11 +1093,9 @@ extending the production code to implement this enhancement.
 -->
 
 
-- <<[UNRESOLVED whats up with this]>>
-  `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
+- `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
   coverage run on
   [prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-coverage-unit/1800947623675301888)**
-  <<[/UNRESOLVED]>>
 
 ##### Integration tests
 
@@ -1165,6 +1167,8 @@ feature gates set as per the [Conflict Resolution](#conflict-resolution) policy
 - Test proving `KubeletConfiguration` objects will silently drop unrecognized
   fields in the `config.validation_test` package
   ([ref](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go)).
+    - <<[UNRESOLVED non blocking]>>Is this also the expected behavior when the feature gate
+      is disabled?<<[/UNRESOLVED]>>
 - Test coverage of proper requeue behavior; see
   https://github.com/kubernetes/kubernetes/issues/123602
 - Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this
@@ -1559,7 +1563,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ###### What specific metrics should inform a rollback?
 
@@ -1598,7 +1602,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1606,7 +1610,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ### Monitoring Requirements
 
@@ -1625,7 +1629,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1638,7 +1642,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release.
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release.
 - [ ] Events
   - Event Reason: 
 - [ ] API .status
@@ -1666,7 +1670,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1674,7 +1678,7 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release.
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release.
 
 - [ ] Metrics
   - Metric name:
@@ -1692,7 +1696,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ### Dependencies
 
@@ -1717,7 +1721,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ### Scalability
 
@@ -1855,7 +1859,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ###### What are other known failure modes?
 
@@ -1874,7 +1878,7 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-<<[UNRESOLVED]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
 
 ## Implementation History
 
