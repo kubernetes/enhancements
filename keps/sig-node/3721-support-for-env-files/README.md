@@ -385,7 +385,7 @@ No
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, Containers already running will have their environment variables populated
-from the specified file. But on restart, the fields will be stripped and the
+from the specified file. But on restart, the fields will be skipped and the
 feature will no longer work.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
