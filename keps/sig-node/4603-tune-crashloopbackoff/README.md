@@ -411,7 +411,7 @@ its expedient to see the exact config proposed here:
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 crashloopbackoff: 
-  max: 4
+  maxSeconds: 4
 ```
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
@@ -760,7 +760,7 @@ The proposed configuration explicitly looks like this:
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 crashloopbackoff: 
-  max: 4
+  maxSeconds: 4
 ```
 
 ### Refactor of recovery threshold
@@ -1146,7 +1146,7 @@ heterogenity between "Succeeded" terminating pods, and crashing pods whose
 
 #### Alpha
 
-- New `int32 crashloopbackoff.max` field in `KubeletConfiguration` API, validated
+- New `int32 crashloopbackoff.maxSeconds` field in `KubeletConfiguration` API, validated
   to a minimum of 1 and a maximum of 300, used when
   `EnableKubeletCrashLoopBackoffMax` feature flag enabled, to customize
   CrashLoopBackOff per node
@@ -1300,12 +1300,12 @@ To make use of this enhancement, on cluster upgrade, the
 `EnableKubeletCrashLoopBackoffMax` feature gate must first be turned on for the
 cluster. Then, if any nodes need to use a different backoff curve, their kubelet
 must be completely redeployed either in the same upgrade or after that upgrade
-with the `crashloopbackoff.max` `KubeletConfiguration` set.
+with the `crashloopbackoff.maxSeconds` `KubeletConfiguration` set.
 
 To stop use of this enhancement, there are two options. 
 
 On a per-node basis, nodes can be completely redeployed with
-`crashloopbackoff.max` `KubeletConfiguration` unset. Since kubelet does
+`crashloopbackoff.maxSeconds` `KubeletConfiguration` unset. Since kubelet does
 not cache the backoff object, on kubelet restart they will start from the
 beginning of their backoff curve (either the original one with initial value
 10s, or the new baseline with initial value 1s, depending on whether they've
@@ -1343,9 +1343,9 @@ lower than 300s, it will be honored. In other words, operator-invoked
 configuration will have precedence over the default, even if it is slower, as
 long as it is valid.
 
-If `crashloopbackoff.max` `KubeletConfiguration` exists but
+If `crashloopbackoff.maxSeconds` `KubeletConfiguration` exists but
 `EnableKubeletCrashLoopBackoffMax` is off, kubelet will log a warning but will
-not honor the `crashloopbackoff.max` `KubeletConfiguration`. In other words,
+not honor the `crashloopbackoff.maxSeconds` `KubeletConfiguration`. In other words,
 operator-invoked per node configuration will not be honored if the overall
 feature gate is turned off.
 
