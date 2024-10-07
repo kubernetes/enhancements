@@ -18,11 +18,11 @@ To get started with this template:
 - [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -129,16 +129,16 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -247,17 +247,17 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal adds a new field to the `DeviceRequest`, called `FirstOf` which
-will contain an ordered list of `DeviceRequest` objects. In order to satisfy the
-main (containing) request, exactly one of the requests listed in `FirstOf` must
-be satisfied. The order listed is considered a priority order, such that the
-scheduler will only try to use the second item in the list if it is unable to
-satsify the first item, and so on.
+The proposal adds a new field to the `DeviceRequest`, called `FirstAvailableOf`
+which will contain an ordered list of `DeviceRequest` objects. In order to
+satisfy the main (containing) request, exactly one of the requests listed in
+`FirstAvailableOf` must be satisfied. The order listed is considered a priority
+order, such that the scheduler will only try to use the second item in the list
+if it is unable to satsify the first item, and so on.
 
-A `DeviceRequest` that populates the `FirstOf` field must *not* populate the
-`DeviceClassName` field. The `required` validation on this field will be
-relaxed. This allows existing clients to differentiate between claims they
-understand (with `DeviceClassName`) and those they do not (without
+A `DeviceRequest` that populates the `FirstAvailableOf` field must *not*
+populate the `DeviceClassName` field. The `required` validation on this field
+will be relaxed. This allows existing clients to differentiate between claims
+they understand (with `DeviceClassName`) and those they do not (without
 `DeviceClassName` but with the new field). Clients written for 1.31, when
 `DeviceClassName` was required, were requested to include this logic, and the
 in-tree components have been built in this way.
@@ -279,9 +279,9 @@ type DeviceRequest struct {
     // additional configuration and selectors to be inherited by this
     // request.
     //
-    // Either a class or FirstOf requests are required in DeviceClaim.Requests.
-    // When this request is part of the FirstOf list, a class is required. Nested
-    // FirstOf requests are not allowed
+    // Either a class or FirstAvailableOf requests are required in DeviceClaim.Requests.
+    // When this request is part of the FirstAvailableOf list, a class is required. Nested
+    // FirstAvailableOf requests are not allowed
     //
     // Which classes are available depends on the cluster.
     //
@@ -295,14 +295,14 @@ type DeviceRequest struct {
     // +oneOf=deviceRequestType
     DeviceClassName string
 
-    // FirstOf contains subrequests, exactly one of which must be satisfied
+    // FirstAvailableOf contains subrequests, exactly one of which must be satisfied
     // in order to satisfy this request. This field may only be set in the
     // entries of DeviceClaim.Requests. It must not be set in DeviceRequest
-    // instances that themselves are part of a FirstOf.
+    // instances that themselves are part of a FirstAvailableOf.
     //
     // +optional
     // +oneOf=deviceRequestType
-    FirstOf []DeviceRequest
+    FirstAvailableOf []DeviceRequest
 
     // Selectors define criteria which must be satisfied by a specific
     // device in order for that device to be considered for this
@@ -353,8 +353,8 @@ type DeviceRequest struct {
 }
 
 const (
-    DeviceSelectorsMaxSize    = 32
-    FirstOfDeviceRequestMaxSize = 8
+    DeviceSelectorsMaxSize               = 32
+    FirstAvailableOfDeviceRequestMaxSize = 8
 )
 ```
 
@@ -439,11 +439,11 @@ request name may be used.
 ### Resource Quota
 
 ResourceQuota will be enforced such that the user must have quota for each
-`DeviceRequest` under every `FirstOf`. Thus, this "pick one" behavior cannot be
-used to circumvent quota. This reduces the usefulness of the feature, as it
-means it will not serve as a quota management feature. However, the primary goal
-of the feature is about flexibility across clusters and obtainability of
-underlying devices, not quota management.
+`DeviceRequest` under every `FirstAvailableOf`. Thus, this "pick one" behavior
+cannot be used to circumvent quota. This reduces the usefulness of the feature,
+as it means it will not serve as a quota management feature. However, the
+primary goal of the feature is about flexibility across clusters and
+obtainability of underlying devices, not quota management.
 
 ### User Stories (Optional)
 
@@ -503,7 +503,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -535,7 +535,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/scheduler`: TBD
+- `k8s.io/kubernetes/pkg/scheduler/framework`: TBD
+- `k8s.io/kubernetes/pkg/controller`: TBD
 
 ##### Integration tests
 
@@ -554,7 +556,14 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+The existing [integration tests for kube-scheduler which measure
+performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
+will be extended to cover the overheaad of running the additional logic to
+support the features in this KEP. These also serve as [correctness
+tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
+as part of the normal Kubernetes "integration" jobs which cover [the dynamic
+resource
+controller](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/util.go#L135-L139).
 
 ##### e2e tests
 
@@ -568,36 +577,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+End-to-end testing depends on a working resource driver and a container runtime
+with CDI support. A [test
+driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
+was developed as part of the overall DRA development effort. We will extend this
+test driver to enable support for alternative device requests and add tests to
+ensure they are handled by the scheduler as described in this KEP.
 
 ### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
 #### Alpha
 
@@ -606,62 +593,40 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
+- Gather feedback
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- 3 examples of real-world usage
 - Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Standard upgrade/downgrade strategies may be used, no special configuration
+changes are needed. There are no kubelet or DRA-driver changes for this feature,
+they are all local to the control plane.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+The proposed API change relaxes a `required` constraint on the
+`DeviceRequest.DeviceClassName` field. The `DeviceRequest` thus becomes a one-of
+that must have either the `DeviceClassName` or the `FirstAvailableOf` field
+populated.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Older clients have been advised in the current implementation to check this
+field, even though it is required, and fail to allocate a claim that does not
+have the field set. This means that during rollout, if the API server has this
+feature, but the scheduler does not, the scheduler will fail to schedule pods
+that utilize the feature. The pod will be scheduled later according to the new
+functionality after the scheduler is upgraded.
+
+This feature affects the specific allocations that get made by the scheduler.
+Those allocations are stored in the `ResourceClaim` status, and will be acted
+upon by the kubelet and DRA-driver just as if the user had made the request
+without this feature. Thus, there is no impact on the data plane version skew;
+if the selected request could be satisfied by the data plane without this
+feature, it will work exactly the same with this feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -705,9 +670,15 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+This is an add-on on top of the `DynamicResourceAllocation` feature gate, which
+also must be enabled for this feature to work.
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DRAFirstAvailableOf
   - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-scheduler
+    - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -722,6 +693,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+No.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -735,7 +708,20 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes. No existing claims or running pods will be affected. This feature affects
+only the allocation of devices during scheduling.
+
+If a workload controller or Pod uses a `ResourceClaimTemplate` that includes
+this feature, it could happen that a new Pod may be created and need to be
+scheduled, even though the feature is disabled. In this case, the new Pod will
+fail to schedule, as the corresponding `ResourceClaim` will not be able to be
+created.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature will begin working again for future scheduling choices that make use
+of it. For `Deployments` or other users of `ResourceClaimTemplate`, previously
+failing Pod creations or scheduling may begin to succeed.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -751,6 +737,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Unit tests will be written to validate the enablement and disablement behavior,
+as well as type conversions for the new field and relaxed validation.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -770,12 +759,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Will consider in the beta timeframe.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Will consider in the beta timeframe.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -785,11 +778,16 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Will consider in the beta timeframe.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No, though we do relax validation on one field to make it no longer a required
+field.
 
 ### Monitoring Requirements
 
@@ -808,6 +806,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Will consider in the beta timeframe.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -818,6 +818,8 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
+
+Will consider in the beta timeframe.
 
 - [ ] Events
   - Event Reason: 
@@ -844,11 +846,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Existing DRA and related SLOs continue to apply.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
+
+Will consider in the beta timeframe.
 
 - [ ] Metrics
   - Metric name:
@@ -863,6 +869,9 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+We can consider a histogram metric showing how many allocations are made from
+indices 0-7 of ResourceClaims that utilize this feature.
 
 ### Dependencies
 
@@ -886,6 +895,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature depends on the DRA structured parameters feature being enabled, and
+on DRA drivers being deployed. There are no requirements beyond those already
+needed for DRA structured parameters.
 
 ### Scalability
 
@@ -914,6 +927,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -923,6 +938,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No, just a new field on the `ResourceClaim.DeviceRequest` struct.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -930,6 +947,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -939,6 +958,11 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Yes, when using this field, the user will add additional data in their
+`ResourceClaim` and `ResourceClaimTemplate` objects. This is an incremental
+increase on top of the existing structures. The number of alternate requests is
+limited to 8 in order to minimize the potential object size.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -950,6 +974,10 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Scheduling a claim that uses this feature may take a bit longer, if it is
+necessary to go deeper into the list of alternative options before finding a
+suitable device. We can measure this impact in alpha.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -963,6 +991,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -974,6 +1004,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -1034,10 +1066,46 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Resource Claim Indirection
+### Higher Level Indirection
 
 Rather than embedding a list of alternative request objects, we could use an
-umbrella `ResourceClaim` that instead references other `ResourceClaim`s.
+indirection at either the `ResourceClaim` level, or the `DeviceClaim` level.
+For example, we could create a new resource claim type by adding a
+`FirstOfDevices` list to the `ResourceClaimSpec`, and making it a one-of with
+`Devices`.
+
+Something like this:
+
+```go
+// ResourceClaimSpec defines what is being requested in a ResourceClaim and how to configure it.
+type ResourceClaimSpec struct {
+        // Devices defines how to request devices.
+        //
+        // oneOf: claimType
+        // +optional
+        Devices DeviceClaim
+
+        // FirstOfDevices defines devices to claim in a
+        //
+        // oneOf: claimType
+        // +optional
+        FirstOfDevices []DeviceClaim
+
+        //
+        // Must be a DNS subdomain and should end with a DNS domain owned by the
+        // vendor of the driver.
+        //
+        // This is an alpha field and requires enabling the DRAControlPlaneController
+        // feature gate.
+        //
+        // +optional
+        // +featureGate=DRAControlPlaneController
+        Controller string
+}
+```
+
+This is arguably simpler and allows them to be essentially complete, alternate
+claims.
 
 ## Infrastructure Needed (Optional)
 
