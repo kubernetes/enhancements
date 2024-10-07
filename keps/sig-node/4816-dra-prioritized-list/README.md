@@ -247,12 +247,90 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+The `ResourceClaim` object contains a `DeviceClaim`, which in turn contains a
+list of `DeviceRequest` objects. This allows the user to allocate different
+types of devices for the same claim, and apply constraints and configuration
+across those different requests.
+
 The proposal adds a new field to the `DeviceRequest`, called `FirstAvailableOf`
 which will contain an ordered list of `DeviceRequest` objects. In order to
 satisfy the main (containing) request, exactly one of the requests listed in
 `FirstAvailableOf` must be satisfied. The order listed is considered a priority
 order, such that the scheduler will only try to use the second item in the list
 if it is unable to satsify the first item, and so on.
+
+This allows some flexibility for the user to create, say, a "gpu" request, but
+allow it to be satisfied by one of several models of GPU.
+
+### User Stories (Optional)
+
+<!--
+Detail the things that people will be able to do if this KEP is implemented.
+Include as much detail as possible so that people can understand the "how" of
+the system. The goal here is to make this feel real for users without getting
+bogged down.
+-->
+
+#### Story 1
+
+As a workload author, I want to run a workload that needs a GPU. The workoad
+itself can work with a few different models of GPU, but may need different
+numbers of them depending on the model chosen. If the latest model is available
+in my cluster, I would like to use that, but if it is not I am willing to take
+a model one generation older. If none of those are available, I am willing to
+take two GPUs of an even older model.
+
+#### Story 2
+
+As a workload author, I want to distribute the manifests of my workloads online.
+However, there are many different models of device out there, and so I do not
+want to be too prescriptive in how I define my manifest. If I make it too
+detailed, then I will either need multiple versions or the users will have to
+edit the manifest. Instead, I would like to provide some optionality in the
+types of devices that can meet my workload's needs. For best performance though,
+I do have a preferred ordering of devices.
+
+### Notes/Constraints/Caveats (Optional)
+
+<!--
+What are the caveats to the proposal?
+What are some important details that didn't come across above?
+Go in to as much detail as necessary here.
+This might be a good place to talk about core concepts and how they relate.
+-->
+
+#### Resource Quota
+
+ResourceQuota will be enforced such that the user must have quota for each
+`DeviceRequest` under every `FirstAvailableOf`. Thus, this "pick one" behavior
+cannot be used to circumvent quota. This reduces the usefulness of the feature,
+as it means it will not serve as a quota management feature. However, the
+primary goal of the feature is about flexibility across clusters and
+obtainability of underlying devices, not quota management.
+
+
+### Risks and Mitigations
+
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+## Design Details
+
+<!--
+This section should contain enough information that the specifics of your
+change are understandable. This may include API specs (though not always
+required) or even code snippets. If there's any ambiguity about HOW your
+proposal will be implemented, this is the place to discuss them.
+-->
 
 A `DeviceRequest` that populates the `FirstAvailableOf` field must *not*
 populate the `DeviceClassName` field. The `required` validation on this field
@@ -436,59 +514,25 @@ case that constraint only applies if that particular subrequest is chosen.
 In the PodSpec, however, the subrequest names are not valid. Only the main
 request name may be used.
 
-### Resource Quota
+### Scheduler Implementation
 
-ResourceQuota will be enforced such that the user must have quota for each
-`DeviceRequest` under every `FirstAvailableOf`. Thus, this "pick one" behavior
-cannot be used to circumvent quota. This reduces the usefulness of the feature,
-as it means it will not serve as a quota management feature. However, the
-primary goal of the feature is about flexibility across clusters and
-obtainability of underlying devices, not quota management.
+Currently, the scheduler loops through each entry in `DeviceClaim.Requests` and
+tries to satisfy each one. This would work essentially the same, except that
+today, it [throws an
+error](https://github.com/kubernetes/kubernetes/blob/03f134461462f86239067ec20ec17a0ba892db52/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go#L164)
+when it encounters a claim with a missing `DeviceClassName`. Instead, here we
+would check for entries in `FirstAvailableOf`, and add an additional loop,
+trying each of these requests in order.
 
-### User Stories (Optional)
+The current implementation will navigate a depth-first search of the devices,
+trying to satisfy all requests and contraints of all claims. The optionality
+offered at the `DeviceRequest` level provides another index state to track in
+the
+[`requestIndices`](https://github.com/kubernetes/kubernetes/blob/03f134461462f86239067ec20ec17a0ba892db52/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go#L362) and [`deviceIndices`](https://github.com/kubernetes/kubernetes/blob/03f134461462f86239067ec20ec17a0ba892db52/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go#L368). In the case of the feature gate
+disabled, this new index will always be 0.
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
-#### Story 1
-
-#### Story 2
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
-### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
-## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+Alternatively, we can refactor to make this code more defensible via a feature
+gate.
 
 ### Test Plan
 
