@@ -683,7 +683,7 @@ A single resize request can change multiple values, including any or all of:
 * Multiple containers
 
 These resource requests & limits can have interdependencies that Kubernetes may not be aware of. For
-example, two containers coordinating work may need to be scaled in tandem. It probably doesn't makes
+example, two containers (in the same pod) coordinating work may need to be scaled in tandem. It probably doesn't makes
 sense to scale limits independently of requests, and scaling CPU without memory could just waste
 resources. To mitigate these issues and simplify the design, the Kubelet will treat the requests &
 limits for all containers in the spec as a single atomic request, and won't accept any of the
@@ -771,6 +771,14 @@ In steady state, `proposed` should equal `infeasible + completed + canceled`.
 The metric is recorded as a counter instead of a gauge to ensure that usage can be tracked over
 time, irrespective of scrape interval.
 
+### Static CPU & Memory Policy
+
+Resizing pods with static CPU & memory policy configured is out-of-scope for the beta release of
+in-place resize. If a pod is a guaranteed QOS on a node with a static CPU or memory policy
+configured, then the resize will be marked as infeasible.
+
+This will be reconsidered post-beta as a future enhancement.
+
 ### Future Enhancements
 
 1. Kubelet (or Scheduler) evicts lower priority Pods from Node to make room for
@@ -780,9 +788,7 @@ time, irrespective of scrape interval.
 1. Extend ResizePolicy to separately control resource increase and decrease
    (e.g. a Container can be given more memory in-place but decreasing memory
    requires Container restart).
-1. Extend Node Information API to report the CPU Manager policy for the Node,
-   and enable validation of integral CPU resize for nodes with 'static' CPU
-   Manager policy.
+1. Handle resize of guaranteed pods with static CPU or memory policy.
 1. Extend controllers (Job, Deployment, etc) to propagate Template resources
    update to running Pods.
 1. Allow resizing local ephemeral storage.
