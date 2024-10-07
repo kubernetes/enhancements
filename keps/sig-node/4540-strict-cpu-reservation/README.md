@@ -143,7 +143,7 @@ The concern is, when the feature graduates to `Stable`, it will be enabled by de
 
 However, this is exactly the feature intent, best-effort workloads have no KPI requirement, they are meant to consume whatever CPU resources left on the node including starving from time to time. Best-effort workloads are not scheduled to run on the `reservedSystemCPUs` so they shall not be run on the `reservedSystemCPUs` to destablize the whole node.
 
-Nevertheless, risk mitigation has been discussed in details and agreement is reached to add node metrics about cpu pool sizes for Alpha stage so we can evaluate the real impacts of this scenario and postpone any further action to Beta stage or later.
+Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha stage to assess the actual impact in real deployment before revisiting if we need risk mitigation.
 
 https://github.com/kubernetes/kubernetes/pull/127506
 - report shared pool size, in millicores (e.g. 13500m)
@@ -263,7 +263,11 @@ A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeRes
 
 #### Archived Risk Mitigation (Option 2)
 
-Another proposal brought up is to force the cpu requests for best effort pods to 1 MilliCPU in kubelet. This option is meant to be simpler than option-1, but the different resource accounting in kubelet and kube-scheduler can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869.
+The problem with `MinSharedCPUs` is that it creates another complication like memory and hugpages, new resources vs overlapping resources, exclusive-cpus is a subset of cpu.
+
+Currently the noderesources scheduler plugin does not filter out the best-effort pods in the case there's no available CPU.
+
+Another option is to force the cpu requests for best effort pods to 1 MilliCPU in kubelet for the purpose of resource availability checks (or, equivalently, check there's at least 1 MilliCPU allocatable). This option is meant to be simpler than option-1, but it can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869.
 
 
 ### Test Plan
