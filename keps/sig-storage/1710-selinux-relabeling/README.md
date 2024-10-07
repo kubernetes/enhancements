@@ -3,66 +3,67 @@
 ## Table of Contents
 
 <!-- toc -->
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [SELinux intro](#selinux-intro)
-    - [SELinux label assignment](#selinux-label-assignment)
-    - [Volume mounting](#volume-mounting)
-    - [SELinux support in Kubernetes volumes](#selinux-support-in-kubernetes-volumes)
-    - [Privileged containers](#privileged-containers)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-      - [API changes](#api-changes)
-        - [<code>CSIDriver</code>](#csidriver)
-        - [<code>PodSecurityContext</code>](#podsecuritycontext)
-      - [Conflicts with other Pods](#conflicts-with-other-pods)
-      - [Single-node conflicts](#single-node-conflicts)
-      - [Multiple-node conflicts](#multiple-node-conflicts)
-    - [<code>CSIDriver</code> examples](#csidriver-examples)
-    - [User Stories [optional]](#user-stories-optional)
-      - [Story 1: default Pod](#story-1-default-pod)
-      - [Story 2: Mount with <code>-o context</code> option](#story-2-mount-with--o-context-option)
-      - [Story 3: cluster upgrade](#story-3-cluster-upgrade)
-    - [CSI driver considerations](#csi-driver-considerations)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Required kubelet changes](#required-kubelet-changes)
-      - [Volume Reconstruction](#volume-reconstruction)
-    - [kube-state-metrics](#kube-state-metrics)
-    - [Implementation phases](#implementation-phases)
-      - [Phase 1](#phase-1)
-      - [Phase 2](#phase-2)
-      - [Phase 3](#phase-3)
-    - [Test Plan](#test-plan)
-        - [Prerequisite testing updates](#prerequisite-testing-updates)
-        - [Unit tests](#unit-tests)
-        - [Integration tests](#integration-tests)
-        - [e2e tests](#e2e-tests)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature enablement and rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks [optional]](#drawbacks-optional)
-  - [Alternatives [optional]](#alternatives-optional)
-    - [<code>FSGroupChangePolicy</code> approach](#fsgroupchangepolicy-approach)
-    - [Change container runtime](#change-container-runtime)
-    - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
-    - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
-    - [Implement kubelet admission](#implement-kubelet-admission)
-    - [Mount <strong>all</strong> volumes with <code>-o context</code>, without any <code>SELinuxChangePolicy</code>](#mount-all-volumes-with--o-context-without-any-selinuxchangepolicy)
-    - [Make SELinuxMount opt-in and not opt-out](#make-selinuxmount-opt-in-and-not-opt-out)
-    - [Allow opt-in (or opt-out) globally via kubelet flags](#allow-opt-in-or-opt-out-globally-via-kubelet-flags)
-- [Appendix 1: promQL queries](#appendix-1-promql-queries)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [SELinux intro](#selinux-intro)
+  - [SELinux label assignment](#selinux-label-assignment)
+  - [Volume mounting](#volume-mounting)
+  - [SELinux support in Kubernetes volumes](#selinux-support-in-kubernetes-volumes)
+  - [Privileged containers](#privileged-containers)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [API changes](#api-changes)
+      - [<code>CSIDriver</code>](#csidriver)
+      - [<code>PodSecurityContext</code>](#podsecuritycontext)
+    - [Conflicts with other Pods](#conflicts-with-other-pods)
+    - [Single-node conflicts](#single-node-conflicts)
+    - [Multiple-node conflicts](#multiple-node-conflicts)
+  - [<code>CSIDriver</code> examples](#csidriver-examples)
+  - [User Stories [optional]](#user-stories-optional)
+    - [Story 1: default Pod](#story-1-default-pod)
+    - [Story 2: Mount with <code>-o context</code> option](#story-2-mount-with--o-context-option)
+    - [Story 3: cluster upgrade](#story-3-cluster-upgrade)
+  - [CSI driver considerations](#csi-driver-considerations)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Required kubelet changes](#required-kubelet-changes)
+    - [Volume Reconstruction](#volume-reconstruction)
+  - [SELinuxController](#selinuxcontroller)
+  - [Implementation phases](#implementation-phases)
+    - [Phase 1](#phase-1)
+    - [Phase 2](#phase-2)
+    - [Phase 3](#phase-3)
+  - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+  - [<code>FSGroupChangePolicy</code> approach](#fsgroupchangepolicy-approach)
+  - [Change container runtime](#change-container-runtime)
+  - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
+  - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge-fsgroupchangepolicy-and-selinuxrelabelpolicy)
+  - [Implement kubelet admission](#implement-kubelet-admission)
+  - [Mount <strong>all</strong> volumes with <code>-o context</code>, without any <code>SELinuxChangePolicy</code>](#mount-all-volumes-with--o-context-without-any-selinuxchangepolicy)
+  - [Make SELinuxMount opt-in and not opt-out](#make-selinuxmount-opt-in-and-not-opt-out)
+  - [Allow opt-in (or opt-out) globally via kubelet flags](#allow-opt-in-or-opt-out-globally-via-kubelet-flags)
+  - [kube-state-metrics](#kube-state-metrics)
+    - [PromQL](#promql)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -101,7 +102,7 @@ This KEP is split into three phases:
    Alpha in 1.32.
 3. All volumes are mounted with `-o context` by default, users can opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
    With feature gate `SELinuxMount`, alpha without opt-out since 1.30, adding the opt-out field as alpha in 1.32.
-   
+
 Initially, we thought we could do 2. without opt-out, but we found that it may break valid use cases.
 
 ## SELinux intro
@@ -200,8 +201,8 @@ spec:
   * Do it _by default_ for all volumes.
   * Provide _explicit opt-out_ for workloads that mix privileged + unprivileged pods or pods with different SELinux labels.
     * Provide metrics + events to identify pods that can't start due to conflicts with other pods, so user can apply the opt-out.
-    * Provide metrics to identify pods that are running now, however, they won't start if a feature gate gets enabled (to warn before upgrade / before enabling the feature gate).
-    * Provide metrics to identify pods that are running now, however, they won't start if the pods end up on the same node (to warn after upgrade / after the feature gate is enabled).
+    * Provide metrics + events to identify pods that are running now, however, they won't start if a feature gate gets enabled (to warn before upgrade / before enabling the feature gate).
+    * Provide metrics + events to identify pods that are running now, however, they won't start if the pods end up on the same node (to warn after upgrade / after the feature gate is enabled).
 
 ### Non-Goals
 
@@ -220,8 +221,8 @@ spec:
     This phase enables opt-out that becomes active in Phase 3.
   * **Phase 3**: all volumes are mounted, under `SELinuxMount` feature gate. It can break existing applications that need to mix privileged and unprivileged Pods using the same volume in parallel.
     * We propose to send Pod events to immediately show why such Pods are stuck `ContainerCreating`.
-    * We propose metrics to identify such Pods before the `SELinuxMount` feature gate is enabled, to identify potential issues before a cluster upgrade / enabling the feature gate.
-    * We propose metrics to identify such Pods _after_ the `SELinuxMount` feature gate is enabled, to identify pods that are running only because they run on different nodes. If they landed on the same node, one of them would be stuck `ContainerCreating`, because they mix privileged and unprivileged pods.
+    * We propose metrics and events to identify such Pods before the `SELinuxMount` feature gate is enabled, to identify potential issues before a cluster upgrade / enabling the feature gate.
+    * We propose metrics and events to identify such Pods _after_ the `SELinuxMount` feature gate is enabled, to identify pods that are running only because they run on different nodes. If they landed on the same node, one of them would be stuck `ContainerCreating`, because they mix privileged and unprivileged pods.
 
 * The opt-out is realized by a new Pod field `PodSpec.SecurityContext.SELinuxChangePolicy` with values `MountOption` and `Recursive` (opt-out). `null` means `MountOption`.
   * We need the field to be available in a cluster **before** `SELinuxMount` feature gate gets enabled, so cluster admins can fix their Pods and add opt-out before they upgrade to a version with `SELinuxMount` feature gate enabled.
@@ -235,6 +236,12 @@ Reason for a new field in `PodSpec.SecurityContext`:
 
 Reason for `MountOption` as the new default:
 * Current telemetry numbers from OpenShift show that only a small number of clusters would be broken by this change. See [risks and mitigations](#risks-and-mitigations) for numbers.
+
+* Report metrics and events about what Pods are not working / may not work after upgrade by a new kube-controller-manager SELinuxController.
+    * These metrics need to cross-check *all* Pods on *all* Nodes, therefore it can't be in kubelet.
+    * The kubernetes scheduler would be able to match only *schedulable* Pods, ignoring custom schedulers and DaemonSets.
+    * This new controller will be opt-in, so it won't run on clusters that don't care about SELinux.
+    * This new controller will provide only information (metrics, events), it won't affect Pod lifecycle.
 
 To sum it up from a different perspective, we propose that kubelet mounts a Pod's volume with `-o context=XYZ` when *all* these conditions are met:
 * Pod has `Pod.Spec.SecurityContext.SELinuxChangePolicy: MountOption` or `null` and `SELinuxMount` feature gate is enabled (Phase 3).
@@ -351,7 +358,7 @@ All these cases assume that the volume used in the examples does support mount w
 **Mixing Pods with different SELinux labels and subpaths**: This is a behavior change in this KEP. We expect that it does not affect anyone or only a very small number of users.
 * Pod A with `SELinuxChangePolicy: Recursive` and label `c1,c2` runs and uses subpath `/dir1` in its Pod definition, Pod B with `SELinuxChangePolicy: Recursive` with label `c8,c9`, using subpath `/dir2` of the volume is about to start.
     * This is the behavior before this KEP. The container runtime relabelled only the subpath `/dir1` with `c1,c2` when A started. When Pod B starts, the container runtime relabels only the subpath `dir2` with `c8,c9`. Both Pod A and Pod B can run in parallel and access their subpaths.
-  * This situation will be reported in the metrics proposed below, so the user can fix it before `SELinuxMount` is enabled by default. Actually, the metrics won't care about subpaths, it will look like two pods sharing the whole volume. 
+  * This situation will be reported in the metrics proposed below, so the user can fix it before `SELinuxMount` is enabled by default. Actually, the metrics won't care about subpaths, it will look like two pods sharing the whole volume.
 * Pod A with `SELinuxChangePolicy: MountOption` and label `c1,c2` runs and uses subpath `/dir1` in its Pod definition, Pod B with `SELinuxChangePolicy: MountOption` with label `c8,c9`, using subpath `/dir2` of the volume is about to start.
     * Kubelet mounted **the whole volume** with `-o context=c1,c2` for Pod A. Pod B will stay in `ContainerCreating` state until Pod A finishes and kubelet unmounts the volume, so it can be re-mounted for Pod B.
     * This situation will be reported in the metrics proposed below.
@@ -484,13 +491,12 @@ Therefore, if configured properly, all Pods in the same namespace run with the s
    Since RWOP volume can be used only in a single Pod, no application should break.
    (Nobody complained so far).
     * At this point, kubelet starts reporting `volume_manager_selinux_volume_context_mismatch_warnings_total` metric.
-3. Cluster admin updates to 1.N, where `SELinuxChangePolicy` is enabled by default.
+3. Cluster admin updates to 1.N, where `SELinuxChangePolicy` is enabled by default and enables the new SELinuxController in kube-controller-manager.
   Kubelet mount behavior stays the same as it is in the previous step.
   Cluster admin can check the cluster metrics and they can proactively opt out from mounting all volumes with SELinux by setting `SELinuxChangePolicy: Recursive` in all Pods that need to mix privileged and unprivileged Pods.
   The field accepts only value `Recursive` at this stage!
-  The field value has no effect on volume mounting or relabeling, however, it is reflected in `volume_manager_selinux_volume_context_mismatch_warnings_total` metric.
+  The field value has no effect on volume mounting or relabeling, however, it is reflected in `volume_manager_selinux_volume_context_mismatch_warnings_total`, `selinux_controller_selinux_label_mismatch`, and `selinux_controller_selinux_label_mismatch` metrics.
   The cluster admin can see that nr. of problematic Pods decreases.
-  Similarly, metrics in kube-state-metrics proposed below must reflect this field.
     * A kubernetes distribution may choose to block upgrade to 1.M (that has `SELinuxMount` enabled), until the cluster admin fixes all problematic Pods.
 4. Cluster admin updates to 1.M, where `SELinuxMount` is enabled by default.
   `SELinuxChangePolicy` field now accepts `MountOption` value and kubelet uses the field when mounting all volumes.
@@ -510,29 +516,30 @@ We will document this requirement in our documentation that faces CSI driver ven
 ### Risks and Mitigations
 
 This KEP changes the default behavior of Kubernetes.
-We provide set of metrics to detect potential issues before the feature is enabled by default, so users can fix their workloads before the change.
+We provide set of metrics and events to detect potential issues before the feature is enabled by default, so users can fix their workloads before the change.
 
 Phase 1 + 2 (no breaking change yet):
-* `volume_manager_selinux_volume_context_mismatch_warnings_total`: nr. of Pods that would not start if `SELinuxMount` feature gate is enabled.
+* `volume_manager_selinux_volume_context_mismatch_warnings_total`: counter of Pods that 100% would not start if `SELinuxMount` feature gate is enabled.
   * It is emitted only when the `SELinuxMountReadWriteOncePod` feature gate is enabled (on by default in 1.28).
   * It is emitted by kubelet, in the code path that will really block starting a pod when `SELinuxMount` feature gate is enabled.
   * It misses Pods that run on different nodes that would not run if they landed on the same node.
+* `selinux_controller_selinux_label_mismatch`, `selinux_controller_selinux_change_policy_mismatch`: names of Pods that may not start if `SELinuxMount` feature gate is enabled *and* the Pods land on the same node.
+* SELinuxController, if enabled, will send events to Pods that may not start if `SELinuxMount` feature gate is enabled.
 
 As of 2024-09-04, telemetry numbers from OpenShift show that less than 2% of the clusters have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
 More than 50% of these potentially-broken clusters have less than 10 of such Pods.
 
 Phase 3:
-* `volume_manager_selinux_volume_context_mismatch_errors_total`: nr. of Pods that did not start.
+* `volume_manager_selinux_volume_context_mismatch_errors_total`: counter of Pods that did not start.
   * It is emitted only when the `SELinuxMount` feature gate is enabled.
   * It is emitted by kubelet when a Pod really cannot start.
   * It misses Pods that run on different nodes that would not run if they landed on the same node.
-  * Since kubelet re-tries to start Pods periodically, this metric will grow until the Pod starts or is deleted.
+  * Since kubelet re-tries to start Pods periodically, the counter will increase until the Pod starts or is deleted.
 
 * Kubelet will send pod events when a pod can't start, because its volume(s) are mounted with different `-o context` option (or without it).
   * Either with names of the conflicting Pods, when they are in the same namespace.
   * Or just generic "volume XYZ is already mounted with a different SELinux label" when A and B are in different namespaces, so users cannot peek into other namespaces.
-
-* We propose adding new metrics to kube-state-metrics, so users may join the container SELinux label with Pods, PVCs, PVs and CSIDrivers and detect Pods that may run today, but won't run if they land on the same node.
+* SELinuxController, if enabled, will send events to Pods that may not start if they land on the same node.
 
 ## Design Details
 
@@ -563,33 +570,39 @@ This work was separated into its own KEP + Feature [#3756](https://github.com/ku
 
 Here in this KEP we will need only to add SELinux label to reconstructed volumes.
 
-### kube-state-metrics
+### SELinuxController
 
-*This section is under development. We need to figure out is Prometheus is able to do such complex queries.*
+A new kube-controller-manager (KCM) controller that watches Pods, PVCs, PVs and CSIDrivers and reports metrics and events when it detects a conflict.
+The controller is enabled only when SELinuxChangePolicy feature gate is enabled.
+Even when the feature gate is GA, the controller is opt-in, as most Kubernetes deployments do not use SELinux.
 
-Today, kube-state-metrics exports metrics that allow users to join Pods with their PVCs and PVs and e.g. see how many Pods use the same PV.
+The controller can safely ignore Pod updates, because Pod volumes and any SELinux options cannot be updated after creation.
+However, the controller needs to watch for PVC, PV and CSIDriver updates, because they can be created or updated (e.g. bound) after a Pod that uses them is created.
 
-We need to add:
+When it sees a pair of Pods that conflict, it emits a metric and an event to both Pods.
+* The event either mentions both Pods by name (if both are in the same namespace) or just something generic (when they are in different namespaces, so the event does not leak sensitive information).
+  The controller keeps in-memory list of Pods+volumes that were reported, so it does not emit the same event again on re-sync.
+  The same event may be sent after KCM restart.
+* `selinux_controller_selinux_change_policy_mismatch{pod1_namespace="ns1", pod1_name="pod1", pod1_uid="abcdef", pod1_volume="vol1", pod1_policy="Recursive", pod2_namespace="ns2", pod2_name="pod2", pod2_uid="abcdef", pod2_volume="vol2", pod2_policy="MountOption"}`.
+  Value of the metric for a given pod1+pod2 combination is either 1 or the metric is not reported at all.
+  In a cluster without any conflicts, the metrics is empty.
+* `selinux_controller_selinux_label_mismatch{pod1_namespace="ns1", pod1_name="pod1", pod1_volume="vol1", pod1_uid="abcdef", pod1_label="system_u:object_r:container_file_t:s0:c10,c0", pod2_namespace="ns2", pod2_name="pod2", pod2_uid="abcdef",  pod2_volume="vol2", pod2_label="system_u:object_r:spc_1:s0"}`
+  Value of the metric for a given pod1+pod2 combination is either 1 or the metric is not reported at all.
+  In a cluster without any conflicts, the metrics is empty.
+  * This metric must not be reported for Privileged and unprivileged Pods with both having `SELinuxChangePolicy: Recursive`.
+  * This metric must not be reported for two Pods with `SELinuxChangePolicy: Recursive` and two different labels using the same volume, but with different subpaths.
+  * A cluster admin should be able to list conflicting pods by querying the metric easily.
+    
+TBD: limit the metric to X thousands of conflicts?
 
-* `kube_pod_security_context`: fields from pod's `spec.securityContext`. Especially `seLinuxOptions` and future `selinuxChangePolicy`. 
-* `kube_pod_container_security_context`: pod's `spec.containers[*].securityContext` fields. We will need at least `privileged` and `seLinuxOptions`.
-* `kube_pod_container_volume_mount`: report volumes used by containers. The existing `kube_pod_spec_volumes_persistentvolumeclaims_info` tracks volumes used in pods, we need *containers*.
-* `kube_csidriver_info`: report CSIDriver object fields. At least `seLinuxMount` flag.
-* *Maybe* `kube_persistentvolume_unique_volume_id`, because `kube_persistentvolume_info` misses some volume plugins (in-tree vSphere, Cinder, AzureFile) and it's clumsy to work with in general.
+Drawbacks:
 
-There is a proof of concept code in https://github.com/kubernetes/kube-state-metrics/pull/2513.
-
-All these changes do not need any feature gate. They may be useful also when SELinuxMount feature is removed from k/k.
-
-With these metrics, it should be possible to query Prometheus to list Pods that share the same volume, but need it with a different SELinux mount options.
-This list would include Pods that run on a different nodes.
-Those would not start if they run on the same node.
-A Kubernetes distribution that uses SELinux could alert on them or block a cluster upgrade until the list is empty.
-A cluster admin can use this list to check what would break during upgrade and update their Pods / StatefulSet / Deployments / DaemonSets with `SELinuxChangePolicy: Recursive` to opt out from the new behavior.
-
-**Due to nature of kube-state-metrics and Prometheus, it may miss a Pod that was living only shortly between two scrapes.
-We don't plan to fix this.**
-
+* The controller does not evaluate any Pod (anti) affinity or other scheduling rules or custom schedulers.
+  It may report a conflict even when the Pods may never run on the same node.
+* The controller may report a conflict when two Pods are scheduled to the same node, but they will run serially there.
+  For example, one pod is already being deleted and the other has just been scheduled there.
+  Kubelet's `volume_manager_selinux_volume_context_mismatch_warnings_total` metric is more accurate in this case.
+  
 ### Implementation phases
 
 Due to change of Kubernetes behavior, we will implement the feature only for cases where it can't break anything first.
@@ -607,7 +620,7 @@ Based on Phase 1 results:
   - In this phase, the only allowed value is `Recursive`.
   - The field is not interpreted, it's used only by cluster admins to proactively opt-out from `SELinuxMount`
   - We need to graduate it to Beta / enabled by default before enabling `SELinuxMount` feature gate.
-- Implement missing metrics in kube-state-metrics.
+- Implement the new SELinuxController.
 
 #### Phase 3
 - Actually interpret `SELinuxChangePolicy` field in PodSpec.
@@ -641,7 +654,6 @@ No existing / new tests for volume mounting there.
     * https://testgrid.k8s.io/kops-k8s-ci#kops-aws-selinux: for features enabled by default.
     * https://testgrid.k8s.io/kops-k8s-ci#kops-aws-selinux-alpha: for alpha features.
     * https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-storage-selinux: for PRs (needs explicit `/test ` in a PR).
-* Check kube-state-metrics e2e tests and their ability to test on a machine with SELinux enabled.
 
 ### Graduation Criteria
 
@@ -655,7 +667,7 @@ No existing / new tests for volume mounting there.
   * KEP author has access to usage data from OpenShift, a Kubernetes distro that runs with SELinux in enforcing mode.
 * Alpha of Phase 2 + 3:
   * Implemented `SELinuxChangePolicy` **with a separate alpha feature gate `SELinuxChangePolicy`** as preparation for `SELinuxMount` feature gate graduation.
-  * Implemented metrics in kube-state-metrics.
+  * Implemented SELinuxController.
 * Beta of Phase 2, alpha of phase 3:
   * Telemetry numbers from OpenShift show that <5% of clusters would need to change any of their Pods.
 * GA:
@@ -867,7 +879,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
 
-For extended metrics, kube-state-metrics must be running in the cluster.
+For extended metrics and events, SELinuxController must be enabled in KCM.
 
 ### Scalability
 
@@ -988,7 +1000,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * The API is slightly different that `FSGroupChangePolicy`, which may create confusion.
 * The feature changes the default behavior.
-* The proposed metrics may be complex to gather (see Appendix) *and* they may miss a short-living Pods. 
+* The proposed metrics may be complex to gather (see Appendix) *and* they may miss a short-living Pods.
 
 ## Alternatives [optional]
 
@@ -1108,8 +1120,38 @@ For example by a new kubelet flag `--enable-selinux-mount`.
 
 This is a good "plan B", if the API changes proposed here are not acceptable.
 
+### kube-state-metrics
+Instead of adding a new SELinuxController to KCM, we considered addin new metrics to kube-state-metrics.
+This is a viable option to report *metrics* about conflicting Pods, but kube-state-metrics can't send *events*.
 
-# Appendix 1: promQL queries
+Today, kube-state-metrics exports metrics that allow users to join Pods with their PVCs and PVs and e.g. see how many Pods use the same PV.
+
+We need to add:
+
+* `kube_pod_security_context`: fields from pod's `spec.securityContext`. Especially `seLinuxOptions` and future `selinuxChangePolicy`.
+* `kube_pod_container_security_context`: pod's `spec.containers[*].securityContext` fields. We will need at least `privileged` and `seLinuxOptions`.
+* `kube_pod_container_volume_mount`: report volumes used by containers. The existing `kube_pod_spec_volumes_persistentvolumeclaims_info` tracks volumes used in pods, we need *containers*.
+* `kube_csidriver_info`: report CSIDriver object fields. At least `seLinuxMount` flag.
+* *Maybe* `kube_persistentvolume_unique_volume_id`, because `kube_persistentvolume_info` misses some volume plugins (in-tree vSphere, Cinder, AzureFile) and it's clumsy to work with in general.
+* *Maybe*  `kube_pod_container_security_context_info`, with defaulted SELinux fields from PodSecurityContex at and SecurityContext at container level, to save a lot of `label_replaces` in PromQL.
+
+There is a proof of concept code in https://github.com/kubernetes/kube-state-metrics/pull/2513.
+
+All these changes do not need any feature gate. They may be useful also when SELinuxMount feature is removed from k/k.
+
+With these metrics, it should be possible to query Prometheus to list Pods that share the same volume, but need it with a different SELinux mount options.
+This list would include Pods that run on a different nodes.
+Those would not start if they run on the same node.
+A Kubernetes distribution that uses SELinux could alert on them or block a cluster upgrade until the list is empty.
+A cluster admin can use this list to check what would break during upgrade and update their Pods / StatefulSet / Deployments / DaemonSets with `SELinuxChangePolicy: Recursive` to opt out from the new behavior.
+
+**Due to nature of kube-state-metrics and Prometheus, it may miss a Pod that was living only shortly between two scrapes.
+We don't plan to fix this.**
+
+#### PromQL
+
+These promQL queries should be then possible:
+
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -1164,7 +1206,7 @@ spec:
             "final_selinux_level", "$1", "container_selinux_level", "(.+)"),
             # replace it by s0 for privileged pods
             "final_selinux_level", "s0", "privileged", "true"),
-            
+
             # user: start with system_u if level is set
             "final_selinux_user", "system_u", "final_selinux_level", "(.+)"),
             # replace it by pod_selinux_user, if set
@@ -1173,19 +1215,19 @@ spec:
             "final_selinux_user", "$1", "container_selinux_user", "(.+)"),
             # replace it by system_u for privileged pods
             "final_selinux_user", "system_u", "privileged", "true"),
-            
+
             # same for _role
             "final_selinux_role", "system_r", "final_selinux_level", "(.+)"),
             "final_selinux_role", "$1", "pod_selinux_role","(.+)"),
             "final_selinux_role", "$1", "container_selinux_role", "(.+)"),
             "final_selinux_role", "system_r", "privileged", "true"),
-            
+
             # same for _type
             "final_selinux_type", "container_t", "final_selinux_level", "(.+)"),
             "final_selinux_type", "$1", "pod_selinux_type","(.+)"),
             "final_selinux_type", "$1", "container_selinux_type", "(.+)"),
             "final_selinux_type", "spc_t", "privileged", "true"),
-            
+
             # This is label_join(): join all final_selinux_ labels into one string as final_selinux_label
             "final_selinux_label", ":", "final_selinux_user", "final_selinux_role", "final_selinux_type", "final_selinux_level"),
             # label_replace(): replace ":::" from the label_join above (= no label set in a pod) with "", just because it looks better
@@ -1205,7 +1247,7 @@ spec:
               * on (namespace, persistentvolumeclaim) group_left(volumename) kube_persistentvolumeclaim_info
               * on (volumename) group_left (csi_driver, csi_volume_handle, unique_volume_id) label_replace(kube_persistentvolume_info:unique_volume_id, "volumename", "$1", "persistentvolume", "(.+)")
               * on(csi_driver) group_left (selinux_mount) kube_csidriver_info,
-                    
+
             # label_replace: set final_selinux_label to "" when the CSI driver does not support SELinuxMount
             "final_selinux_label", "", "selinux_mount", "false")
 ```
