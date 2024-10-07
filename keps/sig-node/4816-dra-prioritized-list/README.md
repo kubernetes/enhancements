@@ -371,7 +371,7 @@ spec:
     - name: nic
       deviceClassName: rdma-nic
     - name: gpu
-      firstOf:
+      firstAvailableOf:
       - name: big-gpu
         deviceClassName: big-gpu
       - name: mid-gpu
