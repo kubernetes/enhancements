@@ -607,11 +607,18 @@ N/A
 
 ## Drawbacks
 
-If the Network device (network interface) characteristics (e.g. IP) and status
+If the network device (network interface) characteristics (e.g. IP) and status
 is reported as part of the `Resource.Claim.Status`, it should be ensured the
-`ResourceClaim` is not used by several `Pod` at a time. Additionally, if a
-controller needs to gather IPs for a specific network to which Pods are
-attached via networking devices, it will need to query each `Pod` and then
+`ResourceClaim` is not used by several `Pod` at a time. 
+
+As the network device characteristics are reported in the `ResourceClaim.Status`,
+the downward API will not provide additional fields to expose those characteristics.
+For example, `Pod.Status.PodIPs` can be provided as an environment variable to 
+the running containers while `ResourceClaim.Status.Devices['KEY'].NetworkData.Addresses`
+will not be available.
+
+Furthermore, if a controller needs to gather IPs for a specific network to which 
+Pods are attached via networking devices, it will need to query each `Pod` and then 
 access the corresponding `ResourceClaim` for every Pod.
 
 ## Alternatives
