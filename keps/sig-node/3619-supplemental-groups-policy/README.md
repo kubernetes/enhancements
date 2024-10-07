@@ -938,7 +938,7 @@ implementation difficulties, etc.).
 -->
 
 Potentially, kube-scheduler could be implemented to avoid scheduling a pod with `supplementalGroupsPolicy: Strict`
-to a node running CRI runtime which is not supported this feature.
+to a node running CRI runtime which does not supported this feature.
 
 In this way, the Event metric described above would not happen, and users would instead see `Pending` pods
 as an error metric.
@@ -969,7 +969,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-Specific version of CRI.
+Container runtimes supporting [CRI api v0.31.0](https://github.com/kubernetes/cri-api/tree/v0.31.0) or above.
+
+For example, 
+- containerd: v2.0 or later
+- CRI-O: v1.31 or later
 
 ### Scalability
 
@@ -1145,7 +1149,7 @@ Major milestones might include:
 
 - 2023-02-10: Initial KEP published.
 - v1.31.0(2024-08-13): Alpha
-- v1.32.0: beta
+- v1.32.0: Beta (enabled by default)
 
 ## Drawbacks
 
