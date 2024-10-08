@@ -133,10 +133,11 @@ Note: In the following, we will use VolumeGroupSnapshot Controller to refer to t
 
 * Admin creates a VolumeGroupSnapshotClass.
 * User creates a VolumeGroupSnapshot with label selector that matches the label applied to all PVCs to be snapshotted together.
-* This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object, and also call the CreateVolumeGroupSnapshot CSI function.
-* The controller will retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
+* This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object. The group snapshot logic in the csi-snapshotter sidecar will call the CreateVolumeGroupSnapshot CSI function.
+* The group snapshot logic in csi-snapshotter will retrieve all volumeSnapshotHandles and their source volumeHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, and populate the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status.
+* The VolumeGroupSnapshot controller will be watching the VolumeGroupSnapshotContent, and create VolumeSnapshotContents pointing to the volumeSnapshotHandles once they are available in the VolumeGroupSnapshotContent status. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
-  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The VolumeGroupSnapshot controller can use the returned list of snapshots to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update SnapshotRefList in the VolumeGroupSnapshot Status and SnapshotContentList in the VolumeGroupSnapshotContent Status.
+  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The group snapshot logic in the csi-snapshotter sidecar will update the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status based on the returned list of snapshots from the CSI call. The VolumeGroupSnapshot controller can use VolumeSnapshotHandles to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update PVCVolumeSnapshotRefList in the VolumeGroupSnapshot Status and PVVolumeSnapshotContentList in the VolumeGroupSnapshotContent Status.
  * Individual VolumeSnapshots will be named in this format:
    * <snap>-<hash of VolumeGroupSnapshot UUID+PVC UUID+timestamp>
    * A label with VolumeGroupSnapshot name will also be added to the VolumeSnapshot
@@ -463,6 +464,17 @@ type GroupSnapshotHandles struct {
 	VolumeSnapshotHandles []string
 }
 
+// VolumeSnapshotHandlePair defines a pair of a source volume handle and a snapshot handle
+type VolumeSnapshotHandlePair struct {
+        // VolumeHandle is a unique id returned by the CSI driver to identify a volume
+	// on the storage system
+        VolumeHandle string
+
+        // SnapshotHandle is a unique id returned by the CSI driver to identify a volume
+        // snapshot on the storage system
+        SnapshotHandle string
+}
+
 Type VolumeGroupSnapshotContentStatus struct {
         // VolumeGroupSnapshotHandle is a unique id returned by the CSI driver
         // to identify the VolumeGroupSnapshot on the storage system.
@@ -470,6 +482,12 @@ Type VolumeGroupSnapshotContentStatus struct {
         // CSI driver can choose to return the VolumeGroupSnapshot name.
         // +optional
         VolumeGroupSnapshotHandle *string
+
+        // VolumeSnapshotHandlePairList is a list of CSI "volume_id" and "snapshot_id"
+	// pair returned by the CSI driver to identify snapshots and their source volumes
+	// on the storage system.
+        // +optional
+        VolumeSnapshotHandlePairList []VolumeSnapshotHandlePair
 
         // ReadyToUse becomes true when ReadyToUse on all individual snapshots become true
         // +optional
@@ -481,6 +499,7 @@ Type VolumeGroupSnapshotContentStatus struct {
         // +optional
         Error *VolumeSnapshotError
 
+	// NOTE: We will consider removing this field after testing.
 	// PVVolumeSnapshotContentList is the list of pairs of PV and
 	// VolumeSnapshotContent for this group snapshot
 	// The maximum number of allowed snapshots in the group is 100.
@@ -964,7 +983,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
+  - [Failure mode refers to a volume group snapshot creation or deletion failure]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
 
