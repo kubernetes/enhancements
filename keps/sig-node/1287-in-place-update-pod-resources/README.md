@@ -213,7 +213,7 @@ PodStatus is extended to show the resources applied to the Pod and its Container
   **desired** state of Pod resources
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
-  its Containers.
+  its Containers for running containers, and the allocated resources for non-running containers.
 * Pod.Status.Resize (new field, type map[string]string) explains what is
   happening for a given resource on a given container.
 
@@ -237,6 +237,10 @@ container status, but only included requests. This field will remain in alpha, g
 separate `InPlacePodVerticalScalingAllocatedStatus` feature gate, and is a candidate for future
 removal. With the allocated status feature gate enabled, Kubelet will continue to populate the field
 with the allocated requests from the checkpoint.
+
+The scheduler uses `max(spec...resources, status...resources)` for fit decisions, but since the
+actual resources are only relevant and reported for running containers, the Kubelet sets
+`status...resources` equal to the allocated resources for non-running containers.
 
 See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
 
