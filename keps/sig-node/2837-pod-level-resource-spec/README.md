@@ -1342,10 +1342,16 @@ TBD. Do not review for the alpha stage.
 #### [Scoped for Beta] Cluster Autoscaler
 
 Cluster Autoscaler won't work as expected with pod-level resources in alpha since
-it relies on container-level values to be specified. This is expected, and the
-support for CA with pod-level resources will come in Beta phase of the feature
-with pod resource requirements surfaced in a helper library/function that
-autoscalers can use to make autoscaling decisions.
+it relies on container-level values to be specified. If a user specifies only
+pod-level resources, the CA will assume that the pod requires no resources since
+container-level values are not set. As a result, the CA won't scale the number of
+nodes to accommodate this pod. Meanwhile, the scheduler will evaluate the
+pod-level resource requests but may be unable to find a suitable node to fit the
+pod. Consequently, the pod will not be scheduled. While this behavior is
+acceptable for the alpha implementation, it is anticipated that Cluster
+Autoscaler support will be addressed in the Beta phase with pod resource
+requirements surfaced in a helper library/function that autoscalers can use to
+make autoscaling decisions.
 
 #### [Scoped for Beta] Support for Windows
 
