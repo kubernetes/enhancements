@@ -78,6 +78,7 @@ SIG Architecture for cross-cutting KEPs).
     - [PodSandboxConfig](#podsandboxconfig)
     - [CreateContainer](#createcontainer)
     - [UpdateContainerResourcesRequest](#updatecontainerresourcesrequest)
+    - [UpdatePodSandboxResources](#updatepodsandboxresources)
   - [kubelet](#kubelet)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
