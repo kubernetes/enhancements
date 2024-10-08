@@ -223,7 +223,17 @@ above would give you:
 It is possible to indicate to a process which Numa node is preferred but a limitation of the Windows API's is that [PROC_THREAD_ATTRIBUTE_PREFERRED_NODE](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 does not support setting multiple Numa nodes for a single Job object (i.e. Container) so is not usable in the context of Windows containers which have multiple processes.  
 
-To work around these limitations, the kubelet will query the OS to get the affinity masks associated with each of the Numa nodes selected by the memory manager and update the CPU Group affinity accordingly in the CRI field. This will result in the memory from the Numa node being used. There are a couple scenarios that need to be considered:
+Since the existing Memory Manager Policy `Static` on Linux has semantic meaning that ensures that only the memory from a 
+NUMA node selected is used. We can not re-use this policy on Windows given that there is no way to ensure only the memory 
+on the Node that the memory manager selects.  For these reason if the `Static` policy is chosen on Windows kubelet will fail
+to start with an error message that states it can use the `Static` policy.  Instead we will create a new Windows only Policy called
+`BestEffort` which will initially only be implemented on Windows and Linux will fail to start if the Policy is set.  
+We do not have any use cases for this policy to be implemented on Linux at this time and so we will avoid adding a feature that isn't 
+applicable to that platform.
+
+The main purpose of the `BestEffort` policy on Windows will be to ensure that at the time of pod start up there is enough Memory on a given NUMA node to meet the memory requests of the pod.  The intent here is to make sure if CPU's are selected that there is enough memory to also support the request to avoid cross CPU/NUMA node processing. On Windows, even though we cannot guarantee NUMA node selection, the Windows Schedule will do the right thing in most cases.  By using Kubelet's existing [Memory Mapping strategy](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#memory-map) we can ensure NUMA nodes have enough memory at the time of scheduling.  It is important to note that this does not mean that it is guaranteed (hence the policy name change)
+
+Since Windows does not have an API to directly assign NUMA nodes, the kubelet will query the OS to get the affinity masks associated with each of the Numa nodes selected by the memory manager and update the CPU Group affinity accordingly in the CRI field. This will result in the memory from the Numa node being used. There are a couple scenarios that need to be considered:
 
 - Memory manager is enabled, cpu manager is not: kubelet will look up all the cpu's associated with the selected Numa nodes and assign the CPU Group affinity.  For example if NumaNode 0 is selected by memory manager, and NumaNode 0 has the first four CPU's in Windows CPU group 0 the result would be `cpu affinity: 0000001111, group 0`.  
 - Memory manager is enabled, CPU manager is enabled
