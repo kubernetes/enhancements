@@ -764,7 +764,6 @@ in back-to-back releases.
 - Feature gate enabled by default
 - containerd and CRI-O runtimes have released versions that have adopted the
   new CRI API changes
-- The [NRI API](https://github.com/containerd/nri) has adopted the feature
 
 #### GA
 
