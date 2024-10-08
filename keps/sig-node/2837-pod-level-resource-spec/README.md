@@ -1527,8 +1527,22 @@ pods are recreated or the resource settings are updated.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Reenabling the feature will not affect existing pods. Once reenabled, any new
-pods can be created with pod-level resources to use the feature.
+If the feature is re-enabled after being previously disabled, any new pods will
+again have access to the pod-level resources feature. Existing pods created while
+the feature was disabled will continue to operate without utilizing pod-level
+resources.
+
+However, existing pods that were created with pod-level resources before the
+feature was disabled will experience mismatched calculations for resource usage
+when the feature is disabled, and these calculations will only align correctly
+once the feature is re-enabled. Additionally, any pods that were admitted before
+the feature was disabled but are recreated or restarted will also have mismatched
+calculations after the feature is re-enabled.
+
+To ensure consistent and intuitive resource calculations, it is advisable to
+delete all pods when toggling the feature between enabling and disabling. This
+will help eliminate discrepancies and ensure that all pods operate under the same
+resource management scheme.
 
 ###### Are there any tests for feature enablement/disablement?
 
