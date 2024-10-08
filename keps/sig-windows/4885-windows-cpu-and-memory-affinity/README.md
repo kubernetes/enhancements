@@ -68,9 +68,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This kep outlines how to add support for the CPU, Memory and Topology Managers in kubelet for Windows.  
 The Managers are already available and support in kubelet on Linux and there have been requests to sig-windows
-to add support on Windows to help with workloads that require co-located workloads.  The goal of the kep is to 
+to add support on Windows to help with workloads that require co-located workloads.  The goal of the KEP is to 
 add Windows support without significant changes to the Managers logic while providing the same feature sets available
 on Linux today.
+
+The existing KEPS are:
+
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager
 
 ## Motivation
 
@@ -165,7 +171,7 @@ One difference between the Windows API and Linux is the concept of [Processor gr
 On Windows systems with more than 64 cores the CPU's will be split into groups, 
 each processor is identified by its group number and its group-relative processor number. 
 
-In Cri we will add the following structure to the `WindowsContainerResources` in CRI:
+In CRI we will add the following structure to the `WindowsContainerResources` in CRI:
 
 ```protobuf
 message WindowsCpuGroupAffinity {
@@ -268,7 +274,7 @@ Integration tests do not run on Windows. Functionality will be covered by unit a
 
 ##### e2e tests
 
--  e2e_node will need to be enabled for windows to add coverage
+-  e2e_node will need to be enabled for Windows to add coverage.  We plan to enable just e2e tests that relate to memory/cpu/topology manager, not the full suite.
 
 ### Graduation Criteria
 
@@ -305,9 +311,18 @@ N/A
 
 ### Version Skew Strategy
 
-N/A
+This feature is kubelet specific, so version skew strategy is N/A.
 
 ## Production Readiness Review Questionnaire
+
+This KEP discusses the changes required to enable for the various managers for Windows. 
+This means many of the PRR questions for these features have already been covered and implemented 
+as part of those KEPs.  We try to give details relevant to Windows but do not plan to change any of the
+details of the features enablement in the KEP unless it is required because of a difference in Windows.  
+
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#production-readiness-review-questionnaire
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager#production-readiness-review-questionnaire
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#production-readiness-review-questionnaire
 
 ### Feature Enablement and Rollback
 
@@ -329,19 +344,31 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: WindowsCPUAndMemoryAffinity
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
+  - Components depending on the feature gate: Kubelet
   - Will enabling / disabling the feature require downtime of the control
     plane?
     No
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
-    Yes it uses a feature gate. Memory and CPU managers have a state file that requires cleanup.
+    This is behavior is is the same as the features is implemented today in existing KEPs:
+
+    https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#troubleshooting
+    https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#feature-enablement-and-rollback
+
+    Yes it uses a feature gate. Memory and CPU managers have a state file that requires cleanup.  After changing the CPU manager policy from none to static or the the other way around, before to start the kubelet again, you must remove the CPU manager state file(/var/lib/kubelet/cpu_manager_state), otherwise the kubelet start will fail. Startup failures for this reason will be logged in the kubelet log.
+
+    Details for the steps to reset a state file are in https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#changing-the-cpu-manager-policy. Memory manager has the same steps for resetting.
 
 ###### Does enabling the feature change any default behavior?
 
-No, Additional settings are required to enable the features.  The default policies for CPU/Memory manager will be `None`, meaning that they will not interact with running of pods.
+No, Additional settings are required to enable the features.  The default policies for CPU/Memory manager will be `None`, meaning that they will not interact with running of pods.  The Cluster administrator will need to set specific CPU/Memory/Topology manager policies 
+to enable any features described here.
+
+See feature details in:
+
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#feature-enablement-and-rollback
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#feature-enablement-and-rollback
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager#feature-enablement-and-rollback
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -356,11 +383,17 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes.  Restarting of the pods will be required to remove the CPU/Memory affinity.
+Yes.  A rolling restart (delete or delete and redeploy) of the pods will be required to remove the CPU/Memory affinity
+from running pods.  Restarting kubelet after changing the feature will not affect any running pods but new pods created will be 
+affected by the changes.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+The Memory Manager and CPU managers utilize a state file to track assignments. If State file is not valid, it must be removed and kubelet restarted. E.g., State file might become invalid when kube/system reserved have changed (increased), which may lead to a situation when some containers cannot be started.
+
 ###### Are there any tests for feature enablement/disablement?
+
+Yes, there is a number of Unit Tests designated for State file validation.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -466,13 +499,9 @@ The memory/cpu manager will be under the pod resources API. And there are propos
 
 ###### How can someone using this feature know that it is working for their instance?
 
-- [x] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: check the kubelet metric `cpu_manager_pinning_requests_total`
+  - check the kubelet metric `memory_manager_pinning_requests_total`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -592,3 +621,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+n/a Windows will use existing testing infrastructure
