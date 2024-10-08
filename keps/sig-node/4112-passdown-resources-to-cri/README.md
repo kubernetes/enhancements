@@ -252,6 +252,8 @@ breaking any existing use cases.
 
 - change kubelet resource management
 - change existing behavior of CRI
+- add UpdatePodSandboxResources CRI rpc (this is covered by [KEP-1287][kep-1287], [PR][kep-1287-beta-pr])
+- add pod-level resource requirements (this is covered by [KEP-2837][kep-2837], [PR][kep-2837-alpha-pr])
 
 ## Proposal
 
@@ -327,6 +329,13 @@ can see the full picture of Pod's resource usage at Pod creation time, for
 example enabling more holistic resource allocation and thus better
 interoperability between containers inside the Pod.
 
+The UpdatePodSandboxResources CRI message is also updated when/if that is
+introduced by the [KEP-1287][kep-1287] Beta ([PR][kep-1287-beta-pr]).
+
+Information about the Pod-level resources are added when/if the Pod-level
+resources enhancement [KEP-2837][kep-2837] Alpha ([PR][kep-2837-alpha-pr]) is
+implemented.
+
 ### CRI API
 
 #### PodSandboxConfig
@@ -390,6 +399,23 @@ request.
 +    REGULAR_CONTAINER = 2;
 +}
 ```
+
+The Pod-level resources enhancement [KEP-2837][kep-2837]
+([alpha PR][kep-2837-alpha-pr]) proposes to add new Pod-level resource
+requirements fields to the PodSpec. This information will be be added to the
+PodResourceConfig message, similar to the container resource information.
+
+```diff
+ message PodResourceConfig {
+     repeated ContainerResourceConfig containers = 1;
++
++    // Kubernetes resource spec of the pod-level resource requirements.
++    KubernetesResources kubernetes_resources = 2;
+ }
+```
+
+The implementation if adding the KubernetesResources field to the
+PodResourceConfig is synced with [KEP-2837][kep-2837].
 
 #### CreateContainer
 
@@ -457,6 +483,39 @@ resource requests from the PodSpec.
 Note that mounts, devices, CDI devices are not part of the
 UpdateContainerResourcesRequest message and this proposal does not suggest
 adding them.
+
+#### UpdatePodSandboxResources
+
+The In-Place Update of Pod Resources ([KEP-1287][kep-1287]) Beta
+([PR][kep-1287-beta-pr]) proposes to add new UpdatePodSandboxResources rpc to
+inform the CRI runtime about the changes in the pod resources.
+
+The UpdatePodSandboxResourcesRequest message is extended similarly to the
+[PodSandboxConfig](#podsandboxconfig) message to contain information about
+resources of all its containers. In UpdatePodSandboxResourcesRequest this will
+reflect the updated resource requirements of the containers.
+
+```diff
+ message UpdatePodSandboxResourcesRequest {
+     // ID of the PodSandbox to update.
+     string pod_sandbox_id = 1;
+ 
+     // Optional overhead represents the overheads associated with this sandbox
+     LinuxContainerResources overhead = 2;
+     // Optional resources represents the sum of container resources for this sandbox
+     LinuxContainerResources resources = 3;
+ 
+     // Unstructured key-value map holding arbitrary additional information for
+     // sandbox resources updating. This can be used for specifying experimental
+     // resources to update or other options to use when updating the sandbox.
+     map<string, string> annotations = 4;
++
++    // Kubernetes resource spec of the containers in the pod.
++    PodResourceConfig pod_resources = 5;
+ }
+```
+
+The implementation will be synced with [KEP-1287][kep-1287].
 
 ### kubelet
 
@@ -1200,3 +1259,10 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+<!-- References -->
+
+[kep-1287]: https://github.com/kubernetes/enhancements/issues/1287
+[kep-1287-beta-pr]: https://github.com/kubernetes/enhancements/pull/4704
+[kep-2837]: https://github.com/kubernetes/enhancements/issues/2837
+[kep-2837-alpha-pr]: https://github.com/kubernetes/enhancements/pull/4678
