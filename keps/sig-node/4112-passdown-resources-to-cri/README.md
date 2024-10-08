@@ -302,7 +302,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-The proposal only adds new informantional data to the CRI API between kubelet
+The proposal only adds new informational data to the CRI API between kubelet
 and the container runtime with no user-visible changes which mitigates possible
 risks considerably.
 
@@ -495,9 +495,14 @@ spec:
     volumeMounts:
     - mountPath: /my-volume
       name: my-volume
+    - mountPath: /image-volume
+      name: image-volume
   volumes:
   - name: my-volume
     emptyDir:
+  - name: image-volume
+    image:
+      reference: example.com/registry/artifact:tag
 ```
 
 Then kubelet will send the following RunPodSandboxRequest when creating the Pod
@@ -524,6 +529,10 @@ RunPodSandboxRequest:
         mounts:
         - container_path: /my-volume
           host_path: /var/lib/kubelet/pods/<pod-uid>/volumes/kubernetes.io~empty-dir/my-volume
+        - container_path: /image-volume
+          image:
+            image: example.com/registry/artifact:tag
+          ...
         - container_path: /var/run/secrets/kubernetes.io/serviceaccount
           host_path: /var/lib/kubelet/pods/<pod-uid>/volumes/kubernetes.io~projected/kube-api-access-4srqm
           readonly: true
@@ -798,6 +807,12 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+The default behavior in Kubernetes is unchanged.
+
+However, there might be changes in behavior if the underlying CRI runtime
+depends on this feature. For example, an NRI plugin relying on the feature may
+cause the application to behave differently.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -811,7 +826,14 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, disabling the `KubeletContainerResourcesInPodSandbox` feature gate will
+disable the feature. Restarting pods may be needed to reset the information
+that was passed down to the CRI.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+New pods will have the feature enabled. Existing pods will continue to operate
+as before until restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -827,6 +849,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Unit tests for the feature gate will be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -846,12 +870,22 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollback or rollout in the kubelet should not fail - it only enables/disabled
+the information (fields in the CRI message) passed down to the CRI runtime.
+
+However, if the CRI runtime depends on the feature, a rollout or rollback may
+cause failures of applications on pod restarts. Running pods are not affected.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Alpha: No new metrics are planned. Non-ready pods with CreatePodSandboxError
+status is one indicator. The error message will contain details if the CRI
+failure is related to the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -861,11 +895,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Alpha: Manual testing of the feature gate is performed.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -884,6 +922,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+By examing the kubelet configuration (feature gate) and the version of the
+kubelet and the CRI runtime.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -895,13 +936,14 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+The end users do not see the status of the feature directly.
+
+The cluster operator can verify that the feature is working by examining the
+kubelet and CRI runtime logs.
+
+The CRI runtime or NRI plugin developers depending on the feature can ensure
+that it is working by verifying that all the required information is available
+at pod sandbox creation time.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -920,18 +962,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -939,6 +978,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+N/A.
 
 ### Dependencies
 
@@ -962,6 +1003,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
+
+However, the practical usability of this feature requires that also the CRI
+runtime supports it. The feature is effectively a no-op if the CRI runtime does
+not support it.
 
 ### Scalability
 
@@ -990,6 +1037,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -999,6 +1048,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1006,6 +1057,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1015,6 +1068,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1026,6 +1081,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Not noticeably.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1039,6 +1096,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No. The new data fields in the CRI API would not count as significant increase.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1050,6 +1109,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -1066,6 +1127,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A. The feature is node-local.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1081,7 +1144,22 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+The feature in Kubernetes is relatively straightforward - passing extra
+information to the CRI runtime. The failure scenarios arise in the CRI runtime
+level, e.g.:
+
+- misbehaving CRI runtime or NRI plugin
+- CRI runtime or NRI plugin is depending on the feature but it is not enabled
+  in the kubelet
+- configuration skew in the cluster where some nodes have the feature enabled
+  and some do not
+
+Pod events and CRI runtime logs are the primary sources of information for
+these failure scenarios.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
