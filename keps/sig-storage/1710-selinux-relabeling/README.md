@@ -834,15 +834,18 @@ _This section must be completed when targeting beta graduation to a release._
         1. `volume_manager_selinux_container_errors_total` + `volume_manager_selinux_container_warnings_total`: Number of errors when kubelet cannot compute SELinux label for a container.
           This indicates an error converting Pod's SELinuxOptions into SELinux label string by github.com/opencontainers/selinux/go-selinux library.
           Reading its source code, this should never happen, but one never knows.
+          Labels: none, this error is not related to volumes. 
         1. `volume_manager_selinux_pod_context_mismatch_errors_total` + `volume_manager_selinux_pod_context_mismatch_warnings_total`: Number
           of errors when a Pod defines different SELinux labels for its containers that use the same volume.
           Before this feature, only one container in such a Pod could access the volume.
           With this feature, the Pod won't even start.
           This metric captures nr. of failed Pod starts, including periodic retries.
+          Labels: `access_mode`, to determine issues with RWOP volumes.
         1. `volume_manager_selinux_volume_context_mismatch_errors_total` + `volume_manager_selinux_volume_context_mismatch_warnings_total`:
           Number of errors when a Pod uses a volume that is already mounted with a different SELinux label than the Pod needs.
           Before this feature, both pods would start, but only one such pod could access the volume.
           With this feature, one of the Pods won't even start.
+          Labels: `access_mode`, to determine issues with RWOP volumes, and `volume_plugin` to match a volume plugin / CSI driver and its `SELinuxMount` flag.   
     - `pod_start_sli_duration_seconds`: Duration in seconds to start a pod, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch.
       This is already existing metric, it should not be worse than before this KEP, because CRI does not need to relabel (some) volume mounts.
     - Components exposing the metric: kubelet
