@@ -382,52 +382,7 @@ type DeviceRequest struct {
     // +oneOf=deviceRequestType
     FirstAvailableOf []DeviceRequest
 
-    // Selectors define criteria which must be satisfied by a specific
-    // device in order for that device to be considered for this
-    // request. All selectors must be satisfied for a device to be
-    // considered.
-    //
-    // +optional
-    // +listType=atomic
-    Selectors []DeviceSelector
-
-    // AllocationMode and its related fields define how devices are allocated
-    // to satisfy this request. Supported values are:
-    //
-    // - ExactCount: This request is for a specific number of devices.
-    //   This is the default. The exact number is provided in the
-    //   count field.
-    //
-    // - All: This request is for all of the matching devices in a pool.
-    //   Allocation will fail if some devices are already allocated,
-    //   unless adminAccess is requested.
-    //
-    // If AlloctionMode is not specified, the default mode is ExactCount. If
-    // the mode is ExactCount and count is not specified, the default count is
-    // one. Any other requests must specify this field.
-    //
-    // More modes may get added in the future. Clients must refuse to handle
-    // requests with unknown modes.
-    //
-    // +optional
-    AllocationMode DeviceAllocationMode
-
-    // Count is used only when the count mode is "ExactCount". Must be greater than zero.
-    // If AllocationMode is ExactCount and this field is not specified, the default is one.
-    //
-    // +optional
-    // +oneOf=AllocationMode
-    Count int64
-
-    // AdminAccess indicates that this is a claim for administrative access
-    // to the device(s). Claims with AdminAccess are expected to be used for
-    // monitoring or other management services for a device.  They ignore
-    // all ordinary claims to the device with respect to access modes and
-    // any resource allocations.
-    //
-    // +optional
-    // +default=false
-    AdminAccess bool
+    ...
 }
 
 const (
@@ -1102,6 +1057,10 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+This adds complexity to the scheduler and to the cluster autoscaler, which will
+simulate the satisfaction of claims with different node shapes.
+
+
 ## Alternatives
 
 <!--
@@ -1135,21 +1094,15 @@ type ResourceClaimSpec struct {
         // +optional
         FirstOfDevices []DeviceClaim
 
-        //
-        // Must be a DNS subdomain and should end with a DNS domain owned by the
-        // vendor of the driver.
-        //
-        // This is an alpha field and requires enabling the DRAControlPlaneController
-        // feature gate.
-        //
-        // +optional
-        // +featureGate=DRAControlPlaneController
-        Controller string
+        ...
 }
 ```
 
 This is arguably simpler and allows them to be essentially complete, alternate
-claims.
+claims. It would be more difficult for the user, though, as it would require
+duplication of other device requests. Additionally, if there were multiple
+separate `FirstAvailableOf` requests in a claim, the user would have to specify
+all the combinations of those in order to get the same flexibility.
 
 ## Infrastructure Needed (Optional)
 
