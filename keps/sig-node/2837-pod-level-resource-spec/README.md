@@ -32,6 +32,7 @@
     - [Admission Controller](#admission-controller)
     - [Eviction Manager](#eviction-manager)
     - [Pod Overhead](#pod-overhead)
+    - [[Scoped for Beta] User Experience Survey](#scoped-for-beta-user-experience-survey)
     - [[Scoped for Beta] Surfacing Pod Resource Requirements](#scoped-for-beta-surfacing-pod-resource-requirements)
       - [The Challenge of Determining Effective Pod Resource Requirements](#the-challenge-of-determining-effective-pod-resource-requirements)
       - [Goals of surfacing Pod Resource Requirements](#goals-of-surfacing-pod-resource-requirements)
@@ -1110,6 +1111,13 @@ back to aggregating container requests.
 * Cgroup Sizing: The kubelet will include the Pod Overhead in determining the
   size of the pod's cgroup. This means the pod cgroup's resource limits will be
   set to accommodate both pod-level requests and pod overhead.
+
+#### [Scoped for Beta] User Experience Survey
+
+Before promoting the feature to Beta, we plan to conduct a UX survey to
+understand user expectations for setting various combinations of requests and
+limits at both the pod and container levels. This will help us gather use cases
+for different combinations, enabling us to enhance the feature's usability.
 
 #### [Scoped for Beta] Surfacing Pod Resource Requirements
 
