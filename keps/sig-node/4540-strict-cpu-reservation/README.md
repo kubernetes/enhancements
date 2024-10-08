@@ -43,8 +43,8 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -53,7 +53,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -72,8 +72,8 @@ With this KEP, a new `CPUManager` policy option `strict-cpu-reservation` is intr
 ## Motivation
 
 The static policy is used to reduce latency or improve performance. If you want to move system daemons or interrupt processing to dedicated cores, the obvious way is use the `reservedSystemCPUs` option. But in current implementation this isolation is implemented only for guaranteed pods with integer CPU requests not for burstable and best-effort pods (and guaranteed pods with fractional CPU requests).
-Admission is only comparing the cpu requests against the allocatable cpus. Since the cpu limit are higher than the request, it allows burstable and best-effort pods to use up the capacity of `reservedSystemCPUs` and cause the OS/Systemd services to starve in real life deployments.
-Solutions like Intel's Balloons Policy can be deployed to separate infrastructure and workload into different CPU pools but they require extra software, additional tuning and reduced CPU pool size could affect performance of multi-threaded processes.
+Admission is only comparing the cpu requests against the allocatable cpus. Since the cpu limit are higher than the request, it allows burstable and best-effort pods to use up the capacity of `reservedSystemCPUs` and cause host OS services to starve in real life deployments.
+Custom CPU allocation policies deployed as NRI plugins (e.g. Balloons) can separate infrastructure and workload into different CPU pools but they require extra software, additional tuning and reduced CPU pool size could affect performance of multi-threaded processes.
 
 ### Goals
  * Align scheduler and node view for Node Allocatable (total - reserved).
@@ -121,13 +121,13 @@ reservedSystemCPUs: "0,32,1,33,16,48"
 
 When `strict-cpu-reservation` is disabled:
 ```console
-# cat /var/lib/kubelet/cpu\_manager\_state
+# cat /var/lib/kubelet/cpu_manager_state
 {"policyName":"static","defaultCpuSet":"0-79","checksum":1241370203}
 ```
 
 When `strict-cpu-reservation` is enabled:
 ```console
-# cat /var/lib/kubelet/cpu\_manager\_state
+# cat /var/lib/kubelet/cpu_manager_state
 {"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
 ```
 
@@ -146,8 +146,8 @@ However, this is exactly the feature intent, best-effort workloads have no KPI r
 Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha stage to assess the actual impact in real deployment before revisiting if we need risk mitigation.
 
 https://github.com/kubernetes/kubernetes/pull/127506
-- report shared pool size, in millicores (e.g. 13500m)
-- report exclusively allocated cores, counting full cores (e.g. 16)
+- cpu\_manager\_shared\_pool\_size\_millicores: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
+- cpu\_manager\_exclusive\_cpu\_allocation\_count: report exclusively allocated cores, counting full cores (e.g. 16)
 
 
 #### Archived Risk Mitigation (Option 1)
@@ -289,17 +289,19 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Integration tests
 
-- These cases will be added in the existing integration tests:
-  - Feature gate enable/disable tests
-  - `strict-cpu-reservation` policy option works as expected.
-  - `strict-cpu-reservation` policy option works with existing policy options.
+No new integration tests for kubelet are planned.
 
 ##### e2e tests
 
 - These cases will be added in the existing e2e tests:
-  - Feature gate enable/disable tests
-  - `strict-cpu-reservation` policy option works as expected.
-  - `strict-cpu-reservation` policy option works with existing policy options.
+  - CPU Manager works with `strict-cpu-reservation` policy option
+
+- Basic functionality
+1. Enable `CPUManagerPolicyAlphaOptions` feature gate and `strict-cpu-reservation` policy option.
+2. Create a simple pod of Burstable QoS type.
+3. Verify the pod is not running on the reserved CPU cores.
+4. Delete the pod.
+
 
 ### Graduation Criteria
 
@@ -307,17 +309,16 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 - [X] Implement the new policy option.
 - [X] Ensure proper unit tests are in place.
-- [X] Ensure proper e2e node tests are in place.
 
 #### Beta
 
-- [X] Gather feedback from consumers of the new policy option.
-- [X] Verify no major bugs reported in the previous cycle.
+- [ ] Gather feedback from consumers of the new policy option.
+- [ ] Verify no major bugs reported in the previous cycle.
 
 #### GA
 
-- [X] Allow time for feedback (1 year).
-- [X] Make sure all risks have been addressed.
+- [ ] Allow time for feedback (1 year).
+- [ ] Make sure all risks have been addressed.
 
 ### Upgrade / Downgrade Strategy
 
@@ -325,13 +326,13 @@ The new policy option is opt-in and orthogonal to the existing ones.
 
 ### Version Skew Strategy
 
-No changes needed
+No changes needed.
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-The /var/lib/kubelet/cpu\_manager\_state needs be removed when changing the value of `strict-cpu-reservation`.
+The /var/lib/kubelet/cpu\_manager\_state needs be removed when enabling or disabling the feature.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -339,15 +340,13 @@ The /var/lib/kubelet/cpu\_manager\_state needs be removed when changing the valu
   - Feature gate name: `CPUManagerPolicyAlphaOptions`
   - Components depending on the feature gate: `kubelet`
 - [X] Change the kubelet configuration to set a `CPUManager` policy of `static` and a `CPUManager` policy option of `strict-cpu-reservation`
-  - Will enabling / disabling the feature require downtime of the control
-    plane? No
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?  No -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
+  - Will enabling / disabling the feature require downtime of the control plane? No
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node?  Yes -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
 
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. Reserved CPU cores for system usage will be strictly used for system daemons and interrupt processing no longer available for workloads.
+Yes. Reserved CPU cores will be strictly used for system daemons and interrupt processing no longer available for workloads.
 
 The feature is only enabled when all following conditions are met:
 1. The `CPUManagerPolicyAlphaOptions` feature gate must be enabled
@@ -377,6 +376,10 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+If the feature rollout fails, burstable and best-efforts can run on the reserved CPU cores.
+If the feature rollback fails, burstable and best-efforts can not run on the reserved CPU cores.
+In either case, existing workload will not be affected.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -394,6 +397,9 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+When the feature rolls back, the reserved CPU cores are included in the `defaultCpuSet` in /var/lib/kubelet/cpu\_manager\_state file.
+
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -402,17 +408,23 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+We manually test it in our internal environment and it works.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
+No.
+
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect the `CPUManager` state file /var/lib/kubelet/cpu\_manager\_state.
+Inspect the `defaultCpuSet` in /var/lib/kubelet/cpu\_manager\_state file:
+- When the feature is disabled, the reserved CPU cores are included in the `defaultCpuSet`.
+- When the feature is enabled, the reserved CPU cores are not included in the `defaultCpuSet`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -428,53 +440,56 @@ Cpus_allowed_list:      2-15,17-31,34-47,49-63
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-This feature to protect infrastructure services, running on the reserved CPU cores, from bursty workloads.
+This feature allows users to protect infrastructure services from bursty workloads.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Run `top -H` to observe `reservedSystemCPUs` are not used by workloads.
+https://github.com/kubernetes/kubernetes/pull/127506:
+- cpu\_manager\_shared\_pool\_size\_millicores: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
+- cpu\_manager\_exclusive\_cpu\_allocation\_count: report exclusively allocated cores, counting full cores (e.g. 16)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-None
+No.
+
 
 ### Dependencies
 
-None
+No.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No
+No.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-No
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No
+No.
 
 ### Troubleshooting
 
@@ -500,7 +515,9 @@ You can safely disable the feature.
 
 ## Implementation History
 
-- 2023-03-08: Initial KEP created
+- 2024-03-08: Initial KEP created
+- 2024-10-07: KEP gets LGTM and Approval
+
 
 ## Drawbacks
 
