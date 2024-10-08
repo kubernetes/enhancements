@@ -872,6 +872,15 @@ However, there might be changes in behavior if the underlying CRI runtime
 depends on this feature. For example, an NRI plugin relying on the feature may
 cause the application to behave differently.
 
+Long running pods that persist (without restart) over kubelet and CRI runtime
+update which enables the feature may experience version skew of the metadata.
+After enabling the feature, the CRI runtime does not have the aggregated
+information of all resources of the pod, provided with this feature, as the
+kubelet didn't restart these pods (didn't send the CreatePodSandbox CRI
+request). This may affect some scenarios e.g. NRI plugins. This "metadata skew"
+can be avoided by draining the node before updating the kubelet and the CRI
+runtime.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
