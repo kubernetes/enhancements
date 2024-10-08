@@ -4,6 +4,7 @@ authors:
   - "@mikebrow"
   - "@pacoxu"
   - "@haircommander"
+  - "@stlaz"
 owning-sig: sig-node
 status: implementable
 creation-date: 2021-03-10
@@ -12,15 +13,16 @@ reviewers:
   - "@yujuhong"
   - "@mrunalp"
   - "@adisky"
+  - "@liggitt"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: alpha
-latest-milestone: "v1.31"
+latest-milestone: "v1.32"
 milestone:
-  alpha: "v1.31"
-  beta: "v1.32"
-  stable: "v1.34"
+  alpha: "v1.32"
+  beta: "v1.33"
+  stable: "v1.35"
 feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:

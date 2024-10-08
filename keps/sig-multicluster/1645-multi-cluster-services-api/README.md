@@ -883,8 +883,9 @@ clusterset, associated with the derived `ServiceImport`. One or more
 `EndpointSlice` containing only endpoints from a single source cluster. These
 `EndpointSlice` objects will be marked as managed by the clusterset service
 controller, so that the endpoint slice controller doesn’t delete them.
-`EndpointSlices` will have an owner reference to their associated
-`ServiceImport`.
+
+When a service is un-exported, the associated EndpointSlices will be deleted.
+The specific mechanism by which they are deleted is an implementation detail.
 
 Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
 given `EndpointSlice` will reference its `ServiceImport` using the label

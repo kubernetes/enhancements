@@ -133,19 +133,19 @@ In practice this means that (for now), only List, Watch, and DeleteCollection ha
 SubjectAccessReviews submitted to the kube-apiserver with verbs that do not honor the selectors will NOT modify the field and label selector attributes.
 The client is trusted to be sending only combinations that will be honored.
 
-Any authorizer that gets an error from `ParseFieldSelector` or `ParseLabelSelector` may attempt to authorize without
+Any authorizer that gets an error from `GetFieldSelector` or `GetLabelSelector` may attempt to authorize without
 field or label selectors since that will authorize using a wider permission (field and label selectors can only reduce access).
 
 ```go
 type Attributes interface {
-	// ParseLabelSelector is lazy, thread-safe, and stores the parsed result and error.
-	// It can return an error if the field selector cannot be parsed.
-    // Remember that field selector formats vary based on the version of the API being used!
-	ParseFieldSelector() ([]Requirement, error)
+  // GetFieldSelector is lazy, thread-safe, and stores the parsed result and error.
+  // It can return an error if the field selector cannot be parsed.
+  // Remember that field selector formats vary based on the version of the API being used!
+  GetFieldSelector() (fields.Requirements, error)
   
-	// ParseLabelSelector is lazy, thread-safe, and stores the parsed result and error.
-    // It can return an error if the field selector cannot be parsed.
-    ParseLabelSelector() ([]Requirement, error)
+  // GetLabelSelector is lazy, thread-safe, and stores the parsed result and error.
+  // It can return an error if the field selector cannot be parsed.
+  GetLabelSelector() (labels.Requirements, error)
 ```
 
 Webhook authors: remember that the list of verbs accepting field and label selectors may change over time.
@@ -366,7 +366,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -398,7 +398,29 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+```
+k8s.io/kubernetes/pkg/registry/authorization/subjectaccessreview: 61.9% of statements
+k8s.io/kubernetes/pkg/registry/authorization/util: 82.6% of statements
+k8s.io/kubernetes/plugin/pkg/auth/authorizer/node: 77.0% of statements
+k8s.io/kubernetes/pkg/apis/admissionregistration/validation: 87.6% of statements
+k8s.io/kubernetes/pkg/apis/authorization/validation: 97.0% of statements
+k8s.io/apiserver/pkg/admission/plugin/cel: 83.6% of statements
+k8s.io/apiserver/pkg/authorization/cel: 53.9% of statements
+k8s.io/apiserver/pkg/endpoints/filters: 77.2% of statements
+k8s.io/apiserver/pkg/endpoints/request: 65.4% of statements
+k8s.io/apiserver/plugin/pkg/authorizer/webhook: 86.6% of statements
+```
+
+Unit tests exercise node authorization, CEL compilation for authorization webhook and admission `matchConditions`,
+and CEL compilation for authorizer use with and without the feature enabled:
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/plugin/pkg/auth/authorizer/node/node_authorizer_test.go#L75-L81
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/pkg/authorization/cel/compile_test.go#L34
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook_v1_test.go#L806
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/pkg/admission/plugin/cel/filter_test.go#L503-L620
 
 ##### Integration tests
 
@@ -417,21 +439,17 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- [`test/integration/apiserver/cel/authorizerselector/...`](https://github.com/kubernetes/kubernetes/tree/c5f2fc05ad5ef3d68f35263f9f965101b371b8cc/test/integration/apiserver/cel/authorizerselector) - [triage history](https://storage.googleapis.com/k8s-triage/index.html?test=test%2Fintegration%2Fapiserver%2Fcel%2Fauthorizerselector)
+  - Fully exercise the new CEL authorizer functions with the feature enabled and disabled
+
+- [`test/integration/auth TestMultiWebhookAuthzConfig`](https://github.com/kubernetes/kubernetes/blob/c5f2fc05ad5ef3d68f35263f9f965101b371b8cc/test/integration/auth/authz_config_test.go#L472-L485) - [triage history](https://storage.googleapis.com/k8s-triage/index.html?text=TestMultiWebhookAuthzConfig&test=test%2Fintegration%2Fauth)
+- positive and negative match tests for a webhook matchCondition using selector matching, on actual API requests using selectors and on SubjectAccessReview requests
+
+[Test history](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=test/integration/apiserver/cel/authorizerselector|test/integration/auth&width=5)
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+This feature is fully tested with unit and integration tests
 
 ### Graduation Criteria
 
@@ -467,7 +485,6 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Feature implemented behind a feature flag
 - Unit tests demonstrating wiring and fallback
-- E2E test demonstrating node authorizer uses the field selector
 - Integration test demonstrating field selector wiring
   - must include fallback on parsing error as well
 
@@ -479,7 +496,6 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### GA
 
 - All bugs resolved and no new bugs requiring code change since the previous shipped release
-
 
 ### Upgrade / Downgrade Strategy
 
@@ -494,6 +510,22 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+On upgrade to a version that enables the feature, no configuration changes are required
+to maintain previous behavior of CEL expressions and authorization webhooks.
+All existing CEL expressions and authorization webhook responses behave identically.
+
+On upgrade to a version that enables the feature, to make use of the new feature:
+* authorization webhooks can inspect incoming SubjectAccessReview requests for field and label selector information
+* authorization webhook configuration files can include `matchConditions` that inspect field and label selector information
+* admission webhook API `matchConditions` can use authorizer fieldSelector / labelSelector functions
+* SubjectAccessReview API requests can specify fieldSelector / labelSelector fields
+
+On downgrade to a version that does not enable the feature by default, or if the feature is disabled:
+* field and label selector information will no longer be sent to authorization webhooks
+* authorization webhook configuration files can no longer include `matchConditions` that inspect field and label selector information
+* admission webhook API `matchConditions` use authorizer fieldSelector / labelSelector functions will not error, but will no-op
+* SubjectAccessReview API requests that specify fieldSelector / labelSelector fields will drop those fields
 
 ### Version Skew Strategy
 
@@ -547,6 +579,9 @@ This section must be completed when targeting alpha to a release.
   - Feature gate name: AuthorizeWithSelectors
   - Components depending on the feature gate:
     - kube-apiserver
+  - Feature gate name: AuthorizeNodeWithSelectors
+  - Components depending on the feature gate:
+    - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
@@ -556,17 +591,18 @@ The node authorizer will start preventing kubelets from listing pods that are no
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes.  Set the FeatureGate to false and restart the kube-apiserver.
-There is no persisted data to consider.
 The kube-apiserver will stop sending field and label selector information to authorization webhooks.
+Persisted CEL expressions using `fieldSelector` and `labelSelector` authorization functions will still function.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The kube-apiserver will send field and label selector information to authorization webhooks.
 
-
 ###### Are there any tests for feature enablement/disablement?
 
-No.  There is no persisted data to consider.
+Yes. Integration tests exercise behavior of CEL expressions with the feature enabled and disabled.
+
+https://github.com/kubernetes/kubernetes/tree/0b1d123fd040359da11dc772947a7908ee907910/test/integration/apiserver/cel/authorizerselector
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -586,12 +622,20 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Non-kubelet clients using kubelet credentials to make API requests could be forbidden
+if they are listing/watching pods without filtering to pods scheduled to the node,
+or if they are listing/watching nodes other than their own node.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+Use of kubelet credentials to make API requests the kubelet is not authorized to make
+is unexpected, but could be detected in the `authorization_attempts_total{result=denied}`
+metric increasing and audit events showing requests from a user in the `system:nodes` group
+with an `authorization.k8s.io/decision=forbid` audit annotation.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -600,12 +644,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Handling of persisted CEL expressions using selector features was tested
+with the feature disabled, and with a compatibility version of 1.30,
+to ensure that a previous version API server would not have to handle
+CEL expressions it did not understand.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No
 
 ### Monitoring Requirements
 
@@ -615,6 +664,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+None
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -623,6 +673,13 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Workloads do not use this feature directly.
+
+Audit events of SubjectAccessReview API requests would show if
+selector information was being provided.
+
+Authorization webhooks would be able to observe selector information
+provided in requests.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -635,13 +692,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Most of the uses are internal to cluster administrators:
+- authorization webhooks configured with matchConditions using fieldSelector/labelSelector
+  pass validation and only route requests passing those conditions to the webhook
+  (`apiserver_authorization_match_condition_exclusions_total` metric will increment if match conditions skip)
+- authorization webhooks can inspect the SubjectAccessReview requests sent to them to observe selector information
+- admission webhooks and validating admission policies can use `fieldSelector` and `labelSelector` authorizer methods
+  and pass API validation.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -660,18 +717,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Use of this feature should not change existing API SLOs.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+Use of this feature should not change existing API SLIs.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -679,6 +733,15 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+There are already metrics for the layers this feature is adding to:
+- authorization latency
+- authorization success
+- webhook authorizer match condition latency
+- webhook authorizer match condition success
+- webhook admission match condition latency
+- webhook admission match condition success
+- validating admission policy match condition latency
+- validating admission policy match condition success
 
 ### Dependencies
 
@@ -702,6 +765,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No
 
 ### Scalability
 
@@ -729,6 +793,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -738,6 +803,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -746,6 +812,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -755,6 +822,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+Existing API fields containing CEL expressions support additional CEL functions.
+
+SubjectAccessReview types (which are not persisted) add new fields for fieldSelector and labelSelector data.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -766,6 +836,13 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+Enabling the feature adds negligible size to authorization webhook payloads.
+
+Using the authorization selector functions in CEL expressions in authorization webhook matchConditions,
+admission webhook matchConditions, and validating admission policies can take additional time,
+though this is no different from increasing the complexity or number of CEL expressions generally.
+CEL expressions that can be set via REST APIs are subject to cost estimation to limit the complexity
+and size of the input data used for selectors.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -778,6 +855,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -790,6 +868,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No, this feature does not touch nodes.
 
 ### Troubleshooting
 
@@ -806,6 +885,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature is fully contained within the API server.
+
 ###### What are other known failure modes?
 
 <!--
@@ -820,40 +901,43 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+- Non-kubelet clients using kubelet credentials are forbidden
+  - Detection: logs of non-kubelet client, `authorization_attempts_total{result=denied}`
+    metric increasing, audit events showing requests from a user in the `system:nodes` group
+    with an `authorization.k8s.io/decision=forbid` audit annotation
+  - Mitigations:
+    - change the non-kubelet client to use its own credential (preferred)
+    - adjust the non-kubelet client to use field selectors on pods and nodes
+    - temporarily disable the `AuthorizeNodeWithSelectors` feature gate in kube-apiserver
+  - Diagnostics: the node authorizer logs the following messages at verbosity level 2
+    when a client attempts to use kubelet credentials to read nodes or pods without
+    using the expected field selector:
+    - `node '...' cannot read all nodes, only its own Node object`
+    - `node '...' cannot read '...', only its own Node object`
+    - `can only list/watch pods with spec.nodeName field selector`
+  - Testing: There are tests ensuring the node authorizer forbids these overly broad
+    read requests. Use of kubelet credentials by non-kubelet clients to make API
+    requests the kubelet is not authorized to make is unexpected and unwanted.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+Determine if webhook latency or matchCondition latency of matchConditions using these selector
+functions is the primary contributor, and if that change correlates with enablement of this feature.
+Test if eliminating use of the CEL selector functions in the offending CEL expression resolves the issue.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- v1.31: Alpha release
+- v1.32: Beta release
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+None considered
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+None considered
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+None

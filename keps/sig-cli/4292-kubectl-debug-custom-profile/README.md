@@ -145,8 +145,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -399,6 +399,8 @@ New unit test cases will be added for the following scenarios:
 - During the copying pod, custom profile is set and `--profile` is `general` and the output is expected
 - During the node debugging, custom profile is set and `--profile` is `general` and the output is expected
 
+- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/debug`: `30-09-2024` - `67.3%`
+
 ##### Integration tests
 
 <!--
@@ -424,6 +426,10 @@ profile's value supersedes the value in original pod spec.
 this value is in the pod spec.
 - Send invalid custom profile json(not in corev1.Container type or completely invalid json) and assure that
 the error message is correct.
+
+integration tests (defined in https://k8s.io/kubernetes/test/cmd/debug.sh#L571-L661) are running in 
+https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=pull-kubernetes-integration
+
 
 ##### e2e tests
 
@@ -518,7 +524,7 @@ in back-to-back releases.
 
 #### GA
 
-- Environment variable is removed altogether and feature is enabled and can not be disabled.
+- Feature gate (i.e. `KUBECTL_DEBUG_CUSTOM_PROFILE`) is locked to true and will be removed in 1.34.
 - e2e tests are implemented and enabled.
 
 ### Upgrade / Downgrade Strategy
@@ -941,7 +947,15 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- invalid debug pod after invalid custom profiling
+  - Detection: Debug pod is not in running state or not having required privileges to debug smoothly
+  - Mitigations: Pod can be deleted and re-run after modifying the custom profile
+  - Diagnostics: Pod can't be attached or in not running state
+  - Testing: There are several unit tests are implemented in https://github.com/kubernetes/kubectl/blob/master/pkg/cmd/debug/debug_test.go
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Not applicable
 
 ## Implementation History
 
@@ -957,6 +971,7 @@ Major milestones might include:
 -->
 - 2023-10-13: Kep is proposed as alpha feature
 - 2024-06-04: Kep is promoted to beta
+- 2024-09-05: Kep is promoted to stable
 
 ## Drawbacks
 
