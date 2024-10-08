@@ -130,12 +130,12 @@ A device, identified by `<driver name>/<pool name>/<device name>` can be
 represented only once in the `Devices` slice and will also mention which
 request caused the device to be allocated. The state and characteristics of the
 device are reported in the `Conditions`, representing the operational state of
-the device and in the `Data`, an arbitrary data slice representing device
+the device and in the `Data`, an arbitrary data field representing device
 specific characteristics. Additionally, for networking devices, a field
 `NetworkData` can be used to report the IPs, the MAC address and the
 interface name.
 
-`Data` being a slice of arbitrary data allows the DRA Driver to store
+`Data` being an arbitrary data field allows the DRA Driver to store
 device specific data in different formats. For example, a Network Device being
 configured by via a CNI plugin could get its `Data` field filled with the CNI
 result for troubleshooting purpose and with a Network result in a modern
@@ -161,7 +161,7 @@ type ResourceClaimStatus struct {
     // +listMapKey=driver
     // +listMapKey=device
     // +listMapKey=pool
-	  // +featureGate=DRAResourceClaimDeviceStatus
+    // +featureGate=DRAResourceClaimDeviceStatus
     Devices []AllocatedDeviceStatus `json:"devices,omitempty" protobuf:"bytes,4,opt,name=devices"`
 }
 
@@ -204,8 +204,7 @@ type AllocatedDeviceStatus struct {
     // Data contains arbitrary driver-specific data.
     //
     // +optional
-    // +listType=atomic
-    Data []runtime.RawExtension `json:"data,omitempty" protobuf:"bytes,5,opt,name=data"`
+    Data runtime.RawExtension `json:"data,omitempty" protobuf:"bytes,5,opt,name=data"`
 
     // NetworkData contains network-related information specific to the device.
     //
@@ -226,25 +225,18 @@ type NetworkDeviceData struct {
 
     // Addresses lists the network addresses assigned to the device's network interface.
     // This can include both IPv4 and IPv6 addresses.
+    // The addresses are in the CIDR notation, which includes both the address and the
+    // associated subnet mask.
+    // e.g.: "192.0.2.0/24" for IPv4 and "2001:db8::/64" for IPv6.
     //
     // +optional
     // +listType=atomic
-    Addresses []NetworkAddress `json:"addresses,omitempty" protobuf:"bytes,2,opt,name=addresses"`
+    Addresses []string `json:"addresses,omitempty" protobuf:"bytes,2,opt,name=addresses"`
 
     // HWAddress represents the hardware address (e.g. MAC Address) of the device's network interface.
     //
     // +optional
     HWAddress string `json:"hwAddress,omitempty" protobuf:"bytes,3,opt,name=hwAddress"`
-}
-
-// NetworkAddress provides a network address related details such as IP and Mask.
-type NetworkAddress struct {
-    // CIDR contains the network address in CIDR notation, which includes
-    // both the address and the associated subnet mask.
-    // e.g.: "192.0.2.0/24" for IPv4 and "2001:db8::/64" for IPv6.
-    //
-    // +required
-    CIDR string `json:"cidr,omitempty" protobuf:"bytes,1,rep,name=cidr"`
 }
 ```
 
@@ -288,7 +280,7 @@ the device they manage. An access control must be set in place to restrict the
 write access to the appropriate driver (A device status can only be updated by
 the entities that have a direct control over the device(s) being reported).
 
-Adding `Data` as an arbitrary data slice may introduce extra processing
+Adding `Data` as an arbitrary data field may introduce extra processing
 and storage overhead which might impact performance in a cluster with many
 devices and frequent status updates. In large-scale clusters where many devices
 are allocated, this impact must be considered.
@@ -404,9 +396,13 @@ to implement this enhancement.
     - A device can only be reported once in the `ResourceClaim`.
     - The reported device is allocated in the `ResourceClaim`.
     - Properties set in `AllocatedDeviceStatus` are in the correct format.
+- `ResourceClaim` registry strategy:
+    - With the feature gate enabled, the field is not dropped.
+    - With the feature gate disabled, the field is dropped.
 
 Coverage:
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `9/30/2024` - `77.1`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `9/28/2024` - `77.1`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `9/28/2024` - `75.5`
 
 ##### Integration tests
 
@@ -419,7 +415,13 @@ Coverage:
 
 ##### e2e tests
 
-TBD
+The [DRA test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
+will be extended to support the new  `ResourceClaim.Status.Devices` field and to 
+populate it with data related to the device configured in the pod.
+
+A new network DRA Driver will be implemented (or extended from the existing DRA 
+test driver) to support networking type of devices and report their 
+network status.
 
 ### Graduation Criteria
 
@@ -479,11 +481,14 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, with no side effects except for missing the new field in
-`ResourceClaim.Status`. Re-enabling this feature will not guarantee to keep
-the values written before the feature has been disabled.
+Yes, with no side effects except for missing the new field `Devices` in
+`ResourceClaim.Status`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The field will be available again for read and write, but this feature will 
+not guarantee to keep the values written before the feature has been disabled.
+DRA-Drivers will then have to write again the `ResourceClaim.Status.Devices`.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -492,11 +497,12 @@ tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
-No
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-No
+Enabling the feature will enable the field to be written and therefore invoke 
+validation of the field. Since the feature does nothing more than allow storage 
+of this data, the only way it can really fail is to crash in validation. It 
+will not affect running workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -532,19 +538,16 @@ N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: `resourceclaim_status_devices_update_attempts_total` ; `resourceclaim_status_devices_update_failures_total`
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No
 
 ### Dependencies
 
@@ -552,7 +555,7 @@ implementation difficulties, etc.).
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No
+No, the field won't be populated unless a DRA driver utilizes it.
 
 ### Scalability
 
@@ -674,11 +677,12 @@ Here is below the proposed API:
 // state of a system, especially if the node that hosts the pod cannot contact the control
 // plane.
 type PodStatus struct {
-[...]
-        // Networks is a list of PodNetworks that are attached to the Pod.
-        //
-        // +optional
-        Networks []NetworkStatus `json:"networks,omitempty"`
+    ...
+
+    // Networks is a list of PodNetworks that are attached to the Pod.
+    //
+    // +optional
+    Networks []NetworkStatus `json:"networks,omitempty"`
 }
 
 // NetworkStatus provides the status of specific PodNetwork in a Pod.
