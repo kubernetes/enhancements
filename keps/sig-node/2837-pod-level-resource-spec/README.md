@@ -151,7 +151,7 @@ This proposal aims to:
 1. Extend Pod API to allow specifying resource spec (requests and limits) at the
    pod level. 
 2. Make this feature compatible with existing usage of container level
-   requests/limits, and other features like topology manager, memory manager,
+   requests/limits, and other features like topology manager, memory manager, VPA
    etc.
 
 ### Non Goals
@@ -195,13 +195,13 @@ spec:
   initContainers:
     - image: debian:buster
       name: shell
-      restartPolicy=Always
+      restartPolicy: Always
     - image: first-tool:latest
       name: tool1
-      restartPolicy=Always
+      restartPolicy: Always
     - image: second-tool:latest
       name: tool2
-      restartPolicy=Always
+      restartPolicy: Always
   containers:
     - name: ide
       image: theia:latest
@@ -261,10 +261,15 @@ resource allocation impacts billing.
 1. cgroupv1 has been moved to maintenance mode since Kubernetes version 1.31.
    Hence this feature will be supported only on cgroupv2. Kubelet will fail to
    admit pods with pod-level resources on nodes with cgroupv1.
+
 2. Pod Level Resource Specifications is an **opt-in** feature, and will have no
 effect on existing deployments. Only deployments that explicitly require this
 functionality should turn it on by setting the relevant resource section at
 pod-level in the Pod specification.
+
+3. In alpha stage of Pod-level Resources feature, when using pod-level resources,
+   in-place pod resizing is unsupported with in-place pod resizing. **Users should
+   not use in-place pod resize with pod-level resources enabled.**
 
 ### Risks and Mitigations
 
@@ -1074,23 +1079,43 @@ on "scoped-for-beta-in-place-pod-resize".
 
 #### Admission Controller
 
-* LimitRanger
+* LimitRange
 
-  LimitRanger today supports objects of type `Container`, `Pod` and `PersistentVolumeClaim`. It allows following constraints:
+  LimitRange today supports objects of type `Container`, `Pod` and
+  `PersistentVolumeClaim`. It allows following constraints:
   
     * min (this option is to specify min usage constraint on the resource)
     * max (this option is to specify max usage constraints on the resource)
-    * defaultRequest (this option is to specify default resource request for the named resource)
+    * defaultRequest (this option is to specify default resource request for the
+      named resource)
     * default (this option is to specify default limit for the named resource)
     * maxLimitRequestRatio (represents the max burst value of the named resource)
   
-  default and defaultRequest are not supported by LimitRanger of type `Pod`. To incorporate Pod level resource specifications, LimitRanger of type `Pod` logic will be extended with following changes:
-  1. Validation at Pod Admission will derive pod resources from `resources` stanza at pod level if it is set.
-  2. Extend `Pod` type LimitRanger to support `defaultRequest` and `default` to allow setting Pod level defaults.
+  default and defaultRequest are not supported by LimitRanger of type `Pod`. To
+  incorporate Pod level resource specifications, LimitRanger of type `Pod` logic
+  will be extended with following changes:
+  1. Validation at Pod Admission will use pod resources from `resources` stanza
+     at pod level if it is set.
+  2. Extend `Pod` type LimitRanger to support `defaultRequest` and `default` to
+     allow setting Pod level defaults.
+
+  Note: If there is an existing LimitRange of type Container in a namespace and a
+  user creates a pod with pod-level resources only (without specifying
+  container-level resources), Kubernetes will apply default container-level
+  values based on the Container LimitRange. To avoid having the Container
+  LimitRange applied to their workloads, the user should create pods in a
+  different namespace where no Container LimitRange is set. 
 
 * ResourceQuota
 
-  Quota will derive the effective resource requests and limits for the pod, including the new pod-level resources.
+ The ResourceQuota admission plugin will prioritize using pod-level resources if
+ they are specified. If not, it will rely on container-level resources to
+ determine the effective resource requests and limits for the pod.
+
+The ResourceQuota Controller obtains the PodSpec directly from the Kubernetes API
+Server to monitor and track resource usage within a namespace. Therefore, if
+pod-level resources are specified, the ResourceQuota will use these pod-level
+resources from the PodSpec for both tracking and monitoring purposes.
 
 #### Eviction Manager
 
@@ -1285,8 +1310,13 @@ CPU usage of all containers in a pod does not exceed the pod-level limits.
 
 #### [Scoped for Beta] In-Place Pod Resize
 
-In-Place Pod resize functionality will be guarded by a separate feature gate
-since it requires new fields in PodStatus at Pod-level. 
+In-Place Pod resizing of resources is not supported in alpha stage of Pod-level
+resources feature. **Users should avoid using in-place pod resizing if they are
+utilizing pod-level resources.**
+
+In version 1.33, the In-Place Pod resize functionality will be controlled by a
+separate feature gate and introduced as an independent alpha feature. This is
+necessary as it involves new fields in the PodStatus at the pod level.
 
 Note for design & implementation: Previously, assigning resources to ephemeral
 containers wasn't allowed because pod resource allocations were immutable. With
@@ -1297,8 +1327,6 @@ allows for a more dynamic allocation of resources within the pod.
 * Specify resource requests and limits directly for ephemeral containers. Kubernetes will
 then automatically resize the pod to ensure sufficient resources are available
 for both regular and ephemeral containers.
-
- 
 
 Currently, setting `resources` for ephemeral containers is disallowed as pod
 resource allocations were immutable before In-Place Pod Resizing feature. With
@@ -1315,7 +1343,9 @@ TBD. Do not review for the alpha stage.
 
 Cluster Autoscaler won't work as expected with pod-level resources in alpha since
 it relies on container-level values to be specified. This is expected, and the
-support for CA with pod-level resources will come in Beta phase of the feature.
+support for CA with pod-level resources will come in Beta phase of the feature
+with pod resource requirements surfaced in a helper library/function that
+autoscalers can use to make autoscaling decisions.
 
 #### [Scoped for Beta] Support for Windows
 
@@ -1465,25 +1495,35 @@ well as the [existing list] of feature gates.
   - Feature gate name: PodLevelResources
   - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
   - Will enabling / disabling the feature require downtime of the control
-    plane? No. Once the feature is disabled, the control plane components will
-    stop using the pod-level resources from the spec.
+    plane? No. Once the feature is disabled, the control plane components reject
+    the pods with pod-level resources.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? No. Once the feature is disabled, the kubelet will stop using the pod
-    level resources from the spec.
+    of a node? No. Once the feature is disabled, the kubelet rejects the pods with
+    pod-level resources.
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature is guarded by a feature gate, and requires setting Pod level `resource` stanza explicitly.
+No. This feature is guarded by a feature gate, and requires setting Pod level
+`resource` stanza explicitly. Existing default behavior does not change if the
+feature is not used.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Any new pods created after disabling the feature will not utilize the
 pod-level resources feature. Disabling the feature will not affect existing pods
--- they will continue to function. 
+not using pod-level resources feature -- they will continue to function. 
 
-However, for pods created with pod-level resources, there will be a mismatch
-between the resource calculations and the actual usage. To fix thie issue, users
-may delete the running pods and create new ones.
+For pods that were created with pod-level resources, disabling the feature can
+result in a discrepancy between how different components calculate resource usage
+and the actual resource consumption of those workloads. To resolve this, users
+can delete the affected pods and recreate them.
+
+For example, if a ResourceQuota object exists in a namespace with pods that were
+using pod-level resources, and then the feature is disabled, those existing pods
+will continue to run. However, the ResourceQuota controller will revert to using
+container-level resources instead of pod-level resources when calculating
+resource usage for these pods. This may lead to a temporary mismatch until the
+pods are recreated or the resource settings are updated.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1495,7 +1535,7 @@ pods can be created with pod-level resources to use the feature.
 Yes, the tests will be added along with alpha implementation. 
 * Validate that the users can set pod-level resources in the Pod spec only when
   the feature gate is enabled.
-* Validate that scheduler considers pod level resources when the feature is enabled, and falls back to container level resources 
+* Validate that scheduler considers pod level resources when the feature is enabled, and falls back to container level resources.
 when the feature is disabled. 
 * Validate the kubelet is using pod level resources in cgroup settings if the feature is enabled, and uses container level values
 when feature is disabled.
