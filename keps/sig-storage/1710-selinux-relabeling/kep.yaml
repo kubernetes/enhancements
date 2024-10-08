@@ -36,10 +36,12 @@ feature-gates:
   - name: SELinuxMount
     components:
       - kube-apiserver
+      - kube-controller-manager
       - kubelet
   - name: SELinuxChangePolicy
     components:
       - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 metrics:
   - volume_manager_selinux_container_errors_total
