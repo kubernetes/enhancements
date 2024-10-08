@@ -721,6 +721,12 @@ scheduled, even though the feature is disabled. In this case, the new Pod will
 fail to schedule, as the corresponding `ResourceClaim` will not be able to be
 created.
 
+The recommendation is to remove any usage of this feature in both
+`ResourceClaim`s and `ResourceClaimTemplate`s when disabling the feature, and
+force the workloads to use a specific device request instead. This will ensure
+that there are no unexpected failures later, if a Pod gets rescheduled to
+another node or recreated for some reason.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The feature will begin working again for future scheduling choices that make use
