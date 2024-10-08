@@ -13,11 +13,12 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Design Principles](#design-principles)
   - [Components/Features changes](#componentsfeatures-changes)
     - [Cgroup Structure Remains unchanged](#cgroup-structure-remains-unchanged)
     - [PodSpec API changes](#podspec-api-changes)
     - [PodSpec Validation Rules](#podspec-validation-rules)
-      - [Proposed Validation Rules](#proposed-validation-rules)
+      - [Proposed Validation &amp; Defaulting Rules](#proposed-validation--defaulting-rules)
       - [Comprehensive Tabular View](#comprehensive-tabular-view)
       - [Clarifying Tricky Cases and Design Decisions with Pod Level Resources](#clarifying-tricky-cases-and-design-decisions-with-pod-level-resources)
     - [Scheduler Changes](#scheduler-changes)
@@ -310,7 +311,7 @@ principles:
    resource specifications, if container-level requests are set. This ensures predictability and maintains the
    expected behavior of existing applications.
 
-3. Symmetric Semantic For Consistency & Compatability With Existing Behavior:
+3. Symmetric Semantic For Consistency & Compatibility With Existing Behavior:
    This principle ensures consistency between how Kubernetes handles resource
    requests at both the container level and the pod level. We preserve the
    existing container-level behavior where a missing resource request defaults to
@@ -491,83 +492,118 @@ resource specifications.
 
 ##### Clarifying Tricky Cases and Design Decisions with Pod Level Resources
 
-1. [Invalid Pod Spec] Row 5 from the scenarios table: Pod Limits Defined; Pod
+1. Row 5 from the scenarios table: Pod Limits Defined; Pod
    Requests & Container Specs Unspecified.
    
    ![](./example-1.png)
-  
-   * The Challenge of Missing Requests: In this case, Kubernetes cannot determine
-     the appropriate pod-level request as pod-level request is not set explicitly,
-     and since container-level requests are also not set, there's no way for
-     kubernetes to derive pod-level requests from the resource spec.
-   * Prioritizing Explicit Resource Requests: Instead of relying on potentially
-     inaccurate default values or guessing the user's intent, this KEP proposes
-     rejecting such a pod specification. This encourages users to explicitly
-     define their resource requests, promoting clarity and preventing ambiguity in
-     resource allocation.  
 
-2. [Invalid Pod Spec] Row 6 from the scenarios table: Pod Limits and Container
+   * Since container-level requests are not specified for at least one container,
+     pod-level request cannot be derived from container-level requests. 
+   * As pod-level limit is set, pod-level request defaults to pod-level limit in
+     Pod Spec.
+   * For runtimes relying on cgroup structure, we set container-level limit equal
+     to pod-level limit in cgroup configuration. These values are not set in Pod
+     Spec.
+
+2. Row 6 from the scenarios table: Pod Limits and Container
    Limits Defined, Pod Requests and Container Requests Unspecified.
 
    ![](./example-2.png)
 
-   * This pod will be rejected for same reasons as example 1 above (for row 5).
-     This KEP prioritizes specifying explicit resource requests at pod-level or at
-     container-level.
+   * As container-level limits are specified, container-level requests default to
+     container-level limits, which means Container-level Request = 60 Gi for each
+     container.
+   * Now as containers have requests, pod-level request can be derived from
+     container-level requests using the formula from
+     [KEP#753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/753-sidecar-containers/README.md#resources-calculation-for-scheduling-and-pod-admission),
+     which means Pod-level Request = 60 Gi + 60 Gi = 120 Gi.
+   * Pod-Level Request of 120Gi > Pod-Level Limit of 100 Gi which makes this
+     PodSpec invalid.
 
 3. Row 7 from the scenarios table: Pod Limit is set; Container Requests are set for
    both regular containers.
 
    ![](./example-3.png)
 
-   * Pod-level Request: Since container-level requests are set, Kubernetes can
+   * Since container-level requests are set, Kubernetes can
      determine the pod-level request using the formula from
      [KEP#753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/753-sidecar-containers/README.md#resources-calculation-for-scheduling-and-pod-admission).
      As both containers in the pod are regular containers, the pod-level request
      will be calculated as sum of container level request which is equal to
-     100Gi.
+     100Gi. This is set in Pod Spec.
     
-   * Container-level Limit: Container-level limit will be set equal to
-     pod-level limit only in cgroup settings (and not in PodSpec) for runtimes (or other softwares)
-     relying on container-level cgroup values.
-
-4. Pod-level Limit is set; Container Requests & Limits are set for 1 regular container.
-   
+   * Container-level limit will be set equal to pod-level limit only in cgroup
+     settings (and not in PodSpec) for runtimes (or other softwares) relying on
+     container-level cgroup values.
+4. Pod-level Request is set, Pod-level limit is not set; Container-level Requests
+   & Limits are not set.
+    
    ![](./example-4.png)
+
+   * Since container-level limits are not set for all containers, Kubernetes
+     cannot determine pod-level limit from container-level values.
+   * As container-level limits are not set for all containers (only 1 container
+     has limits specified) in this pod, there's no way to derive pod-level
+     limits. Hence the containers in this pod can use all the memory up to node
+     allocatable capacity. This is achieved by setting memory.max=max in
+     pod-level cgroup.
+    * As container-level requests and limits are not set, container level cgroup
+      setting for cpu.weight defaults to 1 (minimum default weight) and cpu.max
+      defaults to "max 100000" (maximum default value for cpu.weight).
+
+5. Row 10 from scenaior table: Pod-level Request is set; Container-level limits
+   are set for all containers.
+
+   ![](./example-5.png)
+  
+   * As container-level limits are specified, container-level requests default to
+     container-level limits, which means Container-level Request = 60 Gi for each
+     container.
+   * Aggregated container-level requests = 60 Gi + 60 Gi = 120 Gi; Pod-level
+     specified request is less than aggregated container-level requests which
+     makes this pod invalid.  
+
+6. Pod-level Limit is set; Container Requests & Limits are set for 1 regular container.
    
-   * Pod-level requests will be derived from container-level requests as at least
-     1 container has requests set. The pod-level request, in this case is equal
-     to 50Gi.
+   ![](./example-6.png)
+   
+   * As container-level request is set for at least 1 container, pod-level
+     requests can be derived from container-level requests, which makes pod-level
+     request = 50 Gi.
 
-   * Container-level Limit: Container-level limit for container 2 will be set equal to
-     pod-level limit only in cgroup settings (and not in PodSpec) for runtimes (or other softwares)
-     relying on container-level cgroup values.    
+   * Container-level limit for container 2 will be set equal to pod-level limit
+     only in cgroup settings (and not in PodSpec) for runtimes (or other
+     softwares) relying on container-level cgroup values.    
 
-5. Pod-level request is set; Container level limits set for 1 container.
+7. Pod-level request is set; Container level limits set for 1 container.
 
-    ![](./example-5.png)
+    ![](./example-7.png)
 
    * As container-level limits are not set for all containers (only 1 container
      has limits specified) in this pod, there's no way to derive pod-level
      limits. Hence the containers in this pod can use all the memory up to node
      allocatable capapcity.
 
-6. Pod-level request is set; Container level limits set for all regular
-   containers.
-  
-   ![](./example-6.png)
-
-   * As container-level limits are specified for all the containers in this pod,
-     the pod level limit is derived as sum of container-level limits for both regular
-     containers, which is equal to 120 Gi.
-
-7. Pod-level request is set; Container-level spec is not set.  
+8. Pod-level request is set; Container-level spec is not set.  
    
-   ![](./example-7.png)
+   ![](./example-8.png)
 
     * As container-level limits are not set for all containers in this pod,
      there's no way to derive pod-level limits. Hence the containers in this pod
      can use all the memory up to node allocatable capapcity.
+
+9. Pod-level limit is set, Container-level request is set for all containers.
+   
+   ![](./example-9.png)
+    
+    * AS container-level request are set, pod-level request can be derived from
+      formula in
+      [KEP#753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/753-sidecar-containers/README.md#resources-calculation-for-scheduling-and-pod-admission).
+      So pod-level request is equal = 10 Gi + 20 Gi + 20 Gi = 50 Gi.
+    * Container-level limit will be set equal to pod-level limit only in cgroup
+     settings (and not in PodSpec) for runtimes (or other softwares) relying on
+     container-level cgroup values.  
+
 
 #### Scheduler Changes
 
