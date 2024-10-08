@@ -87,14 +87,19 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Resource Quota](#resource-quota)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Scheduler Implementation](#scheduler-implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -107,7 +112,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Resource Claim Indirection](#resource-claim-indirection)
+  - [Higher Level Indirection](#higher-level-indirection)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -257,7 +262,7 @@ which will contain an ordered list of `DeviceRequest` objects. In order to
 satisfy the main (containing) request, exactly one of the requests listed in
 `FirstAvailableOf` must be satisfied. The order listed is considered a priority
 order, such that the scheduler will only try to use the second item in the list
-if it is unable to satsify the first item, and so on.
+if it is unable to satisfy the first item, and so on.
 
 This allows some flexibility for the user to create, say, a "gpu" request, but
 allow it to be satisfied by one of several models of GPU.
