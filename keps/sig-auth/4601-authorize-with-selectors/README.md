@@ -411,6 +411,17 @@ k8s.io/apiserver/pkg/endpoints/request: 65.4% of statements
 k8s.io/apiserver/plugin/pkg/authorizer/webhook: 86.6% of statements
 ```
 
+Unit tests exercise node authorization, CEL compilation for authorization webhook and admission `matchConditions`,
+and CEL compilation for authorizer use with and without the feature enabled:
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/plugin/pkg/auth/authorizer/node/node_authorizer_test.go#L75-L81
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/pkg/authorization/cel/compile_test.go#L34
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/plugin/pkg/authorizer/webhook/webhook_v1_test.go#L806
+
+https://github.com/kubernetes/kubernetes/blob/0b1d123fd040359da11dc772947a7908ee907910/staging/src/k8s.io/apiserver/pkg/admission/plugin/cel/filter_test.go#L503-L620
+
 ##### Integration tests
 
 <!--
@@ -500,6 +511,22 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+On upgrade to a version that enables the feature, no configuration changes are required
+to maintain previous behavior of CEL expressions and authorization webhooks.
+All existing CEL expressions and authorization webhook responses behave identically.
+
+On upgrade to a version that enables the feature, to make use of the new feature:
+* authorization webhooks can inspect incoming SubjectAccessReview requests for field and label selector information
+* authorization webhook configuration files can include `matchConditions` that inspect field and label selector information
+* admission webhook API `matchConditions` can use authorizer fieldSelector / labelSelector functions
+* SubjectAccessReview API requests can specify fieldSelector / labelSelector fields
+
+On downgrade to a version that does not enable the feature by default, or if the feature is disabled:
+* field and label selector information will no longer be sent to authorization webhooks
+* authorization webhook configuration files can no longer include `matchConditions` that inspect field and label selector information
+* admission webhook API `matchConditions` use authorizer fieldSelector / labelSelector functions will not error, but will no-op
+* SubjectAccessReview API requests that specify fieldSelector / labelSelector fields will drop those fields
+
 ### Version Skew Strategy
 
 #### New kube-apiserver, old webhook authorizer
@@ -574,6 +601,8 @@ The kube-apiserver will send field and label selector information to authorizati
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Integration tests exercise behavior of CEL expressions with the feature enabled and disabled.
+
+https://github.com/kubernetes/kubernetes/tree/0b1d123fd040359da11dc772947a7908ee907910/test/integration/apiserver/cel/authorizerselector
 
 ### Rollout, Upgrade and Rollback Planning
 
