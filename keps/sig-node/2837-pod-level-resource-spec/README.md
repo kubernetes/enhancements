@@ -130,7 +130,7 @@ no container experiences resource starvation, as kubernetes currently lacks a
 mechanism for sharing resources between containers easily. 
 
 Introducing pod-level resource requests and limits offers a more simplified
-resource management for multi-container pods as it is easier to gauge theß
+resource management for multi-container pods as it is easier to gauge the
 collective resource usage of all containers in a pod rather than predicting each
 container’s individual needs. This proposal seeks to support pod-level resource
 management, enabling Kubernetes to control the total resource consumption of the
@@ -1519,17 +1519,28 @@ Yes. Any new pods created after disabling the feature will not utilize the
 pod-level resources feature. Disabling the feature will not affect existing pods
 not using pod-level resources feature -- they will continue to function. 
 
-For pods that were created with pod-level resources, disabling the feature can
+* For pods that were created with pod-level resources, disabling the feature can
 result in a discrepancy between how different components calculate resource usage
-and the actual resource consumption of those workloads. To resolve this, users
-can delete the affected pods and recreate them.
+and the actual resource consumption of those workloads. For example, if a
+ResourceQuota object exists in a namespace with pods that were using pod-level
+resources, and then the feature is disabled, those existing pods will continue to
+run. However, the ResourceQuota controller will revert to using container-level
+resources instead of pod-level resources when calculating resource usage for
+these pods. This may lead to a temporary mismatch until the pods are recreated or
+the resource settings are updated.
 
-For example, if a ResourceQuota object exists in a namespace with pods that were
-using pod-level resources, and then the feature is disabled, those existing pods
-will continue to run. However, the ResourceQuota controller will revert to using
-container-level resources instead of pod-level resources when calculating
-resource usage for these pods. This may lead to a temporary mismatch until the
-pods are recreated or the resource settings are updated.
+* Another scenario arises if the feature is disabled after a series of deployments
+have been admitted with only pod-level resources. In this case, the scheduler
+will interpret these pods as having the minimum implementation-defined resource
+requirements. As a result, these pods may be classified as BestEffort QoS pods,
+which means they are considered to have the lowest priority for resource
+allocation. Consequently, this classification could lead to scheduling issues, as
+the pods may be placed on nodes that lack sufficient resources for them to run
+effectively. This situation highlights the potential risks associated with
+toggling the feature gate after deployments are already in place, as it can
+affect pod scheduling and resource availability in the cluster.
+
+To resolve this, users can delete the affected pods and recreate them.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
