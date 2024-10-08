@@ -66,7 +66,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Starting with Kubernetes 1.22, a new `CPUManager` flag has facilitated the use of `CPUManager` Policy options (#2625) which enable users to customize their behavior based on workload requirements without having to introduce an entirely new policy.
 These policy options work together to ensure an optimized cpu set is allocated for workloads running on a cluster.
-A few policy options that already exist are `full-pcpus-only` (#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327).
+The policy options that already exist are `full-pcpus-only` (#2625) and `distribute-cpus-across-numa` (#2902) and `align-by-socket` (#3327) and `distribute-cpus-across-cores` (#4176).
 With this KEP, a new `CPUManager` policy option `strict-cpu-reservation` is introduced which ensures that `reservedSystemCPUs` are strictly reserved for system daemons or interrupt processing and are not used by burstable and best-effort pods.
 
 ## Motivation
@@ -81,6 +81,7 @@ Custom CPU allocation policies deployed as NRI plugins (e.g. Balloons) can separ
  * Ensure no breaking changes for the `static` policy of `CPUManager`.
 
 ### Non-Goals
+ * Change scheduler interface to sub-partition `cpu` resource (as described in the archived Risk Mitigation Option 1).
 
 ## Proposal
 
@@ -299,7 +300,7 @@ No new integration tests for kubelet are planned.
 - Basic functionality
 1. Enable `CPUManagerPolicyAlphaOptions` feature gate and `strict-cpu-reservation` policy option.
 2. Create a simple pod of Burstable QoS type.
-3. Verify the pod is not running on the reserved CPU cores.
+3. Verify the pod is not using the reserved CPU cores.
 4. Delete the pod.
 
 
