@@ -209,6 +209,8 @@ to implement this enhancement.
 - `/pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go`: `2024-09-07` - `85.4`
 - `/pkg/scheduler/framework/preemption/preemption.go`: `2024-09-07` - `27.2`
 
+Because the coverage for preemption.go is pretty low, we have to improve the testing there before the change for this KEP.
+
 ##### Integration tests
 
 We have to add integration tests to make sure the asynchronous preemption is performed appropriately, 
@@ -257,7 +259,7 @@ This is purely internal feature for kube-scheduler, and hence no version skew st
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `SchedulerAsyncPreemption`
-  - Components depending on the feature gate:
+  - Components depending on the feature gate: kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -295,15 +297,17 @@ This section must be completed when targeting beta to a release.
 
 The partly failure in the rollout isn't there because the scheduler is only the component to rollout this feature. 
 But, if upgrading the scheduler itself fails somehow, new Pods won't be scheduled anymore. 
-(while Pods, which are already scheduled, won't be affected in any cases.)
+If there's a bug in the preemption because of this enhancement, and also downgrading the scheduler fails somehow,
+running Pods could be affected, for example, by being deleted by mistake (depending on bugs).
 
 ###### What specific metrics should inform a rollback?
 
 Maybe something goes wrong with the preemption if `goroutines_duration_seconds{operation=preemption}` takes too long time.
+Also, if `preemption_attempts_total` increases too much, then that might also imply some bugs around the preemption.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No. This feature is an internal feature of the scheduler, 
+No. This feature is an in-memory feature of the scheduler, 
 and just upgrading it and upgrade->downgrade->upgrade are both the same.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -315,7 +319,8 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 This feature is used during all Pods' preemption if the feature gate is enabled.
-You can find Pods that have experienced the preemption by referring to `.Status.NominatedNodeName`.
+You can find Pods that have triggered the preemption by referring to `.Status.NominatedNodeName`,
+and Pods that have been preempted by referring to their condition with `type: DisruptionTarget` and `reason: PreemptionByScheduler`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
