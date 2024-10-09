@@ -132,7 +132,7 @@ A new CPUManager policy option, prefer-align-cpus-by-uncorecache, will be introd
 
 The algorithm for prefer-align-cpus-by-uncorecache will be implemented to follow the default packed behavior of the existing static CPUManager allocation with the introduction of a uncorecache hierarchy. This means that when a guaranteed container requires CPUs that are equal to or greater than the size of a NUMA or socket, the CPU allocation will behave as usual and schedule the full socket or NUMA. The scheduled CPUs will be subtracted from the quantity of CPUs required for the container.
 
-When/once the required CPUs for a container are less than the number of CPUs within a NUMA, the algorithm will be implemented as follows:
+When/once the required CPUs for a container are less than the number of CPUs within a NUMA node, the algorithm will be implemented as follows:
 1. Scan each socket in numerical order. If required CPUs are less than the size of available CPUs on the socket, pick this socket of CPUs.
 2. Within the chosen socket, scan each NUMA in numerical order. If the required CPUs are less than the number of the available CPUs on the NUMA, pick the subset of CPUs that correspond to this NUMA.
 3. Within the chosen NUMA, scan through every uncore cache index in numerical order:
