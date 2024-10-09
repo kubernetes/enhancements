@@ -134,7 +134,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
@@ -142,8 +142,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -364,11 +364,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `pkg/api/pod`: `2022-06-17` - `66.7%`
-- `pkg/apis/core/validation`: `2022-06-17` - `82.1%`
-- `pkg/scheduler`: `2022-06-17` - `75%`
-- `pkg/scheduler/framework/plugins/defaultpreemption`: `2022-06-17` - `85.2%`
-- `pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
+- `pkg/api/pod`: `2024-10-10` - `74.3%`
+- `pkg/apis/core/validation`: `2024-10-10` - `84.3%`
+- `pkg/scheduler`: `2024-10-10` - `79.9%`
+- `pkg/scheduler/framework/plugins/defaultpreemption`: `2024-10-10` - `85.4%`
+- `pkg/scheduler/framework/plugins/podtopologyspread`: `2024-10-10` - `87.2%`
 
 ##### Integration tests
 
@@ -792,8 +792,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Yes, we have a plan to improve observability via metrics [here](https://github.com/kubernetes/kubernetes/issues/110643),
-but still on the way.
+No.
 
 ### Dependencies
 
@@ -954,6 +953,7 @@ Major milestones might include:
 - 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
 - 2022.09.22: Graduate to Beta in v1.26.
+- 2024.10.10: Graduate to GA in v1.32.
 
 ## Drawbacks
 
