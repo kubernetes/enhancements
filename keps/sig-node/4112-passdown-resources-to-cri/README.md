@@ -882,9 +882,10 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-There might be changes in behavior if the underlying CRI runtime depends on
-this feature. For example, an NRI plugin relying on the feature may cause the
-application to behave differently.
+Yes. The kubelet will start passing the extra information to the CRI runtime
+for every container it creates. Whether this has any effect depends on if the
+underlying CRI runtime supports this feature. For example, an NRI plugin
+relying on the feature may cause the application to behave differently.
 
 Long running pods that persist (without restart) over kubelet and CRI runtime
 update which enables the feature may experience version skew of the metadata.
