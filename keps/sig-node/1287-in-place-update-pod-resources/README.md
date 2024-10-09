@@ -1487,4 +1487,7 @@ Pros:
 
 Cons:
 - Requires long-term checkpointing to track container allocation
-- Extra risk in assuming nothing outside the node ever needs to know container-level allocated resources.
+- Extra risk in assuming nothing outside the node ever needs to know container-level allocated
+  resources, such as for hierarchical or container/task level scheduling.
+- No observability into container allocation
+- No recourse if erroneous values are reported by the runtime
