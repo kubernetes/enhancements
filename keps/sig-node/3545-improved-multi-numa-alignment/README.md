@@ -49,6 +49,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -74,10 +77,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -124,7 +127,7 @@ This limitation surfaces in multi-socket, as well as single-socket multi NUMA sy
 
 
 ### Proposed Change
- 
+
 We propose to
 - add a new flag in Kubelet called `TopologyManagerPolicyOptions` in the kubelet config or command line argument called `topology-manager-policy-options` which allows the user to specify the Topology Manager policy option.
 - add a new topology manager option called `prefer-closest-numa-nodes`; if present, this option will enable further refinements of the existing `restricted` and `best-effort` policies, this option has no effect for `none` and `single-numa-node` policies.
@@ -138,11 +141,7 @@ To summarize properties of `prefer-closest-numa-nodes` policy:
 * Choose `NUMANodeAffinity` bitmask which is the narrowest and if the bitmask width is the same prefer the bitmask with smaller average distance.
 
 When `prefer-closest-numa-nodes` policy is enabled, we need to retrieve information regarding distances between NUMA nodes.
-Right now Topology manager discovers Node layout using [CAdvisor API](https://github.com/google/cadvisor/blob/master/info/v1/machine.go#L40).
-
-We will need to extend the `MachineInfo` struct with a `Distances` field which will describe the distance between a given NUMA node and other NUMA nodes in the system.
-This is already implemented in `cadvisor` by this [patch](https://github.com/google/cadvisor/pull/3179) but it is not yet present in any of the released versions. 
-Until a new release of `cadvisor` includes this patch (and it gets vendored into the `kubelet`) we will need to replicate this logic in the `kubelet` code itself.
+Right now Topology manager discovers Node layout using [CAdvisor API](https://github.com/google/cadvisor/blob/master/info/v1/machine.go#L40), which already exposes NUMA distance between nodes since version `v0.46.0`.
 
 ### Implementation strategy
 
@@ -155,7 +154,7 @@ Until a new release of `cadvisor` includes this patch (and it gets vendored into
 - When `TopologyManager` is being created it discovers distances between NUMA nodes and stores them inside `manager` struct. This is temporary until `distance` information lands in `cadvisor`.
 - Pass `TopologyManagerPolicyOptions` to best-effort and restricted policy. When this is specified best-hint is picked based on average distance between NUMA nodes. This would require modification to `compareHints` function to change how the best hint is calculated:
 
-```go 
+```go
 
 // NUMADistance is a matrix representing distances between NUMA nodes
 type NUMADistance [][]uint64
@@ -178,16 +177,16 @@ func compareHints(bestNonPreferredAffinityCount int, current *TopologyHint, cand
     if current.Preferred && candidate.Preferred {
         if candidate.NUMANodeAffinity.IsNarrowerThan(current.NUMANodeAffinity) {
             return candidate
-        } 
+        }
         if policyOpts.PreferClosestNuma && candidate.NUMANodeAffinity.IsEqual(current.NUMANodeAffinity) {
             candidateDistance := policyOpts.Distances.CalculateAvgDistanceFor(candidate)
             currentDistance := policyOpts.Distances.CalculateAvgDistanceFor(current)
             // candidate avg distance is lower
             if candidateDistance < currentDistance {
                 return candidate
-            } 
+            }
 
-            return current 
+            return current
         }
     }
 
@@ -253,6 +252,7 @@ to implement this enhancement.
 
 - `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `09-23-2022` - `92.4`
 - `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `06-12-2023` - `93.2`
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `09-30-2024` - `92.4`
 
 ##### Integration tests
 
@@ -289,7 +289,7 @@ These cases will be added in the existing e2e tests:
 
 In 1.26 we are releasing this feature to Alpha. We propose the following management of TopologyManager policy options graduation:
 
-- `TopologyManagerPolicyOptions` for enabling/disabling the entire feature. As this is an alpha feature, this feature gate would be disabled by default. 
+- `TopologyManagerPolicyOptions` for enabling/disabling the entire feature. As this is an alpha feature, this feature gate would be disabled by default.
   Explicitly enabling `TopologyManagerPolicyOptions` feature gate provides us the ability to supply `TopologyManagerPolicyOptions` or `topology-manager-policy-options` flag in Kubelet.
 
 - `TopologyManagerPolicyAlphaOptions` is not enabled by default. Topology Manager alpha options (only one as of 1.26), are hidden by default
@@ -308,6 +308,10 @@ In 1.28 this feature is being promoted to Beta. We propose following changes to 
 - `TopologyManagerPolicyOptions` feature flag for enabling/disabling the entire feature will be enabled by default.
 - `TopologyManagerPolicyBetaOptions` feature flag for enabling/disabling beta options will be enabled by default.
 - `prefer-closest-numa-nodes` will be moved to Beta options.
+
+In 1.32 this feature is being promoted to Beta. We propose following changes to TopologyManager policy options default visibility:
+
+- `prefer-closest-numa-nodes` will be moved to stable options.
 
 The graduation Criteria of options is described below:
 
@@ -342,7 +346,7 @@ No changes needed
   - Components depending on the feature gate: kubelet
 - [x] Change the kubelet configuration to set a `TopologyManager` policy to `restricted` or `best-effort` and a `TopologyManagerPolicyOptions` to `prefer-closest-numa-nodes`
   - Will enabling / disabling the feature require downtime of the control
-    plane? 
+    plane?
     No.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
@@ -455,11 +459,11 @@ N/A.
 
 There are 2 scenarios where Kubelet may fail to start due to using this feature:
 
-- Bad policy option name or using policy option without enabling appropriate feature flag. we are emitting appropriate error message for this case, 
+- Bad policy option name or using policy option without enabling appropriate feature flag. we are emitting appropriate error message for this case,
   Kubelet will fail to start and print error message what happened. To recover one just have to provide fix policy option name or disable/enable feature flags.
 
 - Cadvisor is not exposing distances for NUMA domains. In this case Kubelet will fail with `error getting NUMA distances from cadvisor` message.
-  Reading NUMA distances is only performed when `prefer-clostest-numa-nodes` option is specified. 
+  Reading NUMA distances is only performed when `prefer-closest-numa-nodes` option is specified.
   To recover one has to either disable `TopologyManagerPolicyOptions` feature-flag or stop using `prefer-closest-numa-nodes` option.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -470,3 +474,36 @@ N/A.
 
 - 2021-09-26: KEP created
 - 2023-06-12: KEP updated for Beta release
+- 2024-09-30: KEP updated for Stable release
+
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
+Adds complexity to Topology Manager.
+
+## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
+
+Adding new Topology Manager policy similar to `best-effort` which also takes NUMA distance into consideration.
+This approach was ruled out as NUMA distance can be an important factor not only for `best-effort` but also `restricted` policy.
+
+So introducing a mechanism similar to CPUManagerPolicyOptions was an already familiar concept that could influence logic of multiple policies.
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
+
+To be able to do e2e testing it would be required that CI machines with at least 4 NUMA nodes exist to be able to use `prefer-closest-numa-nodes` policy option properly.
+The [effort to add machines for sig-node e2e tests](https://github.com/kubernetes/k8s.io/issues/7339) is still open and it shouldn't block this KEP from graduating to GA.
