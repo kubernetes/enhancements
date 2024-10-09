@@ -223,7 +223,6 @@ which go beyond running particular images.
   now as it is easily worked around by creating a different image/artifact for
   each instance/format/quantization of a model.
 
-
 ## Proposal
 
 We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI object
@@ -767,23 +766,8 @@ extending the production code to implement this enhancement.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
-Integration tests for the kubelet are not existing yet and will be covered by extending the e2e_node, e2e and unit tests.
+Integration tests for the kubelet are not existing yet and will be covered by
+extending the e2e_node, e2e and unit tests.
 
 ##### e2e tests
 
@@ -872,21 +856,30 @@ in back-to-back releases.
 #### Alpha
 
 - Initial implementation added
-- CRI implementations add support
+- CRI implementations starting to add support
 
 #### Beta
 
-- Add support for [`subPath`](https://kubernetes.io/docs/concepts/storage/volumes/#using-subpath)
-- Expand unit and e2e tests
-- Add three metrics for an admin to see the success of their image volumes
+- Add support for [`subPath`](https://kubernetes.io/docs/concepts/storage/volumes/#using-subpath):
+    - By adding a new CRI string `image_sub_path` field to the
+      [`Mount`](https://github.com/kubernetes/cri-api/blob/010fdf8/pkg/apis/runtime/v1/api.proto#L221)
+      message. Alternatively it would be possible to re-use the existing
+      [`Mount.host_path`] field which is empty right now if an image volume is
+      being used.
+    - If the sub path does not exist in the image, then runtimes are considered
+      to fail and return an error.
+- Expand unit and e2e tests.
+- Add three kubelet metrics for an admin to see the success of their image volumes:
     - `image_volume_requested_total`
     - `image_volume_mounted_success`
     - `image_volume_mounted_error`
+- Production support in at least one of CRI-O and containerd, and a release
+  candidate is available in the other.
 
 #### GA
 
 - Multiple examples of real world uses
-- support in both CRI-O and containerd
+- Production support in both CRI-O and containerd
 - Allowing time for feedback
 
 
@@ -931,7 +924,9 @@ If the kubelet doesn't support the field, it will not pull the image, and the pa
 to mount it in, and the pod will fail.
 if the CRI implementation doesn't support it, then the PullImage request will fail and the pod creation will fail.
 
-TODO: check what happens when kubelet is too old to support the feature
+If the kubelet does not support the feature because it's too old, then the
+container creation will fail because the volume manager is unable to attach or
+mount the volume because no volume plugin is available for the provided source.
 
 ## Production Readiness Review Questionnaire
 
@@ -1054,11 +1049,15 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-kube-apiserver must support it, and every node that has a pod scheduled that attempts to mount image volumes must have a kubelet and CRI that support it.
-If any don't, the volume won't be enabled.
+kube-apiserver must support it, and every node that has a pod scheduled that
+attempts to mount image volumes must have a kubelet and CRI that support it.
+If any don't, the volume won't be enabled and containers will not start. If the
+kubelet does not support it but will be upgraded, then the container will become
+available after the upgrade.
 
-Since this field only applies on a per node basis, once the control plane agrees on the feature gates, any kubelet with the feature on will have access to it, not needing
-to wait for other workers.
+Since this field only applies on a per node basis, once the control plane agrees
+on the feature gates, any kubelet with the feature on will have access to it,
+not needing to wait for other workers.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1116,8 +1115,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [x] Events
-  - Event Reason: Pod running event
+- [x] Events: All events for pulling images (failures and successes) also apply
+  to image volumes, because they re-use the same code paths. This makes it
+  consistent and straight forward for end users to verify what has been pulled
+  and if a Pod has been started successfully.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
