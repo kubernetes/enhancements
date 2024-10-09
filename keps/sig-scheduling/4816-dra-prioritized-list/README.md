@@ -485,11 +485,11 @@ with this KEP; on any given node, devices will be tried in the priority order
 listed in the main request, and the first fit will be returned. However, in
 practice, nodes typically only have one type of device that would satisfy any of
 the three requests. That means that individual nodes with any of the listed
-devices will show as valid nodes for the workload. In order for the for the
-scheduler to prefer a node that has the initial prioritized device request,
-those requests would need a higher score, which currently is planned for beta of
-this feature. For alpha, the scheduler may still pick a node with a less
-preferred device, if there are nodes with each type of device available.
+devices will show as valid nodes for the workload. In order for the scheduler to
+prefer a node that has the initial prioritized device request, those requests
+would need a higher score, which currently is planned for beta of this feature.
+For alpha, the scheduler may still pick a node with a less preferred device, if
+there are nodes with each type of device available.
 
 ### Test Plan
 
