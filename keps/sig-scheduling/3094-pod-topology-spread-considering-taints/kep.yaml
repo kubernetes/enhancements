@@ -39,3 +39,7 @@ feature-gates:
       - kube-scheduler
 
 disable-supported: false
+
+metrics:
+- plugin_execution_duration_seconds{plugin="PodTopologySpread"}
+- schedule_attempts_total{result="error|unschedulable"}
