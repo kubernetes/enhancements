@@ -2,9 +2,9 @@ title: DRA Prioritized List
 kep-number: 4816
 authors:
   - "@johnbelamaric"
-owning-sig: sig-node
+owning-sig: sig-scheduling
 participating-sigs:
-  - sig-scheduling
+  - sig-node
   - sig-autoscaling
 status: implementable
 creation-date: 2024-09-24
@@ -13,8 +13,8 @@ reviewers:
   - "@klueska"
   - "@thockin"
 approvers:
-  - "@mrunalp" # SIG-Node
   - "@alculquicondor" # SIG-Scheduling
+  - "@mrunalp" # SIG-Node
   - "@MaciekPytel" # SIG-Autoscaling
   - "@thockin" # API Review
 
