@@ -33,6 +33,7 @@
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
   - [Instrumentation](#instrumentation)
+  - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
     - [Design Sketch: Workload resource resize](#design-sketch-workload-resource-resize)
