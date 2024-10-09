@@ -108,16 +108,18 @@ aggregate of the requested resources by all containers in a pod to find a
 suitable node for scheduling the pod. The kubelet then enforces these resource
 constraints by translating the requests and limits into corresponding cgroup
 settings both for containers and for the pod (where pod level values are
-aggregates of container level values). The existing Pod API lacks the ability to
-set resource constraints at pod level, limiting the flexibility and ease of
-resource management for pods as a whole. This limitation is particularly
-problematic when users want to focus on  controlling the overall resource
-consumption of a pod without the need to meticulously configure resource
-specifications for each individual container in it.
+aggregates of container level values derived using the formula in
+[KEP#753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/753-sidecar-containers/README.md#resources-calculation-for-scheduling-and-pod-admission)).
+The existing Pod API lacks the ability to set resource constraints at pod level,
+limiting the flexibility and ease of resource management for pods as a whole.
+This limitation is particularly problematic when users want to focus on
+controlling the overall resource consumption of a pod without the need to
+meticulously configure resource specifications for each individual container in
+it.
 
 To address this, this KEP proposes extending the Pod API to support Pod-level
-resource limits and requests for non-extended resources (CPU and Memory), in
-addition to the existing container-level settings.
+resource limits and requests for non-extended resources (CPU, Memory and
+Hugepages), in addition to the existing container-level settings.
 
 ## Motivation
 
@@ -127,7 +129,7 @@ container, it can be challenging to accurately estimate and allocate resources
 for individual containers, especially for workloads with unpredictable or bursty
 resource demands. This often leads to over-allocation of resources to ensure that
 no container experiences resource starvation, as kubernetes currently lacks a
-mechanism for sharing resources between containers easily. 
+mechanism for sharing resources between containers within a pod easily.
 
 Introducing pod-level resource requests and limits offers a more simplified
 resource management for multi-container pods as it is easier to gauge the
@@ -161,7 +163,7 @@ This proposal aims to:
    the pod level in this phase. However, it could be considered in future extensions of
    the KEP.
 2. Pod-level device plugins: existing container-level device plugins are
-   compatible with this proposal, but there are some discussion on how to share
+   compatible with this proposal, but there are some discussions on how to share
    device(s) among containers within a pod, which is out of scope of this KEP.
 3. This proposal will not explore dynamic QoS class adjustments based on runtime
    conditions or pod phases. Instead, it will focus on static QoS class
@@ -177,7 +179,6 @@ This proposal aims to:
    workloads. Although the feature is anticipated to enhance resource
    utilization, specific optimizations for particular workloads, such as
    high-performance computing, will be considered in future iterations.
-
 
 ## Proposal
 
@@ -274,6 +275,15 @@ other containers within the pod. This approach not only improves overall resourc
 utilization but can also lead to cost savings in cloud environments where
 resource allocation impacts billing.
 
+Note: Understanding the distinction between resource sharing with pod-level
+resources feature and with burstable pods is important. While both allow
+containers to share resources with other containers, they both operate at
+different scopes. Pod-level resources enable containers within a pod to share
+unused resoures amongst themselves, promoting efficient utilization within the
+pod. In contrast, burstable pods allows sharing of spare resources between
+containers in any pods on the node. This means a container in a burstable pod
+can use resources available elsewhere on the node.
+
 ### Notes/Constraints/Caveats
 
 1. cgroupv1 has been moved to maintenance mode since Kubernetes version 1.31.
@@ -281,9 +291,9 @@ resource allocation impacts billing.
    admit pods with pod-level resources on nodes with cgroupv1.
 
 2. Pod Level Resource Specifications is an **opt-in** feature, and will have no
-effect on existing deployments. Only deployments that explicitly require this
-functionality should turn it on by setting the relevant resource section at
-pod-level in the Pod specification.
+   effect on existing deployments. Only deployments that explicitly require this
+   functionality should turn it on by setting the relevant resource section at
+   pod-level in the Pod specification.
 
 3. In alpha stage of Pod-level Resources feature, when using pod-level resources,
    in-place pod resizing is unsupported with in-place pod resizing. **Users should
