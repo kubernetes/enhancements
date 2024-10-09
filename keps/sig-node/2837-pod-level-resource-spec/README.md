@@ -50,8 +50,8 @@
     - [Unit tests](#unit-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.31)](#phase-1-alpha-target-131)
-    - [Phase 2:  Beta (target 1.32)](#phase-2--beta-target-132)
+    - [Phase 1: Alpha (target 1.32)](#phase-1-alpha-target-132)
+    - [Phase 2:  Beta (target 1.33)](#phase-2--beta-target-133)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
@@ -296,8 +296,8 @@ can use resources available elsewhere on the node.
    pod-level in the Pod specification.
 
 3. In alpha stage of Pod-level Resources feature, when using pod-level resources,
-   in-place pod resizing is unsupported with in-place pod resizing. **Users should
-   not use in-place pod resize with pod-level resources enabled.**
+   in-place pod resizing is unsupported with in-place pod resizing. **Users won't
+   be able to use in-place pod resize with pod-level resources enabled.**
 
 ### Risks and Mitigations
 
@@ -402,6 +402,9 @@ type PodSpec struct {
 
 To ensure clarity and prevent ambiguity in resource allocation, the following
 validation rules are proposed for pod-level resource specifications:
+
+* In alpha, invalidate requests to update resources at container-level if
+  `resources` is set in PodSpec.
 
 * Pod-level Resources Priority: If pod-level requests and limits are explicitly
   set, they take precedence over container-level settings. Defaulting logic is only
@@ -1414,18 +1417,18 @@ This feature will touch multiple components. For alpha, unit tests coverage for 
 
 Following scenarios need to be covered:
 
-
-
 * Cgroup settings when pod-level resources are set.
 * Validate scheduling and admission.
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
-* Validate the containers with no limits set are OOMKilled when memory usage reaches Pod level memory limits.
+* Validate the containers with no limits set are OOMKilled when memory usage
+  reaches Pod level memory limits.
+* Test the correct values in TotalResourcesRequested.
 
 
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.31)
+#### Phase 1: Alpha (target 1.32)
 
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `PodLevelResources`
@@ -1437,7 +1440,7 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Documentation mentioning high level design.
 
 
-#### Phase 2:  Beta (target 1.32)
+#### Phase 2:  Beta (target 1.33)
 
 
 * User Feedback.
@@ -1448,7 +1451,7 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Documentation update and blog post to announce feature in beta phase.
 * [Tentative] Benchmark tests for resource usage with and without pod level resources for bursty workloads.
   * Use kube_pod_container_resource_usage metric to check resource utilization.
-
+* [TBD] In-place pod resize support either as a part of this KEP or a separate KEP/feature.
 
 #### GA (stable)
 
@@ -1577,16 +1580,20 @@ To resolve this, users can delete the affected pods and recreate them.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 If the feature is re-enabled after being previously disabled, any new pods will
-again have access to the pod-level resources feature. Existing pods created while
-the feature was disabled will continue to operate without utilizing pod-level
-resources.
+again have access to the pod-level resources feature. 
 
-However, existing pods that were created with pod-level resources before the
-feature was disabled will experience mismatched calculations for resource usage
-when the feature is disabled, and these calculations will only align correctly
-once the feature is re-enabled. Additionally, any pods that were admitted before
-the feature was disabled but are recreated or restarted will also have mismatched
-calculations after the feature is re-enabled.
+Pods that were created but not yet started will be treated based on its resource
+spec (pod-level when feature gate is enabled, and container-level when the gate
+is disabled).
+
+Pods that are already running with resources provisioned will continue running
+with resources provisioned at the time of execution (whether it was pod-level or
+container-level resources).
+
+However, some components may calculate the resource usage of the pods based on
+the resource spec (pod-level when feature gate is enabled, and container-level
+when feature gata is disabled), and that may not necessarily match the actual
+resources provisioned for the running pod.
 
 To ensure consistent and intuitive resource calculations, it is advisable to
 delete all pods when toggling the feature between enabling and disabling. This
