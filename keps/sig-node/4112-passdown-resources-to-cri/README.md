@@ -330,6 +330,11 @@ can see the full picture of Pod's resource usage at Pod creation time, for
 example enabling more holistic resource allocation and thus better
 interoperability between containers inside the Pod.
 
+Also the CreateContainer request is extended to include the unmodified resource
+requirements. This make it possible for the CRI runtime to detect any changes
+in the pod resources that happen between the Pod creation and container
+creation in e.g.  scenarios where in-place pod updates are involved.
+
 The UpdatePodSandboxResources CRI message is also updated when/if that is
 introduced by the [KEP-1287][kep-1287] Beta ([PR][kep-1287-beta-pr]).
 
@@ -451,6 +456,17 @@ contain unmodified resource requests from the PodSpec.
 
 Note that mounts, devices, CDI devices are part of the ContainerConfig message
 but are left out of the diff snippet above.
+
+Including the KubernetesResources in the ContainerConfig message serves
+multiple purposes:
+
+1. Catch changes that happen between pod sandbox creation and container
+   creation. For example, in-place pod updates might change the container
+   before it was created.
+2. Catch changes that happen over container restarts in in-place pod update
+   scenarios
+3. Consistency/completeness. Have enough information to make consistent action
+   based only on information present in this rpc caal.
 
 The resources (mounts, devices, CDI devices, Kubernetes resources) in the
 CreateContainer request should be identical to what was (pre-)informed in the
