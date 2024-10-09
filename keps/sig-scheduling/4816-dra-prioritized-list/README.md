@@ -83,10 +83,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [Resource Quota](#resource-quota)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -267,14 +267,7 @@ if it is unable to satisfy the first item, and so on.
 This allows some flexibility for the user to create, say, a "gpu" request, but
 allow it to be satisfied by one of several models of GPU.
 
-### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+### User Stories
 
 #### Story 1
 
@@ -295,14 +288,7 @@ edit the manifest. Instead, I would like to provide some optionality in the
 types of devices that can meet my workload's needs. For best performance though,
 I do have a preferred ordering of devices.
 
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+### Notes/Constraints/Caveats
 
 #### Resource Quota
 
@@ -501,7 +487,6 @@ This will be implemented for beta. For alpha, the scheduler may still pick a
 node with a less preferred device, if there are nodes with each type of device
 available.
 
-
 ### Test Plan
 
 <!--
@@ -547,9 +532,17 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler`: TBD
-- `k8s.io/kubernetes/pkg/scheduler/framework`: TBD
-- `k8s.io/kubernetes/pkg/controller`: TBD
+<!--
+Generated with:
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+-->
+
+Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 88.8%
+- `k8s.io/dynamic-resource-allocation/structured`: 82.7%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.0%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.9%
 
 ##### Integration tests
 
