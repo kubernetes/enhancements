@@ -195,6 +195,7 @@ Other identified non-goals are:
 * eviction of lower priority Pods to facilitate Pod resize
 * updating extended resources or any other resource types besides CPU, memory
 * support for CPU/memory manager policies besides the default 'None' policy
+* resolving race conditions with the scheduler
 
 Definition of expected behavior of a Container runtime when it handles CRI APIs
 related to a Container's resources is intended to be a high level guide.  It is
@@ -389,6 +390,10 @@ WindowsPodSandboxConfig.
 1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
    could be in use, and approaches such as setting limit near current usage may
    be required. This issue needs further investigation.
+1. Scheduler race condition: If a resize happens concurrently with the scheduler evaluating the node
+   where the pod is resized, it can result in a node being over-scheduled, which will cause the pod
+   to be rejected with an `OutOfCPU` or `OutOfMemory` error. Solving this race condition is out of
+   scope for this KEP, but a general solution may be considered in the future.
 
 ## Design Details
 
@@ -1374,7 +1379,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are other known failure modes?**
 
-  - Race condition with scheduler can cause pods to be (temporarily) rejected with `OutOfCPU` or
+  - Race condition with scheduler can cause pods to be rejected with `OutOfCPU` or
     `OutOfMemory`.
   - Race condition with pod startup on version-skewed clusters can lead to pods running in an
     unknown resource configuration. See [Version Skew Strategy](#version-skew-strategy) for more
