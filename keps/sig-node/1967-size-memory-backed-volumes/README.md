@@ -10,6 +10,9 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -131,6 +134,16 @@ memory consumption, it just provides better sizing across node types.
 
 ### Test Plan
 
+##### Unit tests
+
+- k8s.io/kubernetes/pkg/volume/emptydir: October 9th 2024 - 59.8
+
+##### Integration tests
+
+Sig-node related tests are tested with e2e tests.
+
+##### e2e tests
+
 Node e2e testing will capture the following:
 
 - verify empty dir volume size matches sizeLimit (if specified) OR
@@ -200,8 +213,7 @@ host default.  The sizing may not align with actual available memory for an app.
 
 #### Are there any tests for feature enablement/disablement?
 
-No, testing behavior with the feature disabled is dependent on node operating
-system configuration.  The point of this KEP is to address that coupling.
+Yes, we have unit tests in k8s.io/kubernetes/pkg/volume/emptydir that verify the sizes based on the feature gate.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -220,7 +232,73 @@ None.
 
 #### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-I do not believe this is applicable.
+Kind was used to verify the following path.
+
+The following kind configs were used to provision a cluster with this feature gate off:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  # any feature gate can be enabled here with "Name": true
+  # or disabled here with "Name": false
+  # not all feature gates are tested, however
+  "SizeMemoryBackedVolumes": false
+```
+
+The following pod yaml was used to verify size limits for emptyDir volumes:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+  labels:
+    app: test-pd
+spec:
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - image: busybox
+    command:
+      - /bin/sh
+      - -c
+      - |
+         sleep infinity
+    name: test-pd
+    resources:
+      limits:
+        memory: 2Gi
+    volumeMounts:
+    - mountPath: /dev/shm
+      name: dshm
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+  volumes:
+  - name: dshm
+    emptyDir:
+      medium: Memory
+```
+
+With this feature off, we can confirm that the volumes do not obey the pod memory limits:
+
+```bash
+~/Work/KubeExamples/EmptyDirTest$ k exec -it example -- df -h /dev/shm
+Filesystem                Size      Used Available Use% Mounted on
+tmpfs                    31.2G         0     31.2G   0% /dev/shm
+```
+
+With the feature on, the volumes are sized to the pod memory limit:
+
+```bash
+~/Work/KubeExamples/EmptyDirTest$ k exec -it example -- df -h /dev/shm
+Filesystem                Size      Used Available Use% Mounted on
+tmpfs                     2.0G         0      2.0G   0% /dev/shm
+```
 
 #### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -236,7 +314,8 @@ impacts how the kubelet better enforces an existing API.
 
 #### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-This does not seem relevant to this feature.
+{Pod startup latency}[https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md] can be used for stateless pods.
+By definition, emptyDirs are still considered to be stateless so the official metric for stateless pods is sufficient.
 
 #### How can someone using this feature know that it is working for their instance?
 
@@ -246,7 +325,8 @@ This does not seem relevant to this feature.
 
 #### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
-This does not seem relevant to this feature.
+{Pod startup latency}[https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md] can be used for stateless pods.
+By definition, emptyDirs are still considered to be stateless so the official metric for stateless pods is sufficient.
 
 #### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
