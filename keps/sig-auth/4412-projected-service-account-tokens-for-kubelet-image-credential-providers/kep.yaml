@@ -1,0 +1,32 @@
+title: Projected Service Account Tokens for Kubelet Image Credential Providers
+kep-number: 4412
+authors:
+- "@aramase"
+- "@mainred"
+owning-sig: sig-auth
+participating-sigs:
+- sig-node
+reviewers:
+- "@enj"
+- "@liggitt"
+approvers:
+- "@enj"
+- "@liggitt"
+see-also:
+- "/keps/sig-node/2535-ensure-secret-pulled-images"
+creation-date: "2024-09-09"
+status: implementable
+stage: alpha
+latest-milestone: "v1.32"
+milestone:
+  alpha: "v1.32"
+feature-gates:
+- name: ServiceAccountTokenForKubeletCredentialProviders
+  components:
+  - kubelet
+- name: ServiceAccountNodeAudienceRestriction
+  components:
+  - kube-apiserver
+disable-supported: true
+metrics:
+- "TODO"
