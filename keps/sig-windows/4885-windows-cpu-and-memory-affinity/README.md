@@ -319,9 +319,16 @@ N/A
 
 ### Upgrade / Downgrade Strategy
 
+There is no interaction with out Kubernetes components and upgrade / downgrade strategy is the same as the existing CPU/Memory/Topology manager.
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#upgrade--downgrade-strategy
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/693-topology-manager#upgrade--downgrade-strategy
+https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#upgrade--downgrade-strategy
+
 ### Version Skew Strategy
 
-This feature is kubelet specific, so version skew strategy is N/A.
+This feature requires updated to CRI-API (see above) and containerd in order to set CPU affinity when running Windows containers.
+If the kubelet requests CPU affinity for a container and the container runtime does not support it, the container will be started without CPU affinity. This follows the same behavior as other kubelet enhancements that require container runtime support. Cluster operators that wish to use this feature are responsible to ensuring they have a container runtime that respects the CPU affinity settings since the kubelet doesn't perform minimum version checks for the container runtime or query the container runtime for its capabilities.
+Once the required functionality has been implemented in contaienrd this KEP will be updated with a minimum version required for support of this feature.
 
 ## Production Readiness Review Questionnaire
 
