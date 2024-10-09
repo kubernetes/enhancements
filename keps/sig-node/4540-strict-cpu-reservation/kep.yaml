@@ -7,6 +7,7 @@ participating-sigs: []
 status: implementable
 creation-date: 2024-03-06
 reviewers:
+  - "@ffromani"
   - "@klueska"                                                                          
   - "@swatisehgal"                                                                      
 approvers:
@@ -32,11 +33,11 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: "CPUManagerPolicyAlphaOptions"                                                
-  - name: "CPUManagerPolicyBetaOptions"                                                 
-  - name: "CPUManagerPolicyOptions"                                                     
     components:                                                                         
       - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+  - cpu_manager_shared_pool_size_millicores
+  - cpu_manager_exclusive_cpu_allocation_count

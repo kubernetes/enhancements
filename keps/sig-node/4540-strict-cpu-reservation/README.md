@@ -147,8 +147,8 @@ However, this is exactly the feature intent, best-effort workloads have no KPI r
 Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha stage to assess the actual impact in real deployment before revisiting if we need risk mitigation.
 
 https://github.com/kubernetes/kubernetes/pull/127506
-- cpu\_manager\_shared\_pool\_size\_millicores: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
-- cpu\_manager\_exclusive\_cpu\_allocation\_count: report exclusively allocated cores, counting full cores (e.g. 16)
+- `cpu\_manager\_shared\_pool\_size\_millicores`: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
+- `cpu\_manager\_exclusive\_cpu\_allocation\_count`: report exclusively allocated cores, counting full cores (e.g. 16)
 
 
 #### Archived Risk Mitigation (Option 1)
@@ -333,7 +333,7 @@ No changes needed.
 
 ### Feature Enablement and Rollback
 
-The /var/lib/kubelet/cpu\_manager\_state needs be removed when enabling or disabling the feature.
+The `/var/lib/kubelet/cpu\_manager\_state` needs to be removed when enabling or disabling the feature.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -342,7 +342,7 @@ The /var/lib/kubelet/cpu\_manager\_state needs be removed when enabling or disab
   - Components depending on the feature gate: `kubelet`
 - [X] Change the kubelet configuration to set a `CPUManager` policy of `static` and a `CPUManager` policy option of `strict-cpu-reservation`
   - Will enabling / disabling the feature require downtime of the control plane? No
-  - Will enabling / disabling the feature require downtime or reprovisioning of a node?  Yes -- removing /var/lib/kubelet/cpu\_manager\_state and restarting kubelet are required.
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node?  No -- removing `/var/lib/kubelet/cpu\_manager\_state` and restarting kubelet are enough.
 
 
 ###### Does enabling the feature change any default behavior?
@@ -358,8 +358,8 @@ The feature is only enabled when all following conditions are met:
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, the feature can be disabled by either:
-1. Disabling the `CPUManagerPolicyAlphaOptions` feature gate
-2. Removing `strict-cpu-reservation` from the list of `CPUManager` policy options
+1. Disable feature gate `CPUManagerPolicyAlphaOptions` or remove `strict-cpu-reservation` from the list of `CPUManager` policy options
+2. Remove `/var/lib/kubelet/cpu\_manager\_state` and restart kubelet
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -377,9 +377,11 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-If the feature rollout fails, burstable and best-efforts can run on the reserved CPU cores.
-If the feature rollback fails, burstable and best-efforts can not run on the reserved CPU cores.
+If the feature rollout fails, burstable and best-efforts continue to run on the reserved CPU cores.
+If the feature rollback fails, burstable and best-efforts continue not to run on the reserved CPU cores.
 In either case, existing workload will not be affected.
+
+When enabling or disabling the feature, make sure `/var/lib/kubelet/cpu\_manager\_state` is removed before restarting kubelet otherwise kubelet retart could fail.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -398,7 +400,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-When the feature rolls back, the reserved CPU cores are included in the `defaultCpuSet` in /var/lib/kubelet/cpu\_manager\_state file.
+Best-effort workloads are starved for prolonged time. This indicates you are lacking hardware to use the feature, or you should review the amount of CPU cores reserved.
 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -423,7 +425,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Inspect the `defaultCpuSet` in /var/lib/kubelet/cpu\_manager\_state file:
+Inspect the `defaultCpuSet` in `/var/lib/kubelet/cpu\_manager\_state`:
 - When the feature is disabled, the reserved CPU cores are included in the `defaultCpuSet`.
 - When the feature is enabled, the reserved CPU cores are not included in the `defaultCpuSet`.
 
@@ -446,8 +448,8 @@ This feature allows users to protect infrastructure services from bursty workloa
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 https://github.com/kubernetes/kubernetes/pull/127506:
-- cpu\_manager\_shared\_pool\_size\_millicores: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
-- cpu\_manager\_exclusive\_cpu\_allocation\_count: report exclusively allocated cores, counting full cores (e.g. 16)
+- `cpu\_manager\_shared\_pool\_size\_millicores`: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
+- `cpu\_manager\_exclusive\_cpu\_allocation\_count`: report exclusively allocated cores, counting full cores (e.g. 16)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
