@@ -951,9 +951,13 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Alpha: No new metrics are planned. Non-ready pods with CreatePodSandboxError
-status is one indicator. The error message will contain details if the CRI
-failure is related to the feature.
+Alpha: No new metrics are planned. Increase in the existing
+`kubelet_started_pods_errors_total` metric can indicate a problem caused by
+this feature.
+
+Generally, non-ready pods with CreatePodSandboxError status (reflected by the
+`kubelet_started_pods_errors_total` metric) is a possible indicator. The error
+message will contain details if the CRI failure is related to the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -990,8 +994,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-By examing the kubelet configuration (feature gate) and the version of the
-kubelet and the CRI runtime.
+By examing the kubelet feature gate and the version of the CRI runtime. The
+enablement of the kubelet feature gate can be determined from the
+`kubernetes_feature_enabled` metric.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1030,15 +1035,18 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-N/A.
+No increase in the `kubelet_started_pods_errors_total` rate.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+- [x] Metrics
+  - Metric name: `kubelet_started_pods_errors_total`
+  - Components exposing the metric: kubelet
 
-N/A.
+> NOTE: The `kubelet_started_pods_errors_total` metric is a general metric for
+> any errors that occur when starting pods. The error message (Pod events,
+> kubelet logs) will contain details if the CRI failure is related to the
+> feature.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 

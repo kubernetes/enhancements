@@ -5,7 +5,7 @@ authors:
   - "@askervin"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2023-06-28
 reviewers:
   - "@mikebrow"
