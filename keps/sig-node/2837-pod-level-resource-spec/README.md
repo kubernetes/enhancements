@@ -473,9 +473,9 @@ resource specifications.
 
       * When the pod-level limit is unset, the value will be derived from
         container-level limits. If no pod-level limit is defined and not all the
-        containers within the pod have explicitly limits set, then the containers in the pod can
-        use full amount of resources available on the node, up to the node's
-        allocatable capacity.
+        containers within the pod have explicitly limits set, then the containers
+        in this pod will have access to an unknown amount of resources, up to the
+        node allocatable capacity, but not less than their specified requests.
 
       * Row 10 Annotation [b]: For container level resources, if a request is not
         specified but a limit it set, the Pod Spec is modified to set the [request
@@ -550,9 +550,11 @@ resource specifications.
      cannot determine pod-level limit from container-level values.
    * As container-level limits are not set for all containers (only 1 container
      has limits specified) in this pod, there's no way to derive pod-level
-     limits. Hence the containers in this pod can use all the memory up to node
-     allocatable capacity. This is achieved by setting memory.max=max in
-     pod-level cgroup.
+     limits. Consequently, the containers in this pod will have access to an
+     unknown amount of resources, up to the node allocatable capacity, but not
+     less than the total specified pod requests which guarantees minimum
+     resources for both containers. This is facilitated by setting memory.max=max
+     in the pod-level cgroup.
     * As container-level requests and limits are not set, container level cgroup
       setting for cpu.weight defaults to 1 (minimum default weight) and cpu.max
       defaults to "max 100000" (maximum default value for cpu.weight).
@@ -587,16 +589,18 @@ resource specifications.
 
    * As container-level limits are not set for all containers (only 1 container
      has limits specified) in this pod, there's no way to derive pod-level
-     limits. Hence the containers in this pod can use all the memory up to node
-     allocatable capapcity.
+     limits. As a result, the containers in this pod will have access to an
+     unknown amount of resources, up to the node allocatable capacity, but not
+     less than their specified requests.
 
 8. Pod-level request is set; Container-level spec is not set.  
    
    ![](./example-8.png)
 
     * As container-level limits are not set for all containers in this pod,
-     there's no way to derive pod-level limits. Hence the containers in this pod
-     can use all the memory up to node allocatable capapcity.
+     there's no way to derive pod-level limits. As a result, the containers in
+     this pod will have access to an unknown amount of resources, up to the node
+     allocatable capacity, but not less than their specified requests.
 
 9. Pod-level limit is set, Container-level request is set for all containers.
    
