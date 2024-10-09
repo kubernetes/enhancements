@@ -147,7 +147,7 @@ So, we don't have to pay a special attention to this issue.
 To achieve an asynchronous preemption, we will change the preemption plugin's implementation like the following:
 1. The preemption PostFilter plugin calculates the preemption target and nominate the Pod for the Node. (We'll use `AddNominatedPod` API exposed from the scheduling framework to plugins.)
 2. The preemption PostFilter plugin starts the goroutine to make API calls inside, and return success status (= not wait for the goroutine to finish).
-3. The preemption plugin gates the Pod, which the preemption is in-progress, at PreEnqueue extension point so that the target Pod won't be retried during the preemption.
+3. The preemption plugin blocks the Pod while the preemption routine is in-progress, using PreEnqueue extension point, so that the target Pod won't be retried during this time.
 
 Then, afterwards the preemption goroutine makes actual API calls to delete victime Pods and set `Pod.Status.NominatedNodeName`. 
 If the preemption goroutine fails at some point, it reverts the nomination via `AddNominatedPod` with [`clearNominatedNode`](https://github.com/kubernetes/kubernetes/blob/f5c538418189e119a8dbb60e2a2b22394548e326/pkg/scheduler/schedule_one.go#L135).
