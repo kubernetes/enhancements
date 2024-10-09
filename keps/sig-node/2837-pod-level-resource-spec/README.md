@@ -156,10 +156,28 @@ This proposal aims to:
 
 ### Non Goals
 
-1. This KEP focuses on the core resource types of CPU and memory. It doesn’t
-intend to address other resource types (e.g. GPU, storage, network bandwidth) at
-the pod level in this phase. However, it could be considered in future extensions of
-the KEP.
+1. This KEP focuses on the core resource types of CPU, memory and hugepages. It doesn’t
+   intend to address other resource types (e.g. GPU, storage, network bandwidth) at
+   the pod level in this phase. However, it could be considered in future extensions of
+   the KEP.
+2. Pod-level device plugins: existing container-level device plugins are
+   compatible with this proposal, but there are some discussion on how to share
+   device(s) among containers within a pod, which is out of scope of this KEP.
+3. This proposal will not explore dynamic QoS class adjustments based on runtime
+   conditions or pod phases. Instead, it will focus on static QoS class
+   determination based on pod-level and container-level resources. Future
+   explorations into dynamic QoS changes may be considered in subsequent
+   proposals.
+4. This proposal does not aim to implement fine-grained control over resource
+   sharing within a pod. While pod-level resources facilitate basic resource
+   sharing, more advanced controls such as weighted sharing and prioritization
+   are outside the current scope. These enhancements may be explored in future
+   proposals.
+5. This proposal does not focus on performance optimizations for specific
+   workloads. Although the feature is anticipated to enhance resource
+   utilization, specific optimizations for particular workloads, such as
+   high-performance computing, will be considered in future iterations.
+
 
 ## Proposal
 
