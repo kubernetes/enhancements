@@ -346,10 +346,6 @@ Kubelet in the cluster.  When they are updated, workloads will need to receive
 the updates fairly quickly (within 5 minutes across the whole cluster), to
 accommodate emergency rotation of trust anchors for a private CA.
 
-Security: Should individual trust anchor set entries designate an OCSP endpoint
-to check for certificate revociation?  Or should we require the URL to be
-embedded in the issued certificates?  Note: This question is deferred from the 1.30 beta scope, and will be discussed as an addition to the beta scope in 1.31.
-
 ## Design Details
 
 ### ClusterTrustBundle Object
@@ -375,18 +371,16 @@ as long as their name does not contain a colon.
 Multiple ClusterTrustBundle objects may be associated with a single signer.
 While each object is independent at the API level, consumers (mostly Kubelet)
 will select trust anchors by a combination of field selector on signer name, and
-a label selector.  Signer controllers may follow the convention of making the
-label selector `kubernetes.io/cluster-trust-bundle-version=live` correspond to a
-meaningful set of trust anchors.  In general, users are expected to read the documentation for their signer controller implementation in order to determine which label selectors to use for their needs, including [canarying](#canarying-changes-to-a-clustertrustbundle).
+a label selector. In general, users are expected to read the documentation for their signer controller implementation in order to determine which label selectors to use for their needs, including [canarying](#canarying-changes-to-a-clustertrustbundle).
 
 ClusterTrustBundle objects support `.metadata.generation`.
 
 ClusterTrustBundle creates and updates that result in an empty
-`.spec.pemTrustAnchors` will be rejected during validation.
+`.spec.trustBundle` will be rejected during validation.
 
 All of the new objects and fields described in this section are gated by the
 ClusterTrustBundle kube-apiserver feature gate.  Unless the feature gate is
-enabled, usage of these alpha objects and fields will be rejected by
+enabled, usage of these objects and fields will be rejected by
 kube-apiserver.
 
 #### API Object Definition
