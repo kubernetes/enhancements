@@ -8,10 +8,10 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API - ResourceClaim.Status](#api---resourceclaimstatus)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1 - Network Device Status for Network Services](#story-1---network-device-status-for-network-services)
     - [Story 2 - Network Device Status for Troubleshooting](#story-2---network-device-status-for-troubleshooting)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
@@ -127,8 +127,7 @@ The API changes define a new `Devices` field in the existing
 `AllocatedDeviceStatus` which holds device specific information. 
 
 A device, identified by `<driver name>/<pool name>/<device name>` can be
-represented only once in the `Devices` slice and will also mention which
-request caused the device to be allocated. The state and characteristics of the
+represented only once in the `Devices` slice. The state and characteristics of the
 device are reported in the `Conditions`, representing the operational state of
 the device and in the `Data`, an arbitrary data field representing device
 specific characteristics. Additionally, for networking devices, a field
@@ -204,12 +203,12 @@ type AllocatedDeviceStatus struct {
     // Data contains arbitrary driver-specific data.
     //
     // +optional
-    Data runtime.RawExtension `json:"data,omitempty" protobuf:"bytes,5,opt,name=data"`
+    Data *runtime.RawExtension `json:"data,omitempty" protobuf:"bytes,5,opt,name=data"`
 
     // NetworkData contains network-related information specific to the device.
     //
     // +optional
-    NetworkData NetworkDeviceData `json:"networkData,omitempty" protobuf:"bytes,6,opt,name=networkData"`
+    NetworkData *NetworkDeviceData `json:"networkData,omitempty" protobuf:"bytes,6,opt,name=networkData"`
 }
 
 // NetworkDeviceData provides network-related details for the allocated device.
@@ -221,13 +220,13 @@ type NetworkDeviceData struct {
     // network interface.
     //
     // +optional
-    InterfaceName string `json:"interfaceName,omitempty" protobuf:"bytes,1,opt,name=interfaceName"`
+    InterfaceName *string `json:"interfaceName,omitempty" protobuf:"bytes,1,opt,name=interfaceName"`
 
     // Addresses lists the network addresses assigned to the device's network interface.
     // This can include both IPv4 and IPv6 addresses.
     // The addresses are in the CIDR notation, which includes both the address and the
     // associated subnet mask.
-    // e.g.: "192.0.2.0/24" for IPv4 and "2001:db8::/64" for IPv6.
+    // e.g.: "192.0.2.5/24" for IPv4 and "2001:db8::5/64" for IPv6.
     //
     // +optional
     // +listType=atomic
@@ -236,11 +235,11 @@ type NetworkDeviceData struct {
     // HWAddress represents the hardware address (e.g. MAC Address) of the device's network interface.
     //
     // +optional
-    HWAddress string `json:"hwAddress,omitempty" protobuf:"bytes,3,opt,name=hwAddress"`
+    HWAddress *string `json:"hwAddress,omitempty" protobuf:"bytes,3,opt,name=hwAddress"`
 }
 ```
 
-### User Stories (Optional)
+### User Stories
 
 #### Story 1 - Network Device Status for Network Services
 
@@ -263,7 +262,7 @@ network interfaces helping to quickly and efficiently identify the issues such
 as error messages on failed network interface configuration, incorrect IP
 assignments or misconfigured network interfaces.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 The content of `Data` is driver specific and not standardized as part of
 DRA, the interpretation of this field may then vary between controllers and
@@ -438,6 +437,7 @@ network status.
 
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
+- 1 example of real-world usage.
 - Feedback collected from the community (developers and users) with adjustments
   provided, implemented and tested.
 
@@ -522,6 +522,8 @@ No
 
 Check the `ResourceClaim.Status.Devices`.
 
+The metrics `resourceclaim_status_devices_update_attempts_total` will increase. 
+
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Events
@@ -539,7 +541,9 @@ N/A
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `resourceclaim_status_devices_update_attempts_total` ; `resourceclaim_status_devices_update_failures_total`
+  - Metric name:
+    - "resourceclaim_status_devices_update_attempts_total"
+    - "resourceclaim_status_devices_update_failures_total"
   - [Optional] Aggregation method:
   - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
