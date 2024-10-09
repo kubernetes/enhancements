@@ -2633,10 +2633,41 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler`: 2022-05-24 - 75.0%
-- `k8s.io/kubernetes/pkg/scheduler/framework`: 2022-05-24 - 76.3%
-- `k8s.io/kubernetes/pkg/controller`: 2022-05-24 - 69.4%
-- `k8s.io/kubernetes/pkg/kubelet`: 2022-05-24 - 64.5%
+2022-05-24:
+
+- `k8s.io/kubernetes/pkg/scheduler`: 75.0%
+- `k8s.io/kubernetes/pkg/scheduler/framework`: 76.3%
+- `k8s.io/kubernetes/pkg/controller`: 69.4%
+- `k8s.io/kubernetes/pkg/kubelet`: 64.5%
+
+More specifically for DRA code in Kubernetes (based on checking out the code):
+
+<!--
+Generated with:
+
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+
+-->
+
+v1.31.0:
+
+- `k8s.io/dynamic-resource-allocation/cel`: 80.0%
+- `k8s.io/dynamic-resource-allocation/structured`: 82.7%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.1%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 77.9%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.4%
+
+Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 88.8%
+- `k8s.io/dynamic-resource-allocation/structured`: 82.7%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.0%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 77.7%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.9%
 
 ##### Integration tests
 
