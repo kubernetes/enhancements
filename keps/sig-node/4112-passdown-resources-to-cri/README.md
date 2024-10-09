@@ -278,9 +278,9 @@ what the user requested to fairly allocate resources between applications.
 
 As a cluster administrator, I want to install an NRI plugin that does
 customized resource handling. I run kubelet with CPU manager and memory manager
-disabled. Instead I use my NRI plugin to do customized resource allocation
-(e.g. cpu and memory pinning). To do that properly I need the actual resource
-requests and limits requested by the user.
+disabled (CPU manager policy set to `none`). Instead I use my NRI plugin to do
+customized resource allocation (e.g. cpu and memory pinning). To do that
+properly I need the actual resource requests and limits requested by the user.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -323,7 +323,8 @@ of the CRI API.
 
 With this information, the runtime can for example do detailed resource
 allocation so that CPU, memory and other resources for each container are
-optimally aligned.
+optimally aligned. This applies to scenarios where the kubelet CPU manager is
+disabled (by using the `none` CPU manager policy).
 
 The resource information is included in PodSandboxConfig so that the runtime
 can see the full picture of Pod's resource usage at Pod creation time, for
