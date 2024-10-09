@@ -1,24 +1,37 @@
-title: Support external signing of service account keys
+title: Support external signing of service account tokens
 kep-number: 740
 authors:
   - "@micahhausler"
+  - "@harshaln"
 owning-sig: sig-auth
 participating-sigs: []
-reviewers:
-  - "@mikedanese"
-  - "@liggit"
-  - "@tallclair"
-approvers:
-  - "@mikedanese"
-  - "@liggit"
-  - "@tallclair"
-editor: '@micahhausler'
+status: implementable
 creation-date: 2019-01-16
-last-updated: 2019-05-17
-status: provisional
-see-also: []
-replaces: []
-superseded-by: []
+reviewers:
+  - "@liggitt"
+  - "@enj"
+  - "@taahm"
+approvers:
+  - "@liggitt"
+  - "@enj"
 
-latest-milestone: "0.0"
-stage: "alpha"
+stage: alpha
+
+latest-milestone: "v1.32"
+
+milestone:
+  alpha: "v1.32"
+
+feature-gates:
+  - name: ExternalServiceAccountTokenSigner
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - apiserver_request_total{resource="serviceaccounts", subresource="token"}
+  - apiserver_request_total{resource=""}
+  - serviceaccount_valid_tokens_total
+  - apiserver_request_duration_seconds
+  - serviceaccount_stale_tokens_total
+  
