@@ -335,12 +335,16 @@ requirements. This make it possible for the CRI runtime to detect any changes
 in the pod resources that happen between the Pod creation and container
 creation in e.g.  scenarios where in-place pod updates are involved.
 
-The UpdatePodSandboxResources CRI message is also updated when/if that is
-introduced by the [KEP-1287][kep-1287] Beta ([PR][kep-1287-beta-pr]).
+[KEP-1287][kep-1287] Beta ([PR][kep-1287-beta-pr]) proposes to add new
+UpdatePodSandboxResources rpc to the CRI API. If/when KEP-1287 is implemented
+as proposed, the UpdatePodSandboxResources CRI message is updated to include
+the resource information of all containers (aligning with
+UpdateContainerResourcesRequest).
 
-Information about the Pod-level resources are added when/if the Pod-level
-resources enhancement [KEP-2837][kep-2837] Alpha ([PR][kep-2837-alpha-pr]) is
-implemented.
+[KEP-2837][kep-2837] Alpha ([PR][kep-2837-alpha-pr]) proposes to add new
+Pod-level resource requirements field to the PodSpec. This information will be
+be added to the PodResourceConfig message, similar to the container resource
+information, if/when KEP-2837 is implemented as proposed.
 
 ### CRI API
 
@@ -402,7 +406,7 @@ request.
 +enum ContainerType {
 +    INIT_CONTAINER    = 0;
 +    SIDECAR_CONTAINER = 1;
-+    REGULAR_CONTAINER = 2;
++    CONTAINER = 2;
 +}
 ```
 
