@@ -253,8 +253,6 @@ breaking any existing use cases.
 
 - change kubelet resource management
 - change existing behavior of CRI
-- add UpdatePodSandboxResources CRI rpc (this is covered by [KEP-1287][kep-1287], [PR][kep-1287-beta-pr])
-- add pod-level resource requirements (this is covered by [KEP-2837][kep-2837], [PR][kep-2837-alpha-pr])
 
 ## Proposal
 
