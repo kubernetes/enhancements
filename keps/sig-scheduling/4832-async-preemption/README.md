@@ -241,7 +241,7 @@ We'll add test cases that multiple pods are trigger preemption.
 **Upgrade**
 
 During the alpha period, users have to enable the feature gate `SchedulerAsyncPreemption` to opt in this feature.
-This is purely internal feature for kube-scheduler, so no other special actions are required outside the scheduler.
+This is purely in-memory feature for kube-scheduler, so no other special actions are required outside the scheduler.
 
 **Downgrade**
 
@@ -249,7 +249,7 @@ Users need to disable the feature gate.
 
 ### Version Skew Strategy
 
-This is purely internal feature for kube-scheduler, and hence no version skew strategy.
+This is purely in-memory feature for kube-scheduler, and hence no version skew strategy.
 
 ## Production Readiness Review Questionnaire
 
@@ -269,7 +269,7 @@ This is purely internal feature for kube-scheduler, and hence no version skew st
 
 ###### Does enabling the feature change any default behavior?
 
-No. 
+No. The feature is a performance optimization that affects every Pod that needs preemption, but there are no functional changes: the result of the preemption is the same.
 But, like mentioned in [When kube-apiserver is unstable](#when-kube-apiserver-is-unstable), scheduling results could be different.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -284,7 +284,7 @@ The scheduler again starts to run PostFilter asynchronously.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Given it's purely internal feature and enablement/disablement requires restarting the component (to change the value of feature flag), 
+Given it's purely in-memory feature and enablement/disablement requires restarting the component (to change the value of feature flag), 
 having feature tests is enough.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -319,6 +319,8 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 This feature is used during all Pods' preemption if the feature gate is enabled.
+You can see if the scheduler triggers any preemptions via `preemption_attempts_total` metric.
+
 You can find Pods that have triggered the preemption by referring to `.Status.NominatedNodeName`,
 and Pods that have been preempted by referring to their condition with `type: DisruptionTarget` and `reason: PreemptionByScheduler`.
 
@@ -339,8 +341,8 @@ and Pods that have been preempted by referring to their condition with `type: Di
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-- `goroutines_duration_seconds` (w/ label: `operation`): to observe how many preemption goroutines have failed.
-- `goroutines_execution_total` (w/ labels: `operation`, `result`): to observe how long each preemption goroutine takes to complete.
+- `goroutines_duration_seconds` (w/ label: `operation`): to observe how long each preemption goroutine takes to complete.
+- `goroutines_execution_total` (w/ labels: `operation`, `result`): to observe how many preemption goroutines have failed.
 
 ### Dependencies
 

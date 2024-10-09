@@ -6,9 +6,9 @@ owning-sig: sig-scheduling
 status: provisional
 creation-date: 2024-09-07
 reviewers:
-  - TBD
+  - alculquicondor
 approvers:
-  - TBD
+  - alculquicondor
 
 see-also:
   - "/keps/sig-scheduling/624-scheduling-framework"
@@ -31,4 +31,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - preemption_attempts_total
+  - goroutines_duration_seconds
+  - goroutines_execution_total
