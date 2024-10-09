@@ -494,6 +494,14 @@ disabled, this new index will always be 0.
 Alternatively, we can refactor to make this code more defensible via a feature
 gate.
 
+DRA today works on a "first match" basis for a given node. That would not change
+with this KEP. However, in order for the scheduler to prefer a node that has the
+initial prioritized device request, those requests would need a higher score.
+This will be implemented for beta. For alpha, the scheduler may still pick a
+node with a less preferred device, if there are nodes with each type of device
+available.
+
+
 ### Test Plan
 
 <!--
@@ -593,11 +601,14 @@ ensure they are handled by the scheduler as described in this KEP.
 #### Alpha
 
 - Feature implemented behind a feature flag
+- Implemented in the scheduler but not necessarily the cluster auto scaler
 - Initial e2e tests completed and enabled
 
 #### Beta
 
 - Gather feedback
+- Implement node scoring
+- Cluster auto scaler implementation
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
