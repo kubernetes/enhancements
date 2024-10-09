@@ -1093,9 +1093,10 @@ extending the production code to implement this enhancement.
 -->
 
 
-- `kubelet/kuberuntime/kuberuntime_manager_test`: **could not find a successful
-  coverage run on
-  [prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-coverage-unit/1800947623675301888)**
+- `kubelet/kuberuntime/kuberuntime_manager_test`:
+  [testgrid](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=kuberuntime),
+  [latest
+  prow](https://prow.k8s.io/view/gs/kubernetes-ci-logs/logs/ci-kubernetes-coverage-unit/1843696946913480704)
 
 ##### Integration tests
 
@@ -1115,7 +1116,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - k8s.io/kubernetes/test/integration/kubelet:
-  https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-kubernetes-integration-master/1800944856244162560
+  [testgrid](https://testgrid.k8s.io/sig-testing-canaries#pull-kubernetes-integration-go-canary),
+  [latest
+  prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/pr-logs/directory/pull-kubernetes-integration-go-canary/1710565150676750336)
   * test with and without feature flags enabled
 
 ##### e2e tests
@@ -1133,8 +1136,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Crashlooping container that restarts some number of times (ex 10 times),
   timestamp the logs and read it back in the test, and expect the diff in those
   time stamps to be minimum the backoff, with a healthy timeout
-- k8s.io/kubernetes/test/e2e/node/kubelet_perf: for a given percentage of
-heterogenity between "Succeeded" terminating pods, and crashing pods whose
+- k8s.io/kubernetes/test/e2e/node/kubelet_perf: new suite for a given percentage
+of heterogenity between "Succeeded" terminating pods, and crashing pods whose
 `restartPolicy: Always` or `restartPolicy: OnFailure`, 
   - what is the load and rate of Pod restart related API requests to the API
     server?
