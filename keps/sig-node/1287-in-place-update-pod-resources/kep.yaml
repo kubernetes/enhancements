@@ -5,6 +5,7 @@ authors:
   - "@bskiba"
   - "@schylek"
   - "@vinaykul"
+  - "@tallclair"
 owning-sig: sig-node
 participating-sigs:
   - sig-autoscaling
@@ -30,19 +31,23 @@ approvers:
 see-also:
 replaces:
 
-stage: "alpha"
+stage: "beta"
 
-latest-milestone: "v1.30"
+latest-milestone: "v1.32"
 
 milestone:
   alpha: "v1.27"
-  beta: "v1.31"
-  stable: "v1.32"
+  beta: "v1.32"
+  stable: "TBD"
 
 feature-gates:
   - name: InPlacePodVerticalScaling
     components:
       - kube-apiserver
       - kube-scheduler
+      - kubelet
+  - name: InPlacePodVerticalScalingAllocatedStatus
+    components:
+      - kube-apiserver
       - kubelet
 disable-supported: true
