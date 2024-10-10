@@ -173,25 +173,21 @@ aliases:
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
   enhancements-reviewers:
     - annajung
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
     - palnabarun
   kep-tools-approvers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   prod-readiness-approvers:
     - deads2k
