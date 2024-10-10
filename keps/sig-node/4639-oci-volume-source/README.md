@@ -589,6 +589,10 @@ supported container runtime version will fail to run on the node, because the
 For security reasons, volume mounts should set the [`noexec`] and `ro`
 (read-only) options by default.
 
+Note: in the process of mounting images into the container's rootfs, there may need to be intermediate mounts created. This is especially relevant if
+the CRI implementation wishes to support one image being mounted with multiple different SELinux labels. If that's done, the CRI implementation is responsible
+for cleaning up that additional mount.
+
 ##### Filesystem representation
 
 Container Runtimes are expected to manage a `mountpoint`, which is a single
@@ -867,6 +871,7 @@ in back-to-back releases.
     - `image_volume_mounted_error`
 - Production support in at least one of CRI-O and containerd, and a release
   candidate is available in the other.
+    - However, until both CRI-O and containerd have a released RC with support, this feature will be off by default
 
 #### GA
 
