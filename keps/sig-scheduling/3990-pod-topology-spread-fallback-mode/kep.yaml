@@ -1,0 +1,35 @@
+title: Pod Topology Spread DoNotSchedule to SchedulingAnyway fallback mode
+kep-number: 3990
+authors:
+  - "@sanposhiho"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+  - sig-autoscaling
+status: provisional
+creation-date: 2023-08-08
+reviewers:
+  - "@alculquicondor"
+  - "@MaciekPytel"
+approvers:
+  - "@alculquicondor"
+  - "@MaciekPytel"
+
+see-also:
+  - "/keps/sig-scheduling/895-pod-topology-spread"
+
+stage: alpha
+
+latest-milestone: "v1.29"
+
+milestone:
+  alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.32"
+
+feature-gates:
+  - name: PodTopologySpreadFallbackMode
+    components:
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
