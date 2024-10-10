@@ -151,7 +151,9 @@ To achieve an asynchronous preemption, we will change the preemption plugin's im
 
 Then, afterwards the preemption goroutine makes actual API calls to delete victime Pods and set `Pod.Status.NominatedNodeName`. 
 If the preemption goroutine fails at some point, it reverts the nomination via `AddNominatedPod` with [`clearNominatedNode`](https://github.com/kubernetes/kubernetes/blob/f5c538418189e119a8dbb60e2a2b22394548e326/pkg/scheduler/schedule_one.go#L135).
-If the preemption goroutine succeeds, the Pod is queued back to the queue, and (hopefully) scheduled on the nominated node.
+
+If the preemption goroutine is complete, the preemption plugin ungates the Pod; 
+the Pod is queued back to the queue with the Pod/delete event, and (hopefully) scheduled on the nominated node in the next scheduling cycle.
 
 ### Consideration to race condition
 
