@@ -246,6 +246,8 @@ actual resources are only relevant and reported for running containers, the Kube
 
 See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
 
+The allocated resources API should be reevaluated prior to GA.
+
 #### Subresource
 
 Resource changes can only be made via the new `/resize` subresource, which accepts Update and Patch
@@ -705,6 +707,8 @@ be a race condition where the Kubelet may or may not accept the first resize, de
 it admits the first change before seeing the second. This race condition is accepted as working as
 intended.
 
+The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
+
 ### Sidecars
 
 Sidecars, a.k.a. restartable InitContainers can be resized the same as regular containers. There are
@@ -1096,6 +1100,11 @@ TODO: Identify more cases
 - User feedback (ideally from at least two distinct users) is green,
 - No major bugs reported for three months.
 - Pod-scoped resources are handled if that KEP is past alpha
+- `UpdatePodSandboxResources` is implemented by containerd & CRI-O
+- Re-evaluate the following decisions:
+  - Resize atomicity
+  - Exposing allocated resources in the pod status
+  - QOS class changes
 
 ### Upgrade / Downgrade Strategy
 Scheduler and API server should be updated before Kubelets in that order.
