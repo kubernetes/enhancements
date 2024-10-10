@@ -1104,6 +1104,13 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+API servers will be able to decode resources that have been stored with a CBOR encoding, even when
+the feature gate permitting the CBOR storage encoding is disabled. The feature gate will remain
+disabled by default during alpha. The default storage encoding will not change for built-in API
+types. The default storage encoding for custom resources will not change in the first version to
+support decoding CBOR-encoded objects from storage, so it will remain possible after a downgrade for
+kube-apiserver to decode any resources that may have been stored with the CBOR encoding.
+
 ### Version Skew Strategy
 
 <!--
@@ -1118,6 +1125,21 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Server-side support for accepting CBOR as a request encoding and returning CBOR as a response
+encoding is in addition to the existing support for JSON and Protobuf. CBOR is never selected as a
+response encoding unless the client has included a CBOR media type in the "Accept" request
+header. Older components will continue to use the existing encodings in their interactions with API
+servers that support CBOR.
+
+Clients that proactively send a CBOR-encoded request to an API server without CBOR support will
+receive an HTTP 415 (Unsupported Media Type) response status and fall back to JSON. The test plan
+includes an end-to-end test covering a CBOR request made to the sample 1.17 API server to mitigate
+the risk of regressing this client-side fallback behavior.
+
+Clients that include the CBOR media type in the "Accept" header will also include the JSON media
+type. API servers without CBOR support will select JSON as the response encoding through content
+negotiation.
 
 ## Production Readiness Review Questionnaire
 
