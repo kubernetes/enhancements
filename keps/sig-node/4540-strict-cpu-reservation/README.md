@@ -381,7 +381,7 @@ If the feature rollout fails, burstable and best-efforts continue to run on the 
 If the feature rollback fails, burstable and best-efforts continue not to run on the reserved CPU cores.
 In either case, existing workload will not be affected.
 
-When enabling or disabling the feature, make sure `/var/lib/kubelet/cpu\_manager\_state` is removed before restarting kubelet otherwise kubelet retart could fail.
+When enabling or disabling the feature, make sure `/var/lib/kubelet/cpu\_manager\_state` is removed before restarting kubelet otherwise kubelet restart could fail.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
