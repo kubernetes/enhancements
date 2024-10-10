@@ -50,8 +50,8 @@
     - [Unit tests](#unit-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.31)](#phase-1-alpha-target-131)
-    - [Phase 2:  Beta (target 1.32)](#phase-2--beta-target-132)
+    - [Phase 1: Alpha (target 1.32)](#phase-1-alpha-target-132)
+    - [Phase 2:  Beta (target 1.33)](#phase-2--beta-target-133)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
@@ -108,16 +108,18 @@ aggregate of the requested resources by all containers in a pod to find a
 suitable node for scheduling the pod. The kubelet then enforces these resource
 constraints by translating the requests and limits into corresponding cgroup
 settings both for containers and for the pod (where pod level values are
-aggregates of container level values). The existing Pod API lacks the ability to
-set resource constraints at pod level, limiting the flexibility and ease of
-resource management for pods as a whole. This limitation is particularly
-problematic when users want to focus on  controlling the overall resource
-consumption of a pod without the need to meticulously configure resource
-specifications for each individual container in it.
+aggregates of container level values derived using the formula in
+[KEP#753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/753-sidecar-containers/README.md#resources-calculation-for-scheduling-and-pod-admission)).
+The existing Pod API lacks the ability to set resource constraints at pod level,
+limiting the flexibility and ease of resource management for pods as a whole.
+This limitation is particularly problematic when users want to focus on
+controlling the overall resource consumption of a pod without the need to
+meticulously configure resource specifications for each individual container in
+it.
 
 To address this, this KEP proposes extending the Pod API to support Pod-level
-resource limits and requests for non-extended resources (CPU and Memory), in
-addition to the existing container-level settings.
+resource limits and requests for non-extended resources (CPU, Memory and
+Hugepages), in addition to the existing container-level settings.
 
 ## Motivation
 
@@ -127,7 +129,7 @@ container, it can be challenging to accurately estimate and allocate resources
 for individual containers, especially for workloads with unpredictable or bursty
 resource demands. This often leads to over-allocation of resources to ensure that
 no container experiences resource starvation, as kubernetes currently lacks a
-mechanism for sharing resources between containers easily. 
+mechanism for sharing resources between containers within a pod easily.
 
 Introducing pod-level resource requests and limits offers a more simplified
 resource management for multi-container pods as it is easier to gauge the
@@ -161,7 +163,7 @@ This proposal aims to:
    the pod level in this phase. However, it could be considered in future extensions of
    the KEP.
 2. Pod-level device plugins: existing container-level device plugins are
-   compatible with this proposal, but there are some discussion on how to share
+   compatible with this proposal, but there are some discussions on how to share
    device(s) among containers within a pod, which is out of scope of this KEP.
 3. This proposal will not explore dynamic QoS class adjustments based on runtime
    conditions or pod phases. Instead, it will focus on static QoS class
@@ -177,7 +179,6 @@ This proposal aims to:
    workloads. Although the feature is anticipated to enhance resource
    utilization, specific optimizations for particular workloads, such as
    high-performance computing, will be considered in future iterations.
-
 
 ## Proposal
 
@@ -274,6 +275,15 @@ other containers within the pod. This approach not only improves overall resourc
 utilization but can also lead to cost savings in cloud environments where
 resource allocation impacts billing.
 
+Note: Understanding the distinction between resource sharing with pod-level
+resources feature and with burstable pods is important. While both allow
+containers to share resources with other containers, they both operate at
+different scopes. Pod-level resources enable containers within a pod to share
+unused resoures amongst themselves, promoting efficient utilization within the
+pod. In contrast, burstable pods allows sharing of spare resources between
+containers in any pods on the node. This means a container in a burstable pod
+can use resources available elsewhere on the node.
+
 ### Notes/Constraints/Caveats
 
 1. cgroupv1 has been moved to maintenance mode since Kubernetes version 1.31.
@@ -281,13 +291,13 @@ resource allocation impacts billing.
    admit pods with pod-level resources on nodes with cgroupv1.
 
 2. Pod Level Resource Specifications is an **opt-in** feature, and will have no
-effect on existing deployments. Only deployments that explicitly require this
-functionality should turn it on by setting the relevant resource section at
-pod-level in the Pod specification.
+   effect on existing deployments. Only deployments that explicitly require this
+   functionality should turn it on by setting the relevant resource section at
+   pod-level in the Pod specification.
 
 3. In alpha stage of Pod-level Resources feature, when using pod-level resources,
-   in-place pod resizing is unsupported with in-place pod resizing. **Users should
-   not use in-place pod resize with pod-level resources enabled.**
+   in-place pod resizing is unsupported with in-place pod resizing. **Users won't
+   be able to use in-place pod resize with pod-level resources enabled.**
 
 ### Risks and Mitigations
 
@@ -392,6 +402,9 @@ type PodSpec struct {
 
 To ensure clarity and prevent ambiguity in resource allocation, the following
 validation rules are proposed for pod-level resource specifications:
+
+* In alpha, invalidate requests to update resources at container-level if
+  `resources` is set in PodSpec.
 
 * Pod-level Resources Priority: If pod-level requests and limits are explicitly
   set, they take precedence over container-level settings. Defaulting logic is only
@@ -1404,18 +1417,18 @@ This feature will touch multiple components. For alpha, unit tests coverage for 
 
 Following scenarios need to be covered:
 
-
-
 * Cgroup settings when pod-level resources are set.
 * Validate scheduling and admission.
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
-* Validate the containers with no limits set are OOMKilled when memory usage reaches Pod level memory limits.
+* Validate the containers with no limits set are OOMKilled when memory usage
+  reaches Pod level memory limits.
+* Test the correct values in TotalResourcesRequested.
 
 
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.31)
+#### Phase 1: Alpha (target 1.32)
 
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `PodLevelResources`
@@ -1427,7 +1440,7 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Documentation mentioning high level design.
 
 
-#### Phase 2:  Beta (target 1.32)
+#### Phase 2:  Beta (target 1.33)
 
 
 * User Feedback.
@@ -1438,7 +1451,7 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Documentation update and blog post to announce feature in beta phase.
 * [Tentative] Benchmark tests for resource usage with and without pod level resources for bursty workloads.
   * Use kube_pod_container_resource_usage metric to check resource utilization.
-
+* [TBD] In-place pod resize support either as a part of this KEP or a separate KEP/feature.
 
 #### GA (stable)
 
@@ -1567,16 +1580,20 @@ To resolve this, users can delete the affected pods and recreate them.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 If the feature is re-enabled after being previously disabled, any new pods will
-again have access to the pod-level resources feature. Existing pods created while
-the feature was disabled will continue to operate without utilizing pod-level
-resources.
+again have access to the pod-level resources feature. 
 
-However, existing pods that were created with pod-level resources before the
-feature was disabled will experience mismatched calculations for resource usage
-when the feature is disabled, and these calculations will only align correctly
-once the feature is re-enabled. Additionally, any pods that were admitted before
-the feature was disabled but are recreated or restarted will also have mismatched
-calculations after the feature is re-enabled.
+Pods that were created but not yet started will be treated based on its resource
+spec (pod-level when feature gate is enabled, and container-level when the gate
+is disabled).
+
+Pods that are already running with resources provisioned will continue running
+with resources provisioned at the time of execution (whether it was pod-level or
+container-level resources).
+
+However, some components may calculate the resource usage of the pods based on
+the resource spec (pod-level when feature gate is enabled, and container-level
+when feature gata is disabled), and that may not necessarily match the actual
+resources provisioned for the running pod.
 
 To ensure consistent and intuitive resource calculations, it is advisable to
 delete all pods when toggling the feature between enabling and disabling. This
