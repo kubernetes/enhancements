@@ -173,26 +173,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images and/or OCI artifacts.
+The proposed enhancement adds a new `VolumeSource` to Kubernetes that supports OCI images.
 This allows users to package files and share them among containers in a pod without including them in the main image,
 thereby reducing vulnerabilities and simplifying image creation.
 
-While OCI images are well-supported by Kubernetes and CRI, extending support to
-OCI artifacts involves recognizing additional media types within container
-runtimes, implementing custom lifecycle management, resolution of artifact
-registry referrers use pattern for artifacts, and ensuring appropriate
-validation and security measures.
-
 ## Motivation
 
-Supporting OCI images and artifacts directly as a `VolumeSource` allows
+Supporting OCI images directly as a `VolumeSource` allows
 Kubernetes to focus on OCI standards as well as allows to store and distribute
 any content using OCI registries. This allows the project to grow into use cases
 which go beyond running particular images.
 
 ### Goals
 
-- Introduce a new `VolumeSource` type that allows mounting OCI images and/or artifacts.
+- Introduce a new `VolumeSource` type that allows mounting OCI images.
 - Simplify the process of sharing files among containers in a pod.
 - Providing a runtime guideline of how artifact files and directories should be
   mounted.
@@ -201,11 +195,11 @@ which go beyond running particular images.
 
 - This proposal does not aim to replace existing `VolumeSource` types.
 - This proposal does not address other use cases for OCI objects beyond directory sharing among containers in a pod.
-- Mounting thousands of images and artifacts in a single pod.
+- Mounting thousands of images in a single pod.
 - The enhancement leaves single file use case out for now and restrict the mount
   output to directories.
 - The runtimes (CRI-O, containerd, others) will have to agree on the
-  implementation of how artifacts are manifested as directories. We don't want
+  implementation of how images are manifested as directories. We don't want
   to over-spec on selecting based on media types or other attributes now and can
   consider that for later.
     - We don't want to tie too strongly to how models are hosted on a particular
@@ -225,7 +219,7 @@ which go beyond running particular images.
 
 ## Proposal
 
-We propose to add a new `VolumeSource` that supports OCI images and/or artifacts. This `VolumeSource` will allow users to mount an OCI object
+We propose to add a new `VolumeSource` that supports OCI images. This `VolumeSource` will allow users to mount an OCI image
 directly into a pod, making the files within the image accessible to the containers without the need to include them in the main image and to be able to host them in OCI compatible registries.
 
 ### User Stories (Optional)
@@ -275,7 +269,7 @@ the OS or version of the scanning software.
 
 - This enhancement assumes that the cluster has access to the OCI registry.
 - The implementation must handle image pull secrets and other registry authentication mechanisms.
-- Performance considerations must be taken into account, especially for large images or artifacts.
+- Performance considerations must be taken into account, especially for large images.
 
 ### Vocabulary: OCI Images, Artifacts, and Objects
 
@@ -303,14 +297,14 @@ the OS or version of the scanning software.
 - **Security Risks:**:
     - Allowing direct mounting of OCI objects introduces potential attack
       vectors. Mitigation includes thorough security reviews and limiting access
-      to trusted registries. Limiting to OCI artifacts (non-runnable content)
+      to trusted registries. Limiting to non-runnable content
       and read-only mode will lessen the security risk.
     - Path traversal attacks are a high risk for introducing security
       vulnerabilities. Container Runtimes should re-use their existing
       implementations to merge layers as well as secure join symbolic links in
       the container storage prevent such issues.
 - **Compatibility Risks:** Existing webhooks watching for the images used by the pod using some policies will need to be updated to expect the image to be specified as a `VolumeSource`.
-- **Performance Risks:** Large images or artifacts could impact performance. Mitigation includes optimizations in the implementation and providing
+- **Performance Risks:** Large images could impact performance. Mitigation includes optimizations in the implementation and providing
   guidance on best practices for users.
 
 ## Design Details
@@ -319,12 +313,10 @@ The new `VolumeSource` will be defined in the Kubernetes API, and the implementa
 to support this source type. Key design aspects include:
 
 - API changes to introduce the new `VolumeSource` type.
-- Modifications to the Kubelet to handle mounting OCI images and artifacts.
+- Modifications to the Kubelet to handle mounting OCI images.
 - Handling image pull secrets and registry authentication.
 - The regular OCI images (that are used to create container rootfs today) can
   be setup similarly as a directory and mounted as a volume source.
-- For OCI artifacts, we want to convert and represent them as a directory with
-  files. A single file could also be nested inside a directory.
 
 ### Kubernetes API
 
@@ -485,7 +477,7 @@ Technically it means that we need to pull in [`SyncPod`](https://github.com/kube
 for OCI objects on a pod level and not for each container during [`EnsureImageExists`](https://github.com/kubernetes/kubernetes/blob/b498eb9/pkg/kubelet/images/image_manager.go#L102)
 before they get started.
 
-If users want to re-pull artifacts when referencing moving tags like `latest`,
+If users want to re-pull images when referencing moving tags like `latest`,
 then they need to restart / evict the pod.
 
 The [AlwaysPullImages](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#alwayspullimages)
@@ -500,7 +492,7 @@ container image.
 #### CRI
 
 The CRI API is already capable of managing container images [via the `ImageService`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L146-L161).
-Those RPCs will be re-used for managing OCI artifacts, while the [`Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L220-L247)
+Those RPCs will be re-used for the KEP, while the [`Mount`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L220-L247)
 message will be extended to mount an OCI object using the existing [`ImageSpec`](https://github.com/kubernetes/cri-api/blob/3a66d9d/pkg/apis/runtime/v1/api.proto#L798-L813)
 on container creation:
 
@@ -585,7 +577,7 @@ sequenceDiagram
 
 8. **Security and Performance Optimization**:
    - Implement thorough security checks to mitigate risks such as path traversal attacks.
-   - Optimize performance for handling large OCI artifacts, including caching strategies and efficient retrieval methods.
+   - Optimize performance for handling large OCI images, including caching strategies and efficient retrieval methods.
 
 #### Container Runtimes
 
@@ -1427,4 +1419,4 @@ An out-of-tree CSI plugin can provide flexibility and modularity, but there are 
 
 The in-tree implementation of an OCI VolumeSource offers significant advantages by leveraging existing core mechanisms,
 ensuring deep integration, and simplifying management. This approach avoids the complexity, duplication, and other potential inefficiencies
-of out-of-tree CSI plugins, providing a more reliable solution for mounting OCI images and artifacts.
+of out-of-tree CSI plugins, providing a more reliable solution for mounting OCI images.

@@ -1,4 +1,4 @@
-title: OCI objects as VolumeSource
+title: OCI images as VolumeSource
 kep-number: 4639
 authors:
   - "@sallyom"
