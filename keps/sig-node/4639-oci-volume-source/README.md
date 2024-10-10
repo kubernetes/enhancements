@@ -1112,10 +1112,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [x] Events: All events for pulling images (failures and successes) also apply
-  to image volumes, because they re-use the same code paths. This makes it
-  consistent and straight forward for end users to verify what has been pulled
-  and if a Pod has been started successfully.
+- [x] Metrics: The added metrics `image_volume_requested_total` `image_volume_mounted_success` `image_volume_mounted_error`
+  will signal to an admin that this feature is working or not.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1149,10 +1147,9 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 
-Note: there is not currently a well defined SLI[1] for stateful pods, and it's likely this feature will drastically affect that if a big
-image needs to be pulled from a registry.
-
-1: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md#footnote3
+Note: the pod's start SLI may be affected if the image that is being pulled is large. An accurate comparison in pod start time is
+if the contents of the image mount are stored in the container's image, rather than present on a different volume type, as the
+cost of pulling from a registry needs to be controlled for.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1228,7 +1225,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-new type of volume: image
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
