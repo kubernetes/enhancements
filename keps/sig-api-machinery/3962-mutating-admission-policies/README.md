@@ -1097,6 +1097,14 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+No changes are required for a cluster to make an upgrade and maintain existing behavior.
+There is new API that does not effect the cluster during upgrade. It only has effects
+if it is used after the upgrade.
+
+If a cluster is downgraded, no changes are required. The cluster continues to work as expected since
+the alpha version will have functionality compatible with beta and stable release, any downgrade
+will be to a version that also contains the feature.
+
 ### Version Skew Strategy
 
 <!--
@@ -1111,6 +1119,12 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature is implemented in the kube-apiserver component, skew with other
+kubernetes components do not require coordinated behavior.
+
+Clients should ensure the kube-apiserver is fully rolled out before using the
+feature.
 
 ## Production Readiness Review Questionnaire
 
