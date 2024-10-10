@@ -299,8 +299,9 @@ If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
-The `ResizePolicy` field is append-only. Appending the policy is allowed to accommodate a resize
-adding a request or a limit for a resource that wasn't previously present.
+The `ResizePolicy` field is mutable. Only append is strictly required to support in-place resize
+(for new resource requirements), and we may reevaluate full mutability if additional edge cases are
+discovered in implementation.
 
 #### Resize Status
 
