@@ -18,14 +18,16 @@ approvers:
 see-also:
 replaces:
 
-latest-milestone: "v1.27"
-stage: "alpha"
+latest-milestone: "v1.32"
+stage: "beta"
 milestone:
   alpha: "v1.27"
-  beta: "v1.29"
-  stable: "v1.31"
+  beta: "v1.32"
+  stable:
 
 feature-gates:
 disable-supported: true
 
 metrics:
+- snapshot_controller_operation_total_seconds
+- csi_sidecar_operations_seconds
