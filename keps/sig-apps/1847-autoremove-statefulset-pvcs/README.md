@@ -77,16 +77,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-  - [X] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -360,24 +361,27 @@ to implement this enhancement.
 
 #### Unit tests
 
-- `k8s.io/kubernetes/pkg/controller/statefulset`: `2022-06-15`: `85.5%`
-- `k8s.io/kubernetes/pkg/registry/apps/statefulset`: `2022-06-15`: `68.4%`
-- `k8s.io/kubernetes/pkg/registry/apps/statefulset/storage`: `2022-06-15`: `64%`
+From https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=statefulset
 
+- `k8s.io/kubernetes/pkg/controller/statefulset`: `2024-10-07`: `86.5%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset`: `2022-10-07`: `62.7%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset/storage`: `2022-10-07`: `64%`
   
 ##### Integration tests
 
-- `test/integration/statefulset`: `2022-09-21`: These do not appear to be
-  running in a job visible to the triage dashboard, see for example a search
-  for the previously existing [TestStatefulSetStatusWithPodFail](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStatusWithPodFail).
+- `test/integration/statefulset`: `2024-10-07`: [No failures](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestAutodeleteOwnerRefs)
 
 Added `TestAutodeleteOwnerRefs` to `k8s.io/kubernetes/test/integration/statefulset`.
 
 ##### E2E tests
 
-- `[gci-gce-statefulset](https://testgrid.k8s.io/google-gce#gci-gce-statefulset)`: `2022-09-21`: `0 Failures`
-  - Note that as this KEP is behind the `StatefulSetAutoDeletePVC` feature gate,
-    tests for this KEP are not being run.
+- `[gci-gce-statefulset](https://testgrid.k8s.io/google-gce#gci-gce-statefulset)`: `2024-10-07`: `0 Failures`
+- [triage](https://storage.googleapis.com/k8s-triage/index.html?test=.*StatefulSetPersistentVolumeClaimPolicy.*): `2024-10-09`:
+  - Flakey failures in `ci-kubernetes-kind-e2e-parallel`, `ci-kubernetes-kind-e2e-parallel-1-30` and
+    `ci-kubernetes-kind-ipv6-e2e-parallel-1-31` also had failures in many other tests, so appears to
+    be general infrastructure flake.
+  - ` [sig-apps] StatefulSet Non-retain StatefulSetPersistentVolumeClaimPolicy should delete PVCs
+    after adopting pod (WhenScaled)` seems to have real flakes which will be investigated.
 
 Added `Feature:StatefulSetAutoDeletePVC` tests to `k8s.io/kubernetes/test/e2e/apps/`.
 
@@ -403,7 +407,10 @@ mechanism to run upgrade/downgrade tests.
 - (Done) Enable feature gate for e2e pipelines
 
 #### GA release
-- Validate with customer workloads
+- (Done) Validate with customer workloads. There has been no customer feedback
+  aside from some unrelated issues on GKE which showed that customers were using
+  delete strategies, and analysis of owner references on PVCs that motivated
+  [#122400](https://github.com/kubernetes/kubernetes/issues/122400).
 
 
 ### Upgrade / Downgrade Strategy
@@ -432,9 +439,14 @@ set. The behavior is then as follows.
   * The retention policy is ignored.
 
 ### Version Skew Strategy
-There are only kube-controller-manager changes involved (in addition to the
-apiserver changes for dealing with the new StatefulSet field). Node components
-are not involved so there is no version skew between nodes and the control plane.
+There are only apiserver and kube-controller-manager changes involved. Node
+components are not involved so there is no version skew between nodes and the
+control plane. Since the api changes are backwards compatible, as long as the
+apiserver version which originally added the new StatefulSet fields is rolled
+out before the kube-controller-manager, behavior will be correct. Since the alpha
+API has been out since 1.23 and there have been no incompatible changes to the
+API, the order of any modern apiserver & kube-controller-manager rollout should
+not matter anyway.
 
 ## Production Readiness Review Questionnaire
 
@@ -504,8 +516,7 @@ are not involved so there is no version skew between nodes and the control plane
 
 ##### Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?
-  Enabling the feature also enables the `PersistentVolumeClaimRetentionPolicy`
-  api field.
+  No
 
 ### Monitoring Requirements
 
@@ -570,8 +581,8 @@ of this feature?
   have been happening anyway, manually.
 
 ##### Will enabling / using this feature result in increasing size or count of the existing API objects?
-  - PVC, new ownerRef.
-  - StatefulSet, new field
+  - PVC, new ownerRef; ~64 bytes
+  - StatefulSet, new field; ~8 bytes (holds string enumeration either "Delete" or "Retain"
 
 ##### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
   No. (There are currently no StatefulSet SLOs?)
@@ -624,6 +635,7 @@ stateful set controller lives) should be examined and/or restarted.
   - 1.23, alpha implementation.
   - 1.27, graduation to beta.
   - 1.31, fix controller references.
+  - 1.32, graduation to GA.
 
 ## Drawbacks
 The StatefulSet field update is required.
