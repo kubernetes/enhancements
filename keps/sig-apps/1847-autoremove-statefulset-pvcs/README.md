@@ -387,8 +387,7 @@ Added `Feature:StatefulSetAutoDeletePVC` tests to `k8s.io/kubernetes/test/e2e/ap
 
 ##### Upgrade/downgrade & feature enabled/disable tests
 
-Should be added as an e2e tests, but we have not figured out if there is a
-mechanism to run upgrade/downgrade tests.
+The following scenarios were manuall tested.
 
     1. Create statefulset in previous version and upgrade to the version 
        supporting this feature. The PVCs should remain intact.
@@ -396,6 +395,45 @@ mechanism to run upgrade/downgrade tests.
        remain intact and the others with set policies before upgrade 
        gets deleted based on if the references were already set.
 
+Since `rancher.io/local-path` now provides a default storage class, StatefulSets
+can be tested with kind with the following procedure.
+
+* Create a [kind](https://kind.sigs.k8s.io/) cluster with the following `config.yaml`.
+  ```
+  apiVersion: kind.x-k8s.io/v1alpha4
+  kind: Cluster
+  featureGates:
+    StatefulSetAutoDeletePVC: false
+  nodes:
+  - role: control-plane
+    image: kindest/node:v1.31.0
+  ```
+  This is done with `kind create cluster --config config.yaml`
+* The configuration adds the feature gate to all control plane services. In a
+  kind cluster, these are stored in the `/etc/kubernetes/manifests` directory of
+  the kind docker container serving as the control plane node. The manifests are
+  reconciled to the control plane, so the cluster can be upgraded or downgraded
+  from the StatefulSet retention policy feature with bash script like the
+  following.
+  ```
+  for c in kube-apiserver kube-controller-manager kube-scheduler; do
+    docker exec kind-control-plane \
+      sed -i -r "s|(StatefulSetAutoDeletePVC)=false|\1=true|" \
+      /etc/kubernetes/manifests/$c.yaml
+    echo $c updated
+  done
+  ```
+  To downgrade, swap false for true in the above. Note that the kind control
+  plane will be unreachable for a minute or so while the reconciliation occurs.
+  
+For the upgrade scenario, a StatefulSet was created in a cluster with the
+feature gate disabled. The feature gate was enabled, the StatefulSet was scaled
+down or deleted, and it was confirmed that no PVCs were deleted.
+
+In the downgrade scenario, four StatefulSets were created with all possibilities
+of WhenScaled and WhenDeleted policies. After downgraded, it was confirmed that
+(1) no PVCs are deleted when the StatefulSet is scaled down, and (2) PVCs are
+deleted when the WhenDeleted policy is Delete, and the StatefulSet is deleted.
 
 ### Graduation Criteria
 
