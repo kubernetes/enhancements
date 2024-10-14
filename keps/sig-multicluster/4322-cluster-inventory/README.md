@@ -157,10 +157,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -242,7 +242,7 @@ management. Examples of consumers includes:
   this area.
 * GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
-  concept by themselves or understand APIs representing a cluster from each 
+  concept by themselves or understand APIs representing a cluster from each
   cluster management project. A common ClusterProfile API can provide
   a thin compatible layer for different projects.
 * Operation tools or customized external consumers: this API gives a
@@ -312,14 +312,12 @@ the API proposed by this KEP aims to
 - **Member Cluster**: A kubernetes cluster that is part of a cluster inventory.
 
 - **Cluster Manager**: An entity that creates the ClusterProfile API object per member cluster,
-  and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.  
-  Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD 
+  and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.
+  Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD
   have sufficient permission to access the member cluster to fetch the information so it can update the status
   of the ClusterProfile API resource.
 
-- **ClusterProfile API Consumer**: the person running the cluster managers
-  or the person developing extensions for cluster managers for the purpose of
-  workload distribution, operation management etc.
+- **ClusterInventory Consumer**: Controllers or tools that leverage ClusterProfile and require access into the member clusters for the purpose of workload distribution, operation management etc.. They are defined in another API, which is not defined in this KEP and left to the ClusterManager to define. Their name must be unique for the inventory. Among other parameters, Cluster Managers MUST know the following information about the consumer: their name, if credentials are needed (or not) and if so, preferred namespace to read credentials in  as secrets or serviceaccount used to read the credentials (other fields may be defined in other KEPs, those are the necessary fields for this KEP only).
 
 ### User Stories (Optional)
 
@@ -394,25 +392,25 @@ if all its member clusters adhere to the [namespace sameness](https://github.com
 Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
 
 #### How should the API be consumed?
-We recommend that all ClusterProfile objects within the same cluster inventory reside on 
-a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration 
+We recommend that all ClusterProfile objects within the same cluster inventory reside on
+a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration
 point to access all the information within a cluster inventory. Additionally, a multi-cluster aware
 controller can be run on the dedicated  cluster to offer high-level functionalities over this inventory of clusters.
 
 ####  How should we organize ClusterProfile objects on a hub cluster?
-While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object. 
-This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to 
-certain clusters within the inventory.  
+While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object.
+This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to
+certain clusters within the inventory.
 
 However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
 and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
-and the value as the name of the clusterSet. 
+and the value as the name of the clusterSet.
 
 #### Uniqueness of the ClusterProfile object
 While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
-on a hub cluster. 
+on a hub cluster.
 
-However, a ClusterProfile object can only be in one ClusterSet since the namespace sameness property is transitive, therefore 
+However, a ClusterProfile object can only be in one ClusterSet since the namespace sameness property is transitive, therefore
 it can only be in the namespace of that clusterSet if it is in a ClusterSet.
 
 
@@ -511,26 +509,27 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Credentials
 
-An array of credentials to access the cluster. Each credential should be assigned 
-to a different consumer. Each credential has: 
+> This section is only necessary for consumers that do not have access to federated workload identity. For consumers that can leverage a federated workload identity that member clusters recognize, it is recommended to leverage properties to store the endpoint for each member Cluster.
+
+An optional array of credentials to access the cluster. Each credential MUST be assigned
+to a different consumer. Each credential has:
 - a **consumer** field to indicate which consumer it is assigned to.
-- a **context** field to indicate the context name in the access information that should be used to access the cluster.
-- an **accessRef** field to point to the access information location. 
+- an **accessRef** field to point to the access information location.
+- an optional **context** field to indicate the context name in the access information that should be used to access the cluster. If not provided, the default context of the kubeconfig is used.
 
 The access information itself is stored in the same Kubernetes cluster on which
-the ClusterProfile API resides. However, the access information for different 
-consumers is stored in different namespaces to ensure that it is only accessible
-to the consumer for which it is intended. We recommend that the access information
-be stored in a secret object to add further protection to the access information.
+the ClusterProfile API resides by a ClusterManager. However, the access information for different
+consumers MAY BE stored in different namespaces to ensure that it is only accessible
+to the consumer for which it is intended. The credentials must be stored as a standard Secret object.
 
-##### Access information format
-The access information must contain the following fields
-- **Config**: This field contains cluster access information compatible with the 
+##### Access information Secret format
+The access information Secret must contain the following fields
+- **Config**: This field contains cluster access information compatible with the
   [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/dbc2b0a5c7acc349ea71a14e49913661eaf708d2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
 
 Please note that a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
-supports access to multiple clusters. Consequently, multiple `ClusterProfile`
-objects can share the same access secret. However, it is crucial to
+MAY support access to multiple clusters. Consequently, multiple `ClusterProfile`
+objects can leverage the same access secret to store a single consumer's credentials. However, it is crucial to
 ensure that each secret contains access information for only a single consumer API.
 
 #### Properties
