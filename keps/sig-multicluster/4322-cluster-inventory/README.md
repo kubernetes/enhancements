@@ -104,6 +104,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Cluster Manager](#cluster-manager)
   - [Status](#status)
     - [Version](#version)
+    - [Credentials](#credentials)
+      - [Access information format](#access-information-format)
     - [Properties](#properties)
     - [Conditions](#conditions)
 - [API Example](#api-example)
@@ -249,7 +251,7 @@ management. Examples of consumers includes:
   this area.
 * GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
-  concept by themselves or understand cluster API from each different
+  concept by themselves or understand APIs representing a cluster from each 
   cluster management project. A common ClusterProfile API can provide
   a thin compatible layer for different projects.
 * Operation tools or customized external consumers: this API gives a
@@ -458,6 +460,7 @@ below questions:
 * Is the cluster under management?
 * How can I select a cluster?
 * Is the cluster healthy?
+* How to access the cluster?
 * Does the cluster have certain capabilities or properties?
 * Does the cluster have sufficient resources?
 
@@ -515,6 +518,30 @@ With recent conversations about kube-apiserver and enabled featureset version,
 it is possible to incorporate other version relating to the cluster, such as
 minimum kubelet version, maximum kubelet version, and enabled featureset version.
 
+#### Credentials
+
+An array of credentials to access the cluster. Each credential should be assigned 
+to a different consumer. Each credential has: 
+- a **consumer** field to indicate which consumer it is assigned to.
+- a **context** field to indicate the context name in the access information that should be used to access the cluster.
+- an **accessRef** field to point to the access information location. 
+
+The access information itself is stored in the same Kubernetes cluster on which
+the ClusterProfile API resides. However, the access information for different 
+consumers is stored in different namespaces to ensure that it is only accessible
+to the consumer for which it is intended. We recommend that the access information
+be stored in a secret object to add further protection to the access information.
+
+##### Access information format
+The access information must contain the following fields
+- **Config**: This field contains cluster access information compatible with the 
+  [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/dbc2b0a5c7acc349ea71a14e49913661eaf708d2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
+
+Please note that a single [Kubeconfig file](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
+supports access to multiple clusters. Consequently, multiple `ClusterProfile`
+objects can share the same access secret. However, it is crucial to
+ensure that each secret contains access information for only a single consumer API.
+
 #### Properties
 
 Name/value pairs to represent properties of the clusters. It could be a
@@ -562,18 +589,31 @@ metadata:
  labels:
    x-k8s.io/cluster-manager: some-cluster-manager
 spec:
-  displayName: some-cluster
+  displayName: cluster-us-east
   clusterManager:
     name: some-cluster-manager
 status:
- version:
-   kubernetes: 1.28.0
- properties:
+  version:
+    kubernetes: 1.28.0
+  credentials:
+   - consumer: kueue-admin
+     context: cluster-us-east
+     accessRef:
+       Kind: “Secret”
+       Namespace: “kueue-system”
+       Name: “kueue-demo-admin-1”
+   - consumer: argo-admin
+     context: cluster-us-east
+     accessRef:
+       Kind: “Secret”
+       Namespace: “argo-system”
+       Name: “argo-demo-app-developer-1”
+  properties:
    - name: clusterset.k8s.io
      value: some-clusterset
    - name: location
      value: apac
- conditions:
+  conditions:
    - type: ControlPlaneHealthy
      status: True
      lastTransitionTime: "2023-05-08T07:56:55Z"
