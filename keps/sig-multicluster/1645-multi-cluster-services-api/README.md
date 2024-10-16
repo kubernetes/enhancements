@@ -107,6 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Port](#service-port)
     - [Headlessness](#headlessness)
     - [Session Affinity](#session-affinity)
+    - [Labels and Annotations](#labels-and-annotations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -119,6 +120,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Export services via label selector](#export-services-via-label-selector)
   - [Export via annotation](#export-via-annotation)
   - [Other conflict resolution algorithms](#other-conflict-resolution-algorithms)
+  - [Exporting labels/annotations from the Service/ServiceExport objects](#exporting-labelsannotations-from-the-serviceserviceexport-objects)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -413,7 +415,17 @@ type ServiceExport struct {
         // +optional
         metav1.ObjectMeta `json:"metadata,omitempty"`
         // +optional
+        Spec ServiceExportSpec `json:"spec,omitempty"`
+        // +optional
         Status ServiceExportStatus `json:"status,omitempty"`
+}
+
+// ServiceExportSpec describes an exported service and extra exported information
+type ServiceExportSpec struct {
+        // +optional
+        ExportedLabels map[string]string `json:"exportedLabels"`
+        // +optional
+        ExportedAnnotations map[string]string `json:"exportedAnnotations"`
 }
 
 // ServiceExportStatus contains the current status of an export.
@@ -497,9 +509,12 @@ single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
 only if they are instances of the same service.
 
-All information about the service, including ports, backends and topology, will
-continue to be stored in the `Service` objects, which are each name mapped to a
-`ServiceExport`.
+Most information about the service, including ports, backends, topology and
+session affinity, will continue to be stored in the `Service` objects, which
+are each name mapped to a `ServiceExport`. This does not apply for labels and
+annotations which are stored in `ServiceExport` directly in the spec in `exportedLabels`
+and `exportedAnnotations`. Implementations must not export the annotations or
+labels from the metadata of the `Service` or `ServiceExport` resources.
 
 Deleting a `ServiceExport` will stop exporting the name-mapped `Service`.
 
@@ -1013,6 +1028,12 @@ Session affinity affects a service as a whole for a given consumer. The derived
 service's session affinity will be decided according to the conflict resolution
 policy.
 
+#### Labels and Annotations
+
+Labels and Annotations affect a service as a whole for a given consumer. The derived
+service's labels and annotations will be decided according to the conflict resolution
+if the maps are not identical.
+
 ### Test Plan
 
 E2E tests can use [kind](https://kind.sigs.k8s.io/) to create multiple clusters
@@ -1229,7 +1250,7 @@ retain the flexibility of selectors.
 
 ### Export via annotation
 
-`ServiceExport` as described has no spec and seems like it could just be
+`ServiceExport` initially had no spec and seemed like it could just be
 replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
 service is found with the annotation, it would be considered marked for export
 to the clusterset. The controller would then create `EndpointSlices` and an
@@ -1257,6 +1278,19 @@ would complicate the implementation of MCS-API and, most importantly, might be
 more confusing for users. Having just one simple deciding factor based on
 ServiceExport oldness makes resolving conflicts straightforward, and this
 alternative conflict resolution algorithm could hinder this ease of use.
+
+### Exporting labels/annotations from the Service/ServiceExport objects
+
+`Service` and `ServiceExport` have labels and annotations which could be used during
+export and propagated to the `ServiceImport`. In that case as both `Service` and
+`ServiceExport` have those fields in the metadata object it becomes less clear what
+labels and annotations exported. For instance, should an implementation merge the
+labels/annotations from both objects? Should it favor one? Should it takes only
+from the `Service` object?
+
+We also favored dedicated fields on the `ServiceExport` resource to give more
+flexibility as it will allow to export labels and annotations fully decorrelated
+from the `Service` and `ServiceExport` metadata.
 
 ## Infrastructure Needed
 <!--
