@@ -888,7 +888,7 @@ Tests for the following behaviors will be added:
 - conformance to CBOR specification (adopt existing suite and/or develop as
   necessary)
   - this should be demonstrated to run against implementations in at least some
-    of the non-Go client languages
+    of the non-Go client languages ([Python](https://github.com/dinhxuanvu/cbor-tests))
 - Go strings that are not valid UTF-8 sequences can be roundtripped through CBOR
   without error
 - decoding a map into a Go struct produces a strict decoding error if the map
