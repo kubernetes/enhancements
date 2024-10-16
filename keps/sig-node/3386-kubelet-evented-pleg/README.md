@@ -25,7 +25,6 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-    - [Beta (enabled by default)](#beta-enabled-by-default)
       - [Stress Test](#stress-test)
       - [Recovery Test](#recovery-test)
       - [Retries with Backoff Logic](#retries-with-backoff-logic)
@@ -358,7 +357,6 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Add E2E Node Conformance presubmit job in CI 
 - Add E2E Node Conformance periodic job in CI
 
-#### Beta (enabled by default)
 ##### Stress Test
 To test the performance and scalability of Evented PLEG, it is necessary to generate a large number of CRI Events by creating and deleting a significant number of containers within a short period of time. The following steps outline the stress test:
 
@@ -668,9 +666,17 @@ Disabling this feature in the kubelet will revert to the existing relisting PLEG
 
 ## Implementation History
 
-- PR for required CRI changes - https://github.com/kubernetes/kubernetes/pull/110165
-- PR for presubmit Node e2e job - https://github.com/kubernetes/test-infra/pull/28366
-- PR for periodic Node e2e job - https://github.com/kubernetes/test-infra/pull/28592
+- Alpha(1.25)
+  - <https://github.com/kubernetes/kubernetes/pull/111642>
+  - <https://github.com/kubernetes/kubernetes/pull/111384>
+- Beta(default false, 1.27)
+  - <https://github.com/kubernetes/kubernetes/pull/115967>
+  - PR for presubmit Node e2e job - <https://github.com/kubernetes/test-infra/pull/28366>
+  - PR for periodic Node e2e job - <https://github.com/kubernetes/test-infra/pull/28592>
+  - v1.29 bugfix: <https://github.com/kubernetes/kubernetes/pull/120942>
+- Revert to Alpha(1.30): backported to v1.27.9, v1.28.6, v1.29.1, as there is a known issue <https://github.com/kubernetes/kubernetes/issues/121349> and <https://github.com/kubernetes/kubernetes/issues/121003> that will make static pod failed to start.
+  - revert PR <https://github.com/kubernetes/kubernetes/pull/122697>
+  - v1.30 bugfix: <https://github.com/kubernetes/kubernetes/pull/122475>
 
 ## Drawbacks
 
