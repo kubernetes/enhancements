@@ -996,10 +996,16 @@ The conflict will be resolved by assigning precedence based on each
 A derived service will be accessible with the clusterset IP at the ports
 dictated by child services. If the external properties of service ports for a
 set of exported services don’t match, the clusterset service will expose the
-union of service ports declared on its constituent services. Should a port name
-be used for multiple non-identical (`port`, `protocol`, `appProtocol`) service
-ports by different constituent services, the conflict resolution policy will
-determine which values are used by the derived service.
+union of service ports declared on its constituent services.
+
+Like regular services, the resulting ports must respect two rules:
+- Have no duplicated names (including unnamed/empty name)
+- Two ports must not have the same protocol and port number
+
+As a result, MCS-API implementations should merge ports from constituent
+services first based on port name then by the protocol and port number pair.
+The conflict resolution policy will determine which of the duplicated ports
+are used by the ServiceImport.
 
 #### Headlessness
 
