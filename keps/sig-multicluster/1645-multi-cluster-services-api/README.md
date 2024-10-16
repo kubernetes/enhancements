@@ -313,8 +313,11 @@ implementation requiring no changes to kube-proxy is to have the mcs-controller
 maintain ServiceImports and create "dummy" or "shadow" Service objects, named
 after a mcs-controller managed EndpointSlice that aggregates all cross-cluster
 backend IPs, so that kube-proxy programs those endpoints like a regular Service.
-Other implementations are encouraged as long as the properties of the API described
-in this document are maintained.
+An implementation using "shadow" Services should add the annotation
+`multicluster.kubernetes.io/derived-service` in the ServiceImport objects to
+reference the "shadow"/"derived" Service directly. Other implementations are
+encouraged as long as the properties of the API described in this document are
+maintained.
 
 ### User Stories
 
