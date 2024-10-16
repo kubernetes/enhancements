@@ -33,15 +33,21 @@ import (
 type Stage string
 
 const (
-	AlphaStage  Stage = "alpha"
-	BetaStage   Stage = "beta"
-	StableStage Stage = "stable"
+	AlphaStage         Stage = "alpha"
+	BetaStage          Stage = "beta"
+	StableStage        Stage = "stable"
+	Deprecated         Stage = "deprecated"
+	DeprecatedDisabled Stage = "deprecated-disabled"
+	Removed            Stage = "removed"
 )
 
 var ValidStages = []Stage{
 	AlphaStage,
 	BetaStage,
 	StableStage,
+	Deprecated,
+	DeprecatedDisabled,
+	Removed,
 }
 
 func (s Stage) IsValid() error {
@@ -133,11 +139,12 @@ func (p *Proposal) IsMissingStage() bool {
 }
 
 type Milestone struct {
-	Alpha      string `json:"alpha" yaml:"alpha"`
-	Beta       string `json:"beta" yaml:"beta"`
-	Stable     string `json:"stable" yaml:"stable"`
-	Deprecated string `json:"deprecated" yaml:"deprecated,omitempty"`
-	Removed    string `json:"removed" yaml:"removed,omitempty"`
+	Alpha              string `json:"alpha" yaml:"alpha"`
+	Beta               string `json:"beta" yaml:"beta"`
+	Stable             string `json:"stable" yaml:"stable"`
+	Deprecated         string `json:"deprecated" yaml:"deprecated,omitempty"`
+	Removed            string `json:"removed" yaml:"removed,omitempty"`
+	DeprecatedDisabled string `json:"deprecatedDisabled" yaml:"deprecated-disabled,omitempty"`
 }
 
 type FeatureGate struct {
