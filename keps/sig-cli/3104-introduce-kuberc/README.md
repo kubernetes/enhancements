@@ -311,41 +311,37 @@ Three initial top level keys are proposed.
 
 * `apiVersion` to determine the version of the config.
 * `kind` to keep consistency with Kubernetes resources.
-* `command`
-  * `aliases` for users to declare their own aliases for commands with flags and values.
-  * `overrides` for users to set default flags to apply to commands.
+* `aliases` for users to declare their own aliases for commands with flags and values.
+* `overrides` for users to set default flags to apply to commands.
 
-`command.aliases` will not be allowed to override builtins but take precedence of plugins i.e. builtins -> aliases -> plugins. Additional flags and values will be appended to the end of the aliased command. It is the responsibility of the user to define aliases with this in mind.
+`aliases` will not be allowed to override builtins but take precedence of plugins i.e. builtins -> aliases -> plugins. Additional flags and values will be appended to the end of the aliased command. It is the responsibility of the user to define aliases with this in mind.
 
-`command.overrides` is modeled after all configurable behavior being implemented as flags first. This is a design decision that was made after modeling out the intended behavior and realizing that targeting flags filled the use cases. A merge will be done in the execution of the command for flags with inline overrides taking precedence.
+`overrides` is modeled after all configurable behavior being implemented as flags first. This is a design decision that was made after modeling out the intended behavior and realizing that targeting flags filled the use cases. A merge will be done in the execution of the command for flags with inline overrides taking precedence.
 
 ```
-apiVersion: v1alpha1
-kind: Preferences
+apiVersion: kubectl.config.k8s.io/v1alpha1
+kind: Preference
 
-command:
-  aliases:
-    - alias: getdbprod
-      command: get pods
-      flags:
-      - name: labels
-        default: what=database
-      - name: namespace
-        default: us-2-production
+aliases:
+  - name: getdbprod
+    command: get
+    prependArgs:
+    - pods
+    flags:
+    - name: labels
+      default: what=database
+    - name: namespace
+      default: us-2-production
 
-  overrides:
-    - command: apply
-      flags:
-        - name: server-side
-          default: "true"
-    - command: delete
-      flags:
-        - name: interactive
-          default: "true"
-    - command: "*"
-      flags:
-        - name: exec-auth-allowlist
-          default: /var/kubectl/exec/...
+overrides:
+  - command: apply
+    flags:
+      - name: server-side
+        default: "true"
+  - command: delete
+    flags:
+      - name: interactive
+        default: "true"
 
 ```
 
