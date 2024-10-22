@@ -153,10 +153,14 @@ These tests will be added:
 ##### e2e tests
 
 * Add a test to `test/e2e/common/node/configmap.go` to test that the special characters in configmap are consumed by the environment variable.
-
 * Add a test to `test/e2e/common/node/secret.go` to test that the special characters in secret are consumed by the environment variable.
-
 * Add a test to `test/e2e/common/node/expansion` to test environment variable can contain special characters.
+
+We have also added presubmit and periodic test jobs in CI for these e2e tests.
+Job names:
+
+- `pull-kubernetes-e2e-relaxed-environment-variable-validation`
+- `ci-kubernetes-e2e-relaxed-environment-variable-validation`
 
 ### Graduation Criteria
 
@@ -224,7 +228,9 @@ Yes.
 
 ### Rollout, Upgrade and Rollback Planning
 
-When the feature gate is disabled, workloads that are already running will not be affected. If environment variables contain special characters, changes to fields other than the environment variables will not cause workloads to fail. However, if the environment variable fields are modified, they may fail to recreate Pods or ReplicaSets due to the Apiserver's validation logic, which could result in workload failures.
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+When the feature gate is disabled, workloads that are already running will not be affected. However, if user update the workloads, they may fail to recreate pods or ReplicaSets due to failing the Apiserver's validation logic, which could cause the workloads to fail.
 
 ###### What specific metrics should inform a rollback?
 
@@ -250,12 +256,12 @@ kubectl get pods --all-namespaces -o json | jq -r '.items[] | select(.spec.conta
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-According to the test results in https://github.com/HirazawaUi/verfiy-container-env, the container runtime is very lenient with using special characters as environment variables, and almost no failures will occur. However, if unexpected boundary conditions occur, `run_podsandbox_errors_total` can still help us record some problems.
+According to the test results in https://github.com/HirazawaUi/verfiy-container-env, the container runtime is very lenient with using special characters as environment variables, and almost no failures will occur. 
 
-- [x] Metrics
-  - Metric name: run_podsandbox_errors_total
+- [ ] Metrics
+  - Metric name: 
   - [Optional] Aggregation method:
-  - Components exposing the metric:  kubelet
+  - Components exposing the metric:  
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -312,6 +318,8 @@ No
 \- 2024-02-06: KEP promoted to implementable.
 
 \- 2024-08-26: Promote to beta
+
+\- 2024-08-27: Fixed some errors in the beta phase
 
 ## Drawbacks
 
