@@ -1,4 +1,4 @@
-# KEP-4827: Component Flagz
+# KEP-4828: Component Flagz
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
