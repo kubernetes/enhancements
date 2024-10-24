@@ -363,8 +363,6 @@ NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
   Aware
   Hints](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2433-topology-aware-hints/README.md#kube-proxy), i.e. _"This is to provide safer transitions between enabled and disabled states. Without this fallback, endpoints could easily get overloaded as hints were being added or removed from some EndpointSlices but had not yet propagated to all of them."_
 
-<<[UNRESOLVED Name for the field is being discussed]>>
-
 ### Choice of field name
 The name `trafficDistribution` is meant to capture the highly
 implementation-specific nature of this field and how it affects the routing of
@@ -386,8 +384,6 @@ traffic
 * Use of the word "selection" for a name like `endpointSelection` were avoided
   so as not to confuse with the actual process of selecting the complete set of
   pods backing a service.
-
-<<[/UNRESOLVED]>>
 
 ### Intersection with internal/externalTrafficPolicy
 
