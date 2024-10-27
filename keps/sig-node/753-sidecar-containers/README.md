@@ -400,7 +400,7 @@ Note, a separate KEP https://github.com/kubernetes/enhancements/issues/4438 will
 sidecar containers to be restarted even during Pod termination.
 
 In order to minimize OOM kills of sidecar containers, the OOM adjustment for
-these containers will match or exceed the OOM score adjustment of regular
+these containers will match or fall below the OOM score adjustment of regular
 containers in the Pod. This intent to solve the issue
 https://github.com/kubernetes/kubernetes/issues/111356 
 
