@@ -71,7 +71,7 @@ This proposal adds a new well-known label `service.kubernetes.io/endpoint-contro
 
 ## Motivation
 
-As of now, a service can be delegated to a custom Service-Proxy/Gateway if the label `service.kubernetes.io/service-proxy-name` is set. Introduced in [KEP-2447](https://github.com/kubernetes/enhancements/issues/2447), this allows custom Service-Proxies/Gateways to implement services in different ways to address different purposes / use-cases. However, the EndpointSlices attached to this service will still be reconciled in the same way as any other service. Addressing more purposes / use-cases, for example, different pod IP addresses, is therefore not natively possible.
+As of now, a service can be delegated to a custom Service-Proxy/Gateway if the label `service.kubernetes.io/service-proxy-name` is set. Introduced in [KEP-2447](https://github.com/kubernetes/enhancements/issues/2447), this allows custom Service-Proxies/Gateways to implement services in different ways to address different purposes / use-cases. However, the EndpointSlices attached to this service will still be reconciled in the same way as any other service. Addressing more purposes / use-cases, for example, different pod IP addresses, is therefore not natively possible while using the Service Selector field.
 
 Delegating EndpointSlice control would allow custom controllers to define their own criteria for pod availability, selecting different pod IPs than the pod.status.PodIPs and more. As a reference implementation, and since the EndpointSlice Reconciler has been moved into Staging in [KEP-3685](https://github.com/kubernetes/enhancements/issues/3685), the reconciler logic used by Kubernetes can be reused by custom EndpointSlice controllers.
 
