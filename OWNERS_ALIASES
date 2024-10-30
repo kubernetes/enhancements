@@ -27,11 +27,9 @@ aliases:
     - mpuckett159
     - soltysh
   sig-cloud-provider-leads:
-    - andrewsykim
     - bridgetkromhout
     - cheftako
     - elmiko
-    - nckturner
   sig-cluster-lifecycle-leads:
     - CecileRobertMichon
     - fabriziopandini
@@ -46,11 +44,8 @@ aliases:
   sig-docs-leads:
     - divya-mohan0209
     - katcosgrove
-    - kbhawkey
     - natalisucks
-    - onlydole
     - reylejano
-    - sftim
     - tengqm
     - salaxander
   sig-etcd-leads:
@@ -70,7 +65,7 @@ aliases:
     - upodroid
   sig-multicluster-leads:
     - jeremyot
-    - pmorie
+    - skitt
   sig-network-leads:
     - aojea
     - danwinship
@@ -82,6 +77,7 @@ aliases:
     - dchen1107
     - derekwaynecarr
     - mrunalp
+    - haircommander
   sig-release-leads:
     - Verolop
     - cpanato
@@ -128,7 +124,7 @@ aliases:
     - apelisse
     - kwiesmueller
   wg-batch-leads:
-    - alculquicondor
+    - kannon92
     - mwielgus
     - soltysh
     - swatisehgal
@@ -177,25 +173,21 @@ aliases:
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
   enhancements-reviewers:
     - annajung
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
     - palnabarun
   kep-tools-approvers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   prod-readiness-approvers:
     - deads2k

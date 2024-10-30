@@ -99,11 +99,20 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Encoding Determinism](#encoding-determinism)
   - [Unicode](#unicode)
   - [Libraries](#libraries)
+  - [RawExtension](#rawextension)
+    - [Usage](#usage)
+      - [Transient External Types](#transient-external-types)
+      - [Stored External Types](#stored-external-types)
+      - [Types as Canonical Definition of Custom Resources](#types-as-canonical-definition-of-custom-resources)
+    - [Scenarios](#scenarios)
+    - [Compatibility](#compatibility)
+      - [Migration](#migration)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
+  - [Custom JSON Marshalers](#custom-json-marshalers)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -150,8 +159,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -613,7 +622,204 @@ sequence that it will not successfully decode.
 
 [Benchmarks](https://docs.google.com/spreadsheets/d/1yi8cHrnlbmCUY2Vo7Sknrf87WDOuGUswYsyqJfEUwls/edit#gid=0) TODO: inline
 
+### RawExtension
 
+The `RawExtension` type in `k8s.io/apimachinery/pkg/runtime` allows extension types to be handled
+opaquely within external versioned types, as long as they are syntactically valid.
+
+The [type
+declaration](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/staging/src/k8s.io/apimachinery/pkg/runtime/types.go#L51-L109)
+is:
+
+```go
+type RawExtension struct {
+  Raw []byte
+  Object Object
+}
+```
+
+Using JSON, marshalling and unmarshalling of `RawExtension` is comparable to that of the standard
+library's [RawMessage](https://pkg.go.dev/encoding/json#RawMessage) type. For unmarshalling, if the
+input serialized JSON value is `null`, the destination `RawExtension` is not modified. Otherwise,
+its `Raw` field is set to a verbatim copy of the provided serialized JSON value. The contract of
+json.Unmarshaler states that implementations can assume that the input is valid encoding of a JSON
+value. Absent a bug in the caller (typically via `json.Marshal` or `(*json.Decoder).Decode`), a
+`RawExtension`'s Raw field will contain a valid JSON text after unmarshaling.
+
+In general, for an encoding that supports Unstructured, the encoding of a RawExtension value must
+always be the same as the overall encoding of the request or response body. This is not the case for
+Protobuf. Protobuf can encode RawExtension fields with any encoding since both the writer and reader
+of a Protobuf message have the type information to know that they are serializing or deserializing a
+RawExtension message.
+
+There are three cases when marshalling `RawExtension` to JSON:
+
+1. If both Raw and Object are `nil`, `null` is returned.
+1. If Raw is not `nil`, return it verbatim.
+1. Otherwise (Raw is `nil` and Object is not `nil`), return the result of marshalling Object.
+
+Note that, in the second case, the bytes of the Raw field must be a valid JSON text in order to
+successfully serialize an object containing a `RawExtension` to JSON.
+
+#### Usage
+
+##### Transient External Types
+
+External versioned types may use `RawExtension` to exchange arbitrary objects and plugins without
+persisting them to storage. In these cases, only a single object encoding is involved. When
+preparing to send, or handle a received object containing `RawExtension`, callers can assume that
+the Raw bytes are in the same encoding as the negotiated request or response encoding.
+
+##### Stored External Types
+
+Storing the verbatim Raw bytes of a `RawExtension` received from a client introduces additional
+considerations on top of the transient (transmit-only) case. The encoding of the Raw bytes is
+determined by encoding of the request that wrote the value of the RawExtension, which may or may not
+be the same as the object's storage encoding.
+
+##### Types as Canonical Definition of Custom Resources
+
+Throughout the ecosystem, it is common practice to maintain Go structs as the canonical definition
+for API extensions. In many cases, `controller-gen` is used to mechanically translate such types
+from Go sources to CustomResourceDefinition manifests. Similarly, `client-gen` can produce typed Go
+clients that use the canonical Go types directly. These Go struct types can and sometimes do include
+fields of type `RawExtension`
+([example](https://github.com/openshift/api/blob/944467d2cc3b03225ccc24c4e88b876396202d5a/operator/v1/types.go#L91)).
+
+#### Scenarios
+
+The following tables enumerate API request and response flows that can involve `RawExtension`.
+
+The *Client* and *Server* columns indicate the types the named component uses to processes API
+objects. If "dynamic", it uses Unstructured (e.g. a custom resource handler or a dynamic client). If
+"typed", it uses API-specific Go types that may include `RawExtension` (e.g. clients generated by
+`client-gen`, kube-apiserver built-in types, aggregated apiservers). The table omits cases where
+both the client and the server are dynamic (e.g. a dynamic client and a custom resource handler),
+since neither side should be dealing with `RawExtension` values. The edge case where a client
+program makes a `RawExtension` a child of an Unstructured value's `map[string]interface{}` can be
+considered a static client case for the purposes of this evaluation.
+
+The *Encoding* column is the client's encoding of the request body (for requests) or the server's
+encoding of the response body (for responses).
+
+**Marshalled Unstructured**
+
+| N | Client  | Server  | Direction | Encoding |
+|---|---------|---------|-----------|----------|
+| 1 | dynamic | typed   | request   | json     |
+| 2 | dynamic | typed   | request   | cbor     |
+| 3 | typed   | dynamic | response  | json     |
+| 4 | typed   | dynamic | response  | cbor     |
+
+In these cases, the marshalling side acts on an Unstructured object and is not aware that the
+unmarshalling side may decode some of the payload into a `RawExtension`. The bytes stored in the
+`RawExtension` by unmarshalling ultimately *depend on the negotiated content type, which can vary*
+with the enablement of the CBOR serializer. Existing programs have so far been able to assume that
+unmarshalled RawExtensions always have either nil or a valid JSON text in their Raw field.
+
+**Marshalled RawExtension**
+
+| N  | Client  | Server  | Direction | Encoding |
+|----|---------|---------|-----------|----------|
+| 1  | typed   | typed   | request   | json     |
+| 2  | typed   | typed   | request   | cbor     |
+| 3  | typed   | typed   | response  | json     |
+| 4  | typed   | typed   | response  | cbor     |
+| 5  | dynamic | typed   | response  | json     |
+| 6  | dynamic | typed   | response  | cbor     |
+| 7  | typed   | dynamic | request   | json     |
+| 8  | typed   | dynamic | request   | cbor     |
+| 9  | typed   | typed   | request   | protobuf |
+| 10 | typed   | typed   | response  | protobuf |
+
+In these cases, if the marshalling side populates Raw with a non-nil slice, it is responsible for
+ensuring that that encoding of the slice contents matches the encoding that will be used to
+serialize the object containing the `RawExtension`. This is trivially ensured in cases 9 and 10
+because Protobuf is capable of representing `RawExtension` values containing arbitrary
+bytes. Protobuf is not a supported encoding for Unstructured objects. Existing programs have in
+practice stored JSON in the Raw field of `RawExtension`.
+
+#### Compatibility
+
+If the `RawExtension` marshalling and unmarshalling behavior for CBOR were to be implemented in
+exactly the same way as the existing JSON behaviors, the assumptions in many existing programs that
+the Raw field can be assigned to a slice of JSON bytes, or that the Raw bytes of an unmarshalled
+`RawExtension` are valid JSON, would be broken.
+
+The simple approach of automatically transcoding JSON to CBOR during CBOR marshalling, and
+transcoding CBOR to JSON during CBOR unmarshalling, would avoid breaking existing programs. However,
+the expense of transcoding to or from JSON would negate any performance advantage of a binary
+encoding. This expense would not be limited to a few API types: significant examples include the use
+of a `RawExtension` field in `metav1.WatchEvent` to represent each watch event's object state, or
+the arbitrary objects embedded in `admissionv1.AdmissionRequest`.
+
+A new `ContentType string` field will be added to `RawExtension` to indicate the IANA media type of
+the Raw bytes. If empty, the assumed content type is "application/json". In existing usage, if a
+RawExtension's Raw field does not contain valid JSON, the RawExtension itself cannot be marshalled
+to JSON.
+
+ContentType will not be serialized to JSON or CBOR, but it will be serialized to Protobuf. When
+unmarshalling either JSON or CBOR into a RawExtension, the content type is implicitly the same as
+that of the input. This is not true for Protobuf, which is capable of embedding RawExtensions using
+any encoding, since in all cases both the writer and reader of a Protobuf message are aware that
+they are handling an extension.
+
+The proposed behavior for both MarshalJSON and MarshalCBOR is:
+
+1. If both Raw and Object are `nil`, `null` is returned.
+1. If Object is not `nil`, return the result of marshalling Object to the target encoding.
+1. If the ContentType matches the media type of the target encoding (or if ContentType is the empty
+   string and the target encoding is JSON), return the Raw bytes verbatim.
+1. Otherwise, return the result of transcoding the Raw bytes from the encoding indicated by
+   ContentType to the target encoding.
+
+Unmarshalling will behave the same for CBOR as it currently does for JSON and the input bytes will
+be copied verbatim to the Raw field. The ContentType will be set to "application/json" by a
+successful call to UnmarshalJSON and to "application/cbor" by a successful call to UnmarshalCBOR.
+
+Additionally, by default, the Raw bytes of a decoded `RawExtension` will be automatically transcoded
+to JSON to preserve compatibility with programs that assume an unmarshalled RawExtension contains
+valid JSON. The CBOR serializer available through `serializer.CodecFactory` will be wired to use
+this, allowing existing programs to continue to assume that unmarshalled Raw bytes contain JSON. The
+stream serializer will not. In practice, the watch decoder assumes that the non-stream serializer
+can directly decode the Raw bytes of a `metav1.WatchEvent` decoded by the stream serializer.
+
+There will be a migration period during which it will remain possible to disable automatic
+transcoding of RawExtension via feature gate.
+
+##### Migration
+
+**GA**
+
+*Naive Clients*
+
+1. Client assumes received RawExtension is JSON.
+1. Client receives CBOR response body. The response bytes that represent the RawExtension are CBOR.
+1. During decoding, the RawExtension's Raw field is transcoded from CBOR to JSON.
+1. Client continues processing RawExtension bytes as JSON.
+
+*Advanced Clients*
+
+1. Client tolerates RawExtensions containing either JSON or CBOR.
+1. Client receives CBOR response body. The response bytes that represent the RawExtension are CBOR.
+1. No transcoding is performed during decoding.
+1. Client detects the format of the RawExtension bytes and processes it accordingly. RawExtension
+   will implement UnstructuredConverter, providing a one-liner to get an Unstructured from a
+   RawExtension.
+   
+**Post-GA, CBOR as Default Preferred Request/Response Encoding for One Year**
+
+Automatic transcoding client feature gate becomes disabled by default. The feature gate is unlocked
+and transcoding can be re-enabled without code changes using the existing client feature gate
+environment variable mechanism.
+
+**Post-GA, CBOR as Default Preferred Request/Response Encoding for Two Years**
+
+Automatic transcoding client feature gate is removed and requires code changes to enable.
+
+All existent clusters will support CBOR. Existing programs continue to work unmodified. Updating
+client libraries in existing programs may cause them to break if they have not changed how they are
+handling RawExtensions.
 
 ### Test Plan
 
@@ -682,7 +888,7 @@ Tests for the following behaviors will be added:
 - conformance to CBOR specification (adopt existing suite and/or develop as
   necessary)
   - this should be demonstrated to run against implementations in at least some
-    of the non-Go client languages
+    of the non-Go client languages ([Python](https://github.com/dinhxuanvu/cbor-tests))
 - Go strings that are not valid UTF-8 sequences can be roundtripped through CBOR
   without error
 - decoding a map into a Go struct produces a strict decoding error if the map
@@ -700,8 +906,7 @@ As well as fuzz tests covering:
 
 - for all native types, native-to-JSON-to-unstructured and
   native-to-CBOR-to-unstructured is identical
-- the number of bytes allocated per decode is not more than directly
-  proportional to the input size
+- the number of bytes allocated per decode does not exceed a reasonable upper limit
 - roundtrip JSON-to-CBOR-to-JSON and CBOR-to-JSON-to-CBOR
 - roundtrip through implementations in at least some of the non-Go client
   languages
@@ -751,6 +956,48 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 - request and response content-type negotiation with 1.17 sample API server
+
+### Custom JSON Marshalers
+
+If a type implements json.Marshaler or json.Unmarshaler without corresponding CBOR behaviors,
+serializing values of that type to and from CBOR using default behaviors risks mangling the data.
+
+As an example, consider the structure of a marshalled
+[IntOrString](https://pkg.go.dev/k8s.io/apimachinery/pkg/util/intstr#IntOrString) with the custom
+behavior versus the default behavior:
+
+| Go                                       | Custom  | Default                               |
+|------------------------------------------|---------|---------------------------------------|
+| IntOrString{Type: Int, IntVal: 7}        | 7       | {"IntVal":7,"StrVal":"","Type:":0}    |
+| IntOrString{Type: String, StrVal: "foo"} | "foo"   | {"IntVal":0,"StrVal":"foo","Type:":1} |
+| IntOrString{Type: -1}                    | <error> | {"IntVal":0,"StrVal":"","Type:":-1}   |
+
+Imagine a similar type is declared out-of-tree. It has a similar implementation of `json.Marshaler`,
+but not corresponding custom implementation for CBOR. From this type, a CRD and typed client are
+generated. This typed client is used in a program to write to a custom resource, using JSON to
+encode the request body as either a JSON number or a JSON string. On the server side, the request
+body is decoded into an Unstructured object, and within that object, the IntOrString value is
+represented by either a `string` or an `int64`.
+
+Now imagine that the same request is repeated, but with CBOR as the negotiated content type of the
+request body, and that the CBOR serializer implementation _does not_ recognize types that implement
+`json.Marshaler` or `json.Unmarshaler`. By changing the request content type from JSON to CBOR, the
+actual bytes of the request body represent a structurally different object. Referencing the table
+above, instead of the "Custom" encoding, the encoded CBOR would look like the "Default" encoding.
+
+On the server side, the value is represented within the decoded Unstructured as a
+`map[string]interface{}` with three keys, `"IntVal"`, `"StrVal`", and `"Type"`. A change in the
+request encoding resulted in a structural change to the object the client intended to send.
+
+The CBOR serializer must not use the default behaviors to marshal and unmarshal values that
+implement only custom JSON behaviors. Rejecting them with an error is a minimum requirement for
+alpha, since it prevents corruption. This would support in-tree types, server-side custom resource
+serialization, and typical dynamic client usage. A second alpha release will support these types
+automatically by invoking the JSON methods and transcoding to or from CBOR.
+
+All of the above also applies to types implementing `encoding.TextMarshaler` (which is used if
+implemented unless `json.Marshaler` is also implemented) and `encoding.TextUnmarshaler` (which is
+used if implemented when the input is a JSON string unless `json.Unmarshaler` is also implemented).
 
 ### Graduation Criteria
 
@@ -824,11 +1071,19 @@ in back-to-back releases.
 - Client generation updated to support CBOR behind client-side gates.
 - Runtime gating mechanism added to client-go.
 - Maintenance of CBOR library is understood.
+- Types that implement json.Marshaler or json.Unmarshaler without corresponding custom CBOR
+  behaviors are either rejected with an error on Encode and Decode or automatically transcoded from
+  JSON.
 
 #### Beta
 
 - Review of nondeterministic encoding mode and final decision on whether to keep
   or remove it.
+- To support rollback from beta to alpha, at least one alpha release has supported automatic
+  transcoding of types that implement json.Marshaler or json.Unmarshaler without corresponding
+  custom CBOR behaviors.
+- All Kubernetes components have opted out of automatic transcoding to JSON for FieldsV1 and
+  RawExtension.
 
 #### GA
 
@@ -849,6 +1104,13 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+API servers will be able to decode resources that have been stored with a CBOR encoding, even when
+the feature gate permitting the CBOR storage encoding is disabled. The feature gate will remain
+disabled by default during alpha. The default storage encoding will not change for built-in API
+types. The default storage encoding for custom resources will not change in the first version to
+support decoding CBOR-encoded objects from storage, so it will remain possible after a downgrade for
+kube-apiserver to decode any resources that may have been stored with the CBOR encoding.
+
 ### Version Skew Strategy
 
 <!--
@@ -863,6 +1125,21 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Server-side support for accepting CBOR as a request encoding and returning CBOR as a response
+encoding is in addition to the existing support for JSON and Protobuf. CBOR is never selected as a
+response encoding unless the client has included a CBOR media type in the "Accept" request
+header. Older components will continue to use the existing encodings in their interactions with API
+servers that support CBOR.
+
+Clients that proactively send a CBOR-encoded request to an API server without CBOR support will
+receive an HTTP 415 (Unsupported Media Type) response status and fall back to JSON. The test plan
+includes an end-to-end test covering a CBOR request made to the sample 1.17 API server to mitigate
+the risk of regressing this client-side fallback behavior.
+
+Clients that include the CBOR media type in the "Accept" header will also include the JSON media
+type. API servers without CBOR support will select JSON as the response encoding through content
+negotiation.
 
 ## Production Readiness Review Questionnaire
 

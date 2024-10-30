@@ -273,7 +273,7 @@ spec:
 
 CSI Node Plugins listen on domain sockets and respond to CSI API requests sent over GRPC from a container orchestrator like Kubernetes. They are responsible all storage management operations scoped around a specific node that are typically necessary after a CSI Controller Plugin has finished provisioning a Persistent Volume and attached it to the node. In Kubernetes, the CSI Node API calls are invoked by the CSI In-tree Plugin in the kubelet as well as the CSI Node Driver Registrar. The CSI Node Driver Registrar interacts with the Kubelet Plugin Watcher and it is maintained by the Kubernetes CSI community as a side-car container for deployment in CSI Node Plugin pods.
 
-![Kubernetes CSI Components](https://raw.githubusercontent.com/kubernetes/community/master/contributors/design-proposals/storage/container-storage-interface_diagram1.png?raw=true "Kubernetes CSI Components")
+![Kubernetes CSI Components](https://raw.githubusercontent.com/kubernetes/design-proposals-archive/main/storage/container-storage-interface_diagram1.png?raw=true "Kubernetes CSI Components")
 
 Support for Unix Domain Sockets has been introduced in Windows Server 2019 and works across containers as well as host and container as long as the processes running in containers are listening on the socket. If a process from within a container wishes to connect to a domain socket that a process on the host OS is listening on, Windows returns a permission error. This scenario however does not arise in the context of interactions between Kubelet, CSI Node Driver Registrar and CSI Node Plugin as these involve a process in a container listening on a domain socket (CSI Node Driver Registrar or CSI Node Plugin) that a process on the host (Kubelet) connects to.
 

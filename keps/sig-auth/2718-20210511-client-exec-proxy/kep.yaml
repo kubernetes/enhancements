@@ -6,7 +6,7 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-cli
   - sig-api-machinery
-status: implementable
+status: withdrawn
 creation-date: 2021-05-11
 reviewers:
   - "@mikedanese"

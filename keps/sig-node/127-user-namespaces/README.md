@@ -27,7 +27,6 @@
     - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
   - [Pod Security Standards (PSS) integration](#pod-security-standards-pss-integration)
   - [Unresolved](#unresolved)
-    - [Pod Security Standards (PSS)](#pod-security-standards-pss)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -464,27 +463,24 @@ components that implement the interface.
 
 [Pod Security Standards](https://k8s.io/docs/concepts/security/pod-security-standards)
 define three different policies to broadly cover the whole security spectrum of
-Kubernetes, while the User Namespaces feature should integrate into them. This
-will happen only if the feature is graduated to GA, which _may_ result in
-changing the `Restricted` profile to disallow host user namespaces for stateless
-Pods.
+Kubernetes, while the User Namespaces feature should integrate into them.
 
 The Pod Security will relax in a controlled way for pods which enable user
 namespaces. This behavior can be controlled by an API Server Feature Gate, which
 allows an early opt-in for end users. The overall burden to ensure that all
-nodes will honor user namespaces is on the cluster admin, though. The relaxation
-in detail means, that if user namespaces are enabled, then the following fields
-won't be restricted any more because they always have to refer to the user
-inside the container:
+nodes will honor user namespaces is on the cluster admin, though.
 
-- `spec.securityContext.runAsNonRoot`
-- `spec.containers[*].securityContext.runAsNonRoot`
-- `spec.initContainers[*].securityContext.runAsNonRoot`
-- `spec.ephemeralContainers[*].securityContext.runAsNonRoot`
-- `spec.securityContext.runAsUser`
-- `spec.containers[*].securityContext.runAsUser`
-- `spec.initContainers[*].securityContext.runAsUser`
-- `spec.ephemeralContainers[*].securityContext.runAsUser`
+For `baseline` and `restricted` namespaces, if a pod has `hostUsers` set to false, then the fields `runAsNonRoot` can be set to false and
+`runAsUser` and `runAsGroup` can be set to any value for any `securityContext` in the pod (pod, container, initContainer, ephemeralContainer).
+
+For `baseline` namespaces, pods with `hostUsers` set to false can set any value for the `capabilities.add` field,
+whereas normally in a `baseline` namespace a pod is restricted to adding certain capabilities.
+
+The validation for capabilities can be relaxed in a `baseline` pod because capabilities
+are user namespaced in the linux kernel, and any pod does not have a seccomp profile (as baseline
+pods may not be required to, depending on the kubelet's `seccompDefault` configuration field)
+has access to the `unshare` syscall, allowing a user to create a user
+namespace in the pod, and gain the full set of capabilities within a user namespace.
 
 A serial test will be added to validate the functionality with the enabled
 feature gate.
@@ -509,24 +505,6 @@ something else to this list:
   decide to do it after the first alpha, as the community prefers and time
   allows). Same applies for VM runtimes.
   UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
-
-#### Pod Security Standards (PSS)
-
-The following security context fields have not been relaxed with respect to PSS
-because of [raised security concerns](https://github.com/kubernetes/kubernetes/pull/118760#discussion_r1373287637):
-
-- `spec.containers[*].securityContext.allowPrivilegeEscalation`
-- `spec.initContainers[*].securityContext.allowPrivilegeEscalation`
-- `spec.ephemeralContainers[*].securityContext.allowPrivilegeEscalation`
-- `spec.containers[*].securityContext.capabilities.drop`
-- `spec.initContainers[*].securityContext.capabilities.drop`
-- `spec.ephemeralContainers[*].securityContext.capabilities.drop`
-- `spec.containers[*].securityContext.capabilities.add`
-- `spec.initContainers[*].securityContext.capabilities.add`
-- `spec.ephemeralContainers[*].securityContext.capabilities.add`
-
-Further investigations will be done in future Kubernetes releases to revisit
-them.
 
 ### Test Plan
 

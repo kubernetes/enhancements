@@ -1189,6 +1189,10 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 1.27: alpha
+- 1.28: beta
+- 1.31: GA
+
 ## Drawbacks
 
 <!--

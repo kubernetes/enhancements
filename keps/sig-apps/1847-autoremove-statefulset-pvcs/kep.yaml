@@ -18,14 +18,14 @@ approvers:
   - "@msau42"
   - "@janetkuo"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.27"
+latest-milestone: "v1.32"
 
 milestone:
   alpha: "v1.23"
   beta: "v1.27"
-  stable: "v1.28"
+  stable: "v1.32"
 
 feature-gates:
   - name: StatefulSetAutoDeletePVC

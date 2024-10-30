@@ -18,9 +18,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext)
     - [User in ContainerStatus](#user-in-containerstatus)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field)
   - [CRI](#cri)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext)
     - [user in ContainerStatus](#user-in-containerstatus-1)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Deploy a Security Policy to enforce <code>SupplementalGroupsPolicy</code> field](#story-1-deploy-a-security-policy-to-enforce-supplementalgroupspolicy-field)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -29,9 +31,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api-1)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext-1)
     - [User in ContainerStatus](#user-in-containerstatus-2)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1)
   - [CRI](#cri-1)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext-1)
     - [user in ContainerStatus](#user-in-containerstatus-3)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -80,17 +84,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -201,6 +205,30 @@ Note that both policies diverge from the semantics of [`config.User` OCI image c
 
 To provide users/administrators to know which identities are actually attached to the container process, it proposes to introduce new `User` field in `ContainerStatus`. `User` is an object which consists of `Uid`, `Gid`, `SupplementalGroups` fields for linux containers. This will help users to identify unexpected identities. This field is derived by CRI response (See [user in ContainerStatus](#user-in-containerstatus-1) section).
 
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+
+Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), it proposes to add `NodeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field inside of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature or not. The field is populated by CRI response.
+
+```golang
+type NodeStatus struct {
+	// Features describes the set of features implemented by the CRI implementation.
+	Features *NodeFeatures
+}
+type NodeFeatures struct {
+	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+	SupplementalGroupsPolicy *bool
+}
+```
+
+Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But it is not fit to use for this KEP because RRO mounts requires inspecting [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand whether the low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects  [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `NodeFeatures` in `NodeStatus` does not conflict with `RuntimeHandlerFeatures` as we can clearly define how to use them as below:
+
+- `NodeFeatures`(added in this KEP):
+  - focusses on features that depend only on cri implementation, be independent of runtime handlers(low-level container runtimes), (i.e. it should not require to inspect to any information from oci runtime-spec's features).
+- `RuntimeHandlerFeature` (introduced in KEP-3857):
+  -  focuses features that depend on the runtime handlers, (i.e. dependent to the information exposed by oci runtime-spec's features).
+
+See [this section](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1) for details.
+
 ### CRI
 
 #### SupplementalGroupsPolicy in SecurityContext
@@ -231,6 +259,30 @@ message ContainerUser {
   // details in "Design Details" section
 }
 ```
+
+#### features in StatusResponse which contains supplemental_groups_policy field
+
+To propagate whether the runtime supports fine-grained supplemental group control to `NodeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field `features` in `StatusResponse`. 
+
+```proto
+// service RuntimeService {
+// ...
+//     rpc Status(StatusRequest) returns (StatusResponse) {}
+// }
+message StatusResponse {
+...
+    // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
+    RuntimeFeatures features = ?;
+}
+message RuntimeFeatures {
+    // supplemental_groups_policy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+    bool supplemental_groups_policy = 1;
+}
+```
+
+As discussed in [Kubernetes API section](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field), `RuntimeHandlerFeature` introduced in [KEP-3857](https://kep.k8s.io/3857) should focus on features only for ones which requires to inspect [OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). But `RuntimeFeatuers` proposed in this KEP should focus on ones which does NOT require to inepect it.
+
 
 ### User Stories (Optional)
 
@@ -356,6 +408,53 @@ type LinuxContainerUser struct {
 // }
 ```
 
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+
+```golang
+type NodeStatus struct {
+	// Features describes the set of implemented features implemented by the CRI implementation.
+	// +featureGate=SupplementalGroupsPolicy
+	// +optional
+	Features *NodeFeatures
+
+	// The available runtime handlers.
+	// +featureGate=RecursiveReadOnlyMounts
+	// +optional
+	RuntimeHandlers []RuntimeHandlers
+}
+
+// NodeFeatures describes the set of implemented features implemented by the CRI implementation.
+// THE FEATURES CONTAINED IN THE NodeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
+// (I.E. IT SHOULD NOT REQUIRE TO INSPECT TO ANY INFORMATION FROM OCI RUNTIME-SPEC'S FEATURES).
+type NodeFeatures {
+	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+	// +optional
+	SupplementalGroupsPolicy *bool
+}
+
+// NodeRuntimeHandler is a set of runtime handler information.
+type NodeRuntimeHandler struct {
+	// Runtime handler name.
+	// Empty for the default runtime handler.
+	// +optional
+	Name string
+	// Supported features in the runtime handlers.
+	// +optional
+	Features *NodeRuntimeHandlerFeatures
+}
+
+// NodeRuntimeHandlerFeatures is a set of features implementedy by the runtime handler.
+// THE FEATURES CONTAINED IN THE NodeRuntimeHandlerFeatures SHOULD DEPEND ON THE RUNTIME HANDLERS,
+// (I.E. DEPENDENT TO THE INFORMATION EXPOSED BY OCI RUNTIME-SPEC'S FEATURES).
+type NodeRuntimeHandlerFeatures struct {
+	// RecursiveReadOnlyMounts is set to true if the runtime handler supports RecursiveReadOnlyMounts.
+	// +featureGate=RecursiveReadOnlyMounts
+	// +optional
+	RecursiveReadOnlyMounts *bool
+	// Reserved: UserNamespaces *bool
+}
+```
+
 ### CRI
 
 #### SupplementalGroupsPolicy in SecurityContext
@@ -414,6 +513,48 @@ message LinuxContainerUser {
 // }
 ```
 
+#### features in StatusResponse which contains supplemental_groups_policy field
+
+```proto
+// service RuntimeService {
+// ...
+//     rpc Status(StatusRequest) returns (StatusResponse) {}
+// }
+message StatusResponse {
+...
+    // Runtime handlers.
+    repeated RuntimeHandler runtime_handlers = 3;
+
+    // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
+    RuntimeFeatures features = ?;
+}
+
+// RuntimeFeatures describes the set of features implemented by the CRI implementation.
+// THE FEATURES CONTAINED IN THE RuntimeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
+// (I.E. IT SHOULD NOT REQUIRE TO INSPECT TO ANY INFORMATION FROM OCI RUNTIME-SPEC'S FEATURES).
+message RuntimeFeatures {
+    // supplemental_groups_policy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+    bool supplemental_groups_policy = 1;
+}
+
+// message RuntimeHandler {
+//     // Name must be unique in StatusResponse.
+//     // An empty string denotes the default handler.
+//     string name = 1;
+//     // Supported features.
+//     RuntimeHandlerFeatures features = 2;
+// }
+
+// RuntimeHandlerFeatures is a set of features implementedy by the runtime handler.
+// THE FEATURES CONTAINED IN THE RuntimeHandlerFeatures SHOULD DEPEND ON THE RUNTIME HANDLERS,
+// (I.E. DEPENDENT TO THE INFORMATION EXPOSED BY OCI RUNTIME-SPEC'S FEATURES).
+message RuntimeHandlerFeatures {
+    bool recursive_read_only_mounts = 1;
+    bool user_namespaces = 2;
+}
+```
+
 ### Test Plan
 
 <!--
@@ -459,8 +600,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/apis/core/validation`: `<date>(t.b.d.)` - `<test coverage>(t.b.d.)`
-  - validation tests for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User`
+- `k8s.io/kubernetes/pkg/api/pod/util.go`: `2024-08-13` - `68.7%`
+  - It tests `dropDisabledFields` for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User` fields
+  - Note: The test these field values when enabling/disabling this feature.
 
 ##### Integration tests
 
@@ -472,12 +614,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- Kubernetes API
-  - When `SupplementalGroupsPolicy=Strict`, groups of the container process must be ones specified by API: <link to test coverage(t.b.d.)>
-  - When `SupplementalGroupsPolicy=Merge`, groups of the container process contains both groups specified by API and groups of the primary user from the image: <link to test coverage(t.b.d.)>
-  - For running pods, `ContainerStatus.User` contains the correct identities of the containers: <link to test coverage(t.b.d.)>
-- CRI
-  - I will also add symmetrical integration tests to https://github.com/kubernetes-sigs/cri-tools
+See [e2e tests](#e2e-tests) below.
 
 ##### e2e tests
 
@@ -491,9 +628,21 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- When creating a Pod with `SupplementalGroupsPolicy=Strict`, the pods will run with only groups specified by API: <link to test coverage(t.b.d.)>
-- When creating a Pod with `SupplementalGroupsPolicy=Merge`, the pods will run with groups specified by API and groups from the image: <link to test coverage(t.b.d.)>
-- When creating a Pod and it starts, each `ContainerStatus.User` contain the correct identities of the containers: <link to test coverage(t.b.d.)>
+- Kubernetes: <https://github.com/kubernetes/kubernetes/blob/v1.31.0/test/e2e/node/security_context.go>
+  - When creating a Pod with `SupplementalGroupsPolicy=Strict`
+    - the containers in the pod will run with only groups specified by the API, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - When creating a Pod with `SupplementalGroupsPolicy=Merge`
+    - the containers in the pod will run with groups specified by API and groups from the container image, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers, and
+  - When creating a Pod without `SupplementalGroupsPolicy` (equivalent behaviour with `Merge`)
+    - the pod will run with with groups specified by API and groups from the image
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - _Note: above e2e tests will self-skip if the node does not support `SupplementalGroupsPolicyFeature` detected by `Node.Status.Featuers.SupplementalGroupsPolicy` field._
+- critools(critest): <https://github.com/kubernetes-sigs/cri-tools/blob/v1.31.0/pkg/validate/security_context_linux.go>
+  - Symmetric test cases with Kubernetes e2e tests except for the case of _without `SupplementalGroupsPolicy`_ because `SupplementalGroupsPolicy` always has value(default is `Merge`).
+  - _Note: above tests will self-skip if the runtime does not support `SupplementalGroupsPolicyFeature` detected by `StatusResponse.features.supplemental_groups_policy` field._
+
 
 ### Graduation Criteria
 
@@ -621,7 +770,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Planned for Alpha.
+Yes, see [Unit tests](#unit-tests) section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -906,6 +1055,7 @@ Major milestones might include:
 -->
 
 - 2023-02-10: Initial KEP published.
+- v1.31.0(2024-08-13): Alpha
 
 ## Drawbacks
 

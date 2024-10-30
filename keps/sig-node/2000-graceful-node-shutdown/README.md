@@ -268,6 +268,7 @@ variety of methods for example:
    compute instances stop`. Depending on the cloud provider, this may result in
    virtual power button press by the underlying hypervisor.
 
+Note: The use of `shutdown -h now` is dependent on systemd version. This is explored in Github issue [#124039](https://github.com/kubernetes/kubernetes/issues/124039)
 
 Some of these cases will involve the machine receiving an ACPI event to change
 the power state. The machine can go from G0 (working state) to G2 (Soft Off)

@@ -44,15 +44,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -107,16 +107,15 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/controller/cronjob`: `05/22/2023` - `96.2%`
+- `k8s.io/kubernetes/pkg/controller/cronjob`: `09/24/2023` - `71.2%`
 
 ##### Integration tests
 
-- Unit tests will ensure the new annotation is correctly added to jobs.
-- The integration test should ensure the annotation is present when the feature is on and missing when off. It will also verify that the annotation is only added to jobs from newly created CronJobs, not existing workloads.
+- No integration tests are planned for this feature.
 
 ##### e2e tests
 
-E2E tests will not provide any additional coverage that isn't already covered by unit + integration tests, since we are simply adding an annotation, so no e2e tests will be necessary for this change.
+- [CronJob should set the cronjob-scheduled-timestamp annotation](https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/test/e2e/apps/cronjob.go#L264-L287): [test coverage](https://storage.googleapis.com/k8s-triage/index.html?test=.*CronJob%20should%20set%20the%20cronjob-scheduled-timestamp%20annotation.*)
 
 ### Graduation Criteria
 
@@ -125,7 +124,7 @@ The feature will be released directly in Beta state since there is no benefit in
 #### Beta
 
 - Feature implemented behind the `CronJobsScheduledAnnotation` feature gate.
-- Unit and integration tests passing.
+- Unit and e2e tests passing.
 
 #### GA
 
@@ -187,7 +186,20 @@ This change will not impact the rollout or rollback fail. It also will not impac
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-The feature will be tested manually prior to beta launch.
+The following manual upgrade->downgrade->upgrade scenario was performed:
+
+1. Create a v1.27 cluster where the feature is not available, yet.
+2. Create a CronJob and wait for jobs to be created. Verify the newly created job
+   does NOT have the `batch.kubernetes.io/cronjob-scheduled-timestamp` annotation.
+3. Upgrade cluster to v1.28, where the feature was available as beta, iow.
+   on by default. Verify the newly created job from a CronJob created in 2nd step
+   has the `batch.kubernetes.io/cronjob-scheduled-timestamp` annotation with
+   planned time, when a job was to be created.
+4. Downgrade cluster to v1.27, where the feature was NOT available. Verify the
+   newly created job from a CronJob created in 2nd step does NOT have the
+   `batch.kubernetes.io/cronjob-scheduled-timestamp` annotation.
+
+During the tests no problems were identified with cronjobs or jobs.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -273,9 +285,14 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- 2023-06-06: KEP published
+The new annotation shouldn't cause any unforeseen issues with the cronjob controller.
+In the event of issues with meeting SLOs, cluster admins are advised to consult
+[troubleshooting overview document](https://kubernetes.io/docs/tasks/debug/).
 
 ## Implementation History
+
+- 2023-06-06: KEP published
+- 2024-09-24: KEP updated for stable promotion
 
 ## Drawbacks
 
@@ -288,3 +305,5 @@ N/A
   - The object already has the `CreationTimestamp` field, but it will get overridden with the time the CronJob will start. The point of the new annotation is to pass the original/expected scheduled timestamp information.
 
 ## Infrastructure Needed (Optional)
+
+N/A

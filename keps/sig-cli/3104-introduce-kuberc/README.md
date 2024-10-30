@@ -139,13 +139,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -179,7 +179,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This proposal introduces an optional `kuberc` file that is used to separate cluster credentials and server configuration from user preferences. 
+This proposal introduces an optional `kuberc` file that is used to separate cluster credentials and server configuration from user preferences.
 
 ## Motivation
 
@@ -191,9 +191,11 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-kubectl is one of the oldest parts of the Kubernetes project and has a strong guarantee on backwards compatibility. We want users to be able to opt in to new behaviors (like delete confirmation) that may be considered breaking changes for existing CI jobs and scripts. 
+kubectl is one of the oldest parts of the Kubernetes project and has a strong guarantee on backwards compatibility. We want users to be able to opt in to new behaviors (like delete confirmation) that may be considered breaking changes for existing CI jobs and scripts.
 
-[kubeconfigs already have a field for preferences](https://github.com/kubernetes/kubernetes/blob/474fd40e38bc4e7f968f7f6dbb741b7783b0740b/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L43) that is currently underutilized. The reason for not using this existing field is that creating a new cluster generally yields a new kubeconfig file which contains credentials and host information. While kubeconfigs can be merged and specified by path, we feel there should be a clear separation between server configuration and user preferences.
+[kubeconfig already has a field for preferences](https://github.com/kubernetes/kubernetes/blob/474fd40e38bc4e7f968f7f6dbb741b7783b0740b/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L43) that is currently underutilized. The reason for not using this existing field is that creating a new cluster generally yields a new kubeconfig file which contains credentials and host information. While kubeconfigs can be merged and specified by path, we feel there should be a clear separation between server configuration and user preferences.
+
+Additionally, users can split kubeconfig files into various locations, while maintaining a single preference file that will apply no matter which `--kubeconfig` flag or `$KUBECONFIG` env var is pointing to.
 
 ### Goals
 
@@ -303,42 +305,43 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-During alpha this feature will be enabled through the `ENABLE_KUBERC=true` environment variable. The file will default to being located in `~/.kube/kuberc`. A flag will allow overriding this default location with a path i.e. `kubectl --kuberc /var/kube/rc`.
+During alpha this feature will be enabled through the `KUBECTL_KUBERC=true` environment variable. The file will default to being located in `~/.kube/kuberc`. A flag will allow overriding this default location with a path i.e. `kubectl --kuberc /var/kube/rc`.
 
 Three initial top level keys are proposed.
 
 * `apiVersion` to determine the version of the config.
 * `kind` to keep consistency with Kubernetes resources.
-* `command`
-  * `aliases` for users to declare their own aliases for commands with flags and values.
-  * `overrides` for users to set default flags to apply to commands.
+* `aliases` for users to declare their own aliases for commands with flags and values.
+* `overrides` for users to set default flags to apply to commands.
 
-`command.aliases` will not be allowed to override builtins but take precedence of plugins i.e. builtins -> aliases -> plugins. Additional flags and values will be appended to the end of the aliased command. It is the responsibility of the user to define aliases with this in mind.
+`aliases` will not be allowed to override builtins but take precedence of plugins i.e. builtins -> aliases -> plugins. Additional flags and values will be appended to the end of the aliased command. It is the responsibility of the user to define aliases with this in mind.
 
-`command.overrides` is modeled after all configurable behavior being implemented as flags first. This is a design decision that was made after modeling out the intended behavior and realizing that targeting flags filled the use cases. A merge will be done in the execution of the command for flags with inline overrides taking precedence.
+`overrides` is modeled after all configurable behavior being implemented as flags first. This is a design decision that was made after modeling out the intended behavior and realizing that targeting flags filled the use cases. A merge will be done in the execution of the command for flags with inline overrides taking precedence.
 
 ```
-apiVersion: v1alpha1
-kind: Preferences
+apiVersion: kubectl.config.k8s.io/v1alpha1
+kind: Preference
 
-command:
-  aliases:
-    - alias: getdbprod
-      command: get pods -l what=database --namespace us-2-production
-      
-  overrides:
-    - command: apply
-      flags:
-        - name: server-side
-          default: "true"
-    - command: delete
-      flags:
-        - name: confirm
-          default: "true"
-    - command: "*"
-      flags:
-        - name: exec-auth-allowlist
-          default: /var/kubectl/exec/...
+aliases:
+  - name: getdbprod
+    command: get
+    prependArgs:
+    - pods
+    flags:
+    - name: labels
+      default: what=database
+    - name: namespace
+      default: us-2-production
+
+overrides:
+  - command: apply
+    flags:
+      - name: server-side
+        default: "true"
+  - command: delete
+    flags:
+      - name: interactive
+        default: "true"
 
 ```
 
@@ -387,9 +390,15 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
--->
 
 - `<package>`: `<date>` - `<test coverage>`
+
+-->
+
+We're planning unit tests covering:
+- basic functionality
+- config API fuzzy tests
+- input validation and correctness
 
 ##### Integration tests
 
@@ -399,9 +408,14 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
--->
 
 - <test>: <link to test coverage>
+
+-->
+
+We're planning at least the following integration tests:
+- `KUBECTL_KUBERC` enablement and disablement
+- basic functionality
 
 ##### e2e tests
 
@@ -483,7 +497,7 @@ in back-to-back releases.
 
 #### Alpha
 
-- Initial implementation behind environment variable.
+- Initial implementation behind `KUBECTL_KUBERC` environment variable.
 
 #### Beta
 
@@ -492,7 +506,7 @@ in back-to-back releases.
 
 #### GA
 
-- Allowing time for feedback.
+- Address feedback.
 
 
 ### Upgrade / Downgrade Strategy
@@ -572,7 +586,7 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: The environment variable `ENABLE_KUBERC=true`. 
+  - Describe the mechanism: The environment variable `KUBECTL_KUBERC=true`.
   - Will enabling / disabling the feature require downtime of the control
     plane? No.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -701,10 +715,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [x] Other (treat as last resort)
   - Details: The command will be logged with kubectl -v 2
 
@@ -739,7 +753,7 @@ Pick one more of these and delete the rest.
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
-  - 
+  -
 Not applicable.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -862,6 +876,20 @@ This through this both in small and large cases, again with respect to the
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -909,6 +937,7 @@ Major milestones might include:
 
 * 2021-06-02: [Proposal to add delete confirmation](https://github.com/kubernetes/enhancements/issues/2775)
 * 2022-06-13: This KEP created.
+* 2024-06-07: Update KEP with new env var name and template.
 
 ## Drawbacks
 

@@ -25,6 +25,9 @@
   - [4. Add new CSI API ControllerModifyVolume, when there is a change of VolumeAttributesClass in PVC, external-resizer triggers a ControllerModifyVolume operation against a CSI endpoint. A Controller Plugin MUST implement this RPC call if it has MODIFY_VOLUME capability.](#4-add-new-csi-api-controllermodifyvolume-when-there-is-a-change-of-volumeattributesclass-in-pvc-external-resizer-triggers-a-controllermodifyvolume-operation-against-a-csi-endpoint-a-controller-plugin-must-implement-this-rpc-call-if-it-has-modify_volume-capability)
   - [5. Add new operation metrics for ModifyVolume operations](#5-add-new-operation-metrics-for-modifyvolume-operations)
 - [Design Details](#design-details)
+    - [Binding of PV and PVC](#binding-of-pv-and-pvc)
+      - [Find a PV matching the PVC](#find-a-pv-matching-the-pvc)
+      - [Perform the binding](#perform-the-binding)
     - [VolumeAttributesClass Deletion Protection](#volumeattributesclass-deletion-protection)
     - [Create VolumeAttributesClass](#create-volumeattributesclass)
     - [Delete VolumeAttributesClass](#delete-volumeattributesclass)
@@ -89,8 +92,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
     - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -239,6 +242,8 @@ The CSI create request will be extended to add mutable parameters. A new Control
 
 A default VolumeAttributesClass can be specified for the Kubernetes cluster. This default VolumeAttributesClass is then used to dynamically provision storage for PersistentVolumeClaims that do not require any specific VolumeAttributesClass. A cluster admin can use annotation to manage default VolumeAttributesClass. The default VolumeAttributesClass has an annotation volumeattributesclass.kubernetes.io/is-default-class set to true. Any other value or absence of the annotation is interpreted as false. 
 
+Note: For Kubernetes versions ≤ v1.31, the VolumeAttributesClass feature does not support a default VolumeAttributesClass. This is because there is already a natural default for VolumeAttributesClass: no VolumeAttributesClass associated with the PersistentVolumeClaim. Furthermore, with a default, there would be added overhead for cluster operators in making sure a cluster's default StorageClass and default VolumeAttributesClass are compatible. Use-cases and support for Default VolumeAttributesClass will be re-evaluated during this feature's beta in Kubernetes v1.31.
+
 #### Pre-provisioned Volume
 
 The cluster admin has created a group of PVs with VolumeAttributesClass and an end user is binding PVCs to pre-provisioned PVs. The PVCs will honor the VolumeAttributesClass. It is up to the cluster admin to make sure the parameters in the PVs matching the parameters in the VolumeAttributesClass. This behavior is similar to StorageClass.
@@ -385,6 +390,8 @@ spec:
   ...
 ```
 
+Note: These Administrator Quota Restrictions are not available for Kubernetes versions ≤ v1.31, due to a [bug](https://github.com/kubernetes/kubernetes/issues/124436) in the implementation of the `scopeSelector` feature. Because there is no default quota, we will be able to add quota support in a future version of Kubernetes without breaking existing workloads.
+
 ### Notes/Constraints/Caveats (Optional)
 
 The parameters in VolumeAttributesClass are opaque and immutable. This gives different cloud providers flexibility but at the same time it is up to the specific driver to verify the values set in the parameters. The parameters from VolumeAttributesClass associated with a volume are mutable because they are coming from different VolumeAttributesClasses.
@@ -414,70 +421,146 @@ Please see session "Kubernetes API" above.
 
 ### 5. Add new operation metrics for ModifyVolume operations
 
-Usage metrics:
+A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [existing PV Collector metrics](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98). 
 
-Count of pvcs per VolumeAttributesClass similar to [StorageClass](https://github.com/kubernetes/kubernetes/blob/666fc23fe4d6c84b1dde2b8d4ebf75fce466d338/pkg/controller/volume/persistentvolume/metrics/metrics.go#L98).
+Prior to this enhancement, we loop through all PVCs, check if `pvc.Status.Phase == v1.VolumeBound` and increment the relevant metric only on `namespace` dimension. When the feature flag is enabled, new metrics will take into account `namespace`, `storage_class`, and `volume_attribute_class`. 
+
+With these additional labels, cluster operators can alarm on these new metrics to detect PVCs that are not able to bind. With the additional StorageClass and VolumeAttributesClass name labels, cluster operators can more easily check whether VolumeAttributeClass or StorageClass object misconfiguration is the cause of these binding issues.
 
 ```
-boundPVCCountDesc = metrics.NewDesc(
-	metrics.BuildFQName("", pvControllerSubsystem, boundPVCKey),
-	"Gauge measuring number of persistent volume claim currently bound",
-	[]string{vacLabel}, nil,
+boundPVCCountWithVACDesc = metrics.NewDesc(
+	metrics.BuildFQName("", pvControllerSubsystem, boundPVCWithVACKey),
+	"Gauge measuring number of persistent volume claims currently bound",
+	[]string{namespaceLabel, storageClassLabel, volumeAttributesClassLabel}, nil,
 	metrics.ALPHA, "")
-unboundPVCCountDesc = metrics.NewDesc(
-	metrics.BuildFQName("", pvControllerSubsystem, unboundPVCKey),
-	"Gauge measuring number of persistent volume claim currently unbound",
-	[]string{vacLabel}, nil,
+unboundPVCCountWithVACDesc = metrics.NewDesc(
+	metrics.BuildFQName("", pvControllerSubsystem, unboundPVCWithVACKey),
+	"Gauge measuring number of persistent volume claims currently unbound",
+	[]string{namespaceLabel, storageClassLabel, volumeAttributesClassLabel}, nil,
 	metrics.ALPHA, "")
 ```
 
-Operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernetes-csi/csi-lib-utils/blob/597d128ce3a24d9e3fd5ff5b8d1ff4fd862e543a/metrics/metrics.go#LL250C6-L250C32) for the ModifyVolume operation.
+B. Operation metrics for ControllerModifyVolume 
+
+The metrics `controller_modify_volume_total` `controller_modify_volume_errors_total` can be used to issues in volume modification.
+
+There are operation metrics from [csiOperationsLatencyMetric](https://github.com/kubernetes-csi/csi-lib-utils/blob/597d128ce3a24d9e3fd5ff5b8d1ff4fd862e543a/metrics/metrics.go#LL250C6-L250C32) for the ModifyVolume operation to report latencies.
+
+Finally, CSI Driver Plugin maintainers can expose their own metrics.  
 
 ## Design Details
 
+#### Binding of PV and PVC
+
+Creating the bidirectional binding between a PV and PVC is delicate, because
+there is no transaction support in the kubernetes API to do the whole thing
+atomically. Binding with volume attributes adds to this process but does not
+fundamentally change the 4 steps performed. To support the VolumeAttributesClass
+the binding process will become the following.
+
+A key assumption is that the PVC needs to be immutable until binding is
+complete. This is to avoid race conditions that could, among other things,
+violate quota. For example, suppose there are two VACs, `fast` and `slow`. The
+latter is cheap and unrestricted, but `fast` has limited quota requirements. It
+is not possible to downgrade `fast` to `slow`. If
+VAC could be changed before binding is complete, a user could create a PVC with
+`fast` and change it to `slow` during the binding process. This race with
+binding could end up with a `fast` PV bound to the PVC with a `slow` VAC;
+because it is not possible to downgrade the PV will remain `fast`. But since VAC
+quota only looks at the PVC's VAC, the user is now able to create additional
+`fast` volumes beyond their quota.
+
+An alternative of requiring VAC to match at all steps of binding means that if
+the VAC is changed by mistake, a PVC and PV could be incompletely bound (for
+example, succeed steps 1-3 below but fail at step 4). There is no way to undo
+binding, so even if the PV is deleted the PV would be unavailable until the
+cluster administrator manually intervenes.
+
+##### Find a PV matching the PVC
+
+In the matching process, a PVC is only matched with a PV if their VACs match:
+they are the same class, or are both unspecified. Either a nil or an empty VAC
+is considered unspecified, so for example a PVC with a nil VAC **can** match
+with a PV whose VAC is the empty string.
+
+The matching process then become the following.
+
+If the PVC is pre-bound to a PV, check if node affinity is satisfied, and the
+PVC VAC matches the PV VAC. If so select it, otherwise no PV is selected.
+
+Otherwise, iterate through all unbound PVs. Check if the storage class and
+volume attributes class of the PV matches the PVC, and the capacity is equal to
+or greater than that requested by the PVC. If so, add it to the list of
+candidates. After all unbound PVs have been examined, select the candidate with
+the smallest capacity.
+
+##### Perform the binding
+
+1. Bind the PV to the PVC by updating `pv.Spec.ClaimRef` to point to the PVC.
+1. Update the PV volume phase to Bound.
+1. Bind the PVC to the PV by updating `pvc.Spec.VolumeName` to point to the PV.
+1. Update the PVC claim status, including current volume attributes class, phase
+and capacity.
+
+The changes from when there was no VolumeAttributesClass are:
+* Change the matching algorithm to be aware of volume attributes.
+* Change the last step in binding to update the PVC status indicating the
+  current volume attributes.
+  
+Otherwise the algorithm is unchanged.
+
+As discussed above, this assumes the PVC VAC is immutable until it is bound to a
+PVC. If a PVC cannot be bound due to an otherwise matching PV having the wrong
+VAC, the PVC must be deleted and re-created.
+
 #### VolumeAttributesClass Deletion Protection
 
-While a VolumeAttributesClass is referenced by any PVC, we will prevent the object from being deleted by adding a finalizer([reference](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/admission/storage/storageobjectinuseprotection/admission.go)). 
+While a VolumeAttributesClass is referenced by any PVC, we will prevent the object from being deleted by adding a finalizer `kubernetes.io/vac-protection`. It's a best effort to prevent users from making mistakes. It may not be accurate in all cases.
 
-The VACObjectInUseProtection admission controller sets the finalizer on all VolumeAttributesClasses. VACProtectionController removes the finalizer when it's not referenced. This prevents users from deleting a VolumeAttributesClass that's used by a PVC.
+The **vac_finalizer_controller** sets/removes the finalizer on all VolumeAttributesClasses. It has PVC/PV informers with a custom indexer which is used to list all PVCs/PVs for a given VolumeAttributesClass name. 
 
-There are a few conditions that will trigger add/remove pvc finalizers in the VolumeAttributesClass:
-
+There are a few conditions that will trigger add/remove the finalizer in the VolumeAttributesClass:
 
 1. PVC created with a VolumeAttributesClass
-
-    The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PVC will enter the INPROGRESS state because we do not want to impose ordering on object creation
+    The **vac_finalizer_controller**:
+    * If the VolumeAttributesClassName is nil or empty, do nothing.
+    * Check if the VolumeAttributesClass exists. If not, do nothing.
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none 
-2. PVC created with a VolumeAttributesClass being deleted
-    The **VACObjectInUseProtection admission controller**:
-    * Check VolumeAttributesClass is being deleted and PVC creation failed
-3. PVC updated to a different VolumeAttributesClass
-    * The **VACProtectionController** will remove PVC finalizer in previous VolumeAttributesClass if after listing all the PVCs and confirmed that this PVC is the last one that is consuming the previous VolumeAttributesClass
-
-    The **VACObjectInUseProtection admission controller**:
+2. PVC updated to a different VolumeAttributesClass
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs from informers via a custom indexer and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the vac_finalizer_controller cache
     * Check if the new VolumeAttributesClass already has a protection finalizer
-    * Add the finalizer to the new VolumeAttributesClass if there is none 
-4. PVC updated to a different VolumeAttributesClass that is being deleted
-    The **VACObjectInUseProtection admission controller**:
-    * Check VolumeAttributesClass is being deleted and PVC update failed
-5. PVC has a VolumeAttributesClass and this PVC is deleted
-    * The **VACProtectionController** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs and confirm that this PVC is the last one that is consuming the VolumeAttributesClass
-6. Delete a VolumeAttributesClass while there is **kubernetes.io/vac-protection** finalizer associated with this VolumeAttributesClass
-    * Deletion will not return an error but it will add a deletionTimestamp and wait for the finalizer being removed, then remove the VolumeAttributesClass
-7. Delete a VolumeAttributesClass without any finalizers
-    * Deletion succeed
+    * Add the finalizer to the new VolumeAttributesClass if there is nones
+3. PVC has a VolumeAttributesClass and this PVC is deleted
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs from informers via a custom indexer and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the informer(a cache of VolumeAttributesClass) **only**
+4. Delete a VolumeAttributesClass while there is **kubernetes.io/vac-protection** finalizer associated with this VolumeAttributesClass
+    * Remove the finalizer only if there is no PVC/PV using this VolumeAttributesClass anymore. The check logic is the same as above.
 
-For unbound PVs referencing a VAC:
+For PVs referencing a VAC:
 
 1. Unbound PV created with a VolumeAttributesClass
-    The **VACObjectInUseProtection admission controller**:
-    * Check if the VolumeAttributesClass exists. If not, the PV will enter the INPROGRESS state because we do not want to impose ordering on object creation
+    The **vac_finalizer_controller**:
+    * If the VolumeAttributesClassName is nil or empty, do nothing
     * Check if this VolumeAttributesClass already has a protection finalizer
     * Add the finalizer to the VolumeAttributesClass if there is none
 2. PV has a VolumeAttributesClass and this PV is deleted
-    * The **VACProtectionController** will remove finalizer in the VolumeAttributesClass only if after listing all the PVs and confirm that this PV is the last one that is consuming the VolumeAttributesClass
+    * The **vac_finalizer_controller** will remove finalizer in the VolumeAttributesClass only if after listing all the PVCs/PVs from informers via a custom indexer and confirm that this PVC/PV is the last one that is consuming the VolumeAttributesClass in the informer(a cache of VolumeAttributesClass) **only**
+
+Only the **vac_finalizer_controller** will remove finalizers on VolumeAttributesClass. If the **vac_finalizer_controller** fails at the step of removing finalizer even there is no PVC/PV using the VolumeAttributesClass anymore, the **vac_finalizer_controller** should retry it in next reconcile loop.
+
+The vac_finalizer_controller will use only informers and therefore it may remove the finalizer too early. One scenario is:
+
+1. There is a VolumeAttributesClass that is not used by any PVC. This VolumeAttributesClass is synced to all informers (external-provisioner, external-resizer, KCM)
+2. At the same time:
+  * User creates a PVC that uses this VolumeAttributesClass
+  * Another user deletes the VolumeAttributesClass
+3. VolumeAttributesClass deletion event with DeletionTimestamp reaches vac_finalizer_controller. Because the PVC creation event has not yet reached KCM informers, the controller lets the VolumeAttributesClass to be deleted by removing the finalizer. PVC creation event reaches the external-provisioner, before VolumeAttributesClass update. The external-provisioner will try to provision a new volume using the VolumeAttributesClass that will get deleted soon.
+  * If the external-provisioner gets the VolumeAttributesClass before deletion in the informer, the provisioning will succeed
+  * Otherwise the external-prosivioner will fail the provisioning
+
+Solving this scenario properly requires to Get/List requests to the API server, which will cause performance issue in larger cluster similar to the existing PVC protection controller - [related issue](https://github.com/kubernetes/kubernetes/issues/109282).
+
+Since finalizer is more of a best effort instead of accuracy to prevent users making mistakes. The cluster admin can still force add/delete finalizers to the VAC when needed.
 
 #### Create VolumeAttributesClass
 
@@ -554,7 +637,15 @@ Deleting a PVC will trigger a list PVCs call and decide if we need to remove the
 
 ![VolumeAttributesClass Update Flow](./VolumeAttributesClass-Flow.png)
 
-Since VolumeAttributesClass is **immutable**, to update the parameters, the end user can modify the PVC object to set a different VolumeAttributesClass. If the existing VolumeAttributesClass cannot satisfy the end user’s use case, the end user needs to contact the cluster administrator to create a new VolumeAttributesClass.
+Since VolumeAttributesClass is **immutable**, to update the parameters, the end
+user can modify the PVC object to set a different VolumeAttributesClass. If the
+existing VolumeAttributesClass cannot satisfy the end user’s use case, the end
+user needs to contact the cluster administrator to create a new
+VolumeAttributesClass. The VAC cannot be changed until the PVC is bound to a PV
+(see [binding](#binding-of-pv-and-pvc), above). This is enforced in API
+validation in the same way as storage capacity, see
+[ValidatePersistentVolumeClaimUpdate](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/validation/validation.go#L2389).
+
 
 **Watching changes in the PVC object**, if the PVC’s VolumeAttributesClass changes, it will trigger a ModifyVolume call.
 
@@ -624,6 +715,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - The behavior with feature gate and API turned on/off and mix match
 - The happy path with creating and modifying volume successfully with VolumeAttributesClass
+  - [E2E CSI Test PR](https://github.com/kubernetes/kubernetes/pull/124151/)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=storage&test=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+  - [Testgrid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
 
 ##### e2e tests
 
@@ -645,10 +739,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Give a driver that does not ControllerModifyVolume, CSI volume should not be modified.
 - If ControllerModifyVolume fails, PVC should have appropriate events.
 
+[API Conformance Test PR](https://github.com/kubernetes/kubernetes/pull/121849)
+
 ##### Stress tests
 
-- VAC protection controller with large(define large later) lists of PVCs
-- Creating a large(define large later) amount of PVCs using the same VolumeAttributesClass
+- VAC protection controller with large lists of PVCs (2000)
+- Creating a large amount of PVCs (2000) using the same VolumeAttributesClass
 
 ### Graduation Criteria
 
@@ -663,13 +759,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Beta in 1.30: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc.
+- Beta in 1.31: Since this feature is an extension of the external-resizer/external-provisioner usage flow, we are going to move this to beta with enhanced e2e and test coverage. Test cases are covered in sessions above: ``e2e tests``, ``Integration tests`` etc. Controllers will handle VolumeAttributesClass feature gates being on by default, but beta API itself being disabled on cluster by default. 
 - Involve 3 different CSI drivers to participate in testing
 - Stress test before GA
 
 #### GA
 
-- GA in 1.31, all major issues in the issue board should be fixed before GA.
+- GA in 1.3x, all major issues in the issue board should be fixed before GA.
 - No users complaining about the new behavior
 
 ### Upgrade / Downgrade Strategy
@@ -742,7 +838,7 @@ A metric `controller_modify_volume_errors_total` will indicate a problem with th
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade and rollback will be tested when the feature gate will change to beta.
+TODO Upgrade and rollback will be tested when the feature gate will change to beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -759,7 +855,7 @@ count of successful and failed ControllerModifyVolume.
 
 By inspecting a `controller_modify_volume_total` metric value. If the counter
 is increasing while letting PVCs being updated retroactively the feature is enabled. And at the same time if
-`controller_modify_volume_total` counter does not increase the feature
+`controller_modify_volume_errors_total` counter does not increase the feature
 works as expected.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -779,9 +875,12 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- Ratio of `controller_modify_volume_errors_total`/`controller_modify_volume_total` <= 1%. (Exclude errors with `UNAVAILABLE` code which indicate some quota has been exhausted.) 
+- CreateVolume `csi_sidecar_operations_seconds_sum` does not increase by more than 5% when feature flags are enabled. 
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [X] Metrics
     - Metric name: `controller_modify_volume_total` and `controller_modify_volume_errors_total`
     - [Optional] Aggregation method:
     - Components exposing the metric: external-resizer
@@ -792,6 +891,7 @@ question.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No.
 
 ### Dependencies
 
@@ -801,7 +901,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-external-provisioner, external-resizer.
+external-provisioner, external-resizer. 
 
 ### Scalability
 
@@ -844,6 +944,11 @@ Yes, the feature may impact CreateVolume. We will measure this impact during bet
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+Using this feature may result in non-negligible increase of resource usage IF customers batch modify many volumes at once and CSI Controller Pod has high API Priority.
+- external-resizer CPU and memory will see a non-negligible increase if users increased the number of concurrent operations via the `--workers` flag. We follow the strategy of sharing that limit between `ControllerExpandVolume` and `ControllerModifyVolume` RPCs, similar to how external-provisioner functions. 
+- The API-Server may see a spike of CPU when processing relevant changes.
+
+Stress tests will determine increase in resource usage at varying amounts of concurrent volume modifications. 
 
 ### Troubleshooting
 
@@ -860,6 +965,15 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No change from today's volume provisioning workflow if API Server / etcd are unavailable.
+
+If API server and/or etcd is unavailable, there are two scenarios for volume modification workflow
+
+1. External-resizer detects volume needing modification before API Server is made unavailable. Calls ControllerModifyVolume. Cloud provider will modify volume, report success to external resizer. External-resizer will be unable to update PVC object until API Server back online. Error will be logged. 
+
+2. External-resizer does NOT detect volume needing modification before API Server is made unavailable. Volume modification will not take place until API Server back online. 
+
+In both cases the PVC has not been updated to reflect new VolumeAttributesClass until API Server back online. 
 
 ###### What are other known failure modes?
 
@@ -875,10 +989,22 @@ For each of them, fill in the following information by copying the below templat
       levels that could help debug the issue?
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
+    -->
 -->
+- ControllerModifyVolume cannot modify volume to reflect new VolumeAttributesClass due to user misconfiguration or cloudprovider backend error/limits. Volume would fall back to workable default configuration but external-resizer will requeue with longer `Infeasible` interval. 
+    - Detection: See event on PVC object. See increase in `controller_modify_volume_errors_total`
+    - Mitigations: No serious mitigation needed because volume would fall back to previous configuration. Can edit PVC to previous VolumeAttributesClass to prevent retry ControllerModifyVolume calls. 
+    - Diagnostics: 
+        - Events on PVC which include the associated [ControllerModifyVolume error](https://github.com/container-storage-interface/spec/blob/master/spec.md#controllermodifyvolume-errors) and message
+        - external-resizer container logs: Logs similar to "ModifyVolume failed..." (At Log Levels 2&3)
+    - Testing: Are there any tests for failure mode? If not, describe why.
+        - There are tests to that validate appropriate events/errors propagate.
+    - Note: See [Modify Design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/3751-volume-attributes-class#modify-pvc) to see flow. 
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+When SLOs are not being met, PVC events should be observed. Debug level logging should be enabled on the appropriate containers (external-resizer for volume modifications, external-provisioner for volume creations, relevant CSI Driver plugin). If problem is not determined from PVC events, operator must look at debug logs to narrow problem to CSI Driver plugin or external sidecars. It may be helpful to see if volume was modified on storage backend. If problem is in CSI Driver plugin, must reach out to CSI Driver maintainers. Storage admin can requested for help finding root cause. 
 
 ## Implementation History
 
@@ -892,6 +1018,16 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 2023-06-15 SIG Acceptance of KEP and Agreement on proposed Volume Attributes Class design ([link](https://github.com/kubernetes/enhancements/commit/8929cf618f056e447d0b2bed562af3fc134c8cbb))
+- 2023-06-26 Original demo of VolumeAttributesClass proof-of-concept
+- 2023-10-31 VolumeAttributesClass API changes merged in kubernetes/kubernetes
+- 2023-10-26 Implementation merged in kubernetes-csi/external-provisioner
+- 2023-11-09 Implementation merged in kubernetes-csi/external-resizer
+- First available release: Alpha in Kubernetes 1.29
+
+Implementations in CSI Drivers:
+- [AWS EBS CSI Driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/a402256d03ab3008f642e70253acb4b41d674af0/pkg/driver/controller.go#L581)
+
 
 ## Drawbacks
 

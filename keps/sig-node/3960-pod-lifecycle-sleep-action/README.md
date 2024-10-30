@@ -47,8 +47,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
@@ -289,6 +289,7 @@ Tests List
 
 - No negative feedback
 - No bug issues reported
+- [e2e tests](https://github.com/kubernetes/kubernetes/blob/94df29b8f278503c3b332280132202096e247128/test/e2e/common/node/lifecycle_hook.go#L550) are promoted to conformance
 
 ### Upgrade / Downgrade Strategy
 
@@ -345,7 +346,7 @@ The change is opt-in, it doesn't impact already running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-Metric `sleep_action_terminated_early_total` will be added in beta. 
+Users have to check Metric `sleep_action_terminated_early_total`.
 If it increases unreasonably, then user should check if something goes wrong and may need a rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -454,11 +455,12 @@ Disable PodLifecycleSleepAction feature gate, and restart related components.
 
 - 2023-04-22: Initial draft KEP
 - 2023-12-20: Target to beta in v1.30 
-
+- 2024-09-21: Target to stable in v1.32
+  
 ## Drawbacks
 
 N/A
 
 ## Alternatives
 
-Another way to run `sleep` in a container is to use `exec` command in `preStop hook` like `command: ["/bin/sh","-c","sleep 20"]`. However this requires a sleep binariy in the image. We should offer sleep as a first-class thing.
+Another way to run `sleep` in a container is to use `exec` command in `preStop hook` like `command: ["/bin/sh","-c","sleep 20"]`. However, this requires a sleep binary in the image. We should offer sleep as a first-class thing.

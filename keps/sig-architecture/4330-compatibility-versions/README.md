@@ -879,6 +879,8 @@ We intend to have this up and running for Beta
 - Compatibility version support for N-3 minor versions
 - Clients send version number and servers report out-of-allowance skew to a metric
   (Leveraging work from KEP-4355 if possible)
+- All existing features migrated to versioned feature gate - [kubernetes #125031](https://github.com/kubernetes/kubernetes/issues/125031)
+- Verification machinery added - [kubernetes #125032](https://github.com/kubernetes/kubernetes/issues/125032) 
 
 <!--
 **Note:** *Not required until targeted at a release.*

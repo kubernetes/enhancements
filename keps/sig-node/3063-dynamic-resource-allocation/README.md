@@ -79,10 +79,10 @@ SIG Architecture for cross-cutting KEPs).
     - [Combined setup of different hardware functions](#combined-setup-of-different-hardware-functions)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
 - [Design Details](#design-details)
-  - [ResourceClass extension](#resourceclass-extension)
   - [ResourceClaim extension](#resourceclaim-extension)
   - [ResourceClaimStatus extension](#resourceclaimstatus-extension)
-  - [ResourceHandle extensions](#resourcehandle-extensions)
+  - [DeviceClass extensions](#deviceclass-extensions)
+  - [Custom parameters and results](#custom-parameters-and-results)
   - [PodSchedulingContext](#podschedulingcontext)
   - [Coordinating resource allocation through the scheduler](#coordinating-resource-allocation-through-the-scheduler)
   - [Resource allocation and usage flow](#resource-allocation-and-usage-flow)
@@ -155,6 +155,14 @@ Originally, this KEP introduced DRA in Kubernetes 1.26 and the ["structured
 parameters" KEP](../4381-dra-structured-parameters/README.md) added an
 extension. Now the roles are reversed: #4381 defines the base functionality
 and this KEP is an optional extension.
+
+In Kubernetes 1.32, this KEP has been **withdrawn** and all code related to it
+gets removed. #4381 continues. The main objections against this KEP that
+led to this decision were:
+- Lack of support for cluster autoscaling because a cluster autoscaler cannot
+  reason about resource availability when adding or removing nodes.
+- Complex back-and-forth through the apiserver while scheduler and DRA
+  drivers negotiate how to allocate a ResourceClaim.
 
 With #4381, DRA drivers are limited by what the structured parameter model(s)
 defined by Kubernetes support. New requirements for future hardware may depend
@@ -247,110 +255,29 @@ so this is not a major concern.
 
 ## Design Details
 
-### ResourceClass extension
+### ResourceClaim extension
 
-An optional field in ResourceClass enables using the DRA driver's control
-plane controller:
+When allocation through a DRA driver is required, users have to ask for it by
+specifying the name of the driver which should handle the allocation.
 
-```go
-type ResourceClass struct {
+```
+type ResourceClaimSpec struct {
     ...
 
-    // ControllerName defines the name of the dynamic resource driver that is
-    // used for allocation of a ResourceClaim that uses this class. If empty,
-    // structured parameters are used for allocating claims using this class.
+    // ControllerName defines the name of the DRA driver that is meant
+    // to handle allocation of this claim. If empty, allocation is handled
+    // by the scheduler while scheduling a pod.
     //
-    // Resource drivers have a unique name in forward domain order
-    // (acme.example.com).
+    // Must be a DNS subdomain and should end with a DNS domain owned by the
+    // vendor of the driver.
     //
     // This is an alpha field and requires enabling the DRAControlPlaneController
     // feature gate.
     //
     // +optional
     ControllerName string
-}
-```
 
-### ResourceClaim extension
-
-With structured parameters, allocation always happens only when a pod needs a
-ResourceClaim ("delayed allocation"). With allocation through the driver, it
-may also make sense to allocate a ResourceClaim as soon as it gets created
-("immediate allocation").
-
-Immediate allocation is useful when allocating a resource is expensive (for
-example, programming an FPGA) and the resource therefore is meant to be used by
-multiple different Pods, either in parallel or one after the other. Another use
-case is managing resource allocation in a third-party component which fully
-understands optimal placement of everything that needs to run on a certain
-cluster.
-
-The downside is that Pod resource requirements cannot be considered when choosing
-where to allocate. If a resource was allocated so that it is only available on
-one node and the Pod cannot run there because other resources like RAM or CPU
-are exhausted on that node, then the Pod cannot run elsewhere. The same applies
-to resources that are available on a certain subset of the nodes and those
-nodes are busy.
-
-Different lifecycles of a ResourceClaim can be combined with different allocation modes
-arbitrarily. Some combinations are more useful than others:
-
-```
-+-----------+----------------------------------------------------------------------+
-|           |                             allocation mode                          |
-| lifecycle |             immediate              |   delayed                       |
-+-----------+------------------------------------+---------------------------------+
-| regular   | starts the potentially             | avoids wasting resources        |
-| claim     | slow allocation as soon            | while they are not needed yet   |
-|           | as possible                        |                                 |
-+-----------+------------------------------------+---------------------------------+
-| claim     | same benefit as above,             | resource allocated when needed, |
-| template  | but ignores other pod constraints  | allocation coordinated by       |
-|           | during allocation                  | scheduler                       |
-+-----------+------------------------------------+---------------------------------+
-```
-
-```
-type ResourceClaimSpec struct {
     ...
-
-    // Allocation can start immediately or when a Pod wants to use the
-    // resource. "WaitForFirstConsumer" is the default.
-    // +optional
-    //
-    // This is an alpha field and requires enabling the DRAControlPlaneController
-    // feature gate.
-    AllocationMode AllocationMode
-}
-
-// AllocationMode describes whether a ResourceClaim gets allocated immediately
-// when it gets created (AllocationModeImmediate) or whether allocation is
-// delayed until it is needed for a Pod
-// (AllocationModeWaitForFirstConsumer). Other modes might get added in the
-// future.
-type AllocationMode string
-
-const (
-    // When a ResourceClaim has AllocationModeWaitForFirstConsumer, allocation is
-    // delayed until a Pod gets scheduled that needs the ResourceClaim. The
-    // scheduler will consider all resource requirements of that Pod and
-    // trigger allocation for a node that fits the Pod.
-    //
-    // The ResourceClaim gets deallocated as soon as it is not in use anymore.
-    AllocationModeWaitForFirstConsumer AllocationMode = "WaitForFirstConsumer"
-
-    // When a ResourceClaim has AllocationModeImmediate and the ResourceClass
-    // uses a control plane controller, allocation starts
-    // as soon as the ResourceClaim gets created. This is done without
-    // considering the needs of Pods that will use the ResourceClaim
-    // because those Pods are not known yet.
-    //
-    // When structured parameters are used, nothing special is done for
-    // allocation and thus allocation happens when the scheduler handles
-    // first Pod which needs the ResourceClaim, as with "WaitForFirstConsumer".
-    //
-    // In both cases, claims remain allocated even when not in use.
-    AllocationModeImmediate AllocationMode = "Immediate"
 )
 ```
 
@@ -359,9 +286,36 @@ const (
 ```
 type ResourceClaimStatus struct {
     ...
-    // ControllerName is a copy of the driver name from the ResourceClass at
-    // the time when allocation started. It is empty when the claim was
-    // allocated through structured parameters,
+
+    Allocation *AllocationResult // same as in #4381
+
+    // Indicates that a claim is to be deallocated. While this is set,
+    // no new consumers may be added to ReservedFor.
+    //
+    // This is only used if the claim needs to be deallocated by a DRA driver.
+    // That driver then must deallocate this claim and reset the field
+    // together with clearing the Allocation field.
+    //
+    // This is an alpha field and requires enabling the DRAControlPlaneController
+    // feature gate.
+    //
+    // +optional
+    DeallocationRequested bool
+
+    ...
+}
+
+type AllocationResult struct {
+    ...
+
+    // ControllerName is the name of the DRA driver which handled the
+    // allocation. That driver is also responsible for deallocating the
+    // claim. It is empty when the claim can be deallocated without
+    // involving a driver.
+    //
+    // A driver may allocate devices provided by other drivers, so this
+    // driver name here can be different from the driver names listed for
+    // the results.
     //
     // This is an alpha field and requires enabling the DRAControlPlaneController
     // feature gate.
@@ -369,20 +323,8 @@ type ResourceClaimStatus struct {
     // +optional
     ControllerName string
 
-    // DeallocationRequested indicates that a ResourceClaim is to be
-    // deallocated.
-    //
-    // The driver then must deallocate this claim and reset the field
-    // together with clearing the Allocation field.
-    //
-    // While DeallocationRequested is set, no new consumers may be added to
-    // ReservedFor.
-    //
-    // This is an alpha field and requires enabling the DRAControlPlaneController
-    // feature gate.
-    //
-    // +optional
-    DeallocationRequested bool
+    ...
+}
 ```
 
 DeallocationRequested gets set by the scheduler when it detects
@@ -393,51 +335,53 @@ cannot be allocated because that node ran out of resources for those.
 It also gets set by kube-controller-manager when it detects that
 a claim is no longer in use.
 
-### ResourceHandle extensions
+### DeviceClass extensions
 
-Resource drivers can use each `ResourceHandle` to store data directly or
-cross-reference some other place where information is stored.
-This data is guaranteed to be available when a Pod is about
-to run on a node, in contrast to the ResourceClass which
-may have been deleted in the meantime. It's also protected from
-modification by a user, in contrast to an annotation.
+In cases where a driver manages resources only on a small subset of the nodes
+in the cluster it is useful to inform the scheduler about that up-front because
+it helps narrow down the search for suitable nodes. This information can be
+placed in a DeviceClass when the admin deploys the DRA driver. This is an optional
+optimization.
 
-```
-// ResourceHandle holds opaque resource data for processing by a specific kubelet plugin.
-type ResourceHandle struct {
+```go
+type DeviceClass struct {
     ...
 
-    // Data contains the opaque data associated with this ResourceHandle. It is
-    // set by the controller component of the resource driver whose name
-    // matches the DriverName set in the ResourceClaimStatus this
-    // ResourceHandle is embedded in. It is set at allocation time and is
-    // intended for processing by the kubelet plugin whose name matches
-    // the DriverName set in this ResourceHandle.
+    // Only Nodes matching the selector will be considered by the scheduler
+    // when trying to find a Node that fits a Pod when that Pod uses
+    // a claim that has not been allocated yet *and* that claim
+    // gets allocated through a control plane controller. It is ignored
+    // when the claim does not use a control plane controller
+    // for allocation.
     //
-    // The maximum size of this field is 16KiB. This may get increased in the
-    // future, but not reduced.
+    // Setting this field is optional. If unset, all Nodes are candidates.
     //
-    // This is an alpha field and requires enabling the DRAControlPlaneController feature gate.
+    // This is an alpha field and requires enabling the DRAControlPlaneController
+    // feature gate.
     //
     // +optional
-    Data string
-}
+    SuitableNodes *v1.NodeSelector
 
-// ResourceHandleDataMaxSize represents the maximum size of resourceHandle.data.
-const ResourceHandleDataMaxSize = 16 * 1024
+    ...
+}
 ```
 
+### Custom parameters and results
+
+DRA drivers have to use the API as defined in KEP #4381. They can use the
+config fields to receive additional parameters and to convey information to
+their kubelet plugin.
 
 ### PodSchedulingContext
 
 PodSchedulingContexts get created by a scheduler when it processes a pod which
-uses one or more unallocated ResourceClaims with delayed allocation and
+uses one or more unallocated ResourceClaims where
 allocation of those ResourceClaims is handled by control plane controllers.
 
 ```
 // PodSchedulingContext holds information that is needed to schedule
-// a Pod with ResourceClaims that use "WaitForFirstConsumer" allocation
-// mode.
+// a Pod with ResourceClaims that use a control plane controller
+// for allocation.
 //
 // This is an alpha type and requires enabling the DynamicResourceAllocation
 // and DRAControlPlaneController feature gates.
@@ -587,18 +531,12 @@ other ResourceClaim until a node gets selected by the scheduler.
 
 ### Coordinating resource allocation through the scheduler
 
-For immediate allocation, scheduling Pods is simple because the
-resource is already allocated and determines the nodes on which the
-Pod may run. The downside is that pod scheduling is less flexible.
-
-For delayed allocation, a node is selected tentatively by the scheduler
+A node is selected tentatively by the scheduler
 in an iterative process where the scheduler suggests some potential nodes
 that fit the other resource requirements of a Pod and resource drivers
 respond with information about whether they can allocate claims for those
 nodes. This exchange of information happens through the `PodSchedulingContext`
-for a Pod. The scheduler has to involve the drivers because it
-doesn't know what claim parameters mean and where suitable resources are
-currently available.
+for a Pod.
 
 Once the scheduler is confident that it has enough information to select
 a node that will probably work for all claims, it asks the driver(s) to
@@ -768,7 +706,7 @@ to understand the parameters for the claim and available capacity in order
 to simulate the effect of allocating claims as part of scheduling and of
 creating or removing nodes.
 
-This is not possible with opaque parameters as described in this KEP. If a DRA
+This is not possible when a control plane controller interprets parameters. If a DRA
 driver developer wants to support Cluster Autoscaler, they have to use
 structured parameters as defined in [KEP
 #4381](https://github.com/kubernetes/enhancements/issues/4381).
@@ -993,6 +931,11 @@ resources were not requested.
     - kube-controller-manager
     - kube-scheduler
     - kubelet
+  - Feature gate name: DRAControlPlaneController
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1283,6 +1226,8 @@ instructions.
   a template are generated instead of deterministic), scheduler performance
   enhancements (no more backoff delays).
 - Kubernetes 1.29, 1.30: most blocking API calls moved into Pod binding goroutine
+- Kubernetes 1.31: v1alpha3 with a new API (removal of support for immediate
+  allocation and for CRDs as claim parameters)
 
 ## Drawbacks
 

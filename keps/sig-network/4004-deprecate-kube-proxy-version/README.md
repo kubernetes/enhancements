@@ -18,7 +18,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -148,10 +147,7 @@ to implement this enhancement.
 
 - Created the feature gate, disabled by default.
 - Started looking for components that might be using the deprecated field.
-
-#### Beta
-
-- Make sure that upgrades to the Beta version will work across supported levels of [version skew](https://kubernetes.io/releases/version-skew-policy/).
+- Make sure it works fine on supported versions of [version skew](https://kubernetes.io/releases/version-skew-policy/).
 
 #### GA
 
@@ -187,10 +183,69 @@ The feature should continue to work just fine.
 
 ###### Are there any tests for feature enablement/disablement?
 
-In addition to the unit tests, we will manually confirm that restarting kubelet with the
-feature gate toggled has the expected behavior (that it sets `kubeProxyVersion` if the
-feature gate is disabled, even if it doesn't also need to set `kubeletVersion`, and that
-it clears `kubeProxyVersion` if the feature gate is enabled).
+I manually confirmed that restarting kubelet behaves as expected with feature gate enabled/disabled.
+
+I've tried to simulate this manually by running (using `local-cluster-up.sh).
+
+Cluster Version v1.31+, `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (default value):
+
+```
+~ kubectl get nodes 127.0.0.1 -oyaml
+apiVersion: v1
+kind: Node
+...
+  name: 127.0.0.1
+  uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+...
+    kubeProxyVersion: v0.0.0-master+$Format:%H$
+...
+```
+
+* Change the value of `DisableNodeKubeProxyVersion` to true and restart kubelet, The value of the `kubeProxyVersion` field in nodeInfo is empty.
+
+```
+~ sudo sed -i s@DisableNodeKubeProxyVersion:\ false@DisableNodeKubeProxyVersion:\ true@g  /tmp/local-up-cluster.sh.VABqgo/kubelet.yaml
+➜  kubernetes git:(master) ✗ sudo -E /home/bing/go/src/k8s.io/kubernetes/kubernetes/_output/local/bin/linux/arm64/kubelet \
+--v=3 --vmodule= --hostname-override=127.0.0.1 --cloud-provider= \
+--cloud-config= --bootstrap-kubeconfig=/var/run/kubernetes/kubelet.kubeconfig \
+--kubeconfig=/var/run/kubernetes/kubelet-rotated.kubeconfig \
+--config=/tmp/local-up-cluster.sh.VABqgo/kubelet.yaml
+```
+
+```
+➜  ~ kubectl get nodes 127.0.0.1 -oyaml
+apiVersion: v1
+kind: Node
+...
+  name: 127.0.0.1
+  uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+...
+    kubeProxyVersion: ""
+...
+```
+
+* Change the value of `DisableNodeKubeProxyVersion` to false and restart kubelet, The value of the `kubeProxyVersion` field in nodeInfo is not empty.
+
+```
+~ sudo sed -i s@DisableNodeKubeProxyVersion:\ true@DisableNodeKubeProxyVersion:\ false@g  /tmp/local-up-cluster.sh.VABqgo/kubelet.yaml
+➜  kubernetes git:(master) ✗ sudo -E /home/bing/go/src/k8s.io/kubernetes/kubernetes/_output/local/bin/linux/arm64/kubelet \
+--v=3 --vmodule= --hostname-override=127.0.0.1 --cloud-provider= \
+--cloud-config= --bootstrap-kubeconfig=/var/run/kubernetes/kubelet.kubeconfig \
+--kubeconfig=/var/run/kubernetes/kubelet-rotated.kubeconfig \
+--config=/tmp/local-up-cluster.sh.VABqgo/kubelet.yaml
+```
+
+```
+ ~ kubectl get nodes 127.0.0.1 -oyaml
+apiVersion: v1
+kind: Node
+...
+  name: 127.0.0.1
+  uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+...
+    kubeProxyVersion: v0.0.0-master+$Format:%H$
+...
+```
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -204,11 +259,107 @@ N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+  I've tried to simulate this manually by running (using `local-cluster-up.sh`with `PRESERVE_ETCD=true`):
+
+1. Cluster Version v1.30 `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (default value)
+   
+   ```
+   git checkout release-1.30
+   Switched to branch 'release-1.30'
+   Your branch is up to date with 'upstream/release-1.30'.
+   ➜  kubernetes git:(release-1.30)
+   ➜  kubernetes git:(release-1.30) sudo -E env PATH=$PATH PRESERVE_ETCD=true \
+   ETCD_DIR=/tmp/etcd-temp  ./hack/local-up-cluster.sh
+   ```
+   
+   ```
+    ~ kubectl get nodes 127.0.0.1 -oyaml
+   apiVersion: v1
+   kind: Node
+   ...
+     name: 127.0.0.1
+     uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+   ...
+       kubeProxyVersion: v0.0.0-master+$Format:%H$
+   ...
+   ```
+   
+   * The value of the `kubeProxyVersion` field in nodeInfo is not empty.
+   
+2. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=true` (manual setting)
+
+   ```
+   git checkout master
+   Switched to branch 'master'
+   ➜  kubernetes git:(master) sudo -E env PATH=$PATH PRESERVE_ETCD=true \
+   ETCD_DIR=/tmp/etcd-temp  ./hack/local-up-cluster.sh
+   
+   ```
+   ```
+   ➜  ~ kubectl get nodes 127.0.0.1 -oyaml
+   apiVersion: v1
+   kind: Node
+   ...
+     name: 127.0.0.1
+     uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+   ...
+       kubeProxyVersion: ""
+   ...
+   ```
+   
+   * The value of the `kubeProxyVersion` field in nodeInfo is empty.
+   
+3. Cluster Version v1.30 `FEATURE_GATES=DisableNodeKubeProxyVersion=true` (manual setting)
+
+   ```
+   git checkout release-1.30
+   Already on 'release-1.30'
+   Your branch is up to date with 'upstream/release-1.30'.
+   ➜  kubernetes git:(release-1.30)
+   ➜  kubernetes git:(release-1.30) sudo -E env PATH=$PATH PRESERVE_ETCD=true \
+   ETCD_DIR=/tmp/etcd-temp FEATURE_GATES=DisableNodeKubeProxyVersion=true ./hack/local-up-cluster.sh
+   ```
+   
+   ```
+   ➜  ~ kubectl get nodes 127.0.0.1 -oyaml
+   apiVersion: v1
+   kind: Node
+   ...
+     name: 127.0.0.1
+     uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+   ...
+       kubeProxyVersion: ""
+   ...
+   ```
+   
+   * The value of the `kubeProxyVersion` field in nodeInfo is empty.
+   
+4. Cluster Version v1.31+ `FEATURE_GATES=DisableNodeKubeProxyVersion=false` (default value)
+
+   ```
+   git checkout master
+   Switched to branch 'master'
+   ➜  kubernetes git:(master) ✗ sudo -E env PATH=$PATH PRESERVE_ETCD=true \
+   ETCD_DIR=/tmp/etcd-temp FEATURE_GATES=DisableNodeKubeProxyVersion=false ./hack/local-up-cluster.sh
+   ```
+   
+   ```
+   ~ kubectl get nodes 127.0.0.1 -oyaml
+   apiVersion: v1
+   kind: Node
+   ...
+     name: 127.0.0.1
+     uid: e74238e1-9e3c-41c5-a4ca-3a30941cd16c
+   ...
+       kubeProxyVersion: v0.0.0-master+$Format:%H$
+   ...
+   ```
+   
+   * The value of the `kubeProxyVersion` field in nodeInfo is not empty.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No
+* We will deprecate the `kubeProxyVersion` field in `v1.Node`.
 
 ### Monitoring Requirements
 
@@ -252,13 +403,23 @@ No
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+There will be no impact, because when the API server and etcd are not available, we will not be able to get the Node object.
+
 ###### What are other known failure modes?
 
+N/A.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
 \- 2023-05-15: Initial draft KEP
+
+\- 2024-06-10: Promoted to beta and add manual upgrade and rollback tests
+
+\- 2024-08-25: Replace with Deprecated feature gates.
 
 ## Drawbacks
 

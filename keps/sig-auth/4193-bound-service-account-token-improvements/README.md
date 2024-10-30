@@ -49,15 +49,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -90,6 +90,9 @@ TokenRequest API, in a similar manner to how the ServiceAccount, Pod or Secret i
 
 Additionally, to provide a robust means of tracking token usage within the audit log we can embed a unique identifier for
 each token which is can then also be recorded in future audit entries made by this token.
+
+As we are adding support for `node` metadata associated with Pods, we will also add the ability to bind a token/JWT
+to a Node object directly, similar to how a token can be bound to a Pod or Secret resource today.
 
 ## Motivation
 
@@ -182,9 +185,9 @@ being issued.
 
 * Adding additional cross-referencing validation checks into the TokenReview API may break some user workflows that
   involve deleting Node objects and restarting kubelet's to allow them to be recreated. As a result, the TokenReview
-  behaviour changes will be gated behind an additional flag in kube-apiserver, which defaults to 'off'.
-  This may be revisited in future once we have a better understanding of user expectations around Node objects and
-  associated JWTs.
+  API will **NOT** be modified to permit tightening this validation behaviour. Instead, the existing protections &
+  mechanisms for invalidating a Node<>Pod binding (i.e. auto-deletion after a fixed time period after the Node object
+  is deleted).
 
 ## Design Details
 
@@ -340,6 +343,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - Allowing time for feedback and any other user-experience reports.
 - Conformance tests
+- Consolidate the existing service account docs to be more coherent and avoid duplication,
+  especially in regards to consuming service account tokens outside of Kubernetes:
+    - https://kubernetes.io/docs/concepts/security/service-accounts
+    - https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin
+    - https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account
 
 ### Upgrade / Downgrade Strategy
 
@@ -357,9 +365,24 @@ enhancement:
 
 ### Version Skew Strategy
 
-This feature does not require any coordination between clients and the apiserver, as no components require this
-information to be embedded. This is purely additive, and the only rollback concerns would be around third party
-software that consumes this information.
+Embedding a Pod's assigned Node name into a JWT does not require any coordination between clients and the apiserver,
+as no components require this information to be embedded. This is purely additive, and the only rollback concerns
+would be around third party software that consumes this information. This software should always verify whether a
+`node` claim is embedded into tokens if they require using it, and provide a fall-back behaviour (i.e. a GET to the
+apiserver to fetch the Pod & Node object) if they need to maintain compatibility with older apiservers.
+
+Binding a token to a Node introduces a new validation mechanism, and therefore we must allow one release cycle after
+introducing the ability to **validate** tokens, before we can begin permitting **issuance** of these tokens.
+This is a critical step from a security standpoint, as otherwise an administrator could:
+
+1) upgrade their apiserver/control plane.
+2) a user could request a token bound to a Node, expecting it to be invalidated when the Node is deleted.
+3) rollback the apiserver to an older version.
+4) the Node object is deleted.
+5) the token issued in (2) would now continue to be accepted/validated, despite the Node object no longer existing.
+
+By graduating validation a release **earlier** than issuance, we can ensure any tokens that are bound to a Node
+object will be correctly validated even after a rollback.
 
 ## Production Readiness Review Questionnaire
 
@@ -398,6 +421,7 @@ to ensure a safe rollback from version v1.31 to v1.30 (more info below in rollba
 The `ServiceAccountTokenNodeBinding` feature gate must only be enabled once the `ServiceAccountTokenNodeBindingValidation` feature has been enabled.
 Disabling the `ServiceAccountTokenNodeBindingValidation` feature whilst keeping `ServiceAccountTokenNodeBinding` would allow tokens that are expected to
 be bound to the lifetime of a particular Node to validate even if that Node no longer exists.
+The [rollout & rollback section](#rollout-upgrade-and-rollback-planning) below goes into further detail.
 
 All other feature flags can be disabled without any unexpected adverse affects or coordination required.
 
@@ -421,17 +445,22 @@ All other feature flags can be disabled without any unexpected adverse affects o
 
 ###### Does enabling the feature change any default behavior?
 
-Enabling the feature gate will cause additional information to be stored/persisted into service account JWTs, as well
-as new audit annotations being recorded in the audit log. This is all purely additive, so no changes to existing
-features, schemas or fields are expected.
+Enabling the `ServiceAccountTokenPodNodeInfo` and/or `ServiceAccountTokenJTI`  feature gate will cause additional information
+to be stored/persisted into service account JWTs, as well as new audit annotations being recorded in the audit log.
+This is all purely additive, so no changes to existing features, schemas or fields are expected.
+
+Enabling the `ServiceAccountTokenNodeBinding` will permit binding tokens to Node objects, which is a change in
+behaviour (albeit not to an existing feature, so is not problematic).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Future tokens will then not embed this information. Any existing issued tokens **will** still have this
-information embedded however.
+information embedded, however.
 
 If these fields are deemed to be problematic for other systems interpreting these tokens, users will need to re-issue
 these tokens before presenting them elsewhere.
+
+Once the feature(s) have graduated to GA, it will not be possible to disable this behaviour.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -489,7 +518,7 @@ New metrics that can be used to identify if the feature is in use:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30):**
+**For `ServiceAccountTokenJTI` feature (alpha v1.29, beta v1.30, GA v1.32):**
 
 *Without* the feature gate enabled, issued service account tokens *will not* have their `jti` field set to a random UUID,
 and the audit log will not persist the issued credential identifier when issuing a token.
@@ -505,7 +534,7 @@ as part of the UserInfo in the audit event.
 As none of these fields are actually used for validating/verifying a token is valid, enabling & disabling the feature
 does not cause any adverse side effects.
 
-**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30) feature:**
+**For `ServiceAccountTokenNodeBinding` (alpha v1.29, beta v1.31, GA v1.33) and `ServiceAccountTokenNodeBindingValidation` (alpha v1.29, beta v1.30, GA v1.32) feature:**
 
 *Without* the feature gate enabled, service account tokens that have been bound to Node objects will not have their
 node reference claims validated (to ensure the referenced node exists).
@@ -524,7 +553,7 @@ than `ServiceAccountTokenNodeBinding`.
 
 Tokens that are bound to objects other than Nodes are unaffected.
 
-**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30):**
+**For `ServiceAccountTokenPodNodeInfo` feature (alpha v1.29, beta v1.30, GA v1.32):**
 
 *Without* the feature gate enabled, tokens that are bound to Pod objects will not include information about the Node
 that the pod is scheduled/assigned to.
@@ -693,6 +722,8 @@ For example, attempting to issue a node bound token, or attempting to authentica
 * Renamed audit annotation used for the `serviceaccounts/<name>/token` endpoint to be clearer: https://github.com/kubernetes/kubernetes/pull/123098
 * Added restrictions to disallow enabling `ServiceAccountTokenNodeBinding` without `ServiceAccountTokenNodeBindingValidation`: https://github.com/kubernetes/kubernetes/pull/123135
 * `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
+* Promoted `ServiceAccountTokenNodeBinding` promoted to beta for v1.31 release
+* Promoted `ServiceAccountTokenJTI`, `ServiceAccountTokenPodNodeInfo`, `ServiceAccountTokenNodeBindingValidation` to stable for v1.32 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

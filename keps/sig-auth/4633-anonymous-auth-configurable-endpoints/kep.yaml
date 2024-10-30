@@ -1,0 +1,40 @@
+title: Only allow anonymous auth for configured endpoints
+kep-number: 4633
+authors:
+  - "@vinayakankugoyal"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: implementable
+creation-date: 2024-05-13
+reviewers:
+  - "@liggitt"
+  - "@enj"
+approvers:
+  - "@liggitt"
+see-also:
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.32"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.31"
+  beta: "v1.32"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: AnonymousAuthConfigurableEndpoints
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
