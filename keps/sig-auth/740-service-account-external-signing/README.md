@@ -245,12 +245,12 @@ message Key {
 message MetadataRequest {}
 
 message MetadataResponse {
-  // used by kube-apiserver for defaulting/validation of JWT lifetime while accounting for configuration flag values:
+  // used by kube-apiserver as the max token lifetime and for validation against configuration flag values:
   // 1. `--service-account-max-token-expiration`
   // 2. `--service-account-extend-token-expiration`
   //
-  // * If `--service-account-max-token-expiration` is greater than `max_token_expiration_seconds`, kube-apiserver treats that as misconfiguration and exits.
-  // * If `--service-account-max-token-expiration` is not explicitly set, kube-apiserver defaults to `max_token_expiration_seconds`.
+  // * If `--service-account-max-token-expiration` is set while external-jwt-signer is configured, kube-apiserver treats that as misconfiguration and exits.
+  // * If `--service-account-max-token-expiration` is not set, kube-apiserver uses `max_token_expiration_seconds` as max token lifetime.
   // * If `--service-account-extend-token-expiration` is true, the extended expiration is `min(1 year, max_token_expiration_seconds)`.
   //
   // `max_token_expiration_seconds` must be at least 600s.
