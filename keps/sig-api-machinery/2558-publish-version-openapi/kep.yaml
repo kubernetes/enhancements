@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-architecture
-status: implementable
+status: withdrawn
 creation-date: 2021-03-07
 reviewers:
   - "@thockin"
