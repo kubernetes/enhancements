@@ -1,0 +1,26 @@
+title: KEP Template
+kep-number: 4940
+authors:
+  - "@tssurya"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-network
+status: provisional
+creation-date: 2024-10-31
+reviewers:
+  - deads2k
+  - danwinship
+  - liggitt
+  - BenTheElder
+approvers:
+  - deads2k
+  - liggitt
+
+stage: alpha
+
+latest-milestone: "v1.34"
+
+milestone:
+  alpha: "v1.34"
+  beta: "v1.34"
+  stable: "v1.34"
