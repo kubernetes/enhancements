@@ -106,6 +106,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Version](#version)
     - [Properties](#properties)
     - [Conditions](#conditions)
+  - [Cluster Access](#cluster-access)
+    - [Pull Model with Work API](#pull-model-with-work-api)
+    - [Push Model with Identity Federation (Recommended)](#push-model-with-identity-federation-recommended)
+    - [Push Model via Credentials in Secret (Not Recommended)](#push-model-via-credentials-in-secret-not-recommended)
+      - [Secret format](#secret-format)
 - [API Example](#api-example)
   - [Scalability implication](#scalability-implication)
   - [Test Plan](#test-plan)
@@ -164,7 +169,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -249,7 +254,7 @@ management. Examples of consumers includes:
   this area.
 * GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
-  concept by themselves or understand cluster API from each different
+  concept by themselves or understand APIs representing a cluster from each 
   cluster management project. A common ClusterProfile API can provide
   a thin compatible layer for different projects.
 * Operation tools or customized external consumers: this API gives a
@@ -288,6 +293,7 @@ and make progress.
 * Provide a standard reference implementation.
 * Define specific implementation details beyond general API behavior.
 * Offering functionalities related to multi-cluster orchestration.
+* Define the Consumer registration API
 
 
 ## Proposal
@@ -319,14 +325,14 @@ the API proposed by this KEP aims to
 - **Member Cluster**: A kubernetes cluster that is part of a cluster inventory.
 
 - **Cluster Manager**: An entity that creates the ClusterProfile API object per member cluster,
-  and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.  
-  Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD 
+  and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.
+  Each ClusterProfile resource SHOULD be managed by only one cluster manager. A cluster manager SHOULD
   have sufficient permission to access the member cluster to fetch the information so it can update the status
   of the ClusterProfile API resource.
 
-- **ClusterProfile API Consumer**: the person running the cluster managers
-  or the person developing extensions for cluster managers for the purpose of
-  workload distribution, operation management etc.
+- **ClusterInventory Consumer**: Controllers or tools that leverage the ClusterProfile for the purpose of
+  workload distribution, operation management etc. Their name must be unique for a single inventory. They 
+  might need to register themselves with the Cluster Manager which is not defined in this KEP. 
 
 ### User Stories (Optional)
 
@@ -401,19 +407,19 @@ if all its member clusters adhere to the [namespace sameness](https://github.com
 Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
 
 #### How should the API be consumed?
-We recommend that all ClusterProfile objects within the same cluster inventory reside on 
+We recommend that all ClusterProfile objects within the same cluster inventory reside on
 a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration 
 point to access all the information within a cluster inventory. Additionally, a multi-cluster aware
 controller can be run on the dedicated  cluster to offer high-level functionalities over this inventory of clusters.
 
 ####  How should we organize ClusterProfile objects on a hub cluster?
-While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object. 
+While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object.
 This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to 
-certain clusters within the inventory.  
+certain clusters within the inventory.
 
 However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
 and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
-and the value as the name of the clusterSet. 
+and the value as the name of the clusterSet.
 
 #### Uniqueness of the ClusterProfile object
 While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
@@ -451,13 +457,14 @@ represent a cluster and support the above use case at the minimum scope.
 
 The target consumers of the API are users who manage the clusters and
 other tools to understand the clusters concept from the API for
-multicluster scheduling, workload distribution and cluster management.
+multi-cluster scheduling, workload distribution and cluster management.
 The API aims to provide the information for the consumers to answer the
 below questions:
 
 * Is the cluster under management?
 * How can I select a cluster?
 * Is the cluster healthy?
+* How to access the cluster?
 * Does the cluster have certain capabilities or properties?
 * Does the cluster have sufficient resources?
 
@@ -465,7 +472,7 @@ below questions:
 
 It is required that cluster name is unique for each cluster, and it
 should also be unique among different providers (cluster manager). It
-is cluster managers's responsibility to ensure the name uniqueness.
+is cluster manager's responsibility to ensure the name uniqueness.
 
 It's the responsibility of the cluster manager platform administrator
 to ensure cluster name uniqueness.
@@ -552,6 +559,39 @@ Predefined condition types:
   The status of the cluster SHOULD be updated by the cluster manager under
   this condition.
 
+### Cluster Access
+There are multiple methods for a ClusterInventory Consumer to gain access to the cluster represented by a ClusterProfile API.
+This KEP does not define the exact mechanism for each approach, but it is recommended that ClusterInventory Consumers avoid 
+using a secret if possible. Here are the three approaches:
+
+#### Pull Model with Work API
+The ClusterInventory Consumer can leverage the [Work API](https://multicluster.sigs.k8s.io/concepts/work-api/) so that
+the work API agent on the Member Cluster can *pull* the necessary objects from the management cluster where the ClusterInventory 
+Consumer operates to the Member Cluster. This approach allows the Cluster Manager to manage the RBAC for each Consumer on the 
+management cluster, ensuring that their access is restricted to the corresponding namespaces of the ClusterProfile objects.
+
+#### Push Model with Identity Federation (Recommended)
+The ClusterInventory consumer can utilize identity federation mechanisms, such as [Azure Workload Identity Federation](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation)
+or [GCP Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation). This allows the 
+ClusterInventory Consumer to use an identity that already has access to the clusters in the Cluster Inventory.
+While the Cluster Manager can assist in setting up the federation, it is not a mandatory requirement.
+
+#### Push Model via Credentials in Secret (Not Recommended)
+The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading 
+from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
+accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details 
+about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
+Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
+
+##### Secret format
+- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
+- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
+- The access information in the secret must contain the following fields
+  - **Config**: This field contains cluster access information compatible with the
+    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
+  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
+
+
 ## API Example
 
 ```yaml
@@ -562,18 +602,18 @@ metadata:
  labels:
    x-k8s.io/cluster-manager: some-cluster-manager
 spec:
-  displayName: some-cluster
+  displayName: cluster-us-east
   clusterManager:
     name: some-cluster-manager
 status:
- version:
-   kubernetes: 1.28.0
- properties:
+  version:
+    kubernetes: 1.28.0
+  properties:
    - name: clusterset.k8s.io
      value: some-clusterset
    - name: location
      value: apac
- conditions:
+  conditions:
    - type: ControlPlaneHealthy
      status: True
      lastTransitionTime: "2023-05-08T07:56:55Z"
