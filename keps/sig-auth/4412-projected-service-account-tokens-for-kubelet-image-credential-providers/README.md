@@ -1082,7 +1082,12 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No.
+As part of the `ServiceAccountNodeAudienceRestriction` feature, KAS will need to watch PersistentVolumeClaims, PersistentVolumes and CSIDrivers
+to determine the audiences that the kubelet is allowed to generate service account tokens for. These new informers (which are feature gated) will
+result in additional resource usage in the KAS.
+- Node authorizer is already watching persistent volumes via informers today.
+- CSIDriver objects are expected to be ~few and ~slow-moving, so the impact is expected to be minimal.
+- PersistentVolumeClaims are expected to be more numerous and more dynamic, so there could be more impact here.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
