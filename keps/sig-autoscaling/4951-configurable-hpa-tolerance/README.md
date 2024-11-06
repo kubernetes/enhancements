@@ -58,10 +58,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -216,18 +212,18 @@ type HPAScalingRules struct {
   // tolerance is the tolerance on the ratio between the current and desired
   // metric value under which no updates are made to the desired number of
   // replicas.
-	// +optional
+  // +optional
   Tolerance *resource.Quantity
 
   // Existing fields.
-	StabilizationWindowSeconds *int32
-	SelectPolicy *ScalingPolicySelect
-	Policies []HPAScalingPolicy
+  StabilizationWindowSeconds *int32
+  SelectPolicy *ScalingPolicySelect
+  Policies []HPAScalingPolicy
 }
 ```
 
-This new tolerance will be taken into account in [replica_calculator.go][]. The
-existing logic is:
+This new tolerance will be taken into account in the autoscaling controller
+[replica_calculator.go][]. The update to the logic is:
 
 ```golang
 if math.Abs(1.0-usageRatio) <= c.tolerance { /* ... */ }
@@ -235,18 +231,27 @@ if math.Abs(1.0-usageRatio) <= c.tolerance { /* ... */ }
 
 It will be replaced by:
 
-```golang
-// Down and Up scaling tolerances default to c.tolerance if unset.
-downTolerance, upTolerance := c.tolerance, c.tolerance
-if scaleDown.tolerance != nil {
-  downTolerance = scaleDown.tolerance.AsApproximateFloat64()
-}
-if scaleUp.tolerance != nil {
-  upTolerance = scaleUp.tolerance.AsApproximateFloat64()
-}
-
-if (1.0-downTolerance) < usageRatio && usageRatio < (1.0+upTolerance) { /* ... */ }
+```diff
+- if math.Abs(1.0-usageRatio) <= c.tolerance { /* ... */ }
++ // Down and Up scaling tolerances default to c.tolerance if unset.
++ downTolerance, upTolerance := c.tolerance, c.tolerance
++ if scaleDown.tolerance != nil {
++   downTolerance = scaleDown.tolerance.AsApproximateFloat64()
++ }
++ if scaleUp.tolerance != nil {
++   upTolerance = scaleUp.tolerance.AsApproximateFloat64()
++ }
++
++ if (1.0-downTolerance) <= usageRatio && usageRatio <= (1.0+upTolerance) { /* ... */ }
 ```
+
+Since the added field is optional and has a default value compatible with the
+current autoscaling behavior, this feature can be added to the current API
+version `pkg/apis/autoscaling/v2`.
+
+The feature presented in this KEP only allows to tune an existing parameter, and
+as such doesn't require any new HPA Events or modify any Status. A new error is
+emitted if a `tolerance` field is set to a negative value.
 
 [replica_calculator.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/replica_calculator.go
 
@@ -396,32 +401,18 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+Upgrades present no particular issue: the new field won't be set and the HPA
+will behave like it does today. Users can use the new feature by setting the
+new `tolerance` field (provided the Feature Gate is enabled).
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+On downgrades to a version that does not support this functionality, an HPA will
+ignore any configured `tolerance` field, and use the default (as specified by
+`--horizontal-pod-autoscaler-tolerance`).
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+This feature is entirely implemented in the horizontal autoscaling controller
+and does not introduce any changes that would be impacted by version skews.
 
 ## Production Readiness Review Questionnaire
 

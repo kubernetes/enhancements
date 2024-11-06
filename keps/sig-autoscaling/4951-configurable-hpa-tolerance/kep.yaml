@@ -24,7 +24,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+#latest-milestone: "v1.19"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -34,12 +34,11 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-#feature-gates:
-#  - name: MyFeature
-#    components:
-#      - kube-apiserver
-#      - kube-controller-manager
-#disable-supported: true
+feature-gates:
+  - name: HPAConfigurableTolerance
+    components:
+      - kube-apiserver
+disable-supported: true
 
 # The following PRR answers are required at beta release
 #metrics:
