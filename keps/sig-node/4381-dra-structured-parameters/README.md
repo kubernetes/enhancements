@@ -2645,7 +2645,7 @@ More specifically for DRA code in Kubernetes (based on checking out the code):
 <!--
 Generated with:
 
-go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+go test -cover ./pkg/apis/resource/validation ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
 
 -->
 
@@ -2653,6 +2653,7 @@ v1.31.0:
 
 - `k8s.io/dynamic-resource-allocation/cel`: 80.0%
 - `k8s.io/dynamic-resource-allocation/structured`: 82.7%
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 77.1%
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.1%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.6%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 77.9%
@@ -2663,11 +2664,23 @@ Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
 
 - `k8s.io/dynamic-resource-allocation/cel`: 88.8%
 - `k8s.io/dynamic-resource-allocation/structured`: 82.7%
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 77.1%
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.0%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.6%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 77.7%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.9%
+
+End of v1.32 development cycle (~ https://github.com/kubernetes/kubernetes/pull/127511 = v1.32.0-alpha.3-414-g50d0f920c01):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 89.6%
+- `k8s.io/dynamic-resource-allocation/structured`: 91.3%
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 98.4%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 73.5%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.7%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 91.0%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 77.4%
 
 ##### Integration tests
 
