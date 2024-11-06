@@ -1,4 +1,4 @@
-title: KEP Template
+title: Configurable tolerance for HPA
 kep-number: 4951
 authors:
   - "@pr00se"
