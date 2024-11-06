@@ -5,12 +5,12 @@ authors:
   - "@knopt"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: "2022-09-26"
 reviewers: []
 approvers:
   - "@sig-node-tech-leads"
-last-updated: "2024-09-30"
+last-updated: "2024-11-06"
 see-also: []
 replaces: []
 
