@@ -476,6 +476,7 @@ N/A
 - 2021-05-06: Initial KEP
 - 2023-08-15: Alpha release with Kubernetes 1.28
 - 2023-10-30: Beta release with Kubernetes 1.29
+- 2024-03-01: GA release with Kubernetes 1.30
 
 ## Drawbacks
 
