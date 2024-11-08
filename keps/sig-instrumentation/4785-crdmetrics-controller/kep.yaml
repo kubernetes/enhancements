@@ -28,10 +28,8 @@ milestone: {} # This is completely external to the k/k tree.
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: "" # This is completely external to the k/k tree.
+feature-gates: [] # This is completely external to the k/k tree.
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics:
-  - "" # This is completely external to the k/k tree.
+metrics: [] # This is completely external to the k/k tree.
