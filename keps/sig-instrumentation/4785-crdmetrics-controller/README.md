@@ -244,7 +244,8 @@ The KEP targets a controller which:
   allows defining the collection configuration for generating metrics 
   on-the-fly, and,
 * while being able to accommodate for multiple configuration parsing techniques
-  and expression non-turing languages,
+  and expression turing-incomplete (or turing-complete if Go-bindings are
+  available) languages,
 * all while conforming to, and improving the existing Custom Resource State API 
   offered by Kube State Metrics without hindering the maintainability and the
   scalability of the controller.
@@ -306,9 +307,9 @@ multiple managed resources to isolate configuration logic, etc.
 #### Story 2
 
 As a cluster admin, I want to be able to express my Kube State Metrics' Custom
-Resource State configurations in a non-turing language that is well-known
-throughout the ecosystem, and enables me to get going without learning another
-DSL (domain-specific language).
+Resource State configurations in languages that are well-known throughout the
+ecosystem, and enables me to get going without learning another DSL 
+(domain-specific language).
 
 ### Notes/Constraints/Caveats (Optional)
 
