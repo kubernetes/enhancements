@@ -86,6 +86,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
+    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -238,17 +240,17 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-The KEP targets a controller which:
-* allows for Custom Resource metrics generation based on their schemata,
-* while providing cluster-scoped managed resources (`CRDMetricsResource`) that 
-  allows defining the collection configuration for generating metrics 
-  on-the-fly, and,
-* while being able to accommodate for multiple configuration parsing techniques
-  and expression turing-incomplete (or turing-complete if Go-bindings are
-  available) languages,
-* all while conforming to, and improving the existing Custom Resource State API 
-  offered by Kube State Metrics without hindering the maintainability and the
-  scalability of the controller.
+The KEP targets a controller which allows for:
+* Custom Resource metrics generation based on their schemata,
+* using admission webhooks to avoid ingesting conflicting or bad configuration
+  from managed resources,
+* defining cluster-scoped managed resources (`CRDMetricsResource`) that allows
+  defining the collection configuration for generating metrics on-the-fly,
+* accommodating for multiple configuration parsing techniques and expression
+  turing-incomplete (or turing-complete if Go-bindings are available) languages,
+* conforming to, and improving on existing Custom Resource State API offered by
+  Kube State Metrics without hindering the maintainability and the scalability
+  of the controller.
 
 ### Non-Goals
 
@@ -260,8 +262,8 @@ and make progress.
 The KEP does **not** target a controller which:
 * overlaps with Kube State Metrics' goals in any way except for the Custom 
   Resource State API, or,
-* offers any stability guarantees for the metrics generated using its managed 
-  resource(s).
+* offers any stability and performance guarantees for the metrics generated
+  using its managed resource(s).
 
 ## Proposal
 
@@ -310,6 +312,18 @@ As a cluster admin, I want to be able to express my Kube State Metrics' Custom
 Resource State configurations in languages that are well-known throughout the
 ecosystem, and enables me to get going without learning another DSL 
 (domain-specific language).
+
+#### Story 3
+
+As a Cluster Admin, I want to expose additional metrics from core resources that
+Kube State Metrics does not provide out of the box, so I can observe custom
+tailored metrics for my use case.
+
+#### Story 4
+
+As a maintainer of a project that makes use of Custom Resources, I want to 
+provide configuration on how to generate metrics for them via an externally
+managed resource, so my users can deploy them along-side on the same cluster.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -383,6 +397,88 @@ raw metrics, combined with its appropriate header(s), in the response. All
 generated metrics are hardcoded to `gauge`s by design, as Prometheus lacks
 support for some OpenMetrics-specified metrics' types, such as `Info` and
 `StateSets`.
+
+At the moment, the `spec` houses a single `configuration` field, which defines
+the metric generation configuration as follows:
+
+```yaml
+stores: # Set of metrics stores for each CR we want to generate metrics for.
+  - g: "contoso.com" # CR's group.
+    v: "v1alpha1"    # CR's version.
+    # Both kind and resource names are required to avoid plural ambiguities, see
+    # https://github.com/kubernetes-sigs/kubebuilder/issues/3402.
+    k: "MyPlatform"  # CR's kind.
+    r: "myplatforms" # CR's resource.
+    selectors: # Set of filters to narrow down the selected CRs, may be:
+      field: "metadata.namespace=default" # field selector(s), and (/or),
+      label: "app.kubernetes.io/part-of=sample-controller" # label selector(s).
+    families: # Set of metrics families to generate for the specified CR.
+      - name: "platform_info" # The metric family name, plugged in as-is.
+        help: "Information about a MyPlatform instance" # The help text for the
+                                                        # metric family, plugged
+                                                        # in as-is.
+        metrics: # Set of metrics to generate under the current metrics family.
+          - resolver: "cel" # Preferred resolver to parse the value expressions.
+                            # MAY BE SPECIFIED AT ANY LEVEL.
+                            # INNER RESOLVERS OVERRIDE THE OUTER ONES.
+                            # NO RESOLVER DEFAULTS TO THE "UNSTRUCTURED" ONE.
+            # Set of label-sets to generate for the current metric.
+            labelKeys: # Set of ordered label-keys, static in nature.
+              - "name"
+              - "static_foo"
+            labelValues: # Set of ordered label values, dynamic in nature.
+                         # Therefore, these may contain static values or
+                         # parse-able expressions.
+              - "o.metadata.name" # Parse-able CEL expression.
+              - "static_foo_value" # Static value.
+            value: "42" # `float64` static value, or a dynamic (resolver) path
+                        # that MUST resolve to one. A non-cast-able `float64`
+                        # will skip the current metric generation and log an
+                        # error.
+          - labelKeys: # Set of ordered label-keys, static in nature.
+              - "environmentType"
+              - "static_foo"
+            labelValues: # Set of ordered label values, dynamic in nature.
+                         # Therefore, these may contain static values or
+                         # parse-able expressions.
+              - "spec.environmentType" # Parse-able unstructured expression.
+              - "static_foo_value" # Static value.
+            value: "metadata.labels.foo" # `float64` static value, or a dynamic
+                                         # (resolver) path that MUST resolve to
+                                         # one. A non-cast-able `float64` will
+                                         # skip the current metric generation
+                                         # and log an error.
+      - name: "platform_replicas" # The metric family name, plugged in as-is.
+        help: "Number of replicas for a MyPlatform instance" # The help text for
+                                                             # the metric family
+                                                             # plugged in as-is.
+        metrics: # Set of metrics to generate under the current metrics family.
+          - labelKeys: # Set of ordered label-keys, static in nature.
+              - "name"
+              - "dynamicNoResolveShouldOutputMapRepr_CompositeUnsupportedUpstreamForUnstructured"
+            labelValues: # Set of ordered label values, dynamic in nature.
+                         # Therefore, these may contain static values or
+                         # parse-able expressions.
+              - "metadata.name"
+              - "metadata.labels"
+            value: "spec.replicas" # `float64` static value, or a dynamic
+                                   # (resolver) path that MUST resolve to one.
+                                   # A non-cast-able `float64` will skip the
+                                   # current metric generation and log an error.
+```
+The `status`, on the other hand, is a set of `metav1.Condition`s, like so:
+
+```yaml
+status:
+  conditions:
+    - lastTransitionTime: "2024-11-11T22:43:30Z"
+      message: 'Resource configuration has been processed successfully: Event
+      handler successfully processed event: addEvent'
+      observedGeneration: 1
+      reason: EventHandlerSucceeded
+      status: "True"
+      type: Processed
+```
 
 [plural ambiguities]: https://github.com/kubernetes-sigs/kubebuilder/issues/3402
 
