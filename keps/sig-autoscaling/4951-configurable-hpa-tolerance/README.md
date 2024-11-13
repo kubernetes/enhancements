@@ -143,8 +143,17 @@ updates.
 [Horizontal Pod Autoscaler][] (HPA) regularly estimates how many replicas a given Deployment (or other resource with a `/scale` subresource) should instantiate.
 HPAs define one (or more) metrics (e.g. CPU utilization) on which autoscaling is based. The number of replicas is derived from the ratio between the *expected* and *current* value of this metric ([Algorithm details][]).
 
-To avoid flapping, the number of replicas is left unchanged if this ratio is approximately 1, within a *tolerance* set to 10%. This proposal adds a parameter
-to HPAs allowing users to configure this tolerance.
+For example, for a workload with 100 `currentReplicas` and a usage ratio
+(`currentMetricValue`/`desiredMetricValue`) of 1.07, the calculated `desiredReplicas` 
+would be 107  (100 * 1.07).
+
+However, to avoid flapping, scaling actions are skipped if the usage ratio is approximately 1, within a 
+globally-configurable *tolerance*,  set to 10% by default. In the example above, no scaling action would
+take place, since the ratio is within this tolerance.
+
+This proposal adds a parameter to HPAs allowing users to configure this tolerance per HPA resource. 
+For the example above, we could configure the tolerance in the workload's HPA to 5%, which would 
+allow the scale-up to 107 replicas to proceed.
 
 [Horizontal Pod Autoscaler]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
 [Algorithm details]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
