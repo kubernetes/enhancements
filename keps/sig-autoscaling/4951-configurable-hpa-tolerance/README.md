@@ -309,7 +309,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `/apis/autoscaling/validation`: `2024-11-13` - `95.6`
+- `/pkg/controller/podautoscaler`: `2024-11-13` - `96.4`
 
 ##### Integration tests
 
@@ -342,7 +343,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+We will add the follow [e2e autoscaling tests]:
+
+- For both scale up and scale down:
+  - Workload does not scale because the metric ratio is in tolerance.
+  - Workload scales successfully because the metric ratio is out of tolerance.
+- Autoscaling uses the default when no tolerances are set.
+
+[e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
 ### Graduation Criteria
 
@@ -408,6 +416,11 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a `HPAConfigurableTolerance` feature flag
+- Initial e2e tests completed and enabled
+
 ### Upgrade / Downgrade Strategy
 
 Upgrades present no particular issue: the new field won't be set and the HPA
@@ -420,8 +433,11 @@ ignore any configured `tolerance` field, and use the default (as specified by
 
 ### Version Skew Strategy
 
-This feature is entirely implemented in the horizontal autoscaling controller
-and does not introduce any changes that would be impacted by version skews.
+1. `kube-apiserver`: More recent instances will accept the new 'tolerance'
+   field, while older will ignore it.
+2. `kube-controller-manager`: An older version could receive an HPA containing
+   the new `tolerance` field from a more recent API server, in which case it
+   would ignore it (i.e. scale as if it was not present).
 
 ## Production Readiness Review Questionnaire
 
@@ -699,6 +715,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+- This feature adds two new optional integer fields to `HorizontalPodAutoscaler`
+  `v2` objects. Users should expect this object to increase in size (5 bytes)
+  each time they set this new field.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 

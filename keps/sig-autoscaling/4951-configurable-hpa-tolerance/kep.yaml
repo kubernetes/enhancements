@@ -7,7 +7,8 @@ owning-sig: sig-autoscaling
 status: provisional
 creation-date: 2024-11-05
 reviewers:
-  - TBD
+  - "@gjtempleton"
+  - "@raywainman"
 approvers:
   - TBD
 
@@ -35,6 +36,7 @@ feature-gates:
   - name: HPAConfigurableTolerance
     components:
       - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
