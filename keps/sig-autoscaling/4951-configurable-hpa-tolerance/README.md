@@ -194,15 +194,19 @@ The exact API recommended here has been previously proposed in [kep-853][] (see 
 
 ## Proposal
 
-We propose to complement the existing `HorizontalPodAutoscaler` `behavior`
-`scaleUp` and `scaleDown` objects with a new field:
+We propose to add a new field to the existing [`HPAScalingRules`][] object:
 
-- `scaleUp`:
-  - `tolerance`: the tolerance on the ratio between the *current* and *desired* values of the metric this HorizontalPodAutoscaler operates on, for scaling up. operations. Must be greater or equal to 0.
-- `scaleDown`:
-  - `tolerance`: similar to `scaleUp.tolerance`, for scaling down.
+- `tolerance`: (float) the minimum change (from 1.0) in the desired-to-actual metrics ratio for the horizontal pod autoscaler to consider scaling. Must be greater than or equal to 0.
 
-Those fields are optional, and default to the value used today.
+The `tolerance` field is optional, and when not specified the HPA will continue to use the 
+value of the global `--horizontal-pod-autoscaler-tolerance` as the tolerance for scaling 
+calculations.
+
+Since there are separate `HPAScalingRules` objects defined for an HPA's 
+`spec.behavior.scaleUp` and `spec.behavior.scaleDown`, it is possible to specify different
+`tolerance` values for scaling up vs. scaling down.
+
+[HPAScalingRules]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#hpascalingrules-v2-autoscaling
 
 ### Risks and Mitigations
 
