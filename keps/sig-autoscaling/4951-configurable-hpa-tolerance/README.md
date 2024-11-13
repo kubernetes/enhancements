@@ -210,11 +210,10 @@ Since there are separate `HPAScalingRules` objects defined for an HPA's
 
 ### Risks and Mitigations
 
-Risks are limited as this proposal does not introduce a new autoscaling parameters, but merely proposes to override an existing parameter for specific HPAs.
-
-A user chosing an inapropriate value only impacts a unique Deployment. This allows users to experiment with different tolerance values before adopting those more widely.
-
-A user disatisfied with the autoscaling behavior following an update of this parameter can fall back on the existing behavior by removing the new field.
+There should be minimal risk introduced by the proposed changes:
+- The new field is optional, and its absence results in no changes to the current autoscaling behavior
+- When specified, the new value doesn't change the autoscaling algorithm used, but just overrides a single value used during the calculation. This value can already be changed via the `--horizontal-pod-autoscaler-tolerance` option of the `kube-controller-manager`.
+- If a change to the new field results in undesirable behavior, the change can be reverted by deploying the previous version of the HPA resource, or removing the `tolerance` field entirely.
 
 ## Design Details
 
