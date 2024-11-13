@@ -781,7 +781,7 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
-
+- 2024-11-XX Provisional KEP merged
 ## Drawbacks
 
 <!--
