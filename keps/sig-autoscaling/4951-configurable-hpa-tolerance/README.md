@@ -234,7 +234,7 @@ type HPAScalingRules struct {
 }
 ```
 
-This new tolerance will be taken into account in the autoscaling controller
+This new tolerance will be used in the autoscaling controller
 [replica_calculator.go][]. The current logic is:
 
 ```golang
