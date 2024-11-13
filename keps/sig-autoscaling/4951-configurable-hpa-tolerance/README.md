@@ -173,7 +173,7 @@ case of surges.
 Since appropriate tolerance values are workload-dependent, this KEP proposes to let users add custom tolerance values to `HorizontalPodAutoscaler` resources, overriding the existing default value when present.
 
 This solution integrates seamlessly with the existing HPA API since it already allows users to [fine-tune the autoscaler behavior](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior).
-The exact API recommended here has been previously proposed in [kep-853][] (see [here](https://github.com/kubernetes/enhancements/pull/1234#discussion_r333036990)), but it was then proposed to implement it separately.
+The exact API recommended here has been previously proposed in [kep-853][] (see [here](https://github.com/kubernetes/enhancements/pull/1234#discussion_r333036990)), but it was then decided to implement it separately.
 
 [#116984]: https://github.com/kubernetes/kubernetes/issues/116984
 [#125987]: https://github.com/kubernetes/kubernetes/issues/125987
