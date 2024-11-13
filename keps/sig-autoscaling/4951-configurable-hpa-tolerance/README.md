@@ -185,7 +185,7 @@ The exact API recommended here has been previously proposed in [kep-853][] (see 
 
 ### Goals
 
-- Allow users to override the default workload autoscaling tolerance for specific HPAs.
+- Allow users to optionally override the default workload autoscaling tolerance on a per-HPA bases.
 
 ### Non-Goals
 
