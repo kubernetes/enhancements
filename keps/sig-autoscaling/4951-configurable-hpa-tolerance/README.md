@@ -235,7 +235,7 @@ type HPAScalingRules struct {
 ```
 
 This new tolerance will be taken into account in the autoscaling controller
-[replica_calculator.go][]. The update to the logic is:
+[replica_calculator.go][]. The current logic is:
 
 ```golang
 if math.Abs(1.0-usageRatio) <= c.tolerance { /* ... */ }
@@ -257,11 +257,11 @@ It will be replaced by:
 + if (1.0-downTolerance) <= usageRatio && usageRatio <= (1.0+upTolerance) { /* ... */ }
 ```
 
-Since the added field is optional and has a default value compatible with the
-current autoscaling behavior, this feature can be added to the current API
+Since the added field is optional and it's omission results in no change to the existing 
+autoscaling behavior, this feature can be added to the current API
 version `pkg/apis/autoscaling/v2`.
 
-The feature presented in this KEP only allows to tune an existing parameter, and
+The feature presented in this KEP only allows users to tune an existing parameter, and
 as such doesn't require any new HPA Events or modify any Status. A new error is
 emitted if a `tolerance` field is set to a negative value.
 
@@ -426,13 +426,15 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrades present no particular issue: the new field won't be set and the HPA
-will behave like it does today. Users can use the new feature by setting the
-new `tolerance` field (provided the Feature Gate is enabled).
+#### Upgrade
+Existing HPAs will continue to work as they do today, using the global `horizontal-pod-autoscaler-tolerance` 
+value from the `kube-controller-manager`. Users can use the new feature by enabling the Feature 
+Gate (alpha only) and setting the new `tolerance` field on an HPA.
 
-On downgrades to a version that does not support this functionality, an HPA will
-ignore any configured `tolerance` field, and use the default (as specified by
-`--horizontal-pod-autoscaler-tolerance`).
+#### Downgrade
+On downgrade, all HPAs will revert to using the global `horizontal-pod-autoscaler-tolerance` 
+value from the `kube-controller-manager`, regardless of any configured `tolerance` value on the HPA
+itself.
 
 ### Version Skew Strategy
 
@@ -495,6 +497,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+No.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -508,7 +512,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+The feature can be disabled by restarting the `kube-controller-manager` with the feature gate set to `false`.
+
+Any `tolerance` values set on existing HPAs will be ignored by the `kube-controller-manager` when the feature gate is off.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+When the feature is re-enabled, any HPAs with configured `tolerance` values will use those when calculating replica counts, rather than the global tolerance from the `kube-controller-manager`.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -687,6 +697,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -696,6 +708,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -703,6 +717,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
