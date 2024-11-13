@@ -218,7 +218,7 @@ A user disatisfied with the autoscaling behavior following an update of this par
 
 ## Design Details
 
-The `HorizontalPodAutoscaler` API is updated to add the new `tolerance` field:
+The `HorizontalPodAutoscaler` API is updated to add a new `tolerance` field to the `HPAScalingRules` object:
 
 ```golang
 type HPAScalingRules struct {
