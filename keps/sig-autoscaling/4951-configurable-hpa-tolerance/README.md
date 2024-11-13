@@ -485,15 +485,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: HPAConfigurableTolerance
+  - Components depending on the feature gate: `kube-controller-manager`
 
 ###### Does enabling the feature change any default behavior?
 
