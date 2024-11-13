@@ -4,9 +4,6 @@ authors:
   - "@pr00se"
   - "@jm-franc"
 owning-sig: sig-autoscaling
-participating-sigs:
-  - sig-aaa
-  - sig-bbb
 status: provisional
 creation-date: 2024-11-05
 reviewers:
