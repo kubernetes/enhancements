@@ -252,31 +252,37 @@ The scheduler will prioritize switches according to the order outlined above, pr
 
 If provided, Network QoS Annotations can be used to refine and enhance the details of link performance, enabling more precise scheduling decisions.
 
-#### Example of Network Topology Labels with reserved network types:
+#### Example of network topology representation with reserved network types:
 
+Consider the following network topology:
+
+![Netwotk topology with reserved network types](./img/topo-reserved-labels.png)
+
+Let's examine node `vm12` as an example. This node is connected to NVSwitch `nvl10` and network switch `sw11`, which in turn is connected to switches `sw21` and `sw31`.
+In this case, the node labels would be:
 ```
-network.topology.kubernetes.io/accelerator: nvl72-a
-network.topology.kubernetes.io/block: block-b
-network.topology.kubernetes.io/datacenter: dc-c
-network.topology.kubernetes.io/zone: zone-d
+network.topology.kubernetes.io/accelerator: nvl10
+network.topology.kubernetes.io/block: sw11
+network.topology.kubernetes.io/datacenter: sw21
+network.topology.kubernetes.io/zone: sw31
 ```
 
-#### Example of Network QoS Annotations that complements the example above:
+If we have additional information such as latency and/or bandwidth between the node and the switches, it can be provided in an annotation:
 ```
 network.qos.kubernetes.io/switches: {
-   "nvl72-a": {
+   "nvl10": {
       "latency": "2us",
       "bandwidth": "100Gbps"
    },
-   "block-b": {
+   "sw11": {
       "latency": "50us",
       "bandwidth": "40Gbps"
    },
-   "dc-c": {
+   "sw21": {
       "latency": "500us",
       "bandwidth": "20Gbps"
    },
-  "zone-d": {
+  "sw31": {
       "latency": "1ms",
       "bandwidth": "10Gbps"
    }
