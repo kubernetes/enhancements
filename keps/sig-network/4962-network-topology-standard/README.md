@@ -863,11 +863,19 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+One alternative is to delegate network topology representation to CSPs. For instance, AWS employs network topology labels in the format `topology.k8s.aws/network-node-layer-N` to describe their three-tier network hierarchy.
+
+However, this approach has several limitations:
+1. It is CSP-specific, hindering portability across different cloud environments.
+2. It is tightly coupled to a predefined network layout, offering little flexibility for extension.
+3. It lacks the capability to incorporate additional QoS information that could be utilized by schedulers or applications.
+
+In contrast, our proposal offers:
+1. Flexibility in defining network hierarchies
+2. Extensibility to accommodate various network structures
+3. The ability to include diverse network QoS metrics
+
+This approach provides a more versatile and adaptable solution for representing network topologies across different cloud environments and use cases.
 
 ## Infrastructure Needed (Optional)
 
