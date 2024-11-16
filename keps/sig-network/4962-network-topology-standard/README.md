@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-4962: Standardizing Cluster Network Topology Representation
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -158,13 +158,13 @@ This document proposes a standard for declaring cluster network topology in Kube
 
 ## Motivation
 
-Understanding the cluster network topology is essential for optimizing the placement of workloads that require intensive inter-node communication. Currently, there is no standardized way to represent this information in Kubernetes, making it challenging to develop control plane components and applications that can leverage topology awareness.
+Understanding the cluster network topology is essential for optimizing the placement of workloads that require intensive inter-node communication. Currently, there is no standardized way to represent this information in Kubernetes, making it challenging to develop control plane components and applications that can leverage network topology awareness.
 
 This information might be useful for various components and features, including:
 
 - Pod affinity sections in deployment and pod specs
 - Kueue topology-aware scheduling
-- Development of native scheduler plugins for topology-aware scheduling, for example:
+- Development of native scheduler plugins for nerwork-topology-aware scheduling, for example:
   - Topology-aware gang-scheduling scheduler plugin
   - Gang-scheduling auto-scaler
   - DRA scheduler plugin
@@ -175,8 +175,8 @@ This information might be useful for various components and features, including:
 
 ### Non-Goals
 
-- Implement a topology-aware gang-scheduling scheduler plugin
-- Define or implement topology discovery mechanisms for CSPs or on-premises environments
+- Implement a network-topology-aware gang-scheduling scheduler plugin
+- Define or implement network topology discovery mechanisms for CSPs or on-premises environments
 
 ## Proposal
 
@@ -214,7 +214,7 @@ bogged down.
 
 ### Notes/Constraints/Caveats (Optional)
 
-Cluster topology information can be derived from various sources:
+Cluster network topology information can be derived from various sources:
 - Provided directly by a Cloud Service Provider (CSP)
 - Extracted from a CSP using specialized tools like [topograph](https://github.com/NVIDIA/topograph)
 - Manually set up by cluster administrators
@@ -236,8 +236,6 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-
-
 ### Reserved Network Types
 We have introduced reserved network types to better accommodate common network hierarchies. These reserved network types include the following predefined names and characteristics:
 
@@ -252,15 +250,15 @@ The scheduler will prioritize switches according to the order outlined above, pr
 
 If provided, Network QoS Annotations can be used to refine and enhance the details of link performance, enabling more precise scheduling decisions.
 
-#### Example of network topology representation with reserved network types:
+#### Example 1: network topology representation with reserved network types:
 
 Consider the following network topology:
 
-![Netwotk topology with reserved network types](./img/topo-reserved-labels.png)
+![Network topology with reserved network types](./img/topo-reserved-labels.png)
 
 Let's examine node `vm12` as an example. This node is connected to NVSwitch `nvl10` and network switch `sw11`, which in turn is connected to switches `sw21` and `sw31`.
 In this case, the node labels would be:
-```
+```yaml
 network.topology.kubernetes.io/accelerator: nvl10
 network.topology.kubernetes.io/block: sw11
 network.topology.kubernetes.io/datacenter: sw21
@@ -268,7 +266,7 @@ network.topology.kubernetes.io/zone: sw31
 ```
 
 If we have additional information such as latency and/or bandwidth between the node and the switches, it can be provided in an annotation:
-```
+```yaml
 network.qos.kubernetes.io/switches: {
    "nvl10": {
       "latency": "2us",
@@ -289,37 +287,91 @@ network.qos.kubernetes.io/switches: {
 }
 ```
 
+#### Example 2: network topology representation with reserved network types:
+
+Consider the following network topology:
+
+![Network topology with reserved network types](./img/topo-reserved-labels2.png)
+
+Let's examine node `vm31` as an example. This node is connected to the top-of-rack switch `sw13`, which in turn is connected to switches `sw22` and `sw31`.
+
+In this case, the node labels would be:
+
+```yaml
+network.topology.kubernetes.io/block: sw13
+network.topology.kubernetes.io/datacenter: sw22
+network.topology.kubernetes.io/zone: sw31
+```
+
+Similar to the previous example, the optional QoS metrics can be provided in an annotation:
+
+```yaml
+network.qos.kubernetes.io/switches: {
+   "sw13": {
+      "latency": "50us",
+      "bandwidth": "40Gbps"
+   },
+   "sw22": {
+      "latency": "500us",
+      "bandwidth": "20Gbps"
+   },
+   "sw31": {
+      "latency": "1ms",
+      "bandwidth": "10Gbps"
+   }
+}
+```
+
 ### Extensibility and Future-Proofing
 
 This proposal is designed with extensibility in mind, enabling the use of custom network types. This ensures that the standard can adapt to future advancements in cluster networking without requiring significant overhauls.
 
 For custom network types, Network QoS Annotations are required, with distance being the minimum mandatory metric. Specifying latency and bandwidth is optional, but including them can offer a more detailed view of link performance, enabling more efficient scheduling decisions.
 
-#### Example of network topology with custom network types
+#### Example 3: network topology representation with custom network types
 
-##### Node Labels:
-```
-network.topology.kubernetes.io/area: sw-a
-network.topology.kubernetes.io/sector: block-b
-network.topology.kubernetes.io/center: center-c
+The same network topology depicted in Example 2 can be represented using custom network types.
+
+Let's use `tor` for top-of-rack switches, `area` for the second level of switches, and `center` for the third level.
+
+In this case, the node labels for node `vm31` would be:
+
+```yaml
+network.topology.kubernetes.io/tor: sw13
+network.topology.kubernetes.io/area: sw22
+network.topology.kubernetes.io/center: sw31
 ```
 
-##### Node Annotations:
-```
+The minimally required annotation would be:
+
+```yaml
 network.qos.kubernetes.io/switches: {
-   "sw-a": {
+   "sw13": {
+      "distance": 1
+   },
+   "sw22": {
+      "distance": 2
+   },
+   "sw31": {
+      "distance": 3
+   }
+}
+```
+
+Optionally, the annotations might include additional QoS metrics:
+
+```yaml
+network.qos.kubernetes.io/switches: {
+   "sw13": {
       "distance": 1,
-      "latency": "100ns",
       "bandwidth": "40Gbps"
    },
-   "block-b": {
+   "sw22": {
       "distance": 2,
-      "latency": "500ns",
       "bandwidth": "20Gbps"
    },
-   "center-c": {
+   "sw31": {
       "distance": 3,
-      "latency": "1ms",
       "bandwidth": "10Gbps"
    }
 }
