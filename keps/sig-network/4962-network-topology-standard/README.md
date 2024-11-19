@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4962: Standardizing Cluster Network Topology Representation
+# KEP-4962: Standardizing the Representation of Cluster Switch Network Topology
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -154,20 +154,42 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This document proposes a standard for declaring cluster network topology in Kubernetes, representing the hierarchy of nodes, switches, and interconnects. In this context, a switch can refer to a physical network device or a collection of such devices with close proximity and functionality.
+This document proposes a standard for declaring switch network topology in Kubernetes clusters, representing the hierarchy of nodes, switches, and interconnects. In this context, a switch can refer to a physical network device or a collection of such devices with close proximity and functionality.
 
 ## Motivation
+With the rise of multi-node Kubernetes workloads, especially AI workloads that demand intensive inter-node communication, scheduling pods in close network proximity is becoming essential.
 
-Understanding the cluster network topology is essential for optimizing the placement of workloads that require intensive inter-node communication. Currently, there is no standardized way to represent this information in Kubernetes, making it challenging to develop control plane components and applications that can leverage network topology awareness.
+Some major CSPs already offer mechanisms to discover instance network topology:
+- **Amazon AWS** provides the [DescribeInstanceTopology API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTopology.html).
+- **Google Cloud Platform (GCP)** exposes tools via the [Google Cloud SDK](https://cloud.google.com/go/docs/reference/cloud.google.com/go/compute/latest/apiv1), allowing the retrieval of rack and cluster IDs, which can be used to reconstruct network hierarchies.
+- **Oracle Cloud Infrastructure (OCI)** offers the [Capacity Topology API](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.50.1/oci_cli_docs/cmdref/compute/capacity-topology.html), providing topology-related information for their compute nodes.
 
-This information might be useful for various components and features, including:
+Beyond CSPs, certain on-premises clusters support network topology discovery, though this capability depends on the features of the underlying switch network vendors.
 
-- Pod affinity sections in deployment and pod specs
-- Kueue topology-aware scheduling
-- Development of native scheduler plugins for nerwork-topology-aware scheduling, for example:
-  - Topology-aware gang-scheduling scheduler plugin
-  - Gang-scheduling auto-scaler
-  - DRA scheduler plugin
+An open-source project, [Topograph](https://github.com/NVIDIA/topograph), has implemented these approaches and is successfully deployed in production environments.
+
+However, what remains missing is a common and standardized method to convey switch network topology information to the Kubernetes ecosystem.
+
+Currently, Kubernetes lacks a unified standard for representing network topology. This gap creates challenges for developing control plane components and applications that could leverage topology-aware features.
+
+For example, AWS has begun addressing this by introducing `topology.k8s.aws/network-node-layer-N` node labels to represent its 3-tier networking structure. However, this solution is cloud-specific and does not address broader use cases.
+
+In this KEP, we propose establishing a standardized representation of switch network topology within Kubernetes clusters.
+
+The cluster network topology could be:
+- Provided directly by CSPs, where CSPs apply node labels during node creation.
+- Extracted from CSPs using specialized tools like [Topograph](https://github.com/NVIDIA/topograph).
+- Manually configured by cluster administrators.
+- Derived using a combination of the above methods.
+
+Such topology information could significantly enhance various Kubernetes components and features, including:
+
+- Pod affinity settings in deployments and pod specs.
+- Topology-aware scheduling in Kueue.
+- Development of Kubernetes-native scheduler plugins for network-topology-aware scheduling, such as:
+  - Topology-aware gang-scheduling plugin.
+  - Gang-scheduling auto-scaler.
+  - Device resource allocation (DRA) scheduler plugin.
 
 ### Goals
 
@@ -213,12 +235,6 @@ bogged down.
 #### Story 2
 
 ### Notes/Constraints/Caveats (Optional)
-
-Cluster network topology information can be derived from various sources:
-- Provided directly by a Cloud Service Provider (CSP)
-- Extracted from a CSP using specialized tools like [topograph](https://github.com/NVIDIA/topograph)
-- Manually set up by cluster administrators
-- A combination of the above methods to ensure comprehensive coverage
 
 ### Risks and Mitigations
 
