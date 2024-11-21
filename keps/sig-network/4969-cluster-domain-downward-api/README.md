@@ -155,15 +155,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Currently, all Services (and many Pods) have Fully Qualified Domain Names (FQDNs)
+All Kubernetes Services (and many Pods) have Fully Qualified Domain Names (FQDNs)
 that are constructed using the format `{service}.{namespace}.svc.{clusterDomain}`,
 where `{clusterDomain}` is _typically_ `cluster.local`, but can be reconfigured
 by the cluster administrator.
 
-Currently there is no way for cluster workloads to query for this domain name,
-leaving them either use relative domain names or take it as manual configuration.
+Currently, there is no way for cluster workloads to query for this domain name,
+leaving them to either use relative domain names or configure it manually.
 
-This KEP proposes adding a new Downward API for that workloads can use to request it.
+This KEP proposes adding a new Downward API that workloads can use to request it.
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
