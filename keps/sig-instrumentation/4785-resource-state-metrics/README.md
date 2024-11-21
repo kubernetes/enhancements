@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4785: CRDMetrics Controller
+# KEP-4785: Resource State Metrics
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -176,10 +176,10 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Custom Resource Definition Metrics (`crdmetrics`) is a Kubernetes controller 
-that builds on Kube-State-Metrics' Custom Resource State's ideology and
-generates metrics for custom resources based on the configuration specified in
-its managed resource, `CRDMetricsResource`.
+Resource State Metrics is a Kubernetes controller that builds on Kube State
+Metrics' Custom Resource State's ideology and generates metrics for custom
+resources based on the configuration specified in its managed resource,
+`ResourceMetricsMonitor`.
 
 ## Motivation
 
@@ -211,8 +211,8 @@ scalability in the long run, while ensuring that it meets the same expectations
 as its predecessor and more.
 
 Such a "solution" should allow the maintainers to deprecate and drop the Custom
-Resource State API from Kube State Metrics, and replace it by the CRDMetrics 
-controller which, in addition to its own benefits, would allow Kube State 
+Resource State API from Kube State Metrics, and replace it by Resource State 
+Metrics which, in addition to its own benefits, would allow Kube State 
 Metrics to drop all Custom Resource State API-specific behaviors that can crash
 Kube State Metrics, directly affecting the availability of native metrics 
 defined in the codebase, and ensuring that native metrics do not experience
@@ -244,7 +244,7 @@ The KEP targets a controller which allows for:
 * Custom Resource metrics generation based on their schemata,
 * using admission webhooks to avoid ingesting conflicting or bad configuration
   from managed resources,
-* defining cluster-scoped managed resources (`CRDMetricsResource`) that allows
+* defining cluster-scoped managed resources (`ResourceMetricsMonitor`) that allows
   defining the collection configuration for generating metrics on-the-fly,
 * accommodating for multiple configuration parsing techniques and expression
   turing-incomplete (or turing-complete if Go-bindings are available) languages,
@@ -363,7 +363,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-N/A since the managed resource offered by the CRDMetrics controller provides the
+N/A since the managed resource offered by Resource State Metrics provides the
 ability to define metric configurations that are a super-set of the 
 expressibility that Kube State Metrics' Custom Resource State configurations
 have to offer.
@@ -382,7 +382,7 @@ Resource State API, while maintaining a 3x faster round trip time for metric
 generation.
 
 - At its core, the controller relies on its managed resource,
-`CRDMetricsResource` to fetch the metric generation configuration. Parts of the
+`ResourceMetricsMonitor` to fetch the metric generation configuration. Parts of the
 configuration may be defined using different `resolver`s, such as `unstructured`
 or `CEL`.
 - Once fetched, the controller `unmarshal`s the configuration YAML directly into
@@ -392,7 +392,7 @@ or `CEL`.
 `schema.GroupVersionKind`, `schema.GroupVersionResource` to avoid 
 [plural ambiguities]), and reflectors for the specified resource are
 initialized, and populate the stores on its update.
-- `/metrics` pings on `CRDMETRICS_MAIN_PORT` trigger the server to write the
+- `/metrics` pings on `RSM_MAIN_PORT` trigger the server to write the
 raw metrics, combined with its appropriate header(s), in the response. All
 generated metrics are hardcoded to `gauge`s by design, as Prometheus lacks
 support for some OpenMetrics-specified metrics' types, such as `Info` and
@@ -562,7 +562,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `crdmetrics_test`: https://github.com/rexagod/crdmetrics/tree/main/tests
+- `resourcestatemetrics_test`: https://github.com/rexagod/resource-state-metrics/tree/main/tests
 
 ### Graduation Criteria
 
@@ -728,7 +728,7 @@ automations, so be extremely careful here.
 -->
 
 The controller only has RBAC permissions over its managed resources
-(`CRDMetricsResource` instances) **only** and does not attempt to modify or
+(`ResourceMetricsMonitor` instances) **only** and does not attempt to modify or
 break any existing in-cluster functionality.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -745,14 +745,14 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 Removing the controller will not remove its managed resources. They will be
-dropped if the corresponding `CRDMetricsResource` CRD is deleted. Similarly, 
+dropped if the corresponding `ResourceMetricsMonitor` CRD is deleted. Similarly, 
 removing all managed resources will not remove the controller.
 
 The reason why it is so is because cluster-scoped resources cannot have owner
 references linking back to namespace-scoped resources, in which case, the
 garbage collection is a no-op. See [819a80] for more details.
 
-[819a80]: https://github.com/rexagod/crdmetrics/commit/819a8001200a13c51cb82779c139a9081b4d613b
+[819a80]: https://github.com/rexagod/resource-state-metrics/commit/819a8001200a13c51cb82779c139a9081b4d613b
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -867,8 +867,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [x] Events: Events are emitted in `EMIT_NAMESPACE` (defaults to ``), for e.g., 
   `OwnerRefInvalidNamespace` in case of an owner reference being defined on
-  `CRDMetricsResource` to its controller.
-- [x] API .status: The status for a successfully processed `CRDMetricsResource`
+  `ResourceMetricsMonitor` to its controller.
+- [x] API .status: The status for a successfully processed `ResourceMetricsMonitor`
 looks as follows:
 ```yaml
   status:                                                                                                     
@@ -909,9 +909,9 @@ TBD.
 Pick one more of these and delete the rest.
 -->
 
-- [x] Metrics: Telemetry metrics exposed on `CRDMETRICS_SELF_PORT`.
+- [x] Metrics: Telemetry metrics exposed on `RSM_SELF_PORT`.
 - [x] Other: `healthz`, `readyz`, and `livez` endpoints are exposed on
-  `CRDMETRICS_SELF_PORT`, `CRDMETRICS_MAIN_PORT`, and `CRDMETRICS_SELF_PORT`,
+  `RSM_SELF_PORT`, `RSM_MAIN_PORT`, and `RSM_SELF_PORT`,
   respectively.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1000,10 +1000,10 @@ Describe them, providing:
 -->
 
 Yes, the controller currently has one cluster-scoped managed resource of  
-[`CRDMetricsResource` type]. There is currently no upper-limit on the number of
+[`ResourceMetricsMonitor` type]. There is currently no upper-limit on the number of
 managed resource instances that could be defined.
 
-[`CRDMetricsResource` type]: https://github.com/rexagod/crdmetrics/blob/main/pkg/apis/crdmetrics/v1alpha1/types.go
+[`ResourceMetricsMonitor` type]: https://github.com/rexagod/resource-state-metrics/blob/main/pkg/apis/resourcestatemetrics/v1alpha1/types.go
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1107,7 +1107,7 @@ __monitoring__ any failure using the available set of health probes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-The controller provides a `/debug` endpoint (on `CRDMETRICS_SELF_PORT`) which
+The controller provides a `/debug` endpoint (on `RSM_SELF_PORT`) which
 exposes all available `pprof` data to help diagnose any issue with the binary.
 Additionally, the telemetry metrics can provide more details about the runtime
 consumptions of the binary. The health probes take into factor the health of the
@@ -1154,5 +1154,5 @@ new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
 
-We request a repository (`kubernetes/crdmetrics`) to migrate
-`rexagod/crdmetrics` to.
+We request a repository (`kubernetes/resource-state-metrics`) to migrate
+`rexagod/resource-state-metrics` to.

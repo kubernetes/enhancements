@@ -1,4 +1,4 @@
-title: CRDMetrics Controller
+title: Resource State Metrics
 kep-number: 4785
 authors:
   - "@rexagod"
@@ -14,6 +14,7 @@ reviewers:
 approvers:
   - "@dgrisonnet"
   - "@logicalhan"
+  - "@mrueg"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
