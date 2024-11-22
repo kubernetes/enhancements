@@ -167,7 +167,7 @@ by the cluster administrator.
 Currently, there is no way for cluster workloads to query for this domain name,
 leaving them to either use relative domain names or configure it manually.
 
-This KEP proposes adding a new Downward API that workloads can use to request it.
+This KEP proposes adding a new field mapping into the Downward API mechanism, that workloads can use to request the cluster domain name.
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
