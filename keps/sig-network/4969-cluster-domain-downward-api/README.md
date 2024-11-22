@@ -223,7 +223,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-- Making it easier to use and generate FQDNs.
+- Making it easier to use and generate FQDNs for internally-visible Services
 - Reducing the difference between Kubernetes distributions.
 
 <!--
