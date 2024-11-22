@@ -245,7 +245,7 @@ and make progress.
 
 ## Proposal
 
-Add a Downward API for the cluster domain that containers can request.
+Add a new field mapping into the Downward API mechanism, that lets containers retrieve the cluster domain name.
 
 <!--
 This is where we get down to the specifics of what the proposal actually is.
