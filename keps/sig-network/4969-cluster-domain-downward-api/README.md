@@ -108,6 +108,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [ConfigMap á la k3s](#configmap--la-k3s)
+  - [Dedicated API Resource](#dedicated-api-resource)
+  - [kubelet <code>/configz</code>](#kubelet-configz)
+  - [Parsing <code>resolv.conf</code>](#parsing-resolvconf)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
