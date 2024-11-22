@@ -191,7 +191,7 @@ updates.
 ## Motivation
 
 Relative domain names are a source of ambiguity: does `get.app` refer to
-[the domain registry](https://get.app./) or the Service `get` in `app`?
+the domain registry [get.app](https://get.app/) or the Service `get` in `app`?
 This also becomes problematic for TLS, since there is no way to distinguish
 which of these two cases a certificate applies to.
 
