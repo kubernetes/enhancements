@@ -157,7 +157,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This document proposes a standard for declaring switch network topology in Kubernetes clusters, representing the hierarchy of nodes, switches, and interconnects. In this context, a switch can refer to a physical network device or a collection of such devices with close proximity and functionality.
 
 ## Motivation
-With the rise of multi-node Kubernetes workloads, especially AI workloads that demand intensive inter-node communication, scheduling pods in close network proximity is becoming essential.
+
+With the rise of multi-node Kubernetes workloads—such as AI/ML training jobs or sets of interdependent, data-intensive services—that demand intensive inter-node communication, scheduling pods in close network proximity is becoming essential.
+However, Kubernetes currently lacks a standard method to describe cluster network topology, which is a key area for improvement.
+By establishing a consistent way to represent cluster network topology, this proposal lays the groundwork for advanced scheduling capabilities that take backend switched network topology and performance into account. For example, this will enable the development of a network-aware gang scheduling plugin.
 
 Some major CSPs already offer mechanisms to discover instance network topology:
 - **Amazon AWS** provides the [DescribeInstanceTopology API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTopology.html).
@@ -170,7 +173,7 @@ An open-source project, [Topograph](https://github.com/NVIDIA/topograph), has im
 
 However, what remains missing is a common and standardized method to convey switch network topology information to the Kubernetes ecosystem.
 
-Currently, Kubernetes lacks a unified standard for representing network topology. This gap creates challenges for developing control plane components and applications that could leverage topology-aware features.
+This gap creates challenges for developing control plane components and applications that could leverage topology-aware features.
 
 For example, AWS has begun addressing this by introducing `topology.k8s.aws/network-node-layer-N` node labels to represent its 3-tier networking structure. However, this solution is cloud-specific and does not address broader use cases.
 
@@ -220,6 +223,8 @@ Format: `network.qos.kubernetes.io/switches: <QoS>`
   - `bandwidth`: Link bandwidth (e.g., 100 Gbps), optional
 
 This structure can be easily extended with additional network QoS metrics in the future.
+
+We want to stress that we are not advocating for or favoring any specific network hierarchy. On the contrary, our goal is to make the system flexible and adaptable to any type of network.
 
 ### User Stories (Optional)
 
@@ -392,6 +397,52 @@ network.qos.kubernetes.io/switches: {
    }
 }
 ```
+
+#### Example 4: multi-homing network topology representation
+
+Consider multi-homing network topology where racks connected to multiple network switches:
+
+![Multi-homing network topology](./img/topo-multi-homing.png)
+
+Let's examine node `vm40` as an example. This node is connected to two switches, `sw14R` and `sw14B`, which in turn are connected to switches `sw22R` and `sw3R`, and `sw22B` and `sw3B`, respectively.
+
+In this case, the node `vm40` will have custom labels, for example,
+
+```yaml
+network.topology.kubernetes.io/block_red: sw14R
+network.topology.kubernetes.io/block_blue: sw14B
+network.topology.kubernetes.io/dc_red: sw22R
+network.topology.kubernetes.io/dc_blue: sw22B
+network.topology.kubernetes.io/zone_red: sw3R
+network.topology.kubernetes.io/zone_blue: sw3B
+```
+
+and a QoS annotation with minimally required distance metrics:
+
+```yaml
+network.qos.kubernetes.io/switches: {
+  "sw14R": {
+    "distance": 1
+  },
+  "sw14B": {
+    "distance": 1
+  },
+  "sw22R": {
+    "distance": 2
+  },
+  "sw22B": {
+    "distance": 2
+  },
+  "sw3R": {
+    "distance": 3
+  },
+  "sw3B": {
+    "distance": 3
+  }
+}
+```
+
+Optionally, the QoS annotation may contain additional performance metrics.
 
 ### Test Plan
 
