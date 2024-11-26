@@ -154,13 +154,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This document proposes a standard for declaring switch network topology in Kubernetes clusters, representing the hierarchy of nodes, switches, and interconnects. In this context, a switch can refer to a physical network device or a collection of such devices with close proximity and functionality.
+This document proposes a standard for declaring switch network topology in Kubernetes clusters,
+representing the hierarchy of nodes, switches, and interconnects.
+In this context, a `switch` can refer to a physical network device or a collection of such devices
+with close proximity and functionality.
 
 ## Motivation
 
-With the rise of multi-node Kubernetes workloads—such as AI/ML training jobs or sets of interdependent, data-intensive services—that demand intensive inter-node communication, scheduling pods in close network proximity is becoming essential.
+With the rise of multi-node Kubernetes workloads that demand intensive inter-node communication,
+scheduling pods in close network proximity is becoming essential.
+Examples of such workloads include AI/ML training jobs or sets of interdependent, data-intensive services.
+
 However, Kubernetes currently lacks a standard method to describe cluster network topology, which is a key area for improvement.
-By establishing a consistent way to represent cluster network topology, this proposal lays the groundwork for advanced scheduling capabilities that take backend switched network topology and performance into account. For example, this will enable the development of a network-aware gang scheduling plugin.
+By establishing a consistent way to represent cluster network topology, this proposal lays the groundwork for
+advanced scheduling capabilities that take backend switched network topology and performance into account.
 
 Some major CSPs already offer mechanisms to discover instance network topology:
 - **Amazon AWS** provides the [DescribeInstanceTopology API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTopology.html).
@@ -170,23 +177,15 @@ Some major CSPs already offer mechanisms to discover instance network topology:
 Beyond CSPs, certain on-premises clusters support network topology discovery, though this capability depends on the features of the underlying switch network vendors.
 
 An open-source project, [Topograph](https://github.com/NVIDIA/topograph), has implemented these approaches and is successfully deployed in production environments.
-
 However, what remains missing is a common and standardized method to convey switch network topology information to the Kubernetes ecosystem.
 
-This gap creates challenges for developing control plane components and applications that could leverage topology-aware features.
+This gap creates challenges for developing control plane components and applications that could leverage network-topology-aware features.
 
-For example, AWS has begun addressing this by introducing `topology.k8s.aws/network-node-layer-N` node labels to represent its 3-tier networking structure. However, this solution is cloud-specific and does not address broader use cases.
+Some CSPs have already taken steps to describe cluster network topology. For instance, AWS has begun addressing this by introducing `topology.k8s.aws/network-node-layer-N` node labels, which represent its 3-tier networking structure. However, this solution is specific to AWS and does not cater to broader, cross-cloud use cases.
 
 In this KEP, we propose establishing a standardized representation of switch network topology within Kubernetes clusters.
 
-The cluster network topology could be:
-- Provided directly by CSPs, where CSPs apply node labels during node creation.
-- Extracted from CSPs using specialized tools like [Topograph](https://github.com/NVIDIA/topograph).
-- Manually configured by cluster administrators.
-- Derived using a combination of the above methods.
-
 Such topology information could significantly enhance various Kubernetes components and features, including:
-
 - Pod affinity settings in deployments and pod specs.
 - Topology-aware scheduling in Kueue.
 - Development of Kubernetes-native scheduler plugins for network-topology-aware scheduling, such as:
@@ -205,26 +204,22 @@ Such topology information could significantly enhance various Kubernetes compone
 
 ## Proposal
 
-We propose new node label and annotation types to capture network topology information:
-- Network Topology Label
-- Network QoS Annotation
+We propose new node label type to capture network topology information:
 
 ### Network Topology Label
-Format: `network.topology.kubernetes.io/<nw-switch-type>: <switch-name>`
-- `<nw-switch-type>`: Logical type of the network switch (can be one of the reserved names or a custom name)
-  - Reserved names: `accelerator`, `block`, `datacenter`, `zone`
-- `<switch-name>`: Unique identifier for the switch
+Format: `network.topology.kubernetes.io/<nw-switch-type>: <switch-name>`, where
+- `<nw-switch-type>` defines the characteristics of a network switch. The term `switch` may refer to a physical network device or a collection of closely connected devices with similar functionality.
+- `<switch-name>` is a unique identifier for the switch.
 
-### Network QoS Annotation
-Format: `network.qos.kubernetes.io/switches: <QoS>`
-- `<QoS>`: A JSON object where each key is a switch name (matching the network topology label) with a value containing:
-  - `distance`: Numerical value representing the distance in hops from the node to the switch, required
-  - `latency`: Link latency (e.g., 200 ms), optional
-  - `bandwidth`: Link bandwidth (e.g., 100 Gbps), optional
+We propose to use the following four network switch types:
+1. `accelerator`: Network interconnect for direct accelerator communication (e.g., Multi-node NVLink interconnect between NVIDIA GPUs)
+2. `block`: Rack-level switches connecting hosts in one or more racks as a block.
+3. `datacenter`: Spine-level switches connecting multiple blocks inside a datacenter.
+4. `zone`: Zonal switches connecting multiple datacenters inside an availability zone.
 
-This structure can be easily extended with additional network QoS metrics in the future.
-
-We want to stress that we are not advocating for or favoring any specific network hierarchy. On the contrary, our goal is to make the system flexible and adaptable to any type of network.
+These types will accommodate the majority of common network hierarchies across different CSP and on-prem environments.
+Having these labels available in Kubernetes clusters will help in designing cloud agnostic scheduling systems.
+The scheduler will prioritize switches according to the order outlined above, providing a standardized approach for network-aware scheduling across a range of configurations.
 
 ### User Stories (Optional)
 
@@ -237,9 +232,55 @@ bogged down.
 
 #### Story 1
 
+As a data scientist running a data-intensive large-scale AI training job, I want to optimize the runtime
+by binding pods to nodes that are in close network proximity.
+This ensures better performance for my distributed workloads.
+
+Additionally, I do not want to modify the job specification when migrating the job across different Kubernetes environments.
+
+To achieve this, I can leverage the pod affinity feature of the default Kubernetes scheduler with topology keys:
+```yaml
+  spec:
+    affinity:
+      podAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 70
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - training
+              topologyKey: network.topology.kubernetes.io/block
+          - weight: 90
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - training
+              topologyKey: network.topology.kubernetes.io/accelerator
+```
 #### Story 2
 
+As a Kubernetes contributor, I want to enhance the performance of multi-node jobs that require gang scheduling.
+To achieve this, I am developing a Kubernetes-native scheduler plugin specifically designed for gang scheduling.
+
+This plugin should be cloud-agnostic, ensuring it functions seamlessly across different cloud environments.
+
+The scheduler plugin reconstructs the cluster network topology by interpreting `network.topology.kubernetes.io/...` node labels.
+Using this topology information, it optimally binds pods to suitable nodes, reducing overall latency and improving performance.
+
 ### Notes/Constraints/Caveats (Optional)
+
+The delivery method for the cluster network topology lies outside the scope of this proposal.
+However, this information could be:
+- Provided directly by CSPs, where CSPs apply node labels during node creation.
+- Extracted from CSPs using specialized tools like [Topograph](https://github.com/NVIDIA/topograph).
+- Manually configured by cluster administrators.
+- Derived using a combination of the above methods.
 
 ### Risks and Mitigations
 
@@ -257,192 +298,20 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-### Reserved Network Types
-We have introduced reserved network types to better accommodate common network hierarchies. These reserved network types include the following predefined names and characteristics:
-
-1. `accelerator`: Network interconnect for direct accelerator communication (e.g., Multi-node NVLink interconnect between NVIDIA GPUs)
-2. `block`: Rack-level switches connecting hosts in one or more racks as a block.
-3. `datacenter`: Spine-level switches connecting multiple blocks inside a datacenter.
-4. `zone`: Zonal switches connecting multiple datacenters inside an availability zone.
-
-When using reserved network types, Network QoS Annotations become optional. In the absence of these annotations, it is assumed that performance within each network layer is uniform.
-
-The scheduler will prioritize switches according to the order outlined above, providing a standardized approach for network-aware scheduling across a range of configurations.
-
-If provided, Network QoS Annotations can be used to refine and enhance the details of link performance, enabling more precise scheduling decisions.
-
-#### Example 1: network topology representation with reserved network types:
+### Example: network topology representation with reserved network types:
 
 Consider the following network topology:
 
 ![Network topology with reserved network types](./img/topo-reserved-labels.png)
 
 Let's examine node `vm12` as an example. This node is connected to NVSwitch `nvl10` and network switch `sw11`, which in turn is connected to switches `sw21` and `sw31`.
-In this case, the node labels would be:
+In this case, node `vm12` labels would be:
 ```yaml
 network.topology.kubernetes.io/accelerator: nvl10
 network.topology.kubernetes.io/block: sw11
 network.topology.kubernetes.io/datacenter: sw21
 network.topology.kubernetes.io/zone: sw31
 ```
-
-If we have additional information such as latency and/or bandwidth between the node and the switches, it can be provided in an annotation:
-```yaml
-network.qos.kubernetes.io/switches: {
-   "nvl10": {
-      "latency": "2us",
-      "bandwidth": "100Gbps"
-   },
-   "sw11": {
-      "latency": "50us",
-      "bandwidth": "40Gbps"
-   },
-   "sw21": {
-      "latency": "500us",
-      "bandwidth": "20Gbps"
-   },
-  "sw31": {
-      "latency": "1ms",
-      "bandwidth": "10Gbps"
-   }
-}
-```
-
-#### Example 2: network topology representation with reserved network types:
-
-Consider the following network topology:
-
-![Network topology with reserved network types](./img/topo-reserved-labels2.png)
-
-Let's examine node `vm31` as an example. This node is connected to the top-of-rack switch `sw13`, which in turn is connected to switches `sw22` and `sw31`.
-
-In this case, the node labels would be:
-
-```yaml
-network.topology.kubernetes.io/block: sw13
-network.topology.kubernetes.io/datacenter: sw22
-network.topology.kubernetes.io/zone: sw31
-```
-
-Similar to the previous example, the optional QoS metrics can be provided in an annotation:
-
-```yaml
-network.qos.kubernetes.io/switches: {
-   "sw13": {
-      "latency": "50us",
-      "bandwidth": "40Gbps"
-   },
-   "sw22": {
-      "latency": "500us",
-      "bandwidth": "20Gbps"
-   },
-   "sw31": {
-      "latency": "1ms",
-      "bandwidth": "10Gbps"
-   }
-}
-```
-
-### Extensibility and Future-Proofing
-
-This proposal is designed with extensibility in mind, enabling the use of custom network types. This ensures that the standard can adapt to future advancements in cluster networking without requiring significant overhauls.
-
-For custom network types, Network QoS Annotations are required, with distance being the minimum mandatory metric. Specifying latency and bandwidth is optional, but including them can offer a more detailed view of link performance, enabling more efficient scheduling decisions.
-
-#### Example 3: network topology representation with custom network types
-
-The same network topology depicted in Example 2 can be represented using custom network types.
-
-Let's use `tor` for top-of-rack switches, `area` for the second level of switches, and `center` for the third level.
-
-In this case, the node labels for node `vm31` would be:
-
-```yaml
-network.topology.kubernetes.io/tor: sw13
-network.topology.kubernetes.io/area: sw22
-network.topology.kubernetes.io/center: sw31
-```
-
-The minimally required annotation would be:
-
-```yaml
-network.qos.kubernetes.io/switches: {
-   "sw13": {
-      "distance": 1
-   },
-   "sw22": {
-      "distance": 2
-   },
-   "sw31": {
-      "distance": 3
-   }
-}
-```
-
-Optionally, the annotations might include additional QoS metrics:
-
-```yaml
-network.qos.kubernetes.io/switches: {
-   "sw13": {
-      "distance": 1,
-      "bandwidth": "40Gbps"
-   },
-   "sw22": {
-      "distance": 2,
-      "bandwidth": "20Gbps"
-   },
-   "sw31": {
-      "distance": 3,
-      "bandwidth": "10Gbps"
-   }
-}
-```
-
-#### Example 4: multi-homing network topology representation
-
-Consider multi-homing network topology where racks connected to multiple network switches:
-
-![Multi-homing network topology](./img/topo-multi-homing.png)
-
-Let's examine node `vm40` as an example. This node is connected to two switches, `sw14R` and `sw14B`, which in turn are connected to switches `sw22R` and `sw3R`, and `sw22B` and `sw3B`, respectively.
-
-In this case, the node `vm40` will have custom labels, for example,
-
-```yaml
-network.topology.kubernetes.io/block_red: sw14R
-network.topology.kubernetes.io/block_blue: sw14B
-network.topology.kubernetes.io/dc_red: sw22R
-network.topology.kubernetes.io/dc_blue: sw22B
-network.topology.kubernetes.io/zone_red: sw3R
-network.topology.kubernetes.io/zone_blue: sw3B
-```
-
-and a QoS annotation with minimally required distance metrics:
-
-```yaml
-network.qos.kubernetes.io/switches: {
-  "sw14R": {
-    "distance": 1
-  },
-  "sw14B": {
-    "distance": 1
-  },
-  "sw22R": {
-    "distance": 2
-  },
-  "sw22B": {
-    "distance": 2
-  },
-  "sw3R": {
-    "distance": 3
-  },
-  "sw3B": {
-    "distance": 3
-  }
-}
-```
-
-Optionally, the QoS annotation may contain additional performance metrics.
 
 ### Test Plan
 
@@ -982,19 +851,12 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-One alternative is to delegate network topology representation to CSPs. For instance, AWS employs network topology labels in the format `topology.k8s.aws/network-node-layer-N` to describe their three-tier network hierarchy.
+One alternative is to delegate network topology representation to CSPs. For example, AWS uses network topology
+labels in the format `topology.k8s.aws/network-node-layer-N` to describe its three-tier network hierarchy.
 
-However, this approach has several limitations:
-1. It is CSP-specific, hindering portability across different cloud environments.
-2. It is tightly coupled to a predefined network layout, offering little flexibility for extension.
-3. It lacks the capability to incorporate additional QoS information that could be utilized by schedulers or applications.
+However, this approach is CSP-specific and tightly coupled to a predefined network layout.
 
-In contrast, our proposal offers:
-1. Flexibility in defining network hierarchies
-2. Extensibility to accommodate various network structures
-3. The ability to include diverse network QoS metrics
-
-This approach provides a more versatile and adaptable solution for representing network topologies across different cloud environments and use cases.
+In contrast, our proposal provides a cloud-agnostic approach that accommodates commonly used network topologies.
 
 ## Infrastructure Needed (Optional)
 
