@@ -403,20 +403,6 @@ until it verifies that the consumer associated to that IP has been deleted too.
 The IPAddress will be deleted and an event generated if the controller determines that the IPAddress
 is orphan [(see Allocator section)](#allocator)
 
-- IPAddress referencing recreated Object (different UID)
-
-1. User created Gateway "foo"
-2. Gateway controller allocated IP and ref -> "foo"
-3. User deleted gateway "foo"
-4. Gateway controller doesn't delete the IP (leave it for GC)
-5. User creates a new Gateway "foo"
-6. apiserver repair loop finds the IP with a valid ref to "foo"
-
-If the new gateway is created before the apiserver observes the delete, apiserver will find that gateway "foo"
-still exists and can't release the IP. It can't peek inside "foo" to see if that is the right IP because it is
-a type it does not know. If it knew the UID it could see that "foo" UID was different and release the IP.
-The IPAddress will use the UID to reference the parent to avoid problems in this scenario.
-
 #### Resizing Service IP Ranges
 
 One of the most common problems users may have is how to scale up or scale down their Service CIDRs.
@@ -496,10 +482,6 @@ type ParentReference struct {
   Namespace string
   // Name is the name of the referent
   Name string
-  // UID is the uid of the referent
-  UID string
-}
-
 ```
 
 #### Allocator
