@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4962: Standardizing the Representation of Cluster Switch Network Topology
+# KEP-4962: Standardizing the Representation of Cluster Network Topology
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -154,7 +154,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This document proposes a standard for declaring switch network topology in Kubernetes clusters,
+This document proposes a standard for declaring network topology in Kubernetes clusters,
 representing the hierarchy of nodes, switches, and interconnects.
 In this context, a `switch` can refer to a physical network device or a collection of such devices
 with close proximity and functionality.
@@ -167,7 +167,7 @@ Examples of such workloads include AI/ML training jobs or sets of interdependent
 
 However, Kubernetes currently lacks a standard method to describe cluster network topology, which is a key area for improvement.
 By establishing a consistent way to represent cluster network topology, this proposal lays the groundwork for
-advanced scheduling capabilities that take backend switched network topology and performance into account.
+advanced scheduling capabilities that take network topology and performance into account.
 
 Some major CSPs already offer mechanisms to discover instance network topology:
 - **Amazon AWS** provides the [DescribeInstanceTopology API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTopology.html).
@@ -177,13 +177,13 @@ Some major CSPs already offer mechanisms to discover instance network topology:
 Beyond CSPs, certain on-premises clusters support network topology discovery, though this capability depends on the features of the underlying switch network vendors.
 
 An open-source project, [Topograph](https://github.com/NVIDIA/topograph), has implemented these approaches and is successfully deployed in production environments.
-However, what remains missing is a common and standardized method to convey switch network topology information to the Kubernetes ecosystem.
+However, what remains missing is a common and standardized method to convey network topology information to the Kubernetes ecosystem.
 
 This gap creates challenges for developing control plane components and applications that could leverage network-topology-aware features.
 
 Some CSPs have already taken steps to describe cluster network topology. For instance, AWS has begun addressing this by introducing `topology.k8s.aws/network-node-layer-N` node labels, which represent its 3-tier networking structure. However, this solution is specific to AWS and does not cater to broader, cross-cloud use cases.
 
-In this KEP, we propose establishing a standardized representation of switch network topology within Kubernetes clusters.
+In this KEP, we propose establishing a standardized representation of network topology within Kubernetes clusters.
 
 Such topology information could significantly enhance various Kubernetes components and features, including:
 - Pod affinity settings in deployments and pod specs.
@@ -207,11 +207,11 @@ Such topology information could significantly enhance various Kubernetes compone
 We propose new node label type to capture network topology information:
 
 ### Network Topology Label
-Format: `network.topology.kubernetes.io/<nw-switch-type>: <switch-name>`, where
-- `<nw-switch-type>` defines the characteristics of a network switch. The term `switch` may refer to a physical network device or a collection of closely connected devices with similar functionality.
-- `<switch-name>` is a unique identifier for the switch.
+Format: `network.topology.kubernetes.io/<hierarchy-layer-type>: <name>`, where
+- `<hierarchy-layer-type>` defines the topology and characteristics of a network switch. The term `switch` may refer to a physical network device or a collection of closely connected devices with similar functionality.
+- `<name>` is a unique identifier for the hierarchy layer type.
 
-We propose to use the following four network switch types:
+We propose to use the following four network hierarchy layer types:
 1. `accelerator`: Network interconnect for direct accelerator communication (e.g., Multi-node NVLink interconnect between NVIDIA GPUs)
 2. `block`: Rack-level switches connecting hosts in one or more racks as a block.
 3. `datacenter`: Spine-level switches connecting multiple blocks inside a datacenter.
@@ -219,9 +219,10 @@ We propose to use the following four network switch types:
 
 These types will accommodate the majority of common network hierarchies across different CSP and on-prem environments.
 Having these labels available in Kubernetes clusters will help in designing cloud agnostic scheduling systems.
-The scheduler will prioritize switches according to the order outlined above, providing a standardized approach for network-aware scheduling across a range of configurations.
+The scheduler will prioritize hierarchy layers according to the order outlined above, providing a standardized
+approach for network-aware scheduling across a range of configurations.
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -265,13 +266,12 @@ To achieve this, I can leverage the pod affinity feature of the default Kubernet
 ```
 #### Story 2
 
-As a Kubernetes contributor, I want to enhance the performance of multi-node jobs that require gang scheduling.
-To achieve this, I am developing a Kubernetes-native scheduler plugin specifically designed for gang scheduling.
+As a developer, I would like to extend Kubernetes-native scheduling capabilities to
+support gang-scheduling for multi-node jobs.
 
-This plugin should be cloud-agnostic, ensuring it functions seamlessly across different cloud environments.
-
-The scheduler plugin reconstructs the cluster network topology by interpreting `network.topology.kubernetes.io/...` node labels.
-Using this topology information, it optimally binds pods to suitable nodes, reducing overall latency and improving performance.
+My goal is to ensure that this plugin remains cloud-agnostic. The design leverages the
+presence of `network.topology.kubernetes.io/...` node labels to reconstruct the cluster
+network topology and implement a network-aware placement algorithm.
 
 ### Notes/Constraints/Caveats (Optional)
 
