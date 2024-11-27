@@ -151,7 +151,7 @@ capacity.
 To simplify the model, make it backwards compatible and to avoid that it can evolve into something
 different and collide with other APIs, like Gateway APIs, we are adding the following constraints:
 
-- a ServiceCIDR will be immutable after creation (to be revisited before Beta).
+- a ServiceCIDR will be immutable after creation.
 - a ServiceCIDR can only be deleted if there are no Service IP associated to it (enforced by finalizer).
 - there can be overlapping ServiceCIDRs.
 - the apiserver will periodically ensure that a "default" ServiceCIDR exists to cover the service CIDR flags
