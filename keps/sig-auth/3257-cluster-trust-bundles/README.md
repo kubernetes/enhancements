@@ -290,7 +290,7 @@ kind: ClusterTrustBundle
 metadata:
   name: example.com:server-tls:foo
   labels:
-    k8s.example/cluster-trust-bundle-version: live
+    example.com/cluster-trust-bundle-version: live
 spec:
   signerName: example.com/server-tls
   trustBundle: "<... PEM DATA ...>"
@@ -321,7 +321,7 @@ spec:
 +      - clusterTrustBundle:
 +          signerName: example.com/server-tls
 +          labelSelector:
-+            k8s.example/cluster-trust-bundle-version: live
++            example.com/cluster-trust-bundle-version: live
 +          path: ca_certificates.pem
 ```
 
@@ -562,11 +562,11 @@ Human operators or controllers may use unique names and labels to maintain diffe
 
 For example, if I maintain `example.com/my-signer`, I can use the following strategy:
 * I maintain one ClusterTrustBundle named `example.com:my-signer:live`, labeled
-  `k8s.example/cluster-trust-bundle-version=live` (the object name is mostly
+  `example.com/cluster-trust-bundle-version=live` (the object name is mostly
   irrelevant).
 * I maintain an additional ClusterTrustBundle named
   `example.com:my-signer:canary`, labeled
-  `k8s.example/cluster-trust-bundle-version=canary`.
+  `example.com/cluster-trust-bundle-version=canary`.
 * I have coordinated some fraction of my workloads to use the canary label
   selector, while the bulk of them use the live label selector
 * When I want to perform a root rotation or other trust change, I edit the
