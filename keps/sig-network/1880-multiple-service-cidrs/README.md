@@ -585,6 +585,8 @@ Files:
 - test/integration/servicecidr/allocator_test.go
 - test/integration/servicecidr/migration_test.go
 - test/integration/servicecidr/servicecidr_test.go
+- test/integration/servicecidr/feature_enable_disable_test.go
+- test/integration/servicecidr/perf_test.go
 
 ##### e2e tests
 
@@ -679,7 +681,7 @@ it will be safe to disable the dual-write mode.
 | 1.31     | Beta off | Alpha off   |
 | 1.32     | Beta on  | Alpha off   |
 | 1.33     | GA on    | Beta off   |
-| 1.34     | GA (there are no bitmaps running) | GA on (also delete old bitmap)|
+| 1.34     | GA (there are no bitmaps running) | GA (also delete old bitmap)|
 | 1.35     | remove feature gate | remove feature gate  |
 
 ## Production Readiness Review Questionnaire
