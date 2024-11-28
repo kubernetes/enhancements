@@ -770,7 +770,6 @@ test/integration/servicecidr/allocator_test.go  TestMigrateService
 2. start an apiserver with the new feature enable
 3. the reconciler must detect this stored service and create the corresponding IPAddress
 
-To be added in Beta https://github.com/kubernetes/kubernetes/pull/122047
 test/integration/servicecidr/feature_enable_disable.go TestEnableDisableServiceCIDR
 1. start apiserver with the feature disabled
 2. create new services and assert are correct
