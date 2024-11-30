@@ -173,9 +173,9 @@ We will add a new file `/var/lib/kubelet/instance-config.yaml` to customize the 
 
 For different subcommands, there are the following changes:
 
-* kubeadm init: If the CRI socket provided in the kubeadm configuration is set, it will take precedence and generate the `/var/lib/kubelet/instance-config.yaml` configuration file based on it; if the CRI socket is not specified, the container runtime endpoint will be automatically detected, uploaded to the global configuration, and `/var/lib/kubelet/instance-config.yaml` will be generated.
+* kubeadm init: If the CRI socket provided in the kubeadm configuration is set, it will take precedence and generate the `/var/lib/kubelet/instance-config.yaml` configuration file based on it; if the CRI socket is not specified, the container runtime endpoint will be automatically detected and generate the `/var/lib/kubelet/instance-config.yaml` file.
 
-* kubeadm join: If the CRI socket provided in the kubeadm configuration is set, it will take precedence and generate the `/var/lib/kubelet/instance-config.yaml` configuration file based on it, overwriting the kubelet configuration downloaded from the global configuration(`kube-system/kubelet-config`). If no CRI socket is specified, the socket is automatically detected on the node and `/var/lib/kubelet/instance-config.yaml` is generated based on it.
+* kubeadm join: If the CRI socket provided in the kubeadm configuration is set, it will take precedence and generate the `/var/lib/kubelet/instance-config.yaml` configuration file based on it. If no CRI socket is specified, the socket is automatically detected on the node and `/var/lib/kubelet/instance-config.yaml` is generated based on it.
 
 * kubeadm upgrade: future versions of `kubeadm upgrade apply/node` will only check `/var/lib/kubelet/instance-config.yaml`.
 
@@ -189,12 +189,12 @@ kubeadm init:
 
 * No longer need to write the `--container-runtime-endpoint` to `/var/lib/kubelet/kubeadm-flags.env`.
 * No longer need to add the `kubeadm.alpha.kubernetes.io/cri-socket` annotation.
-* If the CRI socket provided in the kubeadm configuration is set, it is used first and the `/var/lib/kubelet/instance-config.yaml` configuration file is generated based on it. If the CRI socket is not set, the container runtime endpoint is automatically detected uploaded to the global configuration, and `/var/lib/kubelet/instance-config.yaml` will be generated.
+* If the CRI socket provided in the kubeadm configuration is set, it is used first and the `/var/lib/kubelet/instance-config.yaml` configuration file is generated based on it. If the CRI socket is not set, the container runtime endpoint is automatically detected and generate the `/var/lib/kubelet/instance-config.yaml` file.
 
 kubeadm join:
 
 * No longer need to add the `kubeadm.alpha.kubernetes.io/cri-socket` annotation.
-* If the CRI socket provided in the kubeadm configuration is set, it is used first and the `/var/lib/kubelet/instance-config.yaml` configuration file is generated based on it, overwriting the kubelet configuration downloaded from the global configuration; If no CRI socket is specified, the socket is automatically detected on the node and `/var/lib/kubelet/instance-config.yaml` is generated based on it.
+* If the CRI socket provided in the kubeadm configuration is set, it is used first and the `/var/lib/kubelet/instance-config.yaml` configuration file is generated based on it. If no CRI socket is specified, the socket is automatically detected on the node and `/var/lib/kubelet/instance-config.yaml` is generated based on it.
 
 kubeadm reset:
 
@@ -202,13 +202,14 @@ kubeadm reset:
 
 kubeadm upgrade:
 
-* `kubeadm upgrade node/apply` will check the `--container-runtime-endpoint` args in the `/var/lib/kubelet/kubeadm-flags.env` file and generate `/var/lib/kubelet/instance-config.yaml` based on them, and override the `ContainerRuntimeEndpoint` field to `/var/lib/kubelet/config.yaml`.
+**In the Alpha phase, the feature gate is disabled by default. If feature gate is enabled, the kubeadm subcommands change as follows:** 
+* `kubeadm upgrade node/apply` will check the `--container-runtime-endpoint` flag in the `/var/lib/kubelet/kubeadm-flags.env` file and generate `/var/lib/kubelet/instance-config.yaml` based on it. The flag `--container-runtime-endpoint` will be then removed from `/var/lib/kubelet/kubeadm-flags.env` .
 
 **In the Beta phase, the feature gate is enabled by default. If feature gate is disabled, kubeadm subcommands will not be changed, when the feature gate is enabled, the kubeadm subcommands change as follows:** 
 
 * `kubeadm upgrade apply/node`  will use `/var/lib/kubelet/instance-config.yaml`, and override the `ContainerRuntimeEndpoint` field to `/var/lib/kubelet/config.yaml`.
 
-**In the Beta phase, the feature gate is enabled by default and cannot be disabled. the kubeadm subcommands change as follows:** 
+**In the GA phase, the feature gate is enabled by default and cannot be disabled. the kubeadm subcommands change as follows:** 
 
 * `kubeadm upgrade apply/node` will use `/var/lib/kubelet/instance-config.yaml` override the `ContainerRuntimeEndpoint` field to `/var/lib/kubelet/config.yaml` only.
 
@@ -278,8 +279,9 @@ kubeadm will continue to skew from kubelet for three versions. The `ContainerRun
 
 ## Implementation History
 
-- 2024-05-23: Initial draft KEP
-- 2024-10-03: KEP marked as implementable
+- 2024-05-23: Initial draft KEP.
+- 2024-10-03: KEP marked as implementable.
+- 2024-11-30: Modify KEP based on implemented PR.
 
 ## Drawbacks
 
