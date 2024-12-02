@@ -208,7 +208,7 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 - Consider [node
-  metatdata](https://github.com/kubernetes/autoscaler/issues/5928).
+  metadata](https://github.com/kubernetes/autoscaler/issues/5928).
 
 ## Proposal
 
