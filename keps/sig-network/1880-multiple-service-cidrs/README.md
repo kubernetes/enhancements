@@ -482,6 +482,7 @@ type ParentReference struct {
   Namespace string
   // Name is the name of the referent
   Name string
+}
 ```
 
 #### Allocator
