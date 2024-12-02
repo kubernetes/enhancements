@@ -11,10 +11,12 @@ reviewers:
   - "@dgrisonnet"
   - "@logicalhan"
   - "@mrueg"
+  - "@richabanker"
 approvers:
   - "@dgrisonnet"
   - "@logicalhan"
   - "@mrueg"
+  - "@richabanker"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
