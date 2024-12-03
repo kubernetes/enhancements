@@ -154,13 +154,15 @@ This flag will allow cluster administrators to opt-out of this validation if the
 #### Metrics
 
 In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_errors` that will track the number of errors due to the new CN validation.
-If the feature gate is disabled, we will still add the validation code to the HTTP transport, however, if the validation fails we won't return an error, we will just increment the metric counter.
 In addition, we will log the error including the node name, so cluster administrators can identify which nodes are affected and need to reissue their certificates.
 
-We purposefully don't add the node name to the metric to avoid a high cardinality.
+If the feature gate is disabled, we won't publish the metric or run any validation code at all.
+
+If the feature gate is enabled but the feature is disabled (with `--disable-kubelet-cert-cn-validation`), we will still add the validation code to the HTTP transport, however, if the validation fails we won't return an error, we will just increment the metric counter.
+
+We intentionally don't add the node name to the metric to avoid a high cardinality.
 The purpose of the metric is to easily/cheaply tell administrators if they can flip the feature on or not. If the answer is no (counter is greater than 0), the rest of the necessary information to detect the offending nodes will come from logs.
 
-Given that running the validation to feed the metric still has a cost, we won't run it if the validation is explicitly disabled with `--disable-kubelet-cert-cn-validation`.
 
 We will remove the metric once the feature is GA.
 
@@ -384,3 +386,4 @@ None.
 ## Infrastructure Needed
 
 None.
+****
