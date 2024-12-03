@@ -334,16 +334,15 @@ requirements. This make it possible for the CRI runtime to detect any changes
 in the pod resources that happen between the Pod creation and container
 creation in e.g.  scenarios where in-place pod updates are involved.
 
-[KEP-1287][kep-1287] Beta ([PR][kep-1287-beta-pr]) proposes to add new
-UpdatePodSandboxResources rpc to the CRI API. If/when KEP-1287 is implemented
-as proposed, the UpdatePodSandboxResources CRI message is updated to include
-the resource information of all containers (aligning with
-UpdateContainerResourcesRequest).
+[KEP-1287][kep-1287] ([Issue][kep-1287-issue]) Beta in Kubernetes v1.32
+introduced UpdatePodSandboxResources rpc to the CRI API. The
+UpdatePodSandboxResources CRI message is updated to include the resource
+information of all containers (aligning with UpdateContainerResourcesRequest).
 
-[KEP-2837][kep-2837] Alpha ([PR][kep-2837-alpha-pr]) proposes to add new
-Pod-level resource requirements field to the PodSpec. This information will be
-be added to the PodResourceConfig message, similar to the container resource
-information, if/when KEP-2837 is implemented as proposed.
+[KEP-2837][kep-2837] ([Issue][kep-2837-issue]) Alpha in Kubernetes v1.32
+introduced Pod-level resource requirements field to the PodSpec. The
+PodResourceConfig message in the CRI API is updated to include the Pod-level
+resource requirements.
 
 ### CRI API
 
@@ -359,6 +358,12 @@ operate as they did (before this enhancement). That is, it can ignore
 the resource information presented here and allocate resources for each
 container separately at container creation time with the `CreateContainer`
 request.
+
+The Pod-level resources enhancement [KEP-2837][kep-2837]
+([Issue][kep-2837-issue]) Alpha in Kubernetes v1.32 added new Pod-level
+resource requirements field to the PodSpec. This information will is included
+in the PodResourceConfig message, similar to the container-level resource
+information.
 
 ```diff
  message PodSandboxConfig {
@@ -377,7 +382,13 @@ request.
 +// PodResourceConfig contains information of all resources requirements of
 +// the containers of a pod.
 +message PodResourceConfig {
++    // Resource configuration of all containers in the pod.
 +    repeated ContainerResourceConfig containers = 1;
++ 
++    // Kubernetes resource spec of the pod-level resource requirements.
++    // This is the pod-level resource requirements introduced in KEP-2837
++    // (alpha in v1.32).
++    KubernetesResources kubernetes_resources = 2;
 +}
  
 +// ContainerResourceConfig contains information of all resource requirements of
@@ -408,23 +419,6 @@ request.
 +    CONTAINER = 2;
 +}
 ```
-
-The Pod-level resources enhancement [KEP-2837][kep-2837]
-([alpha PR][kep-2837-alpha-pr]) proposes to add new Pod-level resource
-requirements fields to the PodSpec. This information will be be added to the
-PodResourceConfig message, similar to the container resource information.
-
-```diff
- message PodResourceConfig {
-     repeated ContainerResourceConfig containers = 1;
-+
-+    // Kubernetes resource spec of the pod-level resource requirements.
-+    KubernetesResources kubernetes_resources = 2;
- }
-```
-
-The implementation if adding the KubernetesResources field to the
-PodResourceConfig is synced with [KEP-2837][kep-2837].
 
 #### CreateContainer
 
@@ -506,9 +500,9 @@ adding them.
 
 #### UpdatePodSandboxResources
 
-The In-Place Update of Pod Resources ([KEP-1287][kep-1287]) Beta
-([PR][kep-1287-beta-pr]) proposes to add new UpdatePodSandboxResources rpc to
-inform the CRI runtime about the changes in the pod resources.
+The In-Place Update of Pod Resources ([KEP-1287][kep-1287]) Beta in Kubernetes
+v1.32 introduced new UpdatePodSandboxResources rpc to inform the CRI runtime
+about the changes in the pod resources.
 
 The UpdatePodSandboxResourcesRequest message is extended similarly to the
 [PodSandboxConfig](#podsandboxconfig) message to contain information about
@@ -1297,7 +1291,7 @@ SIG to get the process for these resources started right away.
 
 <!-- References -->
 
-[kep-1287]: https://github.com/kubernetes/enhancements/issues/1287
-[kep-1287-beta-pr]: https://github.com/kubernetes/enhancements/pull/4704
-[kep-2837]: https://github.com/kubernetes/enhancements/issues/2837
-[kep-2837-alpha-pr]: https://github.com/kubernetes/enhancements/pull/4678
+[kep-1287]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources
+[kep-1287-issue]: https://github.com/kubernetes/enhancements/issues/1287
+[kep-2837]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec
+[kep-2837-issue]: https://github.com/kubernetes/enhancements/issues/2837
