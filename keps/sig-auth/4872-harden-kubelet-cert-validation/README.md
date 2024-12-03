@@ -203,7 +203,7 @@ Integration tests will be added to ensure the following:
 
 ##### e2e tests
 
-End-to-end tests won't be needed as unit and integration tests will cover all the scenarios.
+We believe is likely end-to-end tests won't be needed as unit and integration tests will cover all the scenarios. If it's not possible to cover all the scenarios, we will add e2e tests. It's also quite likely that existing e2e tests will cover the new behavior once the feature gate is enabled, so new tests might only be needed for the transition period.
 
 ### Graduation Criteria
 
