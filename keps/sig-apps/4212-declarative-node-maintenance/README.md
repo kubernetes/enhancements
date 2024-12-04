@@ -386,7 +386,7 @@ it is not sufficient to ensure application and data safety.
 
 ### Goals
 - Introduce NodeMaintenance API.
-- Introduce a node maintenance controller that creates evacuations.
+- Introduce a node maintenance controller that creates EvictionRequests.
 - Deprecate kubectl drain in favor of NodeMaintenance. Or at least print a warning.
 - Make Graceful Node Shutdown prefer NodeMaintenance during a node shutdown as an opt-in feature
   for a better reliability and application safety.
@@ -401,16 +401,16 @@ it is not sufficient to ensure application and data safety.
   Then the node maintenance would be garbage collected and the node made schedulable again.
 - Solve the node lifecycle management or automatic shutdown after the node drain is completed.
   Implementation of this is better suited for other cluster components and actors who can use the
-  node maintenance as a building block to achieve their desired goals.
-- Synchronize all pod termination mechanisms (see #8 in the [Motivation](#motivation) section), so that they do
-  not terminate pods under NodeMaintenance/Evacuation.
+  node maintenance as a building block to achieve their desired goals. 
+- Synchronize all pod termination mechanisms (see #8 in the [Motivation](#motivation) section), so
+  that they do not terminate pods under NodeMaintenance/EvictionRequests.
 
 ## Proposal
 
 Most of these issues stem from the lack of a standardized way of detecting a start of the node
 drain. This KEP proposes the introduction of a NodeMaintenance object that would signal an intent
 to gracefully remove pods from given nodes. The intent will be implemented by the newly proposed
-[Evacuation API KEP](https://github.com/kubernetes/enhancements/issues/4563), which ensures
+[EvictionRequests API KEP](https://github.com/kubernetes/enhancements/issues/4563), which ensures
 graceful pod removal or migration, an ability to measure the progress and a fallback to eviction if
 progress is lost. The NodeMaintenance implementation should also utilize existing node's
 `.spec.unschedulable` field, which prevents new pods from being scheduled on such a node.
@@ -420,10 +420,10 @@ process via a declarative API. This API can be used either manually or programma
 drain implementations (e.g. cluster autoscalers). 
 
 To support workload migration, a new controller should be introduced to observe the NodeMaintenance
-objects and then select pods for evacuation. The pods should be selected by node (`nodeSelector`)
-and the pods should be gradually evacuated according to the workload they are running.
-Controllers can then implement the migration/termination either by reacting to the Evacuation API
-or by reacting to the NodeMaintenance API if they need more details.
+objects and then select pods for eviction. The pods should be selected by node (`nodeSelector`) and
+evicted gradually by creating EvictionRequest objects according to the workload they are running.
+Controllers can then implement the migration/termination either by reacting to the EvictionRequests
+API or by reacting to the NodeMaintenance API if they need more details.
 
 ### User Stories
 
@@ -456,7 +456,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-- This KEP depends on [Evacuation API KEP](https://github.com/kubernetes/enhancements/issues/4563).
+- This KEP depends on [EvictionRequests API KEP](https://github.com/kubernetes/enhancements/issues/4563).
 
 ### Risks and Mitigations
 
@@ -486,8 +486,9 @@ issue a warning in this scenario.
 either manually or as a library by other projects. It is safer to keep the old behavior of this
 command. However, we will deprecate it along with all the library functions. We can print a
 deprecation warning when this command is used, and promote the NodeMaintenance. Additionally, pods
-that support evacuation and have `evacuation.coordination.k8s.io/priority_${EVACUATOR_CLASS}`
-annotations will block eviction requests.
+that support eviction requests and have
+`interceptor.evictionrequest.coordination.k8s.io/priority_${INTERCEPTOR_CLASS}` annotations could be
+skipped when proceeding with the API-initiated eviction.
 
 `kubectl cordon` and `kubectl uncordon` commands will be enhanced with a warning that will warn
 the user if a node is made un/schedulable, and it collides with an existing NodeMaintenance object.
@@ -501,7 +502,7 @@ include Cordon and Drain toggles to support the following states/stages of the m
 1. Planning: this is to let the users know that maintenance will be performed on a particular set
    of nodes in the future. Configured with `.spec.stage=Idle`.
 2. Cordon: stop accepting (scheduling) new pods. Configured with `.spec.stage=Cordon`.
-3. Drain: gives an intent to drain all selected nodes by creating `Evacuation` objects for the
+3. Drain: gives an intent to drain all selected nodes by creating `EvictionRequest` objects for the
    node's pods. Configured with `.spec.stage=Drain`.
 4. Drain Complete: all targeted pods have been drained from all the selected nodes. The nodes can
    be upgraded, restarted, or shut down. The configuration is still kept at `.spec.stage=Drain` and
@@ -521,11 +522,11 @@ Idle NodeMaintenanceStage = "Idle"
 Cordon NodeMaintenanceStage = "Cordon"
 // Drain:
 // 1. Cordons all selected nodes by making them unschedulable.
-// 2. Gives an intent to drain all selected nodes by creating Evacuation objects for the
+// 2. Gives an intent to drain all selected nodes by creating EvictionRequest objects for the
 //    node's pods.
 Drain NodeMaintenanceStage = "Drain"
 // Complete:
-// 1. Removes all Evacuation objects requested by this NodeMaintenance.
+// 1. Removes all EvictionRequest objects requested by this NodeMaintenance.
 // 2. Uncordons all selected nodes by making them schedulable again, unless there is not another
 //    maintenance in progress.
 Complete NodeMaintenanceStage = "Complete"
@@ -601,7 +602,7 @@ Static PodType = "Static"
 
 type DrainPlanEntry struct {
     // PodSelector selects pods according to their labels.
-    // This can help to select which pods of the same priority should be evacuated first.
+    // This can help to select which pods of the same priority should be evicted first.
     // +optional
     PodSelector *metav1.LabelSelector
     // PodPriority specifies a pod priority.
@@ -630,14 +631,14 @@ type StageStatus struct {
 
 type DrainStatus struct {
     // ReachedDrainTargets indicates which pods on all selected nodes are currently being targeted
-    // for evacuation. Some of the nodes may have reached higher drain targets. This field tracks
+    // for eviction. Some of the nodes may have reached higher drain targets. This field tracks
     // only the lowest drain targets among all nodes. Consult the status of each node to observe
     // its current drain targets.
     //
-    // Once evacuation of the Default PodType finishes, DaemonSet PodType entries appear.
-    // Once the evacuation of DaemonSet PodType finishes, Static PodType entries appear.
+    // Once eviction of the Default PodType finishes, DaemonSet PodType entries appear.
+    // Once the eviction of DaemonSet PodType finishes, Static PodType entries appear.
     // The PodPriority for these entries is increased over time according to the .spec.DrainPlan
-    // as the lower-priority pods finish evacuation.
+    // as the lower-priority pods finish eviction.
     // The next entry in the .spec.DrainPlan is selected once all the nodes have reached their
     // DrainTargets.
     // If there are multiple NodeMaintenances for a node, the least powerful DrainTargets among
@@ -646,10 +647,10 @@ type DrainStatus struct {
     // DrainTargets cannot backtrack and will target more pods with each update until all pods on
     // the node are targeted.
     ReachedDrainTargets  []DrainPlanEntry
-    // Number of pods that have not yet started evacuation.
-    PodsPendingEvacuation int32
-    // Number of pods that have started evacuation and have a matching Evacuation object.
-    PodsEvacuating int32
+    // Number of pods that have not been requested to terminate via EvictionRequest.
+    PodsPendingEvictionRequest int32
+    // Number of active EvictionRequests with matching pods.
+    ActiveEvictionRequests int32
 }
 
 // NodeStatus is information about the current status of a node.
@@ -661,11 +662,11 @@ type NodeStatus struct {
 }
 
 type MaintenanceStatus struct {
-    // DrainTargets specifies which pods on this node are currently being targeted for evacuation.
-    // Once evacuation of the Default PodType finishes, DaemonSet PodType entries appear.
-    // Once the evacuation of DaemonSet PodType finishes, Static PodType entries appear.
+    // DrainTargets specifies which pods on this node are currently being targeted for eviction.
+    // Once eviction of the Default PodType finishes, DaemonSet PodType entries appear.
+    // Once the eviction of DaemonSet PodType finishes, Static PodType entries appear.
     // The PodPriority for these entries is increased over time according to the .spec.DrainPlan
-    // as the lower-priority pods finish evacuation.
+    // as the lower-priority pods finish eviction.
     // The next entry in the .spec.DrainPlan is selected once all the nodes have reached their
     // DrainTargets.
     // If there are multiple NodeMaintenances for a node, the least powerful DrainTargets among
@@ -677,10 +678,10 @@ type MaintenanceStatus struct {
     // DrainMessage may specify a state of the drain on this node and a reason why the drain
     // targets are set to a particular values.
     DrainMessage string
-    // Number of pods that have not yet started evacuation.
-    PodsPendingEvacuation int32
-    // Number of pods that have started evacuation and have a matching Evacuation object.
-    PodsEvacuating int32
+	// Number of pods that have not been requested to terminate via EvictionRequest.
+    PodsPendingEvictionRequest int32
+    // Number of active EvictionRequests with matching pods.
+    ActiveEvictionRequests int32
 }
 
 const (
@@ -716,7 +717,7 @@ object in any way in the `Idle` stage.
 #### Finalizers and Deletion of the NodeMaintenance
 
 When a stage is not `Idle`, `nodemaintenance.k8s.io/maintenance-completion` finalizer is placed on
-the NodeMaintenance object to ensure uncordon and removal of Evacuations upon deletion.
+the NodeMaintenance object to ensure uncordon and removal of EvictionRequests upon deletion.
 
 When a deletion of the NodeMaintenance object is detected, its `.spec.stage` is set to `Complete`.
 The finalizer is not removed until the `Complete` stage has been completed.
@@ -738,34 +739,34 @@ When a `Complete` stage is detected on the NodeMaintenance object, the controlle
 is no other maintenance in progress.
 
 When the node maintenance is canceled (reaches the `Complete` stage without all of its pods
-terminating), the controller will attempt to remove all Evacuations that match the node maintenance,
+terminating), the controller will attempt to remove all EvictionRequests that match the node maintenance,
 unless there is no other maintenance in progress.
-- If there are foreign finalizers on the Evacuation, it should only remove its own instigator
+- If there are foreign finalizers on the EvictionRequest, it should only remove its own requester
   finalizer (see [Drain](#drain)).
-- If the evacuator does not support a cancellation and it has set
-  `.status.evacuationCancellationPolicy` to `Forbid`, deletion of the Evacuation object will not be
+- If the interceptor does not support a cancellation and it has set
+  `.status.evictionRequestCancellationPolicy` to `Forbid`, deletion of the EvictionRequest object will not be
   attempted.
 
 Consequences for pods:
-1. Pods whose evacuators have not yet initiated evacuation will continue to run unchanged.
-2. Pods whose evacuators have initiated evacuation and support cancellation
-   (`.status.evacuationCancellationPolicy=Allow`) should cancel the evacuation and keep the pods
+1. Pods whose interceptors have not yet initiated eviction process will continue to run unchanged.
+2. Pods whose interceptors have initiated eviction process and support cancellation
+   (`.status.evictionRequestCancellationPolicy=Allow`) should cancel the eviction and keep the pods
    available.
-3. Pods whose evacuators have initiated evacuation and do not support cancellation
-   (`.status.evacuationCancellationPolicy=Forbid`) should continue the evacuation and eventually
+3. Pods whose interceptors have initiated eviction process and do not support cancellation
+   (`.status.evictionRequestCancellationPolicy=Forbid`) should continue the eviction and eventually
    terminate the pods.
 
 #### Drain
 
-When a `Drain` stage is detected on the NodeMaintenance object, Evacuation objects are created for
+When a `Drain` stage is detected on the NodeMaintenance object, EvictionRequest objects are created for
 selected pods ([Pod Selection](#pod-selection)).
 
 ```yaml
 apiVersion: v1alpha1
-kind: Evacuation
+kind: EvictionRequest
 metadata:
   finalizers:
-    evacuation.coordination.k8s.io/instigator_nodemaintenance.k8s.io
+    - requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io
   name: f5823a89-e03f-4752-b013-445643b8c7a0-muffin-orders-6b59d9cb88-ks7wb
   namespace: blue-deployment
 spec:
@@ -776,15 +777,15 @@ spec:
 
 ```
 
-This is resolved to the following Evacuation object according to the pod on admission:
+This is resolved to the following EvictionRequest object according to the pod on admission:
 
 ```yaml
 
 apiVersion: v1alpha1
-kind: Evacuation
+kind: EvictionRequest
 metadata:
   finalizers:
-    evacuation.coordination.k8s.io/instigator_nodemaintenance.k8s.io
+    - requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io
   labels:
     app: muffin-orders
   name: f5823a89-e03f-4752-b013-445643b8c7a0-muffin-orders-6b59d9cb88-ks7wb
@@ -794,27 +795,27 @@ spec:
     name: muffin-orders-6b59d9cb88-ks7wb
     uid:  f5823a89-e03f-4752-b013-445643b8c7a0
   progressDeadlineSeconds: 1800
-  evacuators:
-    - evacuatorClass: deployment.apps.k8s.io
+  interceptors:
+    - interceptorClass: deployment.apps.k8s.io
       priority: 10000
       role: controller
 ```
 
 The node maintenance controller requests the removal of a pod from a node by the presence of the
-Evacuation. Setting `progressDeadlineSeconds` to  1800 (30m) should give potential evacuators
-enough time to recover from a disruption and continue with the graceful evacuation. If the
-evacuators are unable to evacuate the pod, or if there are no evacuators, the evacuation controller
-will attempt to evict these pods, until they are deleted.
+EvictionRequest. Setting `progressDeadlineSeconds` to  1800 (30m) should give potential interceptors
+enough time to recover from a disruption and continue with the graceful eviction. If the
+interceptors are unable to terminate the pod, or if there are no interceptors, the eviction request
+controller will attempt to evict these pods, until they are deleted.
 
-The only job of the node maintenance controller is to make sure that the Evacuation object exist
-and has the `evacuation.coordination.k8s.io/instigator_nodemaintenance.k8s.io` finalizer. 
+The only job of the node maintenance controller is to make sure that the EvictionRequest object exist
+and has the `requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io` finalizer.
 
 #### Pod Selection
 
-The pods for evacuation would first be selected by node (`.spec.nodeSelector`). NodeMaintenance
-should eventually remove all the pods from each node. To do this in a graceful manner, the
-controller will first ensure that lower priority pods are evacuated first for the same pod type.
-The user can also target some pods earlier than others with a label selector.
+The pods to be evicted (by EvictionRequest) would first be selected by node (`.spec.nodeSelector`).
+NodeMaintenance should eventually remove all the pods from each node. To do this in a graceful
+manner, the controller will first ensure that lower priority pods are evicted/terminated first for
+the same pod type. The user can also target some pods earlier than others with a label selector.
 
 DaemonSet and static pods typically run critical workloads that should be scaled down last.
 
@@ -858,26 +859,27 @@ spec:
 
 If not they will be added during the NodeMaintenance admission.
 
-The node maintenance controller resolves this plan across intersecting NodeMaintenances. To
-indicate which pods are being evacuated on which node, the controller populates
+The node maintenance controller resolves this plan across intersecting NodeMaintenances. To indicate
+which pods are being evicted on which node, the controller populates
 `.status.maintenanceStatus.drainTargets` on each node object. It also populates
-`.status.drainStatus.reachedDrainTargets` of the NodeMaintenance to track the lowest drain targets among all
-nodes (pods that are being evacuated/evicted everywhere). These status fields are updated during
-the `Drain` stage to incrementally select pods with higher priority and pod type
-(`Default` ->`DaemonSet` -> `Static`). It is also possible to partition the updates for the same
-priorities according to the pod labels.
+`.status.drainStatus.reachedDrainTargets` of the NodeMaintenance to track the lowest drain targets
+among all nodes (pods that are being evicted everywhere). These status fields are updated during the
+`Drain` stage to incrementally select pods with higher priority and pod type (`Default`
+->`DaemonSet` -> `Static`). It is also possible to partition the updates for the same priorities
+according to the pod labels.
 
 If there is only a single NodeMaintenance present, it selects the first entry from the
-`.spec.drainPlan` and makes sure that all the targeted pods are evacuated/removed. It then selects
+`.spec.drainPlan` and makes sure that all the targeted pods are terminated. It then selects
 the next entry and repeats the process. If a new pod appears that matches the previous entries, it
-will also be evacuated.
+will also be evicted.
 
 If there are multiple NodeMaintenances, we have to first resolve the lowest priority entry from the
 `.spec.drainPlan` among them for the intersecting nodes. Non-intersecting nodes may have a higher
 priority or pod type. The next entry in the plan can be selected once all the nodes of a
-NodeMaintenance have finished evacuation and all the NodeMaintenances of intersecting nodes have
-finished evacuation for the current drain targets. See the [Pod Selection and DrainTargets Example](#pod-selection-and-draintargets-example)
-for additional details.
+NodeMaintenance have finished eviction of all pods and all the NodeMaintenances of intersecting
+nodes have finished eviction of pods for the current drain targets. See the 
+[Pod Selection and DrainTargets Example](#pod-selection-and-draintargets-example) for additional
+details.
 
 A similar kind of drain plan, albeit with fewer features is offered today by the
 [Graceful Node Shutdown](https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown)
@@ -887,9 +889,9 @@ limit on how long the termination of pods should take. This is not application-a
 applications may require more time to gracefully shut down. Allowing such hard-coded timeouts may
 result in unnecessary application disruptions or data corruption.
 
-To support the evacuation of `DaemonSet` and `Static` pods, the daemon set controller and kubelet
-should observe NodeMaintenance objects and Evacuations to coordinate the scale down of the pods on
-the targeted nodes.
+To support the eviction of `DaemonSet` and `Static` pods, the daemon set controller and kubelet
+should observe NodeMaintenance objects and EvictionRequests to coordinate the scale down of the pods
+on the targeted nodes.
 
 To ensure more streamlined experience we will not support the default kubectl [drain filters](https://github.com/kubernetes/kubernetes/blob/56cc5e77a10ba156694309d9b6159d4cd42598e1/staging/src/k8s.io/kubectl/pkg/drain/filters.go#L153-L162).
 Instead, it should be possible to create the NodeMaintenance object with just a `spec.nodeSelector`.
@@ -898,14 +900,14 @@ The only thing that can be configured is which pods should be scaled down first.
 NodeMaintenance alternatives to kubectl drain filters:
 - `daemonSetFilter`: Removal of these pods should be supported by the DaemonSet controller.
 - `mirrorPodFilter`: Removal of these pods should be supported by the kubelet.
-- `skipDeletedFilter`: Creating evacuation of already terminating pods should have no downside and
-  be informative for the user.
+- `skipDeletedFilter`: Creating EvictionRequest of already terminating pods should have no downside
+  and be informative for the user.
 - `unreplicatedFilter`: Actors who own pods without a controller owner reference should have the
-  opportunity to register an evacuator to evacuate their pods. Many drain solutions today evict
-  these types of pods indiscriminately.
+  opportunity to register an interceptor to gracefully terminate their pods. Many drain solutions
+  today evict these types of pods indiscriminately.
 - `localStorageFilter`: Actors who own pods with local storage (having `EmptyDir` volumes) should
-  have the opportunity to register an evacuator to evacuate their pods. Many drain solutions today
-  evict these types of pods indiscriminately.
+  have the opportunity to register an interceptor to gracefully terminate their pods. Many drain
+  solutions today evict these types of pods indiscriminately.
 
 #### Pod Selection and DrainTargets Example
 
@@ -931,9 +933,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 130
-    podsEvacuating: 17
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 130
+    activeEvictionRequests: 17
+    drainMessage: "Draining"
     reachedDrainTargets:
       - podPriority: 5000
         podType: Default
@@ -957,9 +959,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 145
-    podsEvacuating: 35
-    drainMessage: "Evacuating (limited by maintenance-a)"
+    podsPendingEvictionRequest: 145
+    activeEvictionRequests: 35
+    drainMessage: "Draining (limited by maintenance-a)"
     reachedDrainTargets:
       - podPriority: 5000
         podType: Default
@@ -971,9 +973,9 @@ metadata:
   name: "one"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 100
-    podsEvacuating: 10
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 100
+    activeEvictionRequests: 10
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 5000
         podType: Default
@@ -985,9 +987,9 @@ metadata:
   name: "two"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 30
-    podsEvacuating: 7
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 30
+    activeEvictionRequests: 7
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 5000
         podType: Default
@@ -999,9 +1001,9 @@ metadata:
   name: "three"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 45
-    podsEvacuating: 25
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 45
+    activeEvictionRequests: 25
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 10000
         podType: Default
@@ -1009,8 +1011,8 @@ status:
 ```
 
 If the node three is drained, then it has to wait for the node one, because the drain plan
-specifies that all the pods with priority 10000 or lower should be evacuated first before moving on
-to the next entry.
+specifies that all the pods with priority 10000 or lower should be evicted first before moving on to
+the next entry.
 
 ```yaml
 apiVersion: v1alpha1
@@ -1031,9 +1033,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 145
-    podsEvacuating: 5
-    drainMessage: "Evacuating (limited by maintenance-a)"
+    podsPendingEvictionRequest: 145
+    activeEvictionRequests: 5
+    drainMessage: "Draining (limited by maintenance-a)"
     reachedDrainTargets:
       - podPriority: 5000
         podType: Default
@@ -1044,8 +1046,8 @@ metadata:
   name: "three"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 45
-    podsEvacuating: 0
+    podsPendingEvictionRequest: 45
+    activeEvictionRequests: 0
     drainMessage: "Waiting for maintenance-a."
     drainTargets:
       - podPriority: 10000
@@ -1054,9 +1056,9 @@ status:
 ```
 
 If the node one is drained, we still have to wait for the `maintenance-a` to drain node two. If we
-were to start evacuating higher priority pods from node one earlier, we would not conform to the
+were to start evicting higher priority pods from node one earlier, we would not conform to the
 drainPlan of `maintenance-a`. The plan specifies that all the pods with priority 5000 or lower
-should be evacuated first before moving on to the next entry.
+should be evicted first before moving on to the next entry.
 
 
 ```yaml
@@ -1078,9 +1080,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 130
-    podsEvacuating: 2
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 130
+    activeEvictionRequests: 2
+    drainMessage: "Draining"
     reachedDrainTargets:
       - podPriority: 5000
         podType: Default
@@ -1104,8 +1106,8 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 145
-    podsEvacuating: 0
+    podsPendingEvictionRequest: 145
+    activeEvictionRequests: 0
     drainMessage: "Waiting for maintenance-a."
     reachedDrainTargets:
       - podPriority: 5000
@@ -1118,8 +1120,8 @@ metadata:
   name: "one"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 100
-    podsEvacuating: 0
+    podsPendingEvictionRequest: 100
+    activeEvictionRequests: 0
     drainMessage: "Waiting for maintenance-a."
     drainTargets:
       - podPriority: 5000
@@ -1132,9 +1134,9 @@ metadata:
   name: "two"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 30
-    podsEvacuating: 2
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 30
+    activeEvictionRequests: 2
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 5000
         podType: Default
@@ -1146,8 +1148,8 @@ metadata:
   name: "three"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 45
-    podsEvacuating: 0
+    podsPendingEvictionRequest: 45
+    activeEvictionRequests: 0
     drainMessage: "Waiting for maintenance-a."
     drainTargets:
       - podPriority: 10000
@@ -1177,9 +1179,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 91
-    podsEvacuating: 39
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 91
+    activeEvictionRequests: 39
+    drainMessage: "Draining"
     reachedDrainTargets:
       - podPriority: 10000
         podType: Default
@@ -1203,9 +1205,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 115
-    podsEvacuating: 30
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 115
+    activeEvictionRequests: 30
+    drainMessage: "Draining"
     reachedDrainTargets:
       - podPriority: 10000
         podType: Default
@@ -1217,9 +1219,9 @@ metadata:
   name: "one"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 70
-    podsEvacuating: 30
-    drainMessage: "Evacuating (limited by maintenance-b)"
+    podsPendingEvictionRequest: 70
+    activeEvictionRequests: 30
+    drainMessage: "Draining (limited by maintenance-b)"
     drainTargets:
       - podPriority: 10000
         podType: Default
@@ -1231,9 +1233,9 @@ metadata:
   name: "two"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 21
-    podsEvacuating: 9
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 21
+    activeEvictionRequests: 9
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 15000
         podType: Default
@@ -1245,8 +1247,8 @@ metadata:
   name: "three"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 45
-    podsEvacuating: 0
+    podsPendingEvictionRequest: 45
+    activeEvictionRequests: 0
     drainMessage: "Waiting for maintenance-b."
     drainTargets:
       - podPriority: 10000
@@ -1275,9 +1277,9 @@ spec:
   ...
 status:
   drainStatus:
-    podsPendingEvacuation: 90
-    podsEvacuating: 35
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 90
+    activeEvictionRequests: 35
+    drainMessage: "Draining"
     reachedDrainTargets:
       - podPriority: 2000
         podType: Default
@@ -1289,9 +1291,9 @@ metadata:
   name: "one"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 70
-    podsEvacuating: 30
-    drainMessage: "Evacuating (limited by maintenance-b, maintenance-c)"
+    podsPendingEvictionRequest: 70
+    activeEvictionRequests: 30
+    drainMessage: "Draining (limited by maintenance-b, maintenance-c)"
     drainTargets:
       - podPriority: 10000
         podType: Default
@@ -1303,9 +1305,9 @@ metadata:
   name: "four"
 status:
   maintenanceStatus:
-    podsPendingEvacuation: 20
-    podsEvacuating: 5
-    drainMessage: "Evacuating"
+    podsPendingEvictionRequest: 20
+    activeEvictionRequests: 5
+    drainMessage: "Draining"
     drainTargets:
       - podPriority: 2000
         podType: Default
@@ -1459,17 +1461,17 @@ The controller can show progress by reconciling:
 -  `.status.drainStatus.drainTargets` should be updated during a `Drain` stage. The drain
   targets should be resolved according to the [Pod Selection](#pod-selection) and [Pod Selection and DrainTargets Example](#pod-selection-and-draintargets-example).
 -  `.status.drainStatus.drainMessage` should be updated during a `Drain` stage. The message
-   should be resolved according to [Pod Selection and DrainTargets Example](#pod-selection-and-draintargets-example).
-- `.status.drainStatus.podsPendingEvacuation`, to indicate how many pods are left to start
-  evacuation from the first node.
-- `.status.drainStatus.podsEvacuating`, to indicate how many pods are being evacuated from the first node.
-  These are the pods that have matching Evacuation objects. 
+   should be resolved according to [Pod Selection and DrainTargets Example](#pod-selection-and-draintargets-example). 
+- `.status.drainStatus.podsPendingEvictionRequest`, to indicate how many pods remain without a
+  matching EvictionRequest on the first node.
+- `.status.drainStatus.activeEvictionRequests`, to indicate how many pods are being evicted from the
+  first node with EvictionRequests. Each EvictionRequest should match a pod that is not in a
+  terminal phase (`Succeeded` or `Failed`).
 - To keep track of the entire maintenance the controller will reconcile a `Drained` condition and
-  set it to true if all pods pending evacuation/termination have terminated on all target nodes
+  set it to true if all pods pending eviction/termination have terminated on all target nodes
   when drain is requested by the maintenance object.
 - NodeMaintenance condition or annotation can be set on the node object to advertise the current
   phase of the maintenance.
-
 #### Supported Stage Transitions
 
 The following transitions should be validated by the API server.
@@ -1493,7 +1495,7 @@ controller. For a simple drain, cluster admin can simply create the NodeMaintena
 
 The DaemonSet workloads should be tied to the node lifecycle because they typically run critical
 workloads where availability is paramount. Therefore, the DaemonSet controller should respond to
-the Evacuation only if there is a NodeMaintenance happening on that node and the DaemonSet is in
+the EvictionRequest only if there is a NodeMaintenance happening on that node and the DaemonSet is in
 the `drainTargets`. For example, if we observe the following NodeMaintenance:
 
 ```yaml
@@ -1512,32 +1514,32 @@ status:
   ...
 ```
 
-To fulfil the Evacuation API, the DaemonSet controller should register itself as a controller
-evacuator. To do this, it should ensure that the following annotation is present on its own pods.
+To fulfil the EvictionRequest API, the DaemonSet controller should register itself as a controller
+interceptor. To do this, it should ensure that the following annotation is present on its own pods.
 
 ```yaml
-evacuation.coordination.k8s.io/priority_daemonset.apps.k8s.io: "10000/controller"
+interceptor.evictionrequest.coordination.k8s.io/priority_daemonset.apps.k8s.io: "10000/controller"
 ```
 
-The controller should respond to the Evacuation object when it observes its own class
-(`daemonset.apps.k8s.io`) in `.status.activeEvacuatorClass`.
+The controller should respond to the EvictionRequest object when it observes its own class
+(`daemonset.apps.k8s.io`) in `.status.activeInterceptorClass`.
 
-For the above node maintenance, the controller should not react to Evacuations of DaemonSet pods
-with a priority greater than 5000. This state should not normally occur, as Evacuation requests
+For the above node maintenance, the controller should not react to EvictionRequests of DaemonSet
+pods with a priority greater than 5000. This state should not normally occur, as EvictionRequest
 should be coordinated with NodeMaintenance. If it does occur, we should not encourage this flow by
-updating the `.status.ActiveEvacuatorCompleted` field, although it is required to update this field
-for normal workloads.
+updating the `.status.ActiveInterceptorCompleted` field, although it is required to update this
+field for normal workloads.
 
-If the DaemonSet pods have a priority equal to or less than 5000, the Evacuation status should be
+If the DaemonSet pods have a priority equal to or less than 5000, the EvictionRequest status should be
 updated appropriately as follows, and the targeted pod should be deleted by the DaemonSet
 controller:
 
 ```yaml
 apiVersion: v1alpha1
-kind: Evacuation
+kind: EvictionRequest
 metadata:
   finalizers:
-    evacuation.coordination.k8s.io/instigator_nodemaintenance.k8s.io
+    - requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io
   labels:
     app: critical-ds
   name: ae9b4bc6-e4ca-4f8e-962b-2d4459b1f684-critical-ds-5nxjs
@@ -1547,16 +1549,16 @@ spec:
     name: critical-ds-5nxjs
     uid:  ae9b4bc6-e4ca-4f8e-962b-2d4459b1f684
   progressDeadlineSeconds: 1800
-  evacuators:
-    - evacuatorClass: daemonset.apps.k8s.io
+  interceptors:
+    - interceptorClass: daemonset.apps.k8s.io
       priority: 10000
       role: controller
 status:
-  activeEvacuatorClass: daemonset.apps.k8s.io
-  activeEvacuatorCompleted: false
-  evacuationProgressTimestamp: "2024-04-22T21:40:32Z"
-  expectedEvacuationFinishTime: "2024-04-22T21:41:32Z" # now + terminationGracePeriodSeconds:
-  failedEvictionCounter: 0
+  activeInterceptorClass: daemonset.apps.k8s.io
+  activeInterceptorCompleted: false
+  progressTimestamp: "2024-04-22T21:40:32Z"
+  expectedInterceptorFinishTime: "2024-04-22T21:41:32Z" # now + terminationGracePeriodSeconds:
+  failedAPIEvictionCounter: 0
   message: "critical-ds is terminating the pod due to node maintenance (OS upgrade)."
   conditions: []
 ```
@@ -1589,8 +1591,8 @@ just without the `shutdownGracePeriodSeconds`. This would give applications a ch
 gracefully leave the node without a timeout. [Pod Selection](#pod-selection) would ensure that user
 workloads are terminated first and critical pods are terminated last. 
 
-By default, all user workloads will be asked to terminate at once. The Evacuation API ensures that
-an evacuator is selected or an eviction API is called. This should result in a fast start of a pod
+By default, all user workloads will be asked to terminate at once. The EvictionRequest API ensures that
+an interceptor is selected or an eviction API is called. This should result in a fast start of a pod
 termination. NodeMaintenance could then be used even by spot instances.
 
 The NodeMaintenance object should survive kubelet restarts, and the kubelet would always know if
@@ -1617,7 +1619,7 @@ to [Pod Selection](#pod-selection).
 
 Similar to [DaemonSets](#daemonset-controller), static pods should be tied to the node lifecycle
 because they typically run critical workloads where availability is paramount. Therefore, the
-kubelet should respond to the Evacuation only if there is a NodeMaintenance happening on that node
+kubelet should respond to the EvictionRequest only if there is a NodeMaintenance happening on that node
 and the `Static` pod is in the `drainTargets`. For example, if we observe the following
 NodeMaintenance:
 
@@ -1639,31 +1641,31 @@ status:
   ...
 ```
 
-To fulfil the Evacuation API, the DaemonSet controller should register itself as a controller
-evacuator. To do this, it should ensure that the following annotation is present on its own pods.
+To fulfil the EvictionRequest API, the DaemonSet controller should register itself as a controller
+interceptor. To do this, it should ensure that the following annotation is present on its own pods.
 
 ```yaml
-evacuation.coordination.k8s.io/priority_kubelet.k8s.io: "10000/controller"
+interceptor.evictionrequest.coordination.k8s.io/priority_kubelet.k8s.io: "10000/controller"
 ```
 
-The kubelet should respond to the Evacuation object when it observes its own class
-(`kubelet.k8s.io`) in `.status.activeEvacuatorClass`.
+The kubelet should respond to the EvictionRequest object when it observes its own class
+(`kubelet.k8s.io`) in `.status.activeInterceptorClass`.
 
-For the above node maintenance, the kubelet should not react to Evacuations of static pods
-with a priority greater than 7000. This state should not normally occur, as Evacuation requests
-should be coordinated with NodeMaintenance. If it does occur, we should not encourage this flow by
-updating the `.status.ActiveEvacuatorCompleted` field, although it is required to update this field
-for normal workloads.
+For the above node maintenance, the kubelet should not react to EvictionRequests of static pods with
+a priority greater than 7000. This state should not normally occur, as EvictionRequest should be
+coordinated with NodeMaintenance. If it does occur, we should not encourage this flow by updating
+the `.status.activeInterceptorCompleted` field, although it is required to update this field for
+normal workloads.
 
-If the static pods have a priority equal to or less than 7000, the Evacuation status should be
+If the static pods have a priority equal to or less than 7000, the EvictionRequest status should be
 updated appropriately as follows, and the targeted pod should be terminated by the kubelet:
 
 ```yaml
 apiVersion: v1alpha1
-kind: Evacuation
+kind: EvictionRequest
 metadata:
   finalizers:
-    evacuation.coordination.k8s.io/instigator_nodemaintenance.k8s.io
+    - requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io
   labels:
     app: critical-static-workload
   name: 08deef1c-1838-42a5-a3a8-3a6d0558c7f9-critical-static-workload
@@ -1673,16 +1675,16 @@ spec:
     name: critical-static-workload
     uid:  08deef1c-1838-42a5-a3a8-3a6d0558c7f9
   progressDeadlineSeconds: 1800
-  evacuators:
-    - evacuatorClass: kubelet.k8s.io
+  interceptors:
+    - interceptorClass: kubelet.k8s.io
       priority: 10000
       role: controller
 status:
-  activeEvacuatorClass: kubelet.k8s.io
-  activeEvacuatorCompleted: false
-  evacuationProgressTimestamp: "2024-04-22T22:10:05Z"
-  expectedEvacuationFinishTime: "2024-04-22T22:11:05Z" # now + terminationGracePeriodSeconds:
-  failedEvictionCounter: 0
+  activeInterceptorClass: kubelet.k8s.io
+  activeInterceptorCompleted: false
+  progressTimestamp: "2024-04-22T22:10:05Z"
+  expectedInterceptorFinishTime: "2024-04-22T22:11:05Z" # now + terminationGracePeriodSeconds:
+  failedAPIEvictionCounter: 0
   message: "critical-static-workload is terminating the pod due to node maintenance (OS upgrade)."
   conditions: []
 ```
@@ -1897,7 +1899,7 @@ This section must be completed when targeting alpha to a release.
 
 - [x] Feature gate
   - Feature gate name: DeclarativeNodeMaintenance - this feature gate enables the NodeMaintenance API and node
-    maintenance controller which creates `Evacuation`
+    maintenance controller which creates `EvictionRequest`
   - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
@@ -2215,7 +2217,7 @@ Why should this KEP _not_ be implemented?
 
 ### Out-of-tree Implementation
 
-We could implement the NodeMaintenance or Evacuation API out-of-tree first as a CRD.
+We could implement the NodeMaintenance or EvictionRequest API out-of-tree first as a CRD.
 
 The KEP aims to solve graceful termination of any pod in the cluster. This is not possible with a
 3rd party CRD as we need an integration with core components.
