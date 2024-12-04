@@ -7,6 +7,7 @@ participating-sigs:
   - sig-apps
   - sig-autoscaling
   - sig-cli
+  - sig-cluster-lifecycle
   - sig-node
   - sig-scheduling
 status: provisional
@@ -17,18 +18,25 @@ reviewers:
   - "@aojea"
   - "@dbenque"
   - "@dchen1107"
+  - "@evrardjp"
   - "@fabiand"
+  - "@fabriziopandini"
+  - "@kfox1111"
   - "@kwilczynski"
   - "@mmerkes"
   - "@pwschuurman"
   - "@razo7"
   - "@rptaylor"
+  - "@rthallisey"
+  - "@sbueringer"
   - "@sftim"
   - "@soltysh"
   - "@thockin"
+  - "@vincepri"
   - "@wangzhen127"
 approvers:
   - "@dchen1107"
+  - "@fabriziopandini"
   - "@soltysh"
 
 # The target maturity stage in the current dev cycle for this KEP.
@@ -37,11 +45,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.31"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.32"
+  alpha: ""
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

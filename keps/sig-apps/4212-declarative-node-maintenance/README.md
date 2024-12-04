@@ -2207,6 +2207,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2024-12-04: Evacuation API was renamed to EvictionRequest API.
+
 ## Drawbacks
 
 <!--
