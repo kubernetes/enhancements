@@ -214,8 +214,8 @@ Format: `network.topology.kubernetes.io/<hierarchy-layer-type>: <name>`, where
 We propose to use the following four network hierarchy layer types:
 1. `accelerator`: Network interconnect for direct accelerator communication (e.g., Multi-node NVLink interconnect between NVIDIA GPUs)
 2. `block`: Rack-level switches connecting hosts in one or more racks as a block.
-3. `datacenter`: Spine-level switches connecting multiple blocks inside a datacenter.
-4. `zone`: Zonal switches connecting multiple datacenters inside an availability zone.
+3. `spine`: Spine-level switches connecting multiple blocks inside a datacenter.
+4. `datacenter`: Zonal switches connecting multiple datacenters inside an availability zone.
 
 These types will accommodate the majority of common network hierarchies across different CSP and on-prem environments.
 Having these labels available in Kubernetes clusters will help in designing cloud agnostic scheduling systems.
@@ -298,19 +298,19 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-### Example: network topology representation with reserved network types:
+### Example: network topology representation:
 
 Consider the following network topology:
 
-![Network topology with reserved network types](./img/topo-reserved-labels.png)
+![Network topology](./img/topo-reserved-labels.png)
 
 Let's examine node `vm12` as an example. This node is connected to NVSwitch `nvl10` and network switch `sw11`, which in turn is connected to switches `sw21` and `sw31`.
 In this case, node `vm12` labels would be:
 ```yaml
 network.topology.kubernetes.io/accelerator: nvl10
 network.topology.kubernetes.io/block: sw11
-network.topology.kubernetes.io/datacenter: sw21
-network.topology.kubernetes.io/zone: sw31
+network.topology.kubernetes.io/spine: sw21
+network.topology.kubernetes.io/datacenter: sw31
 ```
 
 ### Test Plan
