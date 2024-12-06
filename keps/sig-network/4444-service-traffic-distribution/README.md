@@ -237,6 +237,48 @@ NOTE: Implementations reserve the right to refine the behavior associated with
   decision of what constitutes an "improvement" remains at the discretion of the
   implementation.
 
+```
+<<[UNRESOLVED rename PreferClose? ]>>
+
+As of our second value for this field, we have already been forced to give up
+the "vague" naming scheme in favor of being precise. My original proposal tried
+to just extend the semantics of `PreferClose`, indicating particular situations
+in which kube-proxy would treat it as meaning "prefer same node" rather than
+"prefer same zone", but it needed careful heuristics to ensure that we wouldn't
+accidentally start treating existing `trafficDistribution: PreferClose` services
+as "prefer same node" when that wasn't what the user had wanted, and reviewers
+were unanimous in agreeing that the heuristics would not work reliably enough
+(either forcing services into "prefer same node" where the admin didn't want
+that, or else falling back to "prefer same zone" when the admin actually did
+want same-node).
+
+Additionally, although we claim that the service proxy can interpret
+`PreferClose` however it wants, the EndpointSlice hints are assigned based on a
+single specific interpretation. A service proxy that wanted to implement
+`PreferClose` as "prefer same-rack and then fall back to same-zone" would need
+to ignore the hints and reinterpret the EndpointSlice data themselves. A service
+proxy that wanted to implement `PreferClose` as "prefer a node within the
+topology defined by the endpoint pod's TopologySpreadConstraints" would need to
+ignore the hints *and watch all Pods*.
+
+And despite the vagueness of the name `PreferClose`, we've been pretty clear
+that it's intended to mean *something* like "prefer same zone", so users are
+going to use it to mean that. Which means that any service proxy that doesn't
+treat it as meaning *exactly* that runs the risk of screwing up the traffic
+distribution of those services (as in the case of my attempt to redefine it to
+sometimes mean "prefer same node").
+
+Basically, `PreferClose` just repeats the mistake of Topology-Aware Hints: we
+have defined the feature such that users can't reliably predict how the system
+will behave, and once they realize that, they won't want to use the feature.
+
+So, should we rename `PreferClose` to `PreferSameZone`? (Which at this point
+means deprecating `PreferClose` but not actually removing it, at least for a
+while.)
+
+<<[/UNRESOLVED]>>
+```
+
 ### User Stories
 
 #### Story 1
