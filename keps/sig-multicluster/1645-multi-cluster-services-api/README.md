@@ -423,42 +423,27 @@ type ServiceExportStatus struct {
         // +patchMergeKey=type
         // +listType=map
         // +listMapKey=type
-        Conditions []ServiceExportCondition `json:"conditions,omitempty"`
+        Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
-
-// ServiceExportConditionType identifies a specific condition.
-type ServiceExportConditionType string
 
 const {
       // ServiceExportValid means that the service referenced by this
       // service export has been recognized as valid by an mcs-controller.
       // This will be false if the service is found to be unexportable
       // (ExternalName, not found).
-      ServiceExportValid ServiceExportConditionType = "Valid"
+      ServiceExportValid = "Valid"
       // ServiceExportConflict means that there is a conflict between two
       // exports for the same Service. When "True", the condition message
       // should contain enough information to diagnose the conflict:
       // field(s) under contention, which cluster won, and why.
       // Users should not expect detailed per-cluster information in the
       // conflict message.
-      ServiceExportConflict ServiceExportConditionType = "Conflict"
-}
-
-// ServiceExportCondition contains details for the current condition of this
-// service export.
-//
-// Once KEP-1623 (sig-api-machinery/1623-standardize-conditions) is
-// implemented, this will be replaced by metav1.Condition.
-type ServiceExportCondition struct {
-        Type ServiceExportConditionType `json:"type"`
-        // Status is one of {"True", "False", "Unknown"}
-        Status corev1.ConditionStatus `json:"status"`
-        // +optional
-        LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-        // +optional
-        Reason *string `json:"reason,omitempty"`
-        // +optional
-        Message *string `json:"message,omitempty"`
+      ServiceExportConflict = "Conflict"
+      // ServiceExportLocalConflict means that the service export is directly
+      // involved in a conflict. This condition should be "True" if the local
+      // service export if involved in the conflict whether or not
+      // the conflict is resolved in the favor of this service export.
+      ServiceExportLocalConflict = "LocalConflict"
 }
 ```
 ```yaml
@@ -471,14 +456,24 @@ status:
   conditions:
   - type: Ready
     status: "True"
+    reason: Ready
     lastTransitionTime: "2020-03-30T01:33:51Z"
-  - type: InvalidService
+  - type: Valid
     status: "False"
+    reason: Valid
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: "ServiceType"
+    message: "Service type ExternalName is not supported"
   - type: Conflict
     status: "True"
+    reason: Conflict
     lastTransitionTime: "2020-03-30T01:33:55Z"
-    message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
+    message: "Conflicting type. 2/5 clusters disagree. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\"."
+  - type: LocalConflict
+    status: "True"
+    reason: LocalConflict
+    lastTransitionTime: "2020-03-30T01:33:55Z"
+    message: "This ServiceExport is directly involved in the conflict."
 ```
 
 To export a service, a `ServiceExport` should be created within the cluster and
