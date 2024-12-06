@@ -790,12 +790,43 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+A rollout may fail when at least one of the following components are too old because this KEP introduces the new Kubernetes API field:
+
+| Component      | `supplementalGroupsPolicy` value that will cause an error |
+|----------------|-----------------------------------------------------------|
+| kube-apiserver | not null                                                  |
+| kubelet        | not null                                                  |
+| CRI runtime    | `Strict`                                                  |
+
+
+For example, an error will be returned like this if kube-apiserver is too old:
+```console
+$ kubectl apply -f supplementalgroupspolicy.yaml
+Error from server (BadRequest): error when creating "supplementalgroupspolicy.yaml": Pod in version "v1" cannot be handled as a Pod:
+strict decoding error: unknown field "spec.securityContext.supplementalGroupsPolicy"
+```
+
+No impact on already running workloads.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Look for an event saying indicating SupplementalGroupsPolicy is not supported by the runtime.
+```console
+$ kubectl get events -o json -w
+...
+{
+    ...
+    "kind": "Event",
+    "message": "Error: SupplementalGroupsPolicyNotSupported",
+    ...
+}
+...
+```
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -805,11 +836,21 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+During the beta phase, the following test will be manually performed:
+- Enable the `SupplementalGroupsPolicy` feature gate for kube-apiserver and kubelet.
+- Create a pod with `supplementalGroupsPolicy` specified.
+- Disable the `SupplementalGroupsPolicy` feature gate for kube-apiserver, and confirm that the pod gets rejected.
+- Enable the `SupplementalGroupsPolicy` feature gate again, and confirm that the pod gets scheduled again.
+- Do the same for kubelet too.
+
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -828,6 +869,12 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Inspect the `supplementalGroupsPolicy` fields in Pods. You can check if the following `jq` command prints non-zero number:
+
+```bash
+kubectl get pods -A -o json | jq '[.items[].spec.securityContext? | select(.supplementalGroupsPolicy)] | length'
+```
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -841,8 +888,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
+- [x] API .status
+  - Condition name: `containerStatuses.user`
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
@@ -864,16 +911,22 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- `supplementalGroupsPolicy=Strict`: 100% of pods were scheduled into a node with the feature supported.
+
+- `supplementalGroupsPolicy=Merge`: 100% of pods were scheduled into a node with or without the feature supported.
+
+- `supplementalGroupsPolicy` is unset: 100% of pods were scheduled into a node with or without the feature supported.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - [Optional] Aggregation method: `kubectl get events -o json -w`
+  - Components exposing the metric: kubelet -> kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -883,6 +936,15 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Potentially, kube-scheduler could be implemented to avoid scheduling a pod with `supplementalGroupsPolicy: Strict`
+to a node running CRI runtime which does not supported this feature.
+
+In this way, the Event metric described above would not happen, and users would instead see `Pending` pods
+as an error metric.
+
+However, this is not planned to be implemented in kube-scheduler, as it seems overengineering.
+Users may use `nodeSelector`, `nodeAffinity`, etc. to workaround this.
 
 ### Dependencies
 
@@ -907,6 +969,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+Container runtimes supporting [CRI api v0.31.0](https://github.com/kubernetes/cri-api/tree/v0.31.0) or above.
+
+For example, 
+- containerd: v2.0 or later
+- CRI-O: v1.31 or later
+
 ### Scalability
 
 <!--
@@ -918,6 +986,16 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+
+A pod with `supplementalGroupsPolicy: Strict` may be rejected by kubelet with the probablility of $$B/A$$,
+where $$A$$ is the number of all the nodes that may potentially accept the pod,
+and $$B$$ is the number of the nodes that may potentially accept the pod but does not support this feature.
+This may affect scalability.
+
+To evaluate this risk, users may run
+`kubectl get nodes -o json | jq '[.items[].status.features]'`
+to see how many nodes support `supplementalGroupsPolicy: true`.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -1024,6 +1102,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+A pod cannot be created, just as in other pods.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1039,7 +1119,20 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Make sure that the node is running with CRI runtime which supports this feature.
+- Make sure that `crictl info` (with the latest crictl)
+  reports that `supplemental_groups_policy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  the CRI runtime's log.
+- Make sure that `kubectl get nodes -o json | jq '[.items[].status.features]'`
+  (with the latest kubectl and control plane)
+  reports that `supplementalGroupsPolicy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  kubelet's log.
 
 ## Implementation History
 
