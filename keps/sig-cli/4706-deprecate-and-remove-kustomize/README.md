@@ -56,18 +56,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [x] (R) Design details are appropriately documented
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [x] (R) Graduation criteria is in place
+- [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [x] (R) Production readiness review completed
-- [x] (R) Production readiness review approved
-- [x] "Implementation History" section is up-to-date for milestone
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -80,10 +80,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
+
 ## Summary
 
 Deprecate and remove kustomize from kubectl. This will allow both tools to
 be developed and maintained separately.
+
+**NOTE**: After a discussion in sig-architecture meeting on Oct 17th, 2024 (refer to the [recording](https://www.youtube.com/watch?v=cQzS38D0asM)
+and [meeting notes](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/edit?tab=t.0#bookmark=kix.qolek4jkm5m))
+it was decided not to pursue this topic further, and retain kustomize as part of
+kubectl. The primary reason for this decision was the widespread adoption of
+the tool by the community. Moving forward with the proposed enhancement could
+potentially disrupt its established usage and jeopardize users trust.
 
 ## Motivation
 
