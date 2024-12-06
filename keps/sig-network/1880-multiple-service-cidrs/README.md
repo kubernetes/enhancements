@@ -151,7 +151,7 @@ capacity.
 To simplify the model, make it backwards compatible and to avoid that it can evolve into something
 different and collide with other APIs, like Gateway APIs, we are adding the following constraints:
 
-- a ServiceCIDR will be immutable after creation (to be revisited before Beta).
+- a ServiceCIDR will be immutable after creation.
 - a ServiceCIDR can only be deleted if there are no Service IP associated to it (enforced by finalizer).
 - there can be overlapping ServiceCIDRs.
 - the apiserver will periodically ensure that a "default" ServiceCIDR exists to cover the service CIDR flags
@@ -403,20 +403,6 @@ until it verifies that the consumer associated to that IP has been deleted too.
 The IPAddress will be deleted and an event generated if the controller determines that the IPAddress
 is orphan [(see Allocator section)](#allocator)
 
-- IPAddress referencing recreated Object (different UID)
-
-1. User created Gateway "foo"
-2. Gateway controller allocated IP and ref -> "foo"
-3. User deleted gateway "foo"
-4. Gateway controller doesn't delete the IP (leave it for GC)
-5. User creates a new Gateway "foo"
-6. apiserver repair loop finds the IP with a valid ref to "foo"
-
-If the new gateway is created before the apiserver observes the delete, apiserver will find that gateway "foo"
-still exists and can't release the IP. It can't peek inside "foo" to see if that is the right IP because it is
-a type it does not know. If it knew the UID it could see that "foo" UID was different and release the IP.
-The IPAddress will use the UID to reference the parent to avoid problems in this scenario.
-
 #### Resizing Service IP Ranges
 
 One of the most common problems users may have is how to scale up or scale down their Service CIDRs.
@@ -496,10 +482,7 @@ type ParentReference struct {
   Namespace string
   // Name is the name of the referent
   Name string
-  // UID is the uid of the referent
-  UID string
 }
-
 ```
 
 #### Allocator
@@ -603,6 +586,8 @@ Files:
 - test/integration/servicecidr/allocator_test.go
 - test/integration/servicecidr/migration_test.go
 - test/integration/servicecidr/servicecidr_test.go
+- test/integration/servicecidr/feature_enable_disable_test.go
+- test/integration/servicecidr/perf_test.go
 
 ##### e2e tests
 
@@ -697,7 +682,7 @@ it will be safe to disable the dual-write mode.
 | 1.31     | Beta off | Alpha off   |
 | 1.32     | Beta on  | Alpha off   |
 | 1.33     | GA on    | Beta off   |
-| 1.34     | GA (there are no bitmaps running) | GA on (also delete old bitmap)|
+| 1.34     | GA (there are no bitmaps running) | GA (also delete old bitmap)|
 | 1.35     | remove feature gate | remove feature gate  |
 
 ## Production Readiness Review Questionnaire
@@ -786,7 +771,6 @@ test/integration/servicecidr/allocator_test.go  TestMigrateService
 2. start an apiserver with the new feature enable
 3. the reconciler must detect this stored service and create the corresponding IPAddress
 
-To be added in Beta https://github.com/kubernetes/kubernetes/pull/122047
 test/integration/servicecidr/feature_enable_disable.go TestEnableDisableServiceCIDR
 1. start apiserver with the feature disabled
 2. create new services and assert are correct
