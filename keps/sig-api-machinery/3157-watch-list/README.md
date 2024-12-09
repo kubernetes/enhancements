@@ -760,6 +760,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
   the `storage/cacher` to use streaming directly from etcd 
   (This will also allow us to [remove](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/client-go/tools/cache/reflector.go#L110) the `reflector.UseWatchList` field).
+- Currently, WatchList request does not support the use of the AcceptContentType header with the value application/json;as=Table. 
+  When this value is set, the API will return a 406 Not Acceptable response. 
+  This behavior needs to be updated to ensure compatibility with standard LIST requests.
+
 
 #### Post-GA
 - Make  **list** calls expensive in APF. 
