@@ -50,7 +50,6 @@
     - [Alternative 2](#alternative-2)
     - [Alternative 3](#alternative-3)
     - [Alternative 4](#alternative-4)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -63,20 +62,20 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
   (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance
     Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
     [Conformance
     Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to
   [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list
   discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -563,14 +562,6 @@ make this code solid enough prior to committing the changes necessary to impleme
 
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
 There will be added tests to verify:
 
 - API servers using the old and new allocators at same time
@@ -589,12 +580,33 @@ Files:
 - test/integration/servicecidr/feature_enable_disable_test.go
 - test/integration/servicecidr/perf_test.go
 
+Links:
+
+https://storage.googleapis.com/k8s-triage/index.html?test=servicecidr%7Csynthetic_controlplane_test
+
 ##### e2e tests
 
 e2e tests validate that components that depend on Services are able
 to use the new ServiceCIDR ranges allocated.
 
 https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20alpha,%20beta&include-filter-by-regex=ServiceCIDRs
+
+https://testgrid.k8s.io/kops-misc#kops-aws-sig-network-beta
+
+In addition to the specific e2e test that validate the new functionality of allowing
+to add new ServiceCIDRs and create new Services using the IPs of the new range, all
+the existing e2e tests that exercises Services in one way or another are also exercising
+the new APIs.
+
+If we take a job of an execution of any job with the feature enabled, per example, https://storage.googleapis.com/kubernetes-ci-logs/logs/ci-kubernetes-network-kind-alpha-beta-features/1866163383959556096/artifacts/kind-control-plane/pods/kube-system_kube-apiserver-kind-control-plane_89ea5ffb5eb9e46fc7a038252629d04c/kube-apiserver/0.log , we can see the ServiceCIDR and IPAddress objects are constantly exercised:
+
+```sh
+$ grep -c networking.k8s.io/v1beta1/servicecidrs 0.log 
+553
+
+$ grep -c networking.k8s.io/v1beta1/ipaddresses 0.log 
+400
+```
 
 ### Graduation Criteria
 
@@ -683,7 +695,8 @@ it will be safe to disable the dual-write mode.
 | 1.32     | Beta on  | Alpha off   |
 | 1.33     | GA on    | Beta off   |
 | 1.34     | GA (there are no bitmaps running) | GA (also delete old bitmap)|
-| 1.35     | remove feature gate | remove feature gate  |
+| 1.36     | remove feature gate | GA  |
+| 1.37     | --- | remove feature gate  |
 
 ## Production Readiness Review Questionnaire
 
@@ -693,7 +706,9 @@ it will be safe to disable the dual-write mode.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: MultiCIDRServiceAllocator
-  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+    - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+  - Feature gate name: DisableAllocatorDualWrite
+    - Components depending on the feature gate: kube-apiserver,
 
 ###### Does enabling the feature change any default behavior?
 
@@ -719,26 +734,10 @@ restoring the cluster to a working state.
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
-
 Tests for feature enablement/disablement are implemented as integration test, see `test/integration/servicecidr/feature_enable_disable.go`
 The feature add new API objects, no new API fields to existing objects are added.
-### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -943,6 +942,17 @@ This feature contain repair controllers in the apiserver that makes rollbacks sa
   - [x] Docs (`k/website`) update PR(s):
     - https://github.com/kubernetes/website/pull/37620
     - https://github.com/kubernetes/website/pull/43469
+- [x] Beta
+  - [x] KEP (`k/enhancements`) update PR(s):
+     - https://github.com/kubernetes/enhancements/pull/4645
+  - [x] Code (`k/k`) update PR(s):
+    - https://github.com/kubernetes/kubernetes/pull/122047
+    - https://github.com/kubernetes/kubernetes/pull/125021
+  - [x] Docs (`k/website`) update(s):
+    -  https://github.com/kubernetes/website/pull/46947
+- [ ] Stable
+  - [ ] KEP (`k/enhancements`) update PR(s): https://github.com/kubernetes/enhancements/pull/4983
+  - [ ] Code (`k/k`) update PR(s): https://github.com/kubernetes/kubernetes/pull/128971
 
 ## Drawbacks
 
@@ -961,24 +971,83 @@ Several alternatives were proposed in the original PR but discarded by different
 
 #### Alternative 1
 
+From Daniel Smith:
+
+> Each apiserver watches services and keeps an in-memory structure of free IPs.
+> Instead of an allocation table, let's call it a "lock list". It's just a list of (IP, lock > expiration timestamp). When an apiserver wants to do something with an IP, it adds an item > to the list with a timestamp e.g. 30 seconds in the future (we can do this in a way that fails if the item is already there, in which case we abort). Then, we go use it. Then, we let the lock expire. (We can delete the lock early if using the IP fails.)
+> (The above could be optimized in etcd by making an entry per-IP rather than a single list.)
+> So, to make a safe allocation, apiserver comes up with a candidate IP address (either randomly or because the user requested it). Check it against the in-memory structure. If that passes, we look for a lock entry. If none is found, we add a lock entry. Then we use it in a service. Then we delete the lock entry (or wait for it to expire).
+
+> Nothing special needs to be done for deletion, I think it's fine if it takes a while for individual apiservers to mark an IP as safe for reuse.
+
 <https://github.com/kubernetes/enhancements/pull/1881#issuecomment-672090253>
+
+Problem: Strong dependency on etcd
 
 #### Alternative 2
 
+From Tim Hockin:
+
+> make IP-allocations real 
+> resources.  In the limit this would mean potentially 10s of thousands of
+> tiny instances, but they don't change often.  This would help in other
+> areas where I want to allow APIs to specify IPs without worrying about
+> hijacking important "real" IPs.  I imagine it would work something like
+> PVC<->PV binding.  The problem here is that at least service IPs have
+> always been synchronous to CREATE and changing that i a pretty significant
+> behavioral difference thath users WILL be able to observe.  I don't think
+> we have any precedent for "nested" transactions on user-visible APIs?
+
 <https://github.com/kubernetes/enhancements/pull/1881#issuecomment-672135245>
+
+Problem: Incompatible change in behavior.
 
 #### Alternative 3
 
+From Wojtek Tyczynski
+
+> keep storing a bitmap in-memory of kube-apiserver (have that propagated via watching Service objects)
+> store just the hash from that bitmap in etcd
+> whenever you want to allocate/release IP:
+> (a) get the current hash from etcd
+> (b) compute the hash from your in-memory representation
+> (c) if those two are not equal, you're not synced - wait/retry/...
+> (d) if they are equal, then if this is incorrect operation against in-memory operation return conflct/bad request/...
+> (e) otherwise, apply in-memory and write to etcd having the current version is precondtion > (as in GuaranteedUpdate)
+
 <https://github.com/kubernetes/enhancements/pull/1881#issuecomment-672764247>
+
+Problems:
+
+> If somehow an inconsistent state gets recorded in etcd, then you're permanently stuck here. And the failure mode is really bad (can't make any more services) and requires etcd-level access to fix. So, this is not a workable solution, I think.
 
 #### Alternative 4
 
+From Antonio Ojea
+
+> instead of using a bitmap allocator I've created a new API object that has a set of IPs, so the IPs are tracked in the API object
+
+> // IPRangeSpec defines the desired state of IPRange
+> type IPRangeSpec struct {
+>	// Range represent the IP range in CIDR format
+>	// i.e. 10.0.0.0/16 or 2001:db2::/64
+>	// +kubebuilder:validation:MaxLength=128
+> // +kubebuilder:validation:MinLength=8
+>	Range string `json:"range,omitempty"`
+
+>	// +optional
+>	// Addresses represent the IP addresses of the range and its status.
+>	// Each address may be associated to one kubernetes object (i.e. Services)
+>	// +listType=set
+>	Addresses []string `json:"addresses,omitempty"`
+>}
+
+> // IPRangeStatus defines the observed state of IPRange
+> type IPRangeStatus struct {
+>	// Free represent the number of IP addresses that are not allocated in the Range
+>	// +optional
+>	Free int64 `json:"free,omitempty"`
+
 <https://github.com/kubernetes/enhancements/pull/1881#issuecomment-755737620>
 
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+Problems: Updates to the set within the object are problematic and difficult to handle.
