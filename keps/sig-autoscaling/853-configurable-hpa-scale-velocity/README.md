@@ -207,7 +207,7 @@ behavior:
     policies:
     - type: Pods
       value: 5
-      periodSeconds: 600
+      periodSeconds: 60
 ```
 
 i.e., the algorithm will:
