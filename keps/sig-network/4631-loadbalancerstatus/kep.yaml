@@ -1,0 +1,45 @@
+title: LoadBalancer Service Status Improvements
+kep-number: 4631
+authors:
+  - "@danwinship"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cloud-provider
+  - sig-testing
+status: provisional
+creation-date: 2024-05-03
+reviewers:
+  - "@aojea"
+  - "@thockin"
+approvers:
+  - "@thockin"
+
+see-also:
+  - "/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers/"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.32"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.32"
+  beta:
+  stable:
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: LoadBalancerStatusImprovements
+    components:
+      - cloud-controller-manager
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+
