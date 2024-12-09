@@ -1,0 +1,45 @@
+title: Cluster Domain Downward API
+kep-number: 4969
+authors:
+  - "@nightkr"
+owning-sig: sig-network
+participating-sigs:
+  - sig-network
+  - sig-node
+status: provisional
+creation-date: 2024-11-19
+reviewers:
+  - "@thockin"
+  - "@aojea"
+approvers:
+  - TBD
+
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.32"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: TBD
+  beta: TBD
+  stable: TBD
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: MyFeature
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
