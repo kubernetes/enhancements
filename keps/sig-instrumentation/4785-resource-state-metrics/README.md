@@ -244,13 +244,15 @@ The KEP targets a controller which allows for:
 * Custom Resource metrics generation based on their schemata,
 * using admission webhooks to avoid ingesting conflicting or bad configuration
   from managed resources,
-* defining cluster-scoped managed resources (`ResourceMetricsMonitor`) that allows
-  defining the collection configuration for generating metrics on-the-fly,
-* accommodating for multiple configuration parsing techniques and expression
-  turing-incomplete (or turing-complete if Go-bindings are available) languages,
-* conforming to, and improving on existing Custom Resource State API offered by
-  Kube State Metrics without hindering the maintainability and the scalability
-  of the controller.
+* defining cluster-scoped managed resources (`ResourceMetricsMonitor`) that 
+  allows defining the collection configuration for generating metrics
+  on-the-fly,
+* accommodating for multiple configuration parsing techniques and expressions 
+  using turing-incomplete (or turing-complete if Go-bindings are available)
+  languages,
+* conforming to, improving on, and eventually deprecating the existing Custom
+  Resource State API offered by Kube State Metrics without hindering the
+  maintainability and the scalability of the controller.
 
 ### Non-Goals
 
@@ -278,7 +280,7 @@ nitty-gritty.
 
 The proposal targets the incubation and incorporation of a controller capable
 of essentially doing all that Kube State Metrics' Custom Resource State API
-offers, in additional to various benefits of its own owing to the controller
+offers, in addition to various benefits of its own owing to the controller
 lifecycle it is based upon.
 
 The controller aims to replace the existing Kube State Metrics' Custom Resource 
@@ -366,7 +368,13 @@ Consider including folks who also work outside the SIG or subproject.
 N/A since the managed resource offered by Resource State Metrics provides the
 ability to define metric configurations that are a super-set of the 
 expressibility that Kube State Metrics' Custom Resource State configurations
-have to offer.
+have to offer. However, users will need to familiarize themselves with the 
+supported DSLs to be able to translate their configuration into a format that
+the controller can understand, missing which could result in invalid metrics.
+
+Also, since this aims to deprecate the Custom Resource State API, a timeline 
+will be published for users on the Kube State Metrics' repository and a PSA on 
+the appropriate channel(s), once the controller graduates to stable.
 
 ## Design Details
 
@@ -399,7 +407,9 @@ support for some OpenMetrics-specified metrics' types, such as `Info` and
 `StateSets`.
 
 At the moment, the `spec` houses a single `configuration` field, which defines
-the metric generation configuration as follows:
+the metric generation configuration as follows (please note that the schema is
+fast-moving at this point and may be subject to change based on the [feedback 
+obtained](https://github.com/rexagod/resource-state-metrics/issues?q=sort%3Aupdated-desc+is%3Aissue+is%3Aopen)):
 
 ```yaml
 stores: # Set of metrics stores for each CR we want to generate metrics for.
@@ -479,6 +489,8 @@ status:
       status: "True"
       type: Processed
 ```
+
+Also, performance benchmarks are available in [tests/bench](https://github.com/rexagod/resource-state-metrics/tree/main/tests/bench).
 
 [plural ambiguities]: https://github.com/kubernetes-sigs/kubebuilder/issues/3402
 
