@@ -196,13 +196,6 @@ The major issues are:
    This can also happen with other mechanism (e.g., different types of evictions). This has been
    discussed in the issue [kubernetes/kubernetes#124448](https://github.com/kubernetes/kubernetes/issues/124448)
    and in the issue [kubernetes/kubernetes#72129](https://github.com/kubernetes/kubernetes/issues/72129).
-7. [Affinity Based Eviction](https://github.com/kubernetes/enhancements/issues/4328) is an upcoming
-   feature that would like to introduce the `RequiredDuringSchedulingRequiredDuringExecution`
-   nodeAffinity option to remove pods from nodes that do not match this affinity. The controller
-   proposed by this feature would like to use the EvictionRequest API for the disruption safety and
-   observability reasons. It can also leave the eviction logic and reconciliation to the eviction
-   request controller and reducing the maintenance burden. Discussed in the KEP
-   [kubernetes/enhancements#4329](https://github.com/kubernetes/enhancements/pull/4329).
 
 This KEP is a prerequisite for the [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213),
 which describes other issues and consequences that would be solved by the EvictionRequest API.
@@ -223,7 +216,7 @@ the application supports this.
 
 ### PodDisruptionBudget Standing Issues
 
-For completeness here is a complete list of upstream open PDB issues. Most are relevant to this KEP.
+For completeness here is a complete list of open PDB issues. Most are relevant to this KEP.
 
 - [Mandatorliy specify how the application handle disruptions in the pod spec.](https://github.com/kubernetes/kubernetes/issues/124390)
 - [Treat liveness probe-based restarts as voluntary disruptions gated by PodDisruptionBudgets](https://github.com/kubernetes/kubernetes/issues/123204)
@@ -240,6 +233,7 @@ For completeness here is a complete list of upstream open PDB issues. Most are r
 - [New FailedEviction PodDisruptionCondition](https://github.com/kubernetes/kubernetes/issues/128815)
 - [Distinguish PDB error separately in eviction API](https://github.com/kubernetes/kubernetes/issues/125500)
 - [Confusing use of TooManyRequests error for eviction](https://github.com/kubernetes/kubernetes/issues/106286)
+- [New EvictionBlocked PodDisruptionCondition](https://github.com/kubernetes/kubernetes/issues/128815)
 
 ### Goals
 
@@ -1780,10 +1774,10 @@ also not possible to change the default eviction behavior for safety reasons. So
 would not be sufficient, as we need to solve this for all pods.
 
 We could track these requests in the PDB object itself. A PDB can track multiple pods with its
-selector. The pods do not have to be from the same application, even though they usually are. These
-pods may run in various locations and may have various reasons for their disruption. It would be
-difficult to synchronize the PDB object for applications with a large number of pods. This could
-result in inconsistent updates and conflicts as many components would race for the PDB updates.
+selector. These pods may run in various locations and may have various reasons for their disruption.
+It would be difficult to synchronize the PDB object for applications with a large number of pods.
+This could result in inconsistent updates and conflicts as many components would race for the PDB
+updates.
 
 The updates to the PDB could be done solely by the eviction endpoint, but this is disqualified
 because many components override this endpoint with validating admission webhooks. And so we would
