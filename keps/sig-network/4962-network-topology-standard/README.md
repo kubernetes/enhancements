@@ -191,7 +191,7 @@ Such topology information could significantly enhance various Kubernetes compone
 - Development of Kubernetes-native scheduler plugins for network-topology-aware scheduling, such as:
   - Topology-aware gang-scheduling plugin.
   - Gang-scheduling auto-scaler.
-  - Device resource allocation (DRA) scheduler plugin.
+  - Dynamic resource allocation (DRA) scheduler plugin.
 
 ### Goals
 
