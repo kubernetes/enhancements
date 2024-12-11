@@ -45,17 +45,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X]  (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://git.k8s.io/enhancements) (not the initial KEP PR)
 - [X]  (R) KEP approvers have approved the KEP status as `implementable`
 - [X]  (R) Design details are appropriately documented
-- [ ]  (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-    - [ ]  e2e Tests for all Beta API Operations (endpoints)
-    - [ ]  (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-    - [ ]  (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ]  (R) Graduation criteria is in place
-    - [ ]  (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ]  (R) Production readiness review completed
-- [ ]  (R) Production readiness review approved
-- [ ]  "Implementation History" section is up-to-date for milestone
-- [ ]  User-facing documentation has been created in [kubernetes/website](https://git.k8s.io/website), for publication to [kubernetes.io](https://kubernetes.io/)
-- [ ]  Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X]  (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+    - [X]  e2e Tests for all Beta API Operations (endpoints)
+    - [X]  (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+    - [X]  (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X]  (R) Graduation criteria is in place
+    - [X]  (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X]  (R) Production readiness review completed
+- [X]  (R) Production readiness review approved
+- [X]  "Implementation History" section is up-to-date for milestone
+- [X]  User-facing documentation has been created in [kubernetes/website](https://git.k8s.io/website), for publication to [kubernetes.io](https://kubernetes.io/)
+- [X]  Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -140,23 +140,26 @@ The creation and startup of the default taint-manager is performed by `kube-cont
 Kubernetes already has a good coverage of node `No-Execute` eviction. We will add tests only for the changed code.
 
 #####  Unit tests
-- `pkg/controller/taintmanager`: 2023-06-03 - 0% (to add)
+- `pkg/controller/tainteviction`: 2024-09-18 - 81.8% 
   - Enable and disable the new `TaintEvictionController`
   - The new `TaintEvictionController` acts on node taints properly
-- `pkg/controller/apis/config/v1alpha1`: 2023-06-03 - 0%
-  - Test new configuration
-- `pkg/controller/nodelifecycle`: 2023-06-03 - 74.8%
+- `pkg/controller/nodelifecycle`: 2024-09-18 - 68% (target 80% before GA)
   - Test the combined controller
-- `pkg/controller/nodelifecycle/scheduler`: 2023-06-03 - 90%
+- `pkg/controller/nodelifecycle/scheduler`: 2024-09-18 - 85.3%
   - Test the combined controller
 
 #####  Integration tests
 - Verify the ability to enable and disable the default `TaintEvictionController`.
 - Verify the new `TaintEvictionController`to act on node taints properly.
 
+- `test/integration/node/lifecycle_test.go#TestEvictionForNoExecuteTaintAddedByUser`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestEvictionForNoExecuteTaintAddedByUser)
+- `test/integration/node/lifecycle_test.go#TestTaintBasedEvictions`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestTaintBasedEvictions)
+
 ##### E2E tests
 - Verify the new controllers to pass the existing E2E and conformance tests using the split `TaintEvictionController`.
 - Manually test rollback and the `upgrade->downgrade->upgrade` path to verify it can pass the existing e2e tests.
+
+- `test/e2e/node/taints.go`: [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=NoExecuteTaintManager)
 
 ### Graduation Criteria
 
@@ -168,18 +171,28 @@ Since there are no new API changes, we can skip Alpha and go to Beta directly.
 
 * Support `kube-controller-manager` flag `--controllers=-taint-eviction-controller` to disable the default `TaintEvictionController`.
 * Unit and e2e tests completed and passed.
-* Performance and scalability tests to verify there is non-negligible performance degradation in node taint-based eviction.
 * Update documents to reflect the changes.
+* In the past, the taint-manager was running as an internal controller in the `NodeLifecycleManager`, so moving and renaming it as a new top-level controller has a low chance of degrading performance. And no bugs are reported in the current implementation.
 
 #### GA
 
-* Fix all reported bugs if any.
+* No negative feedback.
 
 ### Upgrade / Downgrade Strategy
 
 A feature gate `SeparateTaintEvictionController`  enables and disables the new feature. When the feature is turned on, a user can use `kube-controller-manager`'s flag to disable the default `TaintEvictionController`.
 
+Regarding taint-based eviction, all versions of kube-controller-manager have this feature. The key difference is which controller implements the feature. The feature is implemented in the `NodeLifecycleController` before v1.29; the feature is implemented in a separate controller since v1.29. 
+
+For upgrade/downgrade scenarios, only one instance of the controller is leader and does the taint-based eviction.
+* If the newer instance becomes a leader, the taint-based eviction will work as usual. 
+* If the older instance becomes a leader, the taint-based eviction will work as usual.
+
+But if the cluster admin disables the default controller via the `kube-controller-manager`'s flag during upgrading, the taint-based eviction won't work once the newer instance becomes a leader.
+
 ### Version Skew Strategy
+
+This feature affects only the kube-controller-manager, so there is no issue with version skew with other components.
 
 ## Production Readiness Review Questionnaire
 
@@ -213,11 +226,22 @@ This section must be completed when targeting beta to a release.
 This is an opt-in feature, and it does not change any default behavior. Unless there is a bug in the implementation, a  rollout can not fail. If a rollout does fail, running workloads will not be evicted properly on tainted nodes. We don't except a rollback can fail.
 
 ###### What specific metrics should inform a rollback?
-A significantly changing number of pod evictions (`taint_eviction_controller_pod_evictions_total`) and/or a substantial increase in pod eviction latency (`taint_eviction_controller_pod_deletion_duration_seconds`) in Kubernetes.
+A significantly changing number of pod evictions (`taint_eviction_controller_pod_deletions_total`) and/or a substantial increase in pod eviction latency (`taint_eviction_controller_pod_deletion_duration_seconds`) in Kubernetes.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-The upgrade will be tested in the planned unit and e2e tests. The rollback and upgrade-downgrade-upgrade path will
-be tested manually (see [Test Plan](#test-plan) section).
+Manually tested. No issues were found when we enabled the feature gate -> disabled it ->
+re-enabled the feature gate.
+
+Upgrade->downgrade->upgrade testing was done manually using the following steps:
+
+1. Create a cluster in v1.29, the `SeparateTaintEvictionController` enabled by default.
+2. Run the existing e2e tests to verify the new controllers work as expected. Above mentioned metrics found.
+3. Simulate downgrade by modifying control-plane manifests to disable `SeparateTaintEvictionController`.
+4. Run the existing e2e tests to verify the current behavior without the new controllers.
+5. Simulate upgrade by modifying control-plane manifests to enable `SeparateTaintEvictionController`.
+6. Repeat step 2.
+
+The e2e tests are mentioned in the [Test Plan](#test-plan) section.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -238,7 +262,7 @@ The performance of node taint-based eviction should remain the same level as bef
 The metrics for both `NodeLifecycleController` and `TaintEvictionController`'s queues should stay the same levels as before, the number of pod evictions and pod eviction latency.
 
 - [X] Metrics
-  - Metric name: `taint_eviction_controller_pod_evictions_total`, `taint_eviction_controller_pod_deletion_duration_seconds`
+  - Metric name: `taint_eviction_controller_pod_deletions_total`, `taint_eviction_controller_pod_deletion_duration_seconds`
   - Components exposing the metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -287,6 +311,7 @@ If the pod eviction latency increases significantly, validate if the communicati
 
 * 2023-03-06: Initial KEP published.
 * 2023-10-23: KEP updated to update name of the `SeparateTaintEvictionController` feature-flag and exposed metrics.
+* 2024-08-26: KEP promoted to Stable.
 
 ## Drawbacks
 
