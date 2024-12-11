@@ -154,7 +154,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This document proposes a standard for declaring network topology in Kubernetes clusters,
+This document proposes a standard set of terminologies for declaring network topology in Kubernetes clusters,
 representing the hierarchy of nodes, switches, and interconnects.
 In this context, a `switch` can refer to a physical network device or a collection of such devices
 with close proximity and functionality.
@@ -165,9 +165,9 @@ With the rise of multi-node Kubernetes workloads that demand intensive inter-nod
 scheduling pods in close network proximity is becoming essential.
 Examples of such workloads include AI/ML training jobs or sets of interdependent, data-intensive services.
 
-However, Kubernetes currently lacks a standard method to describe cluster network topology, which is a key area for improvement.
-By establishing a consistent way to represent cluster network topology, this proposal lays the groundwork for
-advanced scheduling capabilities that take network topology and performance into account.
+However, Kubernetes currently lacks a standard way to describe cluster network topology, which is a key area for improvement.
+This proposal introduces terminology for describing network topology, that can be adopted by existing components and systems.
+It also establishes a foundation for advanced scheduling capabilities that take network topology and performance into account.
 
 Some major CSPs already offer mechanisms to discover instance network topology:
 - **Amazon AWS** provides the [DescribeInstanceTopology API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTopology.html).
