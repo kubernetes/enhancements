@@ -1,18 +1,19 @@
 # KEP-4944: Kustomize Wasm Plugin
 
 <!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Limitation current plugins](#limitation-current-plugins)
+  - [Limitation current plugins](#limitation-current-plugins)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [Benefits of Wasm Plugin Support](#benefits-of-wasm-plugin-support)
-      - [Platform Independence](#platform-independence)
-      - [Simplified Distribution](#simplified-distribution)
-      - [Familiar Interface](#familiar-interface)
-      - [Enhanced Security](#enhanced-security)
+  - [Benefits of Wasm Plugin Support](#benefits-of-wasm-plugin-support)
+    - [Platform Independence](#platform-independence)
+    - [Simplified Distribution](#simplified-distribution)
+    - [Familiar Interface](#familiar-interface)
+    - [Enhanced Security](#enhanced-security)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -21,10 +22,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -39,6 +40,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -296,7 +298,44 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-TODO(koba1t):
+Implement with [wazero](https://github.com/tetratelabs/wazero) to WASM runtime
+like the
+[kube-scheduler-wasm-extension](https://github.com/kubernetes-sigs/kube-scheduler-wasm-extension)
+project.
+
+### Interface
+
+Using the WASI to plugin interface.
+
+##### with Wasm binary file
+
+```yaml
+apiVersion: transformers.example.co/v1
+kind: App
+metadata:
+  name: example-app
+  annotations:
+    config.kubernetes.io/function: |
+      wasip1:
+        file: ../bin/fnapp.wasm
+spec:
+  port: 8080
+```
+
+##### with OCI registry
+
+```yaml
+apiVersion: transformers.example.co/v1
+kind: App
+metadata:
+  name: example-app
+  annotations:
+    config.kubernetes.io/function: |
+      wasip1:
+        image: ghcr.io/koba1t/krm-fn-app:v0.0.3-wasm
+spec:
+  port: 8080
+```
 
 ### Test Plan
 
