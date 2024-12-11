@@ -13,12 +13,15 @@
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
+    - [Story 4 (DNS)](#story-4-dns)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [EndpointSlice Controller Implementation](#endpointslice-controller-implementation)
   - [Standard Heuristic Implementation (kube-proxy dataplane)](#standard-heuristic-implementation-kube-proxy-dataplane)
-    - [Default (i.e. <code>trafficDistribution</code> is not configured)](#default-ie-trafficdistribution-is-not-configured)
+    - [Default (i.e. <code>trafficDistribution</code> is not configured, no EndpointSlice hints)](#default-ie-trafficdistribution-is-not-configured-no-endpointslice-hints)
     - [<code>PreferClose</code>](#preferclose)
+    - [<code>PreferSameNode</code>](#prefersamenode)
   - [Changes within kube-proxy](#changes-within-kube-proxy)
   - [Choice of field name](#choice-of-field-name)
   - [Intersection with internal/externalTrafficPolicy](#intersection-with-internalexternaltrafficpolicy)
@@ -206,11 +209,14 @@ while making routing decisions. It does not offer strict routing guarantees.
 
 The field will support the following initial values:
 
-
 * `PreferClose`: Indicates a preference for routing traffic to endpoints that
   are topologically proximate to the client. The interpretation of
   "topologically proximate" may vary across implementations and could encompass
   endpoints within the same node, rack, zone, or even region.
+
+* `PreferSameNode`: Indicates a preference for routing traffic to endpoints that
+  are specifically only the same node as the client, with a fallback to
+  `PreferClose` behavior.
 
 The absence of a value indicates no specific routing preference. In this case,
 the user delegates the routing decision to the implementation, allowing it to
@@ -230,6 +236,48 @@ NOTE: Implementations reserve the right to refine the behavior associated with
   traffic outside the zone when necessary, optimizing overall performance. The
   decision of what constitutes an "improvement" remains at the discretion of the
   implementation.
+
+```
+<<[UNRESOLVED rename PreferClose? ]>>
+
+As of our second value for this field, we have already been forced to give up
+the "vague" naming scheme in favor of being precise. My original proposal tried
+to just extend the semantics of `PreferClose`, indicating particular situations
+in which kube-proxy would treat it as meaning "prefer same node" rather than
+"prefer same zone", but it needed careful heuristics to ensure that we wouldn't
+accidentally start treating existing `trafficDistribution: PreferClose` services
+as "prefer same node" when that wasn't what the user had wanted, and reviewers
+were unanimous in agreeing that the heuristics would not work reliably enough
+(either forcing services into "prefer same node" where the admin didn't want
+that, or else falling back to "prefer same zone" when the admin actually did
+want same-node).
+
+Additionally, although we claim that the service proxy can interpret
+`PreferClose` however it wants, the EndpointSlice hints are assigned based on a
+single specific interpretation. A service proxy that wanted to implement
+`PreferClose` as "prefer same-rack and then fall back to same-zone" would need
+to ignore the hints and reinterpret the EndpointSlice data themselves. A service
+proxy that wanted to implement `PreferClose` as "prefer a node within the
+topology defined by the endpoint pod's TopologySpreadConstraints" would need to
+ignore the hints *and watch all Pods*.
+
+And despite the vagueness of the name `PreferClose`, we've been pretty clear
+that it's intended to mean *something* like "prefer same zone", so users are
+going to use it to mean that. Which means that any service proxy that doesn't
+treat it as meaning *exactly* that runs the risk of screwing up the traffic
+distribution of those services (as in the case of my attempt to redefine it to
+sometimes mean "prefer same node").
+
+Basically, `PreferClose` just repeats the mistake of Topology-Aware Hints: we
+have defined the feature such that users can't reliably predict how the system
+will behave, and once they realize that, they won't want to use the feature.
+
+So, should we rename `PreferClose` to `PreferSameZone`? (Which at this point
+means deprecating `PreferClose` but not actually removing it, at least for a
+while.)
+
+<<[/UNRESOLVED]>>
+```
 
 ### User Stories
 
@@ -266,6 +314,19 @@ NOTE: Implementations reserve the right to refine the behavior associated with
   implementation. This simplifies their deployment process and reduces the
   complexity of managing cross-cluster applications.
 
+#### Story 4 (DNS)
+
+* **Requirement:** As a cluster administrator, I plan to deploy CoreDNS so that there
+  is an endpoint on every node, and I want clients to preferentially connect to the
+  endpoint on their own node, to reduce latency. I'm not worried about CoreDNS
+  endpoints becoming overloaded by unbalanced traffic distribution, because "1
+  endpoint per node" is substantially more replicas than the service "needs" anyway.
+* **Solution:** Set `trafficDistribution: PreferSameNode`
+* **Effect:** The Kubernetes implementation will aim to prioritize
+  routing traffic to endpoints on the same node as the client. If no
+  endpoints are available within the zone, traffic will be treated as
+  with `PreferClose`.
+
 ### Notes/Constraints/Caveats
 
 This proposal is our third attempt at an API revolving around such a
@@ -298,36 +359,41 @@ configuration. There's a non-zero chance that we may need to revisit this again.
 
 ## Design Details
 
-### Standard Heuristic Implementation (kube-proxy dataplane)
+### EndpointSlice Controller Implementation
 
-kube-proxy (along with EndpointSlice controller, within kube-controller-manager
-as the control plane) will start with supporting two distinct behaviors based on
-the value configured for `trafficDistribution`
+The implementation of traffic distribution will use of the `Hints` field in
+`EndpointSlice`, to make it backward-compatible with Topology-Aware Hints on the
+service proxy end.
 
-#### Default (i.e. `trafficDistribution` is not configured)
-* **Meaning:** When `trafficDistribution` is not used, kube-proxy would match
-  it's existing behaviour of having an equal distribution of traffic across
-  endpoints (potentially spanning multiple zones or regions)
-* This leverages existing implementation, requiring no major changes.
+The controller's behavior will be:
 
-#### `PreferClose`
-* **Meaning:** Attempts to route traffic to endpoints within the same zone as
-  the client. If no endpoints are available within the zone, traffic would be
-  routed to other zones.
-* This preference will be implemented by the use of Hints within EndpointSlices.
-* We already use Hints to implement `service.kubernetes.io/topology-mode: Auto`
-  In a similar manner, the EndpointSlice controller will now also populate hints
-  for `trafficDistribution: PreferClose` -- although in this case, the zone hint will
-  match the endpoint of the zone itself.
-* While it may seem redundant to populate the hints here since kube-proxy can
-  already derive the zone hint from the endpoints zone (as they would be the
-  same), we will still use this for implementation simply because of the reason
-  that it’s easier to implement and provides a better design. Consider an
-  alternative implementation where kube-proxy reads
-  `trafficDistribution: PreferClose` field and then constructs the route rules
-  accordingly. This means some extra logic needs to be baked into the kube-proxy
-  which could have just as easily been implemented by an already existing
-  extensibility mechanism (i.e. EndpointSlice hints)
+* **(No topology mode):** By default, the EndpointSlice controller will not set any
+  `Hints` on an EndpointSlice.
+
+* **Topology-Aware Hints:** If `TopologyAwareHints` is in use for a Service, then the
+  controller will set `Hints.ForZones` on the EndpointSlice, according to the rules
+  of that feature.
+
+* **`PreferClose` Traffic Distribution:** The controller will set `Hints.ForZones` on
+  each Endpoint to match the zone of the endpoint itself.
+
+* **`PreferSameNode` Traffic Distribution:** The controller will set `Hints.ForZones`
+  as with `PreferClose`, and additionally set the new `Hints.ForNodes` field,
+  containing a single value, matching the Endpoint's node.
+
+While it may seem redundant to populate the hints in the `PreferClose` case (since
+kube-proxy can already derive the zone hint from the endpoints zone, as they would be
+the same), we will still use this for implementation simply because of the reason
+that it’s easier to implement and provides a better design. Consider an alternative
+implementation where kube-proxy reads `trafficDistribution: PreferClose` field and
+then constructs the route rules accordingly. This means some extra logic needs to be
+baked into the kube-proxy which could have just as easily been implemented by an
+already existing extensibility mechanism (i.e. EndpointSlice hints)
+
+Likewise, `PreferSameNode` could be handled with a `ForSameNode: true` hint rather
+than having the controller explicitly (and redundantly) indicate the node(s) to use
+the endpoint for, but being explicit allows for more possibilities later in the
+controller, while keeping the service proxy code simple.
 
 Although this is not an explicit design goal, an implication of the above
 implementation choice means that:
@@ -337,7 +403,7 @@ implementation choice means that:
 * The data plane (kube-proxy in this case) is only concerned with the Hints
   populated in the EndpointSlice and the fields `internal/externalTrafficPolicy`
   to make routing decisions.
-* Neither the control plane nor the data plane looks at the others field.
+* Neither the control plane nor the data plane looks at the other's field.
 
 NOTE: The fact that EndpointSlice hints are not expected to be implemented by
   all data planes is not of concern here, because `trafficDistribution` is anyways
@@ -345,6 +411,41 @@ NOTE: The fact that EndpointSlice hints are not expected to be implemented by
   data plane will respect the Hints, it’s sufficient for the kube-proxy and
   kube-controller-manager based implementations to say that we do support the
   standard heuristics.
+
+### Standard Heuristic Implementation (kube-proxy dataplane)
+
+kube-proxy will start with supporting three distinct behaviors based on the value
+configured for `trafficDistribution` (or, more precisely, based on the hints that the
+EndpointSlice controller sets):
+
+#### Default (i.e. `trafficDistribution` is not configured, no EndpointSlice hints)
+
+* **Interpretation:** When `trafficDistribution` is not used, kube-proxy would match
+  it's existing behaviour of having an equal distribution of traffic across
+  endpoints (potentially spanning multiple zones or regions)
+
+* This leverages the existing implementation, requiring no major changes.
+
+#### `PreferClose`
+
+* **Interpretation:** Attempts to route traffic to endpoints within the same zone as
+  the client. If no endpoints are available within the zone, traffic would be
+  routed to other zones.
+
+* This also leverages the existing implementation; the same code that implements
+  Topology-Aware Hints will now also implement `PreferClose` traffic distribution
+  (and the fallback for `PreferSameNode`).
+
+#### `PreferSameNode`
+
+* **Interpretation:** Attempts to route traffic to endpoints one the same node as the
+  client. If no endpoints are available on the same node, it falls back to
+  `PreferClose` behavior.
+
+* This requires new code to interpret the `ForNodes` hint. Other service proxy
+  implementations that don't process the new hint will still be able to treat the
+  Service as `PreferClose` because the EndpointSlice controller will have also set
+  the hints for that.
 
 ### Changes within kube-proxy
 
@@ -363,7 +464,18 @@ NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
   Aware
   Hints](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2433-topology-aware-hints/README.md#kube-proxy), i.e. _"This is to provide safer transitions between enabled and disabled states. Without this fallback, endpoints could easily get overloaded as hints were being added or removed from some EndpointSlices but had not yet propagated to all of them."_
 
-<<[UNRESOLVED Name for the field is being discussed]>>
+To support both `PreferClose` and `PreferSameNode`, the behavior of kube-proxy will
+be:
+
+* If there are any endpoints that have a `ForNodes` hint that contains the proxy's
+  node, then the proxy will only route connections to endpoints that are hinted as
+  being for this node.
+
+* Otherwise, if all of the endpoints have a `ForZones` hint, and at least one of them
+  contains the proxy's zone, then the proxy will only route connections to endpoints
+  that are hinted as being for this zone.
+
+* Otherwise, the proxy will route to all endpoints.
 
 ### Choice of field name
 The name `trafficDistribution` is meant to capture the highly
@@ -386,8 +498,6 @@ traffic
 * Use of the word "selection" for a name like `endpointSelection` were avoided
   so as not to confuse with the actual process of selecting the complete set of
   pods backing a service.
-
-<<[/UNRESOLVED]>>
 
 ### Intersection with internal/externalTrafficPolicy
 
