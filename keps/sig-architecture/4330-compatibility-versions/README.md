@@ -276,8 +276,8 @@ release for features to settle in as is typically needed for rollback support.
   - In alpha we intend to support:
     - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
   - In beta, we intend to extend support to:
-    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
-    - `--min-compatibility-version` to `binaryMinorVersion`..`binaryMinorVersion-1`
+    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-3`
+    - `--min-compatibility-version` to `binaryMinorVersion`..`binaryMinorVersion-3`
 
 ### Non-Goals
 
