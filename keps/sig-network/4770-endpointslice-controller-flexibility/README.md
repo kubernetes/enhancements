@@ -35,9 +35,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Well-known label: Use Annotation as Selector](#well-known-label-use-annotation-as-selector)
-  - [Well-known label: Use Dummy Selector](#well-known-label-use-dummy-selector)
-  - [Well-known label: Disable the Kube-Controller-Manager Controllers](#well-known-label-disable-the-kube-controller-manager-controllers)
+  - [Empty Selector field and Use Annotation as Selector](#empty-selector-field-and-use-annotation-as-selector)
+  - [Use Dummy Selector](#use-dummy-selector)
+  - [Disable the Kube-Controller-Manager Controllers](#disable-the-kube-controller-manager-controllers)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -67,7 +67,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal adds a new well-known label `service.kubernetes.io/endpoint-controller-name` to Kubernetes Services. This label disables the default Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for the services where this label is applied and delegates the control of EndpointSlices to a custom EndpointSlice controller.
+This proposal adds a new well-known label `service.kubernetes.io/endpoint-controller-name` to Kubernetes Services. This label disables the default Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for the services where this label is applied (even for services with non-empty selector) and delegates the control of EndpointSlices to a custom EndpointSlice controller.
 
 ## Motivation
 
@@ -123,6 +123,8 @@ The kube-controller-manager will pass to the Endpoints, EndpointSlice and Endpoi
 
 In the Endpoints, EndpointSlice and EndpointSlice Mirroring Controllers, the behavior to create Endpoints/EndpointSlices on service creation and the behavior to delete the Endpoints/EndpointSlices on service deletion is already in place. Only the service informer passed to these controllers must be tweaked for the proposed well-known label (`service.kubernetes.io/endpoint-controller-name`) to work properly.
 
+This new well-known label will not have any impact on the other well-known label `endpointslice.kubernetes.io/managed-by`. Both labels can coexist and be used together, ``service.kubernetes.io/endpoint-controller-name` on the Service object while `endpointslice.kubernetes.io/managed-by` on the EndpointSlice object. The label `endpointslice.kubernetes.io/managed-by` is used to indicate the controller or entity that manages the EndpointSlice. In contrast, this new label `service.kubernetes.io/endpoint-controller-name`, is used to disable the default Kubernetes EndpointSlice, EndpointSlice Mirroring and Endpoints controllers for a Service and indicates the controller or entity that manages the EndpointSlices for that particular Service.
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -133,7 +135,7 @@ to implement this enhancement.
 
 ##### Unit tests
 
-TDB
+TBD
 
 ##### Integration tests
 
@@ -317,7 +319,7 @@ TBD
 
 ## Alternatives
 
-### Well-known label: Use Annotation as Selector 
+### Empty Selector field and Use Annotation as Selector 
 
 Services without selectors will not get any EndpointSlice objects. Therefore, selecting pods can be done in different ways, for example, via annotation. An annotation will be used in the service to select which pods will be used as backend for this service. For example, [nokia/danm](https://github.com/nokia/danm) uses `danm.k8s.io/selector` (e.g. [DANM service declaration](https://github.com/nokia/danm/blob/v4.3.0/example/svcwatcher_demo/services/internal_lb_svc.yaml#L7)), and [projectcalico/vpp-dataplane](https://github.com/projectcalico/vpp-dataplane) uses `extensions.projectcalico.org/selector` (e.g. [Calico-VPP Multinet services](https://github.com/projectcalico/vpp-dataplane/blob/v3.25.1/docs/multinet.md#multinet-services)). To simplify the user experience, a mutating webhook could read the selector, add them to the annotation and clear them from the specs when the type of service is detected.
 
@@ -329,13 +331,13 @@ kind: Service
 metadata:
   name: service
   annotations:
-    selector: "app=a"
+    example.com/custom-service-selector: "app=a"
 spec: {}
 ```
 
 This alternative potentially leads to confusion among users and inconsistency in how services are managed as each implementation is using its own annotation (see the nokia/danm and projectcalico/vpp-dataplane examples), leading to a fragmented approach.
 
-### Well-known label: Use Dummy Selector
+### Use Dummy Selector
 
 The set of Pods targeted by a Service is determined by a selector, the labels in the selector must be included as part of the pod labels. If a dummy selector is added to the service, Kubernetes will not select any pod, the endpointslices created by Kubernetes will then be empty. To simplify the user experience, a mutating webhook could add the dummy selector when the type of service is detected.
 
@@ -354,7 +356,7 @@ spec:
 
 This alternative fails to prevent the placeholder (empty) EndpointSlice(s) to be created by Kube-Controller-Manager. This also potentially causes confusion among users as every implementation could use a different dummy-selector key. Additionally, a miss-configuration with the missing dummy label will lead to unintended EndpointSlices being created with Pod.Status.PodIPs.
 
-### Well-known label: Disable the Kube-Controller-Manager Controllers
+### Disable the Kube-Controller-Manager Controllers
 
 The list of controllers to enable in the Kube-Controller-Manager can be set using the `--controllers` flag ([kube-controller-manager documentation](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/)). The EndpointSlice can then be disabled in the Kube-Controller-Manager and implemented as an external one that will support the label feature described in this KEP.
 
