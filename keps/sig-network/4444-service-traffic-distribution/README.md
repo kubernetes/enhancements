@@ -53,6 +53,7 @@
   - [Granular Routing Controls](#granular-routing-controls)
   - [Reuse Pod Topology Spread Constraints for Traffic Distribution](#reuse-pod-topology-spread-constraints-for-traffic-distribution)
     - [Complementary Use of Pod Topology Spread Constraints and trafficDistribution](#complementary-use-of-pod-topology-spread-constraints-and-trafficdistribution)
+    - [Making Traffic Distribution directly aware of Topology Spread Constraints](#making-traffic-distribution-directly-aware-of-topology-spread-constraints)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -1224,3 +1225,51 @@ distribution when used in conjunction.
   pod distribution across zones, maximizing the likelihood that the
   `trafficDistribution` can be satisfied and reduce (although not completely
   eliminate) chances of overload for a single zone.
+
+#### Making Traffic Distribution directly aware of Topology Spread Constraints
+
+Rather than using Topology Spread Constraints with `PreferClose`, we
+could have traffic distribution make use of Topology Spread
+Constraints directly (either by changing the semantics of
+`PreferClose` in this case, or by adding a new distribution mode such
+as `FollowTopologyConstraints`).
+
+In this case, when the EndpointSlice controller decided that a service
+should used TSC-based traffic distribution, it would add a new
+`ForNodeSelector` hint to the EndpointSlices.
+
+For example, if a pod had:
+
+```
+  topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        foo: bar
+```
+
+and the pod was on a node with the label
+`topology.kubernetes.io/zone: zone-a`, then the Endpoint corresponding
+to that Pod would be given:
+
+```
+  hints:
+    forNodeSelector:
+      matchLabels:
+        topology.kubernetes.io/zone: zone-a
+```
+
+kube-proxy would then use this hint to know that it should only use
+that Endpoint if it was on a node that matched the given label
+selector. (The use of a full label selector rather than a single value
+is to handle the case of endpoints with multiple topology
+constraints.)
+
+While Topology Spread Constraints is a very complicated feature, the
+majority of the complexity is only needed for _scheduling_ the pods,
+so neither the EndpointSlice controller nor the service proxy would
+need to understand most of the details: the EndpointSlice controller
+would only look at the `topologyKey` fields, and the service proxy
+would only look at the EndpointSlice hints.
