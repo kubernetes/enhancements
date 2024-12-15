@@ -700,8 +700,9 @@ it will be safe to disable the dual-write mode.
 |----------|----------|----------|
 | 1.31     | Beta off | Alpha off   |
 | 1.32     | Beta on  | Alpha off   |
-| 1.33     | GA on    | Beta off   |
-| 1.34     | GA (there are no bitmaps running) | GA (also delete old bitmap)|
+| 1.33     | GA on (not locked by default)   | Beta off   |
+| 1.34     | GA (lock by default) | GA (not locked by default) |
+| 1.35     | GA (there are no bitmaps running) | GA (also delete old bitmap)|
 | 1.36     | remove feature gate | GA  |
 | 1.37     | --- | remove feature gate  |
 
