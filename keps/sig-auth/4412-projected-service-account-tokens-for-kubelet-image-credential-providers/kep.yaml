@@ -17,9 +17,9 @@ see-also:
 creation-date: "2024-09-09"
 status: implementable
 stage: alpha
-latest-milestone: "v1.32"
+latest-milestone: "v1.33"
 milestone:
-  alpha: "v1.32"
+  alpha: "v1.33"
 feature-gates:
 - name: ServiceAccountTokenForKubeletCredentialProviders
   components:
