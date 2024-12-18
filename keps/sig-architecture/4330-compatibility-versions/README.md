@@ -276,8 +276,8 @@ release for features to settle in as is typically needed for rollback support.
   - In alpha we intend to support:
     - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
   - In beta, we intend to extend support to:
-    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-1`
-    - `--min-compatibility-version` to `binaryMinorVersion`..`binaryMinorVersion-1`
+    - `--emulation-version` range of `binaryMinorVersion`..`binaryMinorVersion-3`
+    - `--min-compatibility-version` to `emulationVersion`..`binaryMinorVersion-3`
 
 ### Non-Goals
 
@@ -316,7 +316,8 @@ version be <= the kube-apiserver binary version, it must also be <= the
 
 #### --min-compatibility-version
 
-- Defaults to `binaryVersion-1` (matching current behavior)
+- Defaults to `emulationVersion-1` if `emulationVersion.GreaterThan(binaryVersion-3)` (matching current behavior in emulation mode), 
+and defaults to `emulationVersion` if `emulationVersion.EqualTo(binaryVersion-3)` (because of the max version range we are supporting) 
 - Must be <= `--emulation-version`
 - Must not be lower than the supported range of minor versions (see graduation
   criteria for ranges). If below the supported version range the binary will
@@ -338,7 +339,7 @@ rules be defined in terms of compatibility and emulation versions:
 
 - kubectl:
   - Previously: `1.{binaryMinorVersion-1}`..`{binaryVersion+1}`
-  - With this enhancement: `{minCompatibilityVersion-1}..{emulationVersion+1}`
+  - With this enhancement: `{minCompatibilityVersion}..{emulationVersion+1}`
 
 ### Changes to Feature Gates
 
@@ -599,11 +600,11 @@ for each API group. The StorageVersion changes across releases as API groups
 graduate through stability levels.
 
 During upgrades and downgrades, the storage version is particularly important.
-To enable upgrades and rollbacks, the version selected for storage in etcd in 
-version N must be (en/de)codable for k8s versions N-1 through N+1.
+To enable upgrades and rollbacks, pre compatibility version, the version selected for storage in etcd in 
+version N must be (en/de)codable for k8s versions N-1 through N+1. With compatibility version, the version selected for storage in etcd for the combination of `EmulationVersion` and `MinCompatibilityVersion` must be (en/de)codable for k8s versions `MinCompatibilityVersion` through `EmulationVersion+1`.
 
 Thus, to determine the storage version to use at compatibility version N, we 
-will find the set of all supported GVRs for each of N-1, N, and N+1 and intersect 
+will find the set of all supported GVRs for each version in the range of `MinCompatibilityVersion` and `EmulationVersion+1` and intersect 
 them to find a list of all GVRs supported by every binary version in the window. 
 The storage version of each group-resource is the newest 
 (using kube-aware version sorting) version found in that list for that group-resource.
@@ -876,7 +877,7 @@ We intend to have this up and running for Beta
 
 - Initial cross-branch e2e tests completed and enabled
 - Emulation version support for N-3 minor versions
-- Compatibility version support for N-3 minor versions
+- Min compatibility version support for N-3 minor versions
 - Clients send version number and servers report out-of-allowance skew to a metric
   (Leveraging work from KEP-4355 if possible)
 - All existing features migrated to versioned feature gate - [kubernetes #125031](https://github.com/kubernetes/kubernetes/issues/125031)
