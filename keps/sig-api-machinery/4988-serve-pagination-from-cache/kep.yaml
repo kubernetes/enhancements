@@ -1,0 +1,27 @@
+title: Serve pagination from cache
+kep-number: 4988
+authors:
+  - "@serathius"
+owning-sig: sig-api-machinery
+participating-sigs: []
+status: provisional
+creation-date: 2024-12-11
+reviewers:
+  - "@jpbetz"
+approvers:
+- "@deads2k"
+- "@wojtek-t"
+
+see-also:
+  - "/keps/sig-api-machinery/2340-Consistent-reads-from-cache"
+replaces: []
+stage: alpha
+latest-milestone: "v1.33"
+milestone:
+  alpha: "v1.33"
+feature-gates:
+  - name: PaginationFromCache
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics: []
