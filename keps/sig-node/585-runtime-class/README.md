@@ -610,7 +610,7 @@ tolerations.
 
 Replacing the NodeSelector's `[]NodeSelectorRequirements` type with the
 PodSpec's label `map[string]string` approach greatly simplifies the merging
-logic, but sacrifices a lot of flexibliity. For exameple, the operator in
+logic, but sacrifices a lot of flexibliity. For example, the operator in
 NodeSelectorRequriments enables selections like:
 
 - Negative selection, such as "operating system is _not_ windows"
