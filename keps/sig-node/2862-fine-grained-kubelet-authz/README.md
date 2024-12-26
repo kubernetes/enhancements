@@ -784,12 +784,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+We have designed a fallback mechanism that prevents from failed rollouts or rollbacks
+from impacting an already running workloads ability to interact with the kubelet API.
+
+Please see the [Design Details](#design-details) section for more information.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Increase in failed requests to kubelet API from workloads.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -799,11 +806,28 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+We have tested the following upgrade scenarios manually:
+
+|Scenario| Result |
+| -------|--------|
+| Upgrade both kubelet and kube-apiserver so that feature gate is enabled in both. | workloads and kube-apiserver are able to reach kubelet|
+| Upgrade only kubelet to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Updrade only kube-apiserver to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+
+We have tested the following rollback scenarios manually:
+
+|Scenario| Result |
+| -------|--------|
+| Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads and kube-apiserver are able to reach kubelet|
+| Rollback only kubelet to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Rollback only kube-apiserver to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -822,6 +846,28 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Users can check if this feature is enabled in kube-apiserver by running the
+following command:
+
+```sh
+kubectl get --raw /metrics | grep kubernetes_feature_enabled | grep KubeletFineGrainedAuthz
+```
+
+Users can check if this feature is nabled in the kubelet by running the
+following command in a pod that is running on the node:
+
+If readonly port is enabled:
+```sh
+curl http://<node-ip>:10255/metrics | grep kubernetes_feature_enabled | grep KubeletFineGrainedAuthz
+```
+
+If readonly port is not enabled:
+```sh
+curl -k https://$MY_NODE_IP:10250/metrics | grep kubernetes_feature_enabled | grep KubeletFineGrainedAuthz 
+```
+
+NOTE: for port 10250 the pod will need to have the right RBAC bindings (if RBAC is enabled) to view the metrics.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -838,8 +884,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: By replacing `nodes/proxy` permission in RBAC with the fine-grained permissions required by the workload such as `nodes/metrics`, `nodes/pods` etc. and then confirming that the requests to kubelet succeed and don't encounter authorization errors.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -858,6 +904,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Same SLOs as the kubelet API currently offers.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -871,12 +919,16 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 
+Same SLIs as the kubelet API currently offers.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -900,6 +952,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature only comes into play if kubelet authotization mode is set to Webhook.
 
 ### Scalability
 
@@ -1024,6 +1078,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Not any different from how it would affect kubelet without this feature. If kube-apiserver 
+is unavailable any SAR from kubelet will fail.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1039,7 +1096,21 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+If requests to kubelet API start failing due to authorization issues users can
+disabled the feature-gate.
+
+Users can check the kubernetes Audit logs for SubjectAccessReview requests
+created by `system:nodes:*` and check the reason they failed.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Check that the feature gate is enabled in kube-apiserver and kubelet.
+2. Check that the workload has the right permissions. Requesets are expected to
+fail if you are using fine-grained subresources but the feature gate is not enabled
+in kubelet.
+3. Check the audit logs for SubjectAccessReview requests created by `system:nodes:*`
+and check the reason these requests failed.
+4. Check kubelet logs.
 
 ## Implementation History
 
@@ -1053,6 +1124,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+2024-09-28: [KEP-2862](https://github.com/kubernetes/enhancements/pull/4760) merged as implementable and PRR approved for ALPHA.
+2024-10-17: Alpha Code implementation [PR](https://github.com/kubernetes/kubernetes/pull/126347) merged.
+2024-10-22: Alpha Documentation [PR](https://github.com/kubernetes/website/pull/48412) merged.
 
 ## Drawbacks
 
