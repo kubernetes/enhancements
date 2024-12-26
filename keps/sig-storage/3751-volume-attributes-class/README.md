@@ -1024,10 +1024,11 @@ Major milestones might include:
 - 2023-10-26 Implementation merged in kubernetes-csi/external-provisioner
 - 2023-11-09 Implementation merged in kubernetes-csi/external-resizer
 - First available release: Alpha in Kubernetes 1.29
+- 2024-08-14: Beta in Kubernetes 1.31
 
 Implementations in CSI Drivers:
 - [AWS EBS CSI Driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/a402256d03ab3008f642e70253acb4b41d674af0/pkg/driver/controller.go#L581)
-
+- [GCP PD CSI Driver](https://github.com/kubernetes-sigs/gcp-compute-persistent-disk-csi-driver/blob/a1ed4e4635274497b2cd0d87af2417c456b59b3a/pkg/gce-pd-csi-driver/controller.go#L765)
 
 ## Drawbacks
 
