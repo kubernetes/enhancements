@@ -82,7 +82,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -137,10 +137,10 @@ Note: In the following, we will use VolumeGroupSnapshot Controller to refer to t
 * The group snapshot logic in csi-snapshotter will retrieve all volumeSnapshotHandles and their source volumeHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, and populate the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status.
 * The VolumeGroupSnapshot controller will be watching the VolumeGroupSnapshotContent, and create VolumeSnapshotContents pointing to the volumeSnapshotHandles once they are available in the VolumeGroupSnapshotContent status. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
-  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The group snapshot logic in the csi-snapshotter sidecar will update the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status based on the returned list of snapshots from the CSI call. The VolumeGroupSnapshot controller can use VolumeSnapshotHandles to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update PVCVolumeSnapshotRefList in the VolumeGroupSnapshot Status and PVVolumeSnapshotContentList in the VolumeGroupSnapshotContent Status.
+  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The group snapshot logic in the csi-snapshotter sidecar will update the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status based on the returned list of snapshots from the CSI call. The VolumeGroupSnapshot controller can use VolumeSnapshotHandles to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound.
  * Individual VolumeSnapshots will be named in this format:
-   * <snap>-<hash of VolumeGroupSnapshot UUID+PVC UUID+timestamp>
-   * A label with VolumeGroupSnapshot name will also be added to the VolumeSnapshot
+   * <snap>-<hash of VolumeGroupSnapshotContent UUID + volume handle>
+   * VolumeGroupSnapshot will also be added as an OwnerReference for the VolumeSnapshot
 
 ```
 apiVersion: snapshot.storage.k8s.io/v1
@@ -164,6 +164,8 @@ status:
 Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then the user creates a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
 
 The controller will call the CSI GetVolumeGroupSnapshot method to retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
+
+Note: The automatic creation of individual VolumeSnapshots and VolumeSnapshotContents are not done in Beta. For now, the admin will need to manually construct these individual API objects. We plan to work on this before the feature moves to GA.
 
 ### Delete VolumeGroupSnapshot
 
@@ -373,21 +375,6 @@ Type VolumeGroupSnapshotStatus struct {
 
         // +optional
         Error *VolumeSnapshotError
-
-	// VolumeSnapshotRefList is the list of PVC and VolumeSnapshot pairs that
-	// is part of this group snapshot.
-	// The maximum number of allowed snapshots in the group is 100.
-	// +optional
-	PVCVolumeSnapshotRefList []PVCVolumeSnapshotPair
-}
-
-// PVCVolumeSnapshotPair defines a pair of a PVC reference and a Volume Snapshot Reference
-type PVCVolumeSnapshotPair struct {
-	// PersistentVolumeClaimRef is a reference to the PVC this pair is referring to
-	PersistentVolumeClaimRef core_v1.LocalObjectReference
-
-	// VolumeSnapshotRef is a reference to the VolumeSnapshot this pair is referring to
-	VolumeSnapshotRef core_v1.LocalObjectReference
 }
 ```
 
@@ -494,17 +481,10 @@ Type VolumeGroupSnapshotContentStatus struct {
         ReadyToUse *bool
 
         // +optional
-        CreationTime *int64
+        CreationTime *metav1.Time
 
         // +optional
         Error *VolumeSnapshotError
-
-	// NOTE: We will consider removing this field after testing.
-	// PVVolumeSnapshotContentList is the list of pairs of PV and
-	// VolumeSnapshotContent for this group snapshot
-	// The maximum number of allowed snapshots in the group is 100.
-	// +optional
-	PVVolumeSnapshotContentList []PVVolumeSnapshotContentPair
 }
 ```
 
@@ -576,17 +556,14 @@ service Controller {
   …
   rpc CreateVolumeGroupSnapshot(CreateVolumeGroupSnapshotRequest)
     returns (CreateVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
 
   rpc DeleteVolumeGroupSnapshot(DeleteVolumeGroupSnapshotRequest)
     returns (DeleteVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
 
   rpc GetVolumeGroupSnapshot(GetVolumeGroupSnapshotRequest)
     returns (GetVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
   …
 }
@@ -598,8 +575,6 @@ The purpose of this call is to request the creation of a multi-volume snapshot. 
 
 ```
 message CreateVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The suggested name for the group snapshot. This field is REQUIRED
   // for idempotency.
   // Any Unicode string that conforms to the length limit is allowed
@@ -627,16 +602,12 @@ message CreateVolumeGroupSnapshotRequest {
 }
 
 message CreateVolumeGroupSnapshotResponse {
-  option (alpha_message) = true;
-
   // Contains all attributes of the newly created group snapshot.
   // This field is REQUIRED.
   VolumeGroupSnapshot group_snapshot = 1;
 }
 
 message VolumeGroupSnapshot {
-  option (alpha_message) = true;
-
   // The identifier for this group snapshot, generated by the plugin.
   // This field MUST contain enough information to uniquely identify
   // this specific snapshot vs all other group snapshots supported by
@@ -673,8 +644,6 @@ message VolumeGroupSnapshot {
 
 ```
 message DeleteVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The ID of the group snapshot to be deleted.
   // This field is REQUIRED.
   string group_snapshot_id = 1;
@@ -706,8 +675,6 @@ message DeleteVolumeGroupSnapshotResponse {
 
 ```
 message GetVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The ID of the group snapshot to fetch current group snapshot
   // information for.
   // This field is REQUIRED.
@@ -725,8 +692,6 @@ message GetVolumeGroupSnapshotRequest {
 }
 
 message GetVolumeGroupSnapshotResponse {
-  option (alpha_message) = true;
-
   // This field is REQUIRED
   VolumeGroupSnapshot group_snapshot = 1;
 }
