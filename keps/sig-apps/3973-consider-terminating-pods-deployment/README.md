@@ -19,6 +19,7 @@
 - [Design Details](#design-details)
   - [Deployment Behavior Changes](#deployment-behavior-changes)
   - [ReplicaSet Status and Deployment Status Changes](#replicaset-status-and-deployment-status-changes)
+  - [Deployment Completion and Progress Changes](#deployment-completion-and-progress-changes)
   - [Deployment Scaling Changes and a New Annotation for ReplicaSets](#deployment-scaling-changes-and-a-new-annotation-for-replicasets)
   - [kubectl Changes](#kubectl-changes)
   - [API](#api)
@@ -279,6 +280,20 @@ To satisfy the requirement for tracking terminating pods, and for implementation
 we propose a new field `.status.terminatingReplicas` to the ReplicaSet's and Deployment's
 status.
 
+### Deployment Completion and Progress Changes
+
+Currently, when the latest ReplicaSet is fully saturated and all of its pods become available, the
+Deployment is declared complete. However, there may still be old terminating pods. These pods can
+still be ready and hold/accept connections, meaning that the transition to the latest revision is
+not fully complete.
+
+To avoid unexpected behavior, we should not declare the deployment complete until all of its
+terminating replicas have been fully terminated. We will therefore delay setting a `NewRSAvailable`
+reason to the `DeploymentProgressing` condition, when `TerminationComplete` policy is used.
+
+We will also update the `LastUpdateTime` of the `DeploymentProgressing` condition when the number of
+terminating pods decreases to reset the progress deadline.
+
 ### Deployment Scaling Changes and a New Annotation for ReplicaSets
 
 Currently, scaling is done proportionally over all ReplicaSets to mitigate the risk of losing
@@ -383,14 +398,17 @@ See [kubectl Skew](#kubectl-skew) for more details.
 type DeploymentPodReplacementPolicy string
 const (
 // TerminationStarted policy creates replacement Pods when the old Pods start
-// terminating (has a .metadata.deletionTimestamp). The total number of
-// Deployment Pods can be greater than specified by the Deployment's
+// terminating (have a non-null .metadata.deletionTimestamp). The total number
+// of Deployment Pods can be greater than specified by the Deployment's
 // .spec.replicas and the DeploymentStrategy.
 TerminationStarted DeploymentPodReplacementPolicy = "TerminationStarted"
 // TerminationComplete policy creates replacement Pods only when the old Pods
 // are fully terminated (reach Succeeded or Failed phase). The old Pods are
 // subsequently removed. The total number of the Deployment Pods is
 // limited by the Deployment's .spec.replicas and the DeploymentStrategy.
+//
+// This policy will also delay declaring the deployment as complete until all
+// of its terminating replicas have been fully terminated.
 TerminationComplete DeploymentPodReplacementPolicy = "TerminationComplete"
 )
 ```
@@ -401,13 +419,15 @@ type DeploymentSpec struct {
     // podReplacementPolicy specifies when to create replacement Pods. 
 	// Possible values are:
     // - TerminationStarted policy creates replacement Pods when the old Pods start
-	//   terminating (has a .metadata.deletionTimestamp). The total number of
-	//   Deployment Pods can be greater than specified by the Deployment's
+	//   terminating (have a non-null .metadata.deletionTimestamp). The total number
+	//   of Deployment Pods can be greater than specified by the Deployment's
 	//   .spec.replicas and the DeploymentStrategy.
     // - TerminationComplete policy creates replacement Pods only when the old Pods
 	//   are fully terminated (reach Succeeded or Failed phase). The old Pods are
 	//   subsequently removed. The total number of the Deployment Pods is
 	//   limited by the Deployment's .spec.replicas and the DeploymentStrategy.
+	//   This policy will also delay declaring the deployment as complete until all
+	//   of its terminating replicas have been fully terminated.
     //
     // The default behavior when the policy is not specified depends on the DeploymentStrategy:
 	// - Recreate strategy uses TerminationComplete behavior when recreating the deployment,
@@ -442,11 +462,11 @@ type ReplicaSetStatus struct {
     // +optional
     AvailableReplicas int32 `json:"availableReplicas,omitempty" protobuf:"varint,5,opt,name=availableReplicas"`
 
-    // The number of terminating replicas (have .metadata.deletionTimestamp) for this replica set.
+    // The number of terminating pods (have a non-null .metadata.deletionTimestamp) for this replica set. 
     //
     // This is an alpha field. Enable DeploymentPodReplacementPolicy to be able to use this field.
     // +optional
-    TerminatingReplicas int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,7,opt,name=terminatingReplicas"`
+    TerminatingReplicas *int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,7,opt,name=terminatingReplicas"`
     ...
 }
 ```
@@ -476,11 +496,11 @@ type DeploymentStatus struct {
     // +optional
     UnavailableReplicas int32 `json:"unavailableReplicas,omitempty" protobuf:"varint,5,opt,name=unavailableReplicas"`
 
-    // Total number of terminating pods (have .metadata.deletionTimestamp) targeted by this deployment.
+    // Total number of terminating pods (have a non-null .metadata.deletionTimestamp) targeted by this deployment.
     //
     // This is an alpha field. Enable DeploymentPodReplacementPolicy to be able to use this field.
     // +optional
-    TerminatingReplicas int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,9,opt,name=terminatingReplicas"`
+    TerminatingReplicas *int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,9,opt,name=terminatingReplicas"`
     ...
 }
 ```
@@ -929,6 +949,7 @@ deployment and replicaset controllers.
 - 2023-05-01: First version of the KEP opened (https://github.com/kubernetes/enhancements/pull/3974).
 - 2023-12-12: Second version of the KEP opened (https://github.com/kubernetes/enhancements/pull/4357).
 - 2024-29-05: Added a Deployment Scaling Changes and a New Annotation for ReplicaSets section (https://github.com/kubernetes/enhancements/pull/4670).
+- 2024-22-11: Added a Deployment Completion and Progress Changes section (https://github.com/kubernetes/enhancements/pull/4976).
 
 ## Drawbacks
 
