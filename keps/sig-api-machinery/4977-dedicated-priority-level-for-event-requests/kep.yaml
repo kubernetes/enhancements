@@ -1,0 +1,26 @@
+title: Dedicated Priority Level For Event Requests
+kep-number: 4793
+authors:
+  - "@linxiulei"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
+status: provisional
+creation-date: 2024-11-22
+reviewers:
+  - "@MikeSpreitzer"
+  - "@wojtek-t"
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-api-machinery/1040-priority-and-fairness"
+stage: alpha
+latest-milestone: "v1.33"
+milestone:
+  alpha: "v1.33"
+feature-gates:
+  - name: DedicatedPriorityLevelForEventRequests
+    components:
+      - kube-apiserver
+disable-supported: true
