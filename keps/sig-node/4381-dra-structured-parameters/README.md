@@ -1455,29 +1455,8 @@ type DeviceRequest struct {
 }
 ```
 
-Admin access to devices is a privileged operation because it grants users
-access to devices that are in use by other users. Drivers might also remove
-other restrictions when preparing the device.
-
-In Kubernetes 1.31, an example validating admission policy [was
-provided](https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/test/e2e/dra/test-driver/deploy/example/admin-access-policy.yaml#L1-L11)
-which restricts access to this option. It is the responsibility of cluster
-admins to ensure that such a policy is installed if the cluster shouldn't allow
-unrestricted access.
-
-Long term, a Kubernetes cluster should disable usage of this field by default
-and only allow it for users with additional privileges. More time is needed to
-figure out how that should work, therefore the field is placed behind a
-separate `DRAAdminAccess` feature gate which remains in alpha. A separate
-KEP will be created to push this forward.
-
-The `DRAAdminAccess` feature gate controls whether users can set the field to
-true when requesting devices. That is checked in the apiserver. In addition,
-the scheduler refuses to allocate claims with admin access when the feature is
-turned off and somehow the field was set (for example, set in 1.31 when it
-was available unconditionally, or set while the feature gate was enabled).
-A similar check in the kube-controller-manager prevents creating a
-ResourceClaim when the ResourceClaimTemplate has admin access enabled.
+For more details about `AdminAccess`, please refer to [KEP 5018]([KEP
+#5018 DRA AdminAccess](https://kep.k8s.io/5018))
 
 ```yaml
 const (
@@ -1870,21 +1849,17 @@ type DeviceRequestAllocationResult struct {
     // +required
     Device string
 
-    // AdminAccess is a copy of the AdminAccess value in the
-    // request which caused this device to be allocated.
-    //
-    // New allocations are required to have this set when the DRAAdminAccess
-    // feature gate is enabled. Old allocations made
-    // by Kubernetes 1.31 do not have it yet. Clients which want to
-    // support Kubernetes 1.31 need to look up the request and retrieve
-    // the value from there if this field is not set.
+    // AdminAccess indicates that this device was allocated for
+    // administrative access. See the corresponding request field
+    // for a definition of mode.
     //
     // This is an alpha field and requires enabling the DRAAdminAccess
-    // feature gate.
+    // feature gate. Admin access is disabled if this field is unset or
+    // set to false, otherwise it is enabled.
     //
-    // +required
+    // +optional
     // +featureGate=DRAAdminAccess
-    AdminAccess *bool
+    AdminAccess *bool `json:"adminAccess" protobuf:"bytes,5,name=adminAccess"`
 }
 
 // DeviceAllocationConfiguration gets embedded in an AllocationResult.
@@ -2101,10 +2076,6 @@ checked during the actual allocation attempt. The number of allocated devices
 per claim is limited to `AllocationResultsMaxSize = 32`. The quota mechanism
 uses that as the worst-case upper bound, so `allocationMode: all` is treated
 like `allocationMode: exactCount` with `count: 32`.
-
-Requests asking for "admin access" contribute to the quota. In practice,
-namespaces where such access is allowed will typically not have quotas
-configured.
 
 ### kube-controller-manager
 
@@ -2784,8 +2755,7 @@ skew are less likely to occur.
 
 ### Feature Enablement and Rollback
 
-The initial answer in this section is for the core DRA. The second answer is
-marked with DRAAdminAccess and applies to that sub-feature.
+The answer in this section is for the core DRA.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -2796,18 +2766,10 @@ marked with DRAAdminAccess and applies to that sub-feature.
     - kubelet
     - kube-scheduler
     - kube-controller-manager
-- [X] Feature gate
-  - Feature gate name: DRAAdminAccess
-  - Components depending on the feature gate:
-    - kube-apiserver
-
-
 
 ###### Does enabling the feature change any default behavior?
 
 No.
-
-DRAAdminAccess: no.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -2815,22 +2777,10 @@ Yes. Applications that were already deployed and are running will continue to
 work, but they will stop working when containers get restarted because those
 restarted containers won't have the additional resources.
 
-DRAAdminAccess: Workloads which were deployed with admin access will continue
-to run with it. They need to be deleted to remove usage of the feature.
-If they were not running, then the feature gate checks in kube-scheduler will prevent
-scheduling and in kube-controller-manager will prevent creating the ResourceClaim from
-a ResourceClaimTemplate. In both cases, usage of the feature is prevented.
-
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Pods might have been scheduled without handling resources. Those Pods must be
 deleted to ensure that the re-created Pods will get scheduled properly.
-
-DRAAdminAccess: Workloads which were deployed with admin access enabled are not
-affected by a rollback. If the pods were already running, they keep running. If
-they pods where kept as unschedulable because the scheduler refused to allocate
-claims, they might now get scheduled.
-
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -2850,9 +2800,6 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 Tests for apiserver will cover disabling the feature. This primarily matters
 for the extended PodSpec: the new fields must be preserved during updates even
 when the feature is disabled.
-
-DRAAdminAccess: Tests for apiserver will cover disabling the feature. A test
-that the DaemonSet controller tolerates keeping pods as pending is needed.
 
 ### Rollout, Upgrade and Rollback Planning
 
