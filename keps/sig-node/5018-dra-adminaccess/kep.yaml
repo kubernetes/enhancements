@@ -1,0 +1,44 @@
+title: DRA Admin Access
+kep-number: 5018
+authors:
+  - "@ritazh"
+owning-sig: sig-node
+status: provisional
+creation-date: 2025-01-02
+reviewers:
+  - "@pohly"
+approvers:
+  -  # SIG-Node
+  -  # SIG-Auth
+
+see-also:
+  - "/keps/sig-node/4381-dra-structured-parameters"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.33"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.33"
+  beta: "v1.34"
+  stable: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DRAAdminAccess
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  #- my_feature_metric

@@ -41,11 +41,6 @@ feature-gates:
       - kube-controller-manager
       - kube-scheduler
       - kubelet
-  - name: DRAAdminAccess
-    components:
-      - kube-apiserver
-      - kube-controller-manager
-      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release
