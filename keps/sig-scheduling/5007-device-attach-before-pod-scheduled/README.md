@@ -91,8 +91,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [DRA scheduler plugin Design overview](#dra-scheduler-plugin-design-overview)
   - [Composable Controlelr Design Overview](#composable-controlelr-design-overview)
-    - [Proposal 1: The composable controller publishes ResourceSlices with NodeName set within the pool](#proposal-1-the-composable-controller-publishes-resourceslices-with-nodename-set-within-the-pool)
-    - [Proposal 2: Attached devices are published by the vendor's plugin](#proposal-2-attached-devices-are-published-by-the-vendors-plugin)
+  - [Proposal 1: The Vendor's Plugin Publishes Attached Devices](#proposal-1-the-vendors-plugin-publishes-attached-devices)
+  - [Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice](#proposal-2-the-composable-controller-unbinds-resourceclaim-and-resourceslice)
+    - [Advantages](#advantages)
+    - [Disadvantages](#disadvantages)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -346,10 +348,10 @@ To communicate the completion of fabric device attachment to the scheduler, a fl
 // driver chooses to report it. This may include driver-specific information.
 type AllocatedDeviceStatus struct {
 ...
-	// DeviceAttached represents whether the device has been successfully attached.
-	//
-	// +optional
-	DeviceAttached string
+  // DeviceAttached represents whether the device has been successfully attached.
+  //
+  // +optional
+  DeviceAttached string
 }
 ```
 
@@ -391,65 +393,20 @@ devices:
   ...
 ```
 
-Here, when the scheduler selects the fabric device `device1`, it waits for the attachment of the fabric device during PreBind. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. After successful attachment, the composable controller changes the flag of the ResourceClaim.
+During the scheduling cycle, the DRA plugin reserves a ResourceSlice for the ResourceClaim. In the binding cycle, the reserved ResourceSlice is assigned during PreBind.
+
+If a fabric device is selected, the scheduler waits for the device attachment during PreBind. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment. The scheduler receives this update, completes the PreBind.
 
 We are considering the following two methods for handling ResourceSlices upon completion of the attachment. We would like to hear your opinions and feasibility on these two composable controller proposals.
 
-#### Proposal 1: The composable controller publishes ResourceSlices with NodeName set within the pool
+### Proposal 1: The Vendor's Plugin Publishes Attached Devices
 
-Multiple ResourceSlices are published with the same pool name. One indicates the devices included in the fabric, and the other indicates the devices attached to the node.
+At the PreBind phase, if a fabric device is selected, the scheduler waits for the device attachment. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment. The scheduler receives this update, completes the PreBind, and proceeds with the scheduling process.
 
-```yaml
-# composable controller publish this pool
-kind: ResourceSlice
-pool: composable-device
-driver: gpu.nvidia.com
-nodeSelector: fabric1
-devices:
-  - name: device2
-  ...
----
-kind: ResourceSlice
-pool: composable-device
-driver: gpu.nvidia.com
-nodeName: Node1
-devices:
-  - name: device1
-  ...
-```
-
-If the vendor's plugin responds to hotplug, `device1` will appear in the ResourceSlice published by the vendor.
+In this scenario, the composable controller removes `device1` from the composable-device pool.
 
 ```yaml
-# vendor DRA kubelet plugin publish this pool
-kind: ResourceSlice
-pool: Node1
-driver: gpu.nvidia.com
-nodeName: Node1
-devices:
-  - name: device3
-  ...
-  - name: device1
-  ...
-```
-
-This may cause device duplication issues between ResourceSlices. To prevent multiple ResourceSlices from publishing duplicate devices, we plan to define a deny list and standardize it with DRA.
-
-**Advantages**
-- No need to change the allocationResult by the scheduler or composable controller.
-- Can distinguish attached fabric devices and maintain prioritization.
-
-**Disadvantages**
-- ResourceSlices created by the composable controller may not be understood by the vendor kubelet plugin. (NVIDIA drivers use internal information, so cooperation is needed)
-- Attached and unattached fabric devices are mixed in one pool. (https://github.com/kubernetes/kubernetes/issues/124042#issuecomment-2527279157)
-- A mechanism to prevent device duplication is needed (e.g., deny list).
-
-#### Proposal 2: Attached devices are published by the vendor's plugin
-
-In this case, devices are removed from the composable-device pool.
-
-```yaml
-# composable controller publish this pool
+# Composable controller publishes this pool
 kind: ResourceSlice
 pool: composable-device
 driver: gpu.nvidia.com
@@ -462,7 +419,7 @@ devices:
 If the vendor's plugin responds to hotplug, `device1` will appear in the ResourceSlice published by the vendor.
 
 ```yaml
-# vendor DRA kubelet plugin publish this pool
+# Vendor DRA kubelet plugin publishes this pool
 kind: ResourceSlice
 pool: Node1
 driver: gpu.nvidia.com
@@ -474,18 +431,29 @@ devices:
   ...
 ```
 
-This breaks the linkage between ResourceClaim and ResourceSlice. Therefore, it is necessary to modify the AllocationResult of the ResourceClaim.
+This requires modification of the linkage between ResourceClaim and ResourceSlice (expected to be done by the scheduler or DRA controller). Until the linkage is fixed, the device being used may be published as a ResourceSlice and reserved by other Pods.
 
-**Advantages**
-- Simplifies device management.
-- Centralizes management as the vendor's plugin directly publishes devices.
-- No need for mechanisms to prevent device duplication (e.g., deny list).
+### Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice
 
-**Disadvantages**
-- Cannot distinguish attached fabric devices, making prioritization difficult.
-- Requires modification of the linkage between ResourceClaim and ResourceSlice (expected to be done by the scheduler or DRA controller. Which is more appropriate?).
-- Until the linkage is fixed, the device being used may be published as a ResourceSlice and reserved by other Pods.
+This proposal is similar to Proposal 1, but with a key difference: instead of updating the ResourceClaim information during the scheduling cycle, the composable controller unbinds the ResourceClaim and ResourceSlice, and the scheduler fails the binding cycle. In the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
 
+In this case, the composable controller clears the ResourceClaim to prevent the fabric device from using the ResourceSlice in the pool.
+
+```yaml
+# Composable controller clears the ResourceClaim
+kind: ResourceClaim
+status:
+  allocationResult: null
+```
+
+The scheduler fails the binding cycle, and in the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
+
+#### Advantages
+- No need to modify the linkage between ResourceClaim and ResourceSlice.
+
+#### Disadvantages
+- Potential scheduling delays.
+- The device being reserved may be reserved by other Pods before the originally assigned Pod can re-reserve it.
 
 
 
