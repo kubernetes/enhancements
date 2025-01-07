@@ -1,0 +1,15 @@
+title: Log rotate on Disk pressure
+kep-number: TBD
+authors:
+  - "@Zeel-Patel"
+  - "@rishabh325"
+owning-sig: sig-node
+status: provisional
+editor: "@Zeel-Patel"
+creation-date: 2025-01-08
+last-updated: 2025-01-08
+reviewers:
+  - TBD
+approvers:
+  - TBD
+latest-milestone: TBD
