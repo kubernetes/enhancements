@@ -374,23 +374,28 @@ spec:
 
 A cluster admin wants to control costs while giving application developers the freedom to optimize their applications. They set a per VolumeAttributesClass limit to the maximum count of PVCs that can be specified in a cluster ResourceQuota. When an application dev modifies a PVC to request a higher tier of VolumeAttributesClass but there is no quota, the request is rejected. As the ResourceQuota is a cluster-scoped object, only the cluster admin and not application devs can change limits.
 
-An example of defining ResourceQuota for VolumeAttributesClass:
+An example of defining ResourceQuota with [Scope](https://kubernetes.io/docs/concepts/policy/resource-quotas/#quota-scopes) for VolumeAttributesClass:
 
 ```
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: vacquota
+  name: gold-pvcs
 spec:
   hard:
-  // Across all persistent volume claims associated with the 
-  // <volume-attributes-class-name>, the total number of persistent volume claims 
-  // that can exist in the namespace.
-<volume-attributes-class-name>.VolumeAttributesClass.storage.k8s.io/persistentvolumeclaims: "5" 
-  ...
+    count/persistentvolumeclaims: "10"
+  scopeSelector:
+    matchExpressions:
+    - operator : In
+      scopeName: VolumeAttributesClass # Match persistentvolumesclaims that references the specified volume attributes class.
+      values: ["gold"]
 ```
 
-Note: These Administrator Quota Restrictions are not available for Kubernetes versions ≤ v1.31, due to a [bug](https://github.com/kubernetes/kubernetes/issues/124436) in the implementation of the `scopeSelector` feature. Because there is no default quota, we will be able to add quota support in a future version of Kubernetes without breaking existing workloads.
+The VolumeAttributesClass scope restricts a quota to track the following resource: PVCs in a VolumeAttributesClass. We are calculating spec.volumeAttributesClass, status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName with support of matchExpressions(In, NotIn, Exists, DoesNotExist).
+
+Note: 
+1. The quota check is only happening at the spec.volumeAttributesClass update. Thus quota check will NOT block status(status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName) update in external-resizer.
+2. These Administrator Quota Restrictions are not available for Kubernetes versions ≤ v1.31, due to a [bug](https://github.com/kubernetes/kubernetes/issues/124436) in the implementation of the `scopeSelector` feature. Because there is no default quota, we will be able to add quota support in a future version of Kubernetes without breaking existing workloads.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -409,7 +414,7 @@ As part of this proposal, we are proposing:
 
 ### 2. Update quota code to include and validate VolumeAttributesClass usage of PVCs.
 
-The ResourceQuota plug-in introspects all incoming admission requests. It makes decisions by evaluating the incoming object against all defined ResourceQuota.Status.Hard resource limits in the request namespace. If acceptance of the resource would cause the total usage of a named resource to exceed its hard limit, the request is denied. In our case is the total count of PVCs of a VolumeAttributesClass.
+The ResourceQuota plug-in introspects all incoming admission requests. If acceptance of the resource would cause the total usage of a named resource to exceed its limit, the request is denied. In our case we need to introduce a new scope name `VolumeAttributesClass`, and then count the total of PVCs with spec.volumeAttributesClass, status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName equal a VolumeAttributesClass.
 
 The resource quota controller is the only component capable of monitoring and recording usage updates after a DELETE operation since admission control is incapable of guaranteeing a DELETE request actually succeeded.
 
