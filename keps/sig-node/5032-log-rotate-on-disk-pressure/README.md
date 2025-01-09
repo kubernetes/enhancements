@@ -63,6 +63,8 @@ Rotate containers logs when there is disk pressure on kubelet host.
 
 ## Motivation
 
+- A lot of out kubelet hosts experienced Disk pressure as a certain set of pods was generating very high logs. The rate was around 3-4Gib in 15 minutes. We had containerLogMaxSize set to 200Mib and containerLogMaxFiles set to 6. But the .gz files were of size around 500-600Gib. We observed that container log rotation was slow for us.
+
 ### What would you like to be added?
 
 (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L52-L60), responsible for log rotation and cleanup of log files of containers periodically, should also rotate logs of all containers that has exceeded the configured log retention quota in case of disk pressure on host.
