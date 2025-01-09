@@ -3,7 +3,7 @@ kep-number: 3633
 authors:
   - "@sanposhiho"
 owning-sig: sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2022-11-09
 reviewers:
   - "@Huang-Wei"
@@ -26,4 +26,4 @@ feature-gates:
   - name: MatchLabelKeysInPodAffinity
     components:
       - kube-apiserver
-disable-supported: true
+disable-supported: false

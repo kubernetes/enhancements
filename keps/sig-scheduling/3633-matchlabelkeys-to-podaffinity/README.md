@@ -1094,6 +1094,8 @@ Major milestones might include:
  - 2022-11-09: Initial KEP PR is submitted.
  - 2023-05-14 / 2023-06-08: PRs to change it from MatchLabelKeys to MatchLabelSelector are submitted. (to satisfy the user story 2)
  - 2024-01-28: The PR to update KEP for beta is submitted.
+ - 2024-03-14: The PR to change the feature gate for beta is merged.
+ - 2025-01-06: The PR to update KEP for GA is submitted.
 
 ## Drawbacks
 
