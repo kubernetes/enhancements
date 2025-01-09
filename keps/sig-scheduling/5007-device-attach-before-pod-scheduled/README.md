@@ -95,6 +95,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice](#proposal-2-the-composable-controller-unbinds-resourceclaim-and-resourceslice)
     - [Advantages](#advantages)
     - [Disadvantages](#disadvantages)
+  - [Alternative Proposal: Cluster Autoscaler Implementation for Dynamic Management of Fabric Devices](#alternative-proposal-cluster-autoscaler-implementation-for-dynamic-management-of-fabric-devices)
+    - [Cluster Autoscaler Design Overview](#cluster-autoscaler-design-overview)
+      - [Advantages](#advantages-1)
+      - [Disadvantages](#disadvantages-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -403,6 +407,8 @@ We are considering the following two methods for handling ResourceSlices upon co
 
 At the PreBind phase, if a fabric device is selected, the scheduler waits for the device attachment. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment. The scheduler receives this update, completes the PreBind, and proceeds with the scheduling process.
 
+![proposal1](proposal1.JPG)
+
 In this scenario, the composable controller removes `device1` from the composable-device pool.
 
 ```yaml
@@ -437,6 +443,8 @@ This requires modification of the linkage between ResourceClaim and ResourceSlic
 
 This proposal is similar to Proposal 1, but with a key difference: instead of updating the ResourceClaim information during the scheduling cycle, the composable controller unbinds the ResourceClaim and ResourceSlice, and the scheduler fails the binding cycle. In the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
 
+![proposal2](proposal2.JPG)
+
 In this case, the composable controller clears the ResourceClaim to prevent the fabric device from using the ResourceSlice in the pool.
 
 ```yaml
@@ -455,8 +463,29 @@ The scheduler fails the binding cycle, and in the next schedule, the newly publi
 - Potential scheduling delays.
 - The device being reserved may be reserved by other Pods before the originally assigned Pod can re-reserve it.
 
+### Alternative Proposal: Cluster Autoscaler Implementation for Dynamic Management of Fabric Devices
 
+The above two proposals involve tricky methods such as reassigning or deleting the allocated device information in the `ResourceClaim`. Particularly, Proposal 1 poses a risk of negatively impacting several existing APIs. This issue arises from "assigning fabric resources not connected to the node to the `ResourceClaim` by the scheduler, and eventually assigning node-local resources to the `ResourceClaim`."
 
+#### Cluster Autoscaler Design Overview
+
+Instead of implementing the solution within the scheduler, we propose using the Cluster Autoscaler to manage the attachment and detachment of fabric devices.
+
+The key points and main process flow of this alternative proposal are as follows:
+
+The scheduler references only node-local `ResourceSlices`. If there are no available resources in the node-local `ResourceSlices`, the scheduler marks the Pod as unschedulable without waiting in the `PreBind` phase of the `ResourceClaim`.
+
+To handle fabric resources, we implement the Processor for composable system within CA. This Processor identifies unschedulable Pods and determines if attaching a fabric `ResourceSlice` device to an existing node would make scheduling possible. If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process. If attaching the fabric `ResourceSlice` does not make scheduling possible, the Processor determines whether to add a new node as usual.
+
+After the device is attached, the vendor DRA updates the node-local `ResourceSlices`. The vendor DRA needs a rescan function to update the Pool/ResourceSlice. The scheduler can then assign the node-local `ResourceSlice` devices to the unschedulable Pod, operating the same as the usual DRA from this point.
+
+##### Advantages
+- Reduces complexity in the scheduler and DRA controller.
+
+##### Disadvantages
+- Requires significant development effort to extend the Cluster Autoscaler to support fabric devices.
+
+We propose implementing the above functionality using a Processor, and further, ensuring that this Processor only runs in the composable system. This means the modifications to the Cluster Autoscaler would be limited to the Processor and an option to determine whether the Processor should run. In non-composable systems, the usual Cluster Autoscaler Processor would operate, thus excluding the impact of these changes.
 
 ### Test Plan
 
