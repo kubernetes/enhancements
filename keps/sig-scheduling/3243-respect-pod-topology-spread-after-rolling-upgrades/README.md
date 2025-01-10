@@ -307,15 +307,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new field named `MatchLabelKeys` will be added to `TopologySpreadConstraint`. 
-Currently, when scheduling a pod, the `LabelSelector` defined in the pod is used 
-to identify the group of pods over which spreading will be calculated. 
-`MatchLabelKeys` adds another constraint to how this group of pods is identified: 
-the scheduler will use those keys to look up label values from the incoming pod; 
-and those key-value labels are ANDed with `LabelSelector` to select the group of 
-existing pods over which spreading will be calculated.
-
-A new field named `MatchLabelKeys` will be introduced to`TopologySpreadConstraint`:
+A new optional field named `MatchLabelKeys` will be introduced to`TopologySpreadConstraint`.
 ```go
 type TopologySpreadConstraint struct {
 	MaxSkew           int32
@@ -333,22 +325,53 @@ type TopologySpreadConstraint struct {
 }
 ```
 
-Examples of use are as follows:
+When a Pod is created, kube-apiserver will obtain the labels from the pod 
+by the keys in `matchLabelKeys` and `key in (value)` is merged to `LabelSelector` 
+of `TopologySpreadConstraint`.
+
+For example, when this sample Pod is created,
+
 ```yaml
-     topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          matchLabelKeys:
-            - app
-            - pod-template-hash
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample
+  labels:
+    app: sample
+...
+  topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector: {}
+    matchLabelKeys: # ADDED
+    - app
 ```
 
-The scheduler plugin `PodTopologySpread` will obtain the labels from the pod 
-labels by the keys in `matchLabelKeys`. The obtained labels will be merged 
-to `labelSelector` of `topologySpreadConstraints` to filter and group pods. 
-The pods belonging to the same group will be part of the spreading in 
-`PodTopologySpread`.
+kube-apiserver modifies the `labelSelector` like the following:
+
+```diff
+  topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
++     matchExpressions:
++     - key: app
++       operator: In
++       values:
++       - sample
+    matchLabelKeys:
+    - app
+```
+
+Currently, scheduler will also be aware of `matchLabelKeys` and 
+gracefully handle the same labels.
+This originates from the previous implementation only scheduler 
+obtains the pod labels  by the keys in `matchLabelKeys` and uses 
+them with `labelSelector` to filter and group pods for spreading.
+In the near future, the scheduler implementation related to 
+`matchLabelKeys` will be removed.
 
 Finally, the feature will be guarded by a new feature flag. If the feature is 
 disabled, the field `matchLabelKeys` is preserved if it was already set in the 
@@ -532,7 +555,9 @@ enhancement:
 
 In the event of an upgrade, kube-apiserver will start to accept and store the field `MatchLabelKeys`.
 
-In the event of a downgrade, kube-scheduler will ignore `MatchLabelKeys` even if it was set.
+In the event of a downgrade, kube-apiserver will reject pod creation with `matchLabelKeys` in `TopologySpreadConstraint`. 
+But, regarding existing pods, we leave `matchLabelKeys` and generated `LabelSelector` even after downgraded.
+kube-scheduler will ignore `MatchLabelKeys` even if it was set.
 
 ### Version Skew Strategy
 
@@ -659,7 +684,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-It won't impact already running workloads because it is an opt-in feature in scheduler.
+It won't impact already running workloads because it is an opt-in feature in apiserver and scheduler.
 But during a rolling upgrade, if some apiservers have not enabled the feature, they will not
 be able to accept and store the field "MatchLabelKeys" and the pods associated with these 
 apiservers will not be able to use this feature. As a result, pods belonging to the 
