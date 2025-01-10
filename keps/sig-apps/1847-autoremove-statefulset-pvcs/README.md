@@ -165,7 +165,7 @@ so that scale-up can leverage the existing volumes. When the application is fini
 volumes created by the StatefulSet are no longer needed and can be automatically
 reclaimed.
 
-The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete, which
+The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete`, which
 would ensure that the PVCs created automatically during the StatefulSet
 activation is deleted once the StatefulSet is deleted.
 
