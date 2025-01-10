@@ -175,7 +175,7 @@ If the pod had been generating logs in Gigabytes with minimal delay, it can caus
 
 ### Risks and Mitigations
 
-No identified risk.
+Risk of tmp copy creation of log failing as there is no disk space left.  
 
 ## Design Details
 
@@ -216,7 +216,7 @@ to implement this enhancement.
     - Will enabling / disabling the feature require downtime of the control
       plane? Yes (kubelet restart)
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? Yes
+      of a node? No, restart of kubelet with updated configurations and version should work.
 
 ###### Does enabling the feature change any default behavior?
 No
