@@ -147,15 +147,15 @@ updates.
 HPAs define one (or more) metrics (e.g. CPU utilization) on which autoscaling is based. The number of replicas is derived from the ratio between the *expected* and *current* value of this metric ([Algorithm details][]).
 
 For example, for a workload with 100 `currentReplicas` and a usage ratio
-(`currentMetricValue`/`desiredMetricValue`) of 1.07, the calculated `desiredReplicas` 
+(`currentMetricValue`/`desiredMetricValue`) of 1.07, the calculated `desiredReplicas`
 would be 107  (100 * 1.07).
 
-However, to avoid flapping, scaling actions are skipped if the usage ratio is approximately 1, within a 
+However, to avoid flapping, scaling actions are skipped if the usage ratio is approximately 1, within a
 globally-configurable *tolerance*,  set to 10% by default. In the example above, no scaling action would
 take place, since the ratio is within this tolerance.
 
-This proposal adds a parameter to HPAs allowing users to configure this tolerance per HPA resource. 
-For the example above, we could configure the tolerance in the workload's HPA to 5%, which would 
+This proposal adds a parameter to HPAs allowing users to configure this tolerance per HPA resource.
+For the example above, we could configure the tolerance in the workload's HPA to 5%, which would
 allow the scale-up to 107 replicas to proceed.
 
 [Horizontal Pod Autoscaler]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
@@ -201,11 +201,11 @@ We propose to add a new field to the existing [`HPAScalingRules`][] object:
 
 - `tolerance`: (float) the minimum change (from 1.0) in the desired-to-actual metrics ratio for the horizontal pod autoscaler to consider scaling. Must be greater than or equal to 0.
 
-The `tolerance` field is optional, and when not specified the HPA will continue to use the 
-value of the global `--horizontal-pod-autoscaler-tolerance` as the tolerance for scaling 
+The `tolerance` field is optional, and when not specified the HPA will continue to use the
+value of the global `--horizontal-pod-autoscaler-tolerance` as the tolerance for scaling
 calculations.
 
-Since there are separate `HPAScalingRules` objects defined for an HPA's 
+Since there are separate `HPAScalingRules` objects defined for an HPA's
 `spec.behavior.scaleUp` and `spec.behavior.scaleDown`, it is possible to specify different
 `tolerance` values for scaling up vs. scaling down.
 
@@ -260,13 +260,13 @@ It will be replaced by:
 + if (1.0-downTolerance) <= usageRatio && usageRatio <= (1.0+upTolerance) { /* ... */ }
 ```
 
-Since the added field is optional and it's omission results in no change to the existing 
+Since the added field is optional and it's omission results in no change to the existing
 autoscaling behavior, this feature can be added to the current API
 version `pkg/apis/autoscaling/v2`.
 
 The feature presented in this KEP only allows users to tune an existing parameter, and
-as such doesn't require any new HPA Events or modify any Status. A new error is
-emitted if a `tolerance` field is set to a negative value.
+as such doesn't require any new HPA Events or modify any Status. The validation logic
+will be updated to ensure that the `tolerance` field cannot be set to a negative value.
 
 [replica_calculator.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/replica_calculator.go
 
@@ -430,12 +430,12 @@ in back-to-back releases.
 ### Upgrade / Downgrade Strategy
 
 #### Upgrade
-Existing HPAs will continue to work as they do today, using the global `horizontal-pod-autoscaler-tolerance` 
-value from the `kube-controller-manager`. Users can use the new feature by enabling the Feature 
+Existing HPAs will continue to work as they do today, using the global `horizontal-pod-autoscaler-tolerance`
+value from the `kube-controller-manager`. Users can use the new feature by enabling the Feature
 Gate (alpha only) and setting the new `tolerance` field on an HPA.
 
 #### Downgrade
-On downgrade, all HPAs will revert to using the global `horizontal-pod-autoscaler-tolerance` 
+On downgrade, all HPAs will revert to using the global `horizontal-pod-autoscaler-tolerance`
 value from the `kube-controller-manager`, regardless of any configured `tolerance` value on the HPA
 itself.
 
