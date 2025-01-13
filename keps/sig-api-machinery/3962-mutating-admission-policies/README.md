@@ -67,7 +67,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Alternative 1: JSONPatch](#alternative-1-jsonpatch)
   - [Alternative 2: Introduce new syntax](#alternative-2-introduce-new-syntax)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -123,7 +122,7 @@ API](/keps/sig-api-machinery/3488-cel-admission-control/README.md) for
 validating admission policies.
 
 This enhancement proposes an approach where mutations are declared in CEL by
-combining CEL's object instantiation and Server Side Apply's merge algorithms.
+combining CEL's object instantiation, JSON Patch, and Server Side Apply's merge algorithms.
 
 ## Motivation
 
@@ -180,18 +179,18 @@ Very similar to what we have in ValidatingAdmissionPolicy, this API separates po
 - Policy param resources (custom resources or config maps)
 
 The idea is to leverage the CEL power of the object construction and allow users to define how they want to mutate the admission request through CEL expression.
-This proposal aims to allow mutations to be expressed using the "apply configuration" introduced by Server Side Apply. 
+This proposal aims to allow mutations to be expressed using JSON Patch, or the "apply configuration" introduced by Server Side Apply. 
 And users would be able to define only the fields they care about inside MutatingAdmissionPolicy, the object will be constructed using CEL which would be similar to a Server Side Apply configuration patch and then be merged into the request object using the structural merge strategy. 
 See sigs.k8s.io/structured-merge-diff for more details.
 
 Note: See the alternative consideration section for the alternatives.
 
 Pros:
-- Consistent with Server Side Apply so that we will continue investing SSA as the best way to do patch updates to resources;
-- Does not require the users to learn a new syntax;
-- Inherit the declarative nature;
-- Existing merging strategy to be leverage without rewritten and the effort of maintaining multiple systems;
-- Support the existing makers/openapi extensions.
+- JSON Patch provides a migration path from mutating admission webhooks, which must use JSON Patch.
+- Also build on Server Side Apply so that we will continue investing SSA as the best way to do patch updates to resources;
+  - Does not require the users to learn a new syntax;
+  - Inherit the declarative nature;
+  - Leverages existing merging strategy, markers and openapi extensions.
 
 Cons:
 - Lack of deletion support (see the unsetting values section for the details and workaround);
@@ -229,7 +228,7 @@ spec:
   reinvocationPolicy: IfNeeded
   mutations:
     - patchType: "ApplyConfiguration" // "ApplyConfiguration", "JSONPatch" supported. 
-      mutation: >
+      expression: >
         Object{
           spec: Object.spec{
             initContainers: [
@@ -250,13 +249,42 @@ The "ApplyConfiguration" strategy will prevent user from performing ambiguous ac
 The detailed definition of ambiguous action should be reviewed before beta.
 For any mutation requires modification regarding with ambiguous action, "JSONPatch" strategy is needed.
 
-Note: 
-- "JSONPatch" should be supported before the feature going to beta
-- The API design of "JSONPatch" should be discussed before second alpha
+The "JSONPatch" strategy will use JSON Patch like what is done in Mutating Webhook. 
 
-The "JSONPatch" strategy will use JSONPatch like what is done in Mutating Webhook. 
-@andrewsykim has a [prototype](https://github.com/kubernetes/enhancements/pull/3776) on this earlier.
-The following context will focus on "ApplyConfiguration" strategy.
+Example JSON Patch:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1alpha1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: "sidecar-policy.example.com"
+spec:
+  paramKind:
+    group: mutations.example.com
+    kind: Sidecar
+    version: v1
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["apps"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE"]
+      resources:   ["pods"]
+  matchConditions:
+    - name: does-not-already-have-sidecar
+      expression: "!object.spec.initContainers.exists(ic, ic.name == params.name)"
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  mutations:
+    - patchType: "JSONPatch"
+      expression: >
+        JSONPatch{op: "add", path: "/spec/initContainers/-", value: Object.spec.initContainers{
+                name: params.name,
+                image: params.image,
+                args: params.args,
+                restartPolicy: params.restartPolicy
+                // ... other container fields injected here ...
+        }
+```
 
 When "ApplyConfiguration" specified, the expression evaluates to an object that has the same type as the incoming object, and the type alias Object refers to the type (see Type Handling for details).
 
@@ -460,7 +488,8 @@ For example, to remove the env of a sidecar container, filter by its name.
 
 ```yaml
 mutations:
-  - mutaton: >
+  - patchType: "ApplyConfiguration"
+    expression: >
         Object{
             spec: Object.spec{
                 containers: object.spec.containers{
@@ -496,7 +525,8 @@ List with "map" merge type:
   - For associatedList with multiple keys like example above, a directive field added could be used to indicate the deletion.
 ```yaml
 mutations:
-  - mutaton: >
+  - patchType: "ApplyConfiguration"
+    expression: >
       Object{
         spec: Object.spec{
                 assocListField: [Object.spec.assocListField{
@@ -512,7 +542,8 @@ mutations:
 For examples of removing item from List with Map filtered by a subfield:
 ```yaml
 mutations:
-  - mutaton: >
+  - patchType: "ApplyConfiguration"
+    expression: >
         Object{
             spec: Object.spec{
                 containers: object.spec.containers.filter(c, c.envvar != "remove-this-container")
@@ -525,7 +556,8 @@ mutations:
 For granular list removal, a use case would be removing an item with a sub field named `remove-this-item`.
 ```yaml
 mutations:
-  - mutation: >
+  - patchType: "ApplyConfiguration"
+    expression: >
       Object{
         spec: Object.spec{
                 granularList: object.spec.granularList.filter(c, c.subField != "remove-this-item")
@@ -555,7 +587,7 @@ metadata:
 spec:
   # ...
   mutations:
-      mutation: >
+    expression: >
         Object{
           spec: Object.spec{
             initContainers: [
@@ -618,7 +650,8 @@ variables:
       variables.targetContainers.map(c, {"name": c.name, "env": {"name": "FOO",
       "value": "foo"}})
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
           spec: Object.spec{
               template: Object.spec.template{
@@ -636,7 +669,8 @@ variables:
     expression: >-
       params.foo == "bar" ? true : "true"
 mutations:
-    - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
         Object{
           spec: Object.spec{
               template: Object.spec.template{
@@ -696,7 +730,8 @@ matchConditions:
   - name: 'need-default-ingress-class'
     expression: '!has(object.spec.ingressClassName)'
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
         spec: Object.spec{
           ingressClassName: "defaultIngressClass"
@@ -712,7 +747,8 @@ matchConditions:
   - name: 'need-default-storage-class'
     expression: '!has(object.spec.storageClassName)'
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
         spec: Object.spec{
           storageClassName: "defaultStorageClass"
@@ -734,7 +770,8 @@ variables:
   - name: volumesList
     expression: "object.spec.volumes.map(v, v.name)"
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
         spec: Object.spec{
           volumes: volumeMountsList.filter(n, !(n in volumesList)).map(v, {
@@ -751,7 +788,8 @@ I have a [gist example](https://gist.github.com/cici37/e8181e53069435a307cd78223
 Apply default resource requests to Pods that don't specify any.
 ```yaml
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
         spec: Object.spec{
           containers: object.spec.containers.filter(c, !has(c.resources)).map(c, 
@@ -771,7 +809,8 @@ matchConditions:
   - name: 'no-priority-class'
     expression: '!has(object.spec.priorityClassName)'
 mutations:
-  - mutation: |
+  - patchType: "ApplyConfiguration"
+    expression: |
       Object{
         spec: Object.spec{
           priorityClassName: params.defaultPriorityClass
@@ -824,7 +863,7 @@ Object{
 ```
 
 #### Use case: modify deprecated field under CRD versions
-Support atomic list modification through JSONPatch
+Support atomic list modification through JSON Patch
 
 
 #### Use Case - mutation VS controller fight
@@ -1523,21 +1562,8 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-Here are the alternative considerations compared to using the apply configurations introduced by Server Side Apply.
+Here are the alternative considerations compared to using JSON Patch and the apply configurations introduced by Server Side Apply.
 
-### Alternative 1: JSONPatch
-
-Mutating Admission Webhooks express intended mutation in JSONPatch.  Previous attempt by  Andrew Sy Kim proposed a similar solution. However, because MutatingAdmissionPolicy, running inside the API server, no longer requires a remote call, modification can apply without serialization as JSONPatch.
-- Pros:
-  - Same as the current way Mutation Webhook used
-  - Support most of the existing use cases
-  - Low learning curve while migration from Mutation Webhook
-- Cons:
-  - No type checking
-  - Long JSON in declarative API
-  - Do not support types like `strategicMergePatch`, `JSONMergePatch` and `ApplyConfigurations`
-  - Low learning curve while setting up mutations from scratch
-  
 ### Alternative 2: Introduce new syntax
   
 Another alternative consideration would be rewriting your own merge algorithm which is a lot of duplicated effort.

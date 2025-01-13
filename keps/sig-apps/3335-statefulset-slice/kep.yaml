@@ -6,7 +6,7 @@ owning-sig: sig-apps
 participating-sigs:
   - sig-multicluster
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2022-06-02
 reviewers:
   - "@soltysh"

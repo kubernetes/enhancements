@@ -2756,7 +2756,10 @@ Test links:
 
 #### GA
 
-- 3 examples of real-world usage
+- At least 3 real-world driver implementations from different organizations
+- Standardization of at least one attribute suitable for intra-node topology
+  alignment across drivers (e.g., NUMA or PCIe root, as determined to be
+  appropriate and useful).
 - Allowing time for feedback
 - Scalability and performance analysis done and published
 

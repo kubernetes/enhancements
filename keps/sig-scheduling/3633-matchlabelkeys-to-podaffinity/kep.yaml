@@ -3,7 +3,7 @@ kep-number: 3633
 authors:
   - "@sanposhiho"
 owning-sig: sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2022-11-09
 reviewers:
   - "@Huang-Wei"
@@ -13,9 +13,9 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.31"
+latest-milestone: "v1.33"
 
 milestone:
   alpha: "v1.29"
@@ -26,4 +26,4 @@ feature-gates:
   - name: MatchLabelKeysInPodAffinity
     components:
       - kube-apiserver
-disable-supported: true
+disable-supported: false
