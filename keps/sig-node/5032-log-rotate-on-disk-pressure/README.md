@@ -59,15 +59,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Rotate containers logs when there is disk pressure on kubelet host.
+Clean and Rotate containers logs when there is disk pressure on kubelet host.
 
 ## Motivation
 
-- A lot of out kubelet hosts experienced Disk pressure as a certain set of pods was generating very high logs. The rate was around 3-4Gib in 15 minutes. We had containerLogMaxSize set to 200Mib and containerLogMaxFiles set to 6. But the .gz files were of size around 500-600Gib. We observed that container log rotation was slow for us.
+- We manage kubernetes ecosystem at our organization. A lot of our kubelet hosts experienced Disk pressure as a certain set of pods was generating very high logs. The rate was around 3-4Gib in 15 minutes. We had containerLogMaxSize set to 200Mib and containerLogMaxFiles set to 6. But the .gz files were of size around 500-600Gib. We observed that container log rotation was slow for us.
 
 ### What would you like to be added?
 
-(https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L52-L60), responsible for log rotation and cleanup of log files of containers periodically, should also rotate logs of all containers that has exceeded the configured log retention quota in case of disk pressure on host.
+Log cleanup should be another form of eviction to make space like we do with Images and containers.
+
 ### Why is this needed?
 
 It often happens that the containers generating heavy log data have compressed log file with size exceeding the containerLogMaxSize limit set in kubelet config.
@@ -168,10 +169,10 @@ If the pod had been generating logs in Gigabytes with minimal delay, it can caus
 
 ### Goals
 
-- Rotate and Clean all container logs on kubelet Disk pressure that has exceeded the configured log retention quota
+- Rotate and Clean all container logs on kubelet Disk pressure that has exceeded the configured log retention quota.
 
 ## Proposal
-
+- On disk pressure, analyse log paths of all containers. Logs of containers with existing combined log size exceeding `containerLogMaxSize`*`containerLogMaxFiles` should be deleted till the combined log size is within `containerLogMaxSize`*`containerLogMaxFiles`.
 
 ### Risks and Mitigations
 
@@ -179,10 +180,9 @@ Risk of tmp copy creation of log failing as there is no disk space left.
 
 ## Design Details
 
-Define 2 new flags `logRotateDiskCheckInterval`, `logRotateDiskPressureThreshold` in kubelet config.
+- When there is disk pressure in nodefs.available/imagefs.available, ContainerLogManager's rotateLogs (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L52-L60) should be added to list of functions to be run on disk pressure. (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/eviction/helpers.go#L1195-#L1230)
+- And container logs exceeding the kubelet config set for log limit should be deleted. On disk pressure, analyse log paths of all containers. Logs of containers with existing combined log size exceeding `containerLogMaxSize`*`containerLogMaxFiles` should be deleted till the combined log size is within `containerLogMaxSize`*`containerLogMaxFiles`.
 
-- `logRotateDiskCheckInterval` is the time interval within which the ContainerLogManager will check Disk usage on the kubelet host.
-- `logRotateDiskPressureThreshold` is the threshold of overall Disk usage on the kubelet. If actual Disk usage is equal or more than this threshold, it will rotate logs of all the containers of the kubelet.
 
 ### Test Plan
 
@@ -200,10 +200,10 @@ to implement this enhancement.
 - Scenarios will be covered in e2e tests. 
 
 ##### e2e tests
-- Set very high value for `containerLogMaxSize` and `containerLogMaxFiles` to disable periodic log rotation.
-- Add test under `kubernetes/test/e2e_node/container_log_rotation_test.go`.
-- Set very low values for  `logRotateDiskCheckInterval` and `logRotateDiskPressureThreshold`. Create a pod with generating heavy logs and expect the container logs to be rotated after `logRotateDiskCheckInterval` and Disk usage not going more than `logRotateDiskPressureThreshold`.
-
+- Add test under `kubernetes/test/e2e_node`.
+- Set low value for `containerLogMaxSize` and `containerLogMaxFiles`.
+- Create a pod with generating heavy logs and expect the container's combined log size to bw within `containerLogMaxSize`*`containerLogMaxFiles`.
+- 
 ### Graduation Criteria
 
 **Note:** *Not required until targeted at a release.*
@@ -303,3 +303,14 @@ NA
 
 ## Drawbacks
 No identified drawbacks.
+
+## Alternatives
+
+### Only Rotation on disk pressure
+Define 2 new flags `logRotateDiskCheckInterval`, `logRotateDiskPressureThreshold` in kubelet config.
+
+- `logRotateDiskCheckInterval` is the time interval within which the ContainerLogManager will check Disk usage on the kubelet host.
+- `logRotateDiskPressureThreshold` is the threshold of overall Disk usage on the kubelet. If actual Disk usage is equal or more than this threshold, it will rotate logs of all the containers of the kubelet.
+
+### DaemonSet to cleanup logs
+Provide a means for an external tool to trigger the kubelet to rotate its logs. That would move the policy decisions outside of the kubelet, for example, into a DaemonSet.
