@@ -1,4 +1,4 @@
-title: Dynamic node resize
+title: Node Resource Hot Plug
 kep-number: 3953
 authors:
   - "@Karthik-K-N"
@@ -13,13 +13,14 @@ reviewers:
   - "@smarterclayton"
   - "@ffromani"
   - "@SergeyKanzhelev"
+  - "@haircommander"
 approvers:
   - "@sig-node-leads"
 see-also:
 
 stage: "alpha"
 
-latest-milestone: "v1.32"
+latest-milestone: "v1.33"
 
 milestone:
   alpha: ""

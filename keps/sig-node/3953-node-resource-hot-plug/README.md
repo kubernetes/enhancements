@@ -1,4 +1,4 @@
-# KEP-3953: Node dynamic resize
+# KEP-3953: Node Resource Hot Plug
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -19,14 +19,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -74,7 +71,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposal aims at enabling dynamic node resizing. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node to a cluster.
+The proposal aims at enabling hot plugging of node compute resources. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node to a cluster.
 The updated node configurations are to be reflected at the node and cluster levels automatically without the need to reset the kubelet.
 
 This proposal also aims to improve the initialization and reinitialization of resource managers, such as the CPU manager and memory manager, in response to changes in a node's CPU and memory configurations.
@@ -88,59 +85,49 @@ To handle these scenarios, we can:
 - Horizontally scale up the cluster by adding compute nodes.
 - Vertically scale up the cluster by increasing node capacity. However, currently, the workaround for capturing node resizing in the cluster involves restarting the Kubelet.
 
-Dynamic node resizing will provide advantages in scenarios such as:
+Node resource hot plugging will provide advantages in scenarios such as:
 - Handling resource demand with a limited set of nodes by increasing the capacity of existing nodes instead of creating new nodes.
 - Creating new nodes takes more time compared to increasing the capacity of existing nodes.
 
 ### Goals
 
-* Dynamically resize the node without restarting the kubelet.
+* Dynamically scale up the node by hot plugging  resources and without restarting the kubelet.
 * Ability to reinitialize resource managers (CPU manager, memory manager) to adopt changes in node's resource.
 
 ### Non-Goals
 
-* Update the autoscaler to utilize dynamic node resize.
 * Dynamically adjust system reserved and kube reserved values.
+* Hot unplug of node resources.
+* Update the autoscaler to utilize resource hot plugging.
+
 
 ## Proposal
 
-This KEP aims to support the dynamic resize of compute resources of node with dynamic scale up of resources.
-Dynamic scale down of resources will be proposed in separate KEP in future.
-
-This KEP adds a polling mechanism in kubelet to fetch the machine-information from cAdvisor's cache, The information will be fetched periodically based on a configured time interval, after which the node status updater is responsible for updating this information at node level in the cluster.
+This KEP aims to support the node resource hot plugging by adding a polling mechanism in kubelet to fetch the machine-information from cAdvisor's cache which is already updated periodically, This information will be fetched periodically by kubelet, after which the node status updater is responsible for updating this information at node level in the cluster.
 
 Additionally, this KEP aims to improve the initialization and reinitialization of resource managers, such as the memory manager and CPU manager, so that they can adapt to change in node's configurations.
 
-### User Stories (Optional)
+### User Stories
 
 #### Story 1
 
 As a cluster admin, I must be able to increase the cluster resource capacity without adding a new node to the cluster.
 
+#### Story 2
+
+As a cluster admin, I must be able to increase the cluster resource capacity without need to restarting the kubelet.
+
 ### Notes/Constraints/Caveats (Optional)
-
-
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+1. Node resource hot plugging is an opt-in feature, merging the
+   feature related changes won't impact existing workloads. Moreover, the feature
+   will be rolled out gradually, beginning with an alpha release for testing and
+   gathering feedback. This will be followed by beta and GA releases as the
+   feature matures and potential problems and improvements are addressed.
+2. Though the node resource is updated dynamically, the dynamic data is fetched from cAdvisor and its well integrated with kubelet.
+3. Resource manager are updated to adapt to the dynamic node reconfigurations, Enough tests should be added to make sure its not affecting the existing functionalities.
 
 ## Design Details
 
@@ -170,17 +157,13 @@ The interaction sequence is as follows
 
 Note: In case of increase in cluster resources, the scheduler will automatically schedule any pending pods.
 
-**Kubelet Configuration changes**
-
-* Add a variable to configure the interval to fetch the updated machine information.
-
 **Proposed Code changes**
 
-**Dynamic Node resize and Pod Re-admission logic**
+**Dynamic Node Scale Up logic**
 
 ```go
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicNodeResize) {
-		// Handle the node dynamic resize
+	if utilfeature.DefaultFeatureGate.Enabled(features.NodeResourceHotPlug) {
+		// Handle the node dynamic scale up
 		machineInfo, err := kl.cadvisor.MachineInfo()
 		if err != nil {
 			klog.ErrorS(err, "Error fetching machine info")
@@ -199,7 +182,7 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 	}
 ```
 
-**Changes to resource managers to adapt to dynamic resize**
+**Changes to resource managers to adapt to dynamic scale up of resources**
 
 1. Adding ResyncComponents() method to ContainerManager interface
 ```go
@@ -222,119 +205,42 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 	Sync(machineInfo *cadvisorapi.MachineInfo) error
 ```
 
-
-Note: PoC code changes: https://github.com/kubernetes/kubernetes/pull/115755
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
 ##### Unit tests
 
-1. Add necessary tests in kubelet_node_status_test.go to check for the node status behaviour with dynamic node resize.
+1. Add necessary tests in kubelet_node_status_test.go to check for the node status behaviour with dynamic node scale up.
 2. Add necessary tests in kubelet_pods_test.go to check for the pod cleanup and pod addition workflow.
 3. Add necessary tests in eventhandlers_test.go to check for scheduler behaviour with dynamic node capacity change.
 4. Add necessary tests in resource managers to check for managers behaviour to adopt dynamic node capacity change.
 
 
-##### Integration tests
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
-
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+Following scenarios need to be covered:
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+* Node resource information before and after resource hot plug.
+* State of Pending pods due to lack of resources after resource hot plug.
+* Resource manager states after the resynch of components.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
 
-Define graduation milestones.
+#### Phase 1: Alpha (target 1.33)
 
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
 
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
+* Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `NodeResourceHotPlug`
+  feature gate.
+* Support the basic functionality for scheduler to consider pod-level resource requests to find a suitable node.
+* Support the basic functionality for kubelet to translate pod-level requests/limits to pod-level cgroup settings.
+* Unit test coverage.
+* E2E tests.
+* Documentation mentioning high level design.
 
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
@@ -408,7 +314,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:DynamicNodeResize
+    - Feature gate name:NodeResourceHotPlug
     - Components depending on the feature gate: kubelet
 - [ ] Other
     - Describe the mechanism:
@@ -419,40 +325,26 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. This feature is guarded by a feature gate. Existing default behavior does not change if the
+feature is not used. 
+Even if the feature is enabled via feature gate, If there is no change in 
+node configuration the system will continue to work in the same way.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Once disabled any hot plug of resources won't reflect at the cluster level without kubelet restart. 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+If the feature is reenabled again, the node resources can be hot plugged in again. Cluster will be automatically udpated
+with the new resource information.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes, the tests will be added along with alpha implementation.
+* Validate the hot plug of resource to machine is updated at the node resource level.
+* Validate the hot plug of resource made the pending pods to transition into running state.
+* Validate the resource managers are update with the latest machine information after hot plug of resources.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -472,12 +364,20 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollout may fail if the resource managers are not re-synced properly due to programatic errors.
+In case of rollout failures, running workloads are not affected, If the pods are on pending state they remain
+in the pending state only.
+Rollback failure should not affect running workloads.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+In case of pending pods and hot plug of resource but still there is no change `scheduler_pending_pods` metric
+means the feature is not working as expected.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -487,12 +387,14 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+It will be tested manually as a part of implementation and there will also be automated tests to cover the scenarios.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-
+No
 ### Monitoring Requirements
 
 <!--
@@ -510,6 +412,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+This feature will be built into kubelet and behind a feature gate. Examining the kubelet feature gate would help 
+in determining whether the feature is used. The enablement of the kubelet feature gate can be determined from the 
+`kubernetes_feature_enabled` metric.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -521,13 +427,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-    - Event Reason:
-- [ ] API .status
-    - Condition name:
-    - Other field:
-- [ ] Other (treat as last resort)
-    - Details:
+End user can do a hot plug of resource and verify the same change as reflected at the node resource level.
+In case there were any pending pods prior to resource hot plug, those pods should transition into Running with addition
+of new resources.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -545,19 +447,16 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-
+No increase in the `scheduler_pending_pods` rate.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-- [ ] Other (treat as last resort)
-    - Details:
+- [X] Metrics
+    - Metric name: `scheduler_pending_pods`
+    - Components exposing the metric: scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -565,7 +464,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-
+No
 ### Dependencies
 
 <!--
@@ -588,6 +487,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No, It does not depend on any service running on the cluster, But depends on cAdvisor package to fetch
+the machine resource information.
 
 ### Scalability
 
@@ -616,6 +517,10 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No, It won't add/modify any user facing APIs.
+The resource managers might need to be updated with new methods to resync their components with updated
+machine information.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -624,7 +529,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-
+No 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -632,7 +537,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
-
+No
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 <!--
@@ -641,7 +546,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-
+No
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 <!--
@@ -652,7 +557,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-
+Negligible, In the case of resource hot plug the resource manager may take some time to resync.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -664,7 +569,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-
+Negligible computational overhead might be introduced into kubelet as it periodically needs to fetch machine information 
+from cAdvisor cache and resync all the resource managers with the updated machine information.
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -676,6 +582,9 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+Yes, It could.
+Since the nodes computational capacity is increased dynamically there might be more pods scheduled on the node.
+This is however be mitigated by maxPods kubelet configuration that limits the number of pods on a node.
 
 ### Troubleshooting
 
@@ -692,6 +601,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature is node local and mainly handled in kubelet, It has no dependency on etcd.
+In case there are pending pods and there is hot plug of resources, The scheduler relies on the API server to fetch node information. 
+Without access to the API server, it cannot make scheduling decisions as the node resources are not updated. The pending pods would remain in same condition.
+
 ###### What are other known failure modes?
 
 <!--
@@ -707,7 +620,14 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+This feature mainly does two things fetch machine information from cAdvisor and reinitialize resource managers.
+Failure scenarios can occur in cAdvisor level that is if it wrongly updated with incorrect machine information.
+
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+If enabling this feature causes performance degradation, its suggested not to hot plug resources and restart the kubelet
+to manually to continue operation as before.
+
 
 ## Implementation History
 
@@ -730,16 +650,10 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+Existing and the alternative to this effort would be restarting the kubelet manually each time after the node resize.
+
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
--->
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
 -->
