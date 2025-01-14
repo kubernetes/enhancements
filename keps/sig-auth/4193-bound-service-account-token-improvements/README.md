@@ -724,6 +724,7 @@ For example, attempting to issue a node bound token, or attempting to authentica
 * `ServiceAccountTokenJTI`, `ServiceAccountTokenNodeBindingValidation` and `ServiceAccountTokenPodNodeInfo` promoted to beta for v1.30 release
 * Promoted `ServiceAccountTokenNodeBinding` promoted to beta for v1.31 release
 * Promoted `ServiceAccountTokenJTI`, `ServiceAccountTokenPodNodeInfo`, `ServiceAccountTokenNodeBindingValidation` to stable for v1.32 release
+* Promoted `ServiceAccountTokenNodeBinding` to stable for v1.33 release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
