@@ -1206,7 +1206,8 @@ create their own table, and not interfere with anyone else's tables.
 If we document the `priority` values we use to connect to each
 nftables hook, then admins and third party developers should be able
 to reliably process packets before or after kube-proxy, without
-needing to modify kube-proxy's chains/rules.
+needing to modify kube-proxy's chains/rules. (As of 1.33, this is now
+documented.)
 
 In cases where administrators want to insert rules into the middle of
 particular service or endpoint chains, we would have the same problem
@@ -1223,16 +1224,6 @@ specific services to augment/bypass the normal service processing. It
 probably makes sense to leave these out initially and see if people
 actually do need them, or if creating rules in another table is
 sufficient.
-
-```
-<<[UNRESOLVED external rule integration API ]>>
-
-Tigera is currently working on implementing nftables support in
-Calico, so hopefully by 1.32 we should have a good idea of what
-guarantees it needs from nftables kube-proxy.
-
-<<[/UNRESOLVED]>>
-```
 
 #### Rule monitoring
 
@@ -1425,18 +1416,6 @@ We will eventually need e2e tests for switching between `iptables` and
 [It should recreate its iptables rules if they are deleted]: https://github.com/kubernetes/kubernetes/blob/v1.27.0/test/e2e/network/networking.go#L550
 [`TestUnderTemporaryNetworkFailure`]: https://github.com/kubernetes/kubernetes/blob/v1.27.0-alpha.2/test/e2e/framework/network/utils.go#L1078
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
-
 #### Scalability & Performance tests
 
 We have an [nftables scalability job]. Initial performance is fine; we
@@ -1577,14 +1556,14 @@ Yes, though it is necessary to clean up the nftables rules that were
 created, or they will continue to intercept service traffic. In any
 normal case, this should happen automatically when restarting
 kube-proxy in `iptables` or `ipvs` mode, however, that assumes the
-user is rolling back to a still-new-enough version of kube-proxy. If
-the user wants to roll back the cluster to a version of Kubernetes
-that doesn't have the nftables kube-proxy code (i.e., rolling back
-from Alpha to Pre-Alpha), or if they are rolling back to an external
-service proxy implementation (e.g., kpng), then they would need to
-make sure that the nftables rules got cleaned up _before_ they rolled
-back, or else clean them up manually. (We can document how to do
-this.)
+user is rolling back to a version of kube-proxy that has at least the
+Alpha nftables code (1.29+). If the user wants to roll back the
+cluster to a version of Kubernetes that doesn't have the nftables
+kube-proxy code (i.e., rolling back from Alpha to Pre-Alpha), or if
+they are rolling back to an external service proxy implementation
+(e.g., kpng), then they would need to make sure that the nftables
+rules got cleaned up _before_ they rolled back, or else clean them up
+manually. (We document how to do this.)
 
 (By the time we are considering making the `nftables` backend the
 default in the future, the feature will have existed and been GA for
@@ -1635,14 +1614,23 @@ provide more information.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD; we plan to add an e2e job to test switching from `iptables` mode
-to `nftables` mode in 1.31.
+Tested by hand:
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+1. Start kube-proxy in `iptables` mode.
+2. Confirm (via `iptables-save`) that iptables rules exist for Services.
+3. Kill kube-proxy.
+4. Start kube-proxy in `nftables` mode.
+5. Confirm (via `iptables-save`) that iptables rules for Services no
+   longer exist. (There will still be a handful of iptables chains
+   left over, but nothing that actually affects the behavior of
+   services.)
+6. Confirm (via `nft list ruleset`) that nftables rules for Services
+   exist.
+7. Kill kube-proxy.
+8. Start kube-proxy in `iptables` mode again.
+9. Confirm (via `iptables-save`) that iptables rules exist for Services.
+10. Confirm (via `nft list ruleset`) that the `kube-proxy` table (or
+    tables, if dual-stack) has been deleted.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1670,8 +1658,20 @@ For Beta, the goal is for the [network programming latency] to
 be equivalent to the _old_, pre-[KEP-3453] iptables performance
 (because the current code is not yet heavily optimized).
 
-For GA, the goal is for it to be at least as good as the current
+For GA, the goal was for it to be at least as good as the current
 iptables performance.
+
+In fact, we never got entirely clear measurements of this, because the
+iptables-based 1000 node perf/scale test still uses `minSyncPeriod:
+10s`, while the nftables-based one does not. However, the nftables
+performance is quite satisfactory (and the fact that it is able to
+have satisfactory performance without using `minSyncPeriod` is also a
+major win). 
+
+Meanwhile, nftables data plane performance is _substantially_ better
+than iptables:
+
+![iptables-vs-nftables kube-proxy data plane performance](iptables-vs-nftables.svg)
 
 [network programming latency]: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/network_programming_latency.md
 [KEP-3453]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/3453-minimize-iptables-restore
@@ -1701,7 +1701,9 @@ more-or-less **O(1)** behavior, so knowing the number of elements is
 not going to give you much information about how well the system is
 likely to be performing.
 
-(Update while going to Beta: it's still not clear.)
+(Update while going to GA: it's still not clear. We have not found
+ourselves wanting any additional metrics, nor have we received any
+requests for additional metrics.)
 
 - [X] Metrics
   - Metric names:
@@ -1774,19 +1776,6 @@ processed until the apiserver is available again.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
@@ -1794,6 +1783,7 @@ For each of them, fill in the following information by copying the below templat
 - Initial proposal: 2023-02-01
 - Merged: 2023-10-06
 - Updates for beta: 2024-05-24
+- Updates for GA: 2025-01-15
 
 ## Drawbacks
 
