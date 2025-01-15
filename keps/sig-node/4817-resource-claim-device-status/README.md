@@ -438,6 +438,8 @@ network status.
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
 - 1 example of real-world usage.
+    - The kubernetes-sigs/cni-dra-driver project as reference implementation for this feature.
+    - A new EndpointSlice Controller consuming the `ResourceClaim.Status.Devices[].NetworkData.Addresses` field.
 - Feedback collected from the community (developers and users) with adjustments
   provided, implemented and tested.
 
@@ -611,6 +613,8 @@ N/A
 ## Implementation History
 
 - Initial proposal: 2024-08-30
+- Implementation merged ([kubernetes/kubernetes#128240](https://github.com/kubernetes/kubernetes/pull/128240)): 2024-11-08
+- Released as an alpha feature behind a feature-gate: 2024-12-11 (Kubernetes v1.32)
 
 ## Drawbacks
 
