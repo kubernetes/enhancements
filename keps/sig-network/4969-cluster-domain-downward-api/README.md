@@ -929,10 +929,3 @@ mechanisms in the future, or disabled entirely.
 It also requires clients to guess which domain is the correct one, which could
 have false positives.
 
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
