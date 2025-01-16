@@ -235,7 +235,7 @@ know that this has succeeded?
 
 - Disallowing relative domain names.
 - Modifying DNS resolution.
-- Centralizing management of the cluster domain name setting.
+- Providing a central way to configure the cluster domain name setting across kubelets.
 - Exposing all kubelet configuration.
 
 <!--
