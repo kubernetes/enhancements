@@ -256,7 +256,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
