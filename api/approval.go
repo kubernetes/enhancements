@@ -41,7 +41,8 @@ type PRRApproval struct {
 	Beta       *PRRMilestone `json:"beta" yaml:"beta,omitempty"`
 	Stable     *PRRMilestone `json:"stable" yaml:"stable,omitempty"`
 	Deprecated *PRRMilestone `json:"deprecated" yaml:"deprecated,omitempty"`
-	Removed    *PRRMilestone `json:"removed", yaml:"removed,omitempty"`
+	Removed    *PRRMilestone `json:"removed" yaml:"removed,omitempty"`
+	Disabled   *PRRMilestone `json:"disabled" yaml:"disabled,omitempty"`
 
 	// TODO(api): Move to separate struct for handling document parsing
 	Error error `json:"-" yaml:"-"`
