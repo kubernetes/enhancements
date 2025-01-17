@@ -736,7 +736,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 - Metrics are added to the kube-apiserver (see the [monitoring-requirements](#monitoring-requirements) section for more details)
 - Implement `SendInitialEvents` for `watch` requests in the etcd storage implementation
-- The feature is enabled for kube-apiserver and kube-controller-manager 
+- The feature is enabled for kube-apiserver and kube-controller-manager.
 - The generic feature gate mechanism is implemented in client-go. 
   It will be used to enable a new functionality for reflectors/informers.
 - Implement a consistency check detector that will compare data received through a new watchlist request 
@@ -755,6 +755,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   must properly set the kind and apiVersion fields. 
   These fields are important for the correct decoding of the objects.
   See also: https://github.com/kubernetes/kubernetes/pull/126191
+
+#### Beta2
+- The feature is enabled for kubelet.
+- Add watchlist support to the fake client so that starting an informer with a fake client works correctly.
+- Extend the existing performance tests with a case that adds a large number of small objects. 
+  The current perf test adds a small number of large objects. 
+  The new variant will help catch potential regressions such as https://github.com/kubernetes/kubernetes/issues/129467 
+ 
 
 #### GA
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
