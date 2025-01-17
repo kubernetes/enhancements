@@ -2,9 +2,10 @@ title: DRA Partitionable Devices
 kep-number: 4815
 authors:
   - "@klueska"
-owning-sig: sig-node
+  - "@mortent"
+owning-sig: sig-scheduling
 participating-sigs:
-  - sig-scheduling
+  - sig-node
   - sig-autoscaling
 status: implementable
 creation-date: 2024-09-25
@@ -27,13 +28,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.32"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.32"
-  beta: "v1.33"
-  stable: "v1.34"
+  alpha: "v1.33"
+  beta: "v1.34"
+  stable: "v1.35"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
