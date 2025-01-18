@@ -40,6 +40,18 @@ var (
 		Stable: prrMilestoneWithApprover,
 	}
 
+	validDeprecatedPRR = &api.PRRApproval{
+		Deprecated: prrMilestoneWithApprover,
+	}
+
+	validDisabledPRR = &api.PRRApproval{
+		Disabled: prrMilestoneWithApprover,
+	}
+
+	validRemovedPRR = &api.PRRApproval{
+		Removed: prrMilestoneWithApprover,
+	}
+
 	invalidPRR = &api.PRRApproval{}
 )
 
@@ -82,6 +94,27 @@ func TestPRRApproval_ApproverForStage(t *testing.T) {
 			name:         "valid: stable",
 			stage:        "stable",
 			prr:          validStablePRR,
+			wantApprover: "@wojtek-t",
+			wantErr:      false,
+		},
+		{
+			name:         "valid: deprecated",
+			stage:        "deprecated",
+			prr:          validDeprecatedPRR,
+			wantApprover: "@wojtek-t",
+			wantErr:      false,
+		},
+		{
+			name:         "valid: disabled",
+			stage:        "disabled",
+			prr:          validDisabledPRR,
+			wantApprover: "@wojtek-t",
+			wantErr:      false,
+		},
+		{
+			name:         "valid: removed",
+			stage:        "removed",
+			prr:          validRemovedPRR,
 			wantApprover: "@wojtek-t",
 			wantErr:      false,
 		},

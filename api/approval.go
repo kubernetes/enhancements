@@ -62,7 +62,10 @@ func (prr *PRRApproval) ApproverForStage(stage Stage) (string, error) {
 		return "", err
 	}
 
-	if prr.Alpha == nil && prr.Beta == nil && prr.Stable == nil {
+	// KEPs are usually of 2 types:
+	// 1. Features that go through Alpha->Beta->Stable
+	// 2. Removals that go through Deprecated->Disabled->Removed
+	if prr.Alpha == nil && prr.Beta == nil && prr.Stable == nil && prr.Deprecated == nil && prr.Disabled == nil && prr.Removed == nil {
 		return "", ErrPRRMilestonesAllEmpty
 	}
 
@@ -71,20 +74,37 @@ func (prr *PRRApproval) ApproverForStage(stage Stage) (string, error) {
 		if prr.Alpha == nil {
 			return "", ErrPRRMilestoneIsNil
 		}
-
 		return prr.Alpha.Approver, nil
+
 	case BetaStage:
 		if prr.Beta == nil {
 			return "", ErrPRRMilestoneIsNil
 		}
-
 		return prr.Beta.Approver, nil
+
 	case StableStage:
 		if prr.Stable == nil {
 			return "", ErrPRRMilestoneIsNil
 		}
-
 		return prr.Stable.Approver, nil
+
+	case Deprecated:
+		if prr.Deprecated == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+		return prr.Deprecated.Approver, nil
+
+	case Disabled:
+		if prr.Disabled == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+		return prr.Disabled.Approver, nil
+
+	case Removed:
+		if prr.Removed == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+		return prr.Removed.Approver, nil
 	}
 
 	return "", ErrPRRApproverUnknown
