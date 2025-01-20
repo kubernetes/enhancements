@@ -518,7 +518,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-TBD.
+We assess that since the proposed controller resides out-of-tree, no
+prerequisite testing suites need to be updated. 
 
 ##### Unit tests
 
@@ -541,7 +542,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-TBD.
+```
+- `internal`: 20/1/2025 - 21.1% of statements
+- `pkg/apis/resourcestatemetrics/v1alpha1`: 20/1/2025 - 18.3% of statements
+- `pkg/resolver`: 20/1/2025 - 47.8% of statements
+```
 
 ##### Integration tests
 
@@ -574,7 +579,13 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `resourcestatemetrics_test`: https://github.com/rexagod/resource-state-metrics/tree/main/tests
+End-to-end tests reside in the [`resourcestatemetrics_test`] package, and aim to test the following behaviors:
+- conformance with the existing Custom Resource State API ([kubernetes/kube-state-metrics#1710]) feature-set,
+- handling all supported events on the managed resource, which should exhibit deterministic outcomes for each of them,
+- fuzzing the configuration with invalid values to ensure that the controller does not crash, and
+- fuzzing the configuration with valid values to ensure there are no side effects.
+
+[`resourcestatemetrics_test`]: https://github.com/rexagod/resource-state-metrics/tree/main/tests
 
 ### Graduation Criteria
 
@@ -654,7 +665,13 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-N/A.
+`ResourceMetricsMonitor` API(s) will follow the [hub-spoke] interconversion
+model, and as such, an outdated hub or spoke version will be able to upgrade to
+the latest spoke version when the controller itself is upgraded. This will in
+turn convert the spoke to the hub version, and the hub version into the
+latest available spoke version, depending on the controller's version.
+
+[hub-spoke]: https://www.kubebuilder.io/multiversion-tutorial/conversion-concepts
 
 ### Version Skew Strategy
 
@@ -706,8 +723,6 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
-N/A.
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 <!--
@@ -730,7 +745,16 @@ well as the [existing list] of feature gates.
     of a node?
 -->
 
-N/A.
+- [X] Other
+  - Describe the mechanism: The controller can be enabled by deploying it in the
+    cluster, and disabled by deleting it. The managed resources may be left in 
+    the cluster to be picked up by a future deployment. However, if that's not 
+    intended, cluster-admins will need to drop them separately (either all CRs
+    or the defining CRD).
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? No.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -756,17 +780,20 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Removing the controller will not remove its managed resources. They will be
-dropped if the corresponding `ResourceMetricsMonitor` CRD is deleted. Similarly, 
-removing all managed resources will not remove the controller.
+Yes, cluster-admins can roll back the controller by simply deleting it, as there
+are no finalizers or owner references linking back to the controller (this may 
+be [subject to change] at a later stage). Consequently, doing so does not remove
+the managed resources automatically, which will need to be dropped separately 
+(or by dropping the defining CRD).
 
-The reason why it is so is because cluster-scoped resources cannot have owner
+The reason why it is so is that cluster-scoped resources cannot have owner
 references linking back to namespace-scoped resources, in which case, the
 garbage collection is a no-op. See [819a80] for more details.
 
+[subject to change]: https://github.com/rexagod/resource-state-metrics#todo
 [819a80]: https://github.com/rexagod/resource-state-metrics/commit/819a8001200a13c51cb82779c139a9081b4d613b
 
-###### What happens if we reenable the feature if it was previously rolled back?
+###### What happens if we re-enable the feature if it was previously rolled back?
 
 In the context of the controller, pre-existing managed resources in the cluster
 will be picked back up after a (re-)deploy.
@@ -811,8 +838,11 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-In the context of the controller, failed controller deployments do not make any
-changes to the existing managed resources' metric configurations.
+In the context of the controller, failed controller deployments simply do not
+make any changes to the existing managed resources' metric configurations
+(`spec.configuration`), and as such, the metrics will again be available once a 
+deployed instance is up and discovers all existing managed resources in the
+cluster. But long as that's not healthy, the metrics exposition will be absent.
 
 ###### What specific metrics should inform a rollback?
 
@@ -821,7 +851,22 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-The controller has a telemetry server to diagnose and query statistics.
+At the moment any disruptions will be indicated by the managed resources' `status` field, like so,
+
+```
+status:                                                                                                     
+    conditions:                                                                  
+    - lastTransitionTime: "2024-08-27T19:46:13Z"
+      message: 'Resource failed to process'
+      observedGeneration: 1                                                                               
+      reason: EventHandlerFailed                                                                                               
+      status: True                                                                                                           
+      type: Failed
+```
+
+Additionally, diagnostic metrics and traces are [planned] for the near-future.
+
+[planned]: https://github.com/rexagod/resource-state-metrics#todo
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -831,9 +876,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Yes, controller deploy, scale down, and scale up works fine. Operations on
-managed resources, if any, in the future, will be taken care of using the
-aforementioned [hub-spoke] interconversion model.
+TBD (when targeting beta).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -854,8 +897,6 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-N/A.
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -864,7 +905,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-N/A.
+This is not nota workload feature, but an out-of-tree telemetry solution.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -941,13 +982,7 @@ TBD.
 This section must be completed when targeting beta to a release.
 -->
 
-The controller __directly__ imports the following `k8s.io` packages:
-* `k8s.io/api`
-* `k8s.io/apimachinery`
-* `k8s.io/client-go`
-* `k8s.io/code-generator`
-* `k8s.io/klog/v2`
-* `k8s.io/utils`
+TBD (when targeting beta).
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -966,7 +1001,18 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-The controller relies on core Kubernetes components.
+The controller relies on core Kubernetes serving-stack components:
+- `kube-apiserver` and `etcd`
+  - Usage description: The controller needs to make API calls in order to
+    reconcile the managed resources in the cluster.
+    - Impact of its outage on the feature: The controller will log errors but
+      keep reconciling for when `etcd` comes back up.
+    - Impact of its degraded performance or high-error rates on the feature: Same
+      as above.
+
+There's an indirect dependency on critical components such as 
+`kube-controller-manager` and `kubelet`, which have been left out above for the
+sake of brevity.
 
 ### Scalability
 
@@ -1036,8 +1082,8 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-The controller will **not** create or modify any object on its own. Only when a
-managed resource is deployed will it try to reconcile it.
+The controller will **not** create any object on its own. Only when a managed
+resource is deployed will it try to reconcile (modify) it, if needed.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
