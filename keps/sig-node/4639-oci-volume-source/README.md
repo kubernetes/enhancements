@@ -1346,8 +1346,8 @@ Major milestones might include:
 
 - 16-05-2024 Issue opened 
 - 21-06-2024 KEP merged, targeted at alpha
-- 2-10-2024 KEP updated
-
+- 02-10-2024 KEP updated
+- 06-02-2025 KEP targeting beta in v1.33
 
 ## Drawbacks
 
