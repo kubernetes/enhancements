@@ -5,7 +5,7 @@ authors:
   - "@soltysh"
 owning-sig: sig-apps
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2023-06-06
 reviewers:
   - "@soltysh"
