@@ -972,6 +972,7 @@ Major milestones might include:
 - 2023-10-13: Kep is proposed as alpha feature
 - 2024-06-04: Kep is promoted to beta
 - 2024-09-05: Kep is promoted to stable
+- 2025-01-20: Kep is marked as implemented
 
 ## Drawbacks
 
