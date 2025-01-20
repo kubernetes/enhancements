@@ -62,10 +62,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -74,6 +70,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -186,7 +183,7 @@ limitation in the past. ([#109214][])
 Heavily inspired by [KEDA][] propose to add a new field to the existing [`HorizontalPodAutoscalerSpec`][] object:
 
 - `fallback`: an optional new object containing the following fields:
-  - `failureThreshold`: (integer) the number of failures fetching metrics to trigger the fallback behaviour. Must be greater than 0 and is option with a default of 3.
+  - `failureThreshold`: (integer) the number of failures fetching metrics to trigger the fallback behaviour. Must be a value greater than 0. This field is optional and defaults to 3 if not specified.
   - `replicas`: (integer) the number of replicas to scale to in case of fallback. Must be greater than 0 and it's mandatory.
 
 To allow for tracking of failures to fetch metrics a new field should be added to the existing [`HorizontalPodAutoscalerStatus`][] object:
@@ -469,6 +466,16 @@ in back-to-back releases.
 - Initial e2e tests completed and enabled
 
 ### Upgrade / Downgrade Strategy
+
+When the feature flag is enabled, the `kube-controller-manager` should begin 
+counting concurrent failures starting from 0. If the feature flag is disabled, 
+the status should always reflect `MetricRetrievalFailureCount` as 0.
+
+All logic related to metric retrieval failure and `MetricRetrievalFailureCount` 
+evaluation must be gated by the same feature flag. This means that if the feature 
+flag is rolled back, any ongoing metrics retrieval failures will not affect scaling 
+behavior, and the resource will continue with the same scale as it did prior to 
+the feature being disabled.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
