@@ -77,7 +77,7 @@ This resulted in a configuration format, that had various different options grou
 - Backend agnostic options are marked as backed specific options (eg. syncPeriod,  minSyncPeriod).
 - Options specific to a backend are used by other backends (eg. masqueradeBit and masqueradeAll).
 
-[kubernetes/issues/117909](https://github.com/kubernetes/kubernetes/issues/117909) captures all the mis configurations in details.
+[kubernetes/issues/117909](https://github.com/kubernetes/kubernetes/issues/117909) captures all the misconfigurations in details.
 
 Clearly, this made the configuration both hard to use and to maintain. Therefore, a plan to restructure and stabilize the config format is needed.
 
