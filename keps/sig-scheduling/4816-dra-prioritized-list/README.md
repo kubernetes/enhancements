@@ -255,17 +255,48 @@ nitty-gritty.
 The `ResourceClaim` object contains a `DeviceClaim`, which in turn contains a
 list of `DeviceRequest` objects. This allows the user to allocate different
 types of devices for the same claim, and apply constraints and configuration
-across those different requests.
+across those different requests. These changes allow some flexibility for the
+user to create, say, a "gpu" request, but allow it to be satisfied by one of
+several models of GPU.
 
-The proposal adds a new field to the `DeviceRequest`, called `FirstAvailableOf`
-which will contain an ordered list of `DeviceRequest` objects. In order to
+To avoid introducing a breaking API change and to ensure round-tripping
+between the APIs, the `v1beta1` API will remain backward compatible 
+(only extended) and the final change will be made in `v1beta2`.
+
+The `v1beta1` API will be extended with a new field called `FirstAvailable`
+which will contain an ordered list of `DeviceSubRequest` objects. In order to
 satisfy the main (containing) request, exactly one of the requests listed in
-`FirstAvailableOf` must be satisfied. The order listed is considered a priority
+`FirstAvailable` must be satisfied. The order listed is considered a priority
 order, such that the scheduler will only try to use the second item in the list
-if it is unable to satisfy the first item, and so on.
+if it is unable to satisfy the first item, and so on. This extension to the API
+is not breaking, but it makes for a somewhat awkward API where many fields on
+the `DeviceRequest` (in fact all existing fields except `Name`) must not be
+set whenever `FirstAvailable` is set. To avoid this API in the long term, we are
+adding the `v1beta2` API described next.
 
-This allows some flexibility for the user to create, say, a "gpu" request, but
-allow it to be satisfied by one of several models of GPU.
+For the `v1beta2` API, the `DeviceRequest` object will be restructured
+so that there will be the `Name` field just like today, and for supporting
+either a single request or a prioritized list of subrequests, there will
+be separate fields:
+
+* `Exactly` for a request of type `SpecificDeviceRequest` without alternatives.
+`SpecificDeviceRequest` will include all the fields that exists on the
+`DeviceRequest` type in `v1beta1`, except the `Name` field.
+* `FirstAvailable` for providing a prioritized list of requests, each of
+type `DeviceSubRequest`. The `DeviceSubRequest` type is similar to
+`SpecificDeviceRequest`, except for the `AdminAccess` field that is not
+available when providing multiple alternatives. The list provided in the
+`FirstAvailable` field is considered a priority order, such that the
+scheduler will use the first entry in the list that satisfies the
+requirements. 
+
+DRA does not yet implement scoring, which means that
+the selected devices might not be optimal. For example, if a prioritized
+list is provided in a request, DRA might choose entry number two on node A,
+even though entry number one would meet the requirements on node B. This is
+consistent with current behavior in DRA where the first match will be chosen.
+Scoring is something that will be implemented later, with early discussions
+in https://github.com/kubernetes/enhancements/issues/4970
 
 ### User Stories
 
@@ -293,7 +324,7 @@ I do have a preferred ordering of devices.
 #### Resource Quota
 
 ResourceQuota will be enforced such that the user must have quota for each
-`DeviceRequest` under every `FirstAvailableOf`. Thus, this "pick one" behavior
+`DeviceSubRequest` under every `FirstAvailable`. Thus, this "pick one" behavior
 cannot be used to circumvent quota. This reduces the usefulness of the feature,
 as it means it will not serve as a quota management feature. However, the
 primary goal of the feature is about flexibility across clusters and
@@ -323,7 +354,221 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A `DeviceRequest` that populates the `FirstAvailableOf` field must *not*
+For the `v1beta2` API, all fields in the current `DeviceRequest` field except
+`Name` will be moved into a new `SpecificDeviceRequest` type and the `DeviceRequest`
+type will get a field called `Exactly` using this type. So for a request that doesn't
+provide a prioritized list of alternatives, the user will provide the `Name` and
+then set the `Exactly` field which contains the details about the request.
+
+The `FirstAvailable` field is mutually exclusive with the `Exactly` field, and
+allow users to specify a prioritized list of `DeviceSubRequest` objects. The
+`DeviceSubRequest` type is similar to the `SpecificDeviceRequest`, but does not
+expose the `AdminAccess` field. These will be kept as separate types to avoid having
+fields that can't be used in certain contexts (like `AdminAccess` for entries in the
+`FirstAvailable` list) and to allow these to evolve separately going forward.
+
+```go
+// DeviceRequest is a request for devices required for a claim.
+// This is typically a request for a single resource like a device, but can
+// also ask for several identical devices. With FirstAvailable it is also
+// possible to provide a prioritized list of requests.
+type DeviceRequest struct {
+    // Name can be used to reference this request in a pod.spec.containers[].resources.claims
+    // entry and in a constraint of the claim.
+    //
+    // References using the name in the DeviceRequest will uniquely
+    // identify a request when the Exactly field is set. When the
+    // FirstAvailable field is set, a reference to the name of the
+    // DeviceRequest will match whatever subrequest is chosen by the
+    // scheduler.
+    //
+    // Must be a DNS label.
+    //
+    // +required
+    Name string
+
+    // Exactly specifies the details for a single request that must
+    // be met exactly for the request to be satisfied.
+    //
+    // One of Exactly or FirstAvailable must be set.
+    //
+    // +optional
+    // +oneOf=deviceRequestType
+    Exactly *SpecificDeviceRequest
+
+    // FirstAvailable contains subrequests, of which exactly one will be 
+    // satisfied by the scheduler to satisfy this request. It tries to
+    // satisfy them in the order in which they are listed here. So if
+    // there are two entries in the list, the schduler will only check
+    // the second one if it determines that the first one can not be used.
+    //
+    // DRA does not yet implement scoring, so the scheduler will
+    // select the first set of devices that satisfies all the
+    // requests in the claim. And if the requirements can
+    // be satisfied on more than one node, other scheduling features
+    // will determine which node is chosen. This means that the set of
+    // devices allocated to a claim might not be the optimal set
+    // available to the cluster. Scoring will be implemented later.
+    //
+    // +optional
+    // +oneOf=deviceRequestType
+    // +listType=atomic
+    // +featureGate=DRAPrioritizedList
+    FirstAvailable []DeviceSubRequest
+}
+
+// SpecificDeviceRequest is a request for one or more identical devices.
+type SpecificDeviceRequest struct {
+    // DeviceClassName references a specific DeviceClass, which can define
+    // additional configuration and selectors to be inherited by this
+    // request.
+    //
+    // A DeviceClassName is required. Clients must check that it is
+    // indeed set. It's absence indicates that something changed in a way that
+    // is not supported by the client yet, in which case it must refuse to
+    // handle the request.
+    //
+    // Administrators may use this to restrict which devices may get
+    // requested by only installing classes with selectors for permitted
+    // devices. If users are free to request anything without restrictions,
+    // then administrators can create an empty DeviceClass for users
+    // to reference.
+    //
+    // +required
+    DeviceClassName string
+
+    // Selectors define criteria which must be satisfied by a specific
+    // device in order for that device to be considered for this
+    // request. All selectors must be satisfied for a device to be
+    // considered.
+    //
+    // +optional
+    // +listType=atomic
+    Selectors []DeviceSelector
+
+    // AllocationMode and its related fields define how devices are allocated
+    // to satisfy this request. Supported values are:
+    //
+    // - ExactCount: This request is for a specific number of devices.
+    //   This is the default. The exact number is provided in the
+    //   count field.
+    //
+    // - All: This request is for all of the matching devices in a pool.
+    //   Allocation will fail if some devices are already allocated,
+    //   unless adminAccess is requested.
+    //
+    // If AlloctionMode is not specified, the default mode is ExactCount. If
+    // the mode is ExactCount and count is not specified, the default count is
+    // one. Any other requests must specify this field.
+    //
+    // More modes may get added in the future. Clients must refuse to handle
+    // requests with unknown modes.
+    //
+    // +optional
+    AllocationMode DeviceAllocationMode
+
+    // Count is used only when the count mode is "ExactCount". Must be greater than zero.
+    // If AllocationMode is ExactCount and this field is not specified, the default is one.
+    //
+    // +optional
+    // +oneOf=AllocationMode
+    Count int64
+
+    // AdminAccess indicates that this is a claim for administrative access
+    // to the device(s). Claims with AdminAccess are expected to be used for
+    // monitoring or other management services for a device.  They ignore
+    // all ordinary claims to the device with respect to access modes and
+    // any resource allocations.
+    //
+    // This is an alpha field and requires enabling the DRAAdminAccess
+    // feature gate. Admin access is disabled if this field is unset or
+    // set to false, otherwise it is enabled.
+    //
+    // +optional
+    // +featureGate=DRAAdminAccess
+    AdminAccess *bool
+}
+
+// DeviceSubRequest describes a request for device provided in the
+// claim.spec.devices.requests[].firstAvailable array. Each
+// is typically a request for a single resource like a device, but can
+// also ask for several identical devices.
+//
+// DeviceSubRequest is similar to SpecificDeviceRequest, but doesn't expose the
+// AdminAccess field as that one is only supported when requesting a
+// specific device.
+type DeviceSubRequest struct {
+    // Name can be used to reference this subrequest in the list of constraints
+    // or the list of configurations for the claim. References must use the
+    // format <main request>/<subrequest>.
+    //
+    // Must be a DNS label.
+    //
+    // +required
+    Name string
+
+    // DeviceClassName references a specific DeviceClass, which can define
+    // additional configuration and selectors to be inherited by this
+    // subrequest.
+    //
+    // A class is required. Which classes are available depends on the cluster.
+    //
+    // Administrators may use this to restrict which devices may get
+    // requested by only installing classes with selectors for permitted
+    // devices. If users are free to request anything without restrictions,
+    // then administrators can create an empty DeviceClass for users
+    // to reference.
+    //
+    // +required
+    DeviceClassName string
+
+    // Selectors define criteria which must be satisfied by a specific
+    // device in order for that device to be considered for this
+    // subrequest. All selectors must be satisfied for a device to be
+    // considered.
+    //
+    // +optional
+    // +listType=atomic
+    Selectors []DeviceSelector
+
+    // AllocationMode and its related fields define how devices are allocated
+    // to satisfy this subrequest. Supported values are:
+    //
+    // - ExactCount: This request is for a specific number of devices.
+    //   This is the default. The exact number is provided in the
+    //   count field.
+    //
+    // - All: This subrequest is for all of the matching devices in a pool.
+    //   Allocation will fail if some devices are already allocated,
+    //   unless adminAccess is requested.
+    //
+    // If AlloctionMode is not specified, the default mode is ExactCount. If
+    // the mode is ExactCount and count is not specified, the default count is
+    // one. Any other subrequests must specify this field.
+    //
+    // More modes may get added in the future. Clients must refuse to handle
+    // requests with unknown modes.
+    //
+    // +optional
+    AllocationMode DeviceAllocationMode
+
+    // Count is used only when the count mode is "ExactCount". Must be greater than zero.
+    // If AllocationMode is ExactCount and this field is not specified, the default is one.
+    //
+    // +optional
+    // +oneOf=AllocationMode
+    Count int64
+}
+
+const (
+    DeviceSelectorsMaxSize             = 32
+    FirstAvailableDeviceRequestMaxSize = 8
+)
+```
+
+For the `v1beta1` API:
+
+A `DeviceRequest` that populates the `FirstAvailable` field must *not*
 populate the `DeviceClassName` field. The `required` validation on this field
 will be relaxed. This allows existing clients to differentiate between claims
 they understand (with `DeviceClassName`) and those they do not (without
@@ -348,9 +593,9 @@ type DeviceRequest struct {
     // additional configuration and selectors to be inherited by this
     // request.
     //
-    // Either a class or FirstAvailableOf requests are required in DeviceClaim.Requests.
-    // When this request is part of the FirstAvailableOf list, a class is required. Nested
-    // FirstAvailableOf requests are not allowed
+    // Either a class or FirstAvailable requests are required in DeviceClaim.Requests.
+    // When this request is part of the FirstAvailable list, a class is required. Nested
+    // FirstAvailable requests are not allowed.
     //
     // Which classes are available depends on the cluster.
     //
@@ -364,28 +609,129 @@ type DeviceRequest struct {
     // +oneOf=deviceRequestType
     DeviceClassName string
 
-    // FirstAvailableOf contains subrequests, exactly one of which must be satisfied
-    // in order to satisfy this request. This field may only be set in the
-    // entries of DeviceClaim.Requests. It must not be set in DeviceRequest
-    // instances that themselves are part of a FirstAvailableOf.
+    // FirstAvailable contains subrequests, of which exactly one will be 
+    // satisfied by the scheduler to satisfy this request. It tries to
+    // satisfy them in the order in which they are listed here. So if
+    // there are two entries in the list, the schduler will only check
+    // the second one if it determines that the first one can not be used.
+    //
+    // This field may only be set in the entries of DeviceClaim.Requests.
+    //
+    // DRA does not yet implement scoring, so the scheduler will
+    // select the first set of devices that satisfies all the
+    // requests in the claim. And if the requirements can
+    // be satisfied on more than one node, other scheduling features
+    // will determine which node is chosen. This means that the set of
+    // devices allocated to a claim might not be the optimal set
+    // available to the cluster. Scoring will be implemented later.
     //
     // +optional
     // +oneOf=deviceRequestType
-    FirstAvailableOf []DeviceRequest
+    // +listType=atomic
+    // +featureGate=DRAPrioritizedList
+    FirstAvailable []DeviceSubRequest
 
     ...
 }
 
+// DeviceSubRequest describes a request for device provided in the
+// claim.spec.devices.requests[].firstAvailable array. Each
+// is typically a request for a single resource like a device, but can
+// also ask for several identical devices.
+//
+// DeviceSubRequest is similar to Request, but doesn't expose the AdminAccess (not
+// supported) or FirstAvailable (recursion not supported) fields, as those can
+// only be set on the top-level request.
+type DeviceSubRequest struct {
+    // Name can be used to reference this subrequest in the list of constraints
+    // or the list of configurations for the claim. References must use the
+    // format <main request>/<subrequest>.
+    //
+    // Must be a DNS label.
+    //
+    // +required
+    Name string
+
+    // DeviceClassName references a specific DeviceClass, which can define
+    // additional configuration and selectors to be inherited by this
+    // subrequest.
+    //
+    // A class is required. Which classes are available depends on the cluster.
+    //
+    // Administrators may use this to restrict which devices may get
+    // requested by only installing classes with selectors for permitted
+    // devices. If users are free to request anything without restrictions,
+    // then administrators can create an empty DeviceClass for users
+    // to reference.
+    //
+    // +required
+    DeviceClassName string
+
+    // Selectors define criteria which must be satisfied by a specific
+    // device in order for that device to be considered for this
+    // subrequest. All selectors must be satisfied for a device to be
+    // considered.
+    //
+    // +optional
+    // +listType=atomic
+    Selectors []DeviceSelector
+
+    // AllocationMode and its related fields define how devices are allocated
+    // to satisfy this subrequest. Supported values are:
+    //
+    // - ExactCount: This request is for a specific number of devices.
+    //   This is the default. The exact number is provided in the
+    //   count field.
+    //
+    // - All: This subrequest is for all of the matching devices in a pool.
+    //   Allocation will fail if some devices are already allocated,
+    //   unless adminAccess is requested.
+    //
+    // If AlloctionMode is not specified, the default mode is ExactCount. If
+    // the mode is ExactCount and count is not specified, the default count is
+    // one. Any other subrequests must specify this field.
+    //
+    // More modes may get added in the future. Clients must refuse to handle
+    // requests with unknown modes.
+    //
+    // +optional
+    AllocationMode DeviceAllocationMode
+
+    // Count is used only when the count mode is "ExactCount". Must be greater than zero.
+    // If AllocationMode is ExactCount and this field is not specified, the default is one.
+    //
+    // +optional
+    // +oneOf=AllocationMode
+    Count int64
+}
+
 const (
-    DeviceSelectorsMaxSize               = 32
-    FirstAvailableOfDeviceRequestMaxSize = 8
+    DeviceSelectorsMaxSize             = 32
+    FirstAvailableDeviceRequestMaxSize = 8
 )
 ```
 
-Let's take a look at an example.
+Let's take a look at a simple example using a single request with the
+`v1beta2` API:
 
 ```yaml
-apiVersion: resource.k8s.io/v1alpha4
+apiVersion: resource.k8s.io/v1beta2
+kind: ResourceClaim
+metadata:
+  name: device-consumer-claim
+spec:
+  devices:
+    requests:
+    - name: gpu
+      exactly:
+        deviceClassName: big-gpu
+```
+
+Another example shows how to use `FirstAvailable` with the
+`v1beta2` API:
+
+```yaml
+apiVersion: resource.k8s.io/v1beta2
 kind: ResourceClaim
 metadata:
   name: device-consumer-claim
@@ -393,9 +739,10 @@ spec:
   devices:
     requests:
     - name: nic
-      deviceClassName: rdma-nic
+      exactly:
+        deviceClassName: rdma-nic
     - name: gpu
-      firstAvailableOf:
+      firstAvailable:
       - name: big-gpu
         deviceClassName: big-gpu
       - name: mid-gpu
@@ -408,14 +755,83 @@ spec:
       matchAttribute:
       - dra.k8s.io/pcieRoot
     config:
-    - requests: ["small-gpu"]
+    - requests: ["gpu/small-gpu"]
       opaque:
         driver: gpu.acme.example.com
         parameters:
           apiVersion: gpu.acme.example.com/v1
           kind: GPUConfig
           mode: multipleGPUs
----
+```
+
+There are a few things to note here. First, the "nic" request is listed with 
+the `exactly` object, because it has no alternative request types. The "gpu"
+request could be met by several different types of GPU, in the listed order of
+preference as specified in the `firstAvailable` list. Each of those is a
+separate `DeviceSubRequest`, with both a `deviceClassName` and also its own name.
+The fact that these subrequests also have their own names allows us to apply 
+constraints or configuration to specific, individual subrequests, in the event
+that it is the chosen alternative. When referencing a subrequest, the name of the
+main request must also be included in the form `<main request>/<subrequest>`.
+This avoids having to enforce unique subrequest names between requests in a
+claim. In this example, the "small-gpu" choice requires a configuration
+option that the other two choices do not need. Thus, if the resolution of the
+"gpu" request is made using the "small-gpu" subrequest, then that configuration
+will be attached to the allocation. Otherwise, it will not.
+
+Similarly, for `Constraints`, the list of requests can include the main request
+name ("gpu" in this case), in which case the constraint applies regardless of
+which alternative is chosen. Or, it can include the subrequest name, in which
+case that constraint only applies if that particular subrequest is chosen.
+
+In the PodSpec, however, the subrequest names are not valid. Only the main
+request name may be used.
+
+
+Finally, lets look at what a request using `FirstAvailable` looks like
+with the v1beta1 API:
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: device-consumer-claim
+spec:
+  devices:
+    requests:
+    - name: nic
+      deviceClassName: rdma-nic
+    - name: gpu
+      firstAvailable:
+      - name: big-gpu
+        deviceClassName: big-gpu
+      - name: mid-gpu
+        deviceClassName: mid-gpu
+      - name: small-gpu
+        deviceClassName: small-gpu
+        count: 2
+    constraints:
+    - requests: ["nic", gpu"]
+      matchAttribute:
+      - dra.k8s.io/pcieRoot
+    config:
+    - requests: ["gpu/small-gpu"]
+      opaque:
+        driver: gpu.acme.example.com
+        parameters:
+          apiVersion: gpu.acme.example.com/v1
+          kind: GPUConfig
+          mode: multipleGPUs
+```
+
+It is worth noting here that `DeviceClassName` is set for the
+`nic` request that doesn't have alternatives, while that is only
+specified for the subrequests when `FirstAvailable` is set.
+
+All these ResourceClaims can be used from a Pod referencing
+the claim.
+
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -440,35 +856,25 @@ spec:
         request: "gpu" # the 'nic' request is pod-level, no need to attach to container
 ```
 
-There are a few things to note here. First, the "nic" request is listed with a
-`deviceClassName`, because it has no alternative request types. The "gpu"
-request could be met by several different types of GPU, in the listed order of
-preference. Each of those is a separate `DeviceRequest`, with both a
-`deviceClassName` and also its own name. The fact that these subrequests also
-have their own names allows us to apply constraints or configuration to
-specific, individual subrequests, in the event that it is the chosen
-alternative. In this example, the "small-gpu" choice requires a configuration
-option that the other two choices do not need. Thus, if the resolution of the
-"gpu" request is made using the "small-gpu" subrequest, then that configuration
-will be attached to the allocation. Otherwise, it will not.
-
-Similarly, for `Constraints`, the list of requests can include the main request
-name ("gpu" in this case), in which case the constraint applies regardless of
-which alternative is chosen. Or, it can include the subrequest name, in which
-case that constraint only applies if that particular subrequest is chosen.
-
-In the PodSpec, however, the subrequest names are not valid. Only the main
-request name may be used.
+For both the `v1beta1` and `v1beta2` APIs, the `status.allocationResult.devices.results[].request`
+field will reference the name of the main request for requests without
+alternatives that set the `Exactly` field on the request, while it will
+reference the selected subrequest on the format `<main request>/<subrequest>`
+for requests that provide alternatives by setting the `FirstAvailable` field.
 
 ### Scheduler Implementation
 
 Currently, the scheduler loops through each entry in `DeviceClaim.Requests` and
-tries to satisfy each one. This would work essentially the same, except that
-today, it [throws an
-error](https://github.com/kubernetes/kubernetes/blob/03f134461462f86239067ec20ec17a0ba892db52/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go#L164)
-when it encounters a claim with a missing `DeviceClassName`. Instead, here we
-would check for entries in `FirstAvailableOf`, and add an additional loop,
-trying each of these requests in order.
+tries to satisfy each one. This would work essentially the same, except that if
+the `FirstAvailable` object is set, it will attempt all alternatives for a 
+request until one is found or the list is exhausted.
+
+The current implementation in the v1beta1 API uses a missing `DeviceClassName` to make sure that
+an old version of the scheduler doesn't incorrectly handle a request that
+sets `FirstAvailable` which it doesn't see. If this happens it will result in an
+[error](https://github.com/kubernetes/kubernetes/blob/03f134461462f86239067ec20ec17a0ba892db52/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go#L164).
+For the v1beta2 API, this will be handled by the scheduler being able to
+detect claims that have neither the `Exactly` nor `FirstAvailable` set on a request.
 
 The current implementation will navigate a depth-first search of the devices,
 trying to satisfy all requests and contraints of all claims. The optionality
@@ -623,7 +1029,7 @@ they are all local to the control plane.
 
 The proposed API change relaxes a `required` constraint on the
 `DeviceRequest.DeviceClassName` field. The `DeviceRequest` thus becomes a one-of
-that must have either the `DeviceClassName` or the `FirstAvailableOf` field
+that must have either the `DeviceClassName` or the `FirstAvailable` field
 populated.
 
 Older clients have been advised in the current implementation to check this
@@ -686,7 +1092,7 @@ This is an add-on on top of the `DynamicResourceAllocation` feature gate, which
 also must be enabled for this feature to work.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: DRAFirstAvailableOf
+  - Feature gate name: DRAPrioritizedList
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
@@ -1122,7 +1528,7 @@ type ResourceClaimSpec struct {
 This is arguably simpler and allows them to be essentially complete, alternate
 claims. It would be more difficult for the user, though, as it would require
 duplication of other device requests. Additionally, if there were multiple
-separate `FirstAvailableOf` requests in a claim, the user would have to specify
+separate `FirstAvailable` requests in a claim, the user would have to specify
 all the combinations of those in order to get the same flexibility.
 
 ## Infrastructure Needed (Optional)
