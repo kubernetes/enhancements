@@ -6,7 +6,7 @@ participating-sigs: [sig-network]
 reviewers: ['@thockin', '@danwinship', "@aojea"]
 approvers: ['@thockin']
 creation-date: "2023-02-03"
-status: implementable
+status: implemented
 stage: stable
 latest-milestone: "v1.31"
 milestone:

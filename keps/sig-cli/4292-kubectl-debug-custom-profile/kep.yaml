@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-cli
 participating-sigs:
   - sig-cli
-status: implementable
+status: implemented
 creation-date: 2023-10-13
 reviewers:
   - "@soltysh"

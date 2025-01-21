@@ -7,7 +7,7 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2020-06-04
 reviewers:
   - "@kow3ns"  
