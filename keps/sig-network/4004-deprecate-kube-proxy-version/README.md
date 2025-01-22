@@ -17,8 +17,8 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [GA](#ga)
+    - [Deprecated](#deprecated)
+    - [Disabled](#disabled)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -143,15 +143,17 @@ to implement this enhancement.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Deprecated
 
 - Created the feature gate, disabled by default.
 - Started looking for components that might be using the deprecated field.
 - Make sure it works fine on supported versions of [version skew](https://kubernetes.io/releases/version-skew-policy/).
 
-#### GA
+#### Disabled
 
-- No issues reported during two releases.
+- No issues reported.
+- The announcement of deprecation will be made no less than one year in advance.
+
 
 ### Upgrade / Downgrade Strategy
 
@@ -420,6 +422,8 @@ N/A.
 \- 2024-06-10: Promoted to beta and add manual upgrade and rollback tests
 
 \- 2024-08-25: Replace with Deprecated feature gates.
+
+\- 2025-01-23: promote feature to the disabled stage.
 
 ## Drawbacks
 
