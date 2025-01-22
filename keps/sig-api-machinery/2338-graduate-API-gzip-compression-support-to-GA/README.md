@@ -8,8 +8,9 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [1.16](#116)
-  - [1.17](#117)
+  - [1.16 Beta](#116-beta)
+  - [Revist Beta](#revist-beta)
+  - [1.33 GA](#133-ga)
   - [Implementation Details](#implementation-details)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
@@ -36,7 +37,7 @@ Allow standard HTTP transparent `Accept-Encoding: gzip` behavior to work for lar
 
 ## Proposal
 
-### 1.16
+### 1.16 Beta
 
 * Update the existing incomplete alpha API compression to:
   * Only occur on API requests
@@ -44,10 +45,18 @@ Allow standard HTTP transparent `Accept-Encoding: gzip` behavior to work for lar
 * Promote to beta and enable by default since this is a standard feature of HTTP servers
   * Test at large scale to mitigate risk of regression, tune as necessary
 
-### 1.17
+### Revist Beta
+
+There is a [revist issue](https://github.com/kubernetes/kubernetes/issues/112296) by @shyamjvs (https://docs.google.com/document/d/1rMlYKOVyujboAEG2epxSYdx7eyevC7dypkD_kUlBxn4/edit?tab=t.0)
+
+- v1.26 [Reduce default gzip compression level from 4 to 1 in apiserver](https://github.com/kubernetes/kubernetes/pull/112299)
+- v1.25 [Add flag to disable compression for local traffic](https://github.com/kubernetes/kubernetes/pull/111507)
+- v1.26 [Add a "DisableCompression" option to kubeconfig](https://github.com/kubernetes/kubernetes/pull/112309)
+- v1.26 [Add --disable-compression flag to kubectl](https://github.com/kubernetes/kubernetes/pull/112580)
+
+### 1.33 GA
 
 * Promote to GA
-
 
 ### Implementation Details
 
@@ -100,7 +109,7 @@ LIST queries on high bandwidth networks would experience higher CPU use that cau
 limit. In practice, the cost of gzip proportional to the memory and CPU costs of Go memory allocation
 on very large serialization and deserialization grows sublinear, so we judge this unlikely. However,
 to give administrators an opportunity to react, we would preserve the feature gate and allow it to be
-disabled until 1.17.
+disabled until 1.33.
 
 Some clients may be requesting gzip and not be correctly handling gzipped responses. An effort should
 be made to educate client authors that this change is coming, but in general we do not consider
