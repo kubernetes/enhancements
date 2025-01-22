@@ -524,15 +524,15 @@ the introduction of custom marshalling to the apply configuration types.
 
 ### Unset marker escaping
 
-To facilitate applying to all possible data, even data that is itself an apply configuration, the
-`{k8s_io__value: unset}` marker will offer an escape rule:
+We will NOT support escaping of the marker.
 
-| unescaped         | escaped            |
-| ----------------- | ------------------ |
-| `k8s_io__value`   | `_k8s_io__value`   |
-| `_k8s_io__value`  | `__k8s_io__value`  |
-| `__k8s_io__value` | `___k8s_io__value` |
-| ...               | ...                |
+We considered this and started to prototype an implementation, but:
+
+- Adding a performant unescaping pass to structured-merge-diff is complex. It effectively doubles
+  the implementation effort of this KEP.
+- It's hard to imagine where escaping this key would actually be needed. If we really need the ability
+  to "apply to an apply configuration" in the future, look into options, but building this without
+  a plausible use case does not seem necessary.
 
 ### High level implementation plan
 
