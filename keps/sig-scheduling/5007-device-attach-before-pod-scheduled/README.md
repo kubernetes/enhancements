@@ -90,7 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [DRA scheduler plugin Design overview](#dra-scheduler-plugin-design-overview)
-  - [Composable Controlelr Design Overview](#composable-controlelr-design-overview)
+  - [Composable Controlelrs Design Overview](#composable-controlelrs-design-overview)
   - [Proposal 1: The Vendor's Plugin Publishes Attached Devices](#proposal-1-the-vendors-plugin-publishes-attached-devices)
   - [Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice](#proposal-2-the-composable-controller-unbinds-resourceclaim-and-resourceslice)
     - [Advantages](#advantages)
@@ -331,13 +331,13 @@ type Device struct {
 	// +optional
 	// +oneOf=deviceType
 	Basic *BasicDevice
-    
-    // FabricDevice represents whether this device is a fabric device or not.
-    // If true, it indicates that the device is connected via a fabric network.
-    // This flag helps in distinguishing fabric devices from other types of devices.
-    //
-    // +optional
-    FabricDevice string
+
+	// FabricDevice represents whether this device is a fabric device or not.
+	// If true, it indicates that the device is connected via a fabric network.
+	// This flag helps in distinguishing fabric devices from other types of devices.
+	//
+	// +optional
+	FabricDevice bool
 }
 ```
 
@@ -357,6 +357,13 @@ type AllocatedDeviceStatus struct {
   // +optional
   DeviceAttached string
 }
+
+const (
+	DeviceAttachReady = "Ready"
+	DeviceAttachPreparing = "Preparing"
+	DeviceAttachFailed = "Failed"
+	DeviceAttachReschedule = "Reschedule"
+)
 ```
 
 This addition ensures that the scheduler only proceeds once the necessary fabric devices are properly attached, enhancing the reliability and efficiency of the scheduling process. 
@@ -364,7 +371,7 @@ This addition ensures that the scheduler only proceeds once the necessary fabric
 
 To facilitate the discussion on the KEP, we would like to share the design of the composable controller we are considering as a component utilizing the fabric-oriented scheduler function. By sharing this, we believe we can deepen the discussion on the optimal implementation of the scheduler function. Additionally, we would like to verify whether the controller design matches the DRA design.
 
-### Composable Controlelr Design Overview
+### Composable Controlelrs Design Overview
 Our controller's philosophy is to efficiently utilize fabric devices. Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices. (e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices)
 
 This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance. The composable controller manages fabric devices that can be attached and detached. Therefore, it publishes a list of fabric devices as ResourceSlices.
@@ -702,9 +709,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DRADeviceAttachBeforePodScheduled
+  - Components depending on the feature gate: kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -718,6 +725,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -731,8 +739,11 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes. No existing claims or running pods will be affected. This feature affects only the allocation of devices during scheduling/binding.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature will begin working again. If a device that needs to be attached is selected, PreBind will wait for the device to be attached.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -749,12 +760,14 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
+Unit tests will be written.
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
+Will consider in the beta timeframe.
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -766,14 +779,14 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-
+Will consider in the beta timeframe.
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-
+Will consider in the beta timeframe.
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -781,13 +794,13 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-
+Will consider in the beta timeframe.
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-
+Will consider in the beta timeframe.
 ### Monitoring Requirements
 
 <!--
@@ -796,7 +809,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-
+Will consider in the beta timeframe.
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -804,7 +817,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-
+Will consider in the beta timeframe.
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -815,6 +828,7 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
+Will consider in the beta timeframe.
 
 - [ ] Events
   - Event Reason: 
@@ -840,12 +854,14 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+Will consider in the beta timeframe.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
+Will consider in the beta timeframe.
 
 - [ ] Metrics
   - Metric name:
@@ -860,12 +876,14 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Will consider in the beta timeframe.
 
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+Will consider in the beta timeframe.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
