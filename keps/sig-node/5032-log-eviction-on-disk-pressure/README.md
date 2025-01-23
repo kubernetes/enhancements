@@ -1,4 +1,4 @@
-# KEP-5032: Container log rotation on Disk perssure
+# KEP-5032: Container log eviction on Disk perssure
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
