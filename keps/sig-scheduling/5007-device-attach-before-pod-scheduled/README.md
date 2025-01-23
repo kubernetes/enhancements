@@ -359,10 +359,10 @@ type AllocatedDeviceStatus struct {
 }
 
 const (
-	DeviceAttachReady = "Ready"
-	DeviceAttachPreparing = "Preparing"
-	DeviceAttachFailed = "Failed"
-	DeviceAttachReschedule = "Reschedule"
+	DeviceAttachReady		= "Ready"
+	DeviceAttachPreparing	= "Preparing"
+	DeviceAttachFailed		= "Failed"
+	DeviceAttachReschedule	= "Reschedule"
 )
 ```
 
