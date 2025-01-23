@@ -381,6 +381,10 @@ creation will be rejected by kube-apiserver.
 Also kube-scheduler will ignore `matchLabelKeys` in the cluster-level default constraints configuration.
 
 ### [v1.33] design change and a safe upgrade path
+Previously, only kube-scheduler handled `matchLabelKeys`.
+But, we changed the design to make both kube-apiserver and kube-scheduler handle `matchLabelKeys` 
+for the reason described in [implement MatchLabelKeys in only either the scheduler plugin or kube-apiserver](#implement-matchlabelkeys-in-only-either-the-scheduler-plugin-or-kube-apiserver).
+
 kube-apiserver will only merge key-value labels corresponding to `matchLabelKeys` into `labelSelector` 
 at pods creation, and it will not affect the existing pods.
 So if there are unscheduled pods with `matchLabelKeys` which are already created when upgrading cluster, 
@@ -586,7 +590,9 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
-N/A
+
+To ensure a safe upgrade path from v1.32 to v1.33, we plan to change the design between v1.33 and v1.34.
+For more details, please refer to the section [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path).
 
 ## Production Readiness Review Questionnaire
 
@@ -806,7 +812,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] Other (treat as last resort)
-  - Details: We can determine if this feature is being used by checking deployments that have only `MatchLabelKeys` set in `TopologySpreadConstraint` and no `LabelSelector`. These Deployments will strictly adhere to TopologySpread after both deployment and rolling upgrades if the feature is being used.
+  - Details: 
+              This feature doesn't cause any logs, any events, any pod status updates.
+              But, users can know whether it's being evaluated by looking at `labelSelector` in `TopologySpreadConstraint`.
+              If key-value labels corresponding to `matchLabelKeys` are merged into `labelSelector` after Pods' creation, this feature is working correctly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -941,7 +950,7 @@ Yes. there is an additional work:
 kube-apiserver uses the keys in `matchLabelKeys` to look up label values from the pod, 
 and change `LabelSelector` according to them. 
 kube-scheduler also handles matchLabelKeys if the cluster-level default constraints has it.
-The impact in the latency of pod creation request in kube-apiserver and kube-scheduler 
+The impact in the latency of pod creation request in kube-apiserver and the scheduling latency 
 should be negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
@@ -1026,6 +1035,7 @@ Major milestones might include:
  - 2022-03-17: Initial KEP
  - 2022-06-08: KEP merged
  - 2023-01-16: Graduate to Beta
+ - 2025-01-23: Change the design
 
 ## Drawbacks
 
@@ -1048,14 +1058,18 @@ support because of the following reason: scheduler needs to ensure universal
 and scheduler plugin shouldn't have special treatment for any labels/fields.
 
 ### implement MatchLabelKeys in only either the scheduler plugin or kube-apiserver
-If the implementation for handling `MatchLabelKeys` exists only in scheduler plugin, merging the key-value labels 
-corresponding to `MatchLabelKeys` into `LabelSelector` becomes impossible due to its immutability.
-It may confuse users because this behavior is different from PodAffinity's `MatchLabelKeys`, 
-On the other hand, if this implementation exists only in kube-apiserver, it prevents the achievement of the Cluster-level 
-default constraints by `matchLabelKeys: ["pod-template-hash"]` ([#129198](https://github.com/kubernetes/kubernetes/issues/129198)) 
-because kube-apiserver can't be aware of the scheduler configuration.
-In addition, each implementation is simple, and the risk of increased maintenance overhead is low.
-As a result, these ideas are rejected, and we have decided to implement `MatchLabelKeys` in both scheduler plugin and kube-apiserver.
+Technically, we can implement this feature within the PodTopologySpread plugin only;
+merging the key-value labels corresponding to `MatchLabelKeys` into `LabelSelector` internally 
+within the plugin before calculating the scheduling results.
+But, it may confuse users because this behavior would be different from PodAffinity's `MatchLabelKeys`.
+
+Also, we cannot implement this feature only within kube-apiserver because it'd make it
+impossible to handle `MatchLabelKeys` within the cluster-level default constraints in the scheduler configuration.
+
+So we decided to go with the current design that implements this feature within both 
+the PodTopologySpread plugin and kube-apiserver.
+Although the final design has a downside requiring us to maintain two implementations handling `MatchLabelKeys`,
+each implementation is simple and we regard the risk of increased maintenance overhead as fairly low.
 
 ## Infrastructure Needed (Optional)
 
