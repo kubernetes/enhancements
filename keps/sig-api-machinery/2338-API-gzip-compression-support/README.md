@@ -1,4 +1,4 @@
-# Graduate API gzip compression to GA
+# API gzip compression support
 
 ## Table of Contents
 
@@ -9,11 +9,16 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [1.16 Beta](#116-beta)
-  - [Revist Beta](#revist-beta)
+  - [Revisit Beta](#revisit-beta)
   - [1.33 GA](#133-ga)
   - [Implementation Details](#implementation-details)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -45,7 +50,7 @@ Allow standard HTTP transparent `Accept-Encoding: gzip` behavior to work for lar
 * Promote to beta and enable by default since this is a standard feature of HTTP servers
   * Test at large scale to mitigate risk of regression, tune as necessary
 
-### Revist Beta
+### Revisit Beta
 
 There is a [revist issue](https://github.com/kubernetes/kubernetes/issues/112296) by @shyamjvs (https://docs.google.com/document/d/1rMlYKOVyujboAEG2epxSYdx7eyevC7dypkD_kUlBxn4/edit?tab=t.0)
 
@@ -122,6 +127,127 @@ transparent compression in the client ecosystem - many client libraries still re
 Transparent compression must be implemented in the more focused fashion described in this KEP. The
 scalability sig must sign off that the chosen limit (128KB) does not cause a regression in 5000 node
 clusters, which may cause us to revise the limit up.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: APIResponseCompression
+  - Components depending on the feature gate: kube-apiserver
+- [x] Other
+  - Describe the mechanism:
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? No.
+
+### Monitoring Requirements
+
+<!--
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+A new `--disable-compression` flag has been added to kubectl (default = false). When true, it opts out of response compression for all requests to the apiserver. This can help improve list call latencies significantly when client-server network bandwidth is ample (>30MB/s) or if the server is CPU-constrained.
+
+A new "DisableCompression" field (default = false) has been added to kubeconfig under cluster info. When set to true, clients using the kubeconfig opt out of response compression for all requests to the apiserver. This can help improve list call latencies significantly when client-server network bandwidth is ample (>30MB/s) or if the server is CPU-constrained.
+
+New flag `--disable-compression-for-client-ips` can be used to control client address ranges for which traffic shouldn't be compressed.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [ ] Events
+  - Event Reason: N/A
+- [ ] API .status
+  - Condition name: N/A
+  - Other field: N/A
+- [ ] Other (treat as last resort)
+  - Details:N/A
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [ ] Metrics
+  - Metric name: N/A
+  - [Optional] Aggregation method: N/A
+  - Components exposing the metric: N/A
+- [ ] Other (treat as last resort)
+  - Details: N/A
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No.
+
+### Scalability
+
+<--
+For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field.
+-->
+
+###### Will enabling / using this feature result in any new API calls?
+
+No.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+In 1.26, kube-apiserver: gzip compression switched from level 4 to level 1 to improve large list call latencies in exchange for higher network bandwidth usage (10-50% higher). This increases the headroom before very large unpaged list calls exceed request timeout limits.
+
+For the change, there is a detailed doc showing why this change is safe and useful - https://docs.google.com/document/d/1rMlYKOVyujboAEG2epxSYdx7eyevC7dypkD_kUlBxn4
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+This is mentioned in Risk and Mitigations.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+The unavailability of the API server or etcd will result in errors or timeouts for clients,
+and the gzip compression feature will not mitigate these issues. 
+
+###### What are other known failure modes?
+
+<!--
+For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+-->
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If SLOs are not being met, we should first check the CPU usage of the kube-apiserver.
+If the CPU usage is high, we should consider disabling compression for the clients.
 
 ## Implementation History
 
