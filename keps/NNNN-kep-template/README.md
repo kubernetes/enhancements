@@ -308,17 +308,24 @@ Integration tests are contained in k8s.io/kubernetes/test/integration.
 Integration tests allow control of the configuration parameters used to start the binaries under test.
 This is different from e2e tests which do not allow configuration of parameters.
 Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
+
+If integration tests are not necessary or useful, explain why.
 -->
 
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- <test>: <link to test coverage>
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ##### e2e tests
 
@@ -326,13 +333,18 @@ https://storage.googleapis.com/k8s-triage/index.html
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
+If e2e tests are not necessary or useful, explain why.
 -->
 
-- <test>: <link to test coverage>
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
