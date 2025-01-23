@@ -1273,6 +1273,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -1281,8 +1282,22 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-Performance of any writes to a custom resource may be impacted. Benchmarks must
-be taken to measure magniture.
+The benchmark has been written in https://github.com/kubernetes/kubernetes/pull/121405. The difference in time is minimal.
+```shell
+~ go test -bench=. ./staging/src/k8s.io/apiextensions-apiserver/test/integration/ -run=BenchmarkRatcheting          
+goos: linux
+goarch: amd64
+pkg: k8s.io/apiextensions-apiserver/test/integration
+cpu: AMD EPYC 7B13
+BenchmarkRatcheting/RatchetingEnabled/ValidXValid-128                  1        1250442700 ns/op
+BenchmarkRatcheting/RatchetingEnabled/ValidXInvalid-128                2         582064833 ns/op
+BenchmarkRatcheting/RatchetingEnabled/InvalidXInvalid-128              7         161029972 ns/op
+BenchmarkRatcheting/RatchetingDisabled/ValidXValid-128                 1        1203940147 ns/op
+BenchmarkRatcheting/RatchetingDisabled/ValidXInvalid-128               2         574053662 ns/op
+BenchmarkRatcheting/RatchetingDisabled/InvalidXInvalid-128             7         153500634 ns/op
+PASS
+ok      k8s.io/apiextensions-apiserver/test/integration 8.842s
+```
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1295,7 +1310,22 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-Should have benchmarks before beta, but expecting to see some measureable impact to writes only to CRDs.
+The benchmark has been written in https://github.com/kubernetes/kubernetes/pull/121405. The difference in resource usage is minimal.
+```shell
+go test -bench=. ./staging/src/k8s.io/apiextensions-apiserver/test/integration/ -run=BenchmarkRatcheting -benchmem            
+goos: linux
+goarch: amd64
+pkg: k8s.io/apiextensions-apiserver/test/integration
+cpu: AMD EPYC 7B13
+BenchmarkRatcheting/RatchetingEnabled/ValidXValid-128                  1        1290557385 ns/op        525375344 B/op   8876573 allocs/op
+BenchmarkRatcheting/RatchetingEnabled/ValidXInvalid-128                2         593485537 ns/op        248714944 B/op   4217124 allocs/op
+BenchmarkRatcheting/RatchetingEnabled/InvalidXInvalid-128              7         163805382 ns/op        68990193 B/op    1179765 allocs/op
+BenchmarkRatcheting/RatchetingDisabled/ValidXValid-128                 1        1227604853 ns/op        511288592 B/op   8714209 allocs/op
+BenchmarkRatcheting/RatchetingDisabled/ValidXInvalid-128               2         587069751 ns/op        242705312 B/op   4146673 allocs/op
+BenchmarkRatcheting/RatchetingDisabled/InvalidXInvalid-128             7         154602244 ns/op        65377312 B/op    1136079 allocs/op
+PASS
+ok      k8s.io/apiextensions-apiserver/test/integration 10.018s
+```
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
