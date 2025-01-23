@@ -321,6 +321,8 @@ No
 
 \- 2024-08-27: Fixed some errors in the beta phase
 
+\- 2025-01-23: Promote to GA
+
 ## Drawbacks
 
 If the envvar name character set is extended,  all the things currently consuming and using envvar names from the API will have an impact and may break or be unsafe.
