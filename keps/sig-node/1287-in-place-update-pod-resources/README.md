@@ -1458,6 +1458,22 @@ _This section must be completed when targeting beta graduation to a release._
 - 2021-02-05 - Final consensus on allocatedResources[] and resize[]
 - 2022-05-01 - KEP 2273-kubelet-container-resources-cri-api-changes merged with this KEP
 - 2023-04-08 - Catch up KEP details to what is actually implemented
+- 2024-10-09 - v1.32 updates for planned beta
+    - Remove container-level status `AllocatedResources`
+    - Add `/resize` subresource specification
+    - Make `ResizePolicy` mutable
+    - Introduce best-effort `UpdatePodSandboxResources` CRI call
+    - Add sidecar resize support
+    - Describe the [Atomic Resizes](#atomic-resizes) principle
+    - Add ResourceQuota details
+    - Heuristic version skew handling in API validation
+- 2025-01-24 - v1.33 updates for planned beta
+    - Remove `Proposed` resize status
+    - Improve memory limit downsize handling
+    - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
+      and update CRI `UpdateContainerResources` contract
+    - Add pod-level `AllocatedResources`
+    - Switch to edge-triggered resize actuation
 
 ## Drawbacks
 
