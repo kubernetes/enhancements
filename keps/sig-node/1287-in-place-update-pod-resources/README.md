@@ -498,113 +498,107 @@ The scheduler will use the maximum of:
 
 The following steps denote the flow of a series of in-place resize operations
 for a Pod with ResizePolicy set to PreferNoRestart for all its Containers.
-This is intentionally hitting various edge-cases to demonstrate.
+This is intentionally hitting various edge-cases for demonstration.
 
-```
-T=0: A new pod is created
+1. A new pod is created
     - `spec.containers[0].resources.requests[cpu]` = 1
+    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"PreferNoRestart"`
     - all status is unset
 
-T=1: apiserver defaults are applied
+1. Pod is scheduled
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `status.containerStatuses` = unset
-    - `status.resize[cpu]` = unset
+    - status still mostly unset
 
-T=2: kubelet runs the pod and updates the API
+1. kubelet runs the pod and updates the API
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `status.resize[cpu]` = unset
+    - `status.resize` = unset
+    - `status.allocatedResources.requests[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=3: Resize #1: cpu = 1.5 (via PUT or PATCH or /resize)
+1. Resize #1: cpu = 1.5 (via PUT or PATCH to /resize)
     - apiserver validates the request (e.g. `limits` are not below
       `requests`, ResourceQuota not exceeded, etc) and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.5
+    - `status.resize` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=4: Kubelet watching the pod sees resize #1 and accepts it
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-        `status.resize[cpu]` = "InProgress"'
-      }
+1. Kubelet syncs the pod, sees resize #1 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.5
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "InProgress"
-    - `status.containerStatuses[0].resources.requests[cpu]` = 1
-
-T=5: Resize #2: cpu = 2
-    - apiserver validates the request and accepts the operation
-    - `spec.containers[0].resources.requests[cpu]` = 2
+    - `status.resize` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=6: Container runtime applied cpu=1.5
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.5
-        `status.resize[cpu]` = unset
-      }
-    - apiserver fails the operation with a "conflict" error
-
-T=7: kubelet refreshes and sees resize #2 (cpu = 2)
-    - kubelet decides this is possible, but not right now
-    - kubelet sends patch {
-        `resourceVersion` = `<updated value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.5
-        `status.resize[cpu]` = "Deferred"
-      }
+1. Resize #2: cpu = 2
+    - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 2
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Deferred"
-    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.resize` = `"InProgress"`
+    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=8: Resize #3: cpu = 1.6
+1. Container runtime applied cpu=1.5
+    - `spec.containers[0].resources.requests[cpu]` = 2
+    - `status.resize` = `"InProgress"`
+    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1536
+
+1. kubelet syncs the pod, and sees resize #2 (cpu = 2)
+    - kubelet decides this is feasible, but currently insufficient available resources
+    - `spec.containers[0].resources.requests[cpu]` = 2
+    - `status.resize[cpu]` = `"Deferred"`
+    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - actual CPU shares = 1536
+
+1. Resize #3: cpu = 1.6
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
+    - `status.resize[cpu]` = `"Deferred"`
+    - `status.allocatedResources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - actual CPU shares = 1536
 
-T=9: Kubelet watching the pod sees resize #3 and accepts it
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-        `status.resize[cpu]` = "InProgress"'
-      }
+1. Kubelet syncs the pod, and sees resize #3 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "InProgress"
+    - `status.resize[cpu]` = `"InProgress"`
+    - `status.allocatedResources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - actual CPU shares = 1536
 
-T=10: Container runtime applied cpu=1.6
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.6
-        `status.resize[cpu]` = unset
-      }
+1. Container runtime applied cpu=1.6
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
+    - `status.resize[cpu]` = `"InProgress"`
+    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - actual CPU shares = 1638
+
+1. Kubelet syncs the pod
+    - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.resize[cpu]` = unset
+    - `status.allocatedResources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - actual CPU shares = 1638
 
-T=11: Resize #4: cpu = 100
+1. Resize #4: cpu = 100
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 100
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
+    - `status.resize[cpu]` = unset
+    - `status.allocatedResources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - actual CPU shares = 1638
 
-T=12: Kubelet watching the pod sees resize #4
-    - this node does not have 100 CPUs, so kubelet cannot accept
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.resize[cpu]` = "Infeasible"'
-      }
+1. Kubelet syncs the pod, and sees resize #4
+    - this node does not have 100 CPUs, so kubelet cannot admit it
     - `spec.containers[0].resources.requests[cpu]` = 100
-    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "Infeasible"
+    - `status.resize[cpu]` = `"Infeasible"`
+    - `status.allocatedResources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
-```
+    - actual CPU shares = 1638
 
 #### Container resource limit update ordering
 
