@@ -258,9 +258,6 @@ following fields are allowed to be modified:
 * `.spec.initContainers[*].resources` (only for sidecars)
 * `.spec.resizePolicy`
 
-The `.status.resize` field will be reset to `Proposed` in the response, but cannot be modified in the
-request.
-
 #### Validation
 
 Resource fields remain immutable via pod update (a change from the alpha behavior), but are mutable
@@ -312,10 +309,9 @@ proposed resize operation for a given resource.  Any time the
 `Pod.Status.ContainerStatuses[i].Resources` field, this new field explains why.
 
 This field can be set to one of the following values:
-* `Proposed` - the proposed resize (in Spec...Resources) has not been accepted or
-  rejected yet. Desired resources != Allocated resources.
-* `InProgress` - the proposed resize has been accepted and is being actuated. A new resize request
-  will reset the status to `Proposed`. Desired resources == Allocated resources != Actual resources.
+* `InProgress` - the proposed resize has been accepted and is being actuated. A `Deferred` or
+  `Infeasible` resize will take precedence over `InProgress`.
+  Desired resources == Allocated resources != Actual resources.
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
   but is not possible right now; it will be re-evaluated.
   Desired resources != Allocated resources.
@@ -323,12 +319,19 @@ This field can be set to one of the following values:
   be re-evaluated. Desired resources != Allocated resources.
 * (no value) - there is no proposed resize.
   Desired resources == Allocated resources == Acutal resources.
-
-Any time the apiserver observes a proposed resize (a modification of a
-`Spec...Resources` field), it will automatically set this field to `Proposed`.
+* `Error` - if an error occurs while actuating the resize (see [Memory Limit Decreases](#memory-limit-decreases)
+  for an example), then the resize status will be set to `Error` and an event will report the
+  details. The error state behaves similarly to `InProgress`, and the allocated resize will be
+  retried on the next pod sync.
 
 To make this field future-safe, consumers should assume that any unknown value
 means the same as `Deferred`.
+
+Prior to v1.33, the apiserver would populate an additional `Proposed` state to identify a new resize
+that has not yet been acknowledged by the Kubelet. This state will be deprecated in v1.33 and no
+longer populated (due to a race to set it between the apiserver & kubelet). Instead, the new
+[`ObservedGeneration`](https://github.com/kubernetes/enhancements/pull/5068) feature can be used to
+tell whether the resize status includes the latest resize request.
 
 #### CRI Changes
 
@@ -460,8 +463,7 @@ resizes, as described by Status.Resize.
 For containers which have `Status.Resize = "Infeasible"`, it can
 simply use `Status.ContainerStatus[i].Resources`.
 
-For containers which have `Status.Resize = "Proposed"` or `"InProgress"`, it must be pessimistic
-and assume that the resize will be imminently accepted.  Therefore it must use
+For containers which have a pending resize, it must be pessimistic and use
 the larger of the Pod's `Spec...Resources.Requests` and
 `Status...Resources.Requests` values.
 
@@ -490,10 +492,8 @@ T=2: kubelet runs the pod and updates the API
 T=3: Resize #1: cpu = 1.5 (via PUT or PATCH or /resize)
     - apiserver validates the request (e.g. `limits` are not below
       `requests`, ResourceQuota not exceeded, etc) and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `status.resize[cpu]` = "Proposed"
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
 
 T=4: Kubelet watching the pod sees resize #1 and accepts it
@@ -509,10 +509,8 @@ T=4: Kubelet watching the pod sees resize #1 and accepts it
 
 T=5: Resize #2: cpu = 2
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Proposed"
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
 
 T=6: Container runtime applied cpu=1.5
@@ -537,10 +535,8 @@ T=7: kubelet refreshes and sees resize #2 (cpu = 2)
 
 T=8: Resize #3: cpu = 1.6
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Proposed"
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
 
 T=9: Kubelet watching the pod sees resize #3 and accepts it
@@ -567,10 +563,8 @@ T=10: Container runtime applied cpu=1.6
 
 T=11: Resize #4: cpu = 100
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "Proposed"
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
 
 T=12: Kubelet watching the pod sees resize #4
@@ -671,10 +665,6 @@ Pod Status in response to user changing the desired resources in Pod Spec.
 * If additional resize requests arrive when a Pod is being resized, those
   requests are handled after completion of the resize that is in progress. And
   resize is driven towards the latest desired state.
-* Lowering memory limits may not always take effect quickly if the application
-  is holding on to pages. Kubelet will use a control loop to set the memory
-  limits near usage in order to force a reclaim, and update the Pod's
-  Status.ContainerStatuses[i].Resources only when limit is at desired value.
 * Impact of Pod Overhead: Kubelet adds Pod Overhead to the resize request to
   determine if in-place resize is possible.
 * At this time, Vertical Pod Autoscaler should not be used with Horizontal Pod
