@@ -338,7 +338,8 @@ tell whether the resize status includes the latest resize request.
 As of Kubernetes v1.20, the CRI has included support for in-place resizing of containers via the
 `UpdateContainerResources` API, which is implemented by both containerd and CRI-O. Additionally, the
 `ContainerStatus` message includes a `ContainerResources` field, which reports the current resource
-configuration of the container.
+configuration of the container. `UpdateContainerResources` should be idempotent, if called with the
+same configuration multiple times.
 
 Starting with Kubernetes v1.33, the contract on the `UpdateContainerResources` call will be updated
 to specify that runtimes should not deliberately restart the container to adjust the resources. If a
@@ -427,7 +428,7 @@ being resized, it adds the new desired resources (i.e
 Spec.Containers[i].Resources.Requests) to the sum.
 
 * If new desired resources fit, Kubelet accepts the resize, updates
-  the allocated resourcesa, and sets Status.Resize to
+  the allocated resources, and sets Status.Resize to
   "InProgress".  It then invokes the UpdateContainerResources CRI API to update
   Container resource limits.  Once all Containers are successfully updated, it
   updates Status...Resources to reflect new resource values and unsets
@@ -709,6 +710,28 @@ it admits the first change before seeing the second. This race condition is acce
 intended.
 
 The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
+
+### Edge-triggered Resizes
+
+The resources specified by the Kubelet are not guaranteed to be the actual resources configured for
+a pod or container. Examples include:
+- Linux kernel enforced minimums for CPU shares & quota
+- Systemd cgroup driver rounds CPU quota up to the nearest 10ms
+- NRI plugins can change resource configuration
+
+Therefore the Kubelet cannot reliably compare desired & actual resources to know whether to trigger
+a resize (a level-triggered approach).
+
+To accommodate this, the Kubelet stores a bit along with every resource in the allocated resource
+checkpoint which tracks whether the resource has been successfully resized. For container resources,
+this means the `UpdateContainerResources` request succeeded. This status bit is persisted in the
+allocated resources checkpoint to avoid extra resize requests across Kubelet restarts. There is the
+possibility that a poorly timed restart could lead to a resize request being repeated, so
+`UpdateContainerResources` should be idempotent.
+
+When a resize request succeeds, the pod will be marked for resync to read the latest resources. If
+the actual configured resources do not match the desired resources, this will be reflected in the
+pod status resources.
 
 ### Memory Limit Decreases
 
