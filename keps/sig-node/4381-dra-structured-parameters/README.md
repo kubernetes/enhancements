@@ -1859,7 +1859,7 @@ type DeviceRequestAllocationResult struct {
     //
     // +optional
     // +featureGate=DRAAdminAccess
-    AdminAccess *bool `json:"adminAccess" protobuf:"bytes,5,name=adminAccess"`
+    AdminAccess *bool
 }
 
 // DeviceAllocationConfiguration gets embedded in an AllocationResult.
