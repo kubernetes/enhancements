@@ -296,10 +296,22 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-In addition to using `pod-template-hash` added by the Deployment controller, 
-users can also provide the customized key in  `MatchLabelKeys` to identify 
-which pods should be grouped. If so, the user needs to ensure that it is 
-correct and not duplicated with other unrelated workloads.
+- 
+  In addition to using `pod-template-hash` added by the Deployment controller, 
+  users can also provide the customized key in  `MatchLabelKeys` to identify 
+  which pods should be grouped. If so, the user needs to ensure that it is 
+  correct and not duplicated with other unrelated workloads.
+- 
+  `MatchLabelKeys` may be broken when the pod's label values corresponding to 
+  `MatchLabelKeys` are updated after the pod is created and unscheduled.
+  `LabelSelector` will not be updated even if the pod's label values are updated, 
+  because kube-apiserver merges key-value labels into `LabelSelector` and persists 
+  them in the pod object when the pod is created.
+  But, it is not general that the pod's labels are updated at that timing, and 
+  this means the pod will be scheduled without satisfying the `TopologySpreadConstraint`, 
+  not be unschedulable.
+  In the first place, it is deprecated to define `MatchLabelKeys` with label keys
+  whose value may change dynamically, and we should document it.
 
 
 ## Design Details
