@@ -255,9 +255,9 @@ restrictions when preparing the device.
 In Kubernetes 1.31 (before this KEP was introduced), an example validating
 admission policy
 [was provided](https://github.com/kubernetes/kubernetes/blob/4aeaf1e99e82da8334c0d6dddd848a194cd44b4f/test/e2e/dra/test-driver/deploy/example/admin-access-policy.yaml#L1-L11)
-which restricts access to this option. It is the responsibility of cluster
-admins to ensure that such a policy is installed if the cluster shouldn't allow
-unrestricted access.
+which restricted access to this option. It was formerly the responsibility of
+cluster admins to ensure that such a policy was installed if the cluster
+shouldn't have allowed unrestricted access.
 
 Starting in Kubernetes 1.33 (when this KEP was introduced), a validation has
 been added to the REST storage layer to only authorize `ResourceClaim` or
@@ -282,10 +282,6 @@ request is authorized to set the `adminAccess` field to devices based on the DRA
 admin namespace label.
 
 ### Kube-controller-manager Changes
-
-In pkg/controller/resourceclaim/controller.go, process `ResourceClaim` in
-`syncClaim` function to check for the `adminAccess` field and the feature gate
-enablement to ensure the field can be set.
 
 // TODO: what part of claim.Status.Allocation should be updated? e.g.
 AdminAccess is part of `DeviceRequestAllocationResult` but need to set it for
