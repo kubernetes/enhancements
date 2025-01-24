@@ -3,7 +3,7 @@ kep-number: 1929
 authors:
   - apelisse
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2020-08-04
 reviewers:
   - jpbetz
