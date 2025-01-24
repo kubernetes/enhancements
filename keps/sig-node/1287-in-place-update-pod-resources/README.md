@@ -700,6 +700,25 @@ intended.
 
 The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
 
+### Memory Limit Decreases
+
+Setting the memory limit below current memory usage can cause problems. With cgroups v1 the change
+will simply be rejected by the kernel, whereas with cgroups v2 it will trigger an oom-kill.
+
+To avoid this situation, when downsizing container memory limits the Kubelet will first check the
+usage via the CRI `ContainerStats` (or maybe `ListContainerStats`) call. This check will be
+performed both at resource allocation time, and right before actuating the resize. If the
+allocation-time check fails, the resize will be deferred. If the actuation-time check fails, the
+resize will be skipped until the next pod sync, an event will report the error, and the resize
+status will be set to `Error`. Even with these protections, there is still the possibility of a
+time-of-check-time-of-use race, so the possibility of oom-kill will be documented, and caution
+recommended.
+
+If a memory limit decrease fails at actuation time, other resources and containers will continue to
+be resized, but the pod-level memory limit will not be decreased until all container limits have
+been successfully adjusted. For guaranteed pods, in the case the limit decrease fails, the memory
+request will be set to the original limit in the pod status.
+
 ### Sidecars
 
 Sidecars, a.k.a. restartable InitContainers can be resized the same as regular containers. There are
