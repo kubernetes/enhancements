@@ -187,11 +187,10 @@ objects as privileged. This feature includes:
 
 1. Grants privileged access to the requested device:
 
-   For requests with `adminAccess: true`, the DRA controller bypasses standard
+   For requests with `adminAccess: true`, the scheduler bypasses standard
    allocation checks and allows administrators to access devices already in use.
    This ensures privileged tasks like monitoring or diagnostics can be performed
-   without disrupting existing allocations. The controller also logs and audits
-   admin-access requests for security and traceability.
+   without disrupting existing allocations.
 
 1. No impact on availability of claims:
 
@@ -245,7 +244,7 @@ type DeviceRequest struct {
     //
     // +optional
     // +featureGate=DRAAdminAccess
-    AdminAccess *bool `json:"adminAccess,omitempty" protobuf:"bytes,6,opt,name=adminAccess"`
+    AdminAccess *bool
 }
 ```
 
@@ -285,13 +284,12 @@ admin namespace label.
 ### Kube-controller-manager Changes
 
 In pkg/controller/resourceclaim/controller.go, process `ResourceClaim` in
-`syncClaim` function to check for the `adminAccess` field and bypass standard
-allocation checks if `adminAccess: true` and log it for security and
-traceability.
+`syncClaim` function to check for the `adminAccess` field and the feature gate
+enablement to ensure the field can be set.
 
 // TODO: what part of claim.Status.Allocation should be updated? e.g.
-AdminAccess is part of DeviceRequestAllocationResult but need to set it for each
-device?
+AdminAccess is part of `DeviceRequestAllocationResult` but need to set it for
+each device?
 
 In pkg/controller/resourceclaim/controller.go, process requests in `handleClaim`
 function to prevent creation of `ResourceClaim` when the `ResourceClaimTemplate`
@@ -301,7 +299,7 @@ has the `adminAccess` field while the feature gate is turned off.
 
 In pkg/scheduler/framework/plugins/dynamicresources/allocateddevices.go, handle
 claims with `adminAccess` to ensure devices allocated with `adminAccess` are
-skipped without invoking the callback.
+skipped without invoking the callback bypassing standard allocation checks.
 
 ### ResourceQuota
 
