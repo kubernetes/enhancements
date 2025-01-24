@@ -216,6 +216,8 @@ PodStatus is extended to show the resources applied to the Pod and its Container
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers for running containers, and the allocated resources for non-running containers.
+* Pod.Status.AllocatedResources (new field) reports the aggregate pod-level allocated resources,
+  computed from the container-level allocated resources.
 * Pod.Status.Resize (new field, type map[string]string) explains what is
   happening for a given resource on a given container.
 
@@ -232,7 +234,28 @@ Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
 
 When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
 are cached and checkpointed locally. When a container is (re)started, these are the requests and
-limits used.
+limits used. The allocated resources are only reported in the API at the pod-level, through the
+`Pod.Status.AllocatedResources` field.
+
+```
+type PodStatus struct {
+  // ...
+
+  // AllocatedResources is the pod-level allocated resources. Only allocated requests are included.
+  // +optional
+  AllocatedResources *PodAllocatedResources `json:"allocatedResources,omitempty"`
+}
+
+// PodAllocatedResources is used for reporting pod-level allocated resources.
+type PodAllocatedResources struct {
+  // Requests is the pod-level allocated resource requests, either directly
+  // from the pod-level resource requirements if specified, or computed from
+  // the total container allocated requests.
+  // +optional
+  Requests v1.ResourceList
+}
+
+```
 
 The alpha implementation of In-Place Pod Vertical Scaling included `AllocatedResources` in the
 container status, but only included requests. This field will remain in alpha, guarded by the
@@ -240,9 +263,9 @@ separate `InPlacePodVerticalScalingAllocatedStatus` feature gate, and is a candi
 removal. With the allocated status feature gate enabled, Kubelet will continue to populate the field
 with the allocated requests from the checkpoint.
 
-The scheduler uses `max(spec...resources, status...resources)` for fit decisions, but since the
-actual resources are only relevant and reported for running containers, the Kubelet sets
-`status...resources` equal to the allocated resources for non-running containers.
+The scheduler uses `max(spec...resources, status.allocatedResources, status...resources)` for fit
+decisions, but since the actual resources are only relevant and reported for running containers, the
+Kubelet sets `status...resources` equal to the allocated resources for non-running containers.
 
 See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
 
@@ -464,15 +487,12 @@ added. This ensures that resizes don't affect previously admitted existing Pods.
 
 Scheduler continues to use Pod's Spec.Containers[i].Resources.Requests for
 scheduling new Pods, and continues to watch Pod updates, and updates its cache.
-To compute the Node resources allocated to Pods, it must consider pending
-resizes, as described by Status.Resize.
 
-For containers which have `Status.Resize = "Infeasible"`, it can
-simply use `Status.ContainerStatus[i].Resources`.
-
-For containers which have a pending resize, it must be pessimistic and use
-the larger of the Pod's `Spec...Resources.Requests` and
-`Status...Resources.Requests` values.
+To compute the Node resources allocated to Pods, pending resizes must be factored in.
+The scheduler will use the maximum of:
+1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
+1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
+1. Allocated resources, reported in `.status.allocatedResources.requests`
 
 ### Flow Control
 
@@ -772,11 +792,12 @@ resize](#design-sketch-workload-resource-resize).
 ### Resource Quota
 
 With InPlacePodVerticalScaling enabled, resource quota needs to consider pending resizes. Similarly
-to how this is handled by scheduling, resource quota will use the maximum of
-`.spec.container[*].resources.requests` and `.status.containerStatuses[*].resources` to
-determine the effective request values.
+to how this is handled by scheduling, resource quota will use the maximum of: 
+1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
+1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
+1. Allocated resources, reported in `.status.allocatedResources.requests`
 
-To properly handle scale-down, this means that the resource quota controller now needs to evaluate
+To properly handle scale-down, resource quota controller now needs to evaluate
 pod updates where `.status...resources` changed.
 
 ### Affected Components
