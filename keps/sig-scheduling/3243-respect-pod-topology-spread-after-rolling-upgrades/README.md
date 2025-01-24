@@ -87,6 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Possible misuse](#possible-misuse)
+    - [the update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
 - [Design Details](#design-details)
   - [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path)
   - [Test Plan](#test-plan)
@@ -296,23 +298,32 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-- 
-  In addition to using `pod-template-hash` added by the Deployment controller, 
-  users can also provide the customized key in  `MatchLabelKeys` to identify 
-  which pods should be grouped. If so, the user needs to ensure that it is 
-  correct and not duplicated with other unrelated workloads.
-- 
-  `MatchLabelKeys` may be broken when the pod's label values corresponding to 
-  `MatchLabelKeys` are updated after the pod is created and unscheduled.
-  `LabelSelector` will not be updated even if the pod's label values are updated, 
-  because kube-apiserver merges key-value labels into `LabelSelector` and persists 
-  them in the pod object when the pod is created.
-  But, it is not general that the pod's labels are updated at that timing, and 
-  this means the pod will be scheduled without satisfying the `TopologySpreadConstraint`, 
-  not be unschedulable.
-  In the first place, it is deprecated to define `MatchLabelKeys` with label keys
-  whose value may change dynamically, and we should document it.
+#### Possible misuse
 
+In addition to using `pod-template-hash` added by the Deployment controller, 
+users can also provide the customized key in  `MatchLabelKeys` to identify 
+which pods should be grouped. If so, the user needs to ensure that it is 
+correct and not duplicated with other unrelated workloads.
+
+#### the update to labels specified at `matchLabelKeys` isn't supported
+
+`MatchLabelKeys` is handled and merged into `LabelSelector` at _a pod's creation_.
+It means this feature doesn't support the label's update even though users, of course, 
+could update the label that is specified at `matchLabelKeys` after a pod's creation.
+So, in such cases, the update of the label isn't reflected onto the merged `LabelSelector`,
+even though users might expect it to be.
+On the documentation, we'll declare it's not recommended using `matchLabelKeys` with labels that is frequently updated.
+
+Also, we assume the risk is acceptably low because:
+1. It's a fairly low probability to happen because pods are usually managed by another resource (e.g., deployment), 
+   and the update to pod template's labels on a deployment recreates pods, instead of directly updating the labels on existing pods. 
+   Also, even if users somehow use bare pods (which is not recommended in the first place), 
+   there's usually only a tiny moment between the pod creation and the pod getting scheduled, which makes this risk further rarer to happen, 
+   unless many pods are often getting stuck being unschedulable for a long time in the cluster (which is not recommended) 
+   or the labels specified at `matchLabelKeys` are frequently updated (which we'll declare as not recommended).
+2. Even if it happens, the topology spread on the pod is just ignored (since `labelSelector` no longer matches the pod itself) 
+   and the pod could still be schedulable. 
+   It's not that the unfortunate pods would be unschedulable forever.
 
 ## Design Details
 
