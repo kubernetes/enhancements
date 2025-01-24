@@ -766,26 +766,6 @@ Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
 
-### Instrumentation
-
-The following new metric will be added to track total resize requests, counted at the pod level. In
-otherwords, a single pod update changing multiple containers and/or resources will count as a single
-resize request.
-
-`kubelet_container_resize_requests_total` - Total number of resize requests observed by the Kubelet.
-
-Label: `state` - Count resize request state transitions. This closely tracks the [Resize status](#resize-status) state transitions, omitting `InProgress`. Possible values:
-  - `proposed` - Initial request state
-  - `infeasible` - Resize request cannot be completed.
-  - `deferred` - Resize request cannot initially be completed, but will retry
-  - `completed` - Resize operation completed successfully (`spec.Resources == allocated resources == status.Resources`)
-  - `canceled` - Pod was terminated before resize was completed, or a new resize request was started.
-
-In steady state, `proposed` should equal `infeasible + completed + canceled`.
-
-The metric is recorded as a counter instead of a gauge to ensure that usage can be tracked over
-time, irrespective of scrape interval.
-
 ### Static CPU & Memory Policy
 
 Resizing pods with static CPU & memory policy configured is out-of-scope for the beta release of
@@ -1278,13 +1258,13 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  Metric: `kubelet_container_resize_requests_total` (see [Instrumentation](#instrumentation))
+  Metric: `apiserver_request_total{resource=pods,subresource=resize}`
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [x] Metrics
-    - Metric name: `kubelet_container_resize_requests_total`
-      - Components exposing the metric: kubelet
+    - Metric name: `apiserver_request_total{resource=pods,subresource=resize}`
+      - Components exposing the metric: apiserver
     - Metric name: `runtime_operations_duration_seconds{operation_type=container_update}`
       - Components exposing the metric: kubelet
     - Metric name: `runtime_operations_errors_total{operation_type=container_update}`
@@ -1292,8 +1272,7 @@ the health of the service?**
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  - Using `kubelet_container_resize_requests_total`, `completed + infeasible + canceled` request count
-  should approach `proposed` request count in steady state.
+  - Resize requests should succeed (`apiserver_request_total{resource=pods,subresource=resize}` with non-success `code` should be low))
   - Resource update operations should complete quickly (`runtime_operations_duration_seconds{operation_type=container_update} < X` for 99% of requests)
   - Resource update error rate should be low (`runtime_operations_errors_total{operation_type=container_update}/runtime_operations_total{operation_type=container_update}`)
 
