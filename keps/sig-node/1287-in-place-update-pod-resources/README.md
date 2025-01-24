@@ -591,25 +591,29 @@ When in-place resize is requested for multiple Containers in a Pod, Kubelet
 updates resource limit for the Pod and its Containers in the following manner:
   1. If resource resizing results in net-increase of a resource type (CPU or
      Memory), Kubelet first updates Pod-level cgroup limit for the resource
-     type, and then updates the Container resource limit.
-  1. If resource resizing results in net-decrease of a resource type, Kubelet
-     first updates the Container resource limit, and then updates Pod-level
-     cgroup limit.
-  1. If resource update results in no net change of a resource type, only the
-     Container resource limits are updated.
+     type.
+  1. All container limit decreases are applied.
+  1. If all container limit decreases succeeded and resource resizing results in net-decrease of a
+     resource type, Kubelet then updates the Pod-level cgroup limit.
+  1. If all previous steps succeeded, container limit increases are applied.
 
 In all the above cases, Kubelet applies Container resource limit decreases
 before applying limit increases.
 
 #### Container resource limit update failure handling
 
-If multiple Containers in a Pod are being updated, and UpdateContainerResources
-CRI API fails for any of the containers, Kubelet will backoff and retry at a
-later time. Kubelet does not attempt to update limits for containers that are
-lined up for update after the failing container. This ensures that sum of the
-container limits does not exceed Pod-level cgroup limit at any point. Once all
-the container limits have been successfully updated, Kubelet updates the Pod's
-Status.ContainerStatuses[i].Resources to match the desired limit values.
+If an `UpdateContainerResources` request fails while container limit decreases are being applied,
+the remainder of the container limit decreases will be attempted, but container limit increases or
+pod limit decreases will not. This ensures that sum of the container limits does not exceed
+Pod-level cgroup limit at any point.
+
+If an `UpdateContainerResources` request fails while container limit increases are being applied,
+the remaining container limit increases will still be attempted.
+
+If any errors are raised during the resize process:
+- An event will be emitted with the error details
+- The ResizeStatus will be set to `Error`
+- The pod will be requeued for sync, and the resize will be retried on the next pod sync.
 
 #### CRI Changes Flow
 
