@@ -1880,9 +1880,10 @@ type DeviceRequestAllocationResult struct {
     // the value from there if this field is not set.
     //
     // This is an alpha field and requires enabling the DRAAdminAccess
-    // feature gate.
+    // feature gate. Admin access is disabled if this field is unset or
+    // set to false, otherwise it is enabled.
     //
-    // +required
+    // +optional
     // +featureGate=DRAAdminAccess
     AdminAccess *bool
 }
