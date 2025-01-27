@@ -88,7 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Possible misuse](#possible-misuse)
-    - [the update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
+    - [The update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
 - [Design Details](#design-details)
   - [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path)
   - [Test Plan](#test-plan)
@@ -184,11 +184,13 @@ which spreading is applied using a LabelSelector. This means the user should
 know the exact label key and value when defining the pod spec.
 
 This KEP proposes a complementary field to LabelSelector named `MatchLabelKeys` in
-`TopologySpreadConstraint` which represent a set of label keys only. 
-kube-apiserver will use those keys to look up label values from the incoming pod 
-and those key-value labels are ANDed with `LabelSelector` to identify the group of existing pods over 
+`TopologySpreadConstraint` which represents a set of label keys only. 
+At a pod creation, kube-apiserver will use those keys to look up label values from the incoming pod 
+and those key-value labels will be merged with existing `LabelSelector` to identify the group of existing pods over 
 which the spreading skew will be calculated.
-kube-scheduler will also handle it if the cluster-level default constraints have the one with `MatchLabelKeys`.
+Note that in case `MatchLabelKeys` is supported in the cluster-level default constraints 
+(see https://github.com/kubernetes/kubernetes/issues/129198), kube-scheduler will also handle it separately.
+
 
 The main case that this new way for identifying pods will enable is constraining 
 skew spreading calculation to happen at the revision level in Deployments during 
@@ -305,14 +307,14 @@ users can also provide the customized key in  `MatchLabelKeys` to identify
 which pods should be grouped. If so, the user needs to ensure that it is 
 correct and not duplicated with other unrelated workloads.
 
-#### the update to labels specified at `matchLabelKeys` isn't supported
+#### The update to labels specified at `matchLabelKeys` isn't supported
 
 `MatchLabelKeys` is handled and merged into `LabelSelector` at _a pod's creation_.
-It means this feature doesn't support the label's update even though users, of course, 
+It means this feature doesn't support the label's update even though a user 
 could update the label that is specified at `matchLabelKeys` after a pod's creation.
 So, in such cases, the update of the label isn't reflected onto the merged `LabelSelector`,
 even though users might expect it to be.
-On the documentation, we'll declare it's not recommended using `matchLabelKeys` with labels that is frequently updated.
+On the documentation, we'll declare it's not recommended to use `matchLabelKeys` with labels that might be updated.
 
 Also, we assume the risk is acceptably low because:
 1. It's a fairly low probability to happen because pods are usually managed by another resource (e.g., deployment), 
@@ -321,9 +323,10 @@ Also, we assume the risk is acceptably low because:
    there's usually only a tiny moment between the pod creation and the pod getting scheduled, which makes this risk further rarer to happen, 
    unless many pods are often getting stuck being unschedulable for a long time in the cluster (which is not recommended) 
    or the labels specified at `matchLabelKeys` are frequently updated (which we'll declare as not recommended).
-2. Even if it happens, the topology spread on the pod is just ignored (since `labelSelector` no longer matches the pod itself) 
-   and the pod could still be schedulable. 
-   It's not that the unfortunate pods would be unschedulable forever.
+2. If it happens, `selfMatchNum` will be 0 and both `matchNum` and `minMatchNum` will be retained.
+   Consequently, depending on the current number of matching pods in the domain, `matchNum` - `minMatchNum` might be bigger than `maxSkew`, 
+   and the node(s) could be unschedulable.
+   But, it does not mean that the unfortunate pods would be unschedulable forever.
 
 ## Design Details
 
@@ -395,7 +398,8 @@ kube-apiserver modifies the `labelSelector` like the following:
     - app
 ```
 
-In addition, kube-scheduler handles `matchLabelKeys` if the cluster-level default constraints is configured with `matchLabelKeys`.
+In addition, kube-scheduler handles `matchLabelKeys` within the cluster-level default constraints 
+in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
 
 Finally, the feature will be guarded by a new feature flag. If the feature is 
 disabled, the field `matchLabelKeys` and corresponding `labelSelector` are preserved 
@@ -1082,12 +1086,14 @@ and scheduler plugin shouldn't have special treatment for any labels/fields.
 Technically, we can implement this feature within the PodTopologySpread plugin only;
 merging the key-value labels corresponding to `MatchLabelKeys` into `LabelSelector` internally 
 within the plugin before calculating the scheduling results.
+This is the actual implementation up to 1.32.
 But, it may confuse users because this behavior would be different from PodAffinity's `MatchLabelKeys`.
 
 Also, we cannot implement this feature only within kube-apiserver because it'd make it
-impossible to handle `MatchLabelKeys` within the cluster-level default constraints in the scheduler configuration.
+impossible to handle `MatchLabelKeys` within the cluster-level default constraints 
+in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
 
-So we decided to go with the current design that implements this feature within both 
+So we decided to go with the design that implements this feature within both 
 the PodTopologySpread plugin and kube-apiserver.
 Although the final design has a downside requiring us to maintain two implementations handling `MatchLabelKeys`,
 each implementation is simple and we regard the risk of increased maintenance overhead as fairly low.
