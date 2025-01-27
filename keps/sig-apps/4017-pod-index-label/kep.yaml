@@ -3,7 +3,7 @@ kep-number: 4017
 authors:
   - "@danielvegamyhre"
 owning-sig: sig-apps
-status: implementable
+status: implemented
 creation-date: 2023-05-16
 reviewers:
   - "@ahg-g"
