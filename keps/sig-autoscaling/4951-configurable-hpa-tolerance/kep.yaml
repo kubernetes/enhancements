@@ -10,7 +10,7 @@ reviewers:
   - "@gjtempleton"
   - "@raywainman"
 approvers:
-  - TBD
+  - "@gjtempleton"
 
 see-also:
   - "/keps/sig-autoscaling/853-configurable-hpa-scale-velocity"
