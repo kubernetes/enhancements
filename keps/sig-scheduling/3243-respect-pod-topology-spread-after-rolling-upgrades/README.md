@@ -325,7 +325,7 @@ Also, we assume the risk is acceptably low because:
    or the labels specified at `matchLabelKeys` are frequently updated (which we'll declare as not recommended).
 2. If it happens, `selfMatchNum` will be 0 and both `matchNum` and `minMatchNum` will be retained.
    Consequently, depending on the current number of matching pods in the domain, `matchNum` - `minMatchNum` might be bigger than `maxSkew`, 
-   and the node(s) could be unschedulable.
+   and the pod(s) could be unschedulable.
    But, it does not mean that the unfortunate pods would be unschedulable forever.
 
 ## Design Details
@@ -337,7 +337,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-A new optional field named `MatchLabelKeys` will be introduced to`TopologySpreadConstraint`.
+A new optional field named `MatchLabelKeys` will be introduced to `TopologySpreadConstraint`.
 Currently, when scheduling a pod, the `LabelSelector` defined in the pod is used 
 to identify the group of pods over which spreading will be calculated. 
 `MatchLabelKeys` adds another constraint to how this group of pods is identified.
@@ -398,7 +398,7 @@ kube-apiserver modifies the `labelSelector` like the following:
     - app
 ```
 
-In addition, kube-scheduler handles `matchLabelKeys` within the cluster-level default constraints 
+In addition, kube-scheduler will handle `matchLabelKeys` within the cluster-level default constraints 
 in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
 
 Finally, the feature will be guarded by a new feature flag. If the feature is 
