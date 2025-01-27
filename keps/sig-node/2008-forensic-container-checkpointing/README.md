@@ -306,6 +306,11 @@ extending the production code to implement this enhancement.
   - `pkg/kubelet/container`: 02-08-2024 - 55.7
   - `pkg/kubelet/server`: 02-08-2024 - 65.1
   - `pkg/kubelet/cri/remote`: 02-08-2024 - 18.9
+- Test coverage before GA graduation
+  - `pkg/kubelet`: 01-27-2025 - 70.6
+  - `pkg/kubelet/container`: 01-08-2025 - 52.9
+  - `pkg/kubelet/server`: 01-27-2025 - 64.9
+  - `staging/src/k8s.io/cri-client/pkg`: 01-27-2025 - 38.2
 
 ##### Integration tests
 
@@ -354,6 +359,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   features enabled with CRI-O, no results have been collected and tests have
   been skipped.
 
+- Since the release of containerd 2.0 and CRI-O 1.25 and since the graduation of
+  Forensic Container Checkpointing to Beta, end to end tests are being run:
+  <https://storage.googleapis.com/k8s-triage/index.html?test=checkpoint#a3361808c39a7eb28162>
+  Looking at the results today (2025-01-27) the only error seems to have been
+  on 2025-01-16 using containerd as well as CRI-O. Looking at the log files of the
+  failed tests the failure was also seen with other tests which indicates that
+  this failure was not related to the Forensic Container Checkpointing feature.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -388,12 +401,12 @@ In Kubernetes:
 CRI-O as well as containerd have to have implemented the corresponding CRI APIs:
 
 - [x] CRI-O
-- [x] containerd (<https://github.com/containerd/containerd/pull/6965>)
+- [x] containerd
 
 Ensure that e2e tests are working with
 
 - [x] CRI-O
-- [x] containerd (<https://github.com/containerd/containerd/pull/6965>)
+- [x] containerd
 
 ### Upgrade / Downgrade Strategy
 
@@ -681,6 +694,7 @@ that can be turned off during startup or runtime configuration.
 * 2022-04-05: Added CRI API section and targeted 1.25
 * 2022-05-17: Remove *restore* RPC from the CRI API
 * 2024-02-08: Graduation to Beta.
+* 2025-01-27: Graduation to GA.
 
 ## Drawbacks
 
