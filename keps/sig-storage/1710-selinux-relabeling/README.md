@@ -680,10 +680,13 @@ All these e2e tests use only CSI volumes. All in-tree volume types that support 
 * Alpha of Phase 2 + 3:
   * Implemented `SELinuxChangePolicy` **with a separate alpha feature gate `SELinuxChangePolicy`** as preparation for `SELinuxMount` feature gate graduation.
   * Implemented SELinuxController.
-* Beta of Phase 2, alpha of phase 3:
+* Beta of Phase 2 + 3 (`SELinuxChangePolicy` is beta and enabled by default; `SELinuxMount` is beta, but disabled by default).
   * Telemetry numbers from OpenShift show that <5% of clusters would need to change any of their Pods.
-* GA:
+  * This phase signalizes that the feature is ready for real testing. Only non-breaking parts (`SELinuxChangePolicy`) are enabled by default.
+* GA of Phase 2 (`SELinuxChangePolicy` + `SELinuxMountReadWriteOncePod` are GA and locked to default):
   * All known issues fixed. Otherwise, we will GA Phase 1 only.
+* GA of Phase 3 (`SELinuxMount` is GA and locked to default):
+  * At least 1 release after `SELinuxChangePolicy` is GA to give cluster admins enough time to apply `SELinuxChangePolicy` to their Pods.
   * Telemetry numbers from OpenShift show that <2% of clusters would need to change any of their Pods (i.e. most clusters already applied opt-out).
 
 ### Upgrade / Downgrade Strategy
@@ -723,9 +726,9 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: `SELinuxMountReadWriteOncePod` (beta in 1.28)
-    - Feature gate name: `SELinuxChangePolicy` (alpha in 1.30)
+    - Feature gate name: `SELinuxChangePolicy` (alpha in 1.30, proposing beta in 1.33)
       - To enable `SELinuxChangePolicy` feature gate, `SELinuxMountReadWriteOncePod` **must** be enabled too.
-    - Feature gate name: `SELinuxMount` (alpha in 1.30)
+    - Feature gate name: `SELinuxMount` (alpha in 1.30, proposing beta in 1.33)
       - To enable `SELinuxMount` feature gate, `SELinuxMountReadWriteOncePod` and `SELinuxChangePolicy` **must** be enabled too.
     - Components depending on the feature gate: apiserver (API validation only), kubelet
   - [ ] Other
@@ -740,6 +743,7 @@ _This section must be completed when targeting alpha to a release._
   automations, so be extremely careful here.
 
   **Yes.** See [Conflict with other Pods](#conflicts-with-other-pods) for details.
+  We offer metrics + events + proactive opt-out per Pod before the breaking part (`SELinuxMount`) is enabled by default.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
@@ -908,7 +912,8 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
 
-  No new API calls are required. Kubelet / CSI volume plugin already has CSIDriver informer.
+  * No new API calls are required in kubelet, its CSI volume plugin already has CSIDriver informer.
+  * KCM will emit new events when SELinuxWarningController is enabled. It already has Pod, PV, PVC, CSIDriver informers and does not do other API calls.
 
 * **Will enabling / using this feature result in introducing new API types?**
 
@@ -921,8 +926,9 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in increasing size or count of the existing API objects?**
 
-  CSIDriver gets one new field. We expect only few CSIDriver objects in a cluster.
-  PodSpec gets one new field, and we expect it to be `null` for the vast majority of Pods.
+  * CSIDriver gets one new field. We expect only few CSIDriver objects in a cluster.
+  * PodSpec gets one new field, and we expect it to be `null` for the vast majority of Pods.
+  * Event(s) will be created for every conflicting Pod pair when SELinuxWarningController is enabled.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
@@ -939,7 +945,7 @@ previous answers based on experience in the field._
   This through this both in small and large cases, again with respect to the
   [supported limits][].
 
-  No. Kubelet already has a cache of desired / existing mounts, we need to add
+  No. KCM and Kubelet already has a cache of desired / existing mounts, we need to add
   a string with SELinux label to each one, which should be negligible.
 
 * **Can enabling / using this feature result in resource exhaustion of some node
@@ -980,6 +986,7 @@ _This section must be completed when targeting beta graduation to a release._
 
   - *Kubelet des not start new Pods*
     - Detection: `volume_manager_selinux_container_errors_total`, `volume_manager_selinux_pod_context_mismatch_errors_total` or `volume_manager_selinux_volume_context_mismatch_errors_total` grows.
+      In addition, each such Pod has an event about SELinux label mismatch.
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
       Workloads that run keep running, only new Pods can't start.
@@ -1010,6 +1017,9 @@ _This section must be completed when targeting beta graduation to a release._
   * We discovered that sharing volumes between privileged and unprivileged containers as described [here](#privileged-containers) is a valid use case.
     we cannot mount *all* volumes with `-o context` and it must be an explicit opt-out using `SELinuxChangePolicy: Recursive`.
   * Implement `SELinuxChangePolicy` as an alpha field.
+* 1.33: Graduate `SELinuxMount` to beta / disabled by default, `SELinuxChangePolicy` to beta / enabled by default.
+  * Add e2e tests for the SELinuxWarningController.
+  * Test on non-Fedora based Linux distribution (e.g. Debian) with SELinux enabled.
 
 ## Drawbacks [optional]
 
