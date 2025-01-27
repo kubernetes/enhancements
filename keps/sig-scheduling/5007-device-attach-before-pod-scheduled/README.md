@@ -183,11 +183,13 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin. Fabric devices are those that are not directly connected to the server and require attachment to the server for use.
+To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin.
+Fabric devices are those that are not directly connected to the server and require attachment to the server for use.
 
 In the DRA current implementation, fabric devices are attached after the scheduling decision, which leads to the following issues:
 
-Fabric devices may be contested by other clusters. In scenarios where attachment occurs after scheduling, there is a risk that the resource cannot be attached at the time of attachment, causing the container to remain in the "Container Creating" state.
+Fabric devices may be contested by other clusters.
+In scenarios where attachment occurs after scheduling, there is a risk that the resource cannot be attached at the time of attachment, causing the container to remain in the "Container Creating" state.
 
 To address this issue, we propose a feature that allows the DRA scheduler plugin to wait for the device to be attached.
 
@@ -202,17 +204,30 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-As AI and ML become popular in container (K8s) environment, enormous computational resources are required more and more. On the other hand, efforts toward energy efficiency are also required for the realization of a sustainable society. It is expected to achieve the conflicting requirements that providing higher performance and reducing power consumption simultaneously. Recently, a new server architecture called Composable Disaggregated Infrastructure is emerged.
+As AI and ML become popular in container (K8s) environment, enormous computational resources are required more and more.
+On the other hand, efforts toward energy efficiency are also required for the realization of a sustainable society.
+It is expected to achieve the conflicting requirements that providing higher performance and reducing power consumption simultaneously.
+Recently, a new server architecture called Composable Disaggregated Infrastructure is emerged.
 
-In a traditional server, hardware resources such as CPUs, memory, and GPUs reside within the server. Composable Disaggregated Infrastructure decomposes these hardware resources and makes them available as resource pools. We can combine these resource by software definition so that we can create custom-made servers.
+In a traditional server, hardware resources such as CPUs, memory, and GPUs reside within the server.
+Composable Disaggregated Infrastructure decomposes these hardware resources and makes them available as resource pools.
+We can combine these resource by software definition so that we can create custom-made servers.
 
-Composable system is composed of resource pool and Composable Manager software. In Resource pool all components are connected to PCIe or CXL switches. Composable Manager controls the switches so as to create composed baremetals by software definition. It has Composable API and Operator or Kubernetes may call the API. Once composed baremetals are created user can install any operating system or container infrastructure.
+Composable system is composed of resource pool and Composable Manager software.
+In Resource pool all components are connected to PCIe or CXL switches.
+Composable Manager controls the switches so as to create composed baremetals by software definition.
+It has Composable API and Operator or Kubernetes may call the API.
+Once composed baremetals are created user can install any operating system or container infrastructure.
 
-This flexibility extends further with the use of fabric devices. Fabric devices can be used by multiple Kubernetes clusters, not just a single one. Each cluster expose the device as a ResourceSlice, allowing for efficient utilization of the device.
+This flexibility extends further with the use of fabric devices.
+Fabric devices can be used by multiple Kubernetes clusters, not just a single one.
+Each cluster expose the device as a ResourceSlice, allowing for efficient utilization of the device.
 
-In this scenario, the ResourceSlice representing a same fabric device might be selected in multiple Kubernetes clusters simultaneously. If the attachment fails in one cluster, the pod will remain in a failed state in kubelet.
+In this scenario, the ResourceSlice representing a same fabric device might be selected in multiple Kubernetes clusters simultaneously.
+If the attachment fails in one cluster, the pod will remain in a failed state in kubelet.
 
-By having the scheduler wait for the fabric device to be attached, we can reschedule the pod if the attachment fails. This approach is superior because it avoids unnecessary waiting and allows for immediate rescheduling.
+By having the scheduler wait for the fabric device to be attached, we can reschedule the pod if the attachment fails.
+This approach is superior because it avoids unnecessary waiting and allows for immediate rescheduling.
 
 ### Goals
 
@@ -222,13 +237,17 @@ know that this has succeeded?
 -->
 
 1. **Enhance the DRA Scheduling Process**: 
-Implement a feature that allows the scheduling process to wait for the completion of fabric device attachment. This ensures that pods are only scheduled once the necessary fabric devices are successfully attached, improving reliability and efficiency.
+Implement a feature that allows the scheduling process to wait for the completion of fabric device attachment.
+This ensures that pods are only scheduled once the necessary fabric devices are successfully attached, improving reliability and efficiency.
 
 2. **Attribute Information for Fabric Devices**: 
-Add attribute information that clearly distinguishes fabric devices requiring attachment. This will help in accurately identifying and managing these devices within the Kubernetes environment.
+Add attribute information that clearly distinguishes fabric devices requiring attachment.
+This will help in accurately identifying and managing these devices within the Kubernetes environment.
 
 3. **Prioritize Device Allocation**:
-Implement a prioritization mechanism for device allocation, favoring devices directly connected to the node over attached fabric devices. This hierarchy ensures optimal performance and resource utilization. For example, the order of preference would be: Node-local devices > Attached fabric devices > Pre-attached fabric devices.
+Implement a prioritization mechanism for device allocation, favoring devices directly connected to the node over attached fabric devices.
+This hierarchy ensures optimal performance and resource utilization.
+For example, the order of preference would be: Node-local devices > Attached fabric devices > Pre-attached fabric devices.
 
 ### Non-Goals
 
@@ -251,17 +270,21 @@ nitty-gritty.
 The basic idea is the following:
 
 1. **Add a Ready Flag to ResourceClaim**:
-   - Add a flag to `ResourceClaim` that indicates the readiness state of the device. The `PreBind` phase will be held until this flag is set to "Ready".
+   - Add a flag to `ResourceClaim` that indicates the readiness state of the device.
+   The `PreBind` phase will be held until this flag is set to "Ready".
 
 2. **Wait for Device Attachment Completion in the PreBind() Process**:
    The overall flow of the PreBind() process is as follows:
 
    - **Update ResourceClaim**:
-     - The scheduler updates the `ResourceClaim` to notify the vendor's driver that the device needs to be prepared. This process is the same as the existing `PreBind`.
+     - The scheduler updates the `ResourceClaim` to notify the vendor's driver that the device needs to be prepared.
+     This process is the same as the existing `PreBind`.
      - After updating the `ResourceClaim`, if the flag is set to "Preparing", the completion of the `PreBind` phase will be held until the flag is set to "Ready".
 
    - **Monitoring and Preparation by Composable DRA Controllers**:
-     - Composable DRA Controllers monitor the `ResourceClaim`. If a `ResourceSlice` that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations. Once the preparation is complete, they set the flag to "Ready".
+     - Composable DRA Controllers monitor the `ResourceClaim`.
+     If a `ResourceSlice` that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
+     Once the preparation is complete, they set the flag to "Ready".
 
    - **Completion of the PreBind Phase**:
      - Once the flag is set to "Ready", the `PreBind` phase is completed, and the scheduler proceeds to the next step.
@@ -314,7 +337,9 @@ proposal will be implemented, this is the place to discuss them.
 
 ### DRA scheduler plugin Design overview
 
-Add a flag to the `Device` within `ResourceSlice` to indicate whether it represents a fabric device. This flag will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device. To avoid impacting existing DRA functionality, the default value of this flag is set to `false`.
+Add a flag to the `Device` within `ResourceSlice` to indicate whether it represents a fabric device.
+This flag will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
+To avoid impacting existing DRA functionality, the default value of this flag is set to `false`.
 
 ```go
 // Device represents one individual hardware instance that can be selected based
@@ -343,7 +368,8 @@ type Device struct {
 
 **Additions to the DRA Scheduler Plugin**
 
-In the current implementation, the `PreBind` phase waits until the `ResourceClaim` update is completed. This proposal adds functionality to block the completion of the `PreBind` phase until the device is attached if a fabric device is included in the `ResourceClaim`. 
+In the current implementation, the `PreBind` phase waits until the `ResourceClaim` update is completed.
+This proposal adds functionality to block the completion of the `PreBind` phase until the device is attached if a fabric device is included in the `ResourceClaim`.
 
 To communicate the completion of fabric device attachment to the scheduler, a flag will be added to the `Status` of the `ResourceClaim`.
 
@@ -352,10 +378,15 @@ To communicate the completion of fabric device attachment to the scheduler, a fl
 // driver chooses to report it. This may include driver-specific information.
 type AllocatedDeviceStatus struct {
 ...
-  // DeviceAttached represents whether the device has been successfully attached.
-  //
-  // +optional
-  DeviceAttached string
+	// DeviceAttached represents whether the device has been successfully attached.
+	//
+	// +optional
+	DeviceAttached string
+
+	// NodeName contains the name of the node where the device is attached.
+	//
+	// +optional
+	Nodename string 
 }
 
 const (
@@ -366,15 +397,21 @@ const (
 )
 ```
 
-This addition ensures that the scheduler only proceeds once the necessary fabric devices are properly attached, enhancing the reliability and efficiency of the scheduling process. 
+This addition ensures that the scheduler only proceeds once the necessary fabric devices are properly attached, enhancing the reliability and efficiency of the scheduling process.
 
 
-To facilitate the discussion on the KEP, we would like to share the design of the composable controller we are considering as a component utilizing the fabric-oriented scheduler function. By sharing this, we believe we can deepen the discussion on the optimal implementation of the scheduler function. Additionally, we would like to verify whether the controller design matches the DRA design.
+To facilitate the discussion on the KEP, we would like to share the design of the composable controller we are considering as a component utilizing the fabric-oriented scheduler function.
+By sharing this, we believe we can deepen the discussion on the optimal implementation of the scheduler function.
+Additionally, we would like to verify whether the controller design matches the DRA design.
 
 ### Composable Controlelrs Design Overview
-Our controller's philosophy is to efficiently utilize fabric devices. Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices. (e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices)
+Our controller's philosophy is to efficiently utilize fabric devices.
+Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices.
+(e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices)
 
-This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance. The composable controller manages fabric devices that can be attached and detached. Therefore, it publishes a list of fabric devices as ResourceSlices.
+This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance.
+The composable controller manages fabric devices that can be attached and detached.
+Therefore, it publishes a list of fabric devices as ResourceSlices.
 
 The structure we are considering is as follows:
 
@@ -404,15 +441,23 @@ devices:
   ...
 ```
 
-During the scheduling cycle, the DRA plugin reserves a ResourceSlice for the ResourceClaim. In the binding cycle, the reserved ResourceSlice is assigned during PreBind.
+During the scheduling cycle, the DRA plugin reserves a ResourceSlice for the ResourceClaim.
+In the binding cycle, the reserved ResourceSlice is assigned during PreBind.
 
-If a fabric device is selected, the scheduler waits for the device attachment during PreBind. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment. The scheduler receives this update, completes the PreBind.
+If a fabric device is selected, the scheduler waits for the device attachment during PreBind.
+The composable controller performs the attachment operation by checking the flag of the ResourceClaim.
+Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment.
+The scheduler receives this update, completes the PreBind.
 
-We are considering the following two methods for handling ResourceSlices upon completion of the attachment. We would like to hear your opinions and feasibility on these two composable controller proposals.
+We are considering the following two methods for handling ResourceSlices upon completion of the attachment.
+We would like to hear your opinions and feasibility on these two composable controller proposals.
 
 ### Proposal 1: The Vendor's Plugin Publishes Attached Devices
 
-At the PreBind phase, if a fabric device is selected, the scheduler waits for the device attachment. The composable controller performs the attachment operation by checking the flag of the ResourceClaim. Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment. The scheduler receives this update, completes the PreBind, and proceeds with the scheduling process.
+At the PreBind phase, if a fabric device is selected, the scheduler waits for the device attachment.
+The composable controller performs the attachment operation by checking the flag of the ResourceClaim.
+Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment.
+The scheduler receives this update, completes the PreBind, and proceeds with the scheduling process.
 
 ![proposal1](proposal1.JPG)
 
@@ -444,11 +489,13 @@ devices:
   ...
 ```
 
-This requires modification of the linkage between ResourceClaim and ResourceSlice (expected to be done by the scheduler or DRA controller). Until the linkage is fixed, the device being used may be published as a ResourceSlice and reserved by other Pods.
+This requires modification of the linkage between ResourceClaim and ResourceSlice (expected to be done by the scheduler or DRA controller).
+Until the linkage is fixed, the device being used may be published as a ResourceSlice and reserved by other Pods.
 
 ### Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice
 
-This proposal is similar to Proposal 1, but with a key difference: instead of updating the ResourceClaim information during the scheduling cycle, the composable controller unbinds the ResourceClaim and ResourceSlice, and the scheduler fails the binding cycle. In the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
+This proposal is similar to Proposal 1, but with a key difference: instead of updating the ResourceClaim information during the scheduling cycle, the composable controller unbinds the ResourceClaim and ResourceSlice, and the scheduler fails the binding cycle.
+In the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
 
 ![proposal2](proposal2.JPG)
 
@@ -472,7 +519,9 @@ The scheduler fails the binding cycle, and in the next schedule, the newly publi
 
 ### Alternative Proposal: Cluster Autoscaler Implementation for Dynamic Management of Fabric Devices
 
-The above two proposals involve tricky methods such as reassigning or deleting the allocated device information in the `ResourceClaim`. Particularly, Proposal 1 poses a risk of negatively impacting several existing APIs. This issue arises from "assigning fabric resources not connected to the node to the `ResourceClaim` by the scheduler, and eventually assigning node-local resources to the `ResourceClaim`."
+The above two proposals involve tricky methods such as reassigning or deleting the allocated device information in the `ResourceClaim`.
+Particularly, Proposal 1 poses a risk of negatively impacting several existing APIs.
+This issue arises from "assigning fabric resources not connected to the node to the `ResourceClaim` by the scheduler, and eventually assigning node-local resources to the `ResourceClaim`."
 
 #### Cluster Autoscaler Design Overview
 
@@ -480,11 +529,17 @@ Instead of implementing the solution within the scheduler, we propose using the 
 
 The key points and main process flow of this alternative proposal are as follows:
 
-The scheduler references only node-local `ResourceSlices`. If there are no available resources in the node-local `ResourceSlices`, the scheduler marks the Pod as unschedulable without waiting in the `PreBind` phase of the `ResourceClaim`.
+The scheduler references only node-local `ResourceSlices`.
+If there are no available resources in the node-local `ResourceSlices`, the scheduler marks the Pod as unschedulable without waiting in the `PreBind` phase of the `ResourceClaim`.
 
-To handle fabric resources, we implement the Processor for composable system within CA. This Processor identifies unschedulable Pods and determines if attaching a fabric `ResourceSlice` device to an existing node would make scheduling possible. If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process. If attaching the fabric `ResourceSlice` does not make scheduling possible, the Processor determines whether to add a new node as usual.
+To handle fabric resources, we implement the Processor for composable system within CA.
+This Processor identifies unschedulable Pods and determines if attaching a fabric `ResourceSlice` device to an existing node would make scheduling possible.
+If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process.
+If attaching the fabric `ResourceSlice` does not make scheduling possible, the Processor determines whether to add a new node as usual.
 
-After the device is attached, the vendor DRA updates the node-local `ResourceSlices`. The vendor DRA needs a rescan function to update the Pool/ResourceSlice. The scheduler can then assign the node-local `ResourceSlice` devices to the unschedulable Pod, operating the same as the usual DRA from this point.
+After the device is attached, the vendor DRA updates the node-local `ResourceSlices`.
+The vendor DRA needs a rescan function to update the Pool/ResourceSlice.
+The scheduler can then assign the node-local `ResourceSlice` devices to the unschedulable Pod, operating the same as the usual DRA from this point.
 
 ##### Advantages
 - Reduces complexity in the scheduler and DRA controller.
@@ -492,7 +547,9 @@ After the device is attached, the vendor DRA updates the node-local `ResourceSli
 ##### Disadvantages
 - Requires significant development effort to extend the Cluster Autoscaler to support fabric devices.
 
-We propose implementing the above functionality using a Processor, and further, ensuring that this Processor only runs in the composable system. This means the modifications to the Cluster Autoscaler would be limited to the Processor and an option to determine whether the Processor should run. In non-composable systems, the usual Cluster Autoscaler Processor would operate, thus excluding the impact of these changes.
+We propose implementing the above functionality using a Processor, and further, ensuring that this Processor only runs in the composable system.
+This means the modifications to the Cluster Autoscaler would be limited to the Processor and an option to determine whether the Processor should run.
+In non-composable systems, the usual Cluster Autoscaler Processor would operate, thus excluding the impact of these changes.
 
 ### Test Plan
 
@@ -710,7 +767,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: DRADeviceAttachBeforePodScheduled
+  - Feature gate name: DRADeviceAttachDuringScheduling
   - Components depending on the feature gate: kube-scheduler
 - [ ] Other
   - Describe the mechanism:
@@ -739,11 +796,13 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes. No existing claims or running pods will be affected. This feature affects only the allocation of devices during scheduling/binding.
+Yes. No existing claims or running pods will be affected.
+This feature affects only the allocation of devices during scheduling/binding.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature will begin working again. If a device that needs to be attached is selected, PreBind will wait for the device to be attached.
+The feature will begin working again.
+If a device that needs to be attached is selected, PreBind will wait for the device to be attached.
 
 ###### Are there any tests for feature enablement/disablement?
 

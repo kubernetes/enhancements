@@ -8,7 +8,7 @@ owning-sig: sig-scheduling
 #  - sig-bbb
 status: implementable
 #|implemented|deferred|rejected|withdrawn|replaced
-creation-date: 2024-12-20
+creation-date: 2025-01-24
 reviewers:
   - "@pohly"
 approvers:
@@ -36,7 +36,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DRADeviceAttachBeforePodScheduled
+  - name: DRADeviceAttachDuringScheduling
     components:
       - kube-scheduler
 disable-supported: true
