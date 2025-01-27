@@ -647,13 +647,16 @@ No existing / new tests for volume mounting there.
 
 * Check no recursive `chcon` is done on a volume when not needed.
 * Check recursive `chcon` is done on a volume when needed.
-* Check that proper metric is emitted when kubelet can't start two pods with different SELinux labels using the same volume on the same node._
-  * These tests might use only CSI volumes, GCE PD in-tree volume plugin that we use for e2e tests might be already migrated to CSI by that time.
+* Check that kubelet emits proper metrics when it can't start two pods with different SELinux labels using the same volume on the same node._
+* Check that the SELinux warning controller emits events when pods conflict + emit the described metrics.
 * Prepare e2e job that runs with SELinux in Enforcing mode.
   * Done:
     * https://testgrid.k8s.io/kops-k8s-ci#kops-aws-selinux: for features enabled by default.
-    * https://testgrid.k8s.io/kops-k8s-ci#kops-aws-selinux-alpha: for alpha features.
+    * https://testgrid.k8s.io/kops-k8s-ci#kops-aws-selinux-alpha: for all alpha features enabled.
+    * https://testgrid.k8s.io/kops-distro-rhel8#kops-aws-selinux-changepolicy: for `SELinuxChangePolicy` enabled + `SELinuxMount` disabled.
     * https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-storage-selinux: for PRs (needs explicit `/test ` in a PR).
+
+All these e2e tests use only CSI volumes. All in-tree volume types that support SELinux and dynamic provisioning were migrated to CSI already.
 
 ### Graduation Criteria
 
