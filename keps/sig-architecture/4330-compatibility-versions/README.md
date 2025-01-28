@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [CEL Environment Compatibility Versioning](#cel-environment-compatibility-versioning)
   - [StorageVersion Compatibility Versioning](#storageversion-compatibility-versioning)
   - [API availability](#api-availability)
+    - [API availability in forward-compatible mode](#api-availability-in-forward-compatible-mode)
     - [Alternatives to API forward compatibility](#alternatives-to-api-forward-compatibility)
   - [API Field availability](#api-field-availability)
   - [Discovery](#discovery)
@@ -626,11 +627,24 @@ The storage version of each group-resource is the newest
 
 ### API availability
 
-Ideally, similar to feature flags, all API's group-version-resource declarations should be modified
-to track which Kubernetes version the GVRs are introduced (or
-removed) at: if an API is introduced after (or removed before) the emulation version, it should not be available at the emulation version. 
+By default, similar to feature flags, all APIs group-versions declarations will be modified
+to track which Kubernetes version the API group-versions are introduced (or
+removed) at.
 
-But in practice, that would make the controller code changes unreasonably burdonsome if an API is graduating from Beta to GA and the controller wants to use newer API. For example, to graduate Multiple Service CIDRs to GA, normally the controller code change would look like:
+GA APIs should match the exact set of APIs enabled in GA for the Kubernetes version
+the emulation version is set to.
+
+All Beta APIs (both off-by-default and on-by-default, if any of those
+still exist) need to behave exactly as they did for the Kubernetes version
+the emulation version is set to. I.e. `--runtime-config=api/<version>` needs
+to be able to turn on APIs exactly like it did for each Kubernetes version that
+emulation version can be set to.
+
+Alpha APIs may not be enabled in conjunction with emulation version.
+
+#### API availability in forward-compatible mode
+
+If we stick to the strict rule of api availability matching the emulation version, we would face some challenging scenarios when emulating the controllers when an API is graduating from Beta to GA and the controller wants to use newer API. For example, to graduate Multiple Service CIDRs to GA, normally the controller code change would look like:
 ```diff
 - c.serviceCIDRInformer = networkingv1beta1informers.NewFilteredServiceCIDRInformer(client, 12*time.Hour,
 +	c.serviceCIDRInformer = networkingv1informers.NewFilteredServiceCIDRInformer(client, 12*time.Hour,
@@ -657,24 +671,25 @@ type Controller struct {
 ```
 To fully emulate the controller for an older version, anywhere v1 api/type is referenced, it would need to switch to the v1beta version if the emulation version is older than the binary version. This would mean a lot of extra work, complicated testing rules, and high maintenance cost even for simple API graduations, while the emulation fidelity is unreliable with the extra complexity.
 
-So instead of truly emulating the feature controllers and API availability at the emulation version, we are proposing to keep forward compatibility of all APIs in compatibility version mode and have the non-emulatable feature controllers to update to use the newest available API. 
+So instead of truly emulating the feature controllers and API availability at the emulation version, we are allowing apis introduced after the emulation version to be enabled explicitly with `--runtime-config=api/<version>`. We are also introducing an umbrella `--emulation-forward-compatible` flag to enable forward compatibility of all APIs in compatibility version mode: if an older version of the API is enabled, newer and more stable versions of the same resource group introduced between the emulation version and binary version would also be enabled. This way the non-emulatable feature controllers would be able to use the newest available API. 
 
-For API availability, this means:
-1. if an API is removed (as indicated by the GVK prerelease lifecycle) after the emulation version, it would still be available at the emulation version. 
-1. if an API is Beta at the emulation version (meaning the Beta API has been introduced and has not been removed by the emulation version), it can be enabled by `--runtime-config=api/<version>` or it can be on-by-default at the emulation version. If a Beta API is enabled at the emulation version, and it has GAed between the emulation version and the binary version, its GA version would also be enabled at the emulation version. if a newer Beta API is introduced between the emulation version and the binary version, the newer Beta API would also be enabled at the emulation version.
-1. If an API has GAed and has not been removed at the emulated version, it would be enabled by default at the emulation version. If a newer stable version of the GA API has been introduced between the emulation version and the binary version, the new GA API would also be enabled at the emulation version along with the old GA API.
+For API availability, setting `--emulation-forward-compatible=true` means:
+1. if an API is removed (as indicated by the GVK prerelease lifecycle) after the emulation version, it would still be available at the emulation version (regardless of `--emulation-forward-compatible=true/false`). 
+1. if an API is Beta at the emulation version (meaning the Beta API has been introduced and has not been removed by the emulation version), it can be enabled by `--runtime-config=api/<version>` or it can be on-by-default at the emulation version. If a Beta API is enabled at the emulation version, and it has GAed between the emulation version and the binary version, its GA version(s) would also be enabled at the emulation version. If a newer Beta API is introduced between the emulation version and the binary version, the newer Beta API(s) would also be enabled at the emulation version.
+1. if a Beta API is not enabled at the emulation version, its future versions would not be enabled at the emulation version unless explicitly enabled with `--runtime-config=api/<version>`.
+1. If an API has GAed at the emulated version, it would be enabled by default at the emulation version. If a newer stable version of the GA API has been introduced between the emulation version and the binary version, the new GA API(s) would also be enabled at the emulation version along with the old GA API.
 1. Alpha APIs may not be enabled in conjunction with emulation version.
 
 Here are some examples for `BinaryVersion = 1.33`:
 API Prerelease Lifecycle | EmulationVersion | APIs Available @EmulationVersion 
 -----|-----|-----
 `v1alpha1: introduced=1.30, removed=1.31`<br>`v1beta1: introduced=1.31, removed=1.32`<br>`v1: introduced=1.32` | 1.30 | NA because we do not support emulating alpha apis.
-`v1alpha1: introduced=1.30, removed=1.31`<br>`v1beta1: introduced=1.31, removed=1.32`<br>`v1: introduced=1.32` | 1.31 | `api/v1beta1` and `api/v1` available only when `--runtime-config=api/v1beta1=true`
+`v1alpha1: introduced=1.30, removed=1.31`<br>`v1beta1: introduced=1.31, removed=1.32`<br>`v1: introduced=1.32` | 1.31 | `api/v1beta1` available when `--runtime-config=api/v1beta1=true`<br>`api/v1beta1` and `api/v1` available only when `--runtime-config=api/v1beta1=true,api/v1=true` or `--runtime-config=api/v1beta1=true --emulation-forward-compatible=true`
 `v1alpha1: introduced=1.30, removed=1.31`<br>`v1beta1: introduced=1.31, removed=1.32`<br>`v1: introduced=1.32` | 1.33 | `api/v1`
-`v1beta1: introduced=1.31, removed=1.32`<br>`v1beta2: introduced=1.32` | 1.31 | `api/v1beta1` and `api/v1beta2` available only when `--runtime-config=api/v1beta1=true`
+`v1beta1: introduced=1.31, removed=1.32`<br>`v1beta2: introduced=1.32` | 1.31 | `api/v1beta1` available when `--runtime-config=api/v1beta1=true`<br>`api/v1beta1` and `api/v1beta2` available only when `--runtime-config=api/v1beta1=true,api/v1beta2=true` or `--runtime-config=api/v1beta1=true --emulation-forward-compatible=true`
 `v1beta1: introduced=1.31, removed=1.32`<br>`v1beta2: introduced=1.32` | 1.33 | `api/v1beta2` available only when `--runtime-config=api/v1beta2=true`
-`v1: introduced=1.28`<br>`v2beta1: introduced=1.31, removed=1.32`<br>`v2: introduced=1.32` | 1.30 | `api/v1`, `api/v2`
-`v1: introduced=1.28`<br>`v2beta1: introduced=1.31, removed=1.32`<br>`v2: introduced=1.32` | 1.31 | `api/v1`, `api/v2` always available, `api/v2beta1` available only when `--runtime-config=api/v2beta1=true`
+`v1: introduced=1.28`<br>`v2beta1: introduced=1.31, removed=1.32`<br>`v2: introduced=1.32` | 1.30 | `api/v1`<br>`api/v1`, `api/v2` when `--runtime-config=api/v2=true` or `--emulation-forward-compatible=true`
+`v1: introduced=1.28`<br>`v2beta1: introduced=1.31, removed=1.32`<br>`v2: introduced=1.32` | 1.31 | `api/v1`, `api/v2beta1` available when `--runtime-config=api/v2beta1=true`<br>`api/v1`, `api/v2beta1`, `api/v2` available only when `--runtime-config=api/v2beta1=true,api/v2=true` or `--runtime-config=api/v2beta1=true, --emulation-forward-compatible=true`
 `v1: introduced=1.28`<br>`v2beta1: introduced=1.31, removed=1.32`<br>`v2: introduced=1.32` | 1.33 | `api/v1`, `api/v2`
 
 For the controller, at the emulation version the controller is still enabled by enabling the Beta API **AND** the controller feature as before, but under the hood the controller is calling the newer API. 
