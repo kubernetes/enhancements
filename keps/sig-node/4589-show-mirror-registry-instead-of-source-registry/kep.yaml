@@ -1,0 +1,26 @@
+title: Verifying Image Registry Origin in Private Kubernetes Clusters
+kep-number: 4589
+authors:
+  - "@hasan4791"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2024-04-23
+reviewers:
+  - "@smarterclayton"
+  - "@ffromani"
+  - "@SergeyKanzhelev"
+  - "@haircommander"
+approvers:
+  - "@sig-node-leads"
+see-also:
+
+stage: "alpha"
+
+latest-milestone: "v1.33"
+
+milestone:
+  alpha: ""
+  beta: ""
+  stable: ""
