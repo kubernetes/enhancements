@@ -28,11 +28,12 @@
     - [Notes](#notes)
   - [Lifecycle Nuances](#lifecycle-nuances)
   - [Atomic Resizes](#atomic-resizes)
+  - [Edge-triggered Resizes](#edge-triggered-resizes)
+  - [Memory Limit Decreases](#memory-limit-decreases)
   - [Sidecars](#sidecars)
   - [QOS Class](#qos-class)
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
-  - [Instrumentation](#instrumentation)
   - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
@@ -64,7 +65,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Allocated Resources](#allocated-resources-1)
+  - [Allocated Resource Limits](#allocated-resource-limits)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -216,8 +217,7 @@ PodStatus is extended to show the resources applied to the Pod and its Container
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers for running containers, and the allocated resources for non-running containers.
-* Pod.Status.AllocatedResources (new field) reports the aggregate pod-level allocated resources,
-  computed from the container-level allocated resources.
+* Pod.Status.ContainerStatuses[i].AllocatedResources (new field) reports the allocated resource requests.
 * Pod.Status.Resize (new field, type map[string]string) explains what is
   happening for a given resource on a given container.
 
@@ -234,42 +234,12 @@ Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
 
 When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
 are cached and checkpointed locally. When a container is (re)started, these are the requests and
-limits used. The allocated resources are only reported in the API at the pod-level, through the
-`Pod.Status.AllocatedResources` field.
+limits used. Only the allocated requests are reported in the API, through the
+`Pod.Status.ContainerStatuses[i].AllocatedResources` field.
 
-```
-type PodStatus struct {
-  // ...
-
-  // AllocatedResources is the pod-level allocated resources. Only allocated requests are included.
-  // +optional
-  AllocatedResources *PodAllocatedResources `json:"allocatedResources,omitempty"`
-}
-
-// PodAllocatedResources is used for reporting pod-level allocated resources.
-type PodAllocatedResources struct {
-  // Requests is the pod-level allocated resource requests, either directly
-  // from the pod-level resource requirements if specified, or computed from
-  // the total container allocated requests.
-  // +optional
-  Requests v1.ResourceList
-}
-
-```
-
-The alpha implementation of In-Place Pod Vertical Scaling included `AllocatedResources` in the
-container status, but only included requests. This field will remain in alpha, guarded by the
-separate `InPlacePodVerticalScalingAllocatedStatus` feature gate, and is a candidate for future
-removal. With the allocated status feature gate enabled, Kubelet will continue to populate the field
-with the allocated requests from the checkpoint.
-
-The scheduler uses `max(spec...resources, status.allocatedResources, status...resources)` for fit
+The scheduler uses `max(spec...resources, status...allocatedResources, status...resources)` for fit
 decisions, but since the actual resources are only relevant and reported for running containers, the
 Kubelet sets `status...resources` equal to the allocated resources for non-running containers.
-
-See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
-
-The allocated resources API should be reevaluated prior to GA.
 
 #### Subresource
 
@@ -492,7 +462,7 @@ To compute the Node resources allocated to Pods, pending resizes must be factore
 The scheduler will use the maximum of:
 1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
 1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
-1. Allocated resources, reported in `.status.allocatedResources.requests`
+1. Allocated resources, reported in `.status.containerStatuses[i].allocatedResources`
 
 ### Flow Control
 
@@ -512,7 +482,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. kubelet runs the pod and updates the API
     - `spec.containers[0].resources.requests[cpu]` = 1
     - `status.resize` = unset
-    - `status.allocatedResources.requests[cpu]` = 1
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1024
 
@@ -536,14 +506,14 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.resize` = `"InProgress"`
-    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1024
 
 1. Container runtime applied cpu=1.5
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.resize` = `"InProgress"`
-    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1536
 
@@ -551,7 +521,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - kubelet decides this is feasible, but currently insufficient available resources
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.resize[cpu]` = `"Deferred"`
-    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - actual CPU shares = 1536
 
@@ -559,28 +529,28 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.resize[cpu]` = `"Deferred"`
-    - `status.allocatedResources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - actual CPU shares = 1536
 
 1. Kubelet syncs the pod, and sees resize #3 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.resize[cpu]` = `"InProgress"`
-    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - actual CPU shares = 1536
 
 1. Container runtime applied cpu=1.6
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.resize[cpu]` = `"InProgress"`
-    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - actual CPU shares = 1638
 
 1. Kubelet syncs the pod
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.resize[cpu]` = unset
-    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - actual CPU shares = 1638
 
@@ -588,7 +558,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.resize[cpu]` = unset
-    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - actual CPU shares = 1638
 
@@ -596,7 +566,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - this node does not have 100 CPUs, so kubelet cannot admit it
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.resize[cpu]` = `"Infeasible"`
-    - `status.allocatedResources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - actual CPU shares = 1638
 
@@ -789,7 +759,7 @@ With InPlacePodVerticalScaling enabled, resource quota needs to consider pending
 to how this is handled by scheduling, resource quota will use the maximum of: 
 1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
 1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
-1. Allocated resources, reported in `.status.allocatedResources.requests`
+1. Allocated resources, reported in `.status.containerStatuses[i].allocatedResources`
 
 To properly handle scale-down, resource quota controller now needs to evaluate
 pod updates where `.status...resources` changed.
@@ -1101,7 +1071,7 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 #### Backward Compatibility and Negative Tests
 
 1. Verify that Node is allowed to update only a Pod's AllocatedResources field.
-1. Verify that only Node account is allowed to udate AllocatedResources field.
+1. Verify that only Node account is allowed to update AllocatedResources field.
 1. Verify that updating Pod Resources in workload template spec retains current
    behavior:
    - Updating Pod Resources in Job template is not allowed.
@@ -1329,7 +1299,7 @@ the health of the service?**
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  - Resize requests should succeed (`apiserver_request_total{resource=pods,subresource=resize}` with non-success `code` should be low))
+  - Resize requests should succeed (`apiserver_request_total{resource=pods,subresource=resize}` with non-success `code` should be low)
   - Resource update operations should complete quickly (`runtime_operations_duration_seconds{operation_type=container_update} < X` for 99% of requests)
   - Resource update error rate should be low (`runtime_operations_errors_total{operation_type=container_update}/runtime_operations_total{operation_type=container_update}`)
 
@@ -1472,7 +1442,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Improve memory limit downsize handling
     - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
       and update CRI `UpdateContainerResources` contract
-    - Add pod-level `AllocatedResources`
+    - Add back `AllocatedResources` field to resolve a scheduler corner case
     - Switch to edge-triggered resize actuation
 
 ## Drawbacks
@@ -1494,9 +1464,9 @@ information to express the idea and why it was not acceptable.
 We considered having scheduler approve the resize. We also considered PodSpec as
 the location to checkpoint allocated resources.
 
-### Allocated Resources
+### Allocated Resource Limits
 
-If we need allocated resources & limits in the pod status API, the following options have been
+If we need allocated limits in the pod status API, the following options have been
 considered:
 
 **Option 1: New field "AcceptedResources"**
