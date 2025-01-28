@@ -118,6 +118,10 @@ Further in this KEP we assume that the SELinux is enabled on the system. This KE
 
 See [SELinux documentation](https://selinuxproject.org/page/NB_MLS) for more details.
 
+In this document we use `container_t` and `container_file_t` labels for container processes / files, which are the default labels on Fedora based distributions (AlmaLinux, CentOS, Red Hat Enterprise Linux, Rocky Linux, ...).
+For example, Debian uses `svirt_lxc_net_t` and `svirt_lxc_file_t` as the default labels for containers, but the principles are the same.
+The implementation of this KEP does not depend on the actual labels used in the system.
+
 ### SELinux label assignment
 In Kubernetes, the SELinux label of a pod is assigned in two ways:
 1. Either it is set by user in PodSpec or Container: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/.
@@ -465,13 +469,13 @@ spec:
 * Same as the previous story. Kubelet mounts the volume without any SELinux option + the container runtime relabels the volumes recursively.
 
 **Feature gates `SELinuxMountReadWriteOncePod == true` && `SELinuxMount == false`**:
-* If `myclaim` is a RWOP volume (`Spec.AccessModes == ["ReadWriteOncePod']`)  *and* the corresponding CSI drivers support SELinux mount, kubelet mounts the volume with `-o context=system_u:object_r:container_file_t:s0:c10,c0`.
+* If `myclaim` is a RWOP volume (`Spec.AccessModes == ["ReadWriteOncePod']`)  *and* the corresponding CSI drivers support SELinux mount, kubelet fills the blanks in the `seLinuxOptions` from the system defaults (`user: system_u`, `role: object_r`, `type: container_t` on Fedora based distros), translates them to a file label (`container_t` -> `container_file_t`) and mounts the volume with `-o context=system_u:object_r:container_file_t:s0:c10,c0`.
 * If `myclaim` is any other volume, kubelet mounts the volume without any SELinux option + the container runtime relabels the volume recursively.
 * The secret token volume is relabeled by the container runtime, because Secret and Projected volumes do not support SELinux mount.
 
 **Feature gates `SELinuxMountReadWriteOncePod == true` && `SELinuxMount == true`**:
 * Since there is no `SELinuxChangePolicy` set, kubelet implies `MountOption`.
-  If the corresponding CSI driver (or in-tree volume plugin) support SELinux mount, the volume is mounted with `-o context=system_u:object_r:container_file_t:s0:c10,c0`.
+  If the corresponding CSI driver (or in-tree volume plugin) support SELinux mount, kubelet fills the blanks in the `seLinuxOptions` from the system defaults as described above and the volume is mounted with `-o context=system_u:object_r:container_file_t:s0:c10,c0`.
 * Otherwise, kubelet mounts the volume without any SELinux option + the container runtime relabels the volume recursively.
 * The secret token volume is relabeled by the container runtime, because Secret and Projected volumes do not support SELinux mount.
 
