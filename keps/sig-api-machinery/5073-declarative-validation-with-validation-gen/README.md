@@ -374,6 +374,7 @@ Switching to a versioned type for the hub type would have a few implications:
 
 *   We would eliminate the need for internal versions.
 *   We would introduce more conversion when API request version differs from the hub version. But beta APIs are off-by-default and we expect a lot less mixed version API usage than in the past.
+*   Would require rewriting in tree admission plugins.
 
 This "hub version" change feels like something that could be made somewhat independent of this KEP.
 
@@ -481,7 +482,7 @@ Once validation is generated, it will be easy to opt-in (see below snippet).
 ### Catalog of Supported Validation Rules & Associated IDL Tags
 A number of the rules in the below sections are not implemented but will be trivial to implement once we are are aligned on the right pattern/syntax for the given validator. Implementing a validator “just-in-time” means we don't add more without real fields using them. We estimate that in the limit we may have 30-40 validators, but today we have less than 10.  
 
-The below rules are currently implemented or very similar to an existing validator in the [validation-gen prototype](prototype )
+The below rules are currently implemented or are very similar to an existing validator in the [validation-gen prototype](prototype )
 
 <table>
   <tr>
@@ -1171,9 +1172,7 @@ N/A
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 4. Metrics
-    *   Metric name: apiserver_declarative_validation_seconds (histogram)
-    *   Components exposing the metric: kube-apiserver
-    *   ^ do we need any new metrics for performance benchmarking?
+    *   Metric name: apiserver_request_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
