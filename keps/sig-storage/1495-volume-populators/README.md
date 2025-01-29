@@ -467,6 +467,14 @@ fields of API types, flags, etc.?**
   `volume_populator_operation_seconds` and number of operations and results
   including errors called `volume_populator_operation_count`.
 
+* **How can someone using this feature know that it is working for their instance?**
+  Look at the data source field of the PVCs. Non-empty data sources with
+  a Kind other than snapshot and PVC indicate this feature is in use. Also the
+  existence of any VolumePopulator.populator.storage.k8s.io CRs would indicate
+  that a populator is installed and could be used.
+  
+  Checking whether `AnyVolumeDataSource` FeatureGate has been set for the given component.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [X] Metrics
@@ -500,7 +508,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  No
+  No.
 
 ### Dependencies
 
@@ -541,6 +549,11 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   The new data-source-validator controller will consist of a deployment with 1 or
   more replicas. It will watch PVCs and VolumePopulators and emit events on
   PVCs.
+
+* **Can enabling / using this feature result in resource exhaustion of some 
+node resources (PIDs, sockets, inodes, etc.)?**
+
+  No. 
 
 ### Troubleshooting
 
