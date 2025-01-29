@@ -538,6 +538,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
+We will add a unit test verifying that HPAs with and without the new fields are
+properly validated, both when the feature gate is enabled or not.
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -594,6 +597,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The presence of the new `tolerance` HPA field indicates that the feature is
+used.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -605,13 +611,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Events
+  - Event Reason: `SuccessfulRescale`
+
+Users can monitor the scaling behavior of their HPA.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -630,18 +633,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -649,6 +649,12 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Users may want to see a signal that autoscaling isn't happening because of the
+tolerance, but this is not directly related to this KEP (this problem already
+exists today with the hard-coded 10% tolerance), and taking this KEP as an
+opportunity to improve the situation is difficult (see
+[this thread](https://github.com/kubernetes/enhancements/pull/4954#discussion_r1857098884)).
 
 ### Dependencies
 
