@@ -265,6 +265,8 @@ User self-provisions a bucket to store their workload's data.
       the same OSP from multiple k8s clusters. COSI system will need some kind of optional specified ID? -->
 5. If OSP returns provision fail, COSI sidecar reports error to Bucket status and retries gRPC call
 6. When OSP returns provision success, COSI sidecar updates Bucket status `BucketReady` to true
+7. <!-- TODO: how does the BucketClaim become BucketReady? IMO, it's cleaner if the controller manages all aspects of BucketClaims. -->
+   Controller observes Bucket and applies `BucketReady` true to the BucketClaim after the Bucket ???
 
 #### Generating Bucket Access Credentials
 
