@@ -95,6 +95,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -620,6 +622,13 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag
 - Initial unit and integration tests completed and enabled
+
+#### Beta
+- Feature gate set to true by default
+- e2e tests added
+
+#### GA
+- Examples of real-world usage
 
 ### Upgrade / Downgrade Strategy
 
