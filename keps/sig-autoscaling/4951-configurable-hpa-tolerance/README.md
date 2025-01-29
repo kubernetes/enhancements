@@ -641,7 +641,13 @@ N/A.
 Pick one more of these and delete the rest.
 -->
 
-N/A.
+This KEP is not expected to have any impact on SLIs/SLOs as it doesn't introduce
+a new HPA behavior, but merely allows users to easily change the value of a
+parameter that's otherwise difficult to update.
+
+Standard HPA metrics (e.g.
+`horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can
+be used to verify the HPA controller health.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -780,6 +786,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 

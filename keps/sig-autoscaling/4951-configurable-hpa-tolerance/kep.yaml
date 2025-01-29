@@ -4,7 +4,7 @@ authors:
   - "@pr00se"
   - "@jm-franc"
 owning-sig: sig-autoscaling
-status: implementables
+status: implementable
 creation-date: 2024-11-05
 reviewers:
   - "@gjtempleton"
