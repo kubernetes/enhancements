@@ -42,9 +42,9 @@
     - [<code>validation-gen</code> Implementation Plan](#validation-gen-implementation-plan)
     - [Catalog of Supported Validation Rules &amp; Associated IDL Tags](#catalog-of-supported-validation-rules--associated-idl-tags)
     - [Supporting Declarative Validation IDL tags On Shared Struct Fields](#supporting-declarative-validation-idl-tags-on-shared-struct-fields)
-      - [<code>validation-gen</code> One-deep typedef support](#validation-gen-one-deep-typedef-support)
-        - [Proposed Options](#proposed-options)
       - [<code>subfield</code> IDL Tag](#subfield-idl-tag)
+      - [<code>validation-gen</code> One-deep typedef support](#validation-gen-one-deep-typedef-support)
+        - [Proposed Solutions](#proposed-solutions)
     - [Migration Plan](#migration-plan)
       - [Phase1: Initialization (Responsibility of Contributors Implementing the KEP)](#phase1-initialization-responsibility-of-contributors-implementing-the-kep)
       - [Phase2: Scaling the Migration (Responsibility of Contributors Implementing the KEP and broader community)](#phase2-scaling-the-migration-responsibility-of-contributors-implementing-the-kep-and-broader-community)
@@ -52,7 +52,7 @@
     - [Tagging and Validating Against Internal vs Versioned Types](#tagging-and-validating-against-internal-vs-versioned-types)
     - [Handling Zero Values in Declarative Validation](#handling-zero-values-in-declarative-validation)
       - [Difficulties with <code>+required</code> and <code>+default</code>](#difficulties-with-required-and-default)
-      - [Proposed Solutions](#proposed-solutions)
+      - [Proposed Solutions](#proposed-solutions-1)
       - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
     - [Ratcheting](#ratcheting)
     - [Test Plan](#test-plan)
@@ -145,7 +145,7 @@ Declarative validation will also benefit Kubernetes users:
 
 *   Adding new fields and associated validation rules becomes a simpler process of adding IDL tags to the field definition, rather than writing and maintaining validation functions. This reduces potential inconsistencies and bugs.  Testing is also streamlined as centralized rules and frameworks enable the use of test fixtures across k8s types making creating tests simpler and faster to implement for contributors.
 *   Creating k8s APIs becomes faster as developers can focus on the API’s structure and behavior, leaving the validation boilerplate to be generated automatically. This speeds up development and encourages experimentation with new APIs.
-*   Validation is performed on versioned types (assuming recommended approach is from design below), so error message and attributed field path is more likely to be relevant to the user. (Though no known cases of misattributed field errors have yet occurred)
+*   Validation is performed on versioned types (assuming recommended approach is used from design below), so error message and attributed field path is more likely to be relevant to the user. (ex: some fields in autoscaling/v2 will be mis-identified with current approach but resolved w/ Declarative Validation + versioned types)
 
 Additionally Declarative Validation can be built upon to support features such as:
 
@@ -160,7 +160,7 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 
 *   Eliminate 90% of net-new hand-written validation within 5 kube releases (target start: v1.33)
 *   Convert 50% of existing hand-written validation within 5 kube releases (target start: v1.33)
-*   If we lose steam and abandon this, we can roll it back relatively easily.
+*   Migrate in such a way that if contributors lose steam and abandon this, we can roll it back relatively easily.
 *   `types.go` files become the de-facto IDL of Kubernetes for native types. It is worth noting that `+enum` support, `+default` support and similar enhancements all moved our API development forward in this direction. This enhancement is an attempt to continue that story arc.
 *   API Validations are readable and manageable. The IDL should be a joy to use for API authors, reviewers and maintainers. Common complex relationships have simple-to-express idioms in the IDL.
     *   Reduce API development costs for API authors and reviewers. Reduce long term maintainer costs. Reclaiming time from core project contributors.
@@ -169,7 +169,6 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 *   Enable development of linters and other API tool chains that use API validation rules and metadata. Further reducing development effort and risk of incorrect validation rules.
 *   Retain native (or nearly native) performance.
 *   Improve testing rigor by being vastly easier to test.
-*   Migrate in such a way that if contributors lose steam and abandon this, we can roll it back relatively easily.
 
 ### Non-Goals
 
@@ -217,14 +216,14 @@ The previous Declarative Validation proposal ([KEP-4153](https://github.com/kube
 
 In order to properly support the User Stories for “Kubernetes developer wishes to add a field to an existing API version” and “Kubernetes developer adds a new version an API” it is important that `validation-gen` and the associated tooling for IDL tags have robust UX that immediately notifies users when tags are not used properly.  To support this `validation-gen` will have options for validators subject to when they register so that validation authors can express how their associated IDL tag should be used and the framework will error if a user uses an IDL tag incorrectly.  See this related WIP PR [here](https://github.com/jpbetz/kubernetes/pull/89) adding such functionality to the prototype for an example of what this might look like.
 
-The goal is that when a user makes a mistake in authoring IDL tags we give a meaning error.  Users are not expected to know the underlying system or be an insider on the project to successfully use Declarative Validation.
+The goal is that when a user makes a mistake in authoring IDL tags we give a meaningful error.  Users are not expected to know the underlying system or be an insider on the project to successfully use Declarative Validation.
 
 ### Introduce new validation tests and test framework
 
 New validation tests will be created as part of the migration process for contributors migrating fields using `validation-gen`.  Additionally, a test framework and associated migration test utilities will be created as part of `validation-gen` to leverage the new centralized validation rules and to ensure validation consistency across hand-written and declarative validation rules.  See the [Test Plan](?tab=t.0#bookmark=id.a86sekfgbuen) section for more details.
 
 #### New Validations Vs Migrating Validations
-`validation-gen`
+FIXME...    
 
 #### New Validation Tests
 As part of the process for migrating fields, contributors will scrutinize and improve as needed the current validation tests.  No field can go thru migration without a robust test for the field being migrated, which proves that it is validated correctly before the change and after. Many existing tests are not sufficient to verify 100% equivalency and need retooling.  This allows us to de-risk migration problems by scrutinizing the current tests and enhancing them.
@@ -501,10 +500,10 @@ The below rules are currently implemented or are very similar to an existing val
     string format
    </td>
    <td>
-    <code>+k8s:format={format name}</code>
+    `+k8s:format={format name}`
    </td>
    <td>
-    <code>format</code>
+    `format`
    </td>
   </tr>
   <tr>
@@ -512,10 +511,10 @@ The below rules are currently implemented or are very similar to an existing val
     size limits
    </td>
    <td>
-    <code>+k8s:min{Length,Items}</code>, <code>+k8s:max{Length,Items}</code>
+    `+k8s:min{Length,Items}`, `+k8s:max{Length,Items}`
    </td>
    <td>
-    <code>min{Length,Items}</code>, <code>max{Length,Items}</code>
+    `min{Length,Items}`, `max{Length,Items}`
    </td>
   </tr>
   <tr>
@@ -523,10 +522,10 @@ The below rules are currently implemented or are very similar to an existing val
     numeric limits
    </td>
    <td>
-    <code>+k8s:minimum</code>, <code>+k8s:maximum</code>, <code>+k8s:exclusiveMinimum</code>, <code>+k8s:exclusiveMaximum</code>
+    `+k8s:minimum`, `+k8s:maximum`, `+k8s:exclusiveMinimum`, `+k8s:exclusiveMaximum`
    </td>
    <td>
-    <code>minimum</code>, <code>maximum</code>, <code>exclusiveMinimum</code>, <code>exclusiveMaximum</code>
+    `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`
    </td>
   </tr>
   <tr>
@@ -534,13 +533,12 @@ The below rules are currently implemented or are very similar to an existing val
     required fields
    </td>
    <td>
-    <code>+k8s:optional</code>
+    `+k8s:optional`
 <p>
-
-    <code>+k8s:required</code>
+    `+k8s:required`
    </td>
    <td>
-    <code>required</code>
+    `required`
    </td>
   </tr>
   <tr>
@@ -548,10 +546,10 @@ The below rules are currently implemented or are very similar to an existing val
     enum values
    </td>
    <td>
-    <code>+k8s:enum</code>
+    `+k8s:enum`
    </td>
    <td>
-    <code>enum</code>
+    `enum`
    </td>
   </tr>
   <tr>
@@ -559,11 +557,11 @@ The below rules are currently implemented or are very similar to an existing val
     Union values
    </td>
    <td style="background-color: null">
-    <code>+k8s:unionMember</code> \
-<code>+k8s:unionDiscriminator</code>
+    `+k8s:unionMember` \
+`+k8s:unionDiscriminator`
    </td>
    <td style="background-color: null">
-    <code>oneOf,anyOf,allOf</code>
+    `oneOf,anyOf,allOf`
    </td>
   </tr>
   <tr>
@@ -571,9 +569,9 @@ The below rules are currently implemented or are very similar to an existing val
     forbidden values
    </td>
    <td style="background-color: null">
-    <code>+k8s:forbidden</code>
+    `+k8s:forbidden`
    </td>
-   <td style="background-color: #ffff00">
+   <td style="background-color: #null">
    </td>
   </tr>
   <tr>
@@ -581,7 +579,7 @@ The below rules are currently implemented or are very similar to an existing val
     feature gate is enabled
    </td>
    <td style="background-color: null">
-    <code>+k8s:ifOptionEnabled(FeatureX)=&lt;if-enabled-validator-tag></code>
+    `+k8s:ifOptionEnabled(FeatureX)=&lt;if-enabled-validator-tag>`
    </td>
    <td style="background-color: null">
     N/A
@@ -592,7 +590,7 @@ The below rules are currently implemented or are very similar to an existing val
     feature gate is disabled
    </td>
    <td style="background-color: null">
-    <code>+k8s:ifOptionDisabled(FeatureX)=&lt;if-disabled-validator-tag></code>
+    `+k8s:ifOptionDisabled(FeatureX)=&lt;if-disabled-validator-tag>`
    </td>
    <td style="background-color: null">
     N/A
@@ -603,7 +601,7 @@ The below rules are currently implemented or are very similar to an existing val
     validate each key
    </td>
    <td style="background-color: null">
-    <code>+k8s:eachKey=&lt;eachKey-validator-tag></code>
+    `+k8s:eachKey=&lt;eachKey-validator-tag>`
    </td>
    <td style="background-color: null">
     N/A
@@ -614,7 +612,7 @@ The below rules are currently implemented or are very similar to an existing val
     validate each value
    </td>
    <td style="background-color: null">
-    <code>+k8s:eachVal=&lt;eachVal-validator-tag></code>
+    `+k8s:eachVal=&lt;eachVal-validator-tag>`
    </td>
    <td style="background-color: null">
     N/A
@@ -625,10 +623,10 @@ The below rules are currently implemented or are very similar to an existing val
     uniqueness
    </td>
    <td style="background-color: null">
-    <code>+k8s:listType=&lt;type></code>
+    `+k8s:listType=&lt;type>`
    </td>
    <td style="background-color: null">
-    <code>x-kubernetes-list-type</code>
+    `x-kubernetes-list-type`
    </td>
   </tr>
   <tr>
@@ -636,7 +634,7 @@ The below rules are currently implemented or are very similar to an existing val
     shared struct fields (subfield)
    </td>
    <td style="background-color: null">
-    <code>+k8s:subfield(subField-json-name)=&lt;subfield-validator-tag></code>
+    `+k8s:subfield(subField-json-name)=&lt;subfield-validator-tag>`
    </td>
    <td style="background-color: null">
     N/A
@@ -663,10 +661,10 @@ The below rules are not currently implemented in the [validation-gen prototype](
     regex matches
    </td>
    <td>
-    <code>+k8s:pattern</code>
+    `+k8s:pattern`
    </td>
    <td>
-    <code>pattern</code>
+    `pattern`
    </td>
   </tr>
   <tr>
@@ -674,10 +672,10 @@ The below rules are not currently implemented in the [validation-gen prototype](
     cross field validation
    </td>
    <td>
-    <code>TBD
+    `TBD
    </td>
    <td>
-    <code>x-kubernetes-validations</code>
+    `x-kubernetes-validations`
    </td>
   </tr>
   <tr>
@@ -685,10 +683,10 @@ The below rules are not currently implemented in the [validation-gen prototype](
     <a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules">transition rules</a>
    </td>
    <td>
-    <code>TBD
+    `TBD
    </td>
    <td>
-    <code>x-kubernetes-validations</code>
+    `x-kubernetes-validations`
    </td>
   </tr>
 </table>
@@ -722,6 +720,24 @@ type Bar struct {
 
 Shared types present a challenge. For example, different Kubernetes resources have different validation rules for `metadata.name` and `metadata.generateName`. But all resources share the `ObjectMeta` type.
 
+#### `subfield` IDL Tag
+
+To handle this case, we provide an IDL tag - `k8s:subfield(&lt;field-json-name>)` which can be used to specify a `subfield` validation to add to parent which validates against the the `subfield` value:
+
+```go
+type Struct struct {
+  // +k8s:subfield(name)=+k8s:format=dns-label
+  metav1.ObjectMeta
+}
+```
+
+This will also support chaining of subfield calls with other validators (including subfield) which allows for setting subfield validations on arbitrarily deep nested fields of shared structs.  An exaggerated example showcasing this is below: \
+
+```go
+// +k8s:subfield(sliceField)=+k8s:eachVal=+k8s:subfield(stringField)=+k8s:<desired-validaton-rule>
+```
+
+
 #### `validation-gen` One-deep typedef support
 
 <<[UNRESOLVED is it ok that `validation-gen`'s currently design only supports one-deep typedef support?  There are potential solutions to extend this, see below]>>
@@ -747,7 +763,7 @@ type Struct struct {
 
 In the above example, FooField would be validated as a DNS label and have at least 4 characters which is expected.  What might also be expected though is that BarField would be validated as a DNS label, have at least 4 characters, and have no more than 16 characters. INCORRECT!  Due to Go's type system, the relationship of type Foo -> string is represented, but type Bar -> type Foo -> string is flattened to type Bar -> string.  This leads to a currently open question around the severity of this potential UX issue as well potential solutions on how this could be mitigated if needed.
 
-##### Proposed Options
+##### Proposed Solutions
 
 1. **Have it well documented that `validation-gen`only support one-deep typedef:
     *   Pro: Doesn't require any additional architectural changes to `validation-gen`.
@@ -763,22 +779,7 @@ In the above example, FooField would be validated as a DNS label and have at lea
     *   Pro: Better UX for users as they are notified not to use IDL tags that might lead to unintended outcomes when adding IDL tags
     *   Con: Requires implementing the chain of typedefs logic.
 
-#### `subfield` IDL Tag
-
-To handle this case, we provide an IDL tag - `k8s:subfield(&lt;field-json-name>)` which can be used to specify a `subfield` validation to add to parent which validates against the the `subfield` value:
-
-```go
-type Struct struct {
-  // +k8s:subfield(name)=+k8s:format=dns-label
-  metav1.ObjectMeta
-}
-```
-
-This will also support chaining of subfield calls with other validators (including subfield) which allows for setting subfield validations on arbitrarily deep nested fields of shared structs.  An exaggerated example showcasing this is below: \
-
-```go
-// +k8s:subfield(sliceField)=+k8s:eachVal=+k8s:subfield(stringField)=+k8s:<desired-validaton-rule>
-```
+<<[/UNRESOLVED]>>
 
 ### Migration Plan
 
@@ -885,20 +886,23 @@ The straightforward approach of using the `+required` tag to enforce the presenc
 
 #### Proposed Solutions
 
-1. **Tri-State mutually exclusive options (Recommended): <code>+optional</code>, <code>+default</code>, <code>+required</code>:</strong>
-    *   Treat <code>+optional</code>, <code>+default</code>, and <code>+required</code> as mutually exclusive options.
-    *   Fields that allow valid zero values and have defaults would be explicitly tagged with neither <code>+optional</code> nor <code>+required</code>.
+1. <strong>Tri-State mutually exclusive options (Recommended): `+optional`, `+default`, `+required`:</strong>
+    *   Treat `+optional`, `+default`, and `+required` as mutually exclusive options.
+    *   Fields that allow valid zero values and have defaults would be explicitly tagged with neither `+optional` nor `+required`.
     *   Validation logic would need to be aware of this and handle zero values appropriately for such fields.
     *   <strong>Drawback:</strong> This approach requires a linter to enforce the tri-state rule and prevent invalid combinations.
     *   <strong>Benefit:</strong> Simplifies the mental model by making the relationship between optionality, defaults, and requiredness explicit.
-2. <strong><code>optional-default: zero-allowed</code> Tag:</strong>
+2. <strong>`optional-default: zero-allowed` Tag:</strong>
     *   A new tag could be introduced to signify that a zero value is permissible, even with a default.
     *   <strong>Drawback:</strong> Adds complexity by introducing another tag and complicates the mental model.
 3. <strong>Compile-Time or Runtime Default Value Check:</strong>
-    *   <strong>Compile-Time Check:</strong> During code generation, the <code>+default</code> tag could be parsed, and if it refers to a zero value, validation logic could be adjusted accordingly.
+    *   <strong>Compile-Time Check:</strong> During code generation, the `+default` tag could be parsed, and if it refers to a zero value, validation logic could be adjusted accordingly.
     *   <strong>Drawback:</strong> Complex implementation, requires more information to be available during code generation.
     *   <strong>Runtime Check:</strong> Validation logic could check if the provided default value is a zero value and skip certain checks.
     *   <strong>Drawback:</strong> Considered overly-complicated ("gross") and potentially impacts performance.
+    *   <strong>Benefit:</strong> Closest to correct.
+4. <strong>Make `+optional` on non-pointer fields be advisory:</strong>
+    * If we find an optional string field, the optional tag can be used as documentation, but the actual validation will rely on the format-checking (e.g. dns-label). To an end user this means that what used to be a "field is required" error now becomes a "not a dns-label" error. Only slightly worse.
 
 #### Addressing the Problem with Valid Zero Values Using the Linter
 
@@ -1019,12 +1023,14 @@ func TestVersionedValidationByFuzzing(t *testing.T) {
 ```
 
 ###### strategy_test.go vs validation_test.go
+<<[UNRESOLVED should we move current validation_test.go logic to strategy_test.go as it makes more sense generally and aids this project? ]>>
+
 
 Currently, validation logic and associated tests are logically split across `validation.go` and `strategy.go`. The hand-written validation functions and associated tests reside in `validation.go` and `validation_test.go`  while `strategy.go` determines when to invoke these functions during API object creation and updates. With the introduction of declarative validation (controlled by the `DeclarativeValidation` feature gate)  the current logic split is worth considering moving from `validation_test.go` to `strategy_test.go` as the current logic split in the test is unfavorable for the migration as it requires additional plumbing work.
 
 The current approach in the prototype experiment to migrate ReplicationController involves directly injecting declarative validation and equivalency tests into `validation_test.go`. This is achieved by conditionally appending calls to `rest.ValidateDeclaratively` within the existing test cases, based on the `DeclarativeValidation` feature gate's status. This allows for a direct comparison of the outputs between hand-written and declarative validation within the same test framework.
 
-**Moving the feature gate check and declarative validation logic to <code>strategy_test.go</code> could offer several advantages</strong>:
+**Moving the feature gate check and declarative validation logic to `strategy_test.go` could offer several advantages</strong>:
 
 *   **Reduced Test Duplication:** `validation_test.go` could be simplified, as it would no longer need to handle both hand-written and declarative validation paths.
 *   **Clearer Separation of Concerns:** `strategy.go` would be responsible for determining _when_ to validate, while `validation.go` would handle _how_ to validate.
@@ -1035,6 +1041,8 @@ However, this approach also has potential drawbacks:
 *   **Additional PRs for Initial Migration:** Moving existing hand-written validation logic from `validation.go` to `strategy.go` would result in additional work via a PR to move the related code but it would be straightforward (only moving files).
 
 Given the low complexity of moving this code prior to the changes, the enhanced logic split of moving the code, and the reduced work for the migration that moving this code would have currently the plan for Declarative Validation is that the current `validation_test.go` tests are moved to `strategy_test.go` in a PR prior to the migration PR.  
+
+<<[/UNRESOLVED]>>
 
 ###### Error Message Equivalence
 
@@ -1071,7 +1079,7 @@ To ensure that Declarative Validation and some of the identified potential perfo
 
 ##### DeclarativeValidation
 
-    *   `validation-gen` code generator supports the full set of necessary IDL tags for 1:1 porting of handwritten validation to declarative validation
+*   `validation-gen` code generator supports the full set of necessary IDL tags for 1:1 porting of handwritten validation to declarative validation
 *   Have plumbed all previous validation_test.go unit tests to run against declarative validation schemas.
 *   All Unit and Integration tests pass with no errors or only well-understood exceptional errors sourced from a file in the repository
 *   Linter finalized with complete set of linter rules
