@@ -17,8 +17,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -26,7 +27,10 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Unit tests](#unit-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Phase 1: Alpha (target 1.33)](#phase-1-alpha-target-133)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+      - [Upgrade](#upgrade)
+      - [Downgrade](#downgrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -38,7 +42,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -256,6 +259,16 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+##### Upgrade 
+
+To upgrade the cluster to use this feature, Kubelet should be updated to enable featuregate. 
+Existing cluster does not have any impact as the node resources already been updated during cluster creation.
+
+##### Downgrade
+
+It's always possible to trivially downgrade to the previous kubelet, It does not have any impact as the future node resource hot plug wont be reflected in cluster
+without manual kubelet restart.
+
 ### Version Skew Strategy
 
 <!--
@@ -270,6 +283,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Not relevant, As this kubelet specific feature and does not impact other components.
 
 ## Production Readiness Review Questionnaire
 
