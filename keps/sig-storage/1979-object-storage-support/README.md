@@ -256,6 +256,8 @@ User self-provisions a bucket to store their workload's data.
       the BucketClaim is deleted
    4. Controller copies BucketClaim and BucketClass parameters to Bucket
    5. Bucket status `BucketReady` is false initially, indicating bucket is not yet provisioned in OSP
+   6. Controller is now waiting for the intermediate Bucket to be reconciled by COSI sidecar before
+      continuing with BucketClaim reconciliation
 4. COSI sidecar detects the intermediate Bucket resource
    1. If the Bucket's driver matches the sidecar's driver, continue
    2. Sidecar calls the COSI driver via gRPC to provision the OSP bucket
@@ -265,8 +267,14 @@ User self-provisions a bucket to store their workload's data.
       the same OSP from multiple k8s clusters. COSI system will need some kind of optional specified ID? -->
 5. If OSP returns provision fail, COSI sidecar reports error to Bucket status and retries gRPC call
 6. When OSP returns provision success, COSI sidecar updates Bucket status `BucketReady` to true
-7. <!-- TODO: how does the BucketClaim become BucketReady? IMO, it's cleaner if the controller manages all aspects of BucketClaims. -->
-   Controller observes Bucket and applies `BucketReady` true to the BucketClaim after the Bucket ???
+7. Controller detects that the Bucket is provisioned successfully (`BucketReady`==true)
+   1. Controller finishes BucketClaim reconciliation processing/validation as needed
+   2. Controller applies `BucketReady` true status to BucketClaim, finishing BucketClaim reconcile
+
+The mechanism by which the Controller waits for the intermediate Bucket to be provisioned in the
+middle of BucketClaim reconciliation is not specified here. The important behavior (waiting) is
+defined, and the logic coordinating the init-wait-finish reconcile process is left as an
+implementation detail.
 
 #### Generating Bucket Access Credentials
 
