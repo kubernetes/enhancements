@@ -481,7 +481,7 @@ Once validation is generated, it will be easy to opt-in (see below snippet).
 ### Catalog of Supported Validation Rules & Associated IDL Tags
 A number of the rules in the below sections are not implemented but will be trivial to implement once we are are aligned on the right pattern/syntax for the given validator. Implementing a validator “just-in-time” means we don't add more without real fields using them. We estimate that in the limit we may have 30-40 validators, but today we have less than 10.  
 
-The below rules are currently implemented or are very similar to an existing validator in the [validation-gen prototype](prototype )
+The below rules are currently implemented or are very similar to an existing validator in the [valdation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen)
 
 <table>
   <tr>
@@ -642,7 +642,7 @@ The below rules are currently implemented or are very similar to an existing val
   </tr>
 </table>
 
-The below rules are not currently implemented in the [validation-gen prototype](http://prototype ) so the exact syntax is still WIP
+The below rules are not currently implemented in the [validation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen) so the exact syntax is still WIP
 
 <table>
   <tr>
