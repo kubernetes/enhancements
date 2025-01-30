@@ -89,12 +89,17 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [DSR Enablement](#dsr-enablement)
+  - [Overlay support](#overlay-support)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -443,7 +448,7 @@ N/A - This feature is already implemented.
 
 #### GA
 
-- 2 or mroe CNI solutions support overlay networking mode for Windows nodes.
+- 2 or more CNI solutions support overlay networking mode for Windows nodes.
 
 <!--
 
@@ -637,7 +642,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-For DSR a rollout or rollback shoudl not fail. Nodes can operator with DSR enabled or disabled per node in a cluster.
+For DSR a rollout or rollback should not fail. Nodes can operator with DSR enabled or disabled per node in a cluster.
 
 For overlay networking mode support, a rollout can fail if the CNI configuration for the node and kube-proxy configuration are not in sync. This would cause nodes to never go into the Ready state.
 

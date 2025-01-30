@@ -2,5 +2,7 @@
 # "prod-readiness-approvers" group 
 # of http://git.k8s.io/enhancements/OWNERS_ALIASES
 kep-number: 5100
-beta:
+alpha:
   approver: ""
+beta: 
+  approver: "@TBD"
