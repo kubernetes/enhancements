@@ -478,6 +478,11 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+For DSR `--enable-dsr=true` must be passed as a kube-proxy command line switch to enable the functionality.
+This means that the upgrade/downgrade strategy is the redeploy kube-proxy with the appropriate configuration.
+
+For overlay networking mode the entire cluster must be configured for overlay networking so cluster it is not possible for upgrade / downgrade this functionality on a per-node basis.
+
 ### Version Skew Strategy
 
 <!--
@@ -492,6 +497,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+N/A - As long as the all nodes are configured for overlay networking mode, there is no version skew strategy required since networking APIs are not changing.
 
 ## Production Readiness Review Questionnaire
 
@@ -535,15 +542,31 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
+For DSR support:
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: WinDSR
+  - Components depending on the feature gate: kube-proxy
+- [x] Other
+  - Describe the mechanism: DSR is enabled by passing `--enable-dsr=true` as a command line switch to the Windows kube-proxy.
+  - Will enabling / disabling the feature require downtime of the control
+    plane? no
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? Yes, there will be a slight period where network traffic might not be routed correctly while kube-proxy is restarted.
+    Kube-proxy will rules will be re-synced with/without DSR support when kube-proxy is starting up.
+    Nodes that handle network traffic show be drained before toggling DSR support.
+
+For overlay networking mode:
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: WinOverlay
+  - Components depending on the feature gate: kube-proxy
+- [x] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? Yes and no - The HNS network used by kube-proxy must be re-created with the correct type before starting kube-proxy which can disrupt network traffic but also all nodes in a cluster must use the same network type so it is not possible to switch between overlay and bridge networking on a per-node basis.
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    of a node? See above.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -554,7 +577,7 @@ automations, so be extremely careful here.
 
 No.
 For DSR, `--enable-dsr=true` must be passed as a kube-proxy command line switch to enable the functionality.
-For Overlay networking mode, the 
+For overlay networking supprt, behavior changes only occur if the HNS network used by kube-proxy is of type `Overlay` which would only be done intentionally as part of joining nodes to a cluster.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -569,7 +592,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+For DSR, yes, DSR can be disabled by passing `--enable-dsr=false` as a kube-proxy command line switch and restarting kube-proxy.
+
+FOr Overlay, no, overlay networking mode cannot be disabled on a per-node basis. All nodes in a cluster must use the same network type so it is not possible to switch between overlay and bridge networking on a per-node basis.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+For DSR, kube-proxy should resync HNS rules and start using DSR again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -585,6 +614,10 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+For overlay, no, because the feature requires the cluster to be configured for overlay networking mode and cannot be enabled on a per-node basis.
+
+For DSR, no, but they can be added.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -604,12 +637,18 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+For DSR a rollout or rollback shoudl not fail. Nodes can operator with DSR enabled or disabled per node in a cluster.
+
+For overlay networking mode support, a rollout can fail if the CNI configuration for the node and kube-proxy configuration are not in sync. This would cause nodes to never go into the Ready state.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Node ready state should be monitored to ensure nodes job the cluster and are properly configured to start running pods.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -619,11 +658,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+For DSR support yes, manual verification was done to ensure that DSR can be enabled and disabled on a node.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No
 
 ### Monitoring Requirements
 
