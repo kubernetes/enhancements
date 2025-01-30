@@ -10,8 +10,8 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1 - Pod VS NetworkPolicy](#story-1---pod-vs-networkpolicy)
     - [Story 2 - having finalizer conflicts with deletion order](#story-2---having-finalizer-conflicts-with-deletion-order)
-    - [Story 2 - having ownerReference conflicts with deletion order](#story-2---having-ownerreference-conflicts-with-deletion-order)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Having ownerReference conflicts with deletion order](#having-ownerreference-conflicts-with-deletion-order)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Dependency cycle](#dependency-cycle)
     - [Instance from same resources want different deletion order](#instance-from-same-resources-want-different-deletion-order)
@@ -106,17 +106,15 @@ providing a solid foundation for managing resource cleanup in complex environmen
 
 ### Goals
 
-1. Introduce an Opinionated Deletion Order: Implement a mechanism while namespace deletion to prioritize the deletion of certain resource types before others based on logical dependencies and security considerations (e.g., Pods deleted before NetworkPolicies).
+1. Introduce an Opinionated Deletion Order: Implement a mechanism while namespace deletion to prioritize the deletion of certain resource types before others based on logical dependencies and security considerations (e.g., Pods deleted before NetworkPolicies).2
 
-2. Enhance Security During Namespace Deletion: Ensure that critical security resources (e.g., NetworkPolicies, RoleBindings) remain in place until all their dependent resources are safely deleted, thereby eliminating windows of vulnerability.
+2. Maintain Predictability and Consistency: Provide a more deterministic deletion process to improve user confidence and debugging during namespace cleanup.
 
-3. Maintain Predictability and Consistency: Provide a more deterministic deletion process to improve user confidence and debugging during namespace cleanup.
+3. Integrate with Existing Kubernetes Concepts: Build on the namespace deletion’s current architecture without introducing breaking changes to existing APIs or workflows.
 
-4. Integrate with Existing Kubernetes Concepts: Build on the namespace deletion’s current architecture without introducing breaking changes to existing APIs or workflows.
+4. Be safe - don’t introduce unresolvable deadlocks.
 
-5. Be safe - don’t introduce unresolvable deadlocks.
-
-6. Make the most common dependency - workloads and the policies that govern them - safe by default for all types of policies, including CRDs, unless specifically opted out.
+5. Make the most common dependency - workloads and the policies that govern them - safe by default for all types of policies, including CRDs, unless specifically opted out.
 
 
 ### Non-Goals
@@ -195,21 +193,25 @@ avoid the above security concern.
 
 #### Story 2 - having finalizer conflicts with deletion order
 
-E.g. the NetworkPolicy deletion priority would be set lower than the pod and we could expect the Pod be deleted 
+E.g. the NetworkPolicy deletion order would be set lower than the pod and we could expect the Pod be deleted 
 before NetworkPolicy. However, if even one pod has a finalizer which is waiting for network policies (which is opaque to Kubernetes), 
 it will cause dependency loops and block the deletion process.
 
 Refer to the section `Handling Cyclic Dependencies`.
 
-#### Story 2 - having ownerReference conflicts with deletion order
+### Notes/Constraints/Caveats (Optional)
 
-When deciding the deletion priority for resources, it should take ownerReference into consideration. 
-E.g. the deployment VS pod. However, it should not matter much in terms of namespace deletion. 
-Namespace deletion specifically uses `metav1.DeletePropagationBackground` and all resources would be deleted and the ownerReference 
+#### Having ownerReference conflicts with deletion order
+
+When deciding the deletion priority for resources, it should take ownerReference into consideration.
+E.g. the deployment VS pod. However, it should not matter much in terms of namespace deletion.
+Namespace deletion specifically uses `metav1.DeletePropagationBackground` and all resources would be deleted and the ownerReference
 dependencies would be handled by the garbage collection.
 
-
-### Notes/Constraints/Caveats (Optional)
+In Kubernetes, `ownerReferences` define a parent-child relationship where child resources are automatically deleted when the parent is removed.
+This is mostly handled by garbage collection. While namespace deletion, the `ownerReferences` is not part of the consideration and
+`NamespaceDeletionOrder` group will be honored while deleting resources as what it is currently. The garbage collector controller will make sure  
+no child resources still existing after the parent resource deleted.
 
 
 ### Risks and Mitigations
@@ -226,7 +228,7 @@ When a lack of progress detected(maybe caused by the dependency cycle described 
   
 - Return error after retry.
   - Pros: Make sure the security concern being addressed by always honor the deletion order
-  - Cons: Could cause surprising behavior or break the existing user
+  - Cons: Block namespace deletion if dependency cycle exists.  
 
 Mitigation: A proper fallback mechanism would be introduced to make sure the namespace deletion process would not be 
 hanging forever because of potential dependency cycle.
@@ -307,18 +309,18 @@ In this case, the finalizers set would conflict with the `NamespaceDeletionOrder
 
 To address this, the system will:
 
-- Attempt to honor the DeletionOrderPriority for resource deletion.
+- Attempt to honor the `NamespaceDeletionOrder` for resource deletion.
 
 - Monitor the deletion process for each `NamespaceDeletionOrder`. If the process hangs beyond a predefined timeout (e.g., 5 minutes), 
   it will detect the stall and trigger the deletion attempt for the next `NamespaceDeletionOrder` group.
 
-- If the resources from the next `NamespaceDeletionOrder` group are deleted successfully, retry with the ordered namespace deletion mechanism. If the process hangs again, wait for a predefined timeout and retry.
+- After moving on to the next NamespaceDeletionOrder group, the system will attempt to delete all resources under this group. At this stage, deletion is considered successful only when all resources from the current and previous groups have been fully removed.
 
-- If the retry fails over a certain number or the process hangs for too long(an overall timeout), it falls into the fallback mechanism.
+- If the deletion of all resources from previous groups is not completed within the timeout period, the system will proceed to the next NamespaceDeletionOrder group, deleting those resources while waiting for any remaining resources from previous groups to be cleaned up.
 
-- The fallback mechanism will ignore the `NamespaceDeletionOrder` and proceed with the existing unordered deletion process.
+- After looping through all NamespaceDeletionOrder groups, if there is still process blocking resources from being deleted, the system will behave same as the current mechanism.
 
-By introducing a timeout and fallback, the system ensures that cyclic dependencies do not block namespace deletion indefinitely while still striving for an ordered deletion whenever possible.
+By introducing a controlled timeout mechanism, the system ensures that cyclic dependencies do not block namespace deletion indefinitely while still striving for an ordered deletion whenever possible.
 
 
 ### Configure DeletionOrderPriority For CRD
