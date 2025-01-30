@@ -166,7 +166,7 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
     *   Reduce API development costs for API authors and reviewers. Reduce long term maintainer costs. Reclaiming time from core project contributors.
     *   Reduce risk of incorrect validation rules reaching production via API development approach that is easier to get right and harder to get wrong.
 *   No change to error message structure for clients. Difference to clients is limited to minimal changes to error detail strings.  The goal is to preserve the `v1.Status` validation error message’s `field` and `reason`, etc. but we reserve the ability to change the `details` which are allowed to be modified over time from k8s guarantees.
-*   Enable development of linters and other API tool chains that use API validation rules and metadata. Further reducing development effort and risk of incorrect validation rules.
+*   Enable development of linters for API definition and other API tool chains that use API validation rules and metadata. Further reducing development effort and risk of incorrect validation rules.
 *   Retain native (or nearly native) performance.
 *   Improve testing rigor by being vastly easier to test.
 
@@ -201,6 +201,7 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
         *   Easy to review and test.
         *   Easy to distribute.
             *    Leveraging the broader community to speedup migration is key to the success of the project.
+    *   Net-new APIs will not be permitted to use declarative validation in the 1.33 release. This decision will be revisited for the 1.34 release.
 *   Build linters, documentation-generators, and other tools to make k8s development and API review easier and safer
     *   Example:  Lint rule that verifies that all required/optional field information is correct
 
@@ -223,7 +224,12 @@ The goal is that when a user makes a mistake in authoring IDL tags we give a mea
 New validation tests will be created as part of the migration process for contributors migrating fields using `validation-gen`.  Additionally, a test framework and associated migration test utilities will be created as part of `validation-gen` to leverage the new centralized validation rules and to ensure validation consistency across hand-written and declarative validation rules.  See the [Test Plan](?tab=t.0#bookmark=id.a86sekfgbuen) section for more details.
 
 #### New Validations Vs Migrating Validations
-FIXME...    
+**New validations** refer to validation rules added to fields or types that did not previously have any validation, or to entirely new API fields or types being introduced. 
+
+**Migrating validations** refer to the process of converting existing handwritten validation logic in `validation.go` files to the new declarative approach using IDL tags. 
+
+The difference is that new validations are implemented directly using IDL tags from the outset, while migrating validations involve a transition from existing handwritten code to IDL tags. Both types of validations will undergo thorough testing. However, migrating validations require additional equivalence testing. This ensures that the behavior of the new declarative validation is identical to that of the original handwritten validation. As a safeguard, until the GA stage, all newly generated validations will be used in conjunction with the existing handwritten validation code. This dual implementation allows for a smooth rollback if needed.
+
 
 #### New Validation Tests
 As part of the process for migrating fields, contributors will scrutinize and improve as needed the current validation tests.  No field can go thru migration without a robust test for the field being migrated, which proves that it is validated correctly before the change and after. Many existing tests are not sufficient to verify 100% equivalency and need retooling.  This allows us to de-risk migration problems by scrutinizing the current tests and enhancing them.
@@ -306,13 +312,13 @@ Based on this analysis we believe that the proposed `validation-gen` design can 
 
 ##### Mitigation: Roll Back All Migrated Fields
 
-In the case that the workstream loses steam over time and the migration project is abandoned, users can still FIXME...
+In the case that the workstream loses steam over time and the migration project is abandoned, users can still roll back to the previous hand-written validation by disabling the `DeclarativeValidation` feature gate.
 
 #### Risk: we get hundreds of PRs from people migrating fields and can't review them all. 
 
 ##### Mitigation: These are not urgent and we will have patterns which can be reviewed by more people.
 
-FIXME...
+The migration to declarative validation is not time-sensitive. We can proceed at a comfortable pace, and the process will be broken down into small, manageable PRs. This allows for a wider pool of reviewers to participate, including those who may not be deeply familiar with the intricacies of API validation. The use of standardized IDL tags and generated code will establish clear patterns, making it easier for reviewers to understand and assess the changes.
 
 #### Risk: Versioned validation drifts between versions.
 
@@ -837,9 +843,14 @@ We should be able to start the migration when:
 #### 	Phase3: Finalization and GA (Core Team and community)
 
 1. After DeclarativeValidation reaches GA
+    *   The granularity of control for enabling/disabling declarative validation (group, version, type, or field) will be determined based on the experience gained during the Beta phase. The feature gate `DeclarativeValidation` may be retained for a period of time, gradually shifting more validation to the declarative approach, and allowing for a phased rollout and rollback if needed.
 2. Deprecation of Legacy Validation is Announced
-3. ...Deprecation wait period passes (period adhering to community policy)…
+    *   A formal deprecation notice will be issued for the remaining hand-written validation functions. This notice will specify a timeline for the complete removal of the legacy validation code.
+3. Deprecation wait period passes (period adhering to community policy)
+    *   The community will have a defined period to adjust to the full migration to declarative validation. During this time, both hand-written and declarative validation may be used, depending on the feature gate's configuration.
 4. Legacy validation code that is being validated declaratively can safely be deleted
+    *   After the deprecation period, and once the feature gate is removed, the hand-written validation code which has been validated by the generated code will be removed from the codebase.
+
 
 
 ### Tagging and Validating Against Internal vs Versioned Types
