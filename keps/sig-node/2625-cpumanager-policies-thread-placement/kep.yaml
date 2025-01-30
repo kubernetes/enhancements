@@ -1,43 +1,51 @@
 title: SMT aware cpumanager policy
 kep-number: 2625
 authors:
-  - "@fromanirh"
+  - "@ffromani"
   - "@swatisehgal"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: "2021-04-14"
-last-updated: "2021-09-08"
+last-updated: "2025-01-30"
 reviewers:
   - "@klueska"
+  - "@swatisehgal"
 approvers:
   - "@sig-node-tech-leads"
 see-also:
 - "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/"
+- "keps/sig-node/3545-improved-multi-numa-alignment/"
+- "keps/sig-node/4176-cpumanager-spread-cpus-preferred-policy/"
+- "keps/sig-node/4540-strict-cpu-reservation"
+- "keps/sig-node/4622-topologymanager-max-allowable-numa-nodes/"
+- "keps/sig-node/4800-cpumanager-split-uncorecache/"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.23"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.22"
   beta: "v1.23"
-  stable: "v1.25"
+  stable: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: "CPUManagerPolicyOptions"
-  - name: "CPUManagerPolicyExperimentalOptions"
+  - name: "CPUManagerPolicyAlphaOptions"
+  - name: "CPUManagerPolicyBetaOptions"
     components:
       - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+  - container_aligned_compute_resources_count
