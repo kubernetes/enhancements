@@ -1,0 +1,29 @@
+title: Container Stop Signals
+kep-number: "4960"
+authors: 
+  - '@sreeram-venkitesh'
+owning-sig: sig-node
+participating-sigs: 
+  - sig-node
+creation-date: "2025-02-01"
+reviewers: 
+  - '@mikebrow'
+approvers: 
+  - '@mrunalp'
+
+status: provisional
+stage: alpha
+latest-milestone: "v1.33"
+milestone:
+    alpha: ""
+    beta: ""
+    stable: ""
+
+feature-gates:
+  - name: ContainerStopSignals
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+metrics: []
