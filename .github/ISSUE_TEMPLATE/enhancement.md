@@ -1,3 +1,11 @@
+---
+name: Enhancement tracking issue
+about: Template for enhancement issues
+title: ""
+labels: ""
+assignees: 
+---
+
 ### Enhancement Description
 
 - One-line enhancement description (can be used as a release note):
