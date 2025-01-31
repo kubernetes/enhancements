@@ -1,4 +1,4 @@
-# KEP-5032: Container log eviction on Disk perssure
+# KEP-5032: Container log Split and Rotate to avoid Disk perssure
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -57,7 +57,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Clean and Rotate containers logs when there is disk pressure on kubelet host.
+Split, Clean and Rotate containers logs tp avoid disk pressure on kubelet host.
 
 ## Motivation
 
@@ -65,7 +65,7 @@ Clean and Rotate containers logs when there is disk pressure on kubelet host.
 
 ### What would you like to be added?
 
-Log cleanup should be another form of eviction to make space like we do with Images and containers.
+We expect that the log file size is always under limit which can help such disk pressure issues in the future.
 
 ### Why is this needed?
 
@@ -167,10 +167,10 @@ If the pod had been generating logs in Gigabytes with minimal delay, it can caus
 
 ### Goals
 
-- Rotate and Clean all container logs on kubelet Disk pressure that has exceeded the configured log retention quota.
+- Split large log files in size containerLogMaxSize, Rotate and Clean them.
 
 ## Proposal
-- On disk pressure, analyse log paths of all containers. Logs of containers with existing combined log size exceeding `containerLogMaxSize`*`containerLogMaxFiles` should be deleted till the combined log size is within `containerLogMaxSize`*`containerLogMaxFiles`.
+- The container log rotation working now shpuld work as is, but it will ensure that before rotating file, it is under the size limit set..
 
 ### Risks and Mitigations
 
