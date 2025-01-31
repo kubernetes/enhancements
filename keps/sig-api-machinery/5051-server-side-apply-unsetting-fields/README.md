@@ -105,7 +105,6 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -174,7 +173,7 @@ another field manager attempts to set the field.
 
 ### Non-Goals
 
-N/A
+_none_
 
 ## Proposal
 
@@ -452,9 +451,9 @@ fieldManager2:
 
 1. A field that is not explicitly set, but is defaulted, is unowned (existing behavior)
 1. If a field is unset using a marker, defaulting still applies
-  - Consequence: A field manager that owns a unset value ends up owning the defaulted value
-  - Consequence: If two field managers unset the same value, they share ownership of the field
-  - Caveat: Non-declarative defaulting, such as defaulting that is performed by the strategy, or
+   - Consequence: A field manager that owns a unset value ends up owning the defaulted value
+   - Consequence: If two field managers unset the same value, they share ownership of the field
+   - Caveat: Non-declarative defaulting, such as defaulting that is performed by the strategy, or
     admission control, is not detectable by server side apply, and will result in conflicts between
 	field managers even for cases where the defaulting SHOULD result in shared field ownership.
 	This is a pre-existing problem between defaulting and server side apply but is more likely
@@ -608,6 +607,9 @@ TODO: For beta
 #### Beta
 
 - applyconfiguration-gen generates typesafe bindings for unsetting fields
+- We decide if the marker values should be allowed in CREATE/UPDATE manifests, and stripped out, or
+  if we will not allow marker values in manifests.
+- Kubectl allows `{k8s_io__value: unset}` when validating apply configurations.
 - e2e tests are completed
 
 #### GA
@@ -949,16 +951,24 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+We considered requiring users modify the `managed.managedFields` data to add the fields that are unset
+but that they wish to own. While this is possible, it goes against a goal established at the beginning
+of the server side apply project to make all operations possible without client modifiecations to
+`managed.managedFields`. We have documented that modifying `managed.managedFields` is discouraged and risky, 
+and they were not designed to be modified by clients. Note that we may ALLOW users to include managedFields
+in server side apply requests to indicate ownership of an unset field (and typedsafe generated bindings might
+use this the type-incongruent marker values may be problematic), but we're not going to ever require users
+modify `managed.managedFields` directly.
 
-## Infrastructure Needed (Optional)
+We considered using `null` (or other zero values).  But `null` and zero-values already may be used in apply
+configurations, and do not indicate the intent to own a unset field. Modifying this semantic would be
+breaking to clients that use `null` or zero-values today.
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+We considered using a different marker symbol to represent a unset field. We first considered a simple
+string value such as "__UNSET__".  This can be made to work for unsetting fields of objects and values
+of maps, but in order to be able to unset entries in keyed lists (`listType=map`) we need to be able to
+both identify the entry to be unset by the entries keys, and then also indicate that the entry should be
+unset.  So if we use "__UNSET__" for fields, then we need to introduce a special field name for keyed lists,
+for example `__VALUE__: __UNSET__`. This observation led us to favor using a key/value representation
+for all markers, which is slightly more verbose in the case of unsetting fields, but only requires
+developers learn a single representation for the marker to be able to use it in for all possible cases.
