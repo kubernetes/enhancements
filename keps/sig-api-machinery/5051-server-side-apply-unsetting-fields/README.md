@@ -182,7 +182,7 @@ be unset.
 
 The proposed marker value is: `{k8s_io__value: unset}`
 
-For example, given a resource with a field owned by field manager "mgr1":
+For example, given an object with a field owned by field manager "mgr1":
 
 ```yaml
 apiVersion: stable.example.com/v1
@@ -229,7 +229,7 @@ spec:
   # empty
 ```
 
-### User Stories (Optional)
+### User Stories
 
 #### Apply (force=true) to unset an owned listType=map element
 
@@ -458,7 +458,7 @@ fieldManager2:
 	field managers even for cases where the defaulting SHOULD result in shared field ownership.
 	This is a pre-existing problem between defaulting and server side apply but is more likely
 	to occur with this enhancement.
-1. listType=map key fields that are defaulted MUST be respected extracting unset value markers from
+1. listType=map key fields that are defaulted MUST be respected when extracting unset value markers from
    apply configurations.  That is, a unset marker such as `{keyField1: "x", k8s_io__value: unset}`
    will be treated as `{keyField1: "x", defaultedKeyField: "defaultValue", k8s_io__value: unset}`
    to ensure that the field paths are tracked correctly for field management purposes.
@@ -507,11 +507,12 @@ Object{
 
 This mutation unsets a field from the request.
 
-This mutation DOES NOT result in the managedFields tracking ownership of the unset field.
+This mutation **DOES NOT** result in the `managedFields` tracking ownership of the unset field.
 
-MutatingAdmissionPolicy is an Alpha feature and will support unsetting fields unconditionally (even
+At the time of KEP creation, MutatingAdmissionPolicy was an Alpha API; you can use a MutatingAdmissionPolicy to unset fields unconditionally (even
 if the ServerSideApplyUnsettingFields feature gate is off). MutatingAdmissionPolicy will not
-graduate to Beta before ServerSideApplyUnsettingFields to ensure we do not limit our ability
+graduate to Beta before the this KEP and the `ServerSideApplyUnsettingFields` feature gate; we are phasing things
+that way to ensure we do not limit our ability
 to respond to community feedback for this enhancement.
 
 ### Type-safe apply configuration bindings
@@ -523,7 +524,7 @@ the introduction of custom marshalling to the apply configuration types.
 
 ### Unset marker escaping
 
-We will NOT support escaping of the marker.
+We will **NOT** support escaping of the marker.
 
 We considered this and started to prototype an implementation, but:
 
@@ -548,7 +549,7 @@ In kubernetes/kubernetes:
 - A feature gate will be added and used to enable support for unset field markers on
   `Updater.Apply`.
 - MutatingAdmissionPolicy (Alpha feature) will be modified to always allow unset field markers.
-  The use of unset field markers will NOT be feature gated in this alpha feature.
+  The use of unset field markers will **NOT** be feature gated in this alpha feature.
 
 ### Test Plan
 
@@ -660,19 +661,10 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: ServerSideApplyUnsettingFields
-  - Components depending on the feature gate: apiservers
+  - Components depending on the feature gate: kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
