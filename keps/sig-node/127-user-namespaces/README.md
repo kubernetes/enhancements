@@ -679,7 +679,11 @@ pod.spec.hostUsers and has the feature gate enabled.
 If the kube-apiserver doesn't support the feature at all (< 1.25), the unknown field will be dropped and
 the pod will be created without a userns.
 
-If the kubelet doesn't support the feature (< 1.25), it will ignore the pod.spec.hostUsers field.
+If the kubelet doesn't support the feature (< 1.25), or the feature is off, it will ignore the pod.spec.hostUsers field.
+In 1.30, the kubelet began failing to create a pod if the feature is off but hostUsers: false is specified.
+
+Thus, 1.33 is the first release the kube-apiserver can reliably assume a pod with a user namespace specified is either
+created with a user namespace, or fails to create, no matter feature gate skew.
 
 #### Kubelet and container runtime skews
 
@@ -1373,6 +1377,8 @@ For each of them, fill in the following information by copying the below templat
 - Kubernetes 1.25: Support for stateless pods merged (alpha)
 - Kubernetes 1.27: Support for stateless pods rework to rely on idmap mounts (alpha)
 - Kubernetes 1.28: Support for stateful pods, renamed feature gate (alpha)
+- Kubernetes 1.30: Feature went off-by-default beta
+- Kubernetes 1.33: Feature goes on-by-default beta
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
