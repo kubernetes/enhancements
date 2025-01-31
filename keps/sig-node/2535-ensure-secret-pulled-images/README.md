@@ -19,6 +19,7 @@
   - [Kubelet Caching](#kubelet-caching)
     - [Credential Verification Policies](#credential-verification-policies)
     - [Writing to the Cache](#writing-to-the-cache)
+      - [Cache writes upon successful credentials match:](#cache-writes-upon-successful-credentials-match)
       - [Failure modes:](#failure-modes)
     - [Cache Directory Structure](#cache-directory-structure)
     - [Kubelet Cache Housekeeping](#kubelet-cache-housekeeping)
@@ -421,6 +422,24 @@ In the above figures, the logic of `ImagePullManager.getRecord()` first attempts
 to retrieve a record of a successfully *pulled* image, and if it does not find any
 it will also attempt to find a record of an image currently being in a *pulling*
 state.
+
+##### Cache writes upon successful credentials match:
+
+There are two special cases when a new cache entry would be added during the
+`MustAttemptImagePull()` check:
+
+1. A secret coming from the checked pod matches with cached credential hash but has different coordinates (namespace/name/uid).
+2. A secret coming from the checked pod matches with cached secret coordinates but the credential hash is different.
+
+These writes happen in order to prevent unnecessary registry polling in case the
+cached credentials got rotated.
+
+In order to prevent unbound writes in cases of a high namespace turnover, we limit
+these particular `MustAttemptImagePull()` writes to only occur if the number of
+already cached entries per image isn't greater than 100.
+
+For beta we should consider removing cached credentials upon Kubernetes secret / namespace
+deletions.
 
 ##### Failure modes:
 
@@ -838,6 +857,7 @@ Why should this KEP _not_ be implemented. TBD
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
 - For beta/ga we may revisit/replace the in memory hash map in kubelet design, with an extension to the CRI API for having the container runtime
 ensure the image instead of kubelet.
+- For beta, we may want to consider deleting cached credentials upon Kubernetes secret / namespace deletion.
 - Discussions went back and forth as to whether to persist the cache across reboots. It was decided to do so.
 - `Never` could be always allowed to use an image on the node, regardless of its presence on the node. However, this would functionally disable this feature from a security standpoint.
 
