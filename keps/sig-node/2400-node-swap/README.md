@@ -30,6 +30,7 @@
     - [Low footprint systems](#low-footprint-systems)
     - [Virtualization management overhead](#virtualization-management-overhead)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Future Extensions of Swap](#future-extensions-of-swap)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Existing use cases of Swap](#existing-use-cases-of-swap)
     - [Exhausting swap resource](#exhausting-swap-resource)
@@ -486,6 +487,18 @@ amount of swap for a workload as memory requested. We will update the default
 to not permit the use of swap by setting `memory-swap` equal to `limit`.
 
 [runtime specification]: https://github.com/opencontainers/runtime-spec/blob/1c3f411f041711bbeecf35ff7e93461ea6789220/config-linux.md#memory
+
+### Future Extensions of Swap
+
+This feature was created so that we iterate on adding swap to Kubernetes.
+Due to this, pods will not be able to request swap memory directly nor explicitly for the current implementation.
+To make swap more useful for workloads, we acknowledge the need for proper APIs for swap to make it customizable and flexible.
+
+For example, we're considering the following features for future KEPs:
+- Swap should be opt-in and opt-out at the workload level.
+- Customization of swap limit calculation for workloads.
+- Eviction Manager to be more flexible in regards to swap limits.
+- Eviction Manager should look at more advanced ways of determining swap pressure (PSI for example).
 
 ### Risks and Mitigations
 
