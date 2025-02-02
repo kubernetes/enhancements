@@ -53,6 +53,7 @@
     - [Alpha2](#alpha2)
     - [Beta 1](#beta-1)
     - [Beta 2](#beta-2)
+    - [Beta 3](#beta-3)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -858,6 +859,10 @@ For beta 2:
 
 - Add Node-conformance tests for basic swap validation. To avoid disrupting node conformance lanes, only the
 cgroup knobs are validated to be defined as expected with no real memory stress or swap use.
+
+For beta 3:
+
+- We want e2e tests that can confirm that eviction will take in account swap usage
 - Add a lane dedicated for swap testing, including stress tests and other tests that might be disruptive and intensive.
 These lanes are called "swap-conformance", and are (and should remain) consistently green:
   - [kubelet-swap-conformance-fedora-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-fedora-serial): Green.
@@ -928,15 +933,22 @@ Here are specific improvements to be made:
 - Add e2e test confirming that swap is used for `LimitedSwap`.
 - Document [best practices](#best-practices) for setting up Kubernetes with swap
 
-[via cgroups]: #restrict-swap-usage-at-the-cgroup-level
+#### Beta 3
+
+- Enhance website documentation
+  - Docs should be close to GA quality before promoting to GA.
+- Make eviction manager swap aware.
+- Test a wide variety of scenarios that may be affected by swap support, including tests with aggressive memory stress.
+- Address memory-backed backed volumes which should not have access to swap.  
+- Add documentation regarding encrypted swap.
+- Test a wide variety of scenarios in which the node is being memory-stressed with different eviction and swap configurations. 
+Ensure the behavior is consistent and reliable.
+- Exclude high-priority, static and mirrored pods from gaining access to swap.
 
 #### GA
 
-_(Tentative.)_
-
-- Test a wide variety of scenarios that may be affected by swap support.
-- Remove feature flag.
-- Remove the Swap Support using Burstable QoS Pods only deprecated in Beta 2.
+- Remove feature gate.
+- Ensure swap-conformance tests are continuously green.
 
 ### Upgrade / Downgrade Strategy
 
