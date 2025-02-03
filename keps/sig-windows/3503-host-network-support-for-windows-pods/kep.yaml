@@ -6,13 +6,13 @@ owning-sig: sig-windows
 participating-sigs:
   - sig-node
   - sig-network
-status: implementable
+status: withdrawn
 creation-date: 2022-09-12
 reviewers:
   - "@aojea" # sig-network
   - "@saschagrunert" # sig-node
 approvers:
-  - "@jayunit100"
+  - "@jsturtevant" # sig-windows
 
 ##### WARNING !!! ######
 # prr-approvers has been moved to its own location
@@ -33,7 +33,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.26"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
