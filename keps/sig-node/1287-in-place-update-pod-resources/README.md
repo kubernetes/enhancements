@@ -1287,6 +1287,15 @@ _This section must be completed when targeting beta graduation to a release._
 
   Metric: `apiserver_request_total{resource=pods,subresource=resize}`
 
+* **How can someone using this feature know that it is working for their instance?**
+
+  - If the Kubelet supports InPlacePodVerticalScaling, it will always set the `Resources` field in
+    container status.
+  - The `ResizeStatus` in the pod status should converge to the empty value, indicating the resize has completed.
+  - The `Resources` in the container status should converge to the resized resources, or an
+    approximation of it (see [Edge-triggered Resizes](#edge-triggered-resizes) for more details on
+    when these resources can diverge).
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [x] Metrics
@@ -1306,7 +1315,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-  - Kubelet admission rejections: https://github.com/kubernetes/kubernetes/issues/125375
+  - ~~Kubelet admission rejections: https://github.com/kubernetes/kubernetes/issues/125375~~ (DONE)
   - Resize operate duration (time from the Kubelet seeing the request to actuating the changes): this would require persisting more state about when the resize was first observed.
 
 ### Dependencies
