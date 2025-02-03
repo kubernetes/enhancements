@@ -610,7 +610,7 @@ Drawbacks:
   KCM often runs in a container and does not have access to `/etc/selinux` on the worker nodes.
   As consequence, two labels that are equivalent from the SELinux point of view, may be reported as different, such as these two `seLinuxOptions` snippets: `{"type": "container_t", "level": "s0:c10,c0"}` and `{"level": "s0:c10,c1"}`.
   `container_t` is the default type label for containers on Fedora, so kubelet is able to fill it in the `seLinuxOptions` when it is not set and see they're equivalent.
-  KCM does not know the default on nodes and treats these `seLinuxOptions` as different.
+  KCM does not know the default on nodes and treats empty fields in `seLinuxOptions` as *uncomparable* - it does not emit any event in the above example.
 
 ### Implementation phases
 
