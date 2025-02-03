@@ -673,6 +673,7 @@ All these e2e tests use only CSI volumes. All in-tree volume types that support 
   * Provided all tests defined above are passing and gated by the feature gate `SELinuxMountReadWriteOncePod` and set to a default of `false`.
   * Documentation exists.
 * Beta of Phase 1:
+  * E2e tests implemented + green.
   * The feature gate is `true` by default.
 * Evaluation:
   * During the next release after Phase 1 is beta (= the feature is enabled by default), collect reports from users about possible breakage.
@@ -681,6 +682,7 @@ All these e2e tests use only CSI volumes. All in-tree volume types that support 
   * Implemented `SELinuxChangePolicy` **with a separate alpha feature gate `SELinuxChangePolicy`** as preparation for `SELinuxMount` feature gate graduation.
   * Implemented SELinuxController.
 * Beta of Phase 2 + 3 (`SELinuxChangePolicy` is beta and enabled by default; `SELinuxMount` is beta, but disabled by default).
+  * E2e tests implemented + green.
   * Telemetry numbers from OpenShift show that <5% of clusters would need to change any of their Pods.
   * This phase signalizes that the feature is ready for real testing.
     Only non-breaking parts (`SELinuxChangePolicy`) are enabled by default.
