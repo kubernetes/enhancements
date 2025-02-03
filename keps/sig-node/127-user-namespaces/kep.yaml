@@ -16,10 +16,10 @@ approvers:
   - "@derekwaynecarr"
 
 stage: beta
-latest-milestone: "v1.30"
+latest-milestone: "v1.33"
 milestone:
   alpha: "v1.25"
-  beta: "v1.30"
+  beta: "v1.33"
 
 feature-gates:
   - name: UserNamespacesSupport
