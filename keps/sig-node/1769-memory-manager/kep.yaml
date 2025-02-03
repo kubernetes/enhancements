@@ -7,7 +7,7 @@ authors:
   - "@Tal-or" # ONLY for GA graduation and PRR review
 owning-sig: sig-node
 participating-sigs:
-status:  implementable
+status:  implemented
 creation-date: 2020-02-03
 last-updated: 2024-10-01
 reviewers:
