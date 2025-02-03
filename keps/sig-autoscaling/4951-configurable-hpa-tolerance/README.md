@@ -614,7 +614,11 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [X] Events
   - Event Reason: `SuccessfulRescale`
 
-Users can monitor the scaling behavior of their HPA.
+The tolerance is applied on the ratio between the _current_ and _desired_ metric
+values. Users can get both values using
+[`kubectl describe`](https://github.com/kubernetes/kubernetes/blob/1b7a0591871772fbbc0fda430b3b73bc24c0e738/staging/src/k8s.io/kubectl/pkg/describe/describe.go#L4109)
+and use them to verify that scaling events are triggered when their ratio is out
+of tolerance.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
