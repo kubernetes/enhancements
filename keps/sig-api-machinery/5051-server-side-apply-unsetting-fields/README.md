@@ -158,8 +158,8 @@ intent that a field should not be set.
 
 As of Kubernetes 1.32, Server side apply lacks a direct way to unset fields.
 
-If a field manager exclusively owns a field, the field manage may unset the field by applying a
-configuring that omits the field. But if the field manager does not exclusively own the field, there
+If a field manager exclusively owns a field, the field manager may unset the field by applying a
+configuration that omits the field. But if the field manager does not exclusively own the field, there
 is no way for the field manager to unset the field using an apply request.
 
 Additionally, there is no way for a field manager to own a field that is unset.  This prevents a
