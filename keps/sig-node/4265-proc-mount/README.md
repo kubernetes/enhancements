@@ -508,6 +508,7 @@ Major milestones might include:
 2024-02-26: [Update](https://github.com/kubernetes/kubernetes/pull/123520) Unmasked ProcMountType to fail validation without a pod level user namespace.
 2024-05-31: Added e2e [tests](https://github.com/kubernetes/kubernetes/pull/123303)
 2024-05-31: KEP updated to Beta
+2025-01-31: KEP updated to on by default Beta
 
 ## Drawbacks
 
