@@ -3,7 +3,7 @@ kep-number: 3633
 authors:
   - "@sanposhiho"
 owning-sig: sig-scheduling
-status: implemented
+status: implementable
 creation-date: 2022-11-09
 reviewers:
   - "@Huang-Wei"

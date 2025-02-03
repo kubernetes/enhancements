@@ -1021,19 +1021,6 @@ and validate the declared limits?
 -->
 No.
 
-###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
-
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
-
-No.
-
 ### Troubleshooting
 
 <!--
