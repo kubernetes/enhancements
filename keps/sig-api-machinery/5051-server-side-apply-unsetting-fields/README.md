@@ -67,7 +67,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Apply (force=true) to unset an owned listType=map element](#apply-forcetrue-to-unset-an-owned-listtypemap-element)
     - [Apply (force=true) to unset an owned granular map value](#apply-forcetrue-to-unset-an-owned-granular-map-value)
     - [Apply (force=false) to an owned field](#apply-forcefalse-to-an-owned-field)
@@ -105,6 +105,8 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Alternatives to declaring the intent to unset a field](#alternatives-to-declaring-the-intent-to-unset-a-field)
+  - [Escaping](#escaping)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -456,8 +458,10 @@ fieldManager2:
    - Caveat: Non-declarative defaulting, such as defaulting that is performed by the strategy, or
     admission control, is not detectable by server side apply, and will result in conflicts between
 	field managers even for cases where the defaulting SHOULD result in shared field ownership.
-	This is a pre-existing problem between defaulting and server side apply but is more likely
-	to occur with this enhancement.
+	This is a pre-existing problem between mutating admission and server side apply but
+	will also become possible via defaulting of unset fields with this enhancement.
+  See [issue 129960](https://github.com/kubernetes/kubernetes/issues/129960) for
+  for examples.
 1. listType=map key fields that are defaulted MUST be respected when extracting unset value markers from
    apply configurations.  That is, a unset marker such as `{keyField1: "x", k8s_io__value: unset}`
    will be treated as `{keyField1: "x", defaultedKeyField: "defaultValue", k8s_io__value: unset}`
@@ -524,6 +528,7 @@ the introduction of custom marshalling to the apply configuration types.
 
 ### Unset marker escaping
 
+<<<<<<< Updated upstream
 We will **NOT** support escaping of the marker.
 
 We considered this and started to prototype an implementation, but:
@@ -533,6 +538,9 @@ We considered this and started to prototype an implementation, but:
 - It's hard to imagine where escaping this key would actually be needed. If we really need the ability
   to "apply to an apply configuration" in the future, look into options, but building this without
   a plausible use case does not seem necessary.
+=======
+We will NOT support escaping of the marker. See the alternatives considered section for details.
+>>>>>>> Stashed changes
 
 ### High level implementation plan
 
@@ -607,9 +615,10 @@ TODO: For beta
 
 #### Beta
 
-- applyconfiguration-gen generates typesafe bindings for unsetting fields
+- applyconfiguration-gen generates typesafe bindings for unsetting fields.
 - We decide if the marker values should be allowed in CREATE/UPDATE manifests, and stripped out, or
-  if we will not allow marker values in manifests.
+  if we will not allow marker values in manifests. If we to add this support, we will also
+  add feature gates to `kubectl` and client-go to opt-in to it.
 - Kubectl allows `{k8s_io__value: unset}` when validating apply configurations.
 - e2e tests are completed
 
@@ -943,6 +952,8 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### Alternatives to declaring the intent to unset a field
+
 We considered requiring users modify the `managed.managedFields` data to add the fields that are unset
 but that they wish to own. While this is possible, it goes against a goal established at the beginning
 of the server side apply project to make all operations possible without client modifiecations to
@@ -964,3 +975,14 @@ unset.  So if we use "__UNSET__" for fields, then we need to introduce a special
 for example `__VALUE__: __UNSET__`. This observation led us to favor using a key/value representation
 for all markers, which is slightly more verbose in the case of unsetting fields, but only requires
 developers learn a single representation for the marker to be able to use it in for all possible cases.
+
+### Escaping
+
+We considered escaping the marker field key, and started to prototype an implementation, but concluded that:
+
+- The marker key is already sufficiently unique that having it accidentally collide with a field name is
+  a pathological concern. The only plausible collision would be if there was a need to "apply to an apply configuration".
+- If we ever need the ability to "apply to an apply configuration" in the future, we COULD add escaping, but 
+  building this without a plausible use case feels like over engineering.
+- Adding a performant unescaping pass to structured-merge-diff is complex and it effectively doubles
+  the implementation effort of this KEP.
