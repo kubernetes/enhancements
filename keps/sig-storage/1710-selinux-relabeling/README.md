@@ -682,12 +682,19 @@ All these e2e tests use only CSI volumes. All in-tree volume types that support 
   * Implemented SELinuxController.
 * Beta of Phase 2 + 3 (`SELinuxChangePolicy` is beta and enabled by default; `SELinuxMount` is beta, but disabled by default).
   * Telemetry numbers from OpenShift show that <5% of clusters would need to change any of their Pods.
-  * This phase signalizes that the feature is ready for real testing. Only non-breaking parts (`SELinuxChangePolicy`) are enabled by default.
-* GA of Phase 2 (`SELinuxChangePolicy` + `SELinuxMountReadWriteOncePod` are GA and locked to default):
+  * This phase signalizes that the feature is ready for real testing.
+    Only non-breaking parts (`SELinuxChangePolicy`) are enabled by default.
+    Users willing to test `SELinuxMount` must enable it explicitly.
+* GA of Phase 2 (`SELinuxChangePolicy` + `SELinuxMountReadWriteOncePod` are GA and locked to default, `SELinuxMount` is beta and disabled by default):
   * All known issues fixed. Otherwise, we will GA Phase 1 only.
+  * Users can update their clusters safely, there is no breaking change yet.
+    Users willing to test `SELinuxMount` must enable it explicitly.
+  * This phase allows production clusters to check what Pods (Deployments, StatefulSets) need update and fix them before the breaking part (`SELinuxMount`) is enabled by default in the next phase.
 * GA of Phase 3 (`SELinuxMount` is GA and locked to default):
   * At least 1 release after `SELinuxChangePolicy` is GA to give cluster admins enough time to apply `SELinuxChangePolicy` to their Pods.
   * Telemetry numbers from OpenShift show that <2% of clusters would need to change any of their Pods (i.e. most clusters already applied opt-out).
+  * This is the phase that may break existing applications during cluster upgrade.
+    Users that use SELinux should carefully evaluate the metrics emitted by kubelet and SELinuxWarningController and fix their workloads before upgrade to this version.
 
 ### Upgrade / Downgrade Strategy
 
