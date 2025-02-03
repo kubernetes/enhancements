@@ -3,26 +3,26 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -164,45 +164,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
 To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin.
 Fabric devices are those that are not directly connected to the server and require attachment to the server for use.
 
-In the DRA current implementation, fabric devices are attached after the scheduling decision, which leads to the following issues:
+In the DRA current implementation, fabric devices are attached after the scheduling decision, which leads to the following issue:
 
 Fabric devices may be contested by other clusters.
 In scenarios where attachment occurs after scheduling, there is a risk that the resource cannot be attached at the time of attachment, causing the container to remain in the "Container Creating" state.
 
 To address this issue, we propose a feature that allows the DRA scheduler plugin to wait for the device to be attached.
+If attaching fails, the scheduler will retry and attempt to schedule the pod elsewhere.
 
 ## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 As AI and ML become popular in container (K8s) environment, enormous computational resources are required more and more.
 On the other hand, efforts toward energy efficiency are also required for the realization of a sustainable society.
@@ -231,11 +204,6 @@ This approach is superior because it avoids unnecessary waiting and allows for i
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
 1. **Enhance the DRA Scheduling Process**: 
 Implement a feature that allows the scheduling process to wait for the completion of fabric device attachment.
 This ensures that pods are only scheduled once the necessary fabric devices are successfully attached, improving reliability and efficiency.
@@ -258,15 +226,6 @@ and make progress.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-
 The basic idea is the following:
 
 1. **Add a Ready Flag to ResourceClaim**:
@@ -283,7 +242,7 @@ The basic idea is the following:
 
    - **Monitoring and Preparation by Composable DRA Controllers**:
      - Composable DRA Controllers monitor the `ResourceClaim`.
-     If a `ResourceSlice` that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
+     If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
      Once the preparation is complete, they set the flag to "Ready".
 
    - **Completion of the PreBind Phase**:
@@ -327,111 +286,134 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### DRA Scheduler Plugin Design Overview
 
+This document outlines the design of the DRA Scheduler Plugin, focusing on the handling of fabric devices.
+Key additions include new attributes for device identification, enhancements to `AllocatedDeviceStatus`, and the process for handling `ResourceSlices` upon attachment failure.
+The composable controller design is also discussed, emphasizing efficient utilization of fabric devices.
 
-### DRA scheduler plugin Design overview
+//TODO update figure
+![proposal](proposal2.JPG)
 
-Add a flag to the `Device` within `ResourceSlice` to indicate whether it represents a fabric device.
-This flag will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
-To avoid impacting existing DRA functionality, the default value of this flag is set to `false`.
+#### Device Attribute Additions
+
+To indicate whether a device is a fabric device, an attribute is added to the `Basic` within `Device`.
+This attribute will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
+To avoid impacting existing DRA functionality, the default value of this attribute is set to `false`.
 
 ```go
 // Device represents one individual hardware instance that can be selected based
 // on its attributes. Besides the name, exactly one field must be set.
 type Device struct {
-	// Name is unique identifier among all devices managed by
-	// the driver in the pool. It must be a DNS label.
-	//
-	// +required
-	Name string
+    // Name is unique identifier among all devices managed by
+    // the driver in the pool. It must be a DNS label.
+    //
+    // +required
+    Name string
 
-	// Basic defines one device instance.
-	//
-	// +optional
-	// +oneOf=deviceType
-	Basic *BasicDevice
+    // Basic defines one device instance.
+    //
+    // +optional
+    // +oneOf=deviceType
+    Basic *BasicDevice
+}
 
-	// FabricDevice represents whether this device is a fabric device or not.
-	// If true, it indicates that the device is connected via a fabric network.
-	// This flag helps in distinguishing fabric devices from other types of devices.
-	//
-	// +optional
-	FabricDevice bool
+// BasicDevice represents a basic device instance.
+type BasicDevice struct {
+    // Attributes contains additional attributes of the device.
+    //
+    // +optional
+    Attributes map[string]string
 }
 ```
 
-**Additions to the DRA Scheduler Plugin**
+To indicate a fabric device, the following attribute will be added:
 
-In the current implementation, the `PreBind` phase waits until the `ResourceClaim` update is completed.
-This proposal adds functionality to block the completion of the `PreBind` phase until the device is attached if a fabric device is included in the `ResourceClaim`.
+```yaml
+attributes:
+  kubernetes.io/needs-attaching:
+    bool: "true"
+```
 
-To communicate the completion of fabric device attachment to the scheduler, a flag will be added to the `Status` of the `ResourceClaim`.
+#### `AllocatedDeviceStatus` Additions
+
+The `Conditions` field within `AllocatedDeviceStatus` is used to indicate the status of the device attachment.
+This field will contain a list of conditions, each representing a specific state or event related to the device.
+
+For this feature, the NodeName and following `ConditionType` constants are added:
 
 ```go
 // AllocatedDeviceStatus contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
 type AllocatedDeviceStatus struct {
 ...
-	// DeviceAttached represents whether the device has been successfully attached.
-	//
-	// +optional
-	DeviceAttached string
-
-	// NodeName contains the name of the node where the device is attached.
-	//
-	// +optional
-	Nodename string 
+    // NodeName contains the name of the node where the device needs to be attached.
+    //
+    // +optional
+    NodeName string 
 }
-
-const (
-	DeviceAttachReady		= "Ready"
-	DeviceAttachPreparing	= "Preparing"
-	DeviceAttachFailed		= "Failed"
-	DeviceAttachReschedule	= "Reschedule"
+const(
+  DRADeviceNeedAttachType = "kubernetes.io/needs-attaching"
+  DRADeviceIsAttachType = "kubernetes.io/is-attached"
+  DRADeviceAttachFailType = "kubernetes.io/attach-failed"
 )
 ```
 
-This addition ensures that the scheduler only proceeds once the necessary fabric devices are properly attached, enhancing the reliability and efficiency of the scheduling process.
+When `kubernetes.io/needs-attaching: true` is set, the scheduler is expected to do the following:
 
+1. Set `AllocatedDeviceStatus.NodeName`.
+2. Add an `AllocatedDeviceStatus` with a condition of `Type: kubernetes.io/needs-attaching` and `Status: True`.
+3. Wait for a condition with `Type: kubernetes.io/is-attached` and `Status: True` in `PreBind` before proceeding.
+4. Give up when seeing a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
 
-To facilitate the discussion on the KEP, we would like to share the design of the composable controller we are considering as a component utilizing the fabric-oriented scheduler function.
-By sharing this, we believe we can deepen the discussion on the optimal implementation of the scheduler function.
-Additionally, we would like to verify whether the controller design matches the DRA design.
+#### Handling ResourceSlices Upon Failure of Attachment
 
-### Composable Controlelrs Design Overview
+During the scheduling cycle, the DRA plugin reserves a `ResourceSlice` for the `ResourceClaim`.
+In the binding cycle, the reserved `ResourceSlice` is assigned during `PreBind`.
+
+If a fabric device is selected, the scheduler waits for the device attachment during `PreBind`.
+The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
+If the attachment fails, the following steps are taken:
+
+1. **Update ResourceClaim**: The composable controller updates the `ResourceClaim` to indicate the failure of the attachment by setting a condition with `Type: kubernetes.io/is-attached` and `Status: False`.
+2. **Fail the Binding Cycle**: The scheduler detects the failed attachment condition and fails the binding cycle. This prevents the pod from proceeding with an unattached device.
+3. **Unbind ResourceClaim and ResourceSlice**: The scheduler unbinds the `ResourceClaim` and `ResourceSlice`, clearing the allocation to prevent the fabric device from being used in the pool.
+4. **Retry Scheduling**: In the next scheduling cycle, the scheduler attempts to bind the `ResourceClaim` again.
+
+### Composable Controller Design Overview
+
 Our controller's philosophy is to efficiently utilize fabric devices.
-Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices.
-(e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices)
+Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices (e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices).
 
 This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance.
 The composable controller manages fabric devices that can be attached and detached.
-Therefore, it publishes a list of fabric devices as ResourceSlices.
+Therefore, it publishes a list of fabric devices as `ResourceSlices`.
 
 The structure we are considering is as follows:
 
 ```yaml
-# composable controller publish this pool
+# Composable controller publishes this pool
 kind: ResourceSlice
 pool: composable-device
 driver: gpu.nvidia.com
 nodeSelector: fabric1
 devices:
   - name: device1
-  ...
+    attributes:
+      ...
+      kubernetes.io/needs-attaching:
+        bool: "true"
   - name: device2
-  ...
+    attributes:
+      ...
+      kubernetes.io/needs-attaching:
+        bool: "true"
 ```
 
-The vendor's DRA kubelet plugin will also publish the devices managed by the vendor as ResourceSlices.
+The vendor's DRA kubelet plugin will also publish the devices managed by the vendor as `ResourceSlices`.
 
 ```yaml
-# vendor DRA kubelet plugin publish this pool
+# Vendor DRA kubelet plugin publishes this pool
 kind: ResourceSlice
 pool: Node1
 driver: gpu.nvidia.com
@@ -441,28 +423,14 @@ devices:
   ...
 ```
 
-During the scheduling cycle, the DRA plugin reserves a ResourceSlice for the ResourceClaim.
-In the binding cycle, the reserved ResourceSlice is assigned during PreBind.
+During the scheduling cycle, the DRA plugin reserves a `ResourceSlice` for the `ResourceClaim`.
+In the binding cycle, the reserved `ResourceSlice` is assigned during `PreBind`.
+If a fabric device is selected, the scheduler waits for the device attachment during `PreBind`.
+The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
+Once the attachment is complete, the controller updates the `ResourceClaim` to indicate the completion of the attachment.
+The scheduler receives this update, completes the `PreBind`.
 
-If a fabric device is selected, the scheduler waits for the device attachment during PreBind.
-The composable controller performs the attachment operation by checking the flag of the ResourceClaim.
-Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment.
-The scheduler receives this update, completes the PreBind.
-
-We are considering the following two methods for handling ResourceSlices upon completion of the attachment.
-We would like to hear your opinions and feasibility on these two composable controller proposals.
-
-### Proposal 1: The Vendor's Plugin Publishes Attached Devices
-
-At the PreBind phase, if a fabric device is selected, the scheduler waits for the device attachment.
-The composable controller performs the attachment operation by checking the flag of the ResourceClaim.
-Once the attachment is complete, the controller updates the ResourceClaim to indicate the completion of the attachment.
-The scheduler receives this update, completes the PreBind, and proceeds with the scheduling process.
-
-![proposal1](proposal1.JPG)
-
-In this scenario, the composable controller removes `device1` from the composable-device pool.
-
+The composable controller removes device1 from the composable-device pool.
 ```yaml
 # Composable controller publishes this pool
 kind: ResourceSlice
@@ -474,8 +442,7 @@ devices:
   ...
 ```
 
-If the vendor's plugin responds to hotplug, `device1` will appear in the ResourceSlice published by the vendor.
-
+If the vendor's plugin responds to hotplug, device1 will appear in the ResourceSlice published by the vendor.
 ```yaml
 # Vendor DRA kubelet plugin publishes this pool
 kind: ResourceSlice
@@ -489,67 +456,7 @@ devices:
   ...
 ```
 
-This requires modification of the linkage between ResourceClaim and ResourceSlice (expected to be done by the scheduler or DRA controller).
-Until the linkage is fixed, the device being used may be published as a ResourceSlice and reserved by other Pods.
 
-### Proposal 2: The Composable Controller Unbinds ResourceClaim and ResourceSlice
-
-This proposal is similar to Proposal 1, but with a key difference: instead of updating the ResourceClaim information during the scheduling cycle, the composable controller unbinds the ResourceClaim and ResourceSlice, and the scheduler fails the binding cycle.
-In the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
-
-![proposal2](proposal2.JPG)
-
-In this case, the composable controller clears the ResourceClaim to prevent the fabric device from using the ResourceSlice in the pool.
-
-```yaml
-# Composable controller clears the ResourceClaim
-kind: ResourceClaim
-status:
-  allocationResult: null
-```
-
-The scheduler fails the binding cycle, and in the next schedule, the newly published ResourceSlice by the vendor driver is assigned to the ResourceClaim.
-
-#### Advantages
-- No need to modify the linkage between ResourceClaim and ResourceSlice.
-
-#### Disadvantages
-- Potential scheduling delays.
-- The device being reserved may be reserved by other Pods before the originally assigned Pod can re-reserve it.
-
-### Alternative Proposal: Cluster Autoscaler Implementation for Dynamic Management of Fabric Devices
-
-The above two proposals involve tricky methods such as reassigning or deleting the allocated device information in the `ResourceClaim`.
-Particularly, Proposal 1 poses a risk of negatively impacting several existing APIs.
-This issue arises from "assigning fabric resources not connected to the node to the `ResourceClaim` by the scheduler, and eventually assigning node-local resources to the `ResourceClaim`."
-
-#### Cluster Autoscaler Design Overview
-
-Instead of implementing the solution within the scheduler, we propose using the Cluster Autoscaler to manage the attachment and detachment of fabric devices.
-
-The key points and main process flow of this alternative proposal are as follows:
-
-The scheduler references only node-local `ResourceSlices`.
-If there are no available resources in the node-local `ResourceSlices`, the scheduler marks the Pod as unschedulable without waiting in the `PreBind` phase of the `ResourceClaim`.
-
-To handle fabric resources, we implement the Processor for composable system within CA.
-This Processor identifies unschedulable Pods and determines if attaching a fabric `ResourceSlice` device to an existing node would make scheduling possible.
-If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process.
-If attaching the fabric `ResourceSlice` does not make scheduling possible, the Processor determines whether to add a new node as usual.
-
-After the device is attached, the vendor DRA updates the node-local `ResourceSlices`.
-The vendor DRA needs a rescan function to update the Pool/ResourceSlice.
-The scheduler can then assign the node-local `ResourceSlice` devices to the unschedulable Pod, operating the same as the usual DRA from this point.
-
-##### Advantages
-- Reduces complexity in the scheduler and DRA controller.
-
-##### Disadvantages
-- Requires significant development effort to extend the Cluster Autoscaler to support fabric devices.
-
-We propose implementing the above functionality using a Processor, and further, ensuring that this Processor only runs in the composable system.
-This means the modifications to the Cluster Autoscaler would be limited to the Processor and an option to determine whether the Processor should run.
-In non-composable systems, the usual Cluster Autoscaler Processor would operate, thus excluding the impact of these changes.
 
 ### Test Plan
 
