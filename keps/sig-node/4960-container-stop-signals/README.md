@@ -190,7 +190,7 @@ Alpha:
    - When StopSignal is defined in the Container Spec (Status should have signal is defined in the Spec)
    - When StopSignal is only defined in the container image (Status should have the signal defined in the image)
    - When no StopSignal is defined (StopSignal in Status should be SIGTERM)
-- Test that the StopSignal is gracefully degraded when StopSignal is specifed but the container runtime is on a version that doesn't support the implementation
+- Test that the StopSignal is gracefully degraded when StopSignal is specified but the container runtime is on a version that doesn't support the implementation
 - Test that the feature is gracefully degraded when StopSignal is not supported in Kubelet but is supported in the container runtime
 
 ### Graduation Criteria
