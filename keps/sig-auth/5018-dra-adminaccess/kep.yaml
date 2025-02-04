@@ -2,14 +2,16 @@ title: DRA Admin Access
 kep-number: 5018
 authors:
   - "@ritazh"
-owning-sig: sig-node
+owning-sig: sig-auth
 status: provisional
 creation-date: 2025-01-02
 reviewers:
   - "@pohly"
+  - "@liggitt"
+  - "@enj"
 approvers:
-  -  # SIG-Node
   -  # SIG-Auth
+  -  # SIG-Node
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"

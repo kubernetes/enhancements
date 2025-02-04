@@ -179,11 +179,19 @@ objects as privileged. This feature includes:
        kubernetes.io/dra-admin-access: "true"
    ```
 
+   Assumptions:
+
+   - It is not important to subdivide admin access to different types of
+     devices.
+   - Ability to label (or relabel) namespaces is not granted to low-privileged
+     namespace-constrained users (this is the same assumption that
+     PodSecurityAdmission makes).
+
 1. Authorization Check:
 
-   In the REST storage layer, validate requests to create `ResourceClaim` or
-   `ResourceClaimTemplate` objects with `adminAccess: true`. Only authorize if
-   namespace has the `kubernetes.io/dra-admin-access` label.
+   In the REST storage layer, validate requests to create and update
+   `ResourceClaim` or `ResourceClaimTemplate` objects with `adminAccess: true`.
+   Only authorize if namespace has the `kubernetes.io/dra-admin-access` label.
 
 1. Grants privileged access to the requested device:
 
@@ -203,8 +211,9 @@ objects as privileged. This feature includes:
 1. A cluster administrator labels an admin namespace with
    `kubernetes.io/dra-admin-access`.
 
-1. Only authorized users can create `ResourceClaim` or `ResourceClaimTemplate`
-   objects with `adminAccess: true` in this admin namespace.
+1. Users who are authorized to create `ResourceClaim` or `ResourceClaimTemplate`
+   objects in this admin namespace can set `adminAccess: true` field if they
+   want to.
 
 1. Only users with access to the admin namespace can reference these
    `ResourceClaims` or `ResourceClaimTemplates` in their pod or deployment
@@ -263,8 +272,7 @@ Starting in Kubernetes 1.33 (when this KEP was introduced), a validation has
 been added to the REST storage layer to only authorize `ResourceClaim` or
 `ResourceClaimTemplate` with `adminAccess: true` requests if their namespace has
 the `kubernetes.io/dra-admin-access` label to only allow it for users with
-additional privileges. More time is needed to figure out how that should work,
-therefore the field is placed behind the `DRAAdminAccess` feature gate.
+additional privileges.
 
 The `DRAAdminAccess` feature gate controls whether users can set the
 `adminAccess` field to true when requesting devices. That is checked in the
@@ -282,10 +290,6 @@ request is authorized to set the `adminAccess` field to devices based on the DRA
 admin namespace label.
 
 ### Kube-controller-manager Changes
-
-// TODO: what part of claim.Status.Allocation should be updated? e.g.
-AdminAccess is part of `DeviceRequestAllocationResult` but need to set it for
-each device?
 
 In pkg/controller/resourceclaim/controller.go, process requests in `handleClaim`
 function to prevent creation of `ResourceClaim` when the `ResourceClaimTemplate`
@@ -387,6 +391,7 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 - Gather feedback
 - Additional tests are in Testgrid and linked in KEP
+- Implementations in the kubernetes-sigs/dra-example-driver
 
 #### GA
 
@@ -682,6 +687,9 @@ The following options were also considered:
   approach cannot be used to control access for an in-tree type because
   Kubernetes has no mechanism to apply a system VAP to all new clusters
   automatically and therefore it is not sufficient for conformance.
-- Builtin admission controller: This is doable, but more work than the approach
-  described in this KEP.
+- Builtin admission controller: This approach allows removal of a check, which
+  is not what we want. The REST storage approach leaves the control in the hands
+  of the cluster admin via permissions and allows the cluster admin to delegate
+  the control so that anyone can apply labels to namespaces, but they can't
+  prevent the check from running.
 - RBAC++: This is not available yet, especially for the DRA timeframe.
