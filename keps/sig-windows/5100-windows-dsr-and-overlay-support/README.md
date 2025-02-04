@@ -196,6 +196,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 DSR support was added to Windows Server 2019 as part of the May 2020 update.
 DSR provides performance optimizations by allowing the return traffic routed through load balancers to bypass the load balancer and respond directly to the client; reducing load on the load balancer and also reducing overall latency.
+More information on DSR on Windows can be found [here](https://techcommunity.microsoft.com/blog/networkingblog/direct-server-return-dsr-in-a-nutshell/693710).
 
 Overlay networking mode is a common networking mode used in Kubernetes clusters and is required by some for some important scenarios like network policy support with Calico CNI.
 Adding support for overlay networking mode in Windows kube-proxy will allow users to use more CNI soluitons with Windows nodes.
@@ -229,6 +230,9 @@ nitty-gritty.
 
 DSR and Overlay networking mode support is already implemented in Windows kube-proxy and has been extensively tested in the Windows CI pipeline.
 This proposal is to promote the existing implementations to GA.
+
+Additionally, DSR support on Windows is supported on both EKS and AKS.
+Both DSR and overlay networking support have been used in the Windows CI pipelines running release-informing 
 
 ### User Stories (Optional)
 
@@ -279,7 +283,7 @@ Enabling DSR and overlay networking mode support in Windows kube-proxy both have
 For DSR, the Windows Host Network Service handles all of the logic for managing network traffic; kube-proxy only needs to specify if DSR should be used when creating/sycing load balancer rules.
 Additionally, DSR must be enabled with a kube-proxy command switch switch (--enable-dsr=true) disabling DSR is can be performed by redeploying kube-proxy on Windows nodes.
 
-Overlay networking support in Windows has been used in the Windows CI pipelines running release-informing jobs for many releases and is considered stable.
+Overlay networking support in Windows has been used in the Windows CI pipelines running release-informing [capz-windows-master](https://testgrid.k8s.io/sig-windows-signal#capz-windows-master) jobs since K8s v1.20.
 
 ## Design Details
 
@@ -301,7 +305,7 @@ Checks for ternminating and service enpoints handle DSR traffic differently than
 - Local endpoints will be skipped when determining if all endpoints for a service are terminated if DSR is enabled and service type is load balancer.
 - Non-local endpoints will be skipped when considering if all endpoints for a service are non-serving if DSR is enabled and service type is load balancer.
 
-Flags passed to HNS calls used for the following operators will be updated to include a flag indicating if DSR is enabled for all get, create, and update loadbalancer HNS calls.
+Flags passed to HNS (Host Networking Service) calls used for the following operators will be updated to include a flag indicating if DSR is enabled for all get, create, and update loadbalancer HNS calls.
 
 
 ### Overlay support
