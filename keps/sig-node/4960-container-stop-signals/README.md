@@ -65,21 +65,22 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Container runtimes let you define a STOPSIGNAL to let your container images change which signal is delivered to kill the container. Currently you can only configure this by defining STOPSIGNAL in the container image definition file before you build the image. This becomes difficult to change when you’re using prebuilt images. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec. Kubernetes has no equivalent for STOPSIGNAL as part of Pod or Container APIs. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec.
+Container runtimes let you define a [STOPSIGNAL](https://docs.docker.com/reference/dockerfile/#stopsignal) to let your container images change which signal is delivered to kill the container. Currently you can only configure this by defining STOPSIGNAL in the container image definition file before you build the image. This becomes difficult to change when you’re using prebuilt images. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec. Kubernetes has no equivalent for STOPSIGNAL as part of Pod or Container APIs. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec.
 
 ## Motivation
 
-Container runtimes like Docker lets you configure the stop signal with which a container would be killed when you start a container. This can be configured either from the container image definition file itself with the STOPSIGNAL instruction or by using the `--stop-signal` flag when starting a container with the respective CLI tool for your runtime. Currently there is no equivalent to this in the Kubernetes APIs.
+Container runtimes like Docker let you configure the stop signal with which a container would be killed when you start a container. This can be configured either from the container image definition file itself with the STOPSIGNAL instruction or by using the `--stop-signal` flag when starting a container with the respective CLI tool for your runtime. Currently there is no equivalent to this in the Kubernetes APIs.
 
 While managing containers with Kubernetes, if you want to customize an existing image by changing its predefined stop signal or override the default stop signal of SIGTERM, currently you would have to rebuild the container image and update the stop signal at the image definition level. 
 
-Having stop signal as a first class citizen in the container specification would make it easier for users to set custom stop signals for their containers across all types of workloads.
+Having stop signal as a first class citizen in the Pod's container specification would make it easier for users to set custom stop signals for their containers across all types of workloads.
 
 ### Goals
 
 - Add a new StopSignal field to ContainerSpec
 - Update the CRI API to take StopSignal as a field in the StopContainerRequest and pass it down to the container runtime via the StopContainer method of remoteRuntimeService
-- Update StopContainer implementation in container runtimes to use the container’s StopSignal, if defined as the stop signal when killing containers.
+- Update StopContainer implementation in container runtimes to use the container’s StopSignal, if defined as the stop signal when killing containers
+- Add support for sending stop signal as a parameter with the `crictl stop` command
 
 ### Non-Goals
 
@@ -151,7 +152,7 @@ Kubernetes by default sends a SIGTERM to all containers while killing them. When
 
 ### Risks and Mitigations
 
-I don't see any issues with adding a new field for the stop signal because this is an optional feature that users.
+I don't see any issues with adding a new field for the stop signal because this is an optional feature.
 
 ## Design Details
 
@@ -185,6 +186,12 @@ Alpha:
 
 - Test that containers are killed with the right stop signal when StopSignal is passed
 - Test that containers are killed with SIGTERM when no StopSignal is passed
+- Test that the Status returns the correct StopSignal in all the following cases:
+   - When StopSignal is defined in the Container Spec (Status should have signal is defined in the Spec)
+   - When StopSignal is only defined in the container image (Status should have the signal defined in the image)
+   - When no StopSignal is defined (StopSignal in Status should be SIGTERM)
+- Test that the StopSignal is gracefully degraded when StopSignal is specifed but the container runtime is on a version that doesn't support the implementation
+- Test that the feature is gracefully degraded when StopSignal is not supported in Kubelet but is supported in the container runtime
 
 ### Graduation Criteria
 
@@ -192,12 +199,13 @@ Alpha:
 
 - Feature implemented behind a feature flag
 - CRI API implementation completed in containerd marked as experimental
+- CRI API implementation completed for CRI-O
 - Initial e2e tests completed and enabled, testing the feature against containerd
 - Unit tests for validation, e2e tests for version skew
 
 #### Beta
 
-- CRI API implementation for CRI-O
+- Add support for Windows
 - Gather feedback from developers and surveys
 - e2e tests for CRI-O
 
