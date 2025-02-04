@@ -8,6 +8,8 @@ participating-sigs:
 creation-date: "2025-02-01"
 reviewers: 
   - '@mikebrow'
+  - '@thockin'
+  - '@mrunalp'
 approvers: 
   - '@mrunalp'
 
