@@ -694,6 +694,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+If configured for use, both DSR and overlay networking will be used by any workloads that communicate with other pods/services in the cluster.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -710,8 +712,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Pod-to-Pod and Pod-to-Service traffic will not route correctly if the feature is not working.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -730,6 +732,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -740,8 +744,8 @@ Pick one more of these and delete the rest.
   - Metric name:
   - [Optional] Aggregation method:
   - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: Monitoring of workload-specific network traffic to ensure that traffic is being routed correctly.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -749,6 +753,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No
 
 ### Dependencies
 
@@ -772,6 +778,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+DNS and CNI solutions must be deployed in the cluster.
 
 ### Scalability
 
@@ -800,6 +808,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -809,6 +819,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -816,6 +828,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -825,6 +839,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -836,6 +852,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -849,6 +867,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Enabling DSR will increase the number of IP addresses in use on each node by 1 for the VIP used to route return traffic.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -860,6 +880,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No
 
 ### Troubleshooting
 
