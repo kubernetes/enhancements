@@ -42,6 +42,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Future Work](#future-work)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -74,28 +76,31 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposal aims at enabling hot plugging of node compute resources. This will help in updating cluster resource capacity by just resizing compute resources of nodes rather than adding new node to a cluster.
-The updated node configurations are to be reflected at the node and cluster levels automatically without the need to reset the kubelet.
-
-This proposal also aims to improve the initialization and reinitialization of resource managers, such as the CPU manager and memory manager, in response to changes in a node's CPU and memory configurations.
-
+The proposal seeks to facilitate hot plugging of node compute resources, thereby streamlining cluster resource capacity updates through node compute resource resizing, rather than introducing new nodes to the cluster.
+The revised node configurations will be automatically propagated at both the node and cluster levels, eliminating the necessity for a kubelet reset.
+Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager, in response to alterations in a node's CPU and memory configurations.
+This approach aims to optimize resource management, improve scalability, and minimize disruptions to cluster operations.
 ## Motivation
-In a typical Kubernetes environment, the cluster resources may need to be altered due to following reasons:
-- Incorrect resource assignment during cluster creation.
-- Increased workload over time, leading to the need for additional resources in the cluster.
 
-To handle these scenarios, we can:
-- Horizontally scale up the cluster by adding compute nodes.
-- Vertically scale up the cluster by increasing node capacity. However, currently, the workaround for capturing node resizing in the cluster involves restarting the Kubelet.
+In a conventional Kubernetes environment, the cluster resources might necessitate modification due to the following factors:
+- Inaccurate resource allocation during cluster initialization.
+- Escalating workload over time, necessitating supplementary resources within the cluster.
 
-Node resource hot plugging will provide advantages in scenarios such as:
-- Handling resource demand with a limited set of nodes by increasing the capacity of existing nodes instead of creating new nodes.
-- Creating new nodes takes more time compared to increasing the capacity of existing nodes.
+To address these situations, we can:
+- Horizontally scale the cluster by incorporating additional compute nodes.
+- Vertically scale the cluster by augmenting node capacity. Currently, the method to capture node resizing within the cluster entails restarting the Kubelet.
 
+These strategies enable the cluster to adapt to varying resource demands, ensuring optimal performance and efficient resource utilization. However, the limitation of requiring a Kubelet restart for node resizing is an area for potential improvement.
+
+Node resource hot plugging offers benefits in situations like:
+- Managing resource demand with a restricted number of nodes by enhancing the capacity of current nodes rather than creating new ones.
+- The process of creating new nodes is more time-consuming compared to augmenting the capacity of existing nodes.
+ 
+This approach allows for more efficient resource management and quicker capacity adjustments, optimizing the utilization of existing hardware.
 ### Goals
 
-* Dynamically scale up the node by hot plugging  resources and without restarting the kubelet.
-* Ability to reinitialize resource managers (CPU manager, memory manager) to adopt changes in node's resource.
+* Achieve seamless node capacity expansion through hot plugging resources, all without necessitating a kubelet restart.
+* Facilitate the reinitialization of resource managers (CPU manager, memory manager) to accommodate alterations in the node's resource allocation.
 
 ### Non-Goals
 
@@ -103,12 +108,12 @@ Node resource hot plugging will provide advantages in scenarios such as:
 * Hot unplug of node resources.
 * Update the autoscaler to utilize resource hot plugging.
 
-
 ## Proposal
 
-This KEP aims to support the node resource hot plugging by adding a polling mechanism in kubelet to fetch the machine-information from cAdvisor's cache which is already updated periodically, This information will be fetched periodically by kubelet, after which the node status updater is responsible for updating this information at node level in the cluster.
 
-Additionally, this KEP aims to improve the initialization and reinitialization of resource managers, such as the memory manager and CPU manager, so that they can adapt to change in node's configurations.
+This KEP strives to enable node resource hot plugging by incorporating a polling mechanism within the kubelet to retrieve machine-information from cAdvisor's cache, which is already updated periodically.
+The kubelet will periodically fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
+Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
 
 ### User Stories
 
@@ -118,7 +123,7 @@ As a cluster admin, I must be able to increase the cluster resource capacity wit
 
 #### Story 2
 
-As a cluster admin, I must be able to increase the cluster resource capacity without need to restarting the kubelet.
+As a cluster admin, I must be able to increase the cluster resource capacity without need to restart the kubelet.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -158,7 +163,20 @@ The interaction sequence is as follows
 3. Node status updater will update the node's status with the latest resource information.
 4. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
 
-Note: In case of increase in cluster resources, the scheduler will automatically schedule any pending pods.
+With increase in cluster resources the following components will updated
+
+1. Scheduler
+   * Scheduler will automatically schedule any pending pods.
+
+
+2. Change in Swap Memory limit
+   * Currently, the swap memory limit is calculated as 
+ `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+   * So increase in nodeTotalMemory will result in updated swap memory limit.
+
+
+3. Change in OOM score
+   * OOM score calculation depends on machine's memory, so the new OOM score will be updated accordingly.
 
 **Proposed Code changes**
 
@@ -172,7 +190,9 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 			klog.ErrorS(err, "Error fetching machine info")
 		} else {
 			cachedMachineInfo, _ := kl.GetCachedMachineInfo()
-
+            // Avoid collector collects it as a timestamped metric
+            // See PR #95210 and #97006 for more details.
+                machineInfo.Timestamp = time.Time{}
 			if !reflect.DeepEqual(cachedMachineInfo, machineInfo) {
 				kl.setCachedMachineInfo(machineInfo)
 
@@ -204,8 +224,8 @@ Note: In case of increase in cluster resources, the scheduler will automatically
 2. Adding a method Sync to all the resource managers and will be invoked once there is dynamic resource change.
 
 ```go
-        // Sync will sync the CPU Manager with the latest machine info
-	Sync(machineInfo *cadvisorapi.MachineInfo) error
+        // SyncMachineInfo will sync the Manager with the latest machine info
+        SyncMachineInfo(machineInfo *cadvisorapi.MachineInfo) error
 ```
 
 ### Test Plan
@@ -228,7 +248,7 @@ Following scenarios need to be covered:
 
 * Node resource information before and after resource hot plug.
 * State of Pending pods due to lack of resources after resource hot plug.
-* Resource manager states after the resynch of components.
+* Resource manager states after the resync of components.
 
 ### Graduation Criteria
 
@@ -268,6 +288,7 @@ Existing cluster does not have any impact as the node resources already been upd
 
 It's always possible to trivially downgrade to the previous kubelet, It does not have any impact as the future node resource hot plug wont be reflected in cluster
 without manual kubelet restart.
+
 
 ### Version Skew Strategy
 
@@ -351,7 +372,7 @@ Yes. Once disabled any hot plug of resources won't reflect at the cluster level 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the feature is reenabled again, the node resources can be hot plugged in again. Cluster will be automatically udpated
+If the feature is reenabled again, the node resources can be hot plugged in again. Cluster will be automatically updated
 with the new resource information.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -662,6 +683,8 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+Hot Unplug of resource is not supported so any decrease in node resources will be automatically updated but the Pods
+re-admission is not done so Pods may be running with low resources until kubelet is restarted.
 
 ## Alternatives
 
@@ -672,3 +695,10 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+## Infrastructure Needed (Optional)
+VMs of cluster should support hot plug of compute resources for e2e tests.
+
+## Future Work
+
+* Support hot-unplug of node resources: Hot-Unplug of resource needs a pod-readmission, A separate KEP is planned to support this feature.
