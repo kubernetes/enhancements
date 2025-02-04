@@ -182,11 +182,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -1411,7 +1411,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Not yet, but it is planned/required to add them before graduation to Beta.
+See https://github.com/kubernetes/kubernetes/pull/129731/ introducing this test with the emulated version.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1774,18 +1774,18 @@ For each of them, fill in the following information by copying the below templat
   - Detection: high number of events indicating TGPS has been exceeded
   - Mitigations: ensure timely termination of main containers
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: https://github.com/kubernetes/kubernetes/blob/b4f902f0371485505ff4eda39975e67bfa9b0727/test/e2e_node/container_lifecycle_test.go#L4977-L5077
 - Main container or sidecar use a preStop hook consuming TGPS, leading to remaining sidecars being terminated
   - Detection: high number of events indicating TGPS has been exceeded
   - Mitigations: ensure preStop hooks are not delaying termination
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: https://github.com/kubernetes/kubernetes/blob/b4f902f0371485505ff4eda39975e67bfa9b0727/test/e2e_node/container_lifecycle_test.go#L4272-L4408
 - Sidecar container uses a preStop hook that make the container exit during Pod shutdown, sidecar is restarted, leading
 to a CrashLoopBackOff
   - Detection: sidecar in CrashLoopBackOff during termination
   - Mitigations: ensure preStop hooks are not making the container to exit, document best practices
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: no testing needed as this is a best practice implementing sidecars
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1808,6 +1808,7 @@ Major milestones might include:
 - 2023-06-09: Target 1.28 for Alpha.
 - 2023-07-08: Alpha implementation merged.
 - 1.29: feature is in Beta
+- 1.33: feature is graduated to Stable
 
 ## Drawbacks
 
