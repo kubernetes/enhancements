@@ -14,8 +14,10 @@ reviewers:
   - "@ffromani"
   - "@SergeyKanzhelev"
   - "@haircommander"
+  - "@tallclair"
 approvers:
-  - "@sig-node-leads"
+  - "@haircommander"
+  - TBD
 see-also:
 replaces:
 
