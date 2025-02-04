@@ -268,7 +268,7 @@ In addition to the Pod itself, each integration test should be repeated with obj
 - [X] Initial e2e tests completed and enabled
 
 #### Beta
-- [ ] No trouble reports from alpha release
+- [X] No trouble reports from alpha release
 
 #### GA
 - [ ] No trouble reports with the beta release, plus some anecdotal evidence of it being used successfully.
@@ -385,7 +385,8 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Will be tested during implementation.
+
+Tested by hand.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
