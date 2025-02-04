@@ -129,6 +129,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
+      - [Runtime verification testing](#runtime-verification-testing)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
@@ -1211,6 +1212,28 @@ See [Unit Test Instrumentation](#unit-test-instrumentation) for unit testing pla
 - `k8s.io/apiserver/pkg/cel/openapi`: `10/02/2023` - `84.8`
 - `k8s.io/apiserver/pkg/cel/library`: `10/02/2023` - `69`
 - `k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/model`: `10/02/2023` - `83.3`
+
+##### Runtime verification testing
+
+In addition to unit and fuzz tests, we will offer a means of running declarative validation in a "shadow mode"
+such that the presence of mismatches between declarative validation and hand written validation can
+be safely checked against production workloads.
+
+When a `DeclarativeValidationShadowMetrics` feature gate is enabled, the following will be collected for each validation operation:
+
+A. Errors from running all hand written validation
+B. Errors from running only hand written validation for non-converted validations (using validation opts)
+C. Errors from running declarative validation
+
+This data will be used to check if A-B == C. That is, the declarative validation errors should be equivalent to the errors that hand written validation produces for all validation that has been converted to declarative.
+
+If the errors do not match, a 'declarative-validation-mismatch' metric will be incremented and information
+about the mismatch will be written to the apiserver's logs.
+
+This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
+- Enable `DeclarativeValidationShadowMetrics`
+- Soak for a desired duration across some number of clusters
+- Check the metrics to ensure no mismatches have been found
 
 ##### Integration tests
 
