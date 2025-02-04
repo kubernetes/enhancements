@@ -36,6 +36,7 @@
         - [Mitigation: Ensure Invalid Objects Still Invalid](#mitigation-ensure-invalid-objects-still-invalid)
         - [Mitigation: Ensure Valid Old Objects Still Valid](#mitigation-ensure-valid-old-objects-still-valid)
       - [Risk: Added latency to API request handling.](#risk-added-latency-to-api-request-handling)
+        - [Mitigation: Resolve Known &quot;Low Hanging Fruit&quot; of Performance Improvements In Current Validation Code](#mitigation-resolve-known-low-hanging-fruit-of-performance-improvements-in-current-validation-code)
         - [Mitigation: Avoid Conversion to Internal Type](#mitigation-avoid-conversion-to-internal-type)
   - [Design Details](#design-details)
     - [Summary of Declarative Validation Components](#summary-of-declarative-validation-components)
@@ -80,6 +81,8 @@
   - [Alternatives](#alternatives)
     - [Use CEL and OpenAPI libraries directly for K8s Native Types (<a href="https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/4153-declarative-validation">KEP-4153</a>)](#use-cel-and-openapi-libraries-directly-for-k8s-native-types-kep-4153)
   - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+  - [Future Work](#future-work)
+    - [&quot;New K8s Native APIs&quot; Design Partner For Declarative Validation in 1.34](#new-k8s-native-apis-design-partner-for-declarative-validation-in-134)
 <!-- /toc -->
 
 # KEP-5073: Declarative Validation of Kubernetes Native Types With validation-gen
@@ -374,11 +377,11 @@ Today, the apiserver's request handler decodes incoming versioned API requests t
 
 Assuming we use the recommended plan of declarative validation operating on versioned types, the internal type will no longer be responsible for validation.
 
-If we were to convert from the internal back to the version of the API request for validation, we would introduce one additional conversion. If we make this an "unsafe" conversion, then it will be low cost for the vast majority of requests.
+We will convert from the internal back to the version of the API request for validation introducing one additional conversion. If we make this an "unsafe" conversion, then it will be low cost for the vast majority of requests.
 
 We will benchmark this approach and plan to use it for beta.
 
-Long term, we could do better:
+**NOTE**: Long term, it is possible that we could make one of versioned types be the hub type:
 
 Since the internal type will no longer be used for validation, it becomes a lot less important. It is still important to have a hub type. But why not pick one of the versioned types to be the hub type? The vast majority of APIs only have one version anyway. The obvious candidate version to choose for the hub version would be the preferred storage version.
 
@@ -388,11 +391,17 @@ Switching to a versioned type for the hub type would have a few implications:
 *   We would introduce more conversion when API request version differs from the hub version. But beta APIs are off-by-default and we expect a lot less mixed version API usage than in the past.
 *   Would require rewriting in tree admission plugins.
 
-This "hub version" change feels like something that could be made somewhat independent of this KEP.
+This "hub version" change is something that could be made independent of this KEP, just noting the idea here.
+
+##### Mitigation: Resolve Known "Low Hanging Fruit" of Performance Improvements In Current Validation Code
+
+From analyzing the validation code there is "SO MUCH low-hanging fruit" - @thockin with respect to performance improvements.  As such it is likely Declarative Validation can cover any perf deficit by improving validation performance generally. One example of this that already came up is related to the algorithm used for `listmap` (see prototype for more information)
 
 ##### Mitigation: Avoid Conversion to Internal Type
 
-Requests are received as the versioned type, so it should be feasible to avoid extra conversions for resources that have no need of handwritten validations.
+**NOTE** This would be a SIGNIFICANT undertaking to prove defaulting and admission is equivalent. 
+
+Requests are received as the versioned type, so it should be feasible to avoid extra conversions for resources that have no need of handwritten validations.  This is likely not necessary given the known "low hanging fruit" of performance improvements but mentioned for completeness.
 
 ## Design Details
 
@@ -1293,3 +1302,7 @@ No change in behavior.
 ### Use CEL and OpenAPI libraries directly for K8s Native Types ([KEP-4153](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/4153-declarative-validation))
 
 ## Infrastructure Needed (Optional)
+
+## Future Work
+### "New K8s Native APIs" Design Partner For Declarative Validation in 1.34   
+For 1.34 the Declarative Validation working group is looking for a design partner to collaborate with aid in the UX, "validator" creation, and developer process of using Declarative Validation. The partnership would be focused around the new k8s native API creation context of declarative validation (vs the migrating of current k8s native APIs).
