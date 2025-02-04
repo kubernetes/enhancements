@@ -676,6 +676,12 @@ providers such as Okta, Azure AD, etc:
 #### GA
 
 - Gather feedback
+  - Confirm with [Kubespray](https://github.com/kubernetes-sigs/kubespray) that the new functionality addresses their use case.
+    - The Kubespray team is integrating Structured Authentication in this [PR](https://github.com/kubernetes-sigs/kubespray/pull/11841).
+  - Confirm with [Gardener](https://gardener.cloud/) that the new functionality addresses their use case.
+    - The Gardener team has integrated Structured Authentication in this [PR](https://github.com/gardener/gardener/pull/10244).
+  - Confirm with [SPIFFE](https://spiffe.io/) that the new functionality addresses their use case.    
+      - The SPIFFE team recommends Structured Authentication in their [README](https://github.com/spiffe/k8s-spiffe-workload-jwt-exec-auth?tab=readme-ov-file#setup-the-kubernetes-cluster-auth).
 - Add a full documentation with examples for the most popular providers, e.g., Okta, Dex, Auth0
 - Migration guide
 - e2e test with an external provider completed and enabled
