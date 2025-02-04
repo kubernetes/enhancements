@@ -967,6 +967,28 @@ https://github.com/jpbetz/kubernetes/tree/validation-gen/staging/src/k8s.io/code
 `validation-gen` validators will also use test fixtures for validator testing which allows for additional test coverage.  Example of such a generated test (`zz_generated.validations_test.go`) from the prototype is here:  \
 https://github.com/jpbetz/kubernetes/blob/validation-gen/staging/src/k8s.io/code-generator/cmd/validation-gen/output_tests/pointers/zz_generated.[validations_test.go](https://github.com/jpbetz/kubernetes/blob/validation-gen/staging/src/k8s.io/code-generator/cmd/validation-gen/output_tests/pointers/zz_generated.validations_test.go)
 
+##### Runtime verification testing
+
+In addition to unit and fuzz tests, we will offer a means of running declarative validation in a "shadow mode"
+such that the presence of mismatches between declarative validation and hand written validation can
+be safely checked against production workloads.
+
+When a `DeclarativeValidationShadowMetrics` feature gate is enabled, the following will be collected for each validation operation:
+
+A. Errors from running all hand written validation
+B. Errors from running only hand written validation for non-converted validations (using validation opts)
+C. Errors from running declarative validation
+
+This data will be used to check if A-B == C. That is, the declarative validation errors should be equivalent to the errors that hand written validation produces for all validation that has been converted to declarative.
+
+If the errors do not match, a 'declarative-validation-mismatch' metric will be incremented and information
+about the mismatch will be written to the apiserver's logs.
+
+This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
+- Enable `DeclarativeValidationShadowMetrics`
+- Soak for a desired duration across some number of clusters
+- Check the metrics to ensure no mismatches have been found
+
 ##### Integration tests
 
 ###### 	Migration Equivalency Tests
