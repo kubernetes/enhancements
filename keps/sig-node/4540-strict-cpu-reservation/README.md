@@ -12,6 +12,8 @@
     - [Story 2](#story-2)
 - [Design Details](#design-details)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Archived Risk Mitigation (Option 1)](#archived-risk-mitigation-option-1)
+    - [Archived Risk Mitigation (Option 2)](#archived-risk-mitigation-option-2)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -106,10 +108,6 @@ With the following Kubelet configuration:
 ```yaml
 kind: KubeletConfiguration
 apiVersion: kubelet.config.k8s.io/v1beta1
-featureGates:
-  ...
-  CPUManagerPolicyOptions: true
-  CPUManagerPolicyBetaOptions: true
 cpuManagerPolicy: static
 cpuManagerPolicyOptions:
   strict-cpu-reservation: "true"
@@ -131,7 +129,7 @@ When `strict-cpu-reservation` is enabled:
 
 ### Risks and Mitigations
 
-The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyAlphaOptions` or `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default.
+The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default.
 
 Concern for feature impact on best-effort workloads, the workloads that do not have resource requests, is brought up.
 
@@ -141,11 +139,130 @@ The concern is, when the feature graduates to `Stable`, it will be enabled by de
 
 However, this is exactly the feature intent, best-effort workloads have no KPI requirement, they are meant to consume whatever CPU resources left on the node including starving from time to time. Best-effort workloads are not scheduled to run on the `reservedSystemCPUs` so they shall not be run on the `reservedSystemCPUs` to destablize the whole node.
 
-We agree to start with the following node metrics of cpu pool sizes in Alpha and Beta stage to assess the actual impact in real deployment before revisiting if we need risk mitigation.
+Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha and Beta stages to assess the actual impact in real deployment before revisiting if we need risk mitigation.
 
 https://github.com/kubernetes/kubernetes/pull/127506
 - `cpu_manager_shared_pool_size_millicores`: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
 - `cpu_manager_exclusive_cpu_allocation_count`: report exclusively allocated cores, counting full cores (e.g. 16)
+
+
+#### Archived Risk Mitigation (Option 1)
+
+This option is to add `numMinSharedCPUs` in `strict-cpu-reservation` option as the minimum number of CPU cores not available for exclusive allocation and expose it to Kube-scheduler for enforcement.
+
+In Kubelet, when `strict-cpu-reservation` is enabled as a policy option, we remove the reserved cores from the shared pool at the stage of calculation DefaultCPUSet and remove the `MinSharedCPUs` from the list of available cores for exclusive allocation.
+
+![MinSharedCPUs](./strict-cpu-allocation.png)
+
+When `strict-cpu-reservation` is disabled:
+```console
+Total CPU cores: 64
+ReservedSystemCPUs: 6
+defaultCPUSet = Reserved (6) + 58 (available for exclusive allocation)
+```
+
+When `strict-cpu-reservation` is enabled:
+```console
+Total CPU cores: 64
+ReservedSystemCPUs: 6
+MinSharedCPUs: 4
+defaultCPUSet = MinSharedCPUs (4) + 54 (available for exclusive allocation)
+```
+
+Prototype PR for the option is created:
+https://github.com/kubernetes/kubernetes/pull/123979/commits
+
+Add `numMinSharedCPUs` as part of `strict-cpu-reservation` option in Kubelet configuration:
+
+```yaml
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+featureGates:
+  ...
+  CPUManagerPolicyAlphaOptions: true
+cpuManagerPolicy: static
+cpuManagerPolicyOptions:
+  strict-cpu-reservation: { "enable": "true", "numMinSharedCPUs": 4 }
+reservedSystemCPUs: "0,32,1,33,16,48"
+...
+```
+
+In Node API, we add `exclusive-cpu` in Node Allocatable for Kube-scheduler to consume.
+
+```
+  "status": {
+    "capacity": {
+      "cpu": "64",
+      "exclusive-cpu": "64",
+      "ephemeral-storage": "832821572Ki",
+      "hugepages-1Gi": "0",
+      "hugepages-2Mi": "0",
+      "memory": "196146004Ki",
+      "pods": "110"
+    },
+    "allocatable": {
+      "cpu": "58",
+      "exclusive-cpu": "54",
+      "ephemeral-storage": "767528359485",
+      "hugepages-1Gi": "0",
+      "hugepages-2Mi": "0",
+      "memory": "186067796Ki",
+      "pods": "110"
+    },
+  ...
+```
+
+In kube-scheduler, `ExlusiveMilliCPU` is added in scheduler's `Resource` structure and `NodeResourcesFit` plugin is extended to filter out nodes that can not meet pod's exclusive CPU request.
+
+A new item `ExclusiveMilliCPU` is added in the scheduler `Resource` structure:
+
+```
+// Resource is a collection of compute resource.
+type Resource struct {
+        MilliCPU          int64
+        ExclusiveMilliCPU int64    // added
+        Memory            int64
+        EphemeralStorage  int64
+        // We store allowedPodNumber (which is Node.Status.Allocatable.Pods().Value())
+        // explicitly as int, to avoid conversions and improve performance.
+        AllowedPodNumber int
+        // ScalarResources
+        ScalarResources map[v1.ResourceName]int64
+}
+```
+
+A new node fitting failure 'Insufficient exclusive cpu' is added in the `NodeResourcesFit` plugin:
+
+```
+        if podRequest.MilliCPU > 0 && podRequest.MilliCPU > (nodeInfo.Allocatable.MilliCPU-nodeInfo.Requested.MilliCPU) {
+                insufficientResources = append(insufficientResources, InsufficientResource{
+                        ResourceName: v1.ResourceCPU,
+                        Reason:       "Insufficient cpu",
+                        Requested:    podRequest.MilliCPU,
+                        Used:         nodeInfo.Requested.MilliCPU,
+                        Capacity:     nodeInfo.Allocatable.MilliCPU,
+                })
+        }
+        if nodeInfo.Allocatable.ExclusiveMilliCPU > 0 {    // added
+                if podRequest.ExclusiveMilliCPU > 0 && podRequest.ExclusiveMilliCPU > (nodeInfo.Allocatable.ExclusiveMilliCPU-nodeInfo.Requested.ExclusiveMilliCPU) {
+                        insufficientResources = append(insufficientResources, InsufficientResource{
+                                ResourceName: v1.ResourceExclusiveCPU,
+                                Reason:       "Insufficient exclusive cpu",
+                                Requested:    podRequest.ExclusiveMilliCPU,
+                                Used:         nodeInfo.Requested.ExclusiveMilliCPU,
+                                Capacity:     nodeInfo.Allocatable.ExclusiveMilliCPU,
+                        })
+                }
+        }
+```
+
+#### Archived Risk Mitigation (Option 2)
+
+The problem with `MinSharedCPUs` is that it creates another complication like memory and hugpages, new resources vs overlapping resources, exclusive-cpus is a subset of cpu.
+
+Currently the noderesources scheduler plugin does not filter out the best-effort pods in the case there's no available CPU.
+
+Another option is to force the cpu requests for best effort pods to 1 MilliCPU in kubelet for the purpose of resource availability checks (or, equivalently, check there's at least 1 MilliCPU allocatable). This option is meant to be simpler than option-1, but it can create runaway pods similar to that in https://github.com/kubernetes/kubernetes/issues/84869.
 
 
 ### Test Plan
@@ -175,7 +292,7 @@ No new integration tests for kubelet are planned.
   - CPU Manager works with `strict-cpu-reservation` policy option
 
 - Basic functionality
-1. Enable `CPUManagerPolicyBetaOptions` feature gate and `strict-cpu-reservation` policy option.
+1. Enable `strict-cpu-reservation` policy option.
 2. Create a simple pod of Burstable QoS type.
 3. Verify the pod is not using the reserved CPU cores.
 4. Delete the pod.
@@ -228,10 +345,9 @@ The `/var/lib/kubelet/cpu_manager_state` needs to be removed when enabling or di
 Yes. Reserved CPU cores will be strictly used for system daemons and interrupt processing no longer available for workloads.
 
 The feature is only enabled when all following conditions are met:
-1. The `static` `CPUManager` policy must be selected
-2. The `CPUManagerPolicyBetaOptions` feature gate must be enabled
-3. The new `strict-cpu-reservation` policy option must be selected
-4. The `reservedSystemCPUs` is not empty
+1. The `static` `CPUManager` policy is selected
+2. The `CPUManagerPolicyBetaOptions` feature gate is enabled and the `strict-cpu-reservation` policy option is selected
+3. The `reservedSystemCPUs` is not empty
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
