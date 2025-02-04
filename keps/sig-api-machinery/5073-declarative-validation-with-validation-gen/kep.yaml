@@ -40,8 +40,15 @@ feature-gates:
   - name: DeclarativeValidation
     components:
       - kube-apiserver
+  # Adds logic to apiserver to run declarative validation and handwritten validation
+  # while not modifying actual validation path but only outputting any mismatch information as a metric
+  - name: DeclarativeValidationMismatchMode
+    components:
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-#   - my_feature_metric
+  # declarative-validatoin-mismatch tracks the number of mismatched valdation results and errors
+  # when comparing the outputs of hand-written validations vs declarative validations
+  - declarative-validation-mismatch

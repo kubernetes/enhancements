@@ -14,8 +14,8 @@
       - [New Validations Vs Migrating Validations](#new-validations-vs-migrating-validations)
       - [New Validation Tests](#new-validation-tests)
       - [Ensuring Validation Equivalence With Testing](#ensuring-validation-equivalence-with-testing)
-    - [Introduce Feature Gate: <code>DeclarativeValidation</code>](#introduce-feature-gate-declarativevalidation)
-      - [<code>DeclarativeValidation</code> Will Target Beta From The Beginning](#declarativevalidation-will-target-beta-from-the-beginning)
+    - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationMismatchMetrics</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationmismatchmetrics)
+      - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationMismatchMetrics</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationmismatchmetrics-will-target-beta-from-the-beginning)
     - [Linter](#linter)
     - [Documentation Generation](#documentation-generation)
   - [Analysis of existing validation rules](#analysis-of-existing-validation-rules)
@@ -58,6 +58,7 @@
     - [Test Plan](#test-plan)
         - [Prerequisite testing updates](#prerequisite-testing-updates)
         - [Unit tests](#unit-tests)
+        - [Runtime verification testing](#runtime-verification-testing)
         - [Integration tests](#integration-tests)
         - [e2e tests](#e2e-tests)
     - [Graduation Criteria](#graduation-criteria)
@@ -193,6 +194,8 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
     *   Create migration test pattern and utilities which support testing equivalence between hand-written validation and declarative validation (de-risks migration problems)
 *   Introduce featuregate: `DeclarativeValidation`
     *   Safety mechanism in case a mistake is made so that users can turn off Declarative Validation and get back to a healthy validation state.  (de-risks migration problems)
+*   Introduce featuregate: `DeclarativeValidationMismatchMetrics`
+    *   Runtime check which emits declarative-validation-mismatch metric allowing for tests and users to identify any mismatching validation logic between hand-written and declarative validations.
 *   Migration
     *   Migrate schema from one type of a core API group to prove the viability of the approach, in a single PR.
         *   PR will leverage `validation-gen` test framework to demonstrate 100% validation equivalence across hand-written and declarative validation for migrated field(s).
@@ -240,11 +243,15 @@ For testing the migration and ensuring that the validation is identical across c
 
 Verifying that a field/type that is migrated is appropriately tested with proper changes to validation_test.go, equivalence testing, etc. will be human-drivern enforced in PR review for the related community migration PR
 
-### Introduce Feature Gate: `DeclarativeValidation`
+Additionally to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create an additional runtime check controlled by a new feature gate - `DeclarativeValidationMismatchMetrics`.  When this is enabled, both hand-written and declarative validation will be run (parallel to the actual validation logic which is unchanged by the flag) and any mismatches will be output under the metric - `declarative-validation-mismatch`.
+
+### Introduce Feature Gates: `DeclarativeValidation` & `DeclarativeValidationMismatchMetrics`
 
 A new feature gate - `DeclarativeValidation` will be created as part of Declarative Validation.  This feature gate will toggle the behaviour of routing the validation for specified number of fields for a schema (and later full schemas) to use declarative validation vs the hand-written validation.  In Beta this will enable a partial migration where initially a small number of fields of a single schema  will be ported to declarative validation and this will increase over time until all validation logic is declarative.  During the Beta lifecycle more and more validations will be ported until they all are in which case the feature will move to GA.  For more information see the “Migration Plan” section.
 
-#### `DeclarativeValidation` Will Target Beta From The Beginning
+Additionally a new feature gate - `DeclarativeValidationMismatchMetrics` will be created.  For more information see the "Test Plan" section.
+
+#### `DeclarativeValidation` & `DeclarativeValidationMismatchMetrics` Will Target Beta From The Beginning
 
 Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally DeclarativeValidation is targeting Beta with default:true.  This is because Declarative Validation is not new functionality but an alternative implementation of validation and users should not be able to perceive any changes when swapping hand-written validation w/ identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism  in case a mistake is made so that users can turn it off and get back to safety.  There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behaviour, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth` which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230))
 
@@ -396,7 +403,7 @@ Requests are received as the versioned type, so it should be feasible to avoid e
     *   Test fixture
     *   Linter
     *   Documentation generator
-*   Feature gate - `DeclarativeValidation`
+*   Feature gates - `DeclarativeValidation`& `DeclarativeValidationMismatchMetrics`
 *   Testing
     *   Equivalency tests (verifyVersionedValidationEquivalence in prototype)
         *   validation_test.go
@@ -969,11 +976,11 @@ https://github.com/jpbetz/kubernetes/blob/validation-gen/staging/src/k8s.io/code
 
 ##### Runtime verification testing
 
-In addition to unit and fuzz tests, we will offer a means of running declarative validation in a "shadow mode"
+In addition to unit and fuzz tests, we will offer a means of running declarative validation in a "mismatch mode"
 such that the presence of mismatches between declarative validation and hand written validation can
 be safely checked against production workloads.
 
-When a `DeclarativeValidationShadowMetrics` feature gate is enabled, the following will be collected for each validation operation:
+When a `DeclarativeValidationMismatchMetrics` feature gate is enabled, the following will be collected for each validation operation:
 
 A. Errors from running all hand written validation
 B. Errors from running only hand written validation for non-converted validations (using validation opts)
@@ -985,7 +992,7 @@ If the errors do not match, a 'declarative-validation-mismatch' metric will be i
 about the mismatch will be written to the apiserver's logs.
 
 This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
-- Enable `DeclarativeValidationShadowMetrics`
+- Enable `DeclarativeValidationMismatchMetrics`
 - Soak for a desired duration across some number of clusters
 - Check the metrics to ensure no mismatches have been found
 
