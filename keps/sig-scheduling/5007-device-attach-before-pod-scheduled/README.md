@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
     - [Device Attribute Additions](#device-attribute-additions)
     - [<code>AllocatedDeviceStatus</code> Additions](#allocateddevicestatus-additions)
+    - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
   - [Composable Controller Design Overview](#composable-controller-design-overview)
   - [Test Plan](#test-plan)
@@ -354,12 +355,22 @@ const(
 )
 ```
 
-When `kubernetes.io/needs-attaching: true` is set, the scheduler is expected to do the following:
+When `kubernetes.io/needs-attaching: true` is set, the scheduler DRA plugin is expected to do the following:
 
 1. Set `AllocatedDeviceStatus.NodeName`.
 2. Add an `AllocatedDeviceStatus` with a condition of `Type: kubernetes.io/needs-attaching` and `Status: True`.
 3. Wait for a condition with `Type: kubernetes.io/is-attached` and `Status: True` in `PreBind` before proceeding.
 4. Give up when seeing a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
+
+Note: There is a concern that the in-flight events cache may grow too large when waiting in PreBind.
+This issue will be addressed separately as outlined in kubernetes/kubernetes#129967.
+
+#### PreBind Phase Timeout
+
+If the device attachment is successful, we expect it to take no longer than 5 minutes.
+Therefore, if we set a fixed timeout for the scheduler, we would like to set it to 10 minutes.
+
+Even if the conditions `Type: kubernetes.io/is-attached` or `Type: kubernetes.io/attach-failed` are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
 #### Handling ResourceSlices Upon Failure of Attachment
 
@@ -370,9 +381,9 @@ If a fabric device is selected, the scheduler waits for the device attachment du
 The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
 If the attachment fails, the following steps are taken:
 
-1. **Update ResourceClaim**: The composable controller updates the `ResourceClaim` to indicate the failure of the attachment by setting a condition with `Type: kubernetes.io/is-attached` and `Status: False`.
+1. **Update ResourceClaim**: The composable controller updates the `AllocatedDeviceStatus` to indicate the failure of the attachment by setting a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
 2. **Fail the Binding Cycle**: The scheduler detects the failed attachment condition and fails the binding cycle. This prevents the pod from proceeding with an unattached device.
-3. **Unbind ResourceClaim and ResourceSlice**: The scheduler unbinds the `ResourceClaim` and `ResourceSlice`, clearing the allocation to prevent the fabric device from being used in the pool.
+3. **Unbind ResourceClaim and ResourceSlice**: The scheduler DRA plugin unbinds the `ResourceClaim` and `ResourceSlice` in `Unreserve`, clearing the allocation to prevent the fabric device from being used in the `ResourceClaim`.
 4. **Retry Scheduling**: In the next scheduling cycle, the scheduler attempts to bind the `ResourceClaim` again.
 
 ### Composable Controller Design Overview

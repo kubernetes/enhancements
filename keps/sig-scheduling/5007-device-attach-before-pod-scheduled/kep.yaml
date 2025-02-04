@@ -8,11 +8,14 @@ owning-sig: sig-scheduling
 #  - sig-bbb
 status: implementable
 #|implemented|deferred|rejected|withdrawn|replaced
-creation-date: 2025-02-03
+creation-date: 2025-02-04
 reviewers:
   - "@pohly"
+  - "@dom4ha"
+  - "@macsko"
+  - "@sanposhiho"
 approvers:
-  - TBD
+  - "@alculquicondor"
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
