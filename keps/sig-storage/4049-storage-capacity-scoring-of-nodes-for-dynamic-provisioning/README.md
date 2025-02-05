@@ -87,6 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Modify stateData to be able to store StorageCapacity](#modify-statedata-to-be-able-to-store-storagecapacity)
   - [Get the capacity of nodes for dynamic provisioning](#get-the-capacity-of-nodes-for-dynamic-provisioning)
@@ -262,6 +263,26 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+### Risks and Mitigations
+
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+| Risk                                                                             | Impact | Mitigation                                         |
+| -------------------------------------------------------------------------------- | ------ | -------------------------------------------------- |
+| Misconfiguration of storage capacity scoring parameters                          | Medium | Provide documentation                              |
+| Potential performance overhead due to additional scoring calculations            | Low    | Optimize scoring algorithms                        |
+| Loss of optimized scheduling after downgrading to a version without this feature | Medium | Explain the impact of downgrading in documentation |
 
 ## Design Details
 
