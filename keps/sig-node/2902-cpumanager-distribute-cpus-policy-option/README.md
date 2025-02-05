@@ -221,7 +221,8 @@ No changes. Existing container will not see their allocation changed. New contai
 
 ###### What specific metrics should inform a rollback?
 
-Not Applicable.
+As part of graduation of this feature, we plan to add metric `cpu_manager_numa_allocation_spread` to see how the CPUs are distributed across NUMA nodes.
+This can be used to see the CPU distribution across NUMA and will provide an indication of a rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -238,6 +239,8 @@ No
 
 Inspect the kubelet configuration of a node -- check for the presence of the feature gate and usage of the new policy option.
 
+In addition to that, we can check the metric `cpu_manager_numa_allocation_spread` to determine how allocated CPUs are spread across NUMA node.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 In order to verify this feature is working, one should:
@@ -251,6 +254,8 @@ To verify the list of CPUs allocated to the container, one can either:
 - `exec` into uthe container and run `taskset -cp 1` (assuming this command is available in the container).
 - Call the `GetCPUS()` method of the `CPUProvider` interface in the `kubelet`'s [podresources API](https://pkg.go.dev/k8s.io/kubernetes/pkg/kubelet/apis/podresources#CPUsProvider).
 
+Also, we can check `cpu_manager_numa_allocation_spread` metric.
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 There are no specific SLOs for this feature.
@@ -262,7 +267,8 @@ None
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-None
+Yes, as part of graduation of this feature to Beta, we plan to add `cpu_manager_numa_allocation_spread` metric
+to provide data on how the CPUs are distributed across NUMA nodes.
 
 ###### Does this feature depend on any specific services running in the cluster?
 

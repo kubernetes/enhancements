@@ -46,4 +46,5 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+ - cpu_manager_numa_allocation_spread
