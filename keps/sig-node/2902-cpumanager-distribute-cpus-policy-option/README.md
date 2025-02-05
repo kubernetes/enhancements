@@ -10,6 +10,10 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -18,8 +22,11 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -116,6 +123,28 @@ NOTE: The striping operation after all CPUs have been evenly distributed will be
 
 We will extend both the unit test suite and the E2E test suite to cover the new policy option described in this KEP.
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+##### Prerequisite testing updates
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/kubelet/cm/cpumanager`: `20250205` - 85.5% of statements
+
+##### Integration tests
+
+Not Applicable as Kubelet features don't have integration tests.
+
+##### e2e tests
+
+Currently no e2e tests are present for this particular policy option. E2E tests will be added as part of Beta graduation.
+
+The plan is to add e2e tests to cover the basic flows for cases below:
+1. `distribute-cpus-across-numa` option is enabled:   The test will ensure that the allocated CPUs are distributed across NUMA nodes according to the policy.
+1. `distribute-cpus-across-numa` option is disabled:  The test will verify that the allocated CPUs are packed according to the default behavior.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -184,6 +213,25 @@ No changes. Existing container will not see their allocation changed. New contai
 
 - A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
 
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+- A rollout or rollback can fail if the feature gate and the policy option are not configured properly and kubelet fails to start.
+
+###### What specific metrics should inform a rollback?
+
+Not Applicable.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Not Applicable. This policy option only affects pods that meet certain conditions and are scheduled after the upgrade. Running pods will be unaffected
+by any change.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -221,6 +269,12 @@ None
 This feature is `linux` specific, and requires a version of CRI that includes the `LinuxContainerResources.CpusetCpus` field.
 This has been available since `v1alpha2`.
 
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No
+
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
@@ -251,6 +305,18 @@ This delay should be minimal.
 
 No, the algorithm will run on a single `goroutine` with minimal memory requirements.
 
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No impact. The behavior of the feature does not change when API Server and/or etcd is unavailable since the feature is node local.
+
+###### What are other known failure modes?
+
+No known failure modes.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
 ## Implementation History
 
 - 2021-08-26: Initial KEP created
@@ -258,3 +324,4 @@ No, the algorithm will run on a single `goroutine` with minimal memory requireme
 - 2021-09-08: Change feature gate from `CPUManagerPolicyOptions` to `CPUManagerPolicyExperimentalOptions`
 - 2021-10-11: Change feature gate from `CPUManagerPolicyExperimentalOptions` to `CPUManagerPolicyAlphaOptions`
 - 2025-01-30: KEP update for Beta graduation of the policy option 
+- 2025-02-05: KEP update to the latest template
