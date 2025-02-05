@@ -242,15 +242,17 @@ Beta
 - [X] OpenTelemetry reaches GA
 - [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
-- [ ] Test and document results of upgrade and rollback while feature-gate is enabled.
-- [ ] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
-- [ ] Unit/integration test to verify connected traces in kubelet.
-- [ ] Revisit the format used to export spans.
-- [ ] Parity with the old text-based Traces
-- [ ] Connecting traces from container runtimes via the Container Runtime Interface
+- [X] Test and document results of upgrade and rollback while feature-gate is enabled.
+- [X] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
+- [X] Unit/integration test to verify connected traces in kubelet.
+- [X] Revisit the format used to export spans.
+- [X] Parity with the old text-based Traces
+- [X] Connecting traces from container runtimes via the Container Runtime Interface
   - https://github.com/kubernetes/kubernetes/pull/114504
 
 GA
+
+- [X] Feedback from users collected and incorporated over multiple releases
 
 ## Production Readiness Review Questionnaire
 
@@ -431,6 +433,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2022-03-29: KEP deemed not ready for Alpha in 1.24
 - 2022-06-09: KEP targeted at Alpha in 1.25
 - 2023-01-09: KEP targeted at Beta in 1.27
+- 2023-01-09: KEP targeted at Stable in 1.33
 
 ## Drawbacks
 
