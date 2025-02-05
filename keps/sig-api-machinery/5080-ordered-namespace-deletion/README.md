@@ -10,15 +10,14 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1 - Pod VS NetworkPolicy](#story-1---pod-vs-networkpolicy)
     - [Story 2 - having finalizer conflicts with deletion order](#story-2---having-finalizer-conflicts-with-deletion-order)
+    - [Story 3 - having policy set up with parameter resources](#story-3---having-policy-set-up-with-parameter-resources)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Having ownerReference conflicts with deletion order](#having-ownerreference-conflicts-with-deletion-order)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Dependency cycle](#dependency-cycle)
-    - [Instance from same resources want different deletion order](#instance-from-same-resources-want-different-deletion-order)
 - [Design Details](#design-details)
   - [DeletionOrderPriority Mechanism](#deletionorderpriority-mechanism)
   - [Handling Cyclic Dependencies](#handling-cyclic-dependencies)
-  - [Configure DeletionOrderPriority For CRD](#configure-deletionorderpriority-for-crd)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -72,13 +71,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This kep introduces an ordered deletion process in the Kubernetes namespace deletion 
-to ensure predictable and secure deletion of resources within a namespace. 
+This kep introduces an opinionated deletion process in the Kubernetes namespace deletion 
+to ensure secure deletion of resources within a namespace. 
 The current deletion process is semi-random, which may lead to security gaps or 
 unintended behavior, such as Pods persisting after the deletion of their associated NetworkPolicies. 
-By implementing a prioritized deletion mechanism, resources will be deleted in a 
-predefined order that respects logical and security dependencies. 
-For example, Pods will be deleted before NetworkPolicies, ensuring that no Pod is left unprotected during the cleanup process. 
+By implementing an opinionated deletion mechanism, the Pods will be deleted before other resources with 
+respects logical and security dependencies. 
 This design enhances the security and reliability of Kubernetes by mitigating risks arising from the non-deterministic deletion order.
 
 
@@ -94,11 +92,10 @@ Additionally, the lack of a defined deletion order can lead to operational incon
 where any sort of safety guard resources (not just NetworkPolicy) are deleted before their guarded resources (e.g., Pods), 
 resulting in unnecessary disruptions or errors.
 
-By introducing a prioritized deletion process, this proposal aims to:
+By introducing an opinionated deletion process, this proposal aims to:
 
 - Enhance Security: Ensure resources like NetworkPolicies remain in effect until all dependent resources have been safely terminated.
 - Increase Predictability: Provide a consistent and logical cleanup process for namespace deletion, reducing unintended side effects.
-- Improve User Experience: Allow cluster administrators and developers to rely on a robust deletion mechanism without requiring manual intervention or custom scripts.
 
 This opinionated deletion approach aligns with Kubernetes' principles of reliability, security, and extensibility, 
 providing a solid foundation for managing resource cleanup in complex environments.
@@ -136,49 +133,12 @@ providing a solid foundation for managing resource cleanup in complex environmen
 
 ## Proposal
 
-Introduce a way to specify priority based on resource type while deleting namespace. When the feature gate `OrderedNamespaceDeletion` is enabled,
-the resources associated with this namespace should be deleted in order.
+When the feature gate `OrderedNamespaceDeletion` is enabled,
+the resources associated with this namespace should be deleted in order:
 
-To specify the deletion order, the options would be:
-
-Option 1: have int value assigned for resources to indicate the deletion priority such like:
-
-```
-{Resource: "/pods", DeletionPriority: "5"}
-{Resource: "networking.k8s.io/networkpolicies", DeletionPriority: "-999"}                     
-{Resource: "apps.k8s.io/deployments", DeletionPriority: "10"}            
-...
-```
-0 would be the default DeletionPriority if not specified. And the resources which have deletion ordering concern would make sure to set DeletionPriority ahead of the resource it guards.
-
-Option 2: have the deletion priority bands defined instead of using numbers.
-
-To begin with, the deletion order bands would be introduced:
-- Workload Controllers
-- Workloads
-- Default
-- Policies
-
-Those deletion order bands will be deleted in sequence. E.g.
-
-```
-{Resource: "/pods", DeletionPriority: "workload"}
-{Resource: "networking.k8s.io/networkpolicies", DeletionPriority: "policies"}                     
-{Resource: "apps.k8s.io/dloyments", DeletionPriority: "workload controllers"} 
-...
-```
-
-After the deletion priority set, the namespace deletion process will honor the priority and delete the resources in sequence. 
-The resources with higher priority should always be deleted before the resources with lower priority.
-
-<References> Looks like we have examples for using int value for priority configurations existing in Kubernetes already.
-
-1.[Aggregator API priority] https://github.com/kubernetes/kubernetes/blob/659c437b267c4535d2855beee8abe5c121d58569/cmd/kube-apiserver/app/aggregator.go#L27-L59
-
-2. [API priority and fairness](https://kubernetes.io/docs/concepts/cluster-administration/flow-control/#flowschema)
-
-3. [Priority clasee](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#priorityclass)
-
+- Delete all pods in the namespace (in an undefined order).
+- Wait for all the pods to be stopped or deleted.
+- Delete all the other resources in the namespace (in an undefined order).
 
 ### User Stories (Optional)
 
@@ -188,16 +148,24 @@ A user has pods which listen on the network and network policies which help prot
 While namespace deletion, there could be cases that NetworkPolicy has deleted while the pods are running 
 which cause the security concern of having Pods running unprotected.
 
-After this feature was introduced, we would have NetworkPolicy in lower DeletionOrderPriority than the Pods to 
+After this feature was introduced, we would have NetworkPolicy always deleted after the Pods to 
 avoid the above security concern.
 
 #### Story 2 - having finalizer conflicts with deletion order
 
-E.g. the NetworkPolicy deletion order would be set lower than the pod and we could expect the Pod be deleted 
-before NetworkPolicy. However, if even one pod has a finalizer which is waiting for network policies (which is opaque to Kubernetes), 
+E.g. if the pod has a finalizer which is waiting for network policies (which is opaque to Kubernetes), 
 it will cause dependency loops and block the deletion process.
 
 Refer to the section `Handling Cyclic Dependencies`.
+
+#### Story 3 - having policy set up with parameter resources
+
+When ValidatingAdmissionPolicy is used in the cluster with parameterization, it is possible to use pod as the parameter resources. In this case, the parameter resources will be deleted before VAP and 
+lead the VAP not in use. To make it even worse, if the ValidatingAdmissionPolicyBinding is configured with `.spec.paramRef.parameterNotFoundAction: Deny`, 
+it could block certain resources operations and also hang the termination process. Similar concern applies to Webhooks with parameter resources.
+
+It is an existing issue with current namespace deletion as well. As long as we don't plan to have a dependency graph built, it will rely more on 
+best practices and user's configuration.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -209,8 +177,7 @@ Namespace deletion specifically uses `metav1.DeletePropagationBackground` and al
 dependencies would be handled by the garbage collection.
 
 In Kubernetes, `ownerReferences` define a parent-child relationship where child resources are automatically deleted when the parent is removed.
-This is mostly handled by garbage collection. While namespace deletion, the `ownerReferences` is not part of the consideration and
-`NamespaceDeletionOrder` group will be honored while deleting resources as what it is currently. The garbage collector controller will make sure  
+This is mostly handled by garbage collection. While namespace deletion, the `ownerReferences` is not part of the consideration and the garbage collector controller will make sure  
 no child resources still existing after the parent resource deleted.
 
 
@@ -221,113 +188,35 @@ no child resources still existing after the parent resource deleted.
 The introduction of deletion order could potentially cause dependency loops especially when finalizers are 
 specified against deletion priority.
 
-When a lack of progress detected(maybe caused by the dependency cycle described above), the options would be:
-- Fall back to the previous behavior.
-  - Pros: The deletion would not be blocked; no breaking changes;
-  - Cons: Security concern remains unaddressed or could be bypassed
-  
-- Return error after retry.
-  - Pros: Make sure the security concern being addressed by always honor the deletion order
-  - Cons: Block namespace deletion if dependency cycle exists.  
+When a lack of progress detected(maybe caused by the dependency cycle described above), it could hang the deletion process 
+same as the current behavior.
 
-Mitigation: A proper fallback mechanism would be introduced to make sure the namespace deletion process would not be 
-hanging forever because of potential dependency cycle.
-
-Refer to the section `Handling Cyclic Dependencies` for more details.
-
-#### Instance from same resources want different deletion order
-
-The current proposal is to have namespace deletion order per resource. It is possible that the instances 
-with same resources want different namespace deletion order. 
-
-The existing mechanism is to use random order while deletion, the proposal does not make things worse. 
-We could possibly introduce a way to let individual instance be able to specify the deletion order later if certain requests is commonly asked.
+Mitigation: Delete the blocking finalizer to proceed.
 
 ## Design Details
 
 ### DeletionOrderPriority Mechanism
 
-For the namespace deletion process, we would like to have the resources associated with this namespace be deleted in order of:
-- Workload controllers
-- Workload
-- Default
-- Policies
+For the namespace deletion process, we would like to have the resources associated with this namespace be deleted as following:
 
-Each resource type will be assigned a  `NamespaceDeletionOrder` value(<TOBESOLVED - @cici37>int value or string value). To define the DeletionOrder, the options are:
+- Delete all pods in the namespace (in an undefined order).
+- Wait for all the pods to be stopped or deleted.
+- Delete all the other resources in the namespace (in an undefined order).
 
-1. Add a field into APIResource (not mutable) so it could be observed easily(pkg/registry):
-
-```
-type APIResource struct {
-……
-`NamespaceDeletionOrder int64 `json:"namespaceDeletionOrder" protobuf:"varint,11,opt,name=namespaceDeletionOrder"``
-}
-```
-
-In this case, the `NamespaceDeletionOrder` will be associated with the resources naturally and the resource which does not have an opinion will default to a value.
-
-- Pros:
-  - Having it configurable
-  - Consistent between CRD and native type when add support into CRD
-- Cons:
-  - Hard to oversee the overall prioritization across resources
-
-2. Maintain a hard-coded map of DeletionOrder per resources for the resources which have a deletion order preference. Any resources which have no preference opinion would be in the Default category.
-```
-var resourceDeletionOrderPriorities = map[ResourceType]DeletionOrderPriority{
-	"/pods": DeletionOrdeWorkload,
-	"apps.k8s.io/deployments":  DeletionOrdeWorkloadController.
-	"networking.k8s.io/networkpolicies”: DeletionOrdePolicy,
-	……
-})
-
-```
-
-- Pros:
-  - The feature would be fully under control
-  - Have one single place to manage the DeletionOrderPriority across all resources group
-  - Easy for future maintenance
-- Cons:
-  - Not configurable
-  - Not encapsulated (behavior of a type/group defined far away from that type’s “main” code)
-  - Only apply to native types, need separate support for CRD
-
-
-
-During namespace deletion, the namespace collector will traverse resources in the namespace and delete them in ascending priority order based on the `NamespaceDeletionOrder` defined.
+The above order will be strict enforced as long as the feature gate is turned on.
 
 ### Handling Cyclic Dependencies
 
 Cyclic dependencies can occur if resources within the namespace have finalizers set which conflicts with the DeletionOrderPriority. 
 For example, consider the following scenario:
 
-- Resource A has a finalizer that depends on the deletion of Resource B.
+- Pod A has a finalizer that depends on the deletion of Resource B.
 
-- Resource A is in the earlier DeletionOrderPriority than Resource B.
+- Pod A suppose to be deleted before Resource B.
 
-In this case, the finalizers set would conflict with the `NamespaceDeletionOrder` set for resources and could lead to cyclic dependencies and cause namespace deletion process hanging.
+In this case, the finalizers set would conflict with the NamespaceDeletionOrder and could lead to cyclic dependencies and cause namespace deletion process hanging.
 
-To address this, the system will:
-
-- Attempt to honor the `NamespaceDeletionOrder` for resource deletion.
-
-- Monitor the deletion process for each `NamespaceDeletionOrder`. If the process hangs beyond a predefined timeout (e.g., 5 minutes), 
-  it will detect the stall and trigger the deletion attempt for the next `NamespaceDeletionOrder` group.
-
-- After moving on to the next NamespaceDeletionOrder group, the system will attempt to delete all resources under this group. At this stage, deletion is considered successful only when all resources from the current and previous groups have been fully removed.
-
-- If the deletion of all resources from previous groups is not completed within the timeout period, the system will proceed to the next NamespaceDeletionOrder group, deleting those resources while waiting for any remaining resources from previous groups to be cleaned up.
-
-- After looping through all NamespaceDeletionOrder groups, if there is still process blocking resources from being deleted, the system will behave same as the current mechanism.
-
-By introducing a controlled timeout mechanism, the system ensures that cyclic dependencies do not block namespace deletion indefinitely while still striving for an ordered deletion whenever possible.
-
-
-### Configure DeletionOrderPriority For CRD
-
-It could be a phrase 2 feature depending on how the deletion order specified.
-
-We would like to have `NamespaceDeletionOrder` configurable CRDs as well. 
+To mitigate the issue, user would have to manually resolve the dependency lock by either remove the finalizer or force delete the blocking resources which would be the same as current mechanism.
 
 
 ### Test Plan
