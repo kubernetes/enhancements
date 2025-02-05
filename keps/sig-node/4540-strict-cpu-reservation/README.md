@@ -139,7 +139,7 @@ The concern is, when the feature graduates to `Stable`, it will be enabled by de
 
 However, this is exactly the feature intent, best-effort workloads have no KPI requirement, they are meant to consume whatever CPU resources left on the node including starving from time to time. Best-effort workloads are not scheduled to run on the `reservedSystemCPUs` so they shall not be run on the `reservedSystemCPUs` to destablize the whole node.
 
-Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha and Beta stages to assess the actual impact in real deployment before revisiting if we need risk mitigation.
+Nevertheless, risk mitigation has been discussed in details (see archived options below) and we agree to start with the following node metrics of cpu pool sizes in Alpha and Beta stages to assess the actual impact in real deployment. The plan is to move the current implementation to Stable stage if no field issue is observed for one year.
 
 https://github.com/kubernetes/kubernetes/pull/127506
 - `cpu_manager_shared_pool_size_millicores`: report shared pool size, in millicores (e.g. 13500m), expected to be non-zone otherwise best-effort pods will starve
