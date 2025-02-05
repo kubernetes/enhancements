@@ -45,4 +45,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - N/A
+  - node_resize_resync_request_total
+  - node_resize_resync_errors_total

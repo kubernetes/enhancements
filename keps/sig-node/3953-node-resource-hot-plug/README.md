@@ -20,6 +20,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -80,7 +81,13 @@ The proposal seeks to facilitate hot plugging of node compute resources, thereby
 The revised node configurations will be automatically propagated at both the node and cluster levels, eliminating the necessity for a kubelet reset.
 Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager, in response to alterations in a node's CPU and memory configurations.
 This approach aims to optimize resource management, improve scalability, and minimize disruptions to cluster operations.
+
 ## Motivation
+Currently, the node's configurations are recorded solely during the kubelet bootstrap phase and subsequently cached. assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
+
+However, contemporary kernel capabilities enable the dynamic addition of CPUs and memory to a node (References: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html). 
+This can result in Kubernetes being unaware of the node's altered compute capacities during a live-resize, causing the node to retain outdated information. 
+This can lead to inconsistencies or an imbalance in the cluster, affecting the optimal scheduling and deployment of workloads.
 
 In a conventional Kubernetes environment, the cluster resources might necessitate modification due to the following factors:
 - Inaccurate resource allocation during cluster initialization.
@@ -90,13 +97,16 @@ To address these situations, we can:
 - Horizontally scale the cluster by incorporating additional compute nodes.
 - Vertically scale the cluster by augmenting node capacity. Currently, the method to capture node resizing within the cluster entails restarting the Kubelet.
 
-These strategies enable the cluster to adapt to varying resource demands, ensuring optimal performance and efficient resource utilization. However, the limitation of requiring a Kubelet restart for node resizing is an area for potential improvement.
+These strategies enable the cluster to adapt to varying resource demands, ensuring optimal performance and efficient resource utilization. 
+However, the limitation of requiring a Kubelet restart for node resizing is an area for potential improvement.
 
-Node resource hot plugging offers benefits in situations like:
-- Managing resource demand with a restricted number of nodes by enhancing the capacity of current nodes rather than creating new ones.
-- The process of creating new nodes is more time-consuming compared to augmenting the capacity of existing nodes.
- 
-This approach allows for more efficient resource management and quicker capacity adjustments, optimizing the utilization of existing hardware.
+Node resource hot plugging proves advantageous in scenarios such as:
+- Efficiently managing resource demands with a limited number of nodes by increasing the capacity of existing nodes instead of provisioning new ones.
+- The procedure of establishing new nodes is considerably more time-intensive than expanding the capabilities of current nodes.
+
+Implementing this KEP will empower nodes to recognize and adapt to changes in their configurations, 
+thereby facilitating the efficient and effective deployment of pod workloads to nodes capable of meeting the required compute demands.
+
 ### Goals
 
 * Achieve seamless node capacity expansion through hot plugging resources, all without necessitating a kubelet restart.
@@ -107,9 +117,10 @@ This approach allows for more efficient resource management and quicker capacity
 * Dynamically adjust system reserved and kube reserved values.
 * Hot unplug of node resources.
 * Update the autoscaler to utilize resource hot plugging.
+* Re-balance workloads across the nodes.
+* Update runtime/NRI plugins with host resource changes.
 
 ## Proposal
-
 
 This KEP strives to enable node resource hot plugging by incorporating a polling mechanism within the kubelet to retrieve machine-information from cAdvisor's cache, which is already updated periodically.
 The kubelet will periodically fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
@@ -119,9 +130,14 @@ Moreover, this KEP aims to refine the initialization and reinitialization proces
 
 #### Story 1
 
-As a cluster admin, I must be able to increase the cluster resource capacity without adding a new node to the cluster.
+Pinning of workloads to nodes with certain hardware capabilities with limited CPU and memory configurations.
+    Adopting this KEP will allow nodes with certain hardware capabilities to be resized to accommodate additional workloads that are dependent on particular hardware capability.
 
 #### Story 2
+
+As a cluster admin, I must be able to increase the cluster resource capacity without adding a new node to the cluster.
+
+#### Story 3
 
 As a cluster admin, I must be able to increase the cluster resource capacity without need to restart the kubelet.
 
@@ -129,14 +145,19 @@ As a cluster admin, I must be able to increase the cluster resource capacity wit
 
 ### Risks and Mitigations
 
-1. Node resource hot plugging is an opt-in feature, merging the
-   feature related changes won't impact existing workloads. Moreover, the feature
-   will be rolled out gradually, beginning with an alpha release for testing and
-   gathering feedback. This will be followed by beta and GA releases as the
-   feature matures and potential problems and improvements are addressed.
-2. Though the node resource is updated dynamically, the dynamic data is fetched from cAdvisor and its well integrated with kubelet.
-3. Resource manager are updated to adapt to the dynamic node reconfigurations, Enough tests should be added to make sure its not affecting the existing functionalities.
+- Change in OOMScoreAdjust value:
+  - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
+  - However, with change in memoryCapacity post up-scale, The OOMScoreAdjust of pod post up-scale may not be inline with the
+    precalculated scores of pod which are deployed before.
+- Change in Swap limit:
+  - The formula to calculate the swap limit is `<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+  - However, with change in nodeTotalMemory and totalPodsSwapAvailable post up-scale, The swap limit of pod post up-scale may not be inline with the
+    precalculated scores of pod which are deployed before.
+- Post up-scale any failure in resync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
+- Lack of coordination about change in resource availability across kubelet/runtime/plugins.
 
+- To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
+- The plugins/runtime should updated to react to change in resource information on the node.
 ## Design Details
 
 
@@ -168,15 +189,15 @@ With increase in cluster resources the following components will updated
 1. Scheduler
    * Scheduler will automatically schedule any pending pods.
 
+2. Change in OOM score adjust
+    * Currently, the OOM score adjust is calculated by
+      `1000 - (1000*containerMemReq)/memoryCapacity`
+    * So increase in memoryCapacity will result in updated OOM score adjust for pods deployed post resize.
 
-2. Change in Swap Memory limit
-   * Currently, the swap memory limit is calculated as 
+3. Change in Swap Memory limit
+   * Currently, the swap memory limit is calculated by 
  `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-   * So increase in nodeTotalMemory will result in updated swap memory limit.
-
-
-3. Change in OOM score
-   * OOM score calculation depends on machine's memory, so the new OOM score will be updated accordingly.
+   * So increase in nodeTotalMemory will result in updated swap memory limit for pods deployed post resize.
 
 **Proposed Code changes**
 
@@ -246,7 +267,10 @@ to implement this enhancement.
 
 Following scenarios need to be covered:
 
-* Node resource information before and after resource hot plug.
+* Node resource information before and after resource hot plug for the following scenarios.
+  * upsize -> downsize
+  * upsize -> downsize -> upsize
+  * downsize- > upsize
 * State of Pending pods due to lack of resources after resource hot plug.
 * Resource manager states after the resync of components.
 
@@ -411,7 +435,7 @@ Rollback failure should not affect running workloads.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-
+If there is significant increase in `node_resize_resync_errors_total` metric means the feature is not working as expected.
 In case of pending pods and hot plug of resource but still there is no change `scheduler_pending_pods` metric
 means the feature is not working as expected.
 
@@ -440,6 +464,10 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+Monitor the metrics
+- `node_resize_resync_request_total`
+- `node_resize_resync_errors_total`
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -451,6 +479,9 @@ logs or events for this purpose.
 This feature will be built into kubelet and behind a feature gate. Examining the kubelet feature gate would help 
 in determining whether the feature is used. The enablement of the kubelet feature gate can be determined from the 
 `kubernetes_feature_enabled` metric.
+
+In addition, newly added metrics `node_resize_resync_request_total`, `node_resize_resync_errors_total` are incremented in case of up-scale of resource
+and failing to re-sync resources managers respectively.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -483,7 +514,11 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-No increase in the `scheduler_pending_pods` rate.
+
+For each node, the value of the metric `node_resize_resync_request_total` is expected to match the number of time the node is resized.
+For each node, the value of the metric `node_resize_resync_errors_total` is expected to be zero.
+
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -491,8 +526,10 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-    - Metric name: `scheduler_pending_pods`
-    - Components exposing the metric: scheduler
+    - Metric name:
+      - `node_resize_resync_request_total`
+      - `node_resize_resync_errors_total`
+   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -500,7 +537,9 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-No
+- `node_resize_resync_request_total`
+- `node_resize_resync_errors_total`
+
 ### Dependencies
 
 <!--
@@ -701,4 +740,9 @@ VMs of cluster should support hot plug of compute resources for e2e tests.
 
 ## Future Work
 
-* Support hot-unplug of node resources: Hot-Unplug of resource needs a pod-readmission, A separate KEP is planned to support this feature.
+* Support hot-unplug of node resources:
+    Hot-Unplug of resource needs a pod-readmission, A separate KEP is planned to support this feature.
+* Fetching machine info via CRI
+    * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
+    * Presently, resource managers are updated through regular polling. Once the CRI APIs are enhanced to fetch machine information, we can significantly enhance the reinitialization of resource managers, 
+      enabling them to respond more effectively to resize events.
