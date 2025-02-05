@@ -620,6 +620,10 @@ values. Users can get both values using
 and use them to verify that scaling events are triggered when their ratio is out
 of tolerance.
 
+We will update the controller-manager logs to help users understand the behavior
+of the autoscaler. The data added to the logs will include the tolerance used
+for each scaling decision.
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 <!--
