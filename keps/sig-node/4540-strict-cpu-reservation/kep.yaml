@@ -34,6 +34,10 @@ feature-gates:
   - name: "CPUManagerPolicyAlphaOptions"
     components:                                                                         
       - kubelet
+  - name: "CPUManagerPolicyBetaOptions"
+    components:                                                                         
+      - kubelet
+
 disable-supported: true
 
 # The following PRR answers are required at beta release
