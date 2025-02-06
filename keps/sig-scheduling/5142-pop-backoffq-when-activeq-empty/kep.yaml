@@ -1,0 +1,27 @@
+title: Pop pod from backoffQ when activeQ is empty
+kep-number: 5142
+authors:
+  - "@macsko"
+owning-sig: sig-scheduling
+status: implementable
+creation-date: 2025-02-06
+reviewers:
+  - 
+approvers:
+  - 
+
+stage: alpha
+
+latest-milestone: "v1.33"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.33"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PopBackoffQWhenEmptyActiveQ
+    components:
+      - kube-scheduler
+disable-supported: true
