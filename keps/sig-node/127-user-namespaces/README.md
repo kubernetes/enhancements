@@ -7,13 +7,13 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories)
+  - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
-  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Pod.spec changes](#podspec-changes)
@@ -64,10 +64,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -156,7 +160,7 @@ This proposal aims to support running pods inside user namespaces.
 
 This mitigates all the vulnerabilities listed in the motivation section.
 
-### User Stories
+### User Stories (Optional)
 
 #### Story 1
 
@@ -190,7 +194,7 @@ As a cluster admin, I want to use different host UIDs/GIDs for pods running on
 the same node (whenever kernel/kube features allow it), so I can mitigate the
 impact a compromised pod can have on other pods and the node itself.
 
-### Notes/Constraints/Caveats
+### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
 
