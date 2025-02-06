@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5147: Your short, descriptive title
+# KEP-5147: DRA Node Reservations via ResourceClaims
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -172,6 +172,7 @@ updates.
 
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
+This KEP proposes a mechanism for reserving entire nodes (or other topologies in the future) using the Dynamic Resource Allocation (DRA) framework and node tainting. The main idea is to treat nodes as `ResourceClaims` managed by a DRA driver, then use taints to gain exclusive access to these nodes. By adding a taint with a `NoExecute` effect, any pod that does not tolerate the taint gets evicted, ensuring node exclusivity. This approach can be extended to other topological levels (rack, region, etc.) and allows for partitioning of cluster resources in a flexible manner.
 
 ## Motivation
 
@@ -190,6 +191,14 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+- **Exclusivity for Whole Nodes**  
+  Enable large, complex, or security-sensitive workloads to reserve entire nodes, ensuring no other pods can run on those nodes.
+
+- **Multiple Scheduler Isolation**  
+  Provide a mechanism for multiple schedulers (for instance Slurm, which might have different and holistic approach to scheduling) to operate on disjoint sets of nodes without interfering with each other.
+
+- **Preallocation**  
+  Reserve nodes (or other topologies) ahead of time for anticipated large-scale workflows or to trigger cluster autoscaling.
 
 ### Non-Goals
 
@@ -197,6 +206,12 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- **Changing CPU/Memory Accounting**  
+  We do not change how kube-scheduler accounts for CPU/memory. Those remain in place.
+
+- **Partial Node Reservations**  
+  This proposal focuses on full node reservations. Future enhancements could address partial (CPU/memory) or dynamic allocations.
 
 ## Proposal
 
@@ -208,6 +223,21 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+
+### Overview
+
+In this proposal, entire nodes are exposed as `ResourceSlices` by a DRA driver. When a `ResourceClaim` is created to allocate nodes, the driver taints the nodes (`NoExecute`) so that any existing pods without tolerations are evicted. Pods that want to use the reserved node add both a reference to the `ResourceClaim` and the matching toleration. DRA driver will be watching for node changes in the cluster and manage allocations to make sure they are not overlapping.
+
+### Scope
+
+1. **Node-Level ResourceSlices**  
+   Initial focus is on entire nodes. In the future, we may extend the design to handle resources at different level.
+
+2. **Permanent (Static) Claims**  
+   Claims are statically allocated for the node’s lifetime in this design. Dynamically allocated or ephemeral reservations are left for future work.
+
+3. **Exclusive Allocations**  
+   Overlapping allocations are considered out of scope. Future improvements might allow more nuanced sharing across multiple claims or scheduling groups.
 
 ### User Stories (Optional)
 
@@ -245,6 +275,14 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+
+- **Eviction Storm**  
+  Adding a `NoExecute` taint might abruptly evict multiple pods. Operators need to create claims carefully as in effect, they are creating taints.
+
+- **Complexity**  
+  Combining CPU/memory requests with DRA reservations may be confusing to users. Clear documentation and examples are needed.
+
+
 ## Design Details
 
 <!--
@@ -253,6 +291,41 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+#### ResourceClaim Configuration
+
+A user or controller creates a ResourceClaim specifying parameters like:
+- `resourceClassName` (identifies the driver/class responsible for node reservation)
+- Node selection constraints (TBD)
+- Taint configuration (key: `reservation.k8s.io/node-resource` value: `the-reservation-name`) to be applied to the node
+
+#### DRA Driver Allocation
+
+1. **ResourceSlices**  
+   The DRA driver publishes a list of nodes as `ResourceSlice`.
+
+2. **Bind (Allocate)**  
+   - The driver selects a `ResourceSlice` that meets the allocation criteria.  
+   - It applies a taint (`NoExecute`) to the node.  
+   - Existing pods that do not tolerate this taint are evicted.  
+   - The driver considers the node fully allocated only when all conflicting pods have been successfully evicted.
+
+3. **Unbind (Release)**  
+   - On `ResourceClaim` deletion or unbinding, the driver removes the taint.  
+   - The node returns to normal scheduling.
+
+#### Pod Specification
+
+Pods needing exclusive use of the reserved node must:
+- Reference the `ResourceClaim` in their spec
+- Include a toleration matching the taint’s key `reservation.k8s.io/node-resource` and value (which corresponds to the reservation name)
+
+This ensures that only pods explicitly configured for the reservation can run on the reserved node.
+
+#### Pods Ignoring Reservations
+
+Some pods (e.g., system daemons, monitoring agents) might require a broad toleration (i.e., they tolerate the reservation taint’s key (`reservation.k8s.io/node-resource`) without specifying the value), allowing them to bypass all reservations.
+
 
 ### Test Plan
 
@@ -270,6 +343,12 @@ when drafting this test plan.
 [ ] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
+
+
+- **Unit Tests**: Verify adding/removing taints, ensuring pods are evicted accordingly.
+- **Integration Tests**: Confirm that a node is effectively reserved, pods referencing the reservation can schedule, and conflicting pods are removed.
+- **E2E Tests**: Use a mock DRA driver in a real cluster to validate end-to-end functionality (allocation, eviction, deallocation).
+
 
 ##### Prerequisite testing updates
 
@@ -398,6 +477,11 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+
+#### Alpha
+- Basic logic implemented and tested (unit/integration).
+- Documentation of usage and examples.
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -411,6 +495,11 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+
+- **Upgrade**: Existing reservations continue to function.
+- **Downgrade**: Might break or ignore the `ResourceSlice` concept in older versions, leaving orphaned taints.
+
 
 ### Version Skew Strategy
 
@@ -426,6 +515,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+
 
 ## Production Readiness Review Questionnaire
 
@@ -790,7 +881,23 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+
 ## Alternatives
+
+
+- **Scheduler Plugins / Extenders**  
+  Implement node reservations purely through custom scheduling plugins. This forgoes DRA’s resource model but might be more direct.
+
+- **Affinity/Anti-Affinity**  
+  Does not enforce eviction, only influences scheduling decisions.
+
+- **Manual Node Locking**  
+  Manually cordoning or draining nodes is operationally more cumbersome and less automated.
+
+## References
+
+- [Dynamic Resource Allocation (DRA)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage) (placeholder link)  
+- [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/)
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
