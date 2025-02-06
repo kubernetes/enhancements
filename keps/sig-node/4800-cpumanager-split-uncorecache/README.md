@@ -51,7 +51,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -62,43 +62,45 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes to introduce a new CPU Manager static policy option, "prefer-align-cpus-by-uncorecache", that groups CPU resources by uncore cache where possible.
-The opt-in feature changes the cpu assignment algorithm to add sorting by uncore cache and then taking cpus aligned to the same uncore cache, where possible.
-In cases where numbers of cpu requested exceeds number of cpus grouped in the same uncore cache, the algorithm attempts best-effort to reduce assignments of cpus across minimal numbers of uncore caches.
-If the cpumanager cannot align optimally, it will still admit the workload as before. Uncore cache assignment will be preferred but not a requirement for this feature.
-This feature does not introduce the requirement of aligned by uncorecache but the preference to alignment of uncorecache.
+An uncore cache, also known as the last-level-cache, refers to the cache that exists at a shared level among CPU cores, unlike low-level caches which are dedicated per individual core.
+The opt-in feature changes the CPU assignment algorithm to recognize and sort CPUs by uncore cache, and then allocate CPUs aligned to the fewest uncore caches as possible. This is primarily beneficial for CPU architectures that utilize multiple uncore caches, or split uncore caches, within the processor.
+In cases where the number of CPUs requested exceeds the number of CPUs grouped in a uncore cache, the algorithm attempts to align allocations at a best-effort policy to reduce assignments of CPUs across minimal uncore caches.
+If the CPU Manager cannot align optimally, it will still admit the workload as before. Uncore cache assignment will be preferred but not a strict requirement for this feature.
 
 ## Motivation
 
-Main motivation for this proposal is to reduce noisy neighbor scenarios that occur on systems with split uncore cache, which is available on both x86 and ARM architecture.
-The challenge with current kubelet’s cpu manager is that it is unaware of split uncore architecture and spreads CPU assignments across distributed uncore caches. This creates a noisy neighbor problem where multiple pods/containers are sharing the same uncore cache. In addition, pods spread against multiple uncore caches see higher latency and reduced performance due to inter-cache access latency. For workload use cases that are sensitive to latency and are performance deterministic, minimizing the noisy neighbor condition in uncore cache can have significant improvements in performance.
+Traditional CPU architectures commonoly employ a monolithic uncore cache design where all CPU cores share equal access to a unified uncore cache. To address scalability challenges, CPU architectures are adopting a modular design. One such example is the split uncore cache architecture, where subsets of CPU cores are grouped with dedicated uncore caches, and these modular units are interconnected to form the complete processor.
+
+![architecture diagram](./images/monolithic_split_cache.png)
+
+The primary goal of this proposal is to integrate the split uncore cache architecture into the static CPU Manager to enhance container resource allocation by mitigating noisy neighbor issues and intercross-cache latency. This optimization is particularly relevant for systems featuring a split uncore cache, which is supported on both x86 and ARM architectures.
+The challenge with the current Kubelet’s CPU Manager is that it is unaware of split uncore cache architecture and can distribute CPU assignments across multiple uncore caches. This creates a noisy neighbor problem where multiple pods/containers are sharing and competing for access to the same uncore cache. In addition, containers spread across multiple uncore caches can see higher latency and reduced performance due to inter-cache access where a CPU will need to access an undedicated uncore cache. For workload use cases that are sensitive to cache latency and are performance deterministic, minimizing the uncore cache spread can have significant improvements in performance.
 
 ![Figure to the motivation](./images/uncore-alignment-motivation.png)
 
-The figure below highlights performance gain when pod placement is aligned to an uncore cache group. In this example HammerDB TPROC-C/My-SQL is the workload deployed. There was a 18% uplift in performance when uncore cache aligned compared to default behavior. Other workloads may see higher gains.
+The figure below highlights performance gain when container placement is aligned to an uncore cache group. In this example HammerDB TPROC-C/My-SQL is the workload deployed. There was a 18% uplift in performance when uncore cache aligned compared to default behavior. Other workloads may see higher or lower gains based on uncore cache utilization.
 
-![Figure to the results of uncore cache alignment](https://github.com/ajcaldelas/enhancements/blob/split_l3_cache/keps/sig-node/4800-cpumanager-split-uncorecache/images/results.PNG) ![Figure of results](https://github.com/ajcaldelas/enhancements/blob/c7e423439608001cc837e2f5629dc87935353611/keps/sig-node/4800-cpumanager-split-l3cache/images/chart.png)
+![Figure to the results of uncore cache alignment](./images/results.PNG) ![Figure of results](./images/chart.png)
 
 ### Goals
 
-- Introduce a new CPU Manager policy option that assigns CPU within the same grouping of uncore cache to container scope.  
-- Minimize the number of CPUs assignments from different uncore cache grouping to pods and container scope.
+- Introduce a new CPU Manager policy option that attempts to assign CPUs within the same uncore cache group to a container.  
+- Minimize the number of CPUs assignments from different uncore cache groups to containers.
 
 ### Non-Goals
 
 - This proposal does not aim to modify CPU assignments for CPU Manager policy set to none.
-- This does not alter the behavior of existing static policy options such as full-pcpus-only.
+- This does not alter the behavior of existing static policy options such as `full-pcpus-only`.
 
 ## Proposal
 
-- Add a new static policy option to fine-tune of CPU assignments to have a preference to align by uncore cache grouping.
+- Introduce a new static policy option to optimize CPU assignments by prioritizing alignment with uncore cache groupings. The `prefer-align-cpus-by-uncorecache` option, enabled on an opt-in basis, attempts to allocate CPUs to each container in a way that minimizes the number of uncore caches used, if possible.
 
-- Topology struct already contains CPUDetails which is a map of CPUInfo.  CPUInfo knows about NUMA, socket, and core IDs associated with a CPU.  We just need to add a new member called uncorecacheId into the CPUInfo struct that tracks whether the CPU is part of a split uncore caches. Functionality to support this was merged in cadvisor with these pull-requests [cadvisor/pr-2849](https://github.com/google/cadvisor/pull/2849) and [cadvisor/pr-2847](https://github.com/google/cadvisor/pull/2847/)
+- Add a new member called `uncorecacheId` into the CPUInfo struct that tracks whether the CPU is part of a split uncore cache. Topology struct already contains CPUDetails which is a map of CPUInfo.  CPUInfo knows about NUMA, socket, and core IDs associated with a CPU.   Functionality to support this was merged in cadvisor with these pull-requests [cadvisor/pr-2849](https://github.com/google/cadvisor/pull/2849) and [cadvisor/pr-2847](https://github.com/google/cadvisor/pull/2847/)
 
-- Handle enablement of the policy option in pkg/kubelet/cm/cpumanager/policy_options.go and check the validity of the user flag and capability of the system.  If topology does not support split uncore caches, grouping by uncore cache static policy will be ignored.  
+- Handle enablement of the policy option in pkg/kubelet/cm/cpumanager/policy_options.go and check the validity of the user flag and capability of the system. If the node CPU topology does not support split uncore caches, enabling this feature will not impact on the default CPU allocation behavior. 
 
-- Modify the "Allocate" static policy to check for the option, prefer-align-cpus-by-uncorecache. For platforms where SMT is enabled, prefer-align-cpus-by-uncorecache will continue to follow default behaviour and try to allocate full cores when possible. prefer-align-cpus-by-uncorecache can be enabled along with full-pcpus-only and enforce full core assignment with uncorecache alignment.
-
-- prefer-align-cpus-by-uncorecache will be compatible with the default CPU allocation logic with future plans to be compatible with the options distribute-cpus-across-numa and distribute-cpus-across-cores.
+- For platforms where SMT is enabled, `prefer-align-cpus-by-uncorecache` can be enabled along with `full-pcpus-only` and enforce full core assignment with uncore cache alignment.
 
 ### User Stories (Optional)
 
@@ -112,7 +114,7 @@ The figure below highlights performance gain when pod placement is aligned to an
 
 ### Notes/Constraints/Caveats (Optional)
 
-- The name UncoreCache is directly derived from cAdvisor that is being used as a package. 
+- The name `UncoreCache` is directly derived from cAdvisor that is being used as a package. 
 - Using the flow in `CPUManagerPolicy{Alpha,Beta}Options` from [xref](https://github.com/kubernetes/kubernetes/blob/af879aebb1a866a2f0e45bb33c09a1cc8f7acc45/pkg/features/kube_features.go#L110C1-L117C83) which is used to avoid proliferation of feature gates. 
 
 ### Risks and Mitigations
@@ -121,33 +123,69 @@ The figure below highlights performance gain when pod placement is aligned to an
   - Mitigation: Feature is enabled by a static policy option flag
 - Risk: The new feature might interfere with existing functionality
   - Mitigation: It does not change behavior of non-static policy and preserves the behavior of other static options
-- Risk: Inconsistent configuration could cause scheduling issues
-  - Mitigation: Failure will occur during runtime if mismatch between options occurs, preventing the Pod from being scheduled incorrectly or leading a non-optimal aligment
+- Risk: Inconsistent configuration could cause allocation issues
+  - Mitigation: Failure will occur during runtime if mismatch between options occurs, preventing the Pod from being allocated incorrectly or leading a non-optimal aligment
 
 ## Design Details
 
-To make Kubelet be uncore cache aware for CPU sensitive workloads the CPU allocation, `UncoreCacheID` has been added to the `CPUInfo` and `CPUTopology` structures that are provided by `cAdvisor` during the CPU discovery process.
+We propose to:
 
-A new CPUManager policy option, prefer-align-cpus-by-uncorecache, will be introduced to enable this feature. When enabled, the existing default scheduling function will be modified to account for UncoreCache as a preference. The allocation process will first attempt to allocate CPUs from an entire socket. Next, it will attempt to allocate CPUs within the logical boundary of a NUMA node within the socket. Finally, the allocation will consider the subset of CPUs associated with each UncoreCache within the previously selected CPUs. While UncoreCache allocation is preferred, it is not strictly required this policy will not fail if alignment is not possible. Since this policy extends the CPUManager’s Static policy, it will only apply to guaranteed pods with whole CPU requests.
+- make the CPUManager aware of the uncore cache architecture.
+- add a new static CPUManager option called `prefer-align-cpus-by-uncorecache` that affines CPU resources to a container while minimizing the uncore cache distribution at a best-effort policy. 
 
-The algorithm for prefer-align-cpus-by-uncorecache will be implemented to follow the default packed behavior of the existing static CPUManager allocation with the introduction of a uncorecache hierarchy. This means that when a guaranteed container requires CPUs that are equal to or greater than the size of a NUMA or socket, the CPU allocation will behave as usual and schedule the full socket or NUMA. The scheduled CPUs will be subtracted from the quantity of CPUs required for the container.
+To make Kubelet be uncore cache aware for CPU sensitive workloads, the CPU allocation, `UncoreCacheID` has been added to the `CPUInfo` and `CPUTopology` structures that are provided by `cAdvisorapi.MachineInfo` during the CPU discovery process.
 
-When/once the required CPUs for a container are less than the number of CPUs within a NUMA node, the algorithm will be implemented as follows:
-1. Scan each socket in numerical order. If required CPUs are less than the size of available CPUs on the socket, pick this socket of CPUs.
-2. Within the chosen socket, scan each NUMA in numerical order. If the required CPUs are less than the number of the available CPUs on the NUMA, pick the subset of CPUs that correspond to this NUMA.
-3. Within the chosen NUMA, scan through every uncore cache index in numerical order:
-   - If the required CPUs are greater than or equal the size of the **total** amount of CPUs to an uncore cache, assign the full uncore cache CPUs if they are all **unscheduled** within the group. Subtract the amount of scheduled CPUs from the quantity of required CPUs. 
-     - Continue scanning uncore caches in numerical order and assigning full uncore cache CPU groups until the required quantity is less than the **total** number of CPUs to a uncore cache group.
-   - If the required CPUs are less than the size of the **total** amount of CPUs to an uncore cache, scan through each uncore cache index in numerical order starting from the first index, and assign CPUs if there are enough **available** CPUs within the uncore cache group.
-4. If the required amount of CPUs cannot fit within an uncore cache group and there are enough schedulable CPUs on the node, assign cores in numerical order.
-5. Container will not be scheduled on the node if there are not enough CPUs to satisfy the container requirements. 
+A new Static CPUManager Policy option, `prefer-align-cpus-by-uncorecache`, will be introduced to enable the proposed feature. When enabled, the algorithm for `prefer-align-cpus-by-uncorecache` will be implemented to follow the default packed behavior of the existing static CPU Manager allocation with the introduction of a uncore cache hierarchy. Each Guaranteed container allocated resources with the Static CPU Manager Policy will have a defined total CPU requirement. Based on this requirement, CPUs will be allocated from whole CPU Domains, which consist of CPUs sharing a common characteristic such as socket, memory locality (NUMA), uncore caches, or cores. CPU allocations will prioritize larger domains first for optimal resource distribution. 
 
-In the case where the NUMA boundary is larger than a socket (setting NPS0 on a dual-socket system), the allocatable pool of CPUs does not exapnd beyond the respective socket when NUMA hints are provided in the above scheduling policy. The filtered subset of CPUs will still remain within the socket. 
+The CPU allocation algorithm is as follows:
+- If the number of CPUs required for the container is equal to or larger than a total NUMA/Socket's-worth of CPUs (depending on which is larger in the hierarchy), allocate whole NUMA/Socket's worth of CPUs (`takeFullFirstLevel`). Deduct the amount of CPU allocated from the required number of total CPUs. Continue allocating CPUs by this CPU Domain until the required number of total CPUs is satisfied or less than the current CPU Domain.
+- If the remaining CPUs required or original required total number of CPUs for the container is equal to or larger than a total NUMA/Socket's worth of CPUs (depending on which is smaller in the hierarchy), allocate whole NUMA/Socket's worth of CPUs (`takeFullSecondLevel`). Deduct the amount of CPUs allocated from the required number of total CPUs. Continue allocating CPUs by this CPU Domain until the required number of total CPUs is satisfied or less than the current CPU Domain.
+- NOTE: If the container's CPU requirement is large enough to trigger `takeFullFirstLevel` or `takeFullSecondLevel`, the CPU allocation will extend across multiple uncore caches on a split uncore cache processor, undermining the effectiveness of this optimization. The performance benefit of this feature depends on the workload's cache sensitivity and CPU requirements, with greater optimzation potential when fewer uncore caches are utilized. Since this feature is implemented at a best-effort policy, containers with larger CPU requirements can still be deployed. This is intentional to allow mixed-use static workloads on the node (larger non-cache sensitive containers with smaller cache sensitive containers) and prevents CPU size restrictions for Guaranteed containers. For specific circumstances where the container CPU requirement is large enough to employ `takeFullFirstLevel` or `takeFullSecondLevel` yet still requires a subset of CPUs affined to an uncore cache, the application will be required to recognize the allocated CPUset and pin the necessary CPUs.
+- **Added feature**: If `prefer-align-cpus-by-uncorecache` is enabled, use the `takeUncoreCache` method. This feature will be introduced at this level of the CPU topology hierarchy because split-uncore-caches will be smaller CPU domains than sockets since multiple uncore caches are interconnected on a socket. General use cases will also often set the NUMA Per Socket (NPS) equal to 1, meaning the NUMA will be the same size as the socket, resulting in the uncore cache CPU domain being smaller than the NUMA CPU domain. However, it is possible to set NPS=2, NPS=4, and even as high as Last-Level-Cache as NUMA (meaning each uncore cache domain is an individual NUMA). These particular settings are less common and will still result in the NUMA CPU domain being larger than or equal to an uncore cache CPU domain on split-uncore-cache processors. Additionally, setting Last-Level-Cache as NUMA is not recommended with Kubernetes as many split-uncore-cache processors will then exceed the current limitation of 8 NUMA domains in Kubernetes (as of current implementation writing in v1.32). The uncore cache CPU domain is generally considered smaller than the NUMA or Socket CPU domain. However, the proposed algorithm is designed to also handle cases where the uncore cache domain contains the same CPUs as the Socket or NUMA domain, or even scenarios where it spans more CPUs than a NUMA domain. Details of this handling and the overall implementation are described further below.
 
-In the case where the NUMA boundary is smaller than an uncore cache (enabling Sub-NUMA clustering on a monolithic cache system), the allocatable pool of CPUs does not expand beyong the respective NUMA boundary when uncore cache hints are provided in the above scheduling policy. The filtered subset of CPUs will still remain within the NUMA boundary.
+  - Scan through every uncore cache index in numerical order, for each uncore cache block:
+    - First, check if the current required total number of CPUs for the container is greater than or equal the size of the **total** amount of CPUs to an uncore cache, assign the full uncore cache CPUs if they are all **unallocated** within the group. Subtract the amount of assigned CPUs from the quantity of required CPUs. This submethod will be called `takeFullUncore` and follows the same allocation principle as `takeFullFirstLevel` and `takeFullSecondLevel` where CPU allocations will be done based on the domain-level. Repeat `takeFullUncore` until the required number of total CPUs is satisfied or less than the amount of CPUs available on an uncore cache.
+    - Once the current required total number of CPUs for the container is less than the size of the **total** amount of CPUs to an uncore cache, determine if all required CPUs can fit within the uncore cache domain. Allocate the CPUs if the container's required CPUs can be satisfied from the **unallocated** CPUs within the single uncore cache domain. This submethod will be called `takePartialUncore`. The goal of `takePartialUncore` is to perform a first-fit method where as the uncore caches are scanned, CPUs will be allocated once it is determined there are enough allocatable CPUs within the uncore cache to satisfy the CPU requirement.
+    - `takePartialUncore` diverges from the allocation principles previously used where full CPU domains are allocated at a time. This is necessary since this is a best-effort implementation intended to balance maximizing node performance while minimizing uncore cache distribution. Uncore cache sensitive applications can be deployed on the edge where lower core count systems are utilized. These applications often require less CPUs than the total number of CPUs of an uncore cache domain. Newer split architecture processors have increased uncore cache size and bandwidth which has helped reduced the noisy neighbor problem. However, the workloads can still be sensitive to cross-cache latency. The example below helps illustrate why `takePartialUncore` is important to fully maximize nodes that have less uncore caches available. For the example below, a 16-core split uncore cache processor is allocated to the following Guaranteed containers using the static policy with `prefer-align-cpus-by-uncorecache` enabled and disabled.
+      - Reserved CPUs: 0-1
+      - Allocatable CPUs: 2-15
+      - Container 1: 4 CPUs
+      - Container 2: 4 CPUs
+      - Container 3: 4 CPUs
 
-This scheduling policy will minimize the distribution of containers across uncore caches to improve performance while still maintaining the default packed logic. The scope will be initially be narrowed to implement uncore cache alignment to the default static scheduling behavior. The table below summarizes future enhancement plans to implement uncore cache alignment to be compatible with the distributed scheduling policies to reduce contention/noisy neighbor effects.
+      ![partial_uncore](./images/partial_uncore.png)
 
+      In the depiction above, Container 2 will suffer from cross cache latency using the default packed CPU allocation despite having enough room to fit on Uncore Cache 1. With `prefer-align-cpus-by-uncorecache`, the available CPUs on the node can be maximized and run as optimally as possible using the `takePartialUncore` method.
+  - `takeUncoreCache` and `takePartialUncore` will still follow a "packed" allocation principle as the rest of the implementation. Uncore Cache IDs will be scanned in numerical order and assigned as possible. For `takePartialUncore`, CPUs will be assigned within the uncore cache in numerical order to follow a "packed" methodology.
+  - In the case where the uncore cache CPU domain is similar to the socket CPU domain (ex: monolithic cache architectures), `takeFullFirstLevel` and `takeFullSecondLevel` will have already reduced the required number of CPUs to be less than a socket's worth of CPUs (or the original requirement was less than a socket's worth of CPUs). In this case, `takeFullUncore` is skipped since the CPU requirement is already less than the the total CPUs to a monolithic cache. `takePartialUncore` will then allocate CPUs in numerical order as available on the socket CPU domain (which is equivalent to the monolithic uncore cache CPU domain) and results in the same allocation as the default behavior without `prefer-align-cpus-by-uncorecache` enabled.
+  - In the case where the NUMA CPU domain is smaller than the uncore cache CPU domain (ex: enabling sub-NUMA clustering on monolithic cache architectures), `takeFullFirstLevel` and `takeFullSecondLevel` will have already reduced the required number of CPUs to be less than a socket's worth of CPUs (or the original requirement was less than a socket's worth of CPUs). In this case, `takeFullUncore` is skipped since the CPU requirement is already less than the the total CPUs to a monolithic cache. `takePartialUncore` will then allocate CPUs in numerical order as available on the node and results in the same allocation as the default behavior without `prefer-align-cpus-by-uncorecache` enabled.
+  - In the case where the NUMA CPU domain is equal to the uncore cache CPU domain (ex: setting Last-Level-Cache as NUMA on split-uncore-cache architectures), `takeFullSecondLevel` will satisfy the requirements for `takeFullUncore`, which results in the use of `takePartialUncore`. `takePartialUncore` will then minimize the distribution of CPUs across multiple uncore caches as seen in the example above.
+  - Although `takePartialUncore` diverges from the allocation by domain principle, it is necessary to enable greater utilization of the node by reducing uncore cache distribution and achieves the goal for a best-effort policy. If `takeFullUncore` was only implemented, containers with CPU requirements that are less than an uncore cache's worth would follow the default packed method and not always be uncore cache aligned. The only containers that would benefit would be those with CPU requirements that exactly match the size of the uncore cache CPU domain. This would be restrictive for the users who have different sized applications, and could result in overallocating resources and inefficient usage of the node. 
+- Continuing the allocation algorithm, if the required amount of CPUs cannot fit within an uncore cache group and there are enough allocatable cores on the node, assign cores in numerical order as available (`takeFullCores`).
+- If the CPU requirement is still not satisfied but there are enough CPUs available, assign CPUs in numerical order as available (`takeRemainingCPUs`).
+
+In order to fully depict the CPU allocation implementation, the following shows CPU assignments for the default packed method vs `prefer-align-cpus-by-uncorecache`. The following containers are scheduled on the a 32 core split uncore cache processor:
+- Single Socket
+- NPS=1
+- 4 Uncore Caches
+- Reserved CPUs: 0-1
+- Allocatable CPUs: 2-31
+- Container 1: 10 CPUs (larger than an uncore cache CPU domain)
+- Container 2: 8 CPUs (equivalent to an uncore cache CPU domain)
+- Container 3: 6 CPUs (smaller than an uncore cache CPU domain)
+
+![full_uncore_example](./images/full_uncore_example.png)
+
+In this example, `takeFullFirstLevel` and `takeFullSecondLevel` will be skipped for all three containers since the CPU requirement is less than a Socket and NUMA's worth of CPUs.
+- The first container requires 10 CPUs which is greater than the CPUs in an uncore cache, `takeFullUncore` is utilized. The function will iterate through each uncore cache in numerical order. Uncore Cache 0 is not allocated since a full uncore cannot be allocated. Uncore cache 1 is then fully allocated to container 1 but still requires 2 more CPUs. Uncore cache 2 is then scanned. Since the CPU requirement is less than a uncore cache's worth of CPUs, `takePartialUncore` is utilized. Since Uncore Cache 2 is able to satify the 2 remaining required CPUs by container 1, the CPUs are allocated in numerical order on Uncore Cache 2 to satisfy the requirement.
+- Container 2 requires 8 CPUs which is equal to the node's uncore cache worth of CPUs. `takeFullUncore` is utilized again. Scanning each uncore cache in numerical order results in finding that Uncore Cache 3 is the only uncore cache fully available, and therefore allocated to container 2 to satisfy the requirement.
+- Container 3 requires 6 CPUs which is less than the CPUs in an uncore cache. `takeFullUncore` is skipped and `takePartialUncore` is utilized. Scanning each uncore cache in numerical order results in Uncore Cache 0 being able to fit the CPU requirements within a single uncore. The remaining 6 available CPUs on Uncore Cache 0 are allocated to container 3 to satisfy the requirement.
+
+This example shows the benefit of the `prefer-align-by-uncorecache` feature in comparison to the default packed allocation. In the default packed allocation where CPUs are assigned numerically as available, all three containers suffer cross cache latency where CPUs need to access uncore caches from other slices and suffer from the noisy neighbor effect. The uncore cache aligned containers do not suffer from cross cache latency (unless the CPU requirement is larger than an uncore cache domain) and does not face a noisy neighbor scenario.
+
+In the case where the NUMA boundary is larger than a socket (setting NPS0 on a dual-socket system), the full node's CPUs will be allocated to the container if it requires the total NUMA amount of CPUs. Otherwise, if the CPU requirement for the container is less than the total CPUs to the NUMA, the logic will begin with (`takeFullSecondLevel`). The node can not be over committed. 
+
+This CPU allocation policy will minimize the distribution of containers across uncore caches to improve performance while still maintaining the default packed logic. The scope will be initially be narrowed to implement uncore cache alignment to the default static CPU allocation behavior. The table below summarizes future enhancement plans to implement uncore cache alignment to be compatible with the distributed CPU allocation policies to reduce contention/noisy neighbor effects.
 
 | Compatibility | alpha | beta | GA |
 | --- | --- | --- | --- |
@@ -156,196 +194,11 @@ This scheduling policy will minimize the distribution of containers across uncor
 | align-by-socket | x | x | x |
 | distribute-cpus-across-cores |   | x | x |
 
+This feature follows a best-effort policy rather than a strict policy. A strict policy would prevent Guaranteed containers from being deployed if they exceed the size of an uncore cache CPU domain while a best-effort policy will still permit containers larger than an uncore cache CPU domain to be deployed. Additionally, under a strict policy, each container would be assigned its own dedicated uncore cache, which would limit the node to deploying a number of containers equal to the number of uncore caches available. A strict uncore cache alignment policy is not within the scope of this implementation. Execution of a strict uncore cache alignment policy will be pursued in a separate KEP.
+
+As this feature operates on a best-effort basis and does not prevent CPU allocation to containers that cannot be restricted to a single uncore cache, a metric will be need to be provided to help users determine whether a container is uncore cache aligned.
+
 ### Test Plan
-
-The different configurations can help show the above scheduling policy behavior of how containers are assigned CPUs when the prefer-align-cpus-by-uncorecache feature is enabled with containers of different CPU sizes and order. These different configurations can also help outline unit and e2e test cases. Below are a few examples of the scheduling policy across different processors with different NUMA Per Socket (NPS) settings.
-
-HW Test Matrix
-
-- 1P AMD EPYC 7303 32C (smt-on) NPS=1 
-- 1P AMD EPYC 7303 32C (smt-off)  NPS=1 
-- 2P AMD EPYC 9754 128C (smt-on) NPS=1   
-- 2P AMD EPYC 9654 96C (smt-off) NPS=2   
-- 2P Intel Xeon Platinum 8490H 60c  (hyperthreading off)
-- 2P Intel Xeon Platinum 8490H 60c (hyperthreading on) with Sub-NUMA Clustering
-- 1P Intel Core i7-12850HX
-- 1P ARM Ampere Altra 128c
-- AWS Graviton
-
-Case #1. 1P AMD EPYC 7303 32C (smt-off) NPS=1
-
-```
-NumCores:              32,
-NumCPUs:               32,
-NumSockets:            1,
-NumCPUsPerUncoreCache: 8,
-NPS:                   1
-UncoreCache Topology: {
-    0: {CPUSet: 0-7,    NUMAID: 0,  SocketID: 0},
-    1: {CPUSet: 8-15,   NUMAID: 0,  SocketID: 0},
-    2: {CPUSet: 16-23,  NUMAID: 0,  SocketID: 0},
-    3: {CPUSet: 24-31,  NUMAID: 0,  SocketID: 0}
-}
-CPUAssignments: { //pod deployment size, expected result
-    Reserved:           {CPUs: 1,   UncoreCacheID: 0,        CPUSet: 0}
-    Container1:         {CPUs: 2,   UncoreCacheID: 0,        CPUSet: 1-2},
-    Container2:         {CPUs: 20,  UncoreCacheID: 0-2,      CPUSet: 3-6,8-15,16-23},
-    Container3:         {CPUs: 6,   UncoreCacheID: 3,        CPUSet: 24-31}
-}
-```
-
-Case #2. 1P AMD EPYC 7303 32C (smt-on) NPS=1 
-```
-NumCores:                   32,
-NumCPUs:                    64,
-NumSockets:                 1,
-NumCPUsPerUncoreCache:      16,
-NPS:                        1,
-ReservedCPUs:               4
-
-UncoreCache Topology: {
-    0: {CPUSet: 0-7,32-39    NUMAID: 0,  SocketID: 0},
-    1: {CPUSet: 8-15,40-47   NUMAID: 0,  SocketID: 0},
-    2: {CPUSet: 16-23,48-55  NUMAID: 0,  SocketID: 0},
-    3: {CPUSet: 24-31,56-63  NUMAID: 0,  SocketID: 0}
-}
-
-CPUAssignments: { //pod deployment size, expected result
-    Reserved:         {CPUs: 4,   UncoreCacheID: 0,     CPUSet: 0-1,32-33},
-    Container1:       {CPUs: 2,   UncoreCacheID: 0,     CPUSet: 2,34},
-    Container2:       {CPUs: 22,  UncoreCacheID: 0-1,   CPUSet: 3-5,8-15,35-37,40-47},
-    Container3:       {CPUs: 22,  UncoreCacheID: 2-3,   CPUSet: 16-26,48-58},
-    Container4:       {CPUs: 12,  UncoreCacheID: 0,3,   CPUSet: 6-7,27-30,38-39,59-62},
-    Container5:       {CPUs: 2,   UncoreCacheID: -1,    CPUSet: -1}
-}
-```
-
-Case#3: 2P AMD EPYC 9754 128C (smt-on) NPS=1
-
-```
-NumCoresPerSocket:  128,
-NumSockets:         2,
-NumCPUs:            512,
-NumCPUsPerUncoreCache:      16,
-NPS:                1,
-ReservedCPUs:       2
-
-UncoreCache Topology: {
-    0:  {CPUSet: 0-7,256-263,        NUMAID: 0,  SocketID: 0},
-    1:  {CPUSet: 8-15,264-271,       NUMAID: 0,  SocketID: 0},
-    2:  {CPUSet: 16-23,272-279,      NUMAID: 0,  SocketID: 0},
-    3:  {CPUSet: 24-31,280-287,      NUMAID: 0,  SocketID: 0},
-    4:  {CPUSet: 32-39,288-295,      NUMAID: 0,  SocketID: 0},
-    5:  {CPUSet: 40-47,296-303,      NUMAID: 0,  SocketID: 0},
-    6:  {CPUSet: 48-55,304-311,      NUMAID: 0,  SocketID: 0},
-    7:  {CPUSet: 56-63,312-319,      NUMAID: 0,  SocketID: 0},
-    8:  {CPUSet: 64-71,320-327,      NUMAID: 0,  SocketID: 0},
-    9:  {CPUSet: 72-79,328-335,      NUMAID: 0,  SocketID: 0},
-    10: {CPUSet: 80-87,336-343,      NUMAID: 0,  SocketID: 0},
-    11: {CPUSet: 88-95,344-351,      NUMAID: 0,  SocketID: 0},
-    12: {CPUSet: 96-103,352-359,     NUMAID: 0,  SocketID: 0},
-    13: {CPUSet: 104-111,360-367,    NUMAID: 0,  SocketID: 0},
-    14: {CPUSet: 112-119,368-375,    NUMAID: 0,  SocketID: 0},
-    15: {CPUSet: 120-127,376-383,    NUMAID: 0,  SocketID: 0},
-    16: {CPUSet: 128-135,384-391,    NUMAID: 1,  SocketID: 1},
-    17: {CPUSet: 136-143,392-399,    NUMAID: 1,  SocketID: 1},
-    18: {CPUSet: 144-151,400-407,    NUMAID: 1,  SocketID: 1},
-    19: {CPUSet: 152-159,408-415,    NUMAID: 1,  SocketID: 1},
-    20: {CPUSet: 160-167,416-423,    NUMAID: 1,  SocketID: 1},
-    21: {CPUSet: 168-175,424-431,    NUMAID: 1,  SocketID: 1},
-    22: {CPUSet: 167-183,432-439,    NUMAID: 1,  SocketID: 1},
-    23: {CPUSet: 184-191,440-447,    NUMAID: 1,  SocketID: 1},
-    24: {CPUSet: 192-199,448-455,    NUMAID: 1,  SocketID: 1},
-    25: {CPUSet: 200-207,456-463,    NUMAID: 1,  SocketID: 1},
-    26: {CPUSet: 208-215,464-471,    NUMAID: 1,  SocketID: 1},
-    27: {CPUSet: 216-223,472-479,    NUMAID: 1,  SocketID: 1},
-    28: {CPUSet: 224-231,480-487,    NUMAID: 1,  SocketID: 1},
-    29: {CPUSet: 232-239,488-495,    NUMAID: 1,  SocketID: 1},
-    30: {CPUSet: 240-247,496-503,    NUMAID: 1,  SocketID: 1},
-    31: {CPUSet: 248-255,504-511,    NUMAID: 1,  SocketID: 1}
-}
-
-CPUAssignments: {
-    Reserved:         {CPUs: 2,   UncoreCacheID: 0,         CPUSet: 0,256,                      NUMAID: 0,  SocketID: 0},
-    Container1:       {CPUs: 2,   UncoreCacheID: 0,         CPUSet: 1,257,                      NUMAID: 0,  SocketID: 0},
-    Container2:       {CPUs: 22,  UncoreCacheID: 0-1,       CPUSet: 2-4,8-15,258-260,264-271,   NUMAID: 0,  SocketID: 0},
-    Container3:       {CPUs: 8,   UncoreCacheID: 2,         CPUSet: 16-19,272-275,              NUMAID: 0,  SocketID: 0},
-    Container4:       {CPUs: 22,  UncoreCacheID: 0,3,       CPUSet: 5-7,24-31,261-263,280-287,  NUMAID: 0,  SocketID: 0},
-    Container5:       {CPUs: 12,  UncoreCacheID: 4,         CPUSet: 32-35,288-291,              NUMAID: 0,  SocketID: 0},
-    Container6:       {CPUs: 8,   UncoreCacheID: 2,         CPUSet: 20-23,276-279,              NUMAID: 0,  SocketID: 0},
-    Container7:       {CPUs: 12,  UncoreCacheID: 5,         CPUSet: 120-125,376-381,            NUMAID: 0,  SocketID: 0}
-}
-
-Case#4: 2P AMD EPYC 9654 96C (smt-off) NPS=2
-
-NumCoresPerSocket:          96,
-NumSockets:                 2,
-NumCPUs:                    192,
-NumCPUsPerUncoreCache:      8,
-NPS:                        2,
-ReservedCPUs:               4
-
-UncoreCache Topology: {
-    0:  {CPUSet: 0-7,       NUMAID: 0,  SocketID: 0},
-    1:  {CPUSet: 8-15,      NUMAID: 0,  SocketID: 0},
-    2:  {CPUSet: 16-23,     NUMAID: 0,  SocketID: 0},
-    3:  {CPUSet: 24-31,     NUMAID: 0,  SocketID: 0},
-    4:  {CPUSet: 32-39,     NUMAID: 0,  SocketID: 0},
-    5:  {CPUSet: 40-47,     NUMAID: 0,  SocketID: 0},
-    6:  {CPUSet: 48-55,     NUMAID: 1,  SocketID: 0},
-    7:  {CPUSet: 56-63,     NUMAID: 1,  SocketID: 0},
-    8:  {CPUSet: 64-71,     NUMAID: 1,  SocketID: 0},
-    9:  {CPUSet: 72-79,     NUMAID: 1,  SocketID: 0},
-    10: {CPUSet: 80-87,     NUMAID: 1,  SocketID: 0},
-    11: {CPUSet: 88-95,     NUMAID: 1,  SocketID: 0},
-    12: {CPUSet: 96-103,    NUMAID: 2,  SocketID: 1},
-    13: {CPUSet: 104-111,   NUMAID: 2,  SocketID: 1},
-    14: {CPUSet: 112-119,   NUMAID: 2,  SocketID: 1},
-    15: {CPUSet: 120-127,   NUMAID: 2,  SocketID: 1},
-    16: {CPUSet: 128-135,   NUMAID: 2,  SocketID: 1},
-    17: {CPUSet: 136-143,   NUMAID: 2,  SocketID: 1},
-    18: {CPUSet: 144-151,   NUMAID: 3,  SocketID: 1},
-    19: {CPUSet: 152-159,   NUMAID: 3,  SocketID: 1},
-    20: {CPUSet: 160-167,   NUMAID: 3,  SocketID: 1},
-    21: {CPUSet: 168-175,   NUMAID: 3,  SocketID: 1},
-    22: {CPUSet: 167-183,   NUMAID: 3,  SocketID: 1},
-    23: {CPUSet: 184-191,   NUMAID: 3,  SocketID: 1}
-}
-
-CPUAssignments: {
-    Reserved:         {CPUs: 4,   UncoreCacheID: 0,         CPUSet: 0-4         NUMAID: 0,      SocketID: 0},
-    Container1:       {CPUs: 2,   UncoreCacheID: 0,         CPUSet: 5-6,        NUMAID: 0,      SocketID: 0},
-    Container2:       {CPUs: 22,  UncoreCacheID: 1-3,       CPUSet: 8-29,       NUMAID: 0,      SocketID: 0},
-    Container3:       {CPUs: 8,   UncoreCacheID: 4,         CPUSet: 32-39,      NUMAID: 0,      SocketID: 0},
-    Container4:       {CPUs: 12,  UncoreCacheID: 6-7,       CPUSet: 48-59,      NUMAID: 1,      SocketID: 0},
-    Container5:       {CPUs: 22,  UncoreCacheID: 8-10,      CPUSet: 64-85,      NUMAID: 1,      SocketID: 0},
-    Container6:       {CPUs: 22,  UncoreCacheID: 12-14,     CPUSet: 96-117,     NUMAID: 2,      SocketID: 1}
-}
-```
-
-Case#5: 2P Intel Xeon Platinum 8490H
-```
-NumCoresPerSocket:          60,
-NumSockets:                 2,
-NumCPUs:                    120,
-NumCPUsPerUncoreCache:      60,
-NPS:                        1,
-ReservedCPUs:               4
-
-UncoreCache Topology: {
-    0: {CPUSet: 0-59,   NUMAID: 0,  SocketID: 0},
-    1: {CPUSet: 60-119, NUMAID: 1,  SocketID: 1}
-}
-
-CPUAssignments: {
-    Reserved:         {CPUs: 4,   UncoreCacheID: 0,     CPUSet: 0-3,        NUMAID: 0,      SocketID: 0},
-    Container1:       {CPUs: 6,   UncoreCacheID: 0,     CPUSet: 4-9,        NUMAID: 0,      SocketID: 0},
-    Container2:       {CPUs: 22,  UncoreCacheID: 0,     CPUSet: 10-31,      NUMAID: 0,      SocketID: 0},
-    Container3:       {CPUs: 8,   UncoreCacheID: 0,     CPUSet: 32-39,      NUMAID: 0,      SocketID: 0},
-    Container4:       {CPUs: 12,  UncoreCacheID: 0,     CPUSet: 40-51,      NUMAID: 0,      SocketID: 0},
-    Container5:       {CPUs: 4,   UncoreCacheID: 0,     CPUSet: 52-55,      NUMAID: 0,      SocketID: 0}
-}
-```
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -379,7 +232,6 @@ We plan on adding/modifying functions to the following files to create the uncor
 
 Existing topoology test cases will be modified to include uncorecache topology. All modified and added functions will have new test cases.
 
-
 <!--
 In principle every added code should have complete unit test coverage, so providing
 the exact set of tests will not bring additional value.
@@ -403,6 +255,23 @@ extending the production code to implement this enhancement.
 - `/pkg/kubelet/cm/cpumanager/policy_static.go`: `2024-08-26` - `89.5%`
 - `/pkg/kubelet/cm/cpumanager/topology/topology.go`: `2024-9-30` - `93.2%`
 
+Unit tests will be created to test the proposed feature's functionality starting from the static policy's `Allocate` method. The unit tests will show that containers are assigned CPUs from an individual uncore cache.
+
+The `prefer-align-cpus-by-uncorecache` feature will be enabled and tested individually. The following features will also be enabled alongside to test the proposed feature's compatibility with existing static CPU Manager policies:
+- `full-pcpus-only`
+- Topology Manager NUMA Affinity
+
+The following CPU Topologies are representative of various uncore cache architectures and will be added to policy_test.go and represented in the unit testing. 
+
+- 1P AMD EPYC 7702P 64C (smt-on/off) NPS=1, 16 uncore cache instances/socket
+- 2P AMD EPYC 7303 32C (smt-on/off) NPS=1, 4 uncore cache instances/socket
+- 1P AMD EPYC 9754 128C (smt-on) NPS=1, 16 uncore cache instances/socket   
+- 2P AMD EPYC 9654 96C (smt-off) NPS=2, 12 uncore cache instances/socket   
+- 2P Intel Xeon Platinum 8490H 60c (hyperthreading on) with Sub-NUMA Clustering
+- 1P Intel Core i7-12850HX
+- 1P ARM Ampere Altra 128c, 16 uncore cache instances/socket
+- 1P AWS Graviton3 64c
+
 ##### Integration tests
 
 N/A. This feature requires a e2e test for testing.
@@ -421,6 +290,7 @@ N/A. This feature requires a e2e test for testing.
 
 - Feature implemented behind a feature gate flag option
 - E2E Tests will be skipped until nodes with uncore cache can be provisioned within CI hardware. Work is ongoing to add required systems (https://github.com/kubernetes/k8s.io/issues/7339). E2E testing will be required to graduate to beta.
+- Providing a metric to verify uncore cache alignment will be required to graduate to beta.
 
 ### Upgrade / Downgrade Strategy
 
@@ -663,7 +533,7 @@ N/A
 
 ## Alternatives
 
-Uncore cache affinity scheduling is possible by delgating CPU allocation from the Kubelet to the container runtime and plugins. However as a consequence of using a different implementation, the topology alignment granted by the Topology Manager within the kubelet is not compatible. 
+Uncore cache affinity CPU allocation is possible by delgating CPU allocation from the Kubelet to the container runtime and plugins. However as a consequence of using a different implementation, the topology alignment granted by the Topology Manager within the kubelet is not compatible. 
 Existing Static CPU Manager can be used, but requires manual assignment and for user to only run guaranteed pods with CPU sizes matching the corresponding uncore cache CPU group of the specific node.
 
 
