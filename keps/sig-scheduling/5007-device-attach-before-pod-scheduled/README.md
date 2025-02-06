@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
     - [Device Attribute Additions](#device-attribute-additions)
     - [<code>AllocatedDeviceStatus</code> Additions](#allocateddevicestatus-additions)
+    - [Scheduler DRA plugin Additions](#scheduler-dra-plugin-additions)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
   - [Composable Controller Design Overview](#composable-controller-design-overview)
@@ -163,7 +164,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin.
 Fabric devices are those that are not directly connected to the server and require attachment to the server for use.
 
-In the DRA current implementation, fabric devices are attached after the scheduling decision, which leads to the following issue:
+In the current DRA implementation, fabric devices are attached after the scheduling decision, which leads to the following issue:
 
 Fabric devices may be contested by other clusters.
 In scenarios where attachment occurs after scheduling, there is a risk that the resource cannot be attached at the time of attachment, causing the container to remain in the "Container Creating" state.
@@ -180,7 +181,7 @@ Recently, a new server architecture called Composable Disaggregated Infrastructu
 
 In a traditional server, hardware resources such as CPUs, memory, and GPUs reside within the server.
 Composable Disaggregated Infrastructure decomposes these hardware resources and makes them available as resource pools.
-We can combine these resource by software definition so that we can create custom-made servers.
+We can combine these resources by software definition so that we can create custom-made servers.
 
 Composable system is composed of resource pool and Composable Manager software.
 In Resource pool all components are connected to PCIe or CXL switches.
@@ -224,25 +225,26 @@ and make progress.
 
 The basic idea is the following:
 
-1. **Add a Ready Flag to ResourceClaim**:
-   - Add a flag to `ResourceClaim` that indicates the readiness state of the device.
-   The `PreBind` phase will be held until this flag is set to "Ready".
+1. **Adding Attributes to ResourceSlice**:
+   - Add an attribute to `ResourceSlice` to indicate fabric devices. This key is predefined as part of the attributes.
 
-2. **Wait for Device Attachment Completion in the PreBind() Process**:
-   The overall flow of the PreBind() process is as follows:
+2. **Waiting for Device Attachment in PreBind**:
+   - For fabric devices, the scheduler waits for the device attachment to complete during the `PreBind` phase.
 
-   - **Update ResourceClaim**:
-     - The scheduler updates the `ResourceClaim` to notify the vendor's driver that the device needs to be prepared.
-     This process is the same as the existing `PreBind`.
-     - After updating the `ResourceClaim`, if the flag is set to "Preparing", the completion of the `PreBind` phase will be held until the flag is set to "Ready".
+3. **PreBind Process**:
+   The overall flow of the `PreBind` process is as follows:
+
+   - **Updating ResourceClaim**:
+     - The scheduler DRA plugin updates the `ResourceClaim` to notify the Composable DRA Controllers that device attachment is needed. 
+     This is the same as the existing `PreBind` process.
+     - In addition to the existing operations, the update to the `ResourceClaim` includes setting the necessary values in the `AllocatedDeviceStatus` conditions.
 
    - **Monitoring and Preparation by Composable DRA Controllers**:
-     - Composable DRA Controllers monitor the `ResourceClaim`.
-     If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
-     Once the preparation is complete, they set the flag to "Ready".
+     - Composable DRA Controllers monitor the `ResourceClaim`. If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
+     - Once the preparation is complete, they set the conditions to `true`.
 
    - **Completion of the PreBind Phase**:
-     - Once the flag is set to "Ready", the `PreBind` phase is completed, and the scheduler proceeds to the next step.
+     - Once all conditions are met, the `PreBind` phase is completed, and the scheduler proceeds to the next step.
 
 ### User Stories (Optional)
 
@@ -288,8 +290,7 @@ This document outlines the design of the DRA Scheduler Plugin, focusing on the h
 Key additions include new attributes for device identification, enhancements to `AllocatedDeviceStatus`, and the process for handling `ResourceSlices` upon attachment failure.
 The composable controller design is also discussed, emphasizing efficient utilization of fabric devices.
 
-//TODO update figure
-![proposal](proposal2.JPG)
+![proposal](proposal.jpg)
 
 #### Device Attribute Additions
 
@@ -348,6 +349,7 @@ type AllocatedDeviceStatus struct {
     // +optional
     NodeName string 
 }
+
 const(
   DRADeviceNeedAttachType = "kubernetes.io/needs-attaching"
   DRADeviceIsAttachType = "kubernetes.io/is-attached"
@@ -355,6 +357,7 @@ const(
 )
 ```
 
+#### Scheduler DRA plugin Additions
 When `kubernetes.io/needs-attaching: true` is set, the scheduler DRA plugin is expected to do the following:
 
 1. Set `AllocatedDeviceStatus.NodeName`.
@@ -368,7 +371,7 @@ This issue will be addressed separately as outlined in kubernetes/kubernetes#129
 #### PreBind Phase Timeout
 
 If the device attachment is successful, we expect it to take no longer than 5 minutes.
-Therefore, if we set a fixed timeout for the scheduler, we would like to set it to 10 minutes.
+However, to account for potential update lags, we would like to set a fixed timeout for the scheduler to 10 minutes.
 
 Even if the conditions `Type: kubernetes.io/is-attached` or `Type: kubernetes.io/attach-failed` are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
