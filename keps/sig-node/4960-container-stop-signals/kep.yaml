@@ -13,11 +13,11 @@ reviewers:
 approvers: 
   - '@mrunalp'
 
-status: provisional
+status: implementable
 stage: alpha
 latest-milestone: "v1.33"
 milestone:
-    alpha: ""
+    alpha: "v1.33"
     beta: ""
     stable: ""
 
