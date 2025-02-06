@@ -15,6 +15,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -170,6 +171,10 @@ The Pod "dns-example" is invalid: spec.dnsConfig.searches[0]: Invalid value: "":
 
 - Support workloads that need to resolve DNS short names where the full DNS name includes an underscore (`_`).
 - Allow users to use a single dot character `.` as a search string
+
+### Non-Goals
+
+- Allowing support for any characters in the DNS search string
 
 ## Proposal
 
