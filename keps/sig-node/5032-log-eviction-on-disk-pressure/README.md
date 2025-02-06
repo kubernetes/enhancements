@@ -57,15 +57,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Split, Clean and Rotate containers logs tp avoid disk pressure on kubelet host.
+Split, Clean and Rotate container logs to avoid disk pressure on kubelet host.
 
 ## Motivation
 
-- We manage kubernetes ecosystem at our organization. A lot of our kubelet hosts experienced Disk pressure as a certain set of pods was generating very high logs. The rate was around 3-4Gib in 15 minutes. We had containerLogMaxSize set to 200Mib and containerLogMaxFiles set to 6. But the .gz files were of size around 500-600Gib. We observed that container log rotation was slow for us.
+- We manage kubernetes ecosystem at our organization. A lot of our kubelet hosts experienced Disk pressure as a certain set of pods was generating very high logs. The rate was around 3-4Gib logs generated in 15 minutes. We had kubelet configs containerLogMaxSize set to 200Mib and containerLogMaxFiles set to 6. But the .gz files (tar log files of pods) were of size around 500-600Gib. We observed that container log rotation was slow for us.
 
 ### What would you like to be added?
 
-We expect that the log file size is always under limit which can help such disk pressure issues in the future.
+We expect that the log file size is always under set kubelet config limit (i.e., containerLogMaxSize) which can help such disk pressure issues in the future.
 
 ### Why is this needed?
 
@@ -163,24 +163,28 @@ File sizes
 ```
 
 
-If the pod had been generating logs in Gigabytes with minimal delay, it can cause disk pressure on kubelet host and that can affect other pods running in the same kubelets.
+If the pod had been generating logs in Gigabytes with minimal delay, it can cause disk pressure on kubelet host and that can affect other pods running in the same kubelet.
 
 ### Goals
 
-- Split large log files in size containerLogMaxSize, Rotate and Clean them.
+- There is a ContainerLogManager in every kubelet. It runs an infinite go routine and checks active log file(on which all container log read write happens) size. If that exceeds the above mentioned limit (containerLogMaxSize), it starts parallel workers. Each worker creates a tar of the active file, deletes tars till there are containerLogMaxFiles files in total and creates a new active file for container.
+- Goal is to Split large active log file in size containerLogMaxSize, and then do the rest of the operations done by containerLogManager.
 
 ## Proposal
-- The container log rotation working now shpuld work as is, but it will ensure that before rotating file, it is under the size limit set..
+- The container log rotation working now shpuld work as is, but it will ensure that before rotating file, it is under the size limit set. This way, every tar present for a container under host will surely be under containerLogMaxSize. This can avoid disk pressure on the host.
 
 ### Risks and Mitigations
 
-Risk of tmp copy creation of log failing as there is no disk space left.  
+Do not see any risk as of now.
 
 ## Design Details
 
-- When there is disk pressure in nodefs.available/imagefs.available, ContainerLogManager's rotateLogs (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L52-L60) should be added to list of functions to be run on disk pressure. (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/eviction/helpers.go#L1195-#L1230)
-- And container logs exceeding the kubelet config set for log limit should be deleted. On disk pressure, analyse log paths of all containers. Logs of containers with existing combined log size exceeding `containerLogMaxSize`*`containerLogMaxFiles` should be deleted till the combined log size is within `containerLogMaxSize`*`containerLogMaxFiles`.
-
+1. Implement a new function (splitAndRotateLatestLog) to be called by rotateLog function (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L235-L257)
+2. The rotateLog is being called by each worker for the container assigned to it.
+3. It does cleanup to delete all non-rotated (rotated logs have time suffix in name) and .tmp files generated (and if not deleted) in last log rotation.
+4. Then it rotates un rotated files (it does not rotate the active file) and deletes oldest rotated files till containerLogMaxFiles-2 files are left. This is because the non rotated active file be rotated and new active file will be created. Which will add upto containerLogMaxFiles.
+5. Before doing this exact above step, in the new design, it will split the large active log file in size of containerLogMaxSize and name them <active-log-file-name>.part<i>.
+6. Let's say it created n parts, after this, it can do rotate of n-1 parts, keeping last nth part active and do delete. (Basically step 4)
 
 ### Test Plan
 
@@ -200,8 +204,8 @@ to implement this enhancement.
 ##### e2e tests
 - Add test under `kubernetes/test/e2e_node`.
 - Set low value for `containerLogMaxSize` and `containerLogMaxFiles`.
-- Create a pod with generating heavy logs and expect the container's combined log size to bw within `containerLogMaxSize`*`containerLogMaxFiles`.
-- 
+- Create a pod with generating heavy logs and expect the container's combined log size to be within `containerLogMaxSize`*`containerLogMaxFiles`.
+
 ### Graduation Criteria
 
 **Note:** *Not required until targeted at a release.*
