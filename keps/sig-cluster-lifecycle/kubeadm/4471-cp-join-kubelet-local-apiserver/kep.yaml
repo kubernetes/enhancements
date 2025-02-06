@@ -7,6 +7,7 @@ participating-sigs:
   - sig-cluster-lifecycle
 status: implementable
 creation-date: 2024-2-1
+last-updated: 2025-02-06
 reviewers:
   - "@neolit123"
   - "@SataQiu"
@@ -16,4 +17,4 @@ approvers:
   - "@SataQiu"
   - "@pacoxu"
 latest-milestone: "0.0"
-stage: "alpha"
+stage: "beta"
