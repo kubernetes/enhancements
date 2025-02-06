@@ -1,0 +1,18 @@
+title: Production Readiness Review Process
+kep-number: 5147
+authors:
+  - "@dom4ha"
+owning-sig: sig-scheduling
+status: implementable
+creation-date: 2025-02-05
+participating-sigs:
+  - sig-release
+reviewers:
+  - 
+approvers:
+  - 
+latest-milestone: '1.33'
+stage: alpha
+
+milestone:
+  alpha: "v1.33"
