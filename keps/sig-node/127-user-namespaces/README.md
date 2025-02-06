@@ -335,6 +335,8 @@ bool `pod.spec.hostUsers`.
 The mapping length will be 65536, mapping the range 0-65535 to the pod. This wide
 range makes sure most workloads will work fine. Additionally, we don't need to
 worry about fragmentation of IDs, as all pods will use the same length.
+The mapping length (multiple of 65536) will be customizable via a new
+`KubeletConfiguration` property `subidsPerPod`.
 
 The mapping will be chosen by the kubelet, using a simple algorithm to give
 different pods in this category ("without" volumes) a non-overlapping mapping.
