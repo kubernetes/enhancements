@@ -1,6 +1,7 @@
 # KEP: Topology Aware Hints
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [IMPORTANT: Scope Reduction (Feb 2025)](#important-scope-reduction-feb-2025)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -8,11 +9,11 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API](#api)
+    - [Future API Expansion](#future-api-expansion)
   - [Configuration](#configuration)
   - [Interoperability](#interoperability)
   - [Feature Gate](#feature-gate)
-  - [API](#api)
-    - [Future API Expansion](#future-api-expansion)
   - [Kube-Proxy](#kube-proxy)
   - [EndpointSlice Controller](#endpointslice-controller)
 - [Heuristics](#heuristics)
@@ -65,14 +66,41 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
+
+## IMPORTANT: Scope Reduction (Feb 2025)
+
+This KEP's GA scope has been significantly reduced. While originally the KEP
+proposed both the `hints` field in `EndpointSlice` *and* a topology-aware
+routing implementation using Service annotation
+`service.kubernetes.io/topology-mode=Auto`, *only the `hints` field is being
+graduated to GA*. The topology-aware routing aspects, including the
+`service.kubernetes.io/topology-mode` annotation and associated heuristics, are
+not part of this GA release. 
+
+The following sections of this KEP are provided for historical context and to
+explain the rationale behind the `hints` field. The reason the entire KEP has
+not been updated is to maintain this valuable context. While other sections of
+this KEP remain, they have not been updated to fully reflect this scope
+reduction and should be considered in that light. Much of the content, including
+aspects of the Production Readiness Review, remains applicable as significant
+portions of the original implementation are still in use and will graduate to GA
+separately (through other KEPs, with their own Production Readiness Review),
+even though only the API change (the `hints` field itself) is graduating through
+this KEP.
+
+For current active plans on topology-aware routing solutions, please refer to the
+following KEPs:
+
+  * https://kep.k8s.io/4444
+  * https://kep.k8s.io/3015
 
 ## Summary
 
@@ -132,9 +160,10 @@ for most use cases.
 - Ensuring that Pods are distributed evenly across zones.
 
 ## Proposal
+
 This KEP describes two related concepts:
 
-1. A way to express the heuristic you'd like to use for Topology Aware Routing.
+1. (Not graduating to GA; see [scope reduction](#important-scope-reduction-feb-2025)) A way to express the heuristic you'd like to use for Topology Aware Routing.
 2. A new Hints field in EndpointSlices that can be used to enable certain
    topology heuristics.
 
@@ -194,33 +223,6 @@ with a new Service annotation.
 
 ## Design Details
 
-### Configuration
-
-A new `service.kubernetes.io/topology-mode` annotation can be used to enable or
-disable Topology Aware Routing heuristics for a Service.
-
-The previous `service.kubernetes.io/topology-aware-hints` annotation will
-continue to be supported as a means of configuring this feature for both "Auto"
-and "Disabled" values. New values will only be supported by the new annotation.
-
-### Interoperability
-
-Topology hints will be ignored if the TopologyKeys field has at least one entry.
-This field is deprecated and will be removed soon.
-
-Both ExternalTrafficPolicy and InternalTrafficPolicy will be given precedence
-over topology aware routing. For example, if `ExternalTrafficPolicy=Local` and
-topology was enabled, external traffic would be routed using the
-ExternalTrafficPolicy configuration while internal traffic would be routed with
-topology.
-
-### Feature Gate
-
-This functionality will be guarded by the `TopologyAwareHints` feature gate.
-This gate also interacts with 2 other feature gates:
-- It is dependent on the `ServiceTrafficPolicy` feature gate.
-- It is not compatible with the deprecated `ServiceTopology` feature gate.
-
 ### API
 
 A new `EndpointHints` struct would be added to the `EndpointSlice.Endpoint`
@@ -270,6 +272,44 @@ hints:
 Additionally we could easily expand this API to include support for region
 hints. Although it is unclear if either expansion will be necessary, the API is
 designed in a way to make expansions straightforward.
+
+```
+
++---------------------------------- IMPORTANT -------------------------------------+
+|                                                                                  |
+| NOTE: The remaining design proposals described in this KEP will not graduate to  |
+| GA. For more information, see the scope reduction details a the beginning of the |
+| KEP.                                                                             |
+|                                                                                  |
++----------------------------------------------------------------------------------+
+
+```
+### Configuration
+
+A new `service.kubernetes.io/topology-mode` annotation can be used to enable or
+disable Topology Aware Routing heuristics for a Service.
+
+The previous `service.kubernetes.io/topology-aware-hints` annotation will
+continue to be supported as a means of configuring this feature for both "Auto"
+and "Disabled" values. New values will only be supported by the new annotation.
+
+### Interoperability
+
+Topology hints will be ignored if the TopologyKeys field has at least one entry.
+This field is deprecated and will be removed soon.
+
+Both ExternalTrafficPolicy and InternalTrafficPolicy will be given precedence
+over topology aware routing. For example, if `ExternalTrafficPolicy=Local` and
+topology was enabled, external traffic would be routed using the
+ExternalTrafficPolicy configuration while internal traffic would be routed with
+topology.
+
+### Feature Gate
+
+This functionality will be guarded by the `TopologyAwareHints` feature gate.
+This gate also interacts with 2 other feature gates:
+- It is dependent on the `ServiceTrafficPolicy` feature gate.
+- It is not compatible with the deprecated `ServiceTopology` feature gate.
 
 ### Kube-Proxy
 
@@ -590,13 +630,19 @@ completeness.
 - Tests expanded to include e2e coverage described above.
 
 **GA:**
-- Feedback from real world usage shows that feature is working as intended
-- Events are triggered on each Service to provide users with clear information
-  on when the feature transitioned between enabled and disabled states.
+- Feedback from real world usage shows that feature is working as intended (i.e., the `hints` field is functioning correctly).
 - Test coverage in EndpointSlice strategy to ensure that the Hints field is
   dropped when the feature gate is not enabled.
 - Test coverage in EndpointSlice controller for the transition from enabled to
   disabled.
+
+**[Deprecated] GA:**
+
+The following points were originally considered for GA but are *not* part of
+this KEP's GA release (see [scope reduction](#important-scope-reduction-feb-2025)):
+
+- Events are triggered on each Service to provide users with clear information
+  on when the feature transitioned between enabled and disabled states.
 - Ensure that existing Topology Hints e2e test runs as a presubmit if any code
   changes in kube-proxy or the EndpointSlice controller.
 - Autoscaling and Scheduling SIGs have a plan to provide zone aware autoscaling
@@ -776,6 +822,7 @@ enabled even if the annotation has been set on the Service.
 - Alpha release: Kubernetes 1.21
 - Beta Release: Kubernetes 1.23[^1]
 - Feature Gate on-by default, feature available by default: 1.24
+- KEP Graduates to GA in 1.33 with [reduced scope](#important-scope-reduction-feb-2025)
 
 [^1]: This was intended to also flip the feature gate to enabled by default, but
     unfortunately that part was missed in 1.23. See
