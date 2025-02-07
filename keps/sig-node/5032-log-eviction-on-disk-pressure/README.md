@@ -179,12 +179,13 @@ Do not see any risk as of now.
 
 ## Design Details
 
-1. Implement a new function (splitAndRotateLatestLog) to be called by rotateLog function (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L235-L257)
+1. Implement a new function (splitAndRotateLatestLog) to be called by rotateLog function (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go#L313-L346)
 2. The rotateLog is being called by each worker for the container assigned to it.
-3. It does cleanup to delete all non-rotated (rotated logs have time suffix in name) and .tmp files generated (and if not deleted) in last log rotation.
-4. Then it rotates un rotated files (it does not rotate the active file) and deletes oldest rotated files till containerLogMaxFiles-2 files are left. This is because the non rotated active file be rotated and new active file will be created. Which will add upto containerLogMaxFiles.
-5. Before doing this exact above step, in the new design, it will split the large active log file in size of containerLogMaxSize and name them <active-log-file-name>.part<i>.
-6. Let's say it created n parts, after this, it can do rotate of n-1 parts, keeping last nth part active and do delete. (Basically step 4)
+3. It does cleanup to delete all original files for which compressed files are present and .tmp files generated (and if not deleted) in last log rotation.
+4. It then deletes oldest rotated files till containerLogMaxFiles-2 files are left. This is because the non rotated active file will be rotated and new active file will be created. Which will add upto containerLogMaxFiles.
+5. Then it compresses un compressed files (it does not compress the active file) and then rotates active file.
+6. Before doing step 4, in the new design, it will split the large active log file in size of containerLogMaxSize and name them \<active-log-file-name\>.part\<i\>. And rotate parts.
+7. Let's say it created n parts, after this, it can do rotate of n-1 parts, keeping last nth part active and do delete+compress. (Basically step 4 and 5)
 
 ### Test Plan
 
