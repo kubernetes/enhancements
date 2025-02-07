@@ -80,7 +80,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -781,7 +781,6 @@ in back-to-back releases.
   to use `FailIndex`
 - Graduate e2e tests as conformance tests
 - Lock the `JobBackoffLimitPerIndex` feature gate
-- Declare deprecation of the `JobBackoffLimitPerIndex` feature gate in documentation
 
 ### Upgrade / Downgrade Strategy
 
