@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Compatibility with <code>full-pcpus-only</code> policy options](#compatibility-with-full-pcpus-only-policy-options)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -119,6 +120,12 @@ If none of the above conditions can be met, resort back to a best-effort fit of 
 
 NOTE: The striping operation after all CPUs have been evenly distributed will be performed such that the overall disribution of CPUs across those NUMA nodes remains as balanced as possible.
 
+### Compatibility with `full-pcpus-only` policy options
+
+| Compatibility | alpha | beta | GA |
+| --- | --- | --- | --- |
+| full-pcpus-only | x | x | x |
+
 ### Test Plan
 
 We will extend both the unit test suite and the E2E test suite to cover the new policy option described in this KEP.
@@ -135,7 +142,7 @@ to implement this enhancement.
 
 ##### Integration tests
 
-Not Applicable as Kubelet features don't have integration tests.
+Not Applicable as Kubelet features don't have integration tests. We use a mix of `e2e_node` and `e2e` tests.
 
 ##### e2e tests
 
@@ -144,6 +151,7 @@ Currently no e2e tests are present for this particular policy option. E2E tests 
 The plan is to add e2e tests to cover the basic flows for cases below:
 1. `distribute-cpus-across-numa` option is enabled:   The test will ensure that the allocated CPUs are distributed across NUMA nodes according to the policy.
 1. `distribute-cpus-across-numa` option is disabled:  The test will verify that the allocated CPUs are packed according to the default behavior.
+1. Test how this option interacts with `full-pcpus-only` policy option (and test for it enabled and disabled).
 
 ### Graduation Criteria
 
@@ -254,7 +262,30 @@ To verify the list of CPUs allocated to the container, one can either:
 - `exec` into uthe container and run `taskset -cp 1` (assuming this command is available in the container).
 - Call the `GetCPUS()` method of the `CPUProvider` interface in the `kubelet`'s [podresources API](https://pkg.go.dev/k8s.io/kubernetes/pkg/kubelet/apis/podresources#CPUsProvider).
 
-Also, we can check `cpu_manager_numa_allocation_spread` metric.
+Also, we can check `cpu_manager_numa_allocation_spread` metric. We plan to add metric to track how CPUs are distributed across NUMA zones 
+with labels/buckets representing NUMA nodes (numa_node=0, numa_node=1, ..., numa_node=N).
+
+With packed allocation (default, option off), the distribution should mostly be in numa_node=1, with a small tail to numa_node=2 (and possibly higher)
+in cases of severe fragmentation. Users can compare this spread metric with the `container_aligned_compute_resources_count` metric to determine
+if they are getting aligned packed allocation or just packed allocation due to implementation details.
+
+For example, if a node has 2 NUMA nodes and a pod requests 8 CPUs (with no other pods requesting exclusive CPUs on the node), the metric would look like this:
+
+cpu_manager_numa_allocation_spread{numa_node="0"} = 8
+cpu_manager_numa_allocation_spread{numa_node="1"} = 0
+
+
+When the option is enabled, we would expect a more even distribution of CPUs across NUMA nodes, with no sharp peaks as seen with packed allocation.
+Users can also check the `container_aligned_compute_resources_count` metric to assess resource alignment and system behavior.
+
+In this case, the metric would show:
+cpu_manager_numa_allocation_spread{numa_node="0"} = 4
+cpu_manager_numa_allocation_spread{numa_node="1"} = 4
+
+
+Note: This example is simplified to clearly highlight the difference between the two cases. Existing pods may slightly skew the counts, but the general
+trend of peaks and troughs will still provide a good indication of CPU distribution across NUMA nodes, allowing users to determine if the policy option
+is enabled or not.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -319,7 +350,10 @@ No impact. The behavior of the feature does not change when API Server and/or et
 
 ###### What are other known failure modes?
 
-No known failure modes.
+Because of existing distribution of CPU resource across, a distributed allocation might not be possible. E.g. If all Available CPUs are present
+on the same NUMA node.
+
+In that case we resort back to a best-effort fit of packing CPUs into NUMA nodes wherever they can fit.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
