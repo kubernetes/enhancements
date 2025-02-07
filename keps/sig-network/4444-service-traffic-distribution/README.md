@@ -29,6 +29,8 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+  - [Beta](#beta)
+  - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Possible future expansions](#possible-future-expansions)
@@ -45,6 +47,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [An alternative definition of <code>PreferClose</code>](#an-alternative-definition-of-preferclose)
   - [Repurpose the existing topology annotation to recognize additional values](#repurpose-the-existing-topology-annotation-to-recognize-additional-values)
   - [Reuse the fields internal/externalTrafficPolicy to offer these routing preferences](#reuse-the-fields-internalexternaltrafficpolicy-to-offer-these-routing-preferences)
   - [Granular Routing Controls](#granular-routing-controls)
@@ -70,20 +73,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -196,7 +199,7 @@ such a preference in future refinements.
 * **Immediate Support for All Possible Heuristics:** The initial implementation
   focuses on a core set of heuristics. Addition of new heuristics (like
   `Local` for Node local preference) could be explored in future
-  refinements.
+  refinements. (See https://kep.k8s.io/3015)
 
 ## Proposal
 
@@ -206,11 +209,12 @@ while making routing decisions. It does not offer strict routing guarantees.
 
 The field will support the following initial values:
 
+* `PreferClose`: Indicates a preference for routing traffic to endpoints in
+  the same zone as the client.
 
-* `PreferClose`: Indicates a preference for routing traffic to endpoints that
-  are topologically proximate to the client. The interpretation of
-  "topologically proximate" may vary across implementations and could encompass
-  endpoints within the same node, rack, zone, or even region.
+(For background on the name `PreferClose` and its definition, see the "[An
+alternative definition of
+PreferClose](#an-alternative-definition-of-preferclose)" section)
 
 The absence of a value indicates no specific routing preference. In this case,
 the user delegates the routing decision to the implementation, allowing it to
@@ -219,17 +223,6 @@ apply its best-effort strategy.
 Implementations SHOULD support the standard values. While some flexibility in
 interpretation is permitted, implementations should aim to align their behavior
 with the described intent of these preferences as closely as possible.
-
-NOTE: Implementations reserve the right to refine the behavior associated with
-  any heuristic, including standard heuristics. This means the behavior enabled
-  by values such as `PreferClose` might evolve over time, and some
-  evolutions might interpret the heuristic goals slightly differently. For
-  example, in the case of `PreferClose`, an implementation might initially route
-  traffic within the zone without considering endpoint overload, while a future
-  refinement could introduce feedback mechanisms to detect overload and route
-  traffic outside the zone when necessary, optimizing overall performance. The
-  decision of what constitutes an "improvement" remains at the discretion of the
-  implementation.
 
 ### User Stories
 
@@ -363,8 +356,6 @@ NOTE: The expectation remains that *all* endpoints within an EndpointSlice must
   Aware
   Hints](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2433-topology-aware-hints/README.md#kube-proxy), i.e. _"This is to provide safer transitions between enabled and disabled states. Without this fallback, endpoints could easily get overloaded as hints were being added or removed from some EndpointSlices but had not yet propagated to all of them."_
 
-<<[UNRESOLVED Name for the field is being discussed]>>
-
 ### Choice of field name
 The name `trafficDistribution` is meant to capture the highly
 implementation-specific nature of this field and how it affects the routing of
@@ -386,8 +377,6 @@ traffic
 * Use of the word "selection" for a name like `endpointSelection` were avoided
   so as not to confuse with the actual process of selecting the complete set of
   pods backing a service.
-
-<<[/UNRESOLVED]>>
 
 ### Intersection with internal/externalTrafficPolicy
 
@@ -462,6 +451,10 @@ The following packages will also see minor changes:
   and field `trafficDistribution: PreferClose` are configured, precedence is given to
   the annotation.
 
+Link to tests: https://github.com/kubernetes/kubernetes/blob/69ab91a5c59617872c9f48737c64409a9dec2957/test/integration/service/service_test.go#L292-L652
+
+Link to k8s-triage: https://storage.googleapis.com/k8s-triage/index.html?sig=network&test=service_test
+
 ##### e2e tests
 
 * Verify that EndpointSlice hints are correctly populated when
@@ -471,12 +464,44 @@ The following packages will also see minor changes:
   requests originating from zones with no service pods, requests should not get
   blackholed and should rather be forwarded to any service pod from the cluster.
 
+Testgrid: https://testgrid.k8s.io/sig-network-kind#pr-sig-network-kind,%20multizone&include-filter-by-regex=Traffic%20Distribution
+
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature gate
-- Initial e2e tests completed and enabled
+- Feature implemented behind a feature gate.
+- Initial e2e tests completed and enabled.
+
+### Beta
+
+- Gather feedback from developers.
+- Additional tests are in Testgrid and linked in KEP.
+
+### GA
+
+- Examples of real-world usage
+  - Available in [GKE Alpha
+    Clusters](https://cloud.google.com/kubernetes-engine/docs/concepts/alpha-clusters)
+    since 1.30
+  - Available in standard GKE clusters since 1.31:
+    https://opensource.googleblog.com/2024/08/kubernetes-131-is-now-available-on-gke-one-week-after-open-source-release.html
+  - Available in Cilium v1.16 onwards:
+    https://isovalent.com/blog/post/cilium-1-16/#h-service-traffic-distribution
+- The feature was made alpha in k8s 1.30 and since it's beta (enabled by
+  default) release in 1.31, the required number of two minor releases have
+  passed (1.31 and 1.32).
+- Based on developer feedback, a separate KEP
+  ([KEP-3015](http://kep.k8s.io/3015)) will introduce a new `PreferSameNode`
+  option and, to improve clarity, will also introduce `PreferSameZone` as a more
+  precise alias for the existing `PreferClose` field. Because both
+  `PreferSameNode` and the renaming to `PreferSameZone` require the standard
+  Alpha/Beta/GA graduation process (including new feature gates), handling them
+  in a separate KEP allows the `trafficDistribution` field and its initial
+  `PreferClose` option to reach GA status independently. This is important for
+  users who can benefit from the existing functionality now, as waiting for
+  `PreferSameNode` and `PreferSameZone` to reach GA would delay general
+  availability of `trafficDistribution` until at least 1.35.
 
 ### Upgrade / Downgrade Strategy
 
@@ -965,6 +990,8 @@ In terms of mitigation, there are several options:
 - Changes released in alpha as part of Kubernetes 1.30
 - KEP updated to rename field names with the choices made during implementation.
 - KEP updated with PRR sections filled, targeting beta release in Kubernetes 1.31
+- [Feb 2025] KEP is updated to have a more precise definition of `PreferClose`.
+  KEP is targeting graduation to GA in 1.33
 
 ## Drawbacks
 
@@ -973,6 +1000,39 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+
+### An alternative definition of `PreferClose`
+
+A previous iteration of this KEP defined `PreferClose` as follows:
+
+>PreferClose: Indicates a preference for routing traffic to endpoints that are
+>topologically proximate to the client. The interpretation of "topologically
+>proximate" may vary across implementations and could encompass endpoints within
+>the same node, rack, zone, or even region.
+
+This open-ended definition aimed to accommodate both simple implementations
+(like kube-proxy, initially interpreting it as "prefer same zone") and more
+sophisticated ones (potentially offering "prefer same node with load-based
+fallback").
+
+However, this flexibility also introduced ambiguity. As discussions around
+adding a "prefer-same-node" option in
+[kubernetes/enhancements#4931](https://github.com/kubernetes/enhancements/pull/4931)
+illustrated, the lack of a precise definition for `PreferClose` raised concerns
+about overlapping behaviors and future extensibility. Having something like
+`PreferSameNode` alongside `PreferClose` could lead to confusion about the
+distinction.
+
+To address this ambiguity and pave the way for future enhancements like
+`PreferSameNode`, the meaning of `PreferClose` has been clarified and now
+specifically means: 
+
+> PreferClose: Indicates a preference for routing traffic to endpoints in the
+> same zone as the client.
+
+A separate KEP ([KEP-3015](http://kep.k8s.io/3015)) will introduce
+`PreferSameZone` as a more precise name for this functionality (while retaining
+`PreferClose` for backward compatibility)
 
 ### Repurpose the existing topology annotation to recognize additional values
 
