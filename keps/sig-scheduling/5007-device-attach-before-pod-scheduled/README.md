@@ -289,6 +289,21 @@ The scheduler's restart should not pose an issue, as the decision to wait is bas
 After a scheduler restart, if the device attachment is not yet complete, the scheduler will wait again at PreBind.
 If the attachment is complete, it will pass through PreBind.
 
+**Scheduler does not guarantee to pick up the same node for the Pod after the restart**
+
+Basically scheduler should select the same node, however we need to consider the following scenarios:
+ - In case of a failure, we might want to try a different node.
+ - During rescheduling, if another pod is deployed on that node and uses the resources, the rescheduled pod might not be able to be deployed.
+   Therefore, we need logic to prioritize the rescheduled pod on that node.
+
+Node nomination would solve this.
+If node nomination is not available, processing flow is as follows.
+If the pod is assigned to another node after the scheduler restarts, additional device will be attached to that node.
+If the device attached to the original node is not used, user can manually detach the device.
+(Of course, we can leave it attached to that node for future use by the Pod.)
+
+This issue needs to be resolved before the beta is released.
+
 **Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down.**
 
 Regarding collaboration with the Cluster Autoscaler, using node nomination can address the issue.
@@ -455,7 +470,7 @@ Therefore, we prefer to allocate devices directly connected to the node over att
 
 This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance.
 The composable controller manages fabric devices that can be attached and detached.
-Therefore, it publishes a list of fabric devices as `ResourceSlices`.
+Therefore, it publishes a list of free fabric devices as `ResourceSlices`.
 
 The structure we are considering is as follows:
 
@@ -523,6 +538,24 @@ devices:
   - name: device1
   ...
 ```
+
+Composable DRA controller exposes free devices list on the fabric that is not yet connected to a node as a ResourceSlice.
+Controller refreshes the ResourceSlice periodically (every 10 seconds). 
+This means that it reflects the latest list of devices on the fabric.
+It does not "detect attach or detach to nodes and update them immediately in event handlers, etc."
+This is because it is difficult for a Composable DRA running on K8s to cover all cases where a ResourceSlice needs to be updated, such as when a new device is physically added to the fabric.
+We also expect vendor DRAs to periodically update the list of devices connected to the node as a ResourceSlice. This requires the rescan function to be run periodically.
+
+Devices in composable ResourceSlice has a unique device name.
+However, that the device name is not an identifying name (for example, UUID).
+In Composable System, users attach devices by specifying the model name and number of devices they need.
+And until the device is actually attached to the node, the user does not know which specific individual is attached.
+
+Because of this concept, the Pool and ResourceSlice exposed by Composable DRA controller are separate for each model.
+The devices in the Pool for each model have unique device names, but are essentially information about how many devices of this model are in the ResourceSlice.
+Composable DRA controoler also add a model name and so on into the attributes of each device.
+
+![composable-resourceslice](composable-resourceslice.png)
 
 ### Alternative approach
 Instead of implementing the solution within the scheduler, we propose using the Cluster Autoscaler to manage the attachment and detachment of fabric devices.
@@ -623,62 +656,25 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Initial implementation is completed and enabled
 
 #### Beta
 
 - Gather feedback from developers and surveys
-- Complete features A, B, C
+- Resolove the following issues
+  - Scheduler does not guarantee to pick up the same node for the Pod after the restart
+  - Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down
+  - The in-flight events cache may grow too large when waiting in PreBind
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+TBD
 
 #### Deprecation
-
+<!--
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
