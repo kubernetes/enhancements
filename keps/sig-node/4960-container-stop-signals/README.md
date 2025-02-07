@@ -68,7 +68,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Container runtimes let you define a [STOPSIGNAL](https://docs.docker.com/reference/dockerfile/#stopsignal) to let your container images change which signal is delivered to kill the container. Currently you can only configure this by defining STOPSIGNAL in the container image definition file before you build the image. This becomes difficult to change when you’re using prebuilt images. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec. Kubernetes has no equivalent for STOPSIGNAL as part of Pod or Container APIs. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec.
+Container runtimes let you define a [STOPSIGNAL](https://docs.docker.com/reference/dockerfile/#stopsignal) to let your container images change which signal is delivered to kill the container. Currently you can only configure this by defining STOPSIGNAL in the container image definition file before you build the image. This becomes difficult to change when you’re using prebuilt images. Kubernetes has no equivalent for STOPSIGNAL as part of Pod or Container APIs. This KEP proposes to add support to configure custom stop signals for containers from the ContainerSpec.
 
 ## Motivation
 
@@ -80,9 +80,9 @@ Having stop signal as a first class citizen in the Pod's container specification
 
 ### Goals
 
-- Add a new Stop lifecycle handler to container lifecycle which can be configured with a Signal option
+- Add a new Stop lifecycle handler to container lifecycle which can be configured with a Signal option, which takes a string value
 - Update the CRI API to pass down the stop signal to the container runtime via ContainerConfig
-- Update the implementation of the StopContainer method in container runtimes to use the container’s stop signal (if defined) to kill containers
+- Update the implementation of the StopContainer method in container runtimes to use the container’s stop signal defined in the container spec (if present) to kill containers
 - Add support to show the effective stop signal of containers in the container status field in the pod status
 
 ### Non-Goals
@@ -93,22 +93,16 @@ Having stop signal as a first class citizen in the Pod's container specification
 
 ### API
 
-A new Stop lifecycle handler will be added to container lifecycle. The Stop lifecycle event can be configured with a Signal option, which is of type `Signal`. This new `Signal` type can take a string value, and can be used to define a stop signal for containers when creating Pods. `Signal` will hold string values which can be mapped to Go's syscall.Signal. For example, [list of signals supported in Linux environments by moby](https://github.com/containerd/containerd/blob/main/vendor/github.com/moby/sys/signal/signal_linux.go). If the user doesn't define a particular stop signal, the behaviour would default to what it is today and fallback to the stop signal defined in the container image or use the default stop signal of the container runtime (SIGTERM in case of containerd, CRI-O).
+A new StopSignal lifecycle hook will be added to container lifecycle. The StopSignal lifecycle hook can be configured with a signal, which is of type `Signal`. This new `Signal` type can take a string value, and can be used to define a stop signal for containers when creating Pods. `Signal` will hold string values which can be mapped to Go's syscall.Signal. For example, see the [list of signals supported in Linux environments by moby](https://github.com/containerd/containerd/blob/main/vendor/github.com/moby/sys/signal/signal_linux.go). If the user doesn't define a particular stop signal, the behaviour would default to what it is today and fallback to the stop signal defined in the container image or use the default stop signal of the container runtime (SIGTERM in case of containerd, CRI-O).
 
 ```go
 // pkg/apis/core/types.go
 type Signal string //parseable into Go's syscall.Signal
 
-type LifecycleHandler struct {
-  // ...
-	// +optional
-	Signal *Signal
-}
-
 type Lifecycle struct {
   // ...
-	// +optional
-	Stop *LifecycleHandler
+  // +optional
+  StopSignal *Signal
 }
 ```
 
@@ -124,8 +118,7 @@ spec:
   - name: nginx
     image: nginx:1.14.2
     lifecycle:
-      stop:
-        signal: SIGUSR1
+      stopSignal: SIGUSR1
 ```
 
 The stop signal would also be shown in the containers' status. The value of the stop signal shown in the status can be from the spec, if a stop cycle is defined in the spec, else it will be the effective stop signal which is used by the container runtime to kill your container. This can either be read from the container image or will be the default stop signal of the container runtime. Users will be able to see a container's stop signal in its status even if they're not using a custom stop signal from the spec.
@@ -137,8 +130,7 @@ status:
     image: nginx:1.14.2
     lastState: {}
     lifecyle:
-      stop:
-        signal: SIGUSR1
+      stopSignal: SIGUSR1
     name: redis
     ready: true
     restartCount: 0
@@ -161,11 +153,7 @@ message ContainerConfig {
 }
 
 +message Lifecycle {
-+  LifecycleHandler stop = 1;
-+}
-
-+message LifecycleHandler {
-+  string signal = 1;
++  string stop_signal = 1;
 +}
 ```
 
@@ -196,9 +184,7 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(...) (*runtimeapi.Co
     StdinOnce:   container.StdinOnce,
     Tty:         container.TTY,
 +   Lifecycle:  &runtimeapi.Lifecycle{
-+     Stop:       &runtimeapi.LifecycleHandler{
-+      Signal:      container.Lifecycle.Stop.Signal 
-+     }
++     StopSignal: container.Lifecycle.StopSignal 
 +   },
 	}
   // ...
@@ -207,11 +193,11 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(...) (*runtimeapi.Co
 
 Since the new stop lifecycle is optional, the default stop signal for a container can be unset or nil. In this case, the container runtime will fallback to the existing behaviour. 
 
-Additionally, the stop signal would also be added to `ContainerStatus` (as `containerStatus[].Lifecycle.Stop.Signal`) so that we can pass the stop signal extracted from the image/container runtime back to the container status at the Kubernetes API level.
+Additionally, the stop signal would also be added to `ContainerStatus` (as `containerStatus[].Lifecycle.StopSignal`) so that we can pass the stop signal extracted from the image/container runtime back to the container status at the Kubernetes API level.
 
 ### Container runtime changes
 
-Once the stop signal from `containerSpec.Lifecycle.Stop.Signal` is passed down to the container runtime via `ContainerConfig` during creation/updation of the container, we can use the value of the stop signal from the container runtime's implementation of `stopContainer` method. In the case of containerd, it would look like this:
+Once the stop signal from `containerSpec.Lifecycle.StopSignal` is passed down to the container runtime via `ContainerConfig` during creation/updation of the container, we can use the value of the stop signal from the container runtime's implementation of `stopContainer` method. In the case of containerd, it would look like this:
 
 ```diff
 //internal/cri/server/container_stop.go
@@ -219,7 +205,7 @@ Once the stop signal from `containerSpec.Lifecycle.Stop.Signal` is passed down t
 func (c *criService) StopContainer(ctx context.Context, r *runtime.StopContainerRequest) (*runtime.StopContainerResponse, error) {
 // ...
 -	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second); err != nil {
-+ 	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second, container.Config.Lifecycle.Stop.Signal); err != nil {
++ 	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second, container.Config.Lifecycle.StopSignal); err != nil {
 		return nil, err
 	}
 // ...
@@ -239,9 +225,9 @@ func (c *criService) StopContainer(ctx context.Context, r *runtime.StopContainer
 // rest of the code...
 ```
 
- The signal that we get from `ContainerConfig` can be validated with [ParseSignal](https://github.com/containerd/containerd/blob/main/vendor/github.com/moby/sys/signal/signal.go#L38) to further validate that we've received a valid stop signal. Also `container.StopSignal` is reading the stop signal from the image. We can add another condition before that to use the stop signal defined in spec if there is one. If nothing is defined in the spec ("" or unset), containerd behaves like how it is today. Also note that `SIGTERM` is hardcoded in containerd's stopContainer method as the default stop signal to fallback to, in case the image doesn't defined a stop signal. Similar logic in also present in CRI-O [here](https://github.com/cri-o/cri-o/blob/main/internal/oci/container.go#L259-L272).
+The signal that we get from `ContainerConfig` can be validated with [ParseSignal](https://github.com/containerd/containerd/blob/main/vendor/github.com/moby/sys/signal/signal.go#L38) to further validate that we've received a valid stop signal. Also here `container.StopSignal` is reading the stop signal from the image. We can add another condition before that to use the stop signal defined in spec if there is one. If nothing is defined in the spec ("" or unset), containerd behaves like how it is today. Also note that `SIGTERM` is hardcoded in containerd's stopContainer method as the default stop signal to fallback to, in case the image doesn't defined a stop signal. Similar logic in also present in CRI-O [here](https://github.com/cri-o/cri-o/blob/main/internal/oci/container.go#L259-L272).
 
-Find the entire diff for containerd [here](https://github.com/containerd/containerd/compare/main...sreeram-venkitesh:containerd:added-custom-stop-signal?expand=1).
+Find the entire diff for containerd which was done for the POC [here](https://github.com/containerd/containerd/compare/main...sreeram-venkitesh:containerd:added-custom-stop-signal?expand=1).
 
 ### User Stories (Optional)
 
@@ -256,8 +242,8 @@ Kubernetes by default sends a SIGTERM to all containers while killing them. When
 ## Design Details
 
 On top of the details described in the [Proposal](#proposal), these are some details on how exactly the new field will work.
-- `ContainerSpec.Lifecycle.Stop.Signal` is totally optional and can be a nil value. In this case, the stop signal defined in the container image or the container runtime's default stop signal (SIGTERM for containerd and CRI-O) would be used.
-- If set, `ContainerSpec.Lifecycle.Stop.Signal` will override the stop signal set from the container image definition.
+- `ContainerSpec.Lifecycle.StopSignal` is totally optional and can be a nil value. In this case, the stop signal defined in the container image or the container runtime's default stop signal (SIGTERM for containerd and CRI-O) would be used.
+- If set, `ContainerSpec.Lifecycle.StopSignal` will override the stop signal set from the container image definition.
 - The order of priority for the different stop signals would look like this
 	`Stop signal from Container Spec > STOPSIGNAL from container image > Default stop signal of container runtime`
 
@@ -272,14 +258,12 @@ to implement this enhancement.
 ##### Unit tests
 
 Alpha:
-- Test that the validation fails when given a non string value for container lifecycle stop hook's signal field
+- Test that the validation fails when given a non string value for container lifecycle StopSignal hook
 - Test that the validation passes when given a proper string value representing a standard stop signal
 - Test that the validation fails when we configure a custom stop signal with the feature gate disabled
 - Test that the validation returns the appropriate error message when an invalid string value is given for the stop signal
 - Tests for verifying behavior when feature gate is disabled after being used to create Pods where the stop signal field is used
 - Tests for verifying behavior when feature gate is reenabled after being disabled after creating Pods with stop signal
-
-##### Integration tests
   
 ##### e2e tests
 
@@ -318,19 +302,19 @@ Alpha:
 
 #### Upgrade
 
-When upgrading to a new Kubernetes version which supports Container Stop Signals, users can enable the feature gate and start using the feature. If the user is running an older version of the container runtime, the feature will be gracefully degraded as mentioned [here](https://www.kubernetes.dev/docs/code/cri-api-version-skew-policy/#version-skew-policy-for-cri-api) in the CRI API version skew doc. In this case the user will be able to set a Stop lifecycle hook in the Container spec, but the kubelet will not pass this value to the container runtime when calling the `runtimeService.stopContainer` method.
+When upgrading to a new Kubernetes version which supports Container Stop Signals, users can enable the feature gate and start using the feature. If the user is running an older version of the container runtime, the feature will be gracefully degraded as mentioned [here](https://www.kubernetes.dev/docs/code/cri-api-version-skew-policy/#version-skew-policy-for-cri-api) in the CRI API version skew doc. In this case the user will be able to set a StopSignal lifecycle hook in the Container spec, but the kubelet will not pass this value to the container runtime when calling the `runtimeService.stopContainer` method. The container status would also not have stop signal since the container runtime is not updated to return the effective stop signal extracted from the image.
 
 #### Downgrade
 
-If the kube-apiserver or the kubelet's version is downgraded, you will no longer be able to create or update container specs to include the Stop lifecycle hook. Existing containers which have the field set would not be cleared. If you're running a version of the kubelet which doesn't support ContainerStopSignals, the CRI API wouldn't pass the stop signal to the runtime as part of ContainerConfig. Even if the runtime is on a newer version supporting stop signal, it would handle this and default to the stop signal defined in the image or to SIGTERM.
+If the kube-apiserver or the kubelet's version is downgraded, you will no longer be able to create or update container specs to include the StopSignal lifecycle hook. Existing containers which have the field set would not be cleared. If you're running a version of the kubelet which doesn't support ContainerStopSignals, the CRI API wouldn't pass the stop signal to the runtime as part of ContainerConfig. Even if the container runtime is on a newer version supporting stop signal, it would handle this and default to the stop signal defined in the image or to SIGTERM.
 
 ### Version Skew Strategy
 
 Both kubelet and kube-apiserver will need to enable the feature gate for the full featureset to be present and working. If both components disable the feature gate, this feature will be completely unavailable.
 
-If only the kube-apiserver enables this feature, validation will pass, but kubelet won't understand the new lifecycle hook and will ignore it when creating the ContainerConfig.
+If only the kube-apiserver enables this feature, validation will pass, but kubelet won't understand the new lifecycle hook and will not add the stop signal when creating the ContainerConfig.
 
-If only the kubelet has enabled this feature, you won't be able to create a Pod which has a Stop lifecycle hook via the apiserver and hence the feature won't be usable even if the kubelet supports it. `containerSpec.Lifecycle.Stop.Signal` can be an empty value and kubelet functions as if no custom stop signal has been set for any container.
+If only the kubelet has enabled this feature, you won't be able to create a Pod which has a StopSignal lifecycle hook via the apiserver and hence the feature won't be usable even if the kubelet supports it. `containerSpec.Lifecycle.StopSignal` can be an empty value and kubelet functions as if no custom stop signal has been set for any container.
 
 #### Version skew with CRI API and container runtime
 
@@ -338,7 +322,7 @@ As described above in the upgrade/downgrade strategies,
 
 - **If the container runtime is in an older version than kubelet**, the feature will be gracefully degraded. In this case the user will be able to set the stop signal in the Container spec, but the kubelet will not pass this value to the container runtime via ContainerConfig and the container runtime will use the stop signal defined in the image or use the default SIGTERM.
 
-- **If you're running an older version of the kubelet with a newer version of the container runtime**, the CRI API call from the kubelet would be made with the older version of ContainerConfig which doesn't include the stop signal. The container runtime code, even if it is running the newer version supporting stop signal, would handle this and use the stop signal defined in the container image or default to SIGTERM.
+- **If you're running an older version of the kubelet with a newer version of the container runtime**, the CRI API call from the kubelet would be made with the older version of ContainerConfig which doesn't include the stop signal. The container runtime doesn't receive any custom stop signal from the container spec in this case. The container runtime code, even if it is running the newer version supporting stop signal, would fall back to the current behaviour and use the stop signal defined in the container image or default to SIGTERM since it doesn't receive any stop signal from ContainerSpec.
 
 ## Production Readiness Review Questionnaire
 
@@ -366,7 +350,7 @@ Yes, the feature gate can be turned off to disable the feature once it has been 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If you reenable the feature, you'll be able to create Pods with Stop lifecycle hooks for their containers. Without the feature gate enabled, this would make your workloads invalid.
+If you reenable the feature, you'll be able to create Pods with StopSignal lifecycle hooks for their containers. Without the feature gate enabled, this would make your workloads invalid.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -445,7 +429,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-We are adding a new lifecycle hook called Stop, and a new lifecycle handler called Signal which can be used in the Container spec. These are optional values however and can increase the size of the API object.
+We are adding a new lifecycle hook called StopSignal, which takes a string value. These are optional values however and can increase the size of the API object.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
