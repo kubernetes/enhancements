@@ -34,5 +34,3 @@ feature-gates:
     components:
       - kubelet
 disable-supported: true
-metrics:
-  - "tbd"
