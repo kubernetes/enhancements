@@ -105,14 +105,22 @@ that were previously unschedulable.
 
 ## Motivation
 
-When activeQ is empty, kube-scheduler is wasting its potential of scheduling pods.
+There are three queues in scheduling queue: 
+- activeQ contains pods ready for scheduling, 
+- unschedulableQ holds pods that were unschedulable in their scheduling cycle and are waiting for cluster state to change,
+- backoffQ stores pods that failed scheduling attempts (either due to being unschedulable or errors) and could be schedulable again,
+  but applying a backoff penalty, scaled with the number of attempts.
+
+When activeQ is not empty, scheduler pops the highest priority pod from activeQ.
+However, when activeQ is empty, kube-scheduler idles, waiting for any pod being present in activeQ, 
+even if pods are in the backoffQ but their backoff period hasn't expired. 
 In scenarios when pods are waiting, but in backoffQ, 
-kube-scheduler should have a possibility of scheduling those pods even if the backoff is not completed.
+kube-scheduler should be able to consider those pods for scheduling, even if the backoff is not completed, to avoid the idle time.
 
 ### Goals
 
 - Improve scheduling throughput and kube-scheduler utilization when activeQ is empty, but pods are waiting in backoffQ.
-- Run PreEnqueue plugins when putting pod into backoffQ.
+- Run `PreEnqueue` plugins when putting pod into backoffQ.
 
 ### Non-Goals
 
@@ -124,15 +132,18 @@ At the beginning of scheduling cycle, pod is popped from activeQ.
 If activeQ is empty, it waits until a pod is placed into the queue.
 This KEP proposes to pop the pod from backoffQ when activeQ is empty.
 
-To ensure the PreEnqueue is called for each pod taken into scheduling cycle,
-PreEnqueue plugins would be called before putting pods into backoffQ.
+To ensure the `PreEnqueue` is called for each pod taken into scheduling cycle,
+`PreEnqueue` plugins would be called before putting pods into backoffQ.
 It won't be done again when moving pods from backoffQ to activeQ.
 
 ### Risks and Mitigations
 
 #### Scheduling throughput might be affected
 
-TODO
+While popping from backoffQ, another pod might appear in activeQ ready to be scheduled.
+If the pop operation is short enough, there won't be a visible downgrade in throughput.
+The only concern might be that less pods from activeQ might be taken in some period of time in favor of backoffQ, 
+but that's a user responsibility to create enough amount of pods to be scheduled from activeQ, not to cause this KEP behavior to happen.
 
 #### Backoff won't be working as natural rate limiter in case of errors
 
@@ -145,29 +156,34 @@ This information could be used when popping, by filtering only the pods that are
 
 #### One pod in backoffQ could starve the others
 
-TODO
+If a pod popped from the backoffQ fails its scheduling attempt and come back to the queue, it might be selected again, ahead of other pods.
+
+To prevent this, while popping pod from backoffQ, its attempt counter will be incremented as if it had been taken from the activeQ.
+This will give other pods a chance to be scheduled.
 
 ## Design Details
 
 ### Popping from backoffQ in activeQ's pop()
 
-To achieve the goal, activeQ's pop() method needs to be changed:
+To achieve the goal, activeQ's `pop()` method needs to be changed:
 1. If activeQ is empty, then instead of waiting on condition, popping from backoffQ is tried.
-2. If backoffQ is empty, then pop() is waiting on condition as previously.
+2. If backoffQ is empty, then `pop()` is waiting on condition as previously.
 3. If backoffQ is not empty, then the pod is processed like the pod would be taken from activeQ, including increasing attempts number.
+   It is poping from a heap data structure, so it should be fast enough not to cause any performance troubles.
 
 ### Notifying activeQ condition when new pod appears in backoffQ
 
-Pods might appear in backoffQ while pop() is hanging on point 2. 
-That's why it will be required to call broadcast() on condition after adding a pod to backoffQ.
+Pods might appear in backoffQ while `pop()` is hanging on point 2. 
+That's why it will be required to call `broadcast()` on condition after adding a pod to backoffQ.
+It shouldn't cause any performance issues.
 
 We could eventually want to move backoffQ under activeQ's lock, but it's out of scope of this KEP.
 
 ### Calling PreEnqueue for backoffQ
 
-PreEnqueue plugins have to be called for every pod before they are taken to scheduling cycle.
+`PreEnqueue` plugins have to be called for every pod before they are taken to scheduling cycle.
 Initially, those plugins were called before moving pod to activeQ.
-With this proposal, PreEnqueue will need to be called before moving pod to backoffQ 
+With this proposal, `PreEnqueue` will need to be called before moving pod to backoffQ 
 and those calls need to be skipped for the pods that are moved later from backoffQ to activeQ.
 At moveToActiveQ level, these two paths could be distinguished by checking if event is equal to `BackoffComplete`.
 
@@ -268,7 +284,8 @@ while Pods, which are already scheduled, won't be affected in any case.
 ###### What specific metrics should inform a rollback?
 
 Abnormal values of metrics related to scheduling queue, meaning pods are stuck in activeQ:
-- `scheduler_schedule_attempts_total` metric with `scheduled` label is almost constant, while there are pending pods that should be schedulable. This could mean that pods from backoffQ are taken instead of those from activeQ.
+- `scheduler_schedule_attempts_total` metric with `scheduled` label is almost constant, while there are pending pods that should be schedulable. 
+  This could mean that pods from backoffQ are taken instead of those from activeQ.
 - `scheduler_pending_pods` metric with `active` label is not decreasing, while with `backoff` is almost constant.
 - `scheduler_pod_scheduling_sli_duration_seconds` metric is visibly higher for schedulable pods.
 
@@ -294,9 +311,11 @@ N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)), and this feature shouldn't bring any regression there.
+In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)), 
+and this feature shouldn't bring any regression there.
 
-Based on that `schedule_attempts_total` shouldn't be less than 100 in a second.
+Based on that `schedule_attempts_total` shouldn't be less than 100 in a second,
+if there are enough unscheduled pods within the cluster.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -374,4 +393,7 @@ Why should this KEP _not_ be implemented?
 
 ### Move pods in flushBackoffQCompleted when activeQ is empty
 
-TODO
+Moving the pod popping from backoffQ to the existing `flushBackoffQCompleted` function (which already periodically moves pods to activeQ) avoids changing `PreEnqueue` behavior, but it has some downsides. 
+Because flushing runs every second, it would be needed to pop more pods when activeQ is empty. 
+This require to figure out how many pods to pop, either by making it configurable it or calculating it. 
+Also, if schedulable pods show up in activeQ between flushes, a bunch of pods from backoffQ might break activeQ priorities and slow down scheduling for the pods that are ready to go.
