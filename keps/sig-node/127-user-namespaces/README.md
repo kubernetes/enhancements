@@ -198,6 +198,17 @@ impact a compromised pod can have on other pods and the node itself.
 
 ### Risks and Mitigations
 
+An error in user namespaces manager can result in the kubelet failing
+initialization. We will mitigate this by having extensive unit tests to test the
+case of the feature gate disabled and enabled. We will also add e2e tests to
+verify the kubelet works as expected when the feature is enabled (DONE).
+
+The KEP needs changes in the CRI interface, high-level container runtimes
+(containerd, cri-o), low-level container runtimes (runc, crun) and the Linux
+kernel. To mitigate possible issues with the interaction of the components
+involved, we will write integration tests in k8s, containerd, cri-o, runc, crun,
+cri-tools and xfstests for the Linux bits. (DONE)
+
 ## Design Details
 
 ### Pod.spec changes
@@ -533,6 +544,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+None.
 
 ##### Unit tests
 
@@ -1374,6 +1386,25 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+This KEP doesn't introduce new SLOs and doesn't result in increasing time taken
+by Kubernetes components.
+
+As explained in "Will enabling / using this feature result in increasing time
+taken by any operations covered by existing SLIs/SLOs?" if the container runtime
+wants to support this in older kernels, it can have an impact on this SLO:
+
+> Startup latency of schedulable pods, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes
+
+At the time of writing, no container runtime supports user namespaces with old
+kernels, so no container runtime is affected. There is no plan to support that
+scenario either, at the time of writing.
+
+However, if a container runtime supports userns with old kernels in the future,
+to determine if user namespaces are affecting the SLO it should be tested if
+pods without the pod.spec.hostUsers line are also affected. If they are not
+affected (IOW, pods without using user namespaces), then user namespaces seem to
+be the cause of the problem.
 
 ## Implementation History
 
