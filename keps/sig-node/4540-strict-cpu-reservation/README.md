@@ -129,7 +129,7 @@ When `strict-cpu-reservation` is enabled:
 
 ### Risks and Mitigations
 
-The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. enabled by default.
+The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. always enabled.
 
 Concern for feature impact on best-effort workloads, the workloads that do not have resource requests, is brought up.
 
@@ -405,7 +405,9 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-We use the feature in our internal environment and it works.
+End users have this feature enabled in v1.32 under `CPUManagerPolicyAlphaOptions` (default to false) will continue to have the feature enabled in v1.33 under `CPUManagerPolicyBetaOptions` (default to true) automatically i.e. no extra action is needed.
+
+To enable or disable this feature in v1.33, follow the feature activation and de-activation procedures described above.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -514,6 +516,7 @@ You can safely disable the feature.
 
 - 2024-03-08: Initial KEP created
 - 2024-10-07: KEP gets LGTM and Approval
+- 2025-02-03: KEP updated with Beta criteria
 
 
 ## Drawbacks
