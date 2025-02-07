@@ -93,6 +93,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Get the capacity of nodes for dynamic provisioning](#get-the-capacity-of-nodes-for-dynamic-provisioning)
   - [Scoring of nodes for dynamic provisioning](#scoring-of-nodes-for-dynamic-provisioning)
   - [Conditions for scoring static or dynamic provisioning](#conditions-for-scoring-static-or-dynamic-provisioning)
+  - [Feature Gate Consolidation](#feature-gate-consolidation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -488,6 +489,10 @@ func (pl *VolumeBinding) Score(ctx context.Context, cs *framework.CycleState, po
 - 	return pl.scorer(classResources), nil
 }
 ```
+
+### Feature Gate Consolidation
+
+The `StorageCapacityScoring` feature gate will now control the functionality previously managed by the `VolumeCapacityPriority` feature gate, which will be deprecated. This consolidation focuses on enabling node scoring based on storage capacity, limited to the behaviors necessary for `StorageCapacityScoring`. Specifically, [the utilization shape points](https://github.com/kubernetes/enhancements/tree/49cff2e7c62800d1c87dbf5fac02c506209d1409/keps/sig-storage/1845-prioritization-on-volume-capacity#configuring-the-utilization-shape-points) have been supported because they are required for `StorageCapacityScoring`. However, [the weight of storage class](https://github.com/kubernetes/enhancements/tree/49cff2e7c62800d1c87dbf5fac02c506209d1409/keps/sig-storage/1845-prioritization-on-volume-capacity#configuring-the-weight-of-storage-class) has not been implemented ([ref1](https://github.com/kubernetes/enhancements/blob/10ff969c18772dc82cda02f7e9140c4840413e5d/keps/sig-storage/1845-prioritization-on-volume-capacity/README.md?plain=1#L201-L203), [ref2](https://github.com/kubernetes/kubernetes/pull/96347/files#diff-c4f8e3891e057e1f662eda397ce4f97d29de7d779d8a886ba2ec5a6df6f9d989R44)), and there are no plans to require it for `StorageCapacityScoring`, so it will not be implemented. For more details on the original proposal, see [KEP-1845](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/1845-prioritization-on-volume-capacity/README.md).
 
 ### Test Plan
 
