@@ -453,7 +453,11 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-- 2024-09-26: Alpha KEP PR opened for v1.32
+- 2024-09-16: Alpha KEP PR opened for v1.32
+- 2024-10-03: Summary, Motivation and Proposal sections merged
+- 2024-09-03: [Alpha code implementation PR](https://github.com/kubernetes/kubernetes/pull/127094) opened
+- 2024-11-01: Alpha code PR merged
+- 2024-12-11: Kubernetes v1.32 release with PodLifecycleSleepActionAllowZero in alpha stage
 - 2025-02-06: KEP updated targeting to beta in v1.33
 
 ## Drawbacks
