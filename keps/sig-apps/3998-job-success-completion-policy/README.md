@@ -75,8 +75,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -439,18 +439,19 @@ to implement this enhancement.
 ##### Integration tests
 
 - Test scenarios:
-  - [enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L794)
-  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L539)
-  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L608)
-  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L653) 
-  - [handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail](https://github.com/kubernetes/kubernetes/blob/6346b9d1327c4b8be2398d9715bdae5475e27569/test/integration/job/job_test.go#L698)
+  - [enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L872)
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L578)
+  - [jobs_finished_total metric with CompletionsReached is incremented when job does not have successPolicy](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L649)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L680)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L727) 
+  - [handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L774)
 
 ##### e2e tests
 
 - Test scenarios:
-  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L524-L530)
-  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L563-L569)
-  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/3a8a60eba29940e26ac8db52329a91ba87305114/test/e2e/apps/job.go#L602-L608)
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L478-L484)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L517-L523)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L556-L562)
 
 ### Graduation Criteria
 
@@ -470,7 +471,7 @@ to implement this enhancement.
 #### GA
 
 - No negative feedback.
-- Verify reason for the Job's `Complete` condition in all e2e conformance tests
+- Verify `conditions[].reason=[CompletionsReached|SuccessPolicy]` for the Job's `Complete` condition in all e2e conformance tests
   (see [example](https://github.com/kubernetes/kubernetes/blob/e5dd48efd07e8a052604b3073e0fafe7361ca689/test/e2e/apps/job.go#L804))
 
 ### Upgrade / Downgrade Strategy
@@ -741,6 +742,7 @@ consider tuning the parameters for [APF](https://kubernetes.io/docs/concepts/clu
 - 2024.03.09: "Criteria" is replaced with "Rules".
 - 2024.06.11: Beta Graduation.
 - 2024.07.26: "CompletionsReached" reason is added and new reason labels are added to the "jobs_finished_total" metric.
+- 2025.02.07: GA Graduation.
 
 ## Drawbacks
 
