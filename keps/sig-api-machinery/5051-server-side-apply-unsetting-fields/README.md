@@ -182,7 +182,7 @@ _none_
 Introduce a "marker" value that may be used in apply configurations to indicate that a value should
 be unset.
 
-The proposed marker value is: `{k8s_io__value: unset}`
+The proposed marker value, in JSON, is: `{"k8s_io__value": "unset"}`
 
 For example, given an object with a field owned by field manager "mgr1":
 
@@ -210,7 +210,7 @@ kind: Example
 metadata:
   name: example1
 spec:
-  field: {k8s_io__value: unset}
+  field: {"k8s_io__value": "unset"}
 ```
 
 After the configuration is applied field will be unset and will be owned by "mgr2".
@@ -256,7 +256,7 @@ Force apply configuration:
 
 ```yaml
 field: [
-  {name: "b", k8s_io__value: unset}
+  {name: "b", "k8s_io__value": "unset"}
 ]
 ```
 
@@ -296,7 +296,7 @@ fieldManager1:
 Force apply configuration:
 
 ```yaml
-field: {"b": {k8s_io__value: unset}}
+field: {"b": {"k8s_io__value": "unset"}}
 ```
 
 Result value:
@@ -309,7 +309,7 @@ Result field management:
 
 ```yaml
 fieldManager2:
-  field
+  field.b
 ```
 
 #### Apply (force=false) to an owned field
@@ -332,7 +332,7 @@ Apply configuration:
 
 ```yaml
 spec:
-  field: {k8s_io__value: unset}
+  field: {"k8s_io__value": "unset"}
 ```
 
 Apply conflicts:
@@ -389,7 +389,7 @@ Apply configuration:
 
 ```yaml
 spec:
-  field: {k8s_io__value: unset}
+  field: {"k8s_io__value": "unset"}
 ```
 
 Result value:
@@ -430,7 +430,7 @@ Force apply configuration:
 
 ```yaml
 spec:
-  field: {k8s_io__value: unset}
+  field: {"k8s_io__value": "unset"}
 ```
 
 Result value:
@@ -455,10 +455,16 @@ fieldManager2:
 1. If a field is unset using a marker, defaulting still applies
    - Consequence: A field manager that owns a unset value ends up owning the defaulted value
    - Consequence: If two field managers unset the same value, they share ownership of the field
-   - Caveat: Non-declarative defaulting, such as defaulting that is performed by the strategy, or
-    admission control, is not detectable by server side apply, and will result in conflicts between
-	field managers even for cases where the defaulting SHOULD result in shared field ownership.
-	This is a pre-existing problem between mutating admission and server side apply but
+   - Edge case: Non-declarative defaulting, such as defaulting that is performed by the strategy, or
+     admission control, is not detectable by server side apply, and will result in conflicts between
+	   field managers even for cases where the defaulting SHOULD result in shared field ownership.
+     - Example:
+       - a strategy is configured to default f1=z
+         - mgr1 applies: f1=z
+           - Result: Applied. mgr1 now owns f1
+         - mgr2 applies f1={k8s_io__value: unset}
+           - Result: conflict
+ 	This is a pre-existing problem between mutating admission and server side apply but
 	will also become possible via defaulting of unset fields with this enhancement.
   See [issue 129960](https://github.com/kubernetes/kubernetes/issues/129960) for
   for examples.
@@ -524,23 +530,20 @@ to respond to community feedback for this enhancement.
 Before graduation to beta, we will add unsetting field support to `applyconfiguration-gen`.
 
 Our goal is to add `Unset<FieldName>()` functions to the generated types. This may require
-the introduction of custom marshalling to the apply configuration types.
+the introduction of custom marshalling to the apply configuration types (For JSON and CBOR).
 
 ### Unset marker escaping
 
-<<<<<<< Updated upstream
-We will **NOT** support escaping of the marker.
+`_k8s_io__value` will unescape to `k8s_io__value` (deeper levels of unescaping will have progressively more `_` prefixes).
 
-We considered this and started to prototype an implementation, but:
+@deads2k summarized the need for this well:
 
-- Adding a performant unescaping pass to structured-merge-diff is complex. It effectively doubles
-  the implementation effort of this KEP.
-- It's hard to imagine where escaping this key would actually be needed. If we really need the ability
-  to "apply to an apply configuration" in the future, look into options, but building this without
-  a plausible use case does not seem necessary.
-=======
-We will NOT support escaping of the marker. See the alternatives considered section for details.
->>>>>>> Stashed changes
+> An API that sets a value in another API seems like a natural thing to want. This happens when stacking configuration APIs for instance
+> 
+> 1. configuration API for operator/A has field/X
+> 2. operator/A is wrapped by operator/B along with others to act as a unit
+> 3. operator/B must expose a way to configure the value of field/X and does so in field/Y
+> 4. For a user to express "affirmatively unset field/X", they need to set field/Y to the string value "{k8s_io__value: unset}"
 
 ### High level implementation plan
 
@@ -588,6 +591,10 @@ implementing this enhancement to ensure the enhancements have also solid foundat
   - Invalid values of the unset marker key will be detected and produce clear error messages.
   - The unset marker key/value may only have other key fields as sibling fields, if any other map
     entries are present apply will fail with a clear error message.
+  - The existing behavior of apply (before this change) already handles managedField ownership of 
+    fields that are not set, and applies this ownership correctly when detecting conflicts.
+    This proves that we are only adding "syntax sugar" to make it easier to unset fields and
+    that the managedFields configurations produced by this change are backward compatible.
 
 ##### Integration tests
 
@@ -597,6 +604,7 @@ Testing in kubernetes/kubernetes will include:
 - Unset field markers are detected and used
 - Unset fields are tracked correctly in managedFields across multiple requests
 - applyconfiguration-gen generates typesafe bindings to unset fields that work as expected
+- JSON and CBOR apply configurations
 
 ##### e2e tests
 
@@ -702,10 +710,15 @@ I believe this is acceptable because:
 - The handling of managedFields is not changed by this enhancement, so the rollback does not
   make anything worse than it was before rollback
 - the ownership of the field can be removed if needed (before or after rollback)
+- We will add tests to demonstrate that the existing behavior (before this change) already handles
+  managedField ownership of fields that are not set, and applies this ownership correctly when detecting conflicts.
+  This proves that we are only adding "syntax sugar" to make it easier to unset fields and
+  that the managedFields configurations produced by this change are backward compatible and
+  safe for rollback.
 
 ###### What specific metrics should inform a rollback?
 
-- apiserver request failures
+- apiserver request failures for the patch verb
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
