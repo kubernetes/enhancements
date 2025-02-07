@@ -96,6 +96,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
   - [Composable Controller Design Overview](#composable-controller-design-overview)
+  - [Alternative approach](#alternative-approach)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -282,6 +283,24 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+**What if the scheduler restarts while the DRA plugin is waiting for the device(s) to be bound?**
+
+The scheduler's restart should not pose an issue, as the decision to wait is based on the Conditions of the ResourceClaim.
+After a scheduler restart, if the device attachment is not yet complete, the scheduler will wait again at PreBind.
+If the attachment is complete, it will pass through PreBind.
+
+**Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down.**
+
+Regarding collaboration with the Cluster Autoscaler, using node nomination can address the issue.
+This issue needs to be resolved before the beta is released.
+
+**The in-flight events cache may grow too large when waiting in PreBind.**
+
+To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind. 
+This prevents issues in the scheduling queue caused by keeping pods at PreBind for an extended period.
+This issue will be addressed separately as outlined in kubernetes/kubernetes#129967.
+This issue needs to be resolved before the beta is released.
+
 ## Design Details
 
 ### DRA Scheduler Plugin Design Overview
@@ -317,10 +336,48 @@ type Device struct {
 
 // BasicDevice represents a basic device instance.
 type BasicDevice struct {
-    // Attributes contains additional attributes of the device.
+    // Attributes defines the set of attributes for this device.
+    // The name of each attribute must be unique in that set.
+    //
+    // The maximum number of attributes and capacities combined is 32.
     //
     // +optional
-    Attributes map[string]string
+    Attributes map[QualifiedName]DeviceAttribute
+    ...
+
+}
+
+...
+// DeviceAttribute must have exactly one field set.
+type DeviceAttribute struct {
+	// The Go field names below have a Value suffix to avoid a conflict between the
+	// field "String" and the corresponding method. That method is required.
+	// The Kubernetes API is defined without that suffix to keep it more natural.
+
+	// IntValue is a number.
+	//
+	// +optional
+	// +oneOf=ValueType
+	IntValue *int64
+
+	// BoolValue is a true/false value.
+	//
+	// +optional
+	// +oneOf=ValueType
+	BoolValue *bool
+
+	// StringValue is a string. Must not be longer than 64 characters.
+	//
+	// +optional
+	// +oneOf=ValueType
+	StringValue *string
+
+	// VersionValue is a semantic version according to semver.org spec 2.0.0.
+	// Must not be longer than 64 characters.
+	//
+	// +optional
+	// +oneOf=ValueType
+	VersionValue *string
 }
 ```
 
@@ -329,7 +386,7 @@ To indicate a fabric device, the following attribute will be added:
 ```yaml
 attributes:
   kubernetes.io/needs-attaching:
-    bool: "true"
+    boolValue: "true"
 ```
 
 #### `AllocatedDeviceStatus` Additions
@@ -358,14 +415,16 @@ const(
 ```
 
 #### Scheduler DRA plugin Additions
-When `kubernetes.io/needs-attaching: true` is set, the scheduler DRA plugin is expected to do the following:
+When `kubernetes.io/needs-attaching: true` is set, the scheduler DRA plugin is expected to do the following at `PreBind`:
 
 1. Set `AllocatedDeviceStatus.NodeName`.
 2. Add an `AllocatedDeviceStatus` with a condition of `Type: kubernetes.io/needs-attaching` and `Status: True`.
 3. Wait for a condition with `Type: kubernetes.io/is-attached` and `Status: True` in `PreBind` before proceeding.
-4. Give up when seeing a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
+4. Reject the pod when observing a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
 
 Note: There is a concern that the in-flight events cache may grow too large when waiting in PreBind.
+To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind. 
+This prevents issues in the scheduling queue caused by keeping pods at PreBind for an extended period.
 This issue will be addressed separately as outlined in kubernetes/kubernetes#129967.
 
 #### PreBind Phase Timeout
@@ -411,12 +470,12 @@ devices:
     attributes:
       ...
       kubernetes.io/needs-attaching:
-        bool: "true"
+        boolValue: "true"
   - name: device2
     attributes:
       ...
       kubernetes.io/needs-attaching:
-        bool: "true"
+        boolValue: "true"
 ```
 
 The vendor's DRA kubelet plugin will also publish the devices managed by the vendor as `ResourceSlices`.
@@ -465,6 +524,21 @@ devices:
   ...
 ```
 
+### Alternative approach
+Instead of implementing the solution within the scheduler, we propose using the Cluster Autoscaler to manage the attachment and detachment of fabric devices.
+
+The key points and main process flow of this alternative proposal are as follows:
+
+The scheduler references only node-local ResourceSlices.
+If there are no available resources in the node-local ResourceSlices, the scheduler marks the Pod as unschedulable without waiting in the PreBind phase of the ResourceClaim.
+
+To handle fabric resources, we implement the Processor for composable system within CA.
+This Processor identifies unschedulable Pods and determines if attaching a fabric ResourceSlice device to an existing node would make scheduling possible.
+If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process.
+If attaching the fabric ResourceSlice does not make scheduling possible, the Processor determines whether to add a new node as usual.
+
+After the device is attached, the vendor DRA updates the node-local ResourceSlices.
+The vendor DRA needs a rescan function to update the Pool/ResourceSlice. The scheduler can then assign the node-local ResourceSlice devices to the unschedulable Pod, operating the same as the usual DRA from this point.
 
 
 ### Test Plan
