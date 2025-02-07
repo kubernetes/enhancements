@@ -348,15 +348,9 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
-
-
-- **Unit Tests**: Verify adding/removing taints, ensuring pods are evicted accordingly.
-- **Integration Tests**: Confirm that a node is effectively reserved, pods referencing the reservation can schedule, and conflicting pods are removed.
-- **E2E Tests**: Use a mock DRA driver in a real cluster to validate end-to-end functionality (allocation, eviction, deallocation).
-
 
 ##### Prerequisite testing updates
 
@@ -386,6 +380,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
+- DRA scheduler plugin
+
 - `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
@@ -405,6 +401,9 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+- DRA scheduler plugin
+- Taints scheduler plugin
+
 - <test>: <link to test coverage>
 
 ##### e2e tests
@@ -418,6 +417,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+- DRA scheduler plugin
+- Taints scheduler plugin
+- Test watching for pods being evicted
 
 - <test>: <link to test coverage>
 
@@ -487,8 +490,17 @@ in back-to-back releases.
 
 
 #### Alpha
-- Basic logic implemented and tested (unit/integration).
-- Documentation of usage and examples.
+- Basic logic implemented behind a feature gate.
+- All tests from [Test Plan](#test-plan) implemented.
+
+#### Beta
+
+- Gather feedback from users and fix reported bugs.
+- Change the feature flag to be enabled by default.
+
+#### GA
+
+- Gather feedback from users and fix reported bugs.
 
 ### Upgrade / Downgrade Strategy
 
@@ -504,9 +516,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-
-- **Upgrade**: Existing reservations continue to function.
-- **Downgrade**: Might break or ignore the `ResourceSlice` concept in older versions, leaving orphaned taints.
+- **Upgrade**: Users need to enable feature flag and start using `ResourceClaim` new fields.
+- **Downgrade**: The fields specific to this feature will be ignored, but reservations/taints will stay (left orphaned) and be still enforced.
 
 
 ### Version Skew Strategy
@@ -524,7 +535,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-
+- Only kube-scheduler version matters.
 
 ## Production Readiness Review Questionnaire
 
@@ -568,15 +579,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `DraNodeReservations`
+  - Components depending on the feature gate: kube-scheduler
 
 ###### Does enabling the feature change any default behavior?
 
@@ -584,6 +589,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+No, unless there are applicable `ResourceClaims`. In that case they will be enforced and may cause unexpected eviction of large number of pods.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -598,7 +605,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Applied changes to the cluster will remain in place and won't be reverted. Operators may need to remove taints manually to let potentially accidentally evicted pods to get scheduled again.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Scheuler will discover of pre-populated `ResourceClaim` objects and apply taints if needed. It may case unexpected eviction of large number of pods.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -614,6 +625,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+- Yes, discovery of pre-populated `ResourceClaim` objects should be testsed.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -633,12 +646,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+- Yes, existing workloads may be affected.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- Large number of evictions. Rollback itself will not help and manual taints cleanup would be needed.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -653,6 +670,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+- No
 
 ### Monitoring Requirements
 

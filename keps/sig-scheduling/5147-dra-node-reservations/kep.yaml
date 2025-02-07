@@ -16,3 +16,9 @@ stage: alpha
 
 milestone:
   alpha: "v1.33"
+
+feature-gates:
+  - name: DraNodeReservations
+    components:
+      - kube-scheduler
+disable-supported: true
