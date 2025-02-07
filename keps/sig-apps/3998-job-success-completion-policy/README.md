@@ -71,7 +71,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -439,19 +439,19 @@ to implement this enhancement.
 ##### Integration tests
 
 - Test scenarios:
-  - [enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L872)
-  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L578)
-  - [jobs_finished_total metric with CompletionsReached is incremented when job does not have successPolicy](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L649)
-  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L680)
-  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L727) 
-  - [handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L774)
+  - [enabling, disabling and re-enabling of the `JobSuccessPolicy` feature gate](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L872): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy_ReEnabling)
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L578): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy)
+  - [jobs_finished_total metric with CompletionsReached is incremented when job does not have successPolicy](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L649): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L680): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L727): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy)
+  - [handling of successPolicy when some indexes of job with `backOffLimitPerIndex` fail](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L774): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestSuccessPolicy)
 
 ##### e2e tests
 
 - Test scenarios:
-  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L478-L484)
-  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L517-L523)
-  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L556-L562)
+  - [handling of successPolicy when all indexes succeeded](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L478-L484): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-e2e&test=with%20successPolicy%20should%20succeeded%20when%20all%20indexes%20succeeded)
+  - [handling of the `.spec.successPolicy.rules.succeededIndexes` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L517-L523): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-e2e&test=with%20successPolicy%20succeededIndexes%20rule%20should%20succeeded%20even%20when%20some%20indexes%20remain%20pending)
+  - [handling of the `.spec.successPolicy.rules.succeededCount` when some indexes remain pending](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L556-L562): [result](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-e2e&test=with%20successPolicy%20succeededCount%20rule%20should%20succeeded%20even%20when%20some%20indexes%20remain%20pending)
 
 ### Graduation Criteria
 
