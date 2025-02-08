@@ -3,7 +3,7 @@ kep-number: 5018
 authors:
   - "@ritazh"
 owning-sig: sig-auth
-status: provisional
+status: implementable
 creation-date: 2025-01-02
 reviewers:
   - "@pohly"

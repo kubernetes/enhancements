@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
   - [DRAAdminAccess Overview](#draadminaccess-overview)
   - [Workflow](#workflow)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
   - [REST Storage Changes](#rest-storage-changes)
@@ -163,8 +164,10 @@ objects as privileged. This feature includes:
      name: admin-resource-claim
      namespace: admin-namespace
    spec:
-     resourceClassName: admin-resource-class
-     adminAccess: true
+     devices:
+       requests:
+         - deviceClassName: admin-resource-class
+           adminAccess: true
    ```
 
 1. Namespace Label for DRA Admin Mode:
@@ -221,6 +224,16 @@ objects as privileged. This feature includes:
 
 1. The DRA controller processes the request and grants privileged access to the
    requested device.
+
+### Risks and Mitigations
+
+This feature makes the assumption that an admin will only perform read-only
+monitoring and troubleshooting operations. However, it is possible that an admin
+also performs write access to the device. This risk can be mitigated by the DRA
+driver to ensure AdminAccess ResourceClaims can only execute read-only
+operations on the device. We can add a warning in the driver documentation.
+However, what additional permissions are granted or needed for admin operations
+is up to the DRA driver implementation.
 
 ## Design Details
 
@@ -293,13 +306,16 @@ admin namespace label.
 
 In pkg/controller/resourceclaim/controller.go, process requests in `handleClaim`
 function to prevent creation of `ResourceClaim` when the `ResourceClaimTemplate`
-has the `adminAccess` field while the feature gate is turned off.
+has the `adminAccess` field while the feature gate is turned off. This behavior
+was added in 1.32.
 
 ### Kube-scheduler Changes
 
 In pkg/scheduler/framework/plugins/dynamicresources/allocateddevices.go, handle
 claims with `adminAccess` to ensure devices allocated with `adminAccess` are
-skipped without invoking the callback bypassing standard allocation checks.
+skipped without invoking the callback bypassing standard allocation checks and
+these devices are not considered as allocated. This behavior was added in 1.32
+in `foreachAllocatedDevice`.
 
 ### ResourceQuota
 
@@ -332,11 +348,19 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 - `<package>`: `<date>` - `<test coverage>`
 -->
+<!--
+Generated with:
 
-Start of v1.33 development cycle (v1.33.0-alpha.1-):
+ go test -cover ./pkg/registry/resource/resourceclaim ./pkg/registry/resource/resourceclaimtemplate ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
 
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: %
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: %
+-->
+
+During v1.33 development cycle, 2025-02-08 as of git commit 69ab91a:
+
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 73.5%
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: 84.7%
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: 68.8%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 77.3%
 
 ##### Integration tests
 
@@ -347,6 +371,24 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
+
+The scheduler plugin and resource claim controller are covered by the workloads
+in
+https://github.com/kubernetes/kubernetes/blob/master/test/test/integration/scheduler_perf/dra/performance-config.yaml
+
+Those tests run in:
+
+- [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration)
+  and
+  [periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
+  integration testing under
+  `k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf` and
+  `k8s.io/kubernetes/test/integration/scheduler_perf.dra.dra` and the
+  `DRAAdminAccess` feature gate is already enabled.
+- Additional test cases will be added to `test/integration/scheduler_perf` to
+  ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
+  requests are only authorized if their namespace has the
+  `kubernetes.io/dra-admin-access` label as described in this KEP.
 
 ##### e2e tests
 
@@ -379,6 +421,12 @@ Kubernetes e2e suite.[It] [sig-node] DRA [Feature:DynamicResourceAllocation]
 ResourceClaimTemplate and ResourceClaim for admin access
 [Feature:DRAAdminAccess] [FeatureGate:DRAAdminAccess] [Alpha]
 [FeatureGate:DynamicResourceAllocation] [Beta]
+
+- AdminAccess related tests in
+  https://github.com/kubernetes/kubernetes/blob/69ab91a5c59617872c9f48737c64409a9dec2957/test/e2e/dra/dra.go#L976
+  and
+  https://github.com/kubernetes/kubernetes/blob/69ab91a5c59617872c9f48737c64409a9dec2957/test/e2e/dra/dra.go#L1095
+  will be updated.
 
 ### Graduation Criteria
 
@@ -475,7 +523,14 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Will be considered for beta.
+If this feature is not working as intended, it could result in an increase in
+the `scheduler_pending_pods` metric in the kube-scheduler or an increase in the
+`kubelet_started_containers_errors_total` metric.
+
+Further analysis by reviewing logs and pod events is needed to determine whether
+errors are related to this feature.
+
+Will provide more details for beta.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -535,7 +590,11 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Details:
 -->
 
-Will be considered for beta.
+- [x] API .status
+  - Other field: `.status.allocation` will be set for a ResoureClaim using the
+    DRA feature when needed by a pod and
+    `.status.allocation.devices.results[].adminAccess` will be set by the
+    scheduler when it allocates a ResoureClaim.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -569,7 +628,23 @@ Pick one more of these and delete the rest.
   - Details:
 -->
 
-Will be considered for beta.
+This feature is part of the DRA feature and therefore can use the same SLIs to
+determine health of the service.
+
+For kube-controller-manager:
+
+- [x] Metrics
+  - Metric name: `resourceclaim_controller_create_total`
+  - Metric name: `resourceclaim_controller_create_failures_total`
+  - Metric name: `resourceclaim_controller_resource_claims`
+  - Metric name: `resourceclaim_controller_allocated_resource_claims`
+  - Metric name: `workqueue` with `name="resource_claim"`
+
+For kube-scheduler and kubelet, existing metrics for handling Pods such as the
+["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/6f5fa2eb2f4dc731243b00f7e781e95589b5621f/pkg/scheduler/metrics/metrics.go#L200-L206)
+metric in scheduler will identify pods that are currently unschedulable because
+of the `DynamicResources` plugin or a misconfiguration of the `AdminAccess`
+field.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -619,11 +694,16 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+Yes. Setting the field will make the ResourceClaim and ResourceClaimTemplate
+resources larger.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No.
+No. This feature is part of the DRA feature and therefore it uses the same
+existing SLIs as DRA which were derrived from metrics similar to the generic
+ephemeral volume controller
+[were added](https://github.com/kubernetes/kubernetes/blob/163553bbe0a6746e7719380e187085cf5441dfde/pkg/controller/resourceclaim/metrics/metrics.go#L32-L47)
+to determine health of the service.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -693,3 +773,6 @@ The following options were also considered:
   the control so that anyone can apply labels to namespaces, but they can't
   prevent the check from running.
 - RBAC++: This is not available yet, especially for the DRA timeframe.
+- Read-mode: Read-mode is too restrictive. AdminAccess is more like root access
+  in that it may grant additional permissions and there needs to be checks to
+  prevent normal users from bypassing.
