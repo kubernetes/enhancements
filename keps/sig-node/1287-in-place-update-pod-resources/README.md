@@ -307,7 +307,7 @@ This field can be set to one of the following values:
   `Infeasible` resize will take precedence over `InProgress`.
   Desired resources == Allocated resources != Actual resources.
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
-  but is not possible right now; it will be re-evaluated.
+  but is not possible right now; it will be re-evaluated on every pod sync.
   Desired resources != Allocated resources.
 * `Infeasible` - the proposed resize is not feasible and is rejected; it will not
   be re-evaluated. Desired resources != Allocated resources.
@@ -770,6 +770,9 @@ repeated, so `UpdateContainerResources` must be idempotent.
 When a resize CRI request succeeds, the pod will be marked for resync to read the latest resources. If
 the actual configured resources do not match the desired resources, this will be reflected in the
 pod status resources, but not otherwise acted upon.
+
+If a resize request does not succeed, the Kubelet will retry the resize on every subsequent pod
+sync, until it succeeds or the container is terminated.
 
 ### Memory Limit Decreases
 
