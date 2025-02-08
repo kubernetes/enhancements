@@ -287,6 +287,19 @@ been added to the REST storage layer to only authorize `ResourceClaim` or
 the `kubernetes.io/dra-admin-access` label to only allow it for users with
 additional privileges.
 
+```mermaid
+flowchart TD
+    A[Admission Request to Create/Update ResourceClaim or ResourceClaimTemplate] --> B{adminAccess: true?}
+    B -- No --> E
+    B -- Yes --> D[Check Namespace Label]
+    D -- Label Present --> E[Request Allowed]
+    D -- No Label --> F[Request Rejected]
+    E --> G[Resource Created/Updated]
+    G --> H[Kubernetes Scheduler evaluates ResourceClaim]
+    H -- Admin Access Devices --> I[Skip allocation checks; Device is not allocated]
+    H -- Standard Claims --> J[Proceed with standard allocation checks]
+```
+
 The `DRAAdminAccess` feature gate controls whether users can set the
 `adminAccess` field to true when requesting devices. That is checked in the
 apiserver. In addition, the scheduler will not allocate claims with admin access
@@ -753,7 +766,7 @@ Will be considered for beta.
 
 ## Implementation History
 
-- Kubernetes 1.33: KEP accepted as "provisional".
+- Kubernetes 1.33: Alpha version of the KEP.
 
 ## Drawbacks
 
