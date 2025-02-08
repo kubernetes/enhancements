@@ -26,6 +26,7 @@
     - [Container resource limit update ordering](#container-resource-limit-update-ordering)
     - [Container resource limit update failure handling](#container-resource-limit-update-failure-handling)
     - [CRI Changes Flow](#cri-changes-flow)
+    - [Kubelet Restart Analysis](#kubelet-restart-analysis)
     - [Notes](#notes)
   - [Lifecycle Nuances](#lifecycle-nuances)
   - [Atomic Resizes](#atomic-resizes)
@@ -701,6 +702,42 @@ Pod Status in response to user changing the desired resources in Pod Spec.
   the CPU and memory limits applied to a Container. It uses the values returned
   in ContainerStatus.Resources to update ContainerStatuses[i].Resources.Limits
   for that Container in the Pod's Status.
+
+#### Kubelet Restart Analysis
+
+Analysis of Kubelet restarts happening at various points of resize, and how recovery happens.
+Impacts of a restart outside of resource configuration are out of scope.
+
+1. Kubelet Admits a new pod
+  - Resource allocation checkpointed before sending the pod to the pod workers
+  - Restart before checkpointing: pod goes through admission again as if new
+  - Restart after checkpointing: pod goes through admission using the allocated resources
+1. Kubelet creates a container
+  - Resources acknowledged after CreateContainer call succeeds
+  - Restart before acknowledgement: Kubelet issues a superfluous UpdatePodResources request
+  - Restart after acknowledgement: No resize needed
+1. Container starts, triggering a pod sync event
+  - Kubelet updates status with actual resources reported by runtime, allocated resources from checkpoint
+  - Allocated == Acknowledeged, so no resize needed
+  - No races around restart.
+1. Pod is resized in the API, Kubelet observes the update
+  - Triggers a pod sync
+  - On restart, Kubelet reads the latest pod from the API and triggers a pod sync, so same effect as
+    observing the update.
+1. Updated pod is synced: Check if pod can be admitted
+  - No: resize status is deferred, no change to allocated resources
+    - Restart: redo admission check, still deferred.
+  - Yes: resize status is in-progress, update allocated checkpoint
+    - Restart before update: readmit, then update allocated
+    - Restart after update: allocated != acknowledged --> proceed with resize
+1. Allocated != Acknowledged
+  - Trigger an `UpdateContainerResources` CRI call, then update Acknowledged resources on success
+  - Restart before CRI call: allocated != acknowledged, will still trigger the update call
+  - Restart after CRI call, before acknowledged update: will redo update call
+  - Restart after acknowledged update: allocated == acknowledged, resize status cleared
+1. PLEG updates PodStatus cache, triggers pod sync
+  - Pod status updated with actual resources, resize status cleared
+  - Desired == Allocated == Acknowledged, no resize changes needed.
 
 #### Notes
 
