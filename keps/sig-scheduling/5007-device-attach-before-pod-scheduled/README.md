@@ -558,21 +558,27 @@ Composable DRA controoler also add a model name and so on into the attributes of
 ![composable-resourceslice](composable-resourceslice.png)
 
 ### Alternative approach
-Instead of implementing the solution within the scheduler, we propose using the Cluster Autoscaler to manage the attachment and detachment of fabric devices.
-
+Instead of implementing the solution within the scheduler, we can use "device autoscaler" which is a device version of ClusterAutoscaler(CA).
 The key points and main process flow of this alternative proposal are as follows:
 
 The scheduler references only node-local ResourceSlices.
 If there are no available resources in the node-local ResourceSlices, the scheduler marks the Pod as unschedulable without waiting in the PreBind phase of the ResourceClaim.
+And then, device autoscaler tries to attach new devices.
+And it also try to detach devices if they have not been used for a period of time.
+This is similar to the concept of CA.
 
-To handle fabric resources, we implement the Processor for composable system within CA.
+However, if CA and device autoscaler is running independently, CA may add a node with a device at the same time as the device autoscaler attaches the device. 
+This is a wasted resource addition.
+Therefore, there is the following idea that putting device-scale functionality in CA.
+
+To handle fabric resources in CA, we implement the Processor for composable system within CA.
 This Processor identifies unschedulable Pods and determines if attaching a fabric ResourceSlice device to an existing node would make scheduling possible.
 If so, the Processor instructs the attachment of the resource, using the composable Operator for the actual attachment process.
 If attaching the fabric ResourceSlice does not make scheduling possible, the Processor determines whether to add a new node as usual.
 
 After the device is attached, the vendor DRA updates the node-local ResourceSlices.
-The vendor DRA needs a rescan function to update the Pool/ResourceSlice. The scheduler can then assign the node-local ResourceSlice devices to the unschedulable Pod, operating the same as the usual DRA from this point.
-
+The vendor DRA needs a rescan function to update the Pool/ResourceSlice. 
+The scheduler can then assign the node-local ResourceSlice devices to the unschedulable Pod, operating the same as the usual DRA from this point.
 
 ### Test Plan
 
@@ -665,6 +671,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Gather feedback from developers and surveys
 - Resolove the following issues
   - Scheduler does not guarantee to pick up the same node for the Pod after the restart
+  - If Scheduler picks up another node for the Pod after the restart, devices are unnecessarily left on the original nodes
+    (Composable DRA controller needs to have the function to detach a device automatically if it is not used by a Pod for a certain period of time)
   - Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down
   - The in-flight events cache may grow too large when waiting in PreBind
 - Additional tests are in Testgrid and linked in KEP
