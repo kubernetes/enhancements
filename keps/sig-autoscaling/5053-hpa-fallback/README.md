@@ -164,7 +164,7 @@ By allowing users to configure fallback behavior in HPA, this proposal aims to
 reduce the criticality of the metrics APIs and improve the overall robustness 
 of the autoscaling system. This change allows users to define safe scaling 
 actions, both as scaling to a predefined maximum or holding the current scale 
-(current behaviour), ensuring workloads remain operational and better aligned 
+(current behavior), ensuring workloads remain operational and better aligned 
 with user-defined requirements during unexpected disruptions.
 
 Additionally, the community has also expressed interest in addressing this
@@ -183,20 +183,22 @@ limitation in the past. ([#109214][])
 
 ## Proposal
 
-Heavily inspired by [KEDA][] propose to add a new field to the existing [`HorizontalPodAutoscalerSpec`][] object:
+Heavily inspired by [KEDA][] propose to add a new field to the existing [`HorizontalPodAutoscalerBehavior`][] object:
 
 - `fallback`: an optional new object containing the following fields:
-  - `failureThreshold`: (integer) the number of failures fetching metrics to trigger the fallback behaviour. Must be greater than 0 and is option with a default of 3.
+  - `failureThreshold`: (integer) the number of failures fetching metrics to trigger the fallback behavior. Must be greater than 0 and is option with a default of 3.
   - `replicas`: (integer) the number of replicas to scale to in case of fallback. Must be greater than 0 and it's mandatory.
 
 To allow for tracking of failures to fetch metrics a new field should be added to the existing [`HorizontalPodAutoscalerStatus`][] object:
-- `metricRetrievalFailureCount`: (integer) tracks the number of consecutive failures in retrieving metrics.
+- `consecutiveMetricRetrievalFailureCount`: (integer) tracks the number of consecutive failures in retrieving metrics.
 
-When the `fallback` field is not specified, the current behavior is preserved, meaning no scaling operations will occur in the event of a metrics retrieval failure.
+When the `behavior` field on the [`HorizontalPodAutoscalerSpec`][] or the `fallback` field in the [`HorizontalPodAutoscalerBehavior`][] 
+are not specified, the current behavior is preserved, meaning no scaling operations will occur in the event of a metrics retrieval failure.
 
 [KEDA]: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
-[HorizontalPodAutoscalerSpec]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#horizontalpodautoscalerspec-v2-autoscaling
+[HorizontalPodAutoscalerBehavior]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#horizontalpodautoscalerbehavior-v2-autoscaling
 [HorizontalPodAutoscalerStatus]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#horizontalpodautoscalerstatus-v2-autoscaling
+[HorizontalPodAutoscalerSpec]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#horizontalpodautoscalerspec-v2-autoscaling
 
 ### Risks and Mitigations
 
@@ -211,7 +213,7 @@ The `HorizontalPodAutoscaler` API is updated to have a new object `HPAFallback`:
 ```golang
 type HPAFallback struct {
     // failureThreshold is the number of failures fetching metrics to trigger the 
-    // fallback behaviour.
+    // fallback behavior.
     // +optional
     FailureThreshold *int32
     
@@ -220,22 +222,39 @@ type HPAFallback struct {
 }
 ```
 
-The `HorizontalPodAutoscaler` API is updated to add a new `fallback` field to the `HorizontalPodAutoscalerSpec` object:
+The `HorizontalPodAutoscaler` API is updated to add a new `fallback` field to the `HorizontalPodAutoscalerBehavior` object:
 
 ```golang
-type HorizontalPodAutoscalerSpec struct {
+type HorizontalPodAutoscalerBehavior struct {
     // fallback specifies the number of replicas to scale the object to during a 
     // fallback state and defines the threshold for errors required to enter the 
     // fallback state.
     //+optional
     Fallback *HPAFallback
-    
+
+    // Existing fields.
+    ScaleUp *HPAScalingRules
+    ScaleDown *HPAScalingRules
+}
+```
+
+The `HorizontalPodAutoscaler` API is updated to have a new description of the `behavior` field on the `HorizontalPodAutoscalerSpec` object:
+
+```golang
+type HorizontalPodAutoscalerSpec struct {
+    // behavior configures the scaling behavior of the target, including 
+	// scale-up and scale-down policies, as well as fallback behavior in case
+	// of metric retrieval failures. If not set, the default HPAScalingRules 
+	// are used for scaling decisions, and no scaling operation will occur 
+	// when metrics retrieval fails.
+    // +optional
+    Behavior *HorizontalPodAutoscalerBehavior
+
     // Existing fields.
     ScaleTargetRef CrossVersionObjectReference
     MinReplicas *int32
     MaxReplicas int32
     Metrics []MetricSpec
-    Behavior *HorizontalPodAutoscalerBehavior
 }
 ```
 
@@ -243,9 +262,9 @@ The `HorizontalPodAutoscaler` API is updated to add a new `fallback` field to th
 
 ```golang
 type HorizontalPodAutoscalerStatus struct {
-    // metricRetrievalFailureCount tracks the number of consecutive failures in retrieving metrics. 
+    // consecutiveMetricRetrievalFailureCount tracks the number of consecutive failures in retrieving metrics. 
     //+optional
-    MetricRetrievalFailureCount int32
+    ConsecutiveMetricRetrievalFailureCount int32
     
     // Existing fields.
     ObservedGeneration *int64
@@ -255,6 +274,20 @@ type HorizontalPodAutoscalerStatus struct {
     CurrentMetrics []MetricStatus
     Conditions []HorizontalPodAutoscalerCondition
 }
+```
+The `HorizontalPodAutoscaler` API is updated to introduce a new FallbackActive condition to the `HorizontalPodAutoscalerConditionType`:
+
+```golang
+const (
+    // FallbackActive indicates that the HPA has entered the fallback state due to repeated
+    // metric retrieval failures and is applying the configured fallback behavior.
+    FallbackActive HorizontalPodAutoscalerConditionType = "FallbackActive"
+
+	// Existing conditions
+	ScalingActive HorizontalPodAutoscalerConditionType = "ScalingActive"
+    AbleToScale HorizontalPodAutoscalerConditionType = "AbleToScale"
+    ScalingLimited HorizontalPodAutoscalerConditionType = "ScalingLimited"
+)
 ```
 
 The new fallback field will be used in the autoscaling controller
@@ -275,7 +308,7 @@ It will be replaced by:
 
 ```golang
 if err != nil && metricDesiredReplicas == -1 {
-    a.increaseMetricRetrievalFailureCount(hpa)
+    a.increaseConsecutiveMetricRetrievalFailureCount(hpa)
     a.eventRecorder.Event(hpa, v1.EventTypeWarning, "FailedComputeMetricsReplicas", err.Error())
     
     var inFallback bool
@@ -290,14 +323,17 @@ if err != nil && metricDesiredReplicas == -1 {
             failureThreshold = 3
         }
         
-        if failureThreshold < hpa.Status.MetricRetrievalFailureCount {
+        if failureThreshold < hpa.Status.ConsecutiveMetricRetrievalFailureCount {
             inFallback = true
             metricDesiredReplicas = hpa.Spec.Fallback.Replicas
             a.eventRecorder.Event(hpa, v1.EventTypeWarning, "FallbackThresholdReached", err.Error())
+            setCondition(hpa, autoscalingv2.FallbackActive, v1.ConditionTrue, "FallbackThresholdReached", "%s", err.Error())
         } else {
+            setCondition(hpa, autoscalingv2.FallbackActive, v1.ConditionFalse, "FallbackThresholdNotReached", "Threshold is set to %d failures. Current failure count is %d", failureThreshold, hpa.Status.ConsecutiveMetricRetrievalFailureCount)
             inFallback = false
         }
     } else {
+        setCondition(hpa, autoscalingv2.FallbackActive, v1.ConditionFalse, "NoFallbackDefined", "No fallback behavior is defined")
         inFallback = false
     }
     
@@ -309,6 +345,7 @@ if err != nil && metricDesiredReplicas == -1 {
         return fmt.Errorf("failed to compute desired number of replicas based on listed metrics for %s: %v", reference, err)
     }
 }
+setCondition(hpa, autoscalingv2.FallbackActive, v1.ConditionFalse, "SucceededToComputeDesiredReplicas", "the HPA controller was able to compute the desired replicas")
 ```
 
 [horizontal.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/horizontal.go
@@ -394,7 +431,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 Will the follow [e2e autoscaling tests]:
 
 - Failure of retrieving metrics over the threshold scales the resource with the configured replicas
-- Success in retrieving metrics should reset the `MetricRetrievalFailureCount` in the `HorizontalPodAutoscalerStatus`
+- Success in retrieving metrics should reset the `ConsecutiveMetricRetrievalFailureCount` in the `HorizontalPodAutoscalerStatus`
 - When `fallback` is not set the resource should not scale when failing to retrieve metrics
 
 [e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
