@@ -21,7 +21,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: PopBackoffQWhenEmptyActiveQ
+  - name: SchedulerPopFromBackoffQ
     components:
       - kube-scheduler
 disable-supported: true
