@@ -87,6 +87,7 @@ This KEP aims to improve the Kubernetes-native API development experience by add
 ### Non-Goals
 
 - Create tooling for validating CustomResourceDefinition schema changes at admission time
+    - This is a non-goal of this KEP in particular to keep the scope of this KEP to only include the individual tooling. A separate KEP may be written, focusing on addressing this goal.
 
 ## Proposal
 
@@ -265,20 +266,62 @@ Currently, it is proposed that:
 - The CLI UX from https://github.com/everettraven/crd-diff is used. It currently allows sourcing both the old and new CRDs from various locations, allowing for use case flexibility.
 - The reporting logic from https://github.com/openshift/crd-schema-checker is used. It enforces that all checks include a description of why the check matters and allows for communicating errors, warnings, and other important information found during the comparison process.
 - The CRD manifest schema walking logic from https://github.com/openshift/crd-schema-checker is used. https://github.com/everettraven/crd-diff imports this logic.
-- The validation/validator pattern from https://github.com/everettraven/crd-diff. It clearly distinguishes between individual property validations and broader scoped CRD validations. Additionally, it has a validation pattern in place that checks for general CRD changes, compatibility of version-to-version, and compatibility of served versions.
+- The validation/validator pattern from https://github.com/everettraven/crd-diff is used. It clearly distinguishes between individual property validations and broader scoped CRD validations. Additionally, it has a validation pattern in place that checks for general CRD changes, compatibility of version-to-version, and compatibility of served versions.
 
 https://github.com/everettraven/crd-diff currently has some configuration logic in place, but it is highly repetitive and not a great user experience. This needs to be evaluated further and will likely result in a distinct configuration process for the new project.
 
-Additionally, the following validations from both projects are proposed to be included in the move to the common project:
-- **Enum** (crd-diff): Validates compatibility of changes to enum constraints on a property. Flags net new enum constraint on existing property, adding an enum, and removing an enum.
-- **Default** (crd-diff): Validates compatibility of changes to default property values. Flags adding, removing, or changing of a default value.
-- **Max\*** (crd-diff): Validates compatibility of changes to property constraints related to max value constraints (maximum, maxItems, maxLength, maxProperties). Flags adding net new max* constraints and decreasing existing max* constraints.
-- **Min\*** (crd-diff): Validates compatibility of changes to property constraints related to min value constraints (minimum, minItems, minLength, minProperties). Flags adding net new min* constraints and increasing existing min* constraints.
-- **Required** (crd-diff): Validates compatibility of required fields. Flags adding new required properties.
-- **Type** (crd-diff): Flags changes in property type.
-- **Scope** (crd-diff): Flags changes in CRD scope.
-- **ExistingFieldRemoval** (crd-diff, crd-schema-checker): Flags removal of existing fields.
-- **StoredVersionRemoval** (crd-diff): Flags removal of a stored version. Only applicable when comparing to a CRD that is already present on a cluster.
+The tables below show any existing and proposed validations for each of the projects and whether or not they will be carried over to the new common project. Any validations that behave the same in
+both projects marked as being carried over will be combined into a single validation.
+
+Validations in https://github.com/everettraven/crd-diff, both existing and proposed:
+
+| Name | Scope | Description | Implemented | Carry |
+| ---- | ----- | ----------- | ----------- | ----- |
+| enum | Property | Validates compatibility of changes to enum constraints on a property. Net new enum constraints, adding and removing enum values are flagged. | Yes | Yes |
+| default | Property | Validates compatibility of changes to default values on a property. Adding, removing, or changing of a default value are flagged. | Yes  | Yes |
+| maximum | Property | Validates compatibility of changes to maximum constraints on a property. Net new maximum constraints or a decrease in maximum value are flagged | Yes | Yes |
+| maxitems | Property | Validates compatibility of changes to maxitems constraints on a property. Net new maxitems constraints or a decrease in maxitems value are flagged | Yes | Yes |
+| maxlength | Property | Validates compatibility of changes to maxlength constraints on a property. Net new maxlength constraints or a decrease in maxlength value are flagged | Yes | Yes |
+| maxproperties | Property | Validates compatibility of changes to maxproperties constraints on a property. Net new maxproperties constraints or a decrease in maxproperties value are flagged | Yes | Yes |
+| minimum | Property | Validates compatibility of changes to minimum constraints on a property. Net new minimum constraints or an increase in minimum value are flagged | Yes | Yes |
+| minitems | Property | Validates compatibility of changes to minitems constraints on a property. Net new minitems constraints or an increase in minitems value are flagged | Yes | Yes |
+| minlength | Property | Validates compatibility of changes to minlength constraints on a property. Net new minlength constraints or an increase in minlength value are flagged | Yes | Yes |
+| minproperties | Property | Validates compatibility of changes to minproperties constraints on a property. Net new minproperties constraints or an increase in minproperties value are flagged | Yes | Yes |
+| required | Property | Validates compatibility of changes to required constraints on a property. Adding new required properties are flagged | Yes | Yes | 
+| type | Property | Validates compatibility of changes to type constraints on a property. Changes to property types are flagged | Yes | Yes |
+| scope | CRD | Validates that scope doesn't change for the CRD | Yes | Yes |
+| existingfieldremoval | CRD | Validates that existing fields are not removed from the CRD | Yes | Yes |
+| storedversionremoval | CRD | Validates that stored versions are not removed from the CRD. Only valid for CRDs that are previously present on a cluster | Yes | Yes |
+| format | Property | Validates compatibility of changes to the format of a property. Changes to property formats are flagged | No | Yes |
+| exclusiveMaximum | Property | Validates compatibility of changes to the exclusiveMaximum of a property. Net new exclusiveMaximum constraints or a decrease in exclusiveMaximum are flagged | No | Yes |
+| exclusiveMinimum | Property | Validates compatibility of changes to the exclusiveMinimum of a property. Net new exclusiveMinimum constraints or an increase in exclusiveMinimum are flagged | No | Yes |
+| uniqueItems | Property | Validates compatibility of changes to the uniqueItems of a property. Net new uniqueItems constraints are flagged | No | Yes | 
+| pattern | Property | Validates compatibility of changes to the pattern constraint of a property. Net new pattern constraints and more restrictive validations are flagged | No | Yes |
+| nullable | Property  | Validates compatibility of changes to the nullable constraint of a property. Making a property no longer nullable is flagged | No | Yes |
+| multipleOf | Property | Validates compatibility of changes to the multipleOf constraint of a property. Changes to the multipleOf constraint are flagged | No | Yes |
+| allOf | Property | Validates compatibility of changes to the allOf constraint of a property. Net new and addition of allOf constraints are flagged | No | Yes |
+| oneOf | Property | Validates compatibility of changes to the oneOf constraint of a property. Net new and removal of oneOf constraints are flagged | No | Yes |
+| anyOf | Property | Validates compatibility of changes to the anyOf constraint of a property. Net new and removal of anyOf constraints are flagged | No | Yes |
+| not | Property | Validates compatibility of changes to the not constraint of a property. Net new not constraints are flagged | No | Yes |
+
+Proposed validations are tracked via https://github.com/everettraven/crd-diff/issues/3.
+
+Validations in https://github.com/openshift/crd-schema-checker  both existing and proposed:
+
+| Name | Scope | Description | Implemented | Carry |
+| ---- | ----- | ----------- | ----------- | ----- |
+| NoBools | Property | Validates that CRD properties are not of type `boolean` | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoFloats | Property | Validates that CRD properties are not of type `number` | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoUints | Property | Validates that CRD properties are not of type `uint` | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoFieldRemoval | CRD | Validates that existing fields are not removed from a CRD | Yes | Yes |
+| NoEnumRemoval | Property | Validates that existing enum values are not removed from a property | Yes | Yes |
+| NoMaps | Property | Validates that CRD properties of type `object` do not have an `additionalProperties` field specified | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoDataTypeChange | Property | Validates that property type is not changed | Yes | Yes |
+| MustHaveStatus | CRD | Validates that the CRD has a status subresource | Yes | No, if desired this is better suited for a linter in `kal` |
+| ListsMustHaveSSATags | Property | Validates that lists have the `x-kubernetes-list-type` tag for server side apply | Yes | No, if desired this is better suited for a linter in `kal` |
+| ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoNewRequiredFields | CRD | Validates that no new required fields are added | Yes | Yes |
+| MustNotExceedCostBudget | Property | Validates that `XValidations` don't exceed the CEL cost budget | Yes | No, if desired this is better suited for a linter in `kal` |
 
 ### Test Plan
 
