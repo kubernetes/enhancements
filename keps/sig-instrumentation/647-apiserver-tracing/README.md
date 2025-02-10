@@ -11,6 +11,8 @@
   - [User Stories](#user-stories)
     - [Steady-State trace collection](#steady-state-trace-collection)
     - [On-Demand trace collection](#on-demand-trace-collection)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
   - [Tracing API Requests](#tracing-api-requests)
   - [Exporting Spans](#exporting-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
@@ -106,6 +108,14 @@ For example, to trace a request to list nodes, with traceid=4bf92f3577b34da6a3ce
 kubectl proxy --port=8080 &
 curl http://localhost:8080/api/v1/nodes -H "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4737-0000000000000000-01"
 ```
+
+### Risks and Mitigations
+
+The primary risk associated with distributed tracing is DDOS. A user that can send a large number of sampled requests can cause the server to generate a large number of spans.  This is mitigated by allowing respecting the incoming trace context for privileged (`system:master` and `system:monitoring` groups) users and by configuring the to `SamplingRatePerMillion` to a low value.
+
+There is also a risk of memory usage incurred by storing spans prior to export. This is mitigated by limiting the number of spans that can be queued for export, and dropping spans if necessary to stay under that limit.
+
+## Design Details
 
 ### Tracing API Requests
 
@@ -282,14 +292,17 @@ _This section must be completed when targeting beta graduation to a release._
 ###### How can an operator determine if the feature is in use by workloads?
   This is an operator-facing feature.  Look for traces to see if tracing is enabled.
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-  - OpenTelemetry does not currently expose metrics about the number of traces successfully sent: https://github.com/open-telemetry/opentelemetry-go/issues/2547
+###### How can someone using this feature know that it is working for their instance?
+  Look for spans. If you see them, then it is working.
 
-###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+  N/A
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
   N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-  N/A
+  Yes, those are being added in OpenTelemetry, and we will use them once they are present: https://github.com/open-telemetry/opentelemetry-go/issues/2547
 
 ### Dependencies
 
