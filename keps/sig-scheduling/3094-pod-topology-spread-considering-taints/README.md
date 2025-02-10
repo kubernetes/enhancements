@@ -136,7 +136,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
@@ -364,11 +364,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `pkg/api/pod`: `2024-10-10` - `74.3%`
-- `pkg/apis/core/validation`: `2024-10-10` - `84.3%`
-- `pkg/scheduler`: `2024-10-10` - `79.9%`
-- `pkg/scheduler/framework/plugins/defaultpreemption`: `2024-10-10` - `85.4%`
-- `pkg/scheduler/framework/plugins/podtopologyspread`: `2024-10-10` - `87.2%`
+- `pkg/api/pod`: `2025-02-10` - `79.1%`
+- `pkg/apis/core/validation`: `2025-02-10` - `84.4%`
+- `pkg/scheduler`: `2025-02-10` - `80.7%`
+- `pkg/scheduler/framework/plugins/defaultpreemption`: `2025-02-10` - `80.4%`
+- `pkg/scheduler/framework/plugins/podtopologyspread`: `2025-02-10` - `87.5%`
 
 ##### Integration tests
 
@@ -566,7 +566,8 @@ feature, can it break the existing applications?).
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-No, but once you leave the related fields unset, this feature will not work.
+The feature can be disabled in Alpha and Beta stage, but once GA, there's no way to disable it.
+But you can leave it opt-out by unset the two fields, and it will fall back to the default behavior.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 The policies are respected again.
@@ -953,7 +954,7 @@ Major milestones might include:
 - 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
 - 2022.09.22: Graduate to Beta in v1.26.
-- 2024.10.10: Graduate to GA in v1.32.
+- 2024.10.10: Graduate to GA in v1.33.
 
 ## Drawbacks
 
