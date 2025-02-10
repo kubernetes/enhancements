@@ -337,7 +337,7 @@ garbage collector.
     pre-bind phase. The in-memory one in the assumed cache is created earlier
     during reserve phase.
   * It is *deleted* together with the owning pod's deletion.
-  * It is *read* by scheduler dyanmic resource plugin for the devices allocated,
+  * It is *read* by scheduler dynamic resource plugin for the devices allocated,
   so that the scheduler remove considerations for allocation of these devices for
   other DRA resource claim requests in 'dynamic resource plugin'.
   * It is *read* by the kubelet DRA device driver to prepare the devices listed
