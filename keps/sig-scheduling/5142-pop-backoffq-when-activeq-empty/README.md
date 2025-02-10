@@ -295,7 +295,7 @@ Abnormal values of metrics related to scheduling queue, meaning pods are stuck i
 - `scheduler_schedule_attempts_total` metric with `scheduled` label is almost constant, while there are pending pods that should be schedulable. 
   This could mean that pods from backoffQ are taken instead of those from activeQ.
 - `scheduler_pending_pods` metric with `active` label is not decreasing, while with `backoff` is almost constant.
-- `scheduler_queue_incoming_pods_total` metric with `BackoffPop` label is increasing when there are pods in activeQ.
+- `scheduler_queue_incoming_pods_total` metric with `PopFromBackoffQ` label is increasing when there are pods in activeQ.
 - `scheduler_pod_scheduling_sli_duration_seconds` metric is visibly higher for schedulable pods.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
