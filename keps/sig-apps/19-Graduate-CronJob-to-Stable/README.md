@@ -1,4 +1,4 @@
-# KEP-19: Graduate CronJob to stable
+# KEP-19: CronJobs (previously ScheduledJobs)
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
