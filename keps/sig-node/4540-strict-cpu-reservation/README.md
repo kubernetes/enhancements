@@ -47,11 +47,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -118,7 +118,7 @@ reservedSystemCPUs: "0,32,1,33,16,48"
 When `strict-cpu-reservation` is disabled:
 ```console
 # cat /var/lib/kubelet/cpu_manager_state
-{"policyName":"static","defaultCpuSet":"0-64","checksum":1241370203}
+{"policyName":"static","defaultCpuSet":"0-63","checksum":1058907510}
 ```
 
 When `strict-cpu-reservation` is enabled:
@@ -404,10 +404,54 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-
-End users have this feature enabled in v1.32 under `CPUManagerPolicyAlphaOptions` (default to false) will continue to have the feature enabled in v1.33 under `CPUManagerPolicyBetaOptions` (default to true) automatically i.e. no extra action is needed.
-
+If you have this feature enabled in v1.32 under `CPUManagerPolicyAlphaOptions` (default to false) you will continue to have the feature enabled in v1.33 under `CPUManagerPolicyBetaOptions` (default to true) automatically i.e. no extra action is needed.
 To enable or disable this feature in v1.33, follow the feature activation and de-activation procedures described above.
+
+Manual upgrade->downgrade->upgrade testing from v1.32 to v1.33 is as follows:
+
+With the following Kubelet configuration and `cpu_manager_state` v1.32:
+
+```yaml
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+featureGates:
+  CPUManagerPolicyAlphaOptions: true
+  ...
+cpuManagerPolicy: static
+cpuManagerPolicyOptions:
+  strict-cpu-reservation: "true"
+reservedSystemCPUs: "0,32,1,33,16,48"
+...
+```
+
+```console
+# cat /var/lib/kubelet/cpu_manager_state
+{"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
+```
+
+The same Kubelet `cpu_manager_state` will be seen after upgrading to v1.33:
+```console
+# cat /var/lib/kubelet/cpu_manager_state
+{"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
+```
+
+You are recommended to remove the `CPUManagerPolicyAlphaOptions` feature gate after upgrading to v1.33 for operational integrity, but it is not mandatory.
+
+If you want to disable the feature in v1.33, you can either disable the `CPUManagerPolicyBetaOptions` feature gate, or remove the `strict-cpu-reservation` policy option. Remember to remove the `/var/lib/kubelet/cpu_manager_state` file before restarting kubelet.
+
+The following `cpu_manager_state` will be seen after the feature is disabled:
+```console
+# cat /var/lib/kubelet/cpu_manager_state
+{"policyName":"static","defaultCpuSet":"0-63","checksum":1058907510}
+```
+
+If you want to enable the feature in v1.33, you need to make sure the `CPUManagerPolicyBetaOptions` feature gate is not disabled and add the `strict-cpu-reservation` policy option. Remember to remove the `/var/lib/kubelet/cpu_manager_state` file before restarting kubelet.
+
+The following `cpu_manager_state` will be seen after the feature is enabled:
+```console
+# cat /var/lib/kubelet/cpu_manager_state
+{"policyName":"static","defaultCpuSet":"2-15,17-31,34-47,49-63","checksum":4141502832}
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
