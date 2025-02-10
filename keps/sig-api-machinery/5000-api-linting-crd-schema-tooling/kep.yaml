@@ -2,6 +2,7 @@ title: API Linting and CRD Schema Change Tooling
 kep-number: 5000
 authors:
   - "@everettraven"
+  - "@JoelSpeed"
 owning-sig: sig-api-machinery
 participating-sigs:
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced

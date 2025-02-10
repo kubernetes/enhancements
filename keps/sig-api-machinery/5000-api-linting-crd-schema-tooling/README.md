@@ -173,7 +173,11 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-This proposal introduces two new sig-api-machinery subprojects to improve the experience of developing Kubernetes APIs (including CRDs).`kube-api-linter` (aka `kal`) is a golangci-lint plugin for evaluating Go types that are used to generate CRDs to ensure they follow the Kubernetes API conventions and best practices. `crdify` is a CLI that compares CRD YAML to identify changes in CRD schemas, ensuring that any changes are compatible.
+This proposal introduces two new sig-api-machinery subprojects to improve the experience of developing Kubernetes APIs (including CRDs).
+
+A linter, `kube-api-linter` (aka `kal`) as a golangci-lint plugin for evaluating Go types that are used to generate both built-in types and CRDs, to ensure they follow the Kubernetes API conventions and best practices.
+
+A CRD schema upgrade checker, `crdify` as a CLI that compares generated CRD schemas to identify changes to the CRD schema, and ensure that any changes are compatible.
 
 ## Motivation
 
@@ -186,12 +190,16 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Despite there existing documentation on [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md) and [making changes to Kubernetes APIs](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md), there is little to no tooling that enable developers to ensure they are following best practices when developing Kubernetes-native APIs.
+Aside from existing documentation on [Kubernetes API conventions][kube-api-conventions] and [making changes to Kubernetes APIs][making-changes-to-apis],
+there is little to no tooling that enable developers to ensure they are following best practices when developing Kubernetes-native APIs.
 
 This KEP aims to improve the Kubernetes-native API development experience by adding two sig-api-machinery subprojects for:
 
-- Linting Kubernetes APIs written in Go based on the [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
+- Linting Kubernetes APIs written in Go based on the [Kubernetes API conventions][kube-api-conventions]
 - Validating changes to CustomResourceDefinition schemas in YAML
+
+[kube-api-conventions]:(https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
+[making-changes-to-apis]:(https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
 
 ### Goals
 
@@ -210,13 +218,25 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- TBD
+- Create tooling for validating CustomResourceDefinition schema changes at admission time
 
 ## Proposal
 
+This KEP introduces two new sig-api-machinery subprojects.
+The projects are intended to complement each other, and take lessons learned from [Kubernetes API conventions][kube-api-conventions] and our experience
+with [making changes to Kubernetes APIs][making-changes-to-apis], to enable the wider Kubernetes ecosystem to follow best practices and avoid breaking changes.
+
 ### Go-based Kubernetes API Linting
 
-Create a golangci-lint custom linter that evaluates Go structs and fields according to the Kubernetes API Conventions and general best practices.
+A linter, built as a `golangci-lint` plugin, that evaluates Go type defintions (typically `_types.go`), and flags deviations from Kubernetes API conventions and best practices.
+
+The linter will be configurable, allowing users to choose which of the rules they wish to adhere to, and which they wish to ignore.
+
+The linter will focus, as much as possible on providing a "built-ins" experience by default, targetting rules for types in Kubernetes/Kubernetes.
+It will also provide configuration to allow for a more "CRD" experience, adjusting the configuration and rules to cater to the needs of CRD authors.
+
+The linter will focus on static evaluation of CRD types.
+It cannot, and will not detect changes to the code, and therefore cannot assert any rule that requires information about a previous version of the types.
 
 ### CRD Schema Change Validation
 
@@ -229,6 +249,28 @@ Some examples of how the CLI may be used:
 - Comparing CRD that exists on cluster to a local YAML file of the same CRD - `crdify kube://mycrd.example.org file://mycrd.yaml`
 - Comparing CRD across git revisions (could be used in CI systems) - `crdify git://main?path=mycrd.yaml git://HEAD?path=mycrd.yaml`
 - Comparing CRD from git revision to a local file - `crdify git://main?path=mycrd.yaml file://mycrd.yaml`
+
+The schema change validation will focus on changes that may break users, and changes that can be detected by comparing the CRD schemas in YAML.
+It will not focus on static analysis, which will be the focus of the linter.
+
+### Why do we need both?
+
+When authoring types for Kubernetes, we typically use Go types, and add "markers" (e.g. `+optional`) to provide information about how the fields should behave.
+
+When authoring custom types specifically, these markers are processed by [controller-gen][controller-gen] to generate the CRD schema in YAML.
+This generation removes information, such as the type of the field, or whether a particular marker was present.
+
+To implement some of the desired checks, for example ensuring that a required field is not a pointer, or that all fields are marked either `+optional` or `+required`, we need to evaluate the Go types themselves.
+
+On the other hand, typical linter implementations do not provide the ability to compare two versions of a file, and identify changes that may break users.
+Some CRD authors are also known to have used tools like `yaml-patch` to make changes to CRDs post generation.
+
+Capturing breaking changes (such as tightening constraints on a field) requires comparing the CRD schemas old and new state, in the form of YAML.
+
+These two types of checks create a divide or static and transitional analysis, and are best served by two separate tools.
+The linter will focus on all checks that do not need to inspect transitions, and the CRD schema change validation will focus on all checks that do need to inspect transitions.
+
+[controller-gen]: https://book.kubebuilder.io/reference/controller-gen
 
 ### User Stories
 
@@ -321,19 +363,62 @@ proposal will be implemented, this is the place to discuss them.
 
 There is already existing work done on this in https://github.com/JoelSpeed/kal - the intention is to continue with this approach, promoting this repository to a sig-apimachinery sponsored subproject.
 
-Currently implemented linters are:
-- **conditions**: checks that `Conditions` fields are correctly formatted.
-- **commentstart**: checks that all comments in the API types starts with the serialized form of the type they are commenting on.
-- **integers**: checks for usage of unsupported integer types.
-- **jsontags**: checks that all fields in API types have a `json` tag and that the `json` tags are correctly formatted.
-- **maxlength**: checks that string and array fields in the API are bounded by a maximum length.
-- **nobools**: checks fields in the API types do not contain a `bool` type.
-- **nophase**: checks that fields in the API types don't contain a `Phase` or any field where `Phase` is a substring.
-- **optionalorrequired**: checks that all fields in an API type are marked as either optional or required.
-- **requiredfields**: checks that all fields in an API type marked as required follow the convention of not being pointers and not having `omitempty` in their JSON tag.
-- **statussubresource**: checks that the status subresource is correctly configured correctly for API types that back a CRD.
+#### As a golangci-lint plugin
+`goalngci-lint` is a popular linter for Go code, already adopted within the Kubernetes ecosystem, that allows for the creation of custom linters.
 
-Most implemented linters have configuration options, and all linters can be enabled/disabled as desired in a golangci-lint configuration file.
+By building linters based on the `go/analysis` package, and integrating them as a [plugin](https://golangci-lint.run/plugins/module-plugins/), `kal` integrates into the existing `golangci-lint` framework.
+
+`golangci-lint` here provides several helpful features:* Exception handling - `golangci-lint` has a powerful exception handling configuration system that is already well established. By integrating as a plugin, `kal` users can leverage this system to ignore specific rules for specific files or directories.
+* Integration with CI/CD - `golangci-lint` is already integrated into many CI/CD systems, and by creating a plugin, `kal` can be integrated into these systems as well.
+* Release tooling - `golangci-lint custom` can be used to build a custom `golangci-lint` binary with the `kal` plugin included, making it easy to distribute and use.
+* Output formatting - `golangci-lint` already has a well established pattern for printing results, and integrations into IDEs and other tools. `kal` can also leverage this as a plugin.
+* Fixes - `golangci-lint` can automatically apply fixes if a linter supplies them. `kal` implements `SuggestedFixes` for many rules, enabling users to automatically fix issues.
+* Diffing - `golangci-lint` is often used with the `--new-from-rev` flag that allows catching only new issues in a PR. `kal` can leverage this to ensure that new types are compliant with the rules, without needing to fix existing issues.
+
+Some of the above may be considered nice to have, but the decision to leverage `golangci-lint` enables us to focus on implementing the rules, and not the actual linter tooling. 
+
+#### Rules
+
+A number of rules have been inspired by the [kube-api-conventions][kube-api-conventions], as well as sourced from issues and discussion with the Kubernetes community.
+
+The following table details the rules that are identified as being useful, at the time of writing:
+
+Currently implemented linters are:
+| Name | Scope | Description | Configuration | Implemented |
+|------|-------|-------------|---------------|-------------|
+| `conditions` | All | Checks that `Conditions` fields are correctly formatted. Checks for listType and patchStrategyMarkers, as well as tags including protobuf | Protobuf and patch strategy checks can be disabled for CRDs | Yes |
+| `commentstart` | All | Checks that all comments in the API types starts with the serialized form of the type they are commenting on | N/A | Yes |
+| `integers` | All | Checks for usage of unsupported integer types, only `int32` and `int64` are allowed. No other `int` or `uint` variants. | N/A | Yes |
+| `jsontags` | All | Checks that all fields in API types have a `json` tag and that the `json` tags are correctly formatted. Expecting camelCase. | Regex to match json tags against | Yes |
+| `maxlength` | CRD (future All) | Checks that string and array fields in the API are bounded by a maximum length. Checks for `controller-gen` markers to identify limits. Prevents high CEL runtime cost. | N/A | Yes |
+| `nobools` | All | Checks that fields in the API types do not contain a `bool` type. | N/A | Yes |
+| `nofloats` | All | Checks that fields in the API types do not contain a `float32` or `float64` type. | (Future: Do not apply this rule to status fields) | Yes |
+| `nophase` | All | Checks that fields in the API types don't contain a `Phase` or any field where `Phase` is a substring. | N/A | Yes |
+| `optionalorrequired` | All | Checks that all fields in an API type are marked as either optional or required. Will replace `controller-gen` markers with their upstream equivalent | Preference over upstream or `controller-gen` markers | Yes |
+| `requiredfields` | All | Checks that all fields in an API type marked as required follow the convention of not being pointers and not having `omitempty` in their JSON tag. | N/A | Yes |
+| `statussubresource` | CRD | Checks that the status subresource is correctly configured correctly for API types that back a CRD. | N/A | Yes |
+| `arrayofstruct` | All | Checks that any struct used as an array item contains at least 1 required field. | N/A | No |
+| `defaults` | CRD | Checks that fields with default markers use the `+default` marker, and not the `controller-gen` equivalent. | Option to reverse the check for consistency across existing codebases. | No |
+| `discriminatedUnions` | CRD (future All?) | Checks that `+union` structs have a `+unionDiscriminator` field, and checks members of the union for `+unionMember` markers. | Option to enforce CEL validation of discriminator to member mapping. Option to allow non-member fields within the union struct. | No |
+| `duplicatemarkers` | All | Checks that fields in the API types do not contain duplicate markers. | N/A | No |
+| `enums` | All | Enumerations should use a type alias and `+enum` marker. Enum values should be PascalCase | Pattern to match for Enum values, a list of exceptions to allow (e.g. for CLI tool names) | No |
+| `nameformats` | CRD (future All) | Checks that common fields like `Name` and `Namespace` in API types are formatted correctly, using CEL and the format library. | N/A | No |
+| `noduration` | All | Checks that fields in the API types do not contain a `time.Duration` type. Should be `fooSeconds` or `fooMinutes` etc. | N/A | No |
+| `nomaps` | All | Checks that fields in the API types do not contain a `map` type with a struct value. Maps of subobjects are not allowed. | N/A | No |
+| `numericbounds` | CRD (future All) | Checks that numeric fields in the API types are bounded by a maximum and minimum value. | N/A | No |
+| `optionalfields` | All | Checks that all fields in an API type marked as optional follow the convention of being pointers and having `omitempty` in their JSON tag. | Option to allow non-pointers for non-struct types. | No |
+| `references` | All | Checks that fields are named `Ref/Refs` and not `Reference/References`. | Option to forbid usage of either `Ref` or `Reference`. | No |
+| `ssatags` | All | Checks that arrays have a `listType` marker | Option to forbid the use of `listType=set` for array of struct | No |
+| `statusoptional` | All | Checks that all first level children of a `status` field are marked as optional. | N/A | No |
+| `timestamps` | All | Checks that fields in the API types that are timestamps are named `FooTime` and not `FooTimestamp`. | N/A | No |
+| `typeandobjectmeta` | All | Checks for top-level types (i.e. Kinds) and checks that they have inline typemeta and objectmata is optional/omitempty. | N/A | No |
+
+A number of rules implemented are currently only applicable to CRDs, but in the future could be applicable to built-in types as well.
+There is on-going research into marking built-ins and generating validation from these markers.
+Once this research reaches its conclusion, these markers could be integrated into the rules that are at present, CRD only, to make them applicable to all types.
+
+The unimplemented rules are being tracked by an [open issue](https://github.com/JoelSpeed/kal/issues/1) on the repository.
+This enhancement is not aimed at discussion about individual rules, and comments about the rules may be left on their individual tracking issues.
 
 ### CRD Schema Change Validation
 
