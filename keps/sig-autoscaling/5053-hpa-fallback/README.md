@@ -280,8 +280,8 @@ const (
     // metric retrieval failures and is applying the configured fallback behavior.
     FallbackActive HorizontalPodAutoscalerConditionType = "FallbackActive"
 
-	// Existing conditions
-	ScalingActive HorizontalPodAutoscalerConditionType = "ScalingActive"
+    // Existing conditions
+    ScalingActive HorizontalPodAutoscalerConditionType = "ScalingActive"
     AbleToScale HorizontalPodAutoscalerConditionType = "AbleToScale"
     ScalingLimited HorizontalPodAutoscalerConditionType = "ScalingLimited"
 )
