@@ -301,7 +301,7 @@ Since the functionality is already implemented, the design details section will 
 DSR is enabled by passing `--enable-dsr=true` as a command line switch to the Windows kube-proxy.
 Prior to GA, kube-proxy will ensure that `WinDSR=true` is specified in the feature-gates and will fail to start if DSR is enabled without that.
 
-Checks for ternminating and service enpoints handle DSR traffic differently than non-DSR traffic to adhere to behavior defined in [KEP-1669: Proxy Terminating Endpoints](https://github.com/kubernetes/enhancements/issues/1669)
+Checks for terminating and service endpoints handle DSR traffic differently than non-DSR traffic to adhere to behavior defined in [KEP-1669: Proxy Terminating Endpoints](https://github.com/kubernetes/enhancements/issues/1669)
 - Local endpoints will be skipped when determining if all endpoints for a service are terminated if DSR is enabled and service type is load balancer.
 - Non-local endpoints will be skipped when considering if all endpoints for a service are non-serving if DSR is enabled and service type is load balancer.
 
@@ -603,7 +603,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 For DSR, yes, DSR can be disabled by passing `--enable-dsr=false` as a kube-proxy command line switch and restarting kube-proxy.
 
-FOr Overlay, no, overlay networking mode cannot be disabled on a per-node basis. All nodes in a cluster must use the same network type so it is not possible to switch between overlay and bridge networking on a per-node basis.
+For Overlay, no, overlay networking mode cannot be disabled on a per-node basis. All nodes in a cluster must use the same network type so it is not possible to switch between overlay and bridge networking on a per-node basis.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -646,7 +646,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-For DSR a rollout or rollback should not fail. Nodes can operator with DSR enabled or disabled per node in a cluster.
+For DSR a rollout or rollback should not fail. Nodes can operate with DSR enabled or disabled per node in a cluster.
 
 For overlay networking mode support, a rollout can fail if the CNI configuration for the node and kube-proxy configuration are not in sync. This would cause nodes to never go into the Ready state.
 
@@ -657,7 +657,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Node ready state should be monitored to ensure nodes job the cluster and are properly configured to start running pods.
+Node ready state should be monitored to ensure nodes join the cluster and are properly configured to start running pods.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
