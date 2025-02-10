@@ -90,9 +90,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
-    - [Device Attribute Additions](#device-attribute-additions)
-    - [<code>AllocatedDeviceStatus</code> Additions](#allocateddevicestatus-additions)
-    - [Scheduler DRA plugin Additions](#scheduler-dra-plugin-additions)
+    - [BasicDevice Enhancements](#basicdevice-enhancements)
+    - [AllocatedDeviceStatus Enhancements](#allocateddevicestatus-enhancements)
+    - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
   - [Composable Controller Design Overview](#composable-controller-design-overview)
@@ -315,7 +315,7 @@ This issue needs to be resolved before the beta is released.
 
 **The in-flight events cache may grow too large when waiting in PreBind.**
 
-To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind. 
+To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind.
 This prevents issues in the scheduling queue caused by keeping pods at PreBind for an extended period.
 This issue will be addressed separately as outlined in kubernetes/kubernetes#129967.
 This issue needs to be resolved before the beta is released.
@@ -330,11 +330,10 @@ The composable controller design is also discussed, emphasizing efficient utiliz
 
 ![proposal](proposal.jpg)
 
-#### Device Attribute Additions
+#### BasicDevice Enhancements
 
-To indicate whether a device is a fabric device, an attribute is added to the `Basic` within `Device`.
-This attribute will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
-To avoid impacting existing DRA functionality, the default value of this attribute is set to `false`.
+To indicate whether a device is a fabric device, fields are added to the `Basic` within `Device`.
+These fields will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
 
 ```go
 // Device represents one individual hardware instance that can be selected based
@@ -362,87 +361,87 @@ type BasicDevice struct {
     //
     // +optional
     Attributes map[QualifiedName]DeviceAttribute
-    ...
 
-}
+    // BindingGates defines the gates for binding.
+    //
+    // +optional
+    BindingGates []string
 
-...
-// DeviceAttribute must have exactly one field set.
-type DeviceAttribute struct {
-	// The Go field names below have a Value suffix to avoid a conflict between the
-	// field "String" and the corresponding method. That method is required.
-	// The Kubernetes API is defined without that suffix to keep it more natural.
+    // BindingFailureGates defines the gates for binding failure.
+    //
+    // +optional
+    BindingFailureGates []string
 
-	// IntValue is a number.
-	//
-	// +optional
-	// +oneOf=ValueType
-	IntValue *int64
-
-	// BoolValue is a true/false value.
-	//
-	// +optional
-	// +oneOf=ValueType
-	BoolValue *bool
-
-	// StringValue is a string. Must not be longer than 64 characters.
-	//
-	// +optional
-	// +oneOf=ValueType
-	StringValue *string
-
-	// VersionValue is a semantic version according to semver.org spec 2.0.0.
-	// Must not be longer than 64 characters.
-	//
-	// +optional
-	// +oneOf=ValueType
-	VersionValue *string
+    // UsageRestrictedToNode indicates if the usage of an allocation involving this device
+    // has to be limited to exactly the node that was chosen when allocating the claim.
+    //
+    // +optional
+    UsageRestrictedToNode bool
 }
 ```
 
-To indicate a fabric device, the following attribute will be added:
+#### AllocatedDeviceStatus Enhancements
 
-```yaml
-attributes:
-  kubernetes.io/needs-attaching:
-    boolValue: "true"
-```
+The `BindingGates` and `BindingFailureGates` fields within `AllocatedDeviceStatus` are used to indicate the status of the device attachment.
+These fields will contain a list of conditions, each representing a specific state or event related to the device.
 
-#### `AllocatedDeviceStatus` Additions
-
-The `Conditions` field within `AllocatedDeviceStatus` is used to indicate the status of the device attachment.
-This field will contain a list of conditions, each representing a specific state or event related to the device.
-
-For this feature, the NodeName and following `ConditionType` constants are added:
+For this feature, following fields are added:
 
 ```go
 // AllocatedDeviceStatus contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
 type AllocatedDeviceStatus struct {
-...
-    // NodeName contains the name of the node where the device needs to be attached.
+    ...
+    // BindingGates defines the gates for binding.
     //
     // +optional
-    NodeName string 
-}
+    BindingGates map[string]bool
 
-const(
-  DRADeviceNeedAttachType = "kubernetes.io/needs-attaching"
-  DRADeviceIsAttachType = "kubernetes.io/is-attached"
-  DRADeviceAttachFailType = "kubernetes.io/attach-failed"
+    // BindingFailureGates defines the gates for binding failure.
+    //
+    // +optional
+    BindingFailureGates map[string]bool
+}
+```
+
+#### Scheduler DRA Plugin Modifications
+
+When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform the following steps:
+
+1. **Set NodeSelector**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
+
+If Gates are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
+
+2. **Copy Gates**: Copy `BindingGates` and `BindingFailureGates` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
+3. **Wait for Conditions**: Wait for the following conditions:
+   - If `NeedToPreparing` is `True`, wait until `IsPrepared` is `True` before proceeding to Bind.
+   - If `PreparingFailed` is `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - If the preparation takes longer than the `PreparingTimeout` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+
+To support these steps, the following keys are defined:
+
+```go
+const (
+    // NeedToPreparing indicates that this device needs some preparation.
+    // If this flag is True, the scheduler waits in PreBind.
+    NeedToPreparing = "kubernetes.io/need-to-preparing"
+
+    // IsPrepared indicates the device ready state.
+    // If NeedToPreparing is True and IsPrepared is True, the scheduler proceeds to Bind.
+    IsPrepared = "kubernetes.io/is-prepared"
+
+    // PreparingFailed indicates the device preparation failed state.
+    // If PreparingFailed is True, the scheduler will clear the allocation in the ResourceClaim and reschedule the Pod.
+    PreparingFailed = "kubernetes.io/preparing-failed"
+
+    // PreparingTimeout indicates the prepare timeout period.
+    // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
+    PreparingTimeout = "kubernetes.io/preparing-timeout"
 )
 ```
 
-#### Scheduler DRA plugin Additions
-When `kubernetes.io/needs-attaching: true` is set, the scheduler DRA plugin is expected to do the following at `PreBind`:
-
-1. Set `AllocatedDeviceStatus.NodeName`.
-2. Add an `AllocatedDeviceStatus` with a condition of `Type: kubernetes.io/needs-attaching` and `Status: True`.
-3. Wait for a condition with `Type: kubernetes.io/is-attached` and `Status: True` in `PreBind` before proceeding.
-4. Reject the pod when observing a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
-
 Note: There is a concern that the in-flight events cache may grow too large when waiting in PreBind.
-To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind. 
+To address this, the scheduling framework will be modified to flush the in-flight events cache before PreBind.
 This prevents issues in the scheduling queue caused by keeping pods at PreBind for an extended period.
 This issue will be addressed separately as outlined in kubernetes/kubernetes#129967.
 
@@ -451,7 +450,7 @@ This issue will be addressed separately as outlined in kubernetes/kubernetes#129
 If the device attachment is successful, we expect it to take no longer than 5 minutes.
 However, to account for potential update lags, we would like to set a fixed timeout for the scheduler to 10 minutes.
 
-Even if the conditions `Type: kubernetes.io/is-attached` or `Type: kubernetes.io/attach-failed` are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
+Even if the conditions indicating that the device is attached or that the attachment failed are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
 #### Handling ResourceSlices Upon Failure of Attachment
 
@@ -486,15 +485,11 @@ driver: gpu.nvidia.com
 nodeSelector: fabric1
 devices:
   - name: device1
-    attributes:
-      ...
-      kubernetes.io/needs-attaching:
-        boolValue: "true"
+    UsageRestrictedToNode: true
+    ...
   - name: device2
-    attributes:
-      ...
-      kubernetes.io/needs-attaching:
-        boolValue: "true"
+    UsageRestrictedToNode: true
+    ...
 ```
 
 The vendor's DRA kubelet plugin will also publish the devices managed by the vendor as `ResourceSlices`.
@@ -544,11 +539,12 @@ devices:
 ```
 
 Composable DRA controller exposes free devices list on the fabric that is not yet connected to a node as a ResourceSlice.
-Controller refreshes the ResourceSlice periodically (every 10 seconds). 
+Controller refreshes the ResourceSlice periodically (every 10 seconds).
 This means that it reflects the latest list of devices on the fabric.
 It does not "detect attach or detach to nodes and update them immediately in event handlers, etc."
 This is because it is difficult for a Composable DRA running on K8s to cover all cases where a ResourceSlice needs to be updated, such as when a new device is physically added to the fabric.
-We also expect vendor DRAs to periodically update the list of devices connected to the node as a ResourceSlice. This requires the rescan function to be run periodically.
+We also expect vendor DRAs to periodically update the list of devices connected to the node as a ResourceSlice
+This requires the rescan function to be run periodically.
 
 Devices in composable ResourceSlice has a unique device name.
 However, that the device name is not an identifying name (for example, UUID).
@@ -571,7 +567,7 @@ And then, device autoscaler tries to attach new devices.
 And it also try to detach devices if they have not been used for a period of time.
 This is similar to the concept of CA.
 
-However, if CA and device autoscaler is running independently, CA may add a node with a device at the same time as the device autoscaler attaches the device. 
+However, if CA and device autoscaler is running independently, CA may add a node with a device at the same time as the device autoscaler attaches the device.
 This is a wasted resource addition.
 Therefore, there is the following idea that putting device-scale functionality in CA.
 
@@ -581,7 +577,7 @@ If so, the Processor instructs the attachment of the resource, using the composa
 If attaching the fabric ResourceSlice does not make scheduling possible, the Processor determines whether to add a new node as usual.
 
 After the device is attached, the vendor DRA updates the node-local ResourceSlices.
-The vendor DRA needs a rescan function to update the Pool/ResourceSlice. 
+The vendor DRA needs a rescan function to update the Pool/ResourceSlice.
 The scheduler can then assign the node-local ResourceSlice devices to the unschedulable Pod, operating the same as the usual DRA from this point.
 
 ### Test Plan
