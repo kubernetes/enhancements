@@ -2,7 +2,7 @@
 # "prod-readiness-approvers" group 
 # of http://git.k8s.io/enhancements/OWNERS_ALIASES
 kep-number: 4004
-alpha:
+deprecated:
   approver: "@wojtek-t"
-beta:
+disabled:
   approver: "@wojtek-t"
