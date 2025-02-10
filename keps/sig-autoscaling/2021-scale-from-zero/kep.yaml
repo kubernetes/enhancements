@@ -7,9 +7,10 @@ participating-sigs:
 status: implementable
 creation-date: "2020-09-26"
 reviewers:
-  - TBD
+  - "@gjtempleton"
+  - "@adrianmoisey"
 approvers:
-  - TBD
+  - "@gjtempleton"
 
 see-also:
 replaces:

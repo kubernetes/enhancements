@@ -154,7 +154,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-[Horizontal Pod Autoscaler][] (HPA) automatically scales the number of pods in any resource which supports the `scale` subresource based on observed CPU utilization
+[Horizontal Pod Autoscaler][] (HPA) automatically scales the number of pods in any resource which supports the `scale` subresource based on observed CPU or memory utilization
 (or, with custom metrics support, on some other application-provided metrics) from one to many replicas. This proposal adds support for scaling from zero to many replicas and back to zero for object and external metrics.
 
 [Horizontal Pod Autoscaler]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
@@ -239,7 +239,7 @@ bogged down.
 
 #### Story 1: Scale a heavy queue consumer on-demand
 
-As the operator of a video processing pipeline, I would like to reduce costs. While video processing is CPU intensive, it is not a latency sensitive workload. Therefor I want
+As the operator of a video processing pipeline, I would like to reduce costs. While video processing is CPU intensive, it is not a latency sensitive workload. Therefore I want
 my video processing workers to only be created if there is actually a video to be processed and terminated afterwards.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -366,7 +366,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `/pkg/controller/podautoscaler`: `2025-02-06` - `96.4`
 
 ##### Integration tests
 
@@ -491,7 +491,7 @@ enhancement:
 
 As this KEP changes the allowed values for `minReplicas`, special care is required for the downgrade case to not prevent any kind of updates for HPA objects using `minReplicas: 0`. The alpha code already accepts `minReplicas: 0` with the flag enabled or disabled since Kubernetes version 1.16 downgrades to any version >= 1.16 aren't an issue.
 
-The new flag `enableScaleToZero` defaults to `false`, which was has been the previous behavior. In flag should be disabled before downgrading as otherwise the
+The new flag `enableScaleToZero` defaults to `false`, which was has been the previous behavior. The flag should be disabled before downgrading as otherwise the
 HPA for deployments with zero replicas will be disabled until replicas have been
 raised explicitly to at least `1`.
 
@@ -578,8 +578,6 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
 
   HPA creation/update with `minReplicas: 0` is no longer rejected, if the `enableScaleToZero` field is set to true.
 
@@ -596,9 +594,6 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
 
 Yes. To downgrade the cluster to version that does not support scale-to-zero feature:
 
@@ -629,7 +624,7 @@ There currently unit tests for the alpha cases and tests planned to be added for
 This section must be completed when targeting beta to a release.
 -->
 
-As this is a new field every usage is opt-in. In case the kubernetes version is downgraded, currently scaled to 0 workloads might not to be manually scaled to 1 as the controller would treat them as
+As this is a new field every usage is opt-in. In case the kubernetes version is downgraded, currently scaled to 0 workloads might need to be manually scaled to 1 as the controller would treat them as
 paused otherwise.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
@@ -766,7 +761,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-The addition has the same dependencies as the currently autoscaling controller.
+The addition has the same dependencies as the current autoscaling controller.
 
 ### Scalability
 
@@ -867,7 +862,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
-
+No.
 ### Troubleshooting
 
 <!--
@@ -882,7 +877,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-
+Autoscaling will not occur, this is the same as the current behaviour.
 ###### What are other known failure modes?
 
 <!--
