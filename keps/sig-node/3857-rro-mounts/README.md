@@ -146,12 +146,19 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
       - https://github.com/kubernetes/kubernetes/blob/v1.30.0/test/e2e_node/mount_rro_linux_test.go
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+    <!--
+    This is an optional feature which is "not currently eligible for conformance tests".
+    https://github.com/kubernetes/community/blob/e22cc42fba8078b8a7242a894d7fee9507ad92dc/contributors/devel/sig-architecture/conformance-tests.md?plain=1#L67
+
+    e2e_node tests have been passing.
+    -->
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+    <!-- See the note above about the Conformance Tests -->
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved <!-- 2024-06-13 https://github.com/kubernetes/enhancements/pull/4668#pullrequestreview-2113546630 -->
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -582,7 +589,9 @@ extending the production code to implement this enhancement.
 - kubelet unit tests: takes a CRI status and populate the `RecursiveReadOnly` field in the `VolumeMountStatus` struct.
   Implemented in <https://github.com/kubernetes/kubernetes/blob/v1.30.0/pkg/kubelet/kubelet_pods_test.go#L6080-L6201>.
   The unit test set covers 16 conditions as of Kubernetes v1.30.0.
-  There is no branch coverage data (`go test -cover`), as the feature is not implemented as a dedicated Go package.
+  Coverage:
+  - `k8s.io/kubernetes/pkg/kubelet`: [2025-02-11 - 70.7%](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit)
+
 - [CRI test](https://github.com/kubernetes-sigs/cri-tools):
   similar to [e2e tests](#e2e-tests) below but without using Kubernetes Core API.
   Implemented in <https://github.com/kubernetes-sigs/cri-tools/blob/v1.30.0/pkg/validate/container_linux.go#L311-L413>.
@@ -631,9 +640,27 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - run RecursiveReadOnly="Enabled", and verify that the mount is actually recursively read-only
 - run RecursiveReadOnly="Disabled", and verify that the mount is actually not recursively read-only
 
-Tests are implemented in <https://github.com/kubernetes/kubernetes/blob/v1.30.0/test/e2e_node/mount_rro_linux_test.go>,
-and will be executed on the CI when the CI is upgraded to use containerd v2.0.
-So, there is no link to the testgrid yet.
+The `e2e_node` tests are implemented in <https://github.com/kubernetes/kubernetes/blob/v1.30.0/test/e2e_node/mount_rro_linux_test.go>.
+
+Test grid:
+
+- [`containerd-node-e2e-features-1.7`](https://testgrid.k8s.io/sig-node-containerd#containerd-node-e2e-features-1.7)
+```
+E2eNode Suite.[It] [sig-node] Mount recursive read-only [LinuxOnly] [Feature:RecursiveReadOnlyMounts] Mount recursive read-only when the runtime does not support recursive read-only mounts should accept non-recursive read-only mounts
+E2eNode Suite.[It] [sig-node] Mount recursive read-only [LinuxOnly] [Feature:RecursiveReadOnlyMounts] Mount recursive read-only when the runtime does not support recursive read-only mounts should reject recursive read-only mounts
+```
+
+- [`ci-crio-cgroupv2-node-e2e-features`](https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cgroupv2-node-e2e-features)
+```
+E2eNode Suite.[It] [sig-node] Mount recursive read-only [LinuxOnly] [Feature:RecursiveReadOnlyMounts] Mount recursive read-only when the runtime supports recursive read-only mounts should accept recursive read-only mounts
+E2eNode Suite.[It] [sig-node] Mount recursive read-only [LinuxOnly] [Feature:RecursiveReadOnlyMounts] Mount recursive read-only when the runtime supports recursive read-only mounts should reject invalid recursive read-only mounts
+```
+
+k8s-triage:
+- https://storage.googleapis.com/k8s-triage/index.html?sig=node&job=e2e&test=recursive%20read-only
+```
+0 clusters of 0 failures out of 127983 builds from 2025/1/28 9:00:38 to 2025/2/11 12:45:18.
+```
 
 ### Graduation Criteria
 
@@ -711,7 +738,8 @@ in back-to-back releases.
 
 #### GA
 - Two beta releases of Kubernetes at least
-- containerd, CRI-O, and cri-dockerd supports the feature with their GA releases
+- containerd (v2.0) and CRI-O (v1.30) support the feature with their GA releases.
+  The feature has been implemented in the `master` branch of cri-dockerd too.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1264,6 +1292,7 @@ Major milestones might include:
 -->
 - v1.30: alpha
 - v1.31: beta
+- v1.33: GA
 
 ## Drawbacks
 
