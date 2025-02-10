@@ -16,13 +16,14 @@ approvers:
 see-also:
 replaces:
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.31"
+latest-milestone: "v1.33"
 
 milestone:
   alpha: "v1.23"
   beta: "v1.31"
+  stable: "v1.33"
 
 feature-gates:
   - name: HonorPVReclaimPolicy
