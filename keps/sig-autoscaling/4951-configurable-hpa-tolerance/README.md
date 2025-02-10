@@ -491,7 +491,8 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: HPAConfigurableTolerance
-  - Components depending on the feature gate: `kube-controller-manager`
+  - Components depending on the feature gate: `kube-controller-manager` and
+    `kube-apiserver`.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -517,7 +518,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 The feature can be disabled by restarting the `kube-controller-manager` with the feature gate set to `false`.
 
-Any `tolerance` values set on existing HPAs will be ignored by the `kube-controller-manager` when the feature gate is off.
+Any `tolerance` values set on existing HPAs will be ignored by the
+`kube-controller-manager` and `kube-apiserver` when the feature gate is off.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
