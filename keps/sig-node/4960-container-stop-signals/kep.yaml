@@ -5,11 +5,13 @@ authors:
 owning-sig: sig-node
 participating-sigs: 
   - sig-node
+  - sig-windows
 creation-date: "2025-02-01"
 reviewers: 
   - '@mikebrow'
   - '@thockin'
   - '@mrunalp'
+  - '@kannon92'
 approvers: 
   - '@mrunalp'
 

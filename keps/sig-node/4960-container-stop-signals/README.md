@@ -232,11 +232,20 @@ Find the entire diff for containerd which was done for the POC [here](https://gi
 
 #### Story 1
 
-Kubernetes by default sends a SIGTERM to all containers while killing them. When running nginx on Kubernetes, this can result in nginx dropping requests as reported [here](https://github.com/Kong/kubernetes-ingress-controller/pull/283). The current solution for this issue would be to build custom images with a SIGQUIT stop signal or to write a PreStop lifecycle hook that manually kills the process gracefully, which is what is done in the PR. If we had stop signal support at the Container spec level, this would've been easier and straightforward to implement. Users wouldn't have to patch the applications running on Kubernetes to handle different termination behavior. This is also similar to [this issue](https://github.com/github/resque/pull/21). 
+Kubernetes by default sends a SIGTERM to all containers while killing them. When running nginx on Kubernetes, this can result in nginx dropping requests as reported [here](https://github.com/Kong/kubernetes-ingress-controller/pull/283). The current solution for this issue would be to build custom images with a SIGQUIT stop signal or to write a PreStop lifecycle hook that manually kills the process gracefully, which is what is done in the PR. The PreStop hook solution looks like the following:
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "kill -SIGUSR1 $(pidof my-app)"]
+```
+
+If we had stop signal support at the Container spec level, this would've been easier and straightforward to implement. Users wouldn't have to patch the applications running on Kubernetes to handle different termination behavior. This is also similar to [this issue](https://github.com/github/resque/pull/21).
 
 ### Risks and Mitigations
 
-- We'll be adding the complexity of signal handling to the pod/container spec. If users define an signal that is not handled by their containers, this can lead to pods hanging. 
+We'll be adding the complexity of signal handling to the pod/container spec. If users define an signal that is not handled by their containers, this can lead to pods hanging. In such a scenario, if the stop signal is not properly handled, the pod will hang for the terminationGracePeriodSeconds before it is forcefully killed with SIGKILL. In the default case where the terminationGracePeriodSeconds is 30 seconds, the pods will hang for 30 seconds before being killed.
 
 ## Design Details
 
@@ -311,9 +320,11 @@ If the kube-apiserver or the kubelet's version is downgraded, you will no longer
 
 Both kubelet and kube-apiserver will need to enable the feature gate for the full featureset to be present and working. If both components disable the feature gate, this feature will be completely unavailable.
 
-If only the kube-apiserver enables this feature, validation will pass, but kubelet won't understand the new lifecycle hook and will not add the stop signal when creating the ContainerConfig.
+If only the kube-apiserver enables this feature, validation will pass, but kubelet won't understand the new lifecycle hook and will not add the stop signal when creating the ContainerConfig. The StopSignal lifecycle hook would be silently dropped by the kubelet before sending the ContainerConfig to the runtime since the feature gate is disabled in the kubelet.
 
 If only the kubelet has enabled this feature, you won't be able to create a Pod which has a StopSignal lifecycle hook via the apiserver and hence the feature won't be usable even if the kubelet supports it. `containerSpec.Lifecycle.StopSignal` can be an empty value and kubelet functions as if no custom stop signal has been set for any container.
+
+For static pods, if the feature is only enabled in the kube-apiserver and not in the kubelet, the pod will be created but the StopSignal lifecycle hook would be dropped by the kubelet since the feature gate is not enabled in the kubelet. If the feature is enabled on the kubelet but not in the kube-apiserver, the pod would have the StopSignal lifecycle hook, but the apiserver wouldn't report the pod as having a StopSignal lifecycle hook since the feature is disabled in the kube-apiserver. This would be the case if we create regular pods with StopSignal and later turn off the feature in the kube-apiserver. The pods with a stop signal would continue working in this case.
 
 #### Version skew with CRI API and container runtime
 
@@ -465,6 +476,16 @@ There aren't any drawbacks to why this KEP shouldn't be implemented since it doe
 ## Alternatives
 
 As discussed above, one alternative would be to bake the stop signal into the container image definition itself. This is tricky when you're using pre-built image or when you cannot or do not want to build custom images just to update the stop signal.
+
+Another alternative is to define the stop signal as a PreStop lifecycle hook like so as mentioned in user story #1.
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "kill -SIGUSR1 $(pidof my-app)"]
+```
+
 
 ## Infrastructure Needed (Optional)
 
