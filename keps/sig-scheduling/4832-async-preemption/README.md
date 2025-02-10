@@ -399,6 +399,8 @@ Nothing.
 ## Implementation History
 
 - Sep 07, 2024: The initial KEP is submitted.
+- Nob 08, 2024: The implementation PR is merged.
+- Feb 03, 2025: The PR to promote it to beta is submitted.
 
 ## Drawbacks
 
