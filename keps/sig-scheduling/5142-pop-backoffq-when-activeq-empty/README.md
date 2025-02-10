@@ -24,7 +24,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [Scheduling throughput might be affected](#scheduling-throughput-might-be-affected)
+    - [A tiny delay on the first scheduling attempts for newly created pods](#a-tiny-delay-on-the-first-scheduling-attempts-for-newly-created-pods)
     - [Backoff won't be working as natural rate limiter in case of errors](#backoff-wont-be-working-as-natural-rate-limiter-in-case-of-errors)
     - [One pod in backoffQ could starve the others](#one-pod-in-backoffq-could-starve-the-others)
 - [Design Details](#design-details)
