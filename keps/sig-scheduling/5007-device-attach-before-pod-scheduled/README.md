@@ -247,9 +247,12 @@ The basic idea is the following:
    - **Monitoring and Preparation by Composable DRA Controllers**:
      - Composable DRA Controllers monitor the `ResourceClaim`. If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
      - Once the preparation is complete, they set the conditions to `true`.
+     - Please note that the scheduler need to abandon binding after the attach is complete in the case of a composable system.
+       Therefore, Composable DRA Controller sets the condition in BindingFailureGates to true after the attach is complete.
 
    - **Completion of the PreBind Phase**:
      - Once all conditions are met, the `PreBind` phase is completed, and the scheduler proceeds to the next step.
+     - This is for the general case. Note that in a Composable system, the scheduler abandons binding as described above.
 
 ### User Stories (Optional)
 
