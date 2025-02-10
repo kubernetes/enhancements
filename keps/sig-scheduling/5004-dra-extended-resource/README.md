@@ -244,7 +244,7 @@ resource, and dynamic extended resource.
   int on the consumption side, and list of devices with a common
   `ExtendedResourceName` on the capacity side.
 
-With these additions in place, the resources can be consumed by extended resouce
+With these additions in place, the DRA devices can be consumed by extended resource
 requests, or by DRA resouce claims. The scheduler has everything it needs to support
 the dynamic allocation of devices to requests made through extended resource and
 resource claims. No static partition of resources between extended resources and
