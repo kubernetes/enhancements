@@ -262,7 +262,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 Overlay networking mode is not compatible with dualstack networking on Windows.
 
-If kube-proxy is started with both overlay networking mode and dualstack networking enabled, a warning message will be added and ip address space with be downgraded to ipv4 only. This is existing behavior and has not caused and any reported issues.
+If kube-proxy is started with both overlay networking mode and dualstack networking enabled, a warning message will be added and ip address space with be downgraded to ipv4 only. This is existing behavior and has not caused any reported issues.
 
 ### Risks and Mitigations
 
