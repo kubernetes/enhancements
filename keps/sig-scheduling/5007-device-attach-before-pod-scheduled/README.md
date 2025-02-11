@@ -231,25 +231,26 @@ and make progress.
 
 The basic idea is the following:
 
-1. **Adding Attributes to ResourceSlice**:
-   - Add an attribute to `ResourceSlice` to indicate fabric devices. This key is predefined as part of the attributes.
+1. **Adding BindingConditions and BindingFailureConditions to ResourceSlice**:
+   - Add conditions to `ResourceSlice` to indicate the device needs some preparation before the scheduler proceeds `Bind` Phase.
+   - For example, in a composable system, it is necessary to attach devices to nodes.
+   - DRA driver can set any condition to BindingConditions or BindingFailureConditions depending on the characteristics of the device it manages.
 
 2. **Waiting for Device Attachment in PreBind**:
-   - For fabric devices, the scheduler waits for the device attachment to complete during the `PreBind` phase.
+   - The scheduler waits until all Conditions in BindingConditions are True.
+   - For fabric devices, this means that the scheduler waits for the device attachment to complete during the `PreBind` phase.
 
 3. **PreBind Process**:
    The overall flow of the `PreBind` process is as follows:
 
    - **Updating ResourceClaim**:
-     - The scheduler DRA plugin updates the `ResourceClaim` to notify the Composable DRA Controllers that device attachment is needed. 
-     This is the same as the existing `PreBind` process.
-     - In addition to the existing operations, the update to the `ResourceClaim` includes setting the necessary values in the `AllocatedDeviceStatus` conditions.
+     - The scheduler DRA plugin copies `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus.Conditions`.
 
    - **Monitoring and Preparation by Composable DRA Controllers**:
      - Composable DRA Controllers monitor the `ResourceClaim`. If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
      - Once the preparation is complete, they set the conditions to `true`.
      - Please note that the scheduler need to abandon binding after the attach is complete in the case of a composable system.
-       Therefore, Composable DRA Controller sets the condition in BindingFailureGates to true after the attach is complete.
+       Therefore, Composable DRA Controller sets the condition in BindingFailureConditions to true after the attach is complete.
 
    - **Completion of the PreBind Phase**:
      - Once all conditions are met, the `PreBind` phase is completed, and the scheduler proceeds to the next step.
@@ -366,15 +367,15 @@ type BasicDevice struct {
     // +optional
     Attributes map[QualifiedName]DeviceAttribute
 
-    // BindingGates defines the gates for binding.
+    // BindingConditions defines the conditions for binding.
     //
     // +optional
-    BindingGates []string
+    BindingConditions []string
 
-    // BindingFailureGates defines the gates for binding failure.
+    // BindingFailureConditions defines the conditions for binding failure.
     //
     // +optional
-    BindingFailureGates []string
+    BindingFailureConditions []string
 
     // UsageRestrictedToNode indicates if the usage of an allocation involving this device
     // has to be limited to exactly the node that was chosen when allocating the claim.
@@ -382,35 +383,40 @@ type BasicDevice struct {
     // +optional
     UsageRestrictedToNode bool
 
-    // BindingTimeout indicates the prepare timeout period(minute).
+    // BindingTimeoutSeconds indicates the prepare timeout period.
     // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
     //
     // +optional
-    BindingTimeout int
+    BindingTimeoutSeconds *metav1.Duration
 }
+
+const (
+    BindingConditionsMaxSize    = 4
+    BindingFailureConditionsMaxSize = 4
+)
 ```
 
-#### AllocatedDeviceStatus Enhancements
+#### AllocatedDeviceStatus.Conditions Enhancements
 
-The `BindingGates` and `BindingFailureGates` fields within `AllocatedDeviceStatus` are used to indicate the status of the device attachment.
+The `BindingConditions` and `BindingFailureConditions` fields within `AllocatedDeviceStatus.Conditions` are used to indicate the status of the device attachment.
 These fields will contain a list of conditions, each representing a specific state or event related to the device.
 
 For this feature, following fields are added:
 
 ```go
-// AllocatedDeviceStatus contains the status of an allocated device, if the
+// AllocatedDeviceStatus.Conditions contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
-type AllocatedDeviceStatus struct {
+type AllocatedDeviceStatus.Conditions struct {
     ...
-    // BindingGates defines the gates for binding.
+    // BindingConditions defines the conditions for binding.
     //
     // +optional
-    BindingGates map[string]bool
+    BindingConditions map[string]bool
 
-    // BindingFailureGates defines the gates for binding failure.
+    // BindingFailureConditions defines the conditions for binding failure.
     //
     // +optional
-    BindingFailureGates map[string]bool
+    BindingFailureConditions map[string]bool
 }
 ```
 
@@ -420,28 +426,25 @@ When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform
 
 1. **Set NodeSelector**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
 
-If Gates are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
+If Conditions are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
 
-2. **Copy Gates**: Copy `BindingGates` and `BindingFailureGates` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
+2. **Copy Conditions**: Copy `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
 3. **Wait for Conditions**: Wait for the following conditions:
-   - Wait until all conditions in the BindingGates are `True` before proceeding to Bind.
-   - If any one of the conditions in the BindingFailureGates becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
-   - If the preparation of a device takes longer than the `BindingTimeout` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - Wait until all conditions in the BindingConditions are `True` before proceeding to Bind.
+   - If any one of the conditions in the BindingFailureConditions becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - If the preparation of a device takes longer than the `BindingTimeoutSeconds` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
 
-To support these steps, for example, a DRA driver can include the following definitions in BindingGates or BindingFailureGates within a ResourceSlice:
+To support these steps, for example, a DRA driver can include the following definitions in BindingConditions or BindingFailureConditions within a ResourceSlice:
 
 ```go
 const (
-    // NeedToPreparing indicates that this device needs some preparation.
-    NeedToPreparing = "kubernetes.io/need-to-preparing"
-
     // IsPrepared indicates the device ready state.
     // If NeedToPreparing is True and IsPrepared is True, the scheduler proceeds to Bind.
-    IsPrepared = "kubernetes.io/is-prepared"
+    IsPrepared = "dra.example.com/is-prepared"
 
     // PreparingFailed indicates the device preparation failed state.
     // If PreparingFailed is True, the scheduler will clear the allocation in the ResourceClaim and reschedule the Pod.
-    PreparingFailed = "kubernetes.io/preparing-failed"
+    PreparingFailed = "dra.example.com/preparing-failed"
 )
 ```
 
@@ -464,10 +467,10 @@ During the scheduling cycle, the DRA plugin reserves a `ResourceSlice` for the `
 In the binding cycle, the reserved `ResourceSlice` is assigned during `PreBind`.
 
 If a fabric device is selected, the scheduler waits for the device attachment during `PreBind`.
-The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
+The composable controller performs the attachment operation by checking the flag of BindingConditions in the `ResourceClaim`.
 If the attachment fails, the following steps are taken:
 
-1. **Update ResourceClaim**: The composable controller updates the `AllocatedDeviceStatus` to indicate the failure of the attachment by setting a condition with `Type: kubernetes.io/attach-failed` and `Status: True`.
+1. **Update ResourceClaim**: The composable controller updates the `AllocatedDeviceStatus.Conditions` to indicate the failure of the attachment by setting a condition in BindingFailureConditions to `True`.
 2. **Fail the Binding Cycle**: The scheduler detects the failed attachment condition and fails the binding cycle. This prevents the pod from proceeding with an unattached device.
 3. **Unbind ResourceClaim and ResourceSlice**: The scheduler DRA plugin unbinds the `ResourceClaim` and `ResourceSlice` in `Unreserve`, clearing the allocation to prevent the fabric device from being used in the `ResourceClaim`.
 4. **Retry Scheduling**: In the next scheduling cycle, the scheduler attempts to bind the `ResourceClaim` again.
@@ -767,7 +770,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: DRAPrebindingGates
+  - Feature gate name: DRAPrebindingConditions
   - Components depending on the feature gate: kube-scheduler
 - [ ] Other
   - Describe the mechanism:
