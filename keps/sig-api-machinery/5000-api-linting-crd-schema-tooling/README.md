@@ -305,21 +305,22 @@ Validations in https://github.com/everettraven/crd-diff, both existing and propo
 | not | Property | Validates compatibility of changes to the not constraint of a property. Net new not constraints are flagged | No | Yes |
 
 Proposed validations are tracked via https://github.com/everettraven/crd-diff/issues/3.
+All validations have some form of configuration option. For more information on the configuration options that exist for each validation, see https://everettraven.github.io/crd-diff/#/validations
 
 Validations in https://github.com/openshift/crd-schema-checker  both existing and proposed:
 
 | Name | Scope | Description | Implemented | Carry |
 | ---- | ----- | ----------- | ----------- | ----- |
-| NoBools | Property | Validates that CRD properties are not of type `boolean` | Yes | No, if desired this is better suited for a linter in `kal` |
-| NoFloats | Property | Validates that CRD properties are not of type `number` | Yes | No, if desired this is better suited for a linter in `kal` |
-| NoUints | Property | Validates that CRD properties are not of type `uint` | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoBools | Property | Validates that CRD properties are not of type `boolean` | Yes | No, already implemented as a linter in `kal` |
+| NoFloats | Property | Validates that CRD properties are not of type `number` | Yes | No, already implemented as a linter in `kal` |
+| NoUints | Property | Validates that CRD properties are not of type `uint` | Yes | No, already implemented as a linter in `kal` |
 | NoFieldRemoval | CRD | Validates that existing fields are not removed from a CRD | Yes | Yes |
 | NoEnumRemoval | Property | Validates that existing enum values are not removed from a property | Yes | Yes |
 | NoMaps | Property | Validates that CRD properties of type `object` do not have an `additionalProperties` field specified | Yes | No, if desired this is better suited for a linter in `kal` |
 | NoDataTypeChange | Property | Validates that property type is not changed | Yes | Yes |
-| MustHaveStatus | CRD | Validates that the CRD has a status subresource | Yes | No, if desired this is better suited for a linter in `kal` |
-| ListsMustHaveSSATags | Property | Validates that lists have the `x-kubernetes-list-type` tag for server side apply | Yes | No, if desired this is better suited for a linter in `kal` |
-| ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, if desired this is better suited for a linter in `kal` |
+| MustHaveStatus | CRD | Validates that the CRD has a status subresource | Yes | No, this is already implemented as a linter in `kal` |
+| ListsMustHaveSSATags | Property | Validates that lists have the `x-kubernetes-list-type` tag for server side apply | Yes | No, this is desired as a linter in `kal` |
+| ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, this is already implemented as a subset of the `conditions` linter in `kal` |
 | NoNewRequiredFields | CRD | Validates that no new required fields are added | Yes | Yes |
 | MustNotExceedCostBudget | Property | Validates that `XValidations` don't exceed the CEL cost budget | Yes | No, if desired this is better suited for a linter in `kal` |
 
