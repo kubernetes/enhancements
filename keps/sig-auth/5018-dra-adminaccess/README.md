@@ -287,9 +287,18 @@ been added to the REST storage layer to only authorize `ResourceClaim` or
 the `kubernetes.io/dra-admin-access` label to only allow it for users with
 additional privileges.
 
+The below flowchart starts with `ResourceClaim` creation from
+`ResourceClaimTemplate` in kube-controller-manager and ends with the node
+operations.
+
 ```mermaid
 flowchart TD
-    A[Admission Request to Create/Update ResourceClaim or ResourceClaimTemplate] --> B{adminAccess: true?}
+    AA[Pod needs ResourceClaim for ResourceClaimTemplate] --> AB{adminAccess: true?}
+    AB -- No --> A
+    AB -- Yes --> AC{feature enabled?}
+    AC -- No --> AY[refuse to create ResourceClaim, Pod remains pending]
+    AC -- Yes --> A
+    A[Request to API server to Create/Update ResourceClaim or ResourceClaimTemplate] --> B{adminAccess: true and feature enabled?}
     B -- No --> E
     B -- Yes --> D[Check Namespace Label]
     D -- Label Present --> E[Request Allowed]
@@ -298,6 +307,11 @@ flowchart TD
     G --> H[Kubernetes Scheduler evaluates ResourceClaim]
     H -- Admin Access Devices --> I[Skip allocation checks; Device is not allocated]
     H -- Standard Claims --> J[Proceed with standard allocation checks]
+    J --> K
+    I --> K
+    K[kubelet asks DRA driver to prepare the ResourceClaim] --> L
+    L[DRA driver reads full ResourceClaim] --> M
+    M[DRA driver may grant additional permissions for devices with admin access]
 ```
 
 The `DRAAdminAccess` feature gate controls whether users can set the
