@@ -360,7 +360,11 @@ Yes, the feature gate can be turned off to disable the feature once it has been 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If you reenable the feature, you'll be able to create Pods with StopSignal lifecycle hooks for their containers. Without the feature gate enabled, this would make your workloads invalid.
+If you reenable the feature, you'll be able to create Pods with StopSignal lifecycle hooks for their containers. Once the gate is disabled, if you try to create new Pods with StopSignal, those would be invalid and wouldn't pass validation. Existing worklods using StopSignal should still continue to function.
+
+If the feature gate is turned off in the kubelet alone, users would be able to create Pods with StopSignal, but the field will be dropped in the kubelet. When they turn the feature gate back on in the kubelet, the kubelet would start sending the StopSignal to the container runtime again, and the container runtime starts using the custom stop signal to kill the containers. If cluster operator disables or reenables the feature gate, no change should happen to exisiting workloads.
+
+When the kubelet restarts after the feature gate is reenabled, it polls the CRI implementation for existing containers and then compares them to the ones that the API is requesting. It is recommended to drain the node before enabling/disabling the feature gate in the kubelet.
 
 ###### Are there any tests for feature enablement/disablement?
 
