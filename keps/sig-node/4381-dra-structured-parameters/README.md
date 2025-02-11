@@ -2763,6 +2763,17 @@ Test links:
   appropriate and useful).
 - Allowing time for feedback
 - Scalability and performance analysis done and published
+- Define kubelet restart, node bootstrap/restart, driver runtime, and
+  upgrade/downgrade failure modes
+  - Implement kubelet, [DRA kubeletplugin
+    framework](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin),
+    or [example driver](https://github.com/kubernetes-sigs/dra-example-driver)
+    changes based on above analysis
+    - Including existing in-flight work and bugs ex. [PR
+      #129799](https://github.com/kubernetes/kubernetes/pull/129799),
+      [kubernetes#128964](https://github.com/kubernetes/kubernetes/issues/128964),
+      [kubernetes#129402](https://github.com/kubernetes/kubernetes/issues/129402).
+
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
