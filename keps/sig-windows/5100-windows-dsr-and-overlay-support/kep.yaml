@@ -4,7 +4,7 @@ authors:
   - "@marosset"
 owning-sig: sig-windows
 participating-sigs:
-  - sig-netowkr
+  - sig-network
 status: implementable
 creation-date: 2025-01-28
 reviewers:

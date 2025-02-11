@@ -133,15 +133,15 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -394,7 +394,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Functionality described in this KEP require Windows nodes and are primariily validated with unit and e2e tests.
+Functionality described in this KEP require Windows nodes and are primarily validated with unit and e2e tests.
+The Kubernetes project does not currently have support for running integration tests for Windows specific code-paths.
 
 ##### e2e tests
 
@@ -669,6 +670,17 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 For DSR support yes, manual verification was done to ensure that DSR can be enabled and disabled on a node.
 
+The steps for the manual validation went as followed:
+
+- Create a cluster with 1 Linux control plane node and 2 Windows worker nodes.
+- Deployo a kube-proxy deamonSet with `--feature-gates=WinDSR=true` and `--enable-dsr=true` to Windows worker nodes.
+- Deploy IIS (Internet Information Services) on both Windows work nodes and expose the service with a LoadBalancer service.
+- Once the service IP became available, test that the service is from the each Windows node and outside of the cluster.
+- Redeploy the kube-proxy deamonSet with `--enable-dsr=false` to Windows worker nodes.
+- Wait for Kube-proxy to start and test that the service is still reachable from each Windows node and outside of the cluster.
+- Redeploy the kube-proxy deamonSet with `--enable-dsr=true` to Windows worker nodes.
+- Wait for Kube-proxy to start and test that the service is still reachable from each Windows node and outside of the cluster.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
@@ -898,6 +910,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature does not change the functionality of kube-proxy or other Kubernetes components if the API server or etcd is unavailable. Kube-proxy would retain the existing behavior if the API server or etcd is unavailable, which would result in new Pod and Service endpoints not routing correctly on the nodes.
+
 ###### What are other known failure modes?
 
 <!--
@@ -912,6 +926,8 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+We have not observed any additional failure modes with DSR or overlay networking mode support on Windows nodes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -928,11 +944,17 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- **2019-02-20** - DSR and overlay networking mode support added to Windows kube-proxy (k/k PR [#70896](https://github.com/kubernetes/kubernetes/pull/70896)
+- **2025-01-28** - [KEP #5100](https://github.com/kubernetes/enhancements/issues/5100) created to document the changes made to Windows kube-proxy to support DSR and overlay networking mode support and provide a path for promoting these features to GA.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+The functionally described in this KEP is already implemented and used by various cloud providers so there are no drawbacks to not implementing it.
+The drawbacks for not progressing the features to GA are that this functionality may get removed from kube-proxy in the future which would result in Windows not being able to support some CNI solutions (Calico networking with network policy support) and not being able to take advantage of DSR performance optimizations.
 
 ## Alternatives
 
@@ -941,6 +963,8 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+This functionality has already merged into k/k so other alternatives have not been considered.
 
 ## Infrastructure Needed (Optional)
 
