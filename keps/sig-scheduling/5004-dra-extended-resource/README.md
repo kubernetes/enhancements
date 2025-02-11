@@ -220,7 +220,7 @@ The basic idea is the following:
    plugin. Hence they are given a new name 'dynamic extended resource'.
 1. Introduce a special `ResourceClaim` object to keep track of device allocations
    for each dynamic extended resource requests for a pod.
-1. kube-scheduler uses DRA scheduling algorithm to fit pod's dynamic extended
+1. kube-scheduler uses DRA scheduling algorithm to fit pod's extended
    resource request to a node that advertises the extended resource in DRA
    `ResorceSlice` or traditional extended resources.
    When using DRA devices, it creates a `ResourceClaim`
