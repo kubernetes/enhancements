@@ -18,8 +18,8 @@ approvers:
   - "@saad-ali"
 see-also:
   - /keps/sig-storage/695-skip-permission-change/README.md
-stage: alpha
-latest-milestone: "v1.32"
+stage: beta
+latest-milestone: "v1.33"
 milestone:
   alpha: "v1.24"  # SELinuxMountReadWriteOncePod
   beta: "v1.27"   # SELinuxMountReadWriteOncePod
@@ -27,7 +27,8 @@ milestone:
 
   # alpha: "v1.30"  # SELinuxMount
   # alpha: "v1.32"  # SELinuxChangePolicy
-
+  # beta: "v1.33"   # SELinuxChangePolicy (enabled by default)
+  # beta: "v1.33"   # SELinuxMount (disabled by default)
 feature-gates:
   - name: SELinuxMountReadWriteOncePod
     components:
