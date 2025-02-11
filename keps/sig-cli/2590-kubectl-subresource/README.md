@@ -7,10 +7,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
-  - [Examples](#examples)
-    - [get](#get)
-    - [patch](#patch)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Subresource support](#subresource-support)
   - [Table printer](#table-printer)
@@ -43,16 +43,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -61,25 +61,26 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes supporting a new flag `--subresource` to get, patch, edit and replace kubectl
-commands to fetch and update `status` and `scale` subresources.
+This document proposes adding a new `--subresource` flag to the following kubectl
+subcommands: `get`, `patch`, `edit`, `apply` and `replace`. The goal of this flag
+is to simplify the process of fetching and updating `status` and `scale` subresources.
 
 ## Motivation
 
-Today while testing or debugging, fetching subresources (like status) of API objects via kubectl
-involves using `kubectl --raw`. Patching subresources using kubectl is not possible at all and 
-requires using curl directly. This method is very cumbersome and not user-friendly.
+Today while testing or debugging, fetching subresources (like `status`) of API objects via kubectl
+involves using `kubectl --raw`. Patching subresources using kubectl is not possible at all and
+requires using `curl` directly. This method is very cumbersome and not user-friendly.
 
-This KEP adds subresources as a first class option in kubectl to allow users to work with the API
-in a generic fashion.
+This enhancement adds subresources as a first class option in kubectl to allow users
+to work with the API in a generic fashion.
 
 ### Goals
 
-- Add a new flag `--subresource=[subresource-name]` to get, patch, edit
-and replace kubectl commands to allow fetching and updating `status` and `scale`
-subresources for all resources (built-in and CRs) that support these subresources.
-- Display pretty printed table columns for the status (uses same columns as the main resource)
-and scale subresources.
+- Add a new flag `--subresource=[subresource-name]` to `get`, `patch`, `edit`, `apply`
+and `replace` kubectl commands to allow fetching and updating `status` and `scale`
+subresources for all resources (built-in and custom resources) that support these.
+- Display pretty printed table columns for the `status` (uses same columns as the main resource)
+and `scale` subresources.
 
 ### Non-Goals
 
@@ -88,25 +89,21 @@ and scale subresources.
 
 ## Proposal
 
-kubectl commands like get, patch, edit and replace will now contain a
+kubectl commands like `get`, `patch`, `edit`, `apply` and `replace` will now contain a
 new flag `--subresource=[subresource-name]` which will allow fetching and updating
 `status` and `scale` subresources for all API resources.
 
-Note that the API contract against the subresource is identical to a full resource. Therefore updating
-the status subresource to hold new value which could potentially be reconciled by a controller 
-to a different value is *expected behavior*.
+Note that the API contract against the subresource is identical to a full resource.
+Therefore updating the status subresource to hold new value which could potentially
+be reconciled by a controller to a different value is *expected behavior*.
 
-If `--subresource` flag is used for a resource that doesn't support the subresource, 
+If `--subresource` flag is used for a resource that doesn't support the subresource,
 a `NotFound` error will be returned.
 
-### Notes/Constraints/Caveats
 
-Due to additional complexity and the general purpose of `apply` being a
-declarative command, `--subresource` will not be expanded to the `apply` command.
+### User Stories (Optional)
 
-### Examples
-
-#### get
+#### Story 1
 
 ```shell
 # for built-in types
@@ -142,7 +139,7 @@ $ kubectl get pod nginx-deployment-66b6c48dd5-dv6gl --subresource=scale
 Error from server (NotFound): the server could not find the requested resource
 ```
 
-#### patch
+#### Story 2
 
 ```shell
 # For built-in types
@@ -164,6 +161,12 @@ NAME   DESIREDREPLICAS   AVAILABLEREPLICAS
 cron   3                 2
 ```
 
+### Risks and Mitigations
+
+This feature adds a new flag which will be validated like any other flag for a limited
+set of inputs. The remaining flags passed to every command will be validated as
+before.
+
 ## Design Details
 
 ### Subresource support
@@ -182,8 +185,8 @@ If the subresource does not exist for an API resource, a `NotFound` error is ret
 
 ### Table printer
 
-To support table view for subresources using kubectl get, table convertor support is added to
-the scale and status subresoruces for built-in and CRD types.
+To support table view for subresources using `kubectl get`, table convertor support is added to
+the scale and status subresources for built-in and custom resource types.
 
 For built-in types, `StatusStore` and `ScaleStore` are updated to implement the `TableConvertor` interface.
 `StatusStore` uses the same columns as the main resource object.
@@ -193,7 +196,7 @@ The following column definitions for the `Scale` object are added to [printers.g
 - `Desired Replicas` uses the json path of `.spec.replicas` of autoscalingv1.Scale object
 
 For custom resources:
-- the status subresoruce uses the same columns as defined for the full resource, i.e., `additionalPrinterColumns` defined in the CRD.
+- the status subresource uses the same columns as defined for the full resource, i.e., `additionalPrinterColumns` defined in the CRD.
 - the scale subresource follows the same column definitions as the built-in types, and are defined in [helpers.go].
 
 [printers.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/printers/internalversion/printers.go#L88
@@ -207,45 +210,57 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/printers/internalversion`: `2023-01-12` - 71.2
-- `k8s.io/kubernetes/vendor/k8s.io/cli-runtime/pkg/resource`: `2023-01-12` - 70.9
-- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/edit`: `2023-01-12` - 100
-- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/get`: `2023-01-12` - 80.7
-- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/patch`: `2023-01-12` - 56.3
-- `k8s.io/kubernetes/vendor/k8s.io/kubectl/pkg/cmd/replace`: `2023-01-12` - 63.6
+- `k8s.io/kubernetes/pkg/printers/internalversion`: `2025-01-23` - 73.5
+- `k8s.io/cli-runtime/pkg/resource`: `2025-01-23` - 71.8
+- `k8s.io/kubectl/pkg/cmd/apply`: `2025-01-23` - 82
+- `k8s.io/kubectl/pkg/cmd/edit`: `2025-01-23` - 100
+- `k8s.io/kubectl/pkg/cmd/get`: `2025-01-23` - 80.8
+- `k8s.io/kubectl/pkg/cmd/patch`: `2025-01-23` - 56.4
+- `k8s.io/kubectl/pkg/cmd/replace`: `2025-01-23` - 63.8
 
 ##### Integration tests
 
-- `kubectl get`: [link to test coverage](https://github.com/kubernetes/kubernetes/blob/4802d7bb62c2623be8e4f940f6b5c1fcddd6c744/test/cmd/get.sh#L178-L184)
+- [kubectl get](https://github.com/kubernetes/kubernetes/blob/00fa8f119077da3c96090aa5efc5dfc9c5a78977/test/cmd/get.sh#L178-L184): https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=pull-kubernetes-integration&test=test-cmd%3A%20run_kubectl_get_tests
+- [kubectl apply](https://github.com/kubernetes/kubernetes/blob/00fa8f119077da3c96090aa5efc5dfc9c5a78977/test/cmd/apply.sh#L417): https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=pull-kubernetes-integration&test=test-cmd%3A%20run_kubectl_server_side_apply_tests
+- [TestGetSubresourcesAsTables](https://github.com/kubernetes/kubernetes/blob/00fa8f119077da3c96090aa5efc5dfc9c5a78977/test/integration/apiserver/apiserver_test.go#L1458-L1678): https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=pull-kubernetes-integration&test=TestGetSubresourcesAsTables
+- [TestGetScaleSubresourceAsTableForAllBuiltins](https://github.com/kubernetes/kubernetes/blob/ed9572d9c7733602de43979caf886fd4092a7b0f/test/integration/apiserver/apiserver_test.go#L1681-L1876): https://storage.googleapis.com/k8s-triage/index.html?pr=1&job=pull-kubernetes-integration&test=TestGetScaleSubresourceAsTableForAllBuiltins
 
 ##### e2e tests
+
+- [kubectl subresource flag](https://github.com/kubernetes/kubernetes/blob/00fa8f119077da3c96090aa5efc5dfc9c5a78977/test/e2e/kubectl/kubectl.go#L2090-L2118): https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-e2e-gci-gce&include-filter-by-regex=kubectl%20subresource
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Add the `--subresource` flag to get, patch, edit and replace commands.
+- Add the `--subresource` flag to `get`, `patch`, `edit` and `replace` subcommands.
 - Unit tests and integration tests are added.
 
 #### Beta
 
 - Gather feedback from users.
 - e2e tests are added.
+- Add the `--subresource` flag to `apply` subcommand.
 
 #### GA
 
-- User feedback gathered for at least 1 cycle.
+Since v1.27 when the feature moved to beta, there have been no reported bugs concerning this feature.
+In fact, it is reassuring to see the community use this feature quite commonly such as in bug reports:
+https://github.com/kubernetes/kubernetes/issues/116311
 
+Seeing this and given our added unit, integration and e2e tests gives us the confidence to graduate to stable.
 
 ### Upgrade / Downgrade Strategy
 
-This functionality is contained entirely within kubectl and shares its strategy.
-No configuration changes are required.
+See [Version Skew Strategy](#version-skew-strategy).
 
 ### Version Skew Strategy
 
-Not applicable. There is nothing required of the API Server, so there
-can be no version skew.
+The [kube-apiserver functionality](https://github.com/kubernetes/kubernetes/pull/103516)
+required for the `--subresource` flag to work correctly was introduced in Kubernetes v1.24.
+The current release (v1.33) exceeds the [supported version skew policy](https://kubernetes.io/releases/version-skew-policy/).
+Therefore, there are no requirements for planning the upgrade or downgrade process.
+needs to be completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -262,13 +277,13 @@ Pick one of these and delete the rest.
     - Components depending on the feature gate:
 - [x] Other
     - Describe the mechanism: A new flag for kubectl commands.
-      For the alpha stage, description will be added to expicitly call
+      For the alpha stage, description will be added to explicitly call
       out this flag as an alpha feature.
     - Will enabling / disabling the feature require downtime of the control
-      plane? No, disabling the feature would be a client behaviour.
+      plane? No, disabling the feature would be a client behavior.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? 
-      No, disabling the feature would be a client behaviour.
+      of a node?
+      No, disabling the feature would be a client behavior.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -276,7 +291,7 @@ While the feature now updates kubectl's behavior to allow updating subresources,
 it is gated by the `--subresource` flag so it does not change kubectl's default
 behavior.
 
-Subresources can also be updated using curl today so this feature only
+Subresources can also be updated using `curl` today so this feature only
 provides a consistent way to use the API via kubectl, but does not allow additional
 changes to the API that are not possible today.
 
@@ -287,8 +302,8 @@ for the `--subresource` flag and the ability to update subresources via kubectl.
 
 However, this does not "lock" us to any changes to the subresources that were made
 when the feature was enabled i.e. it does not remove the ability to update subresources
-for existing API resources completely. If a subresource of an exisiting API resource needs
-to be updated, this can be done via curl.
+for existing API resources completely. If a subresource of an existing API resource needs
+to be updated, this can be done via `curl`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -300,15 +315,13 @@ No, because it cannot be disabled or enabled in a single release.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout fail? Can it impact already running workloads?
 
 The feature is encapsulated entirely within the kubectl binary, so rollout is
-an atomic client binary update. Subresources can always be updated via curl,
+an atomic client binary update. Subresources can always be updated via `curl`,
 so there are no version dependencies.
+
+For kube-apiserver changes see [Version Skew Strategy](#version-skew-strategy).
 
 ###### What specific metrics should inform a rollback?
 
@@ -316,15 +329,11 @@ N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-This feature is completely with in the client. The upgrades and rollback of cluster will not be affected by this change.  
+This feature is completely within the client. The upgrades and rollback of cluster will not be affected by this change.
 The update and downgrade of the kubectl version will only limit the availability of the `--subresource` flag and will not
 change any API behavior.
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+For kube-apiserver changes see [Version Skew Strategy](#version-skew-strategy).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -334,13 +343,20 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
+Cluster administrator can verify [audit entries](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/)
+looking for `kubectl` invocations targeting `scale` and `status` subresources.
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+###### How can someone using this feature know that it is working for their instance?
 
 N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+
+Since this functionality doesn't heavily modify kube-apiserver I'd expected
+the SLO defined [here](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md)
+to apply.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 N/A
 
@@ -352,7 +368,7 @@ N/A
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No
+No.
 
 ### Scalability
 
@@ -388,6 +404,10 @@ No
 
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -404,14 +424,17 @@ N/A
 
 ## Implementation History
 
-2021-03-01: Initial [POC PR] created  
+2021-03-01: Initial [POC PR] created
 2021-04-06: KEP proposed
 2021-04-07: [Demo] in SIG CLI meeting
 2022-05-25: PR for alpha implementation merged
+2023-01-12: KEP graduated to Beta
+2023-03-15: e2e test added for KEP as part of beta graduation
+2025-01-23: KEP graduated to Stable
 
 [POC PR]: https://github.com/kubernetes/kubernetes/pull/99556
 [Demo]: https://youtu.be/zUa7dudYCQM?t=299
 
 ## Alternatives
 
-Alternatives would be to use curl commands directly to update subresources.
+Alternatives would be to use `curl` commands directly to update subresources.

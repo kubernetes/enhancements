@@ -8,17 +8,20 @@ participating-sigs:
   - sig-arch
 reviewers:
   - "@soltysh"
+  - "@MadhavJivrajani"
 approvers:
   - "@soltysh"
+  - "@ardaguclu"
 
 creation-date: 2021-04-06
-last-updated: 2023-01-12
+last-updated: 2025-01-23
 
-status: implementable
-stage: beta
+status: implemented
+stage: stable
 
-latest-milestone: "v1.27"
+latest-milestone: "v1.33"
 
 milestone:
   alpha: "v1.24"
   beta: "v1.27"
+  stable: "v1.33"
