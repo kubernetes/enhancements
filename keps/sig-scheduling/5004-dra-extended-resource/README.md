@@ -97,7 +97,7 @@ the node is dynamically allocated to the pod, with the remaining 7 GPUs left for
 allocation for future requests from either extended resource, or DRA resource claim.
 
 Note that another node in the same cluster has installed device plugin, which
-has advertised 'nvidia.com/gpu: 2' in its `Node`'s Capacity. The same
+may have advertised e.g. 'nvidia.com/gpu: 2' in its `Node`'s Capacity. The same
 `Deployment` can possibly be scheduled and run on this node too.
 
 ```yaml
