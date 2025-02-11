@@ -672,8 +672,44 @@ Because this KEP's core implementation(i.e. `SupplementalGroupsPolicy` handling)
 
 ### Version Skew Strategy
 
-- CRI must support this feature, especially when using `SupplementalGroupsPolicy=Strict`.
-- kubelet must be at least the version of control-plane components.
+Existing pods will still work as intended, as the new field is missing there
+(i.e. no `SupplementalGroupsPolicy` fields in existing Pods' spec).
+
+For upgrade, it will not change any current behaviors. But, please note that if you plan to use `Strict` SupplementalGroupsPolicy after the upgrade,
+we assume your CRI runtime in the cluster also support this feature (See ["Dependencies"](#dependencies) section).
+If there are some nodes whose CRI runtime does NOT support this feature, 
+- the creation of pods with `Strict` policy will be rejected depending if the feature levels of the upgraded version was beta or above,
+- the `Strict` policy will fallback to `Merge` silently if the feature level of the upgraded version was alpha.
+Please see the below matrix for more details.
+
+For downgrade, when the functionality wasn't yet used, downgrade will not be affected. But, when the functionality, especially `Strict` SupplementalGroupsPolicy, was already used, there need to be caution:
+- the running containers will continue to run with its effective policy as long as the container was not recreated.
+- However, when the containers in such pods are recreated in the node, the behavior will be varied by downgraded version, the downgraded feature gate value, and its CRI runtime support status (see the below matrix).
+
+The below matrix summarizes what will happen by upgraded/downgraded target versions, target feature gate, target CRI runtime support status:
+
+|     Target<br />kubelet version     | Target<br/>Feature Gate | Target<br/>CRI runtime<br /> support the feature? |                Pod's policy                 |         Effective Policy         | Rejected By Kubelet? | `.containerStatuses.user` reported? |
+| :---------------------------------: | :---------------------: | :-----------------------------------------------: | :-----------------------------------------: | :------------------------------: | :------------------: | :---------------------------------: |
+| <1.31<br/>(does not know the field) |           N/A           |                      Yes/No                       |                  `Strict`                   | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|      1.31 or 1.32<br/>(Alpha)       |         `True`          |                        YES                        |                  `Strict`                   |             `Strict`             |          NO          |                 YES                 |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 YES                 |
+|                                     |                         |                        NO                         |                  `Strict`                   | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |         `False`         |                        YES                        | `Strict`<br />(set when the feature was on) |             `Strict`             |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |                         |                        NO                         | `Strict`<br />(set when the feature was on) | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|     >=1.33<br />(Beta or above)     |  `True`<br />(default)  |                        YES                        |                  `Strict`                   |             `Strict`             |          NO          |                 YES                 |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 YES                 |
+|                                     |                         |                        NO                         |                  `Strict`                   |                -                 |   __REJECTED__(*)    |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |         `False`         |                        YES                        |  `Strict`<br />(set when the feature was)   |             `Strict`             |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |                         |                        NO                         |  `Strict`<br />(set when the feature was)   |                -                 |   __REJECTED__(*)    |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+
+_(*): See ["What specific metrics should inform a rollback?"](#what-specific-metrics-should-inform-a-rollback) for details_
 
 ## Production Readiness Review Questionnaire
 
@@ -749,11 +785,18 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. It can be disabled after enabled. However, users should pay attention that gids of container processes in pods with `Strict` policy would change. It means the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+Yes. It can be disabled after enabled.
+When disabled, you can not create pods with `SupplementalGroupsPolicy` fields and no `.status.containerStatuses[*].user` will be reported in pod status.
+Please note if there are pods that have been created with `Strict` policy, the policy of the containers in such pods will keep enforced even after its disablement.
+
+See ["Version Skew Strategy"](#version-skew-strategy) for more complex cases (including upgrading/downgrading).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Just the policy `Stcict` is reenabled. Users should pay attention that gids of containers in pods with `Stcict` policy would change. It means that the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+The `SupplementalGroupsPolicy` field in pod spec and `.status.containerStatuses[*].user` in pod status will be available again.
+As described above section, for pods that have been created with `Strict` policy before, the policy of the containers in such pods will still keep enforced after its re-enablement.
+
+See ["Version Skew Strategy"](#version-skew-strategy) for more complex cases (including upgrading/downgrading).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -790,12 +833,52 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+As long as you does not use the `SupplementalGroupsPolicy` fields, rollout or rollback will be safe. And, there is no impact to already running workloads because the feature have backward compatible.
+
+However, if there exist pods with `SupplementalGroupsPolicy` fields when to rollout/rollback, there need to be caution.
+Please see the matrix in ["Version Skew Strategy"](#version-skew-strategy) section for details.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+As long as you does not use the `SupplementalGroupsPolicy` fields, rollout or rollback will be safe as described in the above section.
+
+However, if there exist pods with `SupplementalGroupsPolicy` fields when to rollout/rollback, pod creation rejection might happen when
+- the feature level of rollout-ed/rollback-ed version is beta or above, and
+- pods with `Strict` policy (set when the feature gate was on previously) are scheduled to the nodes whose CRI runtime does NOT support this feature.
+
+In that case, please look for an event saying indicating SupplementalGroupsPolicy is not supported by the node as the rollback signal.
+
+```console
+$ kubectl get events -o json -w
+...
+{
+    ...
+    "kind": "Event",
+    "message": "Error: SupplementalGroupsPolicy is not supported in this node.",
+    ...
+}
+...
+```
+
+Also, the following kubelet metrics are also useful to check:
+
+- `kubelet_running_pods`: Shows the actual number of pods running
+- `kubelet_desired_pods`: The number of pods the kubelet is trying to run
+
+If these metrics are different, it means there are desired pods that can't be set to running.
+If that is the case, checking the pod events to see if they are failing for SupplementalGroupsPolicy reasons
+(like the errors shown in above) is advised, in which case it is recommended to rollback.
+
+Even this KEP does NOT include kube-scheduler integration to ensure to let the scheduler place pods requires
+the feature(`Strict` policy) to the nodes which support this feature, you can use node labels and
+pod's `nodeSelector`/`nodeAffinity` to mitigate pod rejection or error events. Please see
+["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+section below for details.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -805,11 +888,21 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+During the beta phase, the following test will be manually performed:
+- Enable the `SupplementalGroupsPolicy` feature gate for kube-apiserver and kubelet.
+- Create a pod with `supplementalGroupsPolicy` specified.
+- Disable the `SupplementalGroupsPolicy` feature gate for kube-apiserver, and confirm that the pod gets rejected.
+- Enable the `SupplementalGroupsPolicy` feature gate again, and confirm that the pod gets scheduled again.
+- Do the same for kubelet too.
+
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -828,6 +921,12 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Inspect the `supplementalGroupsPolicy` fields in Pods. You can check if the following `jq` command prints non-zero number:
+
+```bash
+kubectl get pods -A -o json | jq '[.items[].spec.securityContext? | select(.supplementalGroupsPolicy)] | length'
+```
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -841,8 +940,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
+- [x] API .status
+  - Condition name: `containerStatuses.user`
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
@@ -864,16 +963,24 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- `supplementalGroupsPolicy=Strict`: 100% of pods were scheduled into a node with the feature supported.
+  Even this KEP does NOT include scheduler integration, please see
+  ["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature) section for this.
+
+- `supplementalGroupsPolicy=Merge`: 100% of pods were scheduled into a node with or without the feature supported.
+
+- `supplementalGroupsPolicy` is unset: 100% of pods were scheduled into a node with or without the feature supported.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - [Optional] Aggregation method: `kubectl get events -o json -w`
+  - Components exposing the metric: kubelet -> kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -883,6 +990,24 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Potentially, kube-scheduler could implement a rule to avoid scheduling a pod with `supplementalGroupsPolicy: Strict`
+to a node not supporting this feature. 
+
+However, this is not covered by this KEP. It is because that more generic way would be nice in Kubernetes so that scheduler can schedule pods which requires node feature X
+to the nodes which support node feature X.
+
+As of v1.33, although kubernetes does not offer such generic way to do this, cluster admins can maintain node labels and use `nodeSelector`/`nodeAffinity` in pods instead.
+
+There are several way to automate them:
+
+- By Mutating Webhook:
+  - for nodes, which transforms `Node.Status.Feature.SupplementalGroupsPolicy` field to some node label(say `supplementalgroupspolicy-supported: "true" | "false"`),
+  - for pods, which mutates an additional `.spec.nodeSelector: { "supplementalgroupspolicy-supported": "true" }` when the pod specifies `Strict` policy.
+- By Mutating Admission Policy:
+  - although the feature is still alpha as of v1.32, you can write the equivalent policy to do this.
+
+If you appropriately managed the node labels and pods' `nodeSelector`/`nodeAffinity`, the error events or pod rejection will not expect to happen. Instead, you will need to watch `Pending` pods if there are sufficient number of nodes supporting SupplementalGroupsPolicy in the cluster.
 
 ### Dependencies
 
@@ -907,6 +1032,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+Container runtimes supporting [CRI api v0.31.0](https://github.com/kubernetes/cri-api/tree/v0.31.0) or above.
+
+For example, 
+- containerd: v2.0 or later
+- CRI-O: v1.31 or later
+
 ### Scalability
 
 <!--
@@ -918,6 +1049,20 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+
+A pod with `supplementalGroupsPolicy: Strict` may be rejected by kubelet with the probablility of $$B/A$$,
+where $$A$$ is the number of all the nodes that may potentially accept the pod,
+and $$B$$ is the number of the nodes that may potentially accept the pod but does not support this feature.
+This may affect scalability.
+
+To evaluate this risk, users may run
+`kubectl get nodes -o json | jq '[.items[].status.features]'`
+to see how many nodes support `supplementalGroupsPolicy: true` before using `Strict` policy.
+
+To mitigate this probability, you can also manage node labels and pod's `nodeSelector`/`nodeAffinity` to
+ensure pods with `Strict` policy to the nodes which support SupplementalGroupPolicy feature.
+Please see ["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature) section.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -1024,6 +1169,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+A pod cannot be created, just as in other pods.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1039,7 +1186,20 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Make sure that the node is running with CRI runtime which supports this feature.
+- Make sure that `crictl info` (with the latest crictl)
+  reports that `supplemental_groups_policy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  the CRI runtime's log.
+- Make sure that `kubectl get nodes -o json | jq '[.items[].status.features]'`
+  (with the latest kubectl and control plane)
+  reports that `supplementalGroupsPolicy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  kubelet's log.
 
 ## Implementation History
 
