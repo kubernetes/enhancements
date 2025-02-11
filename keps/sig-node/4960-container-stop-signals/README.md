@@ -358,6 +358,8 @@ No, enabling the feature gate does not change existing behaviour.
 
 Yes, the feature gate can be turned off to disable the feature once it has been enabled.
 
+The feature gate is present in kube-apiserver and kubelet. Both enabling and disabling the feature gate once it has been turned on would involve restarting the kube-apiserver and the kubelet. The update strategy of how to roll out the feature gate flips for both kube-apiserver and kubelet are described in the [Version Skew Strategy](#version-skew-strategy) section.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 If you reenable the feature, you'll be able to create Pods with StopSignal lifecycle hooks for their containers. Once the gate is disabled, if you try to create new Pods with StopSignal, those would be invalid and wouldn't pass validation. Existing worklods using StopSignal should still continue to function.
@@ -374,11 +376,13 @@ Yes, unit tests are planned for alpha for testing the disabling and reenabling o
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The change is opt-in, it doesn't impact already running workloads.
+The change is opt-in, it doesn't impact already running workloads. The only change to the existing workloads would be the stop signal showing up in the container statuses for existing Pods once the change is rolled out in the kubelet.
 
 ###### What specific metrics should inform a rollback?
 
-Pods/Containers not getting terminated properly might indicate that something is wrong, although we will aim to handle all such cases gracefully and show proper error messages if something is missing.
+Pods/Containers not getting terminated properly might indicate that something is wrong, although we will aim to handle all such cases gracefully and show proper error messages if something is missing. 
+
+You can also look at the newly proposed metric `kubelet_pod_termination_grace_period_exceeded_total` which gives you the number of Pods which are killed forcefully after the timeout for graceful termination exceeded. A high value for this metric could mean that Pods are not getting killed gracefully. This could mean that Pods might have a misconfigured stop signals and might need a rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -402,7 +406,8 @@ Inspect the workloads' Container spec for Stop lifecycle hook and also check if 
   - Condition name: 
   - Other field: 
 - [x] Other (treat as last resort)
-  - Details: Check if the containers with custom stop signals are being killed with the stop signal provided. For example your container might want to take SIGUSR1 to be exited. You can achieve this by defining it in the Container spec and have to bake it into your container image.
+  - Check if the containers with custom stop signals are being killed with the stop signal provided. For example your container might want to take SIGUSR1 to be exited. You can achieve this by defining it in the Container spec and have to bake it into your container image.
+  - Since we're showing the effective stop signal in the container status, irrespective of whether a custom signal is used or not, users can check whether Pods scheduled to every node has a StopSignal field in their statuses to confirm whether the feature is enabled and working in that particular instance of kubelet.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -410,8 +415,10 @@ N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
+    - kubelet_pod_stop_signals_count (Guage measuring number of  pods configured with each stop signal)
+    - kubelet_pod_termination_grace_period_exceeded_total (Counter counting the number of Pods that doesn't get terminated gracefully with the duration of terminationGracePeriodSeconds)
   - [Optional] Aggregation method:
   - Components exposing the metric:
 - [x] Other (treat as last resort)
@@ -419,7 +426,7 @@ N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No.
+Metrics related to pods termination could be useful to improve the observability of stop signal usage. There aren't any metrics related to the terminationGracePeriodSeconds for Pods and one such metric has been proposed above, `kubelet_pod_termination_grace_period_exceeded_total`, which counts the number of Pods that gets terminated forcefully after exceeding terminationGracePeriodSeconds.
 
 ### Dependencies
 
@@ -465,7 +472,7 @@ The same way any write to kube-apiserver/etcd would behave. This feature doesn't
 
 ###### What are other known failure modes?
 
-N/A
+Pods can fail and hang if the user configures a stop signal that is not handled in the container. This is a new failure mode that is introduced by this KEP. The KEPs would hang until they're forcecully killed with SIGKILL after the terminationGracePeriodSeconds.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -475,7 +482,7 @@ Disable the ContainerStopSignal feature gate, and restart the kube-apiserver and
 
 ## Drawbacks
 
-There aren't any drawbacks to why this KEP shouldn't be implemented since it does not change the default behaviour.
+One of the drawbacks of introducing stop signal to the container spec is that this introduces the scope of users misconfiguring the stop signal leading to unexpected behaviour such as the hanging pods as mentioned in the [Risks and Mitigations](#risks-and-mitigations) section.
 
 ## Alternatives
 
