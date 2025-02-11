@@ -222,7 +222,11 @@ The basic idea is the following:
    for each dynamic extended resource requests for a pod.
 1. kube-scheduler uses DRA scheduling algorithm to fit pod's dynamic extended
    resource request to a node that advertises the extended resource in DRA
-   `ResorceSlice`.
+   `ResorceSlice` or traditional extended resources.
+   When using DRA devices, it creates a `ResourceClaim`
+   for the pod with the allocation result recording which
+   devices were picked, as usual. More details on this special `ResourceClaim` follow below.
+   When using extended resources advertised for a node, the normal resource tracking reserves them.
 1. kubelet asks DRA driver to prepare devices in the special `ResourceClaim`,
    and pass the devices to containers with the dynamic extended resource
    requests.
