@@ -83,7 +83,7 @@ either extended resource, or DRA resource claim.
 
 There are three major motivations for the solution in this KEP.
 
-* Enable the existing applications to run without modification.
+* Enable existing applications to run without modification.
 
 * Enable application developers, operators to transition to DRA gradually at
   their own pace.
