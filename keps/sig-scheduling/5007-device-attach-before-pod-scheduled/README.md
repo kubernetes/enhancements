@@ -382,7 +382,7 @@ type BasicDevice struct {
     // +optional
     UsageRestrictedToNode bool
 
-    // BindingTimeout indicates the prepare timeout period.
+    // BindingTimeout indicates the prepare timeout period(minute).
     // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
     //
     // +optional
