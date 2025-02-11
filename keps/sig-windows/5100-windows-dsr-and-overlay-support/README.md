@@ -141,10 +141,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -232,7 +232,7 @@ DSR and Overlay networking mode support is already implemented in Windows kube-p
 This proposal is to promote the existing implementations to GA.
 
 Additionally, DSR support on Windows is supported on both EKS and AKS.
-Both DSR and overlay networking support have been used in the Windows CI pipelines running release-informing 
+Both DSR and overlay networking support have been used in the Windows CI pipelines running release-informing jobs since K8s v1.20.
 
 ### User Stories (Optional)
 
@@ -281,7 +281,7 @@ Consider including folks who also work outside the SIG or subproject.
 Enabling DSR and overlay networking mode support in Windows kube-proxy both have very little risk.
 
 For DSR, the Windows Host Network Service handles all of the logic for managing network traffic; kube-proxy only needs to specify if DSR should be used when creating/sycing load balancer rules.
-Additionally, DSR must be enabled with a kube-proxy command switch switch (--enable-dsr=true) disabling DSR is can be performed by redeploying kube-proxy on Windows nodes.
+Additionally, DSR must be enabled with a kube-proxy command switch (--enable-dsr=true) disabling DSR is can be performed by redeploying kube-proxy on Windows nodes.
 
 Overlay networking support in Windows has been used in the Windows CI pipelines running release-informing [capz-windows-master](https://testgrid.k8s.io/sig-windows-signal#capz-windows-master) jobs since K8s v1.20.
 
@@ -374,7 +374,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-Unit tests validating overlay networking behavior exist at https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/winkernel/proxier_test.go but must run on Windows machines so coverage is not reported in ci-kubernetes-coverage-unit. 
+Kube-proxy for Windows must run on Windows machines so coverage is not reported in ci-kubernetes-coverage-unit. 
+This coverage data was run manually on a Windows Server 2022 machine:
+
+- k8s.io/kubernetes/pkg/proxy/winkernel: 2025-02-11 - 58.8% of statements
 
 
 ##### Integration tests
@@ -450,6 +453,7 @@ N/A - This feature is already implemented.
 
 - Test passes on testgrid with WinDSR and Winoverlay enabled on Windows nodes are running regularly.
 - Unit tests validating expected behavior for both DSR and overlay networking mode are added.
+  - For DSR, unit tests validating feature gate is set correctly and that the correct flags are passed to HNS calls will also be added.
 
 #### GA
 
@@ -627,7 +631,8 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 
 For overlay, no, because the feature requires the cluster to be configured for overlay networking mode and cannot be enabled on a per-node basis.
 
-For DSR, no, but they can be added.
+For DSR, unit tests will be added to validate that DSR is enabled and disabled correctly and that the correct flags are passed to HNS calls for each case.
+These will be required for the feature to move to beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -793,6 +798,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 DNS and CNI solutions must be deployed in the cluster.
 
+Both DSR and overlay networking modes are supported for all patch versions of Windows Server 2022 and Windows Server 2025.
+DSR requires Windows Server 2019 with May 2020 updates (or later).
+
 ### Scalability
 
 <!--
@@ -907,6 +915,34 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+
+A troubleshooting guide for general Windows networking issues can be found at https://learn.microsoft.com/en-us/troubleshoot/windows-server/software-defined-networking/troubleshoot-windows-server-software-defined-networking-stack
+
+https://github.com/microsoft/SDN/ contains some additional troubleshooting scripts to collect detailed information and can help in troubleshooting
+- https://github.com/microsoft/SDN/blob/master/Kubernetes/windows/hns.v2.psm1 is a powershell module with cmdlets for inspecting HNS policies and endpoints
+- https://github.com/microsoft/SDN/blob/master/Kubernetes/windows/helper.psm1 contains useful helper functions for troubleshooting
+- https://github.com/microsoft/SDN/tree/master/Kubernetes/windows/debug contains various powershell scripts for enabling tracing, collectings stats and perf counterd, starting packet captures, etc
+
+Troubleshooting issues with Direct Server Return (DSR) on Windows:
+
+- Ensure that the kube-proxy command line switch `--enable-dsr=true` is set and `--feature-gates=WinDSR=true` is set.
+- Inspect kube-proxy logs for any warnings or errors
+- If everything looks correct, log onto the node and inspect the HNS rules to ensure DSR is enabled for the load balancer rules.
+  - Log onto the node and use `hnsdiag.exe list loadbalancers -d` to list all the load balancers and details about their rules.
+    You should see `IsDSR:true` for load balancer policies proxied by kube-proxy.
+  - You can use `hnsdiag.exe` to get detailed infromation about local networks and endpoints in addition to loadbalancers.
+- If you are still having issues create an issue at https://github.com/microsoft/windows-containers
+
+Troubleshooting issues with overlay networking mode on Windows:
+
+- Ensure that the CNI solution has either created a HNS network of type `Overlay` or that instructions provided by the CNI solution have been followed to create the network.
+- Ensure that the name of the network created above is passed to kube-proxy with the `$Env:KUBE_NETWORK` environment variable.
+- Check kube-proxy logs for any warnings or errors.
+- If everything looks correct, log onto the node and inspect the HNS rules to ensure that the source VIP is being used correctly.
+  - Log onto the node and use `hnsdiag.exe list loadbalancers -d` to list all the load balancers and details about their rules.
+    You should see the source VIP being used for load balancer policies proxied by kube-proxy.
+  - You can use `hnsdiag.exe` to get detailed infromation about local networks and endpoints in addition to loadbalancers.
+- If you are still having issues create an issue at https://github.com/microsoft/windows-containers 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
