@@ -9,12 +9,10 @@ status: implementable
 creation-date: 2024-01-21
 reviewers:
   - deads2k
-  - liggitt
   - msau42
   - thockin
 approvers:
   - deads2k
-  - liggitt
 
 see-also:
   - "/keps/sig-api-machinery/4153-declarative-validation"
