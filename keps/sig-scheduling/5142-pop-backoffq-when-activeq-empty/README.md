@@ -99,100 +99,105 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes improving scheduling queue behavior by popping pods from backoffQ when activeQ is empty. 
-This would allow to increase utilization of kube-scheduler cycles as well as reduce waiting time for pending pods 
-that were previously unschedulable.
+This KEP proposes improving scheduling queue behavior by popping pods from the backoffQ when the activeQ is empty.
+This would allow to process potentially schedulable pods ASAP, eliminating a penalty effect of the backoff queue.
 
 ## Motivation
 
-There are three queues in scheduling queue: 
-- activeQ contains pods ready for scheduling, 
+There are three queues in the scheduler:
+- activeQ contains pods ready for scheduling,
 - unschedulableQ holds pods that were unschedulable in their scheduling cycle and are waiting for cluster state to change,
 - backoffQ stores pods that failed scheduling attempts (either due to being unschedulable or errors) and could be schedulable again,
   but applying a backoff penalty, scaled with the number of attempts.
 
-When activeQ is not empty, scheduler pops the highest priority pod from activeQ.
-However, when activeQ is empty, kube-scheduler idles, waiting for any pod being present in activeQ, 
-even if pods are in the backoffQ but their backoff period hasn't expired. 
-In scenarios when pods are waiting, but in backoffQ, 
-kube-scheduler should be able to consider those pods for scheduling, even if the backoff is not completed, to avoid the idle time.
+When the activeQ is not empty, the scheduler pops the highest priority pod from the activeQ.
+However, when the activeQ is empty, the kube-scheduler idles,
+even if pods are in the backoffQ waiting for their backoff period to expire.
+To avoid delaying assessment of potentially schedulable pods,
+kube-scheduler should consider those pods for scheduling, even if the backoff time hasn't expired yet.
+However, pods that are in the backoffQ due to errors, should not bypass the backoff time,
+since it plays also rate limiting role, avoiding system overload due to too frequent retries.
 
 ### Goals
 
-- Improve scheduling throughput and kube-scheduler utilization when activeQ is empty, but pods are waiting in backoffQ.
-- Run `PreEnqueue` plugins when putting pod into backoffQ.
+- Improve scheduling throughput and kube-scheduler utilization when the activeQ is empty, but pods are waiting in the backoffQ.
+- Run `PreEnqueue` plugins when putting a pod into the backoffQ.
 
 ### Non-Goals
 
-- Refactor scheduling queue by changing backoff logic or merging activeQ with backoffQ.
+- Refactor the scheduling queue by changing backoff logic or merging the activeQ with the backoffQ.
 
 ## Proposal
 
-At the beginning of scheduling cycle, pod is popped from activeQ. 
-If activeQ is empty, it waits until a pod is placed into the queue.
-This KEP proposes to pop the pod from backoffQ when activeQ is empty.
+At the beginning of the scheduling cycle, a pod is popped from the activeQ.
+Currently, when activeQ is empty, it waits until some pod is placed into the queue.
+This KEP proposes to pop the pod from the backoffQ when the activeQ is empty,
+however moving pods from the backoffQ to activeQ will still work as before to avoid the problem of pods starvation, 
+which was the original reason of introducing the backoffQ.
 
-To ensure the `PreEnqueue` is called for each pod taken into scheduling cycle,
-`PreEnqueue` plugins would be called before putting pods into backoffQ.
-It won't be done again when moving pods from backoffQ to activeQ.
+To ensure the `PreEnqueue` is called for each pod taken into the scheduling cycle,
+`PreEnqueue` plugins would be called before putting pods into the backoffQ.
+It won't be done again when moving pods from the backoffQ to the activeQ.
 
 ### Risks and Mitigations
 
 #### A tiny delay on the first scheduling attempts for newly created pods
 
-While the scheduler handles a pod directly popping from backoffQ, another pod that should be scheduled before the pod being scheduled now, may appear in activeQ.
+While the scheduler handles a pod directly popping from the backoffQ, another pod that should be scheduled before the pod being scheduled now, may appear in the activeQ.
 However, in the real world, if the scheduling latency is short enough, there won't be a visible downgrade in throughput.
-This will only happen if there are no pods in activeQ, so this can be mitigated by an appropriate rate of pod creation.
+This will only happen if there are no pods in the activeQ, so this can be mitigated by an appropriate rate of pod creation.
 
-#### Backoff won't be working as natural rate limiter in case of errors
+#### Backoff won't be working as a natural rate limiter in case of errors
 
-In case of API calls errors (e.g. network issues), backoffQ allows to limit number of retries in a short term.
+In case of API calls errors (e.g., network issues), the backoffQ allows to limit the number of retries in a short term.
 This proposal will take those pods earlier, leading to losing this mechanism.
 
-After merging [kubernetes#128748](github.com/kubernetes/kubernetes/pull/128748), 
-it will be possible to distinguish pods backing off because of errors from those backing off because of unschedulable attempt.
-This information could be used when popping, by filtering only the pods that are from unschedulable attempt or even splitting backoffQ.
+After merging [kubernetes#128748](github.com/kubernetes/kubernetes/pull/128748),
+it will be possible to distinguish pods backing off because of errors from those backing off because of an unschedulable attempt.
+This information could be used when popping, by filtering only the pods that are from an unschedulable attempt or even splitting the backoffQ.
 
-This has to be resolved before the beta is released.
+This has to be resolved before the beta is released, which means before the release of the feature.
 
-#### One pod in backoffQ could starve the others
+#### One pod in the backoffQ could starve the others
 
-The head of BackoffQ is the pod with the closest backoff expiration,
+The head of the BackoffQ is the pod with the closest backoff expiration,
 and the backoff time is calculated based on the number of scheduling failures that the pod has experienced.
 If one pod has a smaller attempt counter than others,
 could the scheduler keep popping this pod ahead of other pods because the pod's backoff expires faster than others?
-Actually, that wouldn't happen because the scheduler would increment the attempt counter of pods from backoffQ as well,
+Actually, that wouldn't happen because the scheduler would increment the attempt counter of pods from the backoffQ as well,
 which would make the backoff time of pods bigger every after the scheduling attempt,
 and the pod that had a smaller attempt number eventually won't be popped out.
 
 ## Design Details
 
-### Popping from backoffQ in activeQ's pop()
+### Popping from the backoffQ in activeQ's pop()
 
 To achieve the goal, activeQ's `pop()` method needs to be changed:
-1. If activeQ is empty, then instead of waiting for a pod to arrive at activeQ, popping from backoffQ is tried.
-2. If backoffQ is empty, then `pop()` is waiting for pod as previously.
-3. If backoffQ is not empty, then the pod is processed like the pod would be taken from activeQ, including increasing attempts number.
+1. If the activeQ is empty, then instead of waiting for a pod to arrive at the activeQ, popping from the backoffQ is tried.
+2. If the backoffQ is empty, then `pop()` is waiting for a pod as previously.
+3. If the backoffQ is not empty, then the pod is processed like the pod would be taken from the activeQ, including increasing attempts number.
    It is poping from a heap data structure, so it should be fast enough not to cause any performance troubles.
 
-To support monitoring, when popping from backoffQ, 
+To support monitoring, when popping from the backoffQ,
 the `scheduler_queue_incoming_pods_total` metric with an `activeQ` queue and a new `PopFromBackoffQ` event label will be incremented.
 
-### Notifying activeQ condition when new pod appears in backoffQ
+### Notifying activeQ condition when a new pod appears in the backoffQ
 
-Pods might appear in backoffQ while `pop()` is hanging on point 2. 
-That's why it will be required to call `broadcast()` on condition after adding a pod to backoffQ.
+Pods might appear in the backoffQ while `pop()` is hanging on point 2.
+That's why it will be required to call `broadcast()` on the condition after adding a pod to the backoffQ.
 It shouldn't cause any performance issues.
 
-We could eventually want to move backoffQ under activeQ's lock, but it's out of scope of this KEP.
+We could eventually want to move the backoffQ under activeQ's lock, but it's out of scope of this KEP.
 
-### Calling PreEnqueue for backoffQ
+### Calling PreEnqueue for the backoffQ
 
-`PreEnqueue` plugins have to be called for every pod before they are taken to scheduling cycle.
-Initially, those plugins were called before moving pod to activeQ.
-With this proposal, `PreEnqueue` will need to be called before moving pod to backoffQ 
-and those calls need to be skipped for the pods that are moved later from backoffQ to activeQ.
-At moveToActiveQ level, these two paths could be distinguished by checking if event is equal to `BackoffComplete`.
+Currently, we call `PreEnqueue` at a single place, every time pods are being moved to the activeQ.
+But, with this proposal, `PreEnqueue` will be called before moving a pod to the backoffQ, not when popping pods directly from the backoffQ.
+Otherwise, a direct popping would be inefficient: it has to take the top backoffQ pod, check if it goes through `PreEnqueue` plugins, 
+if not check the next backoffQ pod, until it finds the pod that goes through all `PreEnqueue` plugins.
+Also, it means we'd have two paths that `PreEnqueue` plugins are invoked: when new pods are created and entering the scheduling queue, 
+and when pods are pushed into the backoffQ.
+At the moveToActiveQ level, these two paths could be distinguished by checking if the event is equal to `BackoffComplete`.
 
 ### Test Plan
 
@@ -213,20 +218,21 @@ to implement this enhancement.
 
 ##### e2e tests
 
-Feature is scoped within kube-scheduler internally, so there is no interaction between other components.
-Whole feature should be already covered by integration tests.
+The feature is scoped within the kube-scheduler internally, so there is no interaction between other components.
+The whole feature should be already covered by integration tests.
 
 ### Graduation Criteria
 
+The feature will start from beta and be enabled by default, because it is an internal kube-scheduler feature and guarded by a flag.
+
 #### Alpha
 
-- Feature implemented behind a feature flag.
-- All tests from [Test Plan](#test-plan) implemented.
+N/A
 
 #### Beta
 
-- Gather feedback from users and fix reported bugs.
-- Change the feature flag to be enabled by default.
+- Feature implemented behind a feature flag and enabled by default.
+- All tests from [Test Plan](#test-plan) implemented.
 - Make sure [backoff in case of error](#backoff-wont-be-working-as-natural-rate-limiter-in-case-of-errors) is not skipped.
 
 #### GA
@@ -237,8 +243,8 @@ Whole feature should be already covered by integration tests.
 
 **Upgrade**
 
-During the alpha period, users have to enable the feature gate `SchedulerPopFromBackoffQ` to opt in this feature.
-This is purely in-memory feature for kube-scheduler, so no special actions are required outside the scheduler.
+During the beta period, the feature gate `SchedulerPopFromBackoffQ` is enabled by default, so users don't need to opt in.
+This is a purely in-memory feature for the kube-scheduler, so no special actions are required outside the scheduler.
 
 **Downgrade**
 
@@ -246,7 +252,7 @@ Users need to disable the feature gate.
 
 ### Version Skew Strategy
 
-This is purely in-memory feature for kube-scheduler, and hence no version skew strategy.
+This is a purely in-memory feature for the kube-scheduler, and hence no version skew strategy.
 
 ## Production Readiness Review Questionnaire
 
@@ -260,47 +266,43 @@ This is purely in-memory feature for kube-scheduler, and hence no version skew s
 
 ###### Does enabling the feature change any default behavior?
 
-Pods that are backing off might be scheduled earlier when activeQ is empty.
+Pods that are backing off might be scheduled earlier when the activeQ is empty.
 
-###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+###### Can the feature be disabled once it has been enabled (i.e., can we roll back the enablement)?
 
 Yes.
-The feature can be disabled in Alpha and Beta versions
-by restarting kube-scheduler with the feature-gate off.
+The feature can be disabled in Beta version by restarting the kube-scheduler with the feature-gate off.
 
-###### What happens if we reenable the feature if it was previously rolled back?
+###### What happens if we re-enable the feature if it was previously rolled back?
 
-The scheduler again starts to pop pods from backoffQ when activeQ is empty.
+The scheduler again starts to pop pods from the backoffQ when the activeQ is empty.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Given it's purely in-memory feature and enablement/disablement requires restarting the component (to change the value of feature flag), 
+Given it's a purely in-memory feature and enablement/disablement requires restarting the component (to change the value of the feature flag),
 having feature tests is enough.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The partly failure in the rollout isn't there because the scheduler is the only component to rollout this feature. 
+The partial failure in the rollout isn't there because the scheduler is the only component to roll out this feature.
 But, if upgrading the scheduler itself fails somehow, new Pods won't be scheduled anymore,
 while Pods, which are already scheduled, won't be affected in any case.
 
 ###### What specific metrics should inform a rollback?
 
-Abnormal values of metrics related to scheduling queue, meaning pods are stuck in activeQ:
-- `scheduler_schedule_attempts_total` metric with `scheduled` label is almost constant, while there are pending pods that should be schedulable. 
-  This could mean that pods from backoffQ are taken instead of those from activeQ.
-- `scheduler_pending_pods` metric with `active` label is not decreasing, while with `backoff` is almost constant.
-- `scheduler_queue_incoming_pods_total` metric with `PopFromBackoffQ` label is increasing when there are pods in activeQ.
-- `scheduler_pod_scheduling_sli_duration_seconds` metric is visibly higher for schedulable pods.
+Abnormal values of metrics related to the scheduling queue, meaning pods are stuck in the activeQ:
+- The `scheduler_schedule_attempts_total` metric with the `scheduled` label is almost constant, while there are pending pods that should be schedulable.
+  This could mean that pods from the backoffQ are taken instead of those from the activeQ.
+- The `scheduler_pending_pods` metric with the `active` label is not decreasing, while with the `backoff` is almost constant.
+- The `scheduler_queue_incoming_pods_total` metric with the `PopFromBackoffQ` label is increasing when there are pods in the activeQ.
+  If this metric with this specific label is always higher than for other labels, it could also mean that this feature should be rolled back.
+- The `scheduler_pod_scheduling_sli_duration_seconds` metric is visibly higher for schedulable pods.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No. This feature is a in-memory feature of the scheduler 
+No. This feature is an in-memory feature of the scheduler
 and thus calculations start from the beginning every time the scheduler is restarted.
 So, just upgrading it and upgrade->downgrade->upgrade are both the same.
 
@@ -312,8 +314,7 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-This feature is used during scheduling when activeQ is empty and if the feature gate is enabled.
-Also, `scheduler_queue_incoming_pods_total` could be checked, by querying for new `PopFromBackoffQ` event label.
+They can check `scheduler_queue_incoming_pods_total` with the `PopFromBackoffQ` event label.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -321,7 +322,7 @@ N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)), 
+In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)),
 and this feature shouldn't bring any regression there.
 
 Based on that `schedule_attempts_total` shouldn't be less than 100 in a second,
@@ -369,7 +370,7 @@ No
 
 No
 
-###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+###### Will enabling / using this feature result in a non-negligible increase of resource usage (CPU, RAM, disk, IO,...) in any components?
 
 No
 
@@ -403,7 +404,7 @@ Why should this KEP _not_ be implemented?
 
 ### Move pods in flushBackoffQCompleted when activeQ is empty
 
-Moving the pod popping from backoffQ to the existing `flushBackoffQCompleted` function (which already periodically moves pods to activeQ) avoids changing `PreEnqueue` behavior, but it has some downsides. 
-Because flushing runs every second, it would be needed to pop more pods when activeQ is empty. 
-This require to figure out how many pods to pop, either by making it configurable it or calculating it. 
-Also, if schedulable pods show up in activeQ between flushes, a bunch of pods from backoffQ might break activeQ priorities and slow down scheduling for the pods that are ready to go.
+Moving the pod popping from the backoffQ to the existing `flushBackoffQCompleted` function (which already periodically moves pods to the activeQ) avoids changing `PreEnqueue` behavior, but it has some downsides.
+Because flushing runs every second, it would be needed to pop more pods when the activeQ is empty.
+This requires figuring out how many pods to pop, either by making it configurable or calculating it.
+Also, if schedulable pods show up in the activeQ between flushes, a bunch of pods from the backoffQ might break activeQ priorities and slow down scheduling for the pods that are ready to go.
