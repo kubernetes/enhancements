@@ -291,9 +291,7 @@ If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
-The `ResizePolicy` field is mutable. Only append is strictly required to support in-place resize
-(for new resource requirements), and we may reevaluate full mutability if additional edge cases are
-discovered in implementation.
+The `ResizePolicy` field is immutable.
 
 #### Resize Status
 
@@ -856,8 +854,7 @@ pod updates where `.status...resources` changed.
 Pod v1 core API:
 * extend API
 * auto-reset Status.Resize on changes to Resources
-* added validation allowing only CPU and memory resource changes,
-* set default for ResizePolicy
+* added validation allowing only CPU and memory resource changes
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 * for ResourceQuota, podEvaluator.Handler implementation is modified to allow
