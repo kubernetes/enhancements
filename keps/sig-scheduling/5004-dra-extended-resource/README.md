@@ -9,10 +9,16 @@
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Resource Slice API](#resource-slice-api)
+  - [Device Class API](#device-class-api)
   - [Resource Claim API](#resource-claim-api)
   - [Pod API](#pod-api)
-  - [Scheduling for Dynamic Extended Resource](#scheduling-for-dynamic-extended-resource)
-  - [Actuation for Dynamic Extended Resource](#actuation-for-dynamic-extended-resource)
+  - [Scheduling for Extended Resource backed by DRA](#scheduling-for-extended-resource-backed-by-dra)
+    - [EventsToRegister](#eventstoregister)
+    - [Score](#score)
+    - [Reserve](#reserve)
+    - [Prebind](#prebind)
+    - [Unreserve](#unreserve)
+  - [Actuation for Extended Resource backed by DRA](#actuation-for-extended-resource-backed-by-dra)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -97,8 +103,8 @@ the node is dynamically allocated to the pod, with the remaining 7 GPUs left for
 allocation for future requests from either extended resource, or DRA resource claim.
 
 Note that another node in the same cluster has installed device plugin, which
-may have advertised e.g. 'nvidia.com/gpu: 2' in its `Node`'s Capacity. The same
-`Deployment` can possibly be scheduled and run on this node too.
+may have advertised e.g. 'example.com/gpu: 2' in its `Node`'s Capacity. The same
+`Deployment` can possibly be scheduled and run on that node too.
 
 ```yaml
 apiVersion: apps/v1
@@ -122,14 +128,14 @@ spec:
         args: ["nvidia-smi && tail -f /dev/null"]
         resources:
           limits:
-            nvidia.com/gpu: 1
+            example.com/gpu: 1
 ```
 
 ```yaml
 apiVersion: resource.k8s.io/v1beta1
 kind: ResourceSlice
 metadata:
-  name: gke-drabeta-n1-standard-4-2xt4-346fe653-zrw2-gpu.nvidia.coqj92d
+  name: gke-drabeta-n1-standard-4-2xt4-346fe653-zrw2-gpu.coqj92d
 spec:
   devices:
   - basic:
@@ -148,9 +154,9 @@ spec:
     name: gpu-6
   - basic:
     name: gpu-7
-  driver: gpu.nvidia.com
+  driver: gpu.example.com
   nodeName: gke-drabeta-n1-standard-4-2xt4-346fe653-zrw2
-  extendedResourceName: nvidia.com/gpu
+  extendedResourceName: example.com/gpu
 ```
 
 ```yaml
@@ -181,7 +187,7 @@ status:
     hugepages-2Mi: "0"
     memory: 15335536Ki
     pods: "110"
-    nvidia.com/gpu: 2
+    example.com/gpu: 2
 ```
 
 
@@ -190,8 +196,8 @@ non-goals of this KEP.
 
 ### Goals
 
-* Introduce the ability for DRA to advertise extended resources listed in a
-  ResourceSlice, and for the scheduler to consider them for allocation.
+* Introduce the ability for DRA to advertise extended resources, and for the
+  scheduler to consider them for allocation.
 
 * Enable application operators to use the existing extended resource request in
   pod spec to request for DRA resources.
@@ -200,24 +206,36 @@ non-goals of this KEP.
   for the short term. Its ease of use is one big advantage to keep it remaining
   useful for the long term.
 
+* Device plugin API must not change. The existing device plugin drivers must
+  continue working without change.
+
+* DRA driver API change must be minimal, if there is any. Core kubernetes
+  (kube-scheduler, kubelet) is preferred over DRA driver for any change needed
+  to support the feature.
+
 ### Non-Goals
 
-* Simplify DRA driver developement. The DRA driver needs to support both DRA
-  and extended resource API. This KEP adds complexity and cost to the driver.
+* Minimize kubelet or kube-scheduler changes. The feature requires necessary
+  changes in both scheduling and actuation.
+
+* Keep advertising pod.status.Capacity for extended resources backed by DRA.
+  It is used for extended resources backed by device plugin only.
 
 ## Proposal
 
 The basic idea is the following:
 
-1. Introduce a new concept `dynamic extended resource`. It is like the current
-   extended resource, in that, it has a string name, and a discrete countable
-   quantity. Its capacity is provided through dynamic resource `ResourceSlice`,
-   its consumption is specified through current pod's extended resource request.
+1. Introduce `extended resource backed by DRA`. It is like the current extended
+   resource backed by device plugin, in that, it has a string name, and a
+   discrete countable quantity. Its capacity is provided through dynamic
+   resource `ResourceSlice`, its consumption is specified through pod's extended
+   resource request.
 1. Introduce a field `ExtendedResourceName` to `ResourceSlice` and `Device` to
    allow cluster administrators to configure DRA device driver to advertise
-   certain devices as extended resource. This is different from the extended
-   resource advertised by k8s `Node` Object, which are usually backed by device
-   plugin. Hence they are given a new name 'dynamic extended resource'.
+   certain devices as extended resource.
+1. Alternatively, introduce a field `ExtendedResourceName` to `DeviceClass` to
+   allow cluster administrators to advertise certain class of devices as
+   extended resource.
 1. Introduce a special `ResourceClaim` object to keep track of device allocations
    for each dynamic extended resource requests for a pod.
 1. kube-scheduler uses DRA scheduling algorithm to fit pod's extended
@@ -228,21 +246,20 @@ The basic idea is the following:
    devices were picked, as usual. More details on this special `ResourceClaim` follow below.
    When using extended resources advertised for a node, the normal resource tracking reserves them.
 1. kubelet asks DRA driver to prepare devices in the special `ResourceClaim`,
-   and pass the devices to containers with the dynamic extended resource
-   requests.
+   and pass the devices to containers with the extended resource requests.
 
-Some quick clarifications around the basic concepts: extended resource, dynamic
-resource, and dynamic extended resource.
+Some quick clarifications around the basic concepts: extended resource backed by
+device plugin, extended resource backed by DRA, and dynamic resource.
 
-* extended resource uses pod's spec.containers[].resources.requests to request
-  for resources, extended resource consumes the capacity from node's
-  status.capacity. Extended resource is of type: string, int
+* extended resource backed by device plugin uses pod's
+  spec.containers[].resources.requests to request for resources, it consumes the capacity
+  from node's status.capacity. It is of type: string, int
 * dynamic resource uses `ResourceClaim` to request for resources, and
   `ResourceSlice` to provide resource capacity. A pod asks for resources through
   resource claim requests in pod's spec.resources.claims. Dynamic resource type
   is described in resource slice, simply speaking, it is a list of devices, with
-  each device being described as structured paramaters.
-* dynamic extended resource is a combination of the two above. It uses pods'
+  each device being described as structured parameters.
+* extended resource backend by DRA is a combination of the two above. It uses pods'
   spec.containers[].resources.requests to request for resources, and uses
   `ResourceSlice` to provide resource capacity. Hence, it is of type: string,
   int on the consumption side, and list of devices with a common
@@ -257,12 +274,13 @@ to admit and pass the allocated devices to the pod to run.
 
 The following cluster setup is supported.
 
-* One node in cluster has a dynamic extended resource, and another node in the
-cluster has the same name extended resource.
+* One node in cluster has a extended resource backed by DRA, and another node in the
+cluster has the same named extended resource backend by device plugin.
 
-* One node in a cluster cannot have both dynamic extended resource, and same
-  name extended resource at the same time. This implies that either the resource
-  is advertised through `ResourceSlice`, or `Node`'s status.capacity.
+* One node in a cluster cannot have both extended resource backed by DRA, and same
+  named extended resource backed by device plugin at the same time. This implies
+  that either the resource is advertised through `ResourceSlice`,
+  or `Node`'s status.capacity.
 
 ## Design Details
 
@@ -312,24 +330,127 @@ advertised as the given extended resource name. If a device has a different
 extended resource name than that given in the `ResoureSlice`, the device's
 extended resource name is used for that device.
 
+### Device Class API
+The extended resource name to device mapping can be specified at
+`DeviceClassSpec`, instead of at the `Device` in `ResourceSlice` API as shown in
+the section above. The same extended resource name can be given to different
+device classes, and one device class can have at most one extended resource name.
+
+```go
+// DeviceClassSpec is used in a [DeviceClass] to define what can be allocated
+// and how to configure it.
+type DeviceClassSpec struct {
+	// Each selector must be satisfied by a device which is claimed via this class.
+	//
+	// +optional
+	// +listType=atomic
+	Selectors []DeviceSelector `json:"selectors,omitempty" protobuf:"bytes,1,opt,name=selectors"`
+
+	// Config defines configuration parameters that apply to each device that is claimed via this class.
+	// Some classses may potentially be satisfied by multiple drivers, so each instance of a vendor
+	// configuration applies to exactly one driver.
+	//
+	// They are passed to the driver, but are not considered while allocating the claim.
+	//
+	// +optional
+	// +listType=atomic
+	Config []DeviceClassConfiguration `json:"config,omitempty" protobuf:"bytes,2,opt,name=config"`
+
+	// ExtendedResourceName is the extended resource name
+	// the device class is advertised as. It must be a DNS label.
+	// All devices matched by the device class can be used to satisfy the
+	// extended resource requests in pod's spec.
+	//
+	// +optional
+	ExtendedResourceName string
+}
+```
+
 ### Resource Claim API
-There is no API change on `ResourceClaim`, i.e. no new API type. However, a special
-resource claim object is created to keep track of device allocations for dyanmic
-extended resource. The special resource claim object has following properties:
+A new field `ExtendedResults` of type
+`DeviceExtendedResourceRequestAllocationResult` is added to hold the allocated
+devices for the extended resources. The existing field `Results` cannot be
+reused directly without breaking downgrade.
+
+```go
+// DeviceAllocationResult is the result of allocating devices.
+type DeviceAllocationResult struct {
+	// Results lists all allocated devices.
+	//
+	// +optional
+	// +listType=atomic
+	Results []DeviceRequestAllocationResult
+	// ExtendedResults lists all allocated devices for extended resource
+	// requests.
+	//
+	// +optional
+	// +listType=atomic
+	ExtendedResults []DeviceExtendedResourceRequestAllocationResult
+}
+
+// DeviceExtendedResourceRequestAllocationResult contains the allocation result
+// for extended resource request.
+type DeviceExtendedResourceRequestAllocationResult struct {
+	// ExtendedResourceName is the extended resource name the devices are
+	// allocated for.
+	//
+	// +required
+	ExtendedResourceName string `json:"extendedResourceName" protobuf:"bytes,1,name=extendedResourceName"`
+
+	// Driver specifies the name of the DRA driver whose kubelet
+	// plugin should be invoked to process the allocation once the claim is
+	// needed on a node.
+	//
+	// Must be a DNS subdomain and should end with a DNS domain owned by the
+	// vendor of the driver.
+	//
+	// +required
+	Driver string `json:"driver" protobuf:"bytes,2,name=driver"`
+
+	// This name together with the driver name and the device name field
+	// identify which device was allocated (`<driver name>/<pool name>/<device name>`).
+	//
+	// Must not be longer than 253 characters and may contain one or more
+	// DNS sub-domains separated by slashes.
+	//
+	// +required
+	Pool string `json:"pool" protobuf:"bytes,3,name=pool"`
+
+	// Device references one device instance via its name in the driver's
+	// resource pool. It must be a DNS label.
+	//
+	// +required
+	Device string `json:"device" protobuf:"bytes,4,name=device"`
+
+	// AdminAccess indicates that this device was allocated for
+	// administrative access. See the corresponding request field
+	// for a definition of mode.
+	//
+	// This is an alpha field and requires enabling the DRAAdminAccess
+	// feature gate. Admin access is disabled if this field is unset or
+	// set to false, otherwise it is enabled.
+	//
+	// +optional
+	// +featureGate=DRAAdminAccess
+	AdminAccess *bool `json:"adminAccess" protobuf:"bytes,5,name=adminAccess"`
+}
+```
+
+A special resource claim object is created to keep track of device allocations for
+extended resource. The resource claim object has following properties:
 
   * It is namespace scoped, like other resource claim objects.
   * It is owned by a pod, like other resource claim objects.
   * It has null `spec`.
   * Its `status.allocation.devices` and `status.allocation.reservedFor` are
     used.
-  * It has annotation `resource.kubernetes.io/extended-resource-name:`, and it
-    does not have annotation `resource.kubernetes.io/pod-claim-name:`
-
-```yaml
-metadata:
-  annotations:
-    resource.kubernetes.io/extended-resource-name: foo.domain/bar
-```
+  * It does not have annotation `resource.kubernetes.io/pod-claim-name:` as
+    it is created for the extended resource request in a pod spec, not for a
+    claim in the pod spec.
+  * At most one such claim object is created per pod. For example, if the pod
+    requests for foo1.domain/bar and foo2.domain/bar, the allocation of devices
+    for each are recorded in DeviceExtendedResourceRequestAllocationResult, and
+    one claim object with two `ExtendedResults` is created for the pod.
 
 The special resource claim object lifecycle is managed by the scheduler and
 garbage collector.
@@ -337,10 +458,12 @@ garbage collector.
   * It is *created* in a namespace when there is a pod with extended resource
   request, and the extended resource is advertised by `ResourceSlice` and
   scheduler has fit the pod to a node with the `ResourceSlice`.
-  * It is *created* by the scheduler dynamic extended resource plugin during
-    pre-bind phase. The in-memory one in the assumed cache is created earlier
+  * It is *created* by the scheduler dynamic resource backed by DRA plugin during
+    preBind phase. The in-memory one in the assumed cache is created earlier
     during reserve phase.
-  * It is *deleted* together with the owning pod's deletion.
+  * It is *deleted*
+    * together with the owning pod's deletion.
+    * by the scheduler extended resource backed by DRA plugin during unReserve phase.
   * It is *read* by scheduler dynamic resource plugin for the devices allocated,
   so that the scheduler remove considerations for allocation of these devices for
   other DRA resource claim requests in 'dynamic resource plugin'.
@@ -348,26 +471,35 @@ garbage collector.
     therein when preparing to run the pod.
 
 ### Pod API
-There is no API change on `Pod`. Pod's status.resourceClaimStatuses tracks the
-special resouceclaim object created for the dynamic extended resource requests
-in the pod. The dynamic extended resource name is used in the status. For
-example, if a pod has requested for foo.domain/bar, and it is scheduled to run
-on a node that has advertised foo.domain/bar in `ResourceSlice`, then the pod's
-status is like below:
+
+A new field `extendedResourceClaimStatuses` is added to Pod's status to track
+the special resouceclaim object created for the extended resource requests
+in the pod. For example, if a pod has requested for foo.domain/bar, and it is
+scheduled to run on a node that has advertised foo.domain/bar in `ResourceSlice`,
+then the pod's status is like below:
 
 
 ```yaml
 status:
-   resourceClaimStatuses:
+   extendedResourceClaimStatuses:
    - name: foo.domain/bar
      resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
 ```
+Note the validations for extendedResourceClaimStatuses are different from the
+validations for resourceClaimStatuses.
 
-### Scheduling for Dynamic Extended Resource
+1. resourceClaimStatuses requires `name` must be DNS label,
+   extendedResourceClaimStatuses's name does not need to be DNS label.
+1. resourceClaimStatuses requires `name` must be one of the claim's name in the
+   pod spec. extendedResourceClaimStatuses requires `name` must be one of the
+   extended resource name in the pod spec.
 
-A new field `DynamicResources` is added to `Resource`, it works similar to
-ScalarResources. It is used to keep track of the dynamic extended resources on a
-node, i.e. those that are advertised by `ResourceSlice`.
+### Scheduling for Extended Resource backed by DRA
+
+A new field `DynamicResources` is added to
+[`Resource`](https://github.com/kubernetes/kubernetes/blob/c81431de59a3bf516489317433a165b050322339/pkg/scheduler/framework/types.go#L798),
+it works similar to ScalarResources. It is used to keep track of the extended
+resources backed by DRA on a node, i.e. those that are advertised by `ResourceSlice`.
 
 ```go
 type Resource struct {
@@ -380,19 +512,28 @@ type Resource struct {
 	// ScalarResources
 	ScalarResources map[v1.ResourceName]int64
 
-    // NEW!
-    // DynamicResources: keep track of dynamic extended resources
+	// NEW!
+	// DynamicResources: keep track of extended resources backed by DRA
 	DynamicResources map[v1.ResourceName]int64
 }
 ```
 
 type `NodeInfo` is used by scheduler to keep track of the information for each
 node in memory. Its `Allocatable` field is used to keep track of the allocatable
-resources in memory. For a node with extended resources, its NodeInfo's
-Allocatable.ScalarResources is updated with the `Node`'s informer, minus the
-used. For a node with dynamic extended resources, its NodeInfo's
-Allocatable.DynamicResources is updated with the `ResourceSlice`'s informer,
-minus used by either dynamic extended resource or resource claims.
+resources in memory. At the beginning of each scheduling cycle, scheduler takes
+a snapshot of all the nodes in the cluster, and updates their corresponding
+`NodeInfo`.
+
+For the scheduler with DRA enabled, right after taking the node snapshot, the
+scheduler also takes a snapshot of `ResoureClaims` and `ResourceSlice`, and
+updates `NodeInfo.DynamicResources` if the node has resources backed by DRA
+`ResourceSlice`.
+
+For a node with extended resources, its NodeInfo's
+Allocatable.ScalarResources is updated with the k8s `Node`'s object.
+For a node with extended resources backed by DRA, its NodeInfo's
+Allocatable.DynamicResources is updated based on DRA `ResourceSlice` and
+`ResourceClaim` objects.
 
 The existing 'noderesources' plugin needs to be modified, such that a pod's
 extended resource request is checked against a NodeInfo's ScalarResources if the
@@ -401,10 +542,10 @@ the node uses DRA driver and it advertised the extended resource in its
 `ResourceSlice`.
 
 The existing 'dynamicresources' plugin needs no modification. Since the special
-resource claim for dynamic extended resource has accounted for the resource
+resource claim for extended resource has accounted for the resource
 usage.
 
-A new scheduler plugin 'dynamic extended resource' is added. It uses the
+A new scheduler plugin 'extended resource' is added. It uses the
 SharedDRAManager, which is shared with the 'dynamicresources' plugin.
 
 The new plugin implements the following extension points.
@@ -418,7 +559,7 @@ If two nodes can fit the pod, one node has installed device plugin, the other
 has installed DRA, score the DRA node higher.
 
 #### Reserve
-Allocate the specific devices for the number of dynamic extended resource
+Allocate the specific devices for the number of extended resource
 requested in the pod, create an in-memory `ResourceClaim` for storing the
 allocation results. The claim is stored in the map of in-flight claims.
 
@@ -429,22 +570,22 @@ PreBind fails and the pod must be retried.
 
 #### Unreserve
 The plugin removes the Pod from the claim.status.reservedFor field, removes the
-special `ResourceClaim` for dynamic extended resource. Because it cannot be scheduled
+special `ResourceClaim` for extended resource. Because it cannot be scheduled
 after all.
 
-### Actuation for Dynamic Extended Resource
-When a pod with dynamic extended resources is picked up by the kubelet on the node it
+### Actuation for Extended Resource backed by DRA
+When a pod with extended resources is picked up by the kubelet on the node it
 is scheduled to run, the following are particularly important:
 
-1. Kubelet tries to admit the pod, the pod's dynamic extended resources requests
+1. Kubelet tries to admit the pod, the pod's extended resources requests
    should not be checked against the `Node`'s allocatable, as the resources are
    in `ResourceSlice`, not in `Node`. Instead, kubelet needs to follow the admit
-   process for the speical `ResourceClaim`.
+   process for the special `ResourceClaim`.
 
 1. Kubelet passes the special `ResoureClaim` to DRA driver to prepare the
    devices, in the same way as that for normal `ResourceClaim`.
 
-1. Kubelet passes the device IDs through CDI to the containers with the dynamic
+1. Kubelet passes the device IDs through CDI to the containers with the
    extended resource requests. This is different from actuation of a pod with
    resource claim, as the pod does *not* have claims requests in containers or
    pods.
