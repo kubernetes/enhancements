@@ -7,13 +7,13 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories)
+  - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
     - [Story 4](#story-4)
     - [Story 5](#story-5)
-  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Pod.spec changes](#podspec-changes)
@@ -64,13 +64,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -156,7 +160,7 @@ This proposal aims to support running pods inside user namespaces.
 
 This mitigates all the vulnerabilities listed in the motivation section.
 
-### User Stories
+### User Stories (Optional)
 
 #### Story 1
 
@@ -190,9 +194,20 @@ As a cluster admin, I want to use different host UIDs/GIDs for pods running on
 the same node (whenever kernel/kube features allow it), so I can mitigate the
 impact a compromised pod can have on other pods and the node itself.
 
-### Notes/Constraints/Caveats
+### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
+
+An error in user namespaces manager can result in the kubelet failing
+initialization. We will mitigate this by having extensive unit tests to test the
+case of the feature gate disabled and enabled. We will also add e2e tests to
+verify the kubelet works as expected when the feature is enabled (DONE).
+
+The KEP needs changes in the CRI interface, high-level container runtimes
+(containerd, cri-o), low-level container runtimes (runc, crun) and the Linux
+kernel. To mitigate possible issues with the interaction of the components
+involved, we will write integration tests in k8s, containerd, cri-o, runc, crun,
+cri-tools and xfstests for the Linux bits. (DONE)
 
 ## Design Details
 
@@ -531,6 +546,7 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+None.
 
 ##### Unit tests
 
@@ -1372,6 +1388,25 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+This KEP doesn't introduce new SLOs and doesn't result in increasing time taken
+by Kubernetes components.
+
+As explained in "Will enabling / using this feature result in increasing time
+taken by any operations covered by existing SLIs/SLOs?" if the container runtime
+wants to support this in older kernels, it can have an impact on this SLO:
+
+> Startup latency of schedulable pods, excluding time to pull images and run init containers, measured from pod creation timestamp to when all its containers are reported as started and observed via watch, measured as 99th percentile over last 5 minutes
+
+At the time of writing, no container runtime supports user namespaces with old
+kernels, so no container runtime is affected. There is no plan to support that
+scenario either, at the time of writing.
+
+However, if a container runtime supports userns with old kernels in the future,
+to determine if user namespaces are affecting the SLO it should be tested if
+pods without the pod.spec.hostUsers line are also affected. If they are not
+affected (IOW, pods without using user namespaces), then user namespaces seem to
+be the cause of the problem.
 
 ## Implementation History
 
