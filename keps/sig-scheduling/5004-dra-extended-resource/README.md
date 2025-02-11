@@ -235,7 +235,7 @@ resource, and dynamic extended resource.
   status.capacity. exteneded resource is of type: string, int
 * dynamic resource uses `ResourceClaim` to request for resources, and
   `ResourceSlice` to provide resource capacity. A pod asks for resources through
-  resource claim requests in pod's spec.resources.claims. dynamic resource type
+  resource claim requests in pod's spec.resources.claims. Dynamic resource type
   is described in resource slice, simply speaking, it is a list of devices, with
   each device being described as structured paramaters.
 * dynamic extended resource is a combination of the two above. It uses pods'
