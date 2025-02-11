@@ -179,10 +179,12 @@ _none_
 
 ## Proposal
 
-Introduce a "marker" value that may be used in apply configurations to indicate that a value should
+Introduce a "marker" prefix that may be used in apply configurations to indicate that a value should
 be unset.
 
-The proposed marker value, in JSON, is: `{"k8s_io__value": "unset"}`
+The proposed marker is the field prefix: `unset_k8s_io__`.  Which may be used to unset field `b` by setting
+a field, in JSON, like: `{"unset_k8s_io__b": true}`. It may also be used to unset a list map entry by
+setting the keys fields as well as setting `"unset_k8s_io": true`: `{"keyField1": "a", "keyField1": "b", "unset_k8s_io": true}`.
 
 For example, given an object with a field owned by field manager "mgr1":
 
@@ -194,7 +196,7 @@ metadata:
   managedFields:
   - manager: mgr1
     operation: Apply
-    …
+    # ...
     fieldsV1:
       f:spec:
         f:field {}
@@ -210,7 +212,7 @@ kind: Example
 metadata:
   name: example1
 spec:
-  field: {"k8s_io__value": "unset"}
+  unset_k8s_io__field: true
 ```
 
 After the configuration is applied field will be unset and will be owned by "mgr2".
@@ -223,7 +225,7 @@ metadata:
   managedFields:
   - manager: mgr2
     operation: Apply
-    …
+    # ...
     fieldsV1:
       f:spec:
         f:field {} # mgr2 owns this field even though it is unset
@@ -256,7 +258,7 @@ Force apply configuration:
 
 ```yaml
 field: [
-  {name: "b", "k8s_io__value": "unset"}
+  {name: "b", "unset_k8s_io": true}
 ]
 ```
 
@@ -296,7 +298,7 @@ fieldManager1:
 Force apply configuration:
 
 ```yaml
-field: {"b": {"k8s_io__value": "unset"}}
+field: {"unset_k8s_io__b": true}
 ```
 
 Result value:
@@ -332,7 +334,7 @@ Apply configuration:
 
 ```yaml
 spec:
-  field: {"k8s_io__value": "unset"}
+  unset_k8s_io__field: true
 ```
 
 Apply conflicts:
@@ -389,7 +391,7 @@ Apply configuration:
 
 ```yaml
 spec:
-  field: {"k8s_io__value": "unset"}
+  unset_k8s_io__field: true
 ```
 
 Result value:
@@ -401,8 +403,7 @@ spec:
 Result field management:
 
 ```yaml
-Shared ownership.
-
+# Shared ownership.
 fieldManager1: 
   spec.field
 
@@ -430,7 +431,7 @@ Force apply configuration:
 
 ```yaml
 spec:
-  field: {"k8s_io__value": "unset"}
+  unset_k8s_io__field: true
 ```
 
 Result value:
@@ -462,15 +463,15 @@ fieldManager2:
        - a strategy is configured to default f1=z
          - mgr1 applies: f1=z
            - Result: Applied. mgr1 now owns f1
-         - mgr2 applies f1={k8s_io__value: unset}
+         - mgr2 applies unset_k8s_io__f1=true
            - Result: conflict
  	This is a pre-existing problem between mutating admission and server side apply but
 	will also become possible via defaulting of unset fields with this enhancement.
   See [issue 129960](https://github.com/kubernetes/kubernetes/issues/129960) for
   for examples.
 1. listType=map key fields that are defaulted MUST be respected when extracting unset value markers from
-   apply configurations.  That is, a unset marker such as `{keyField1: "x", k8s_io__value: unset}`
-   will be treated as `{keyField1: "x", defaultedKeyField: "defaultValue", k8s_io__value: unset}`
+   apply configurations.  That is, a unset marker such as `{keyField1: "x", unset_k8s_io: true}`
+   will be treated as `{keyField1: "x", defaultedKeyField: "defaultValue", unset_k8s_io: true}`
    to ensure that the field paths are tracked correctly for field management purposes.
 
 ### Risks and Mitigations
@@ -508,7 +509,7 @@ Object{
       spec: Object.spec.template.spec{
         volumes: [Object.spec.template.spec.volumes{
           name: "y",
-          k8s_io__value: "unset",
+          unset_k8s_io: true,
         }]
       }
     }
@@ -543,7 +544,7 @@ the introduction of custom marshalling to the apply configuration types (For JSO
 > 1. configuration API for operator/A has field/X
 > 2. operator/A is wrapped by operator/B along with others to act as a unit
 > 3. operator/B must expose a way to configure the value of field/X and does so in field/Y
-> 4. For a user to express "affirmatively unset field/X", they need to set field/Y to the string value "{k8s_io__value: unset}"
+> 4. For a user to express "affirmatively unset field/X", they need to set field/Y to "unset_k8s_io__Y: true"
 
 ### High level implementation plan
 
@@ -627,7 +628,7 @@ TODO: For beta
 - We decide if the marker values should be allowed in CREATE/UPDATE manifests, and stripped out, or
   if we will not allow marker values in manifests. If we to add this support, we will also
   add feature gates to `kubectl` and client-go to opt-in to it.
-- Kubectl allows `{k8s_io__value: unset}` when validating apply configurations.
+- Kubectl allows markers when validating apply configurations.
 - e2e tests are completed
 
 #### GA
@@ -979,6 +980,10 @@ modify `managed.managedFields` directly.
 We considered using `null` (or other zero values).  But `null` and zero-values already may be used in apply
 configurations, and do not indicate the intent to own a unset field. Modifying this semantic would be
 breaking to clients that use `null` or zero-values today.
+
+We considered using a `{"k8s_io___value": "unset"}` marker.  This was a candidate for a while, but
+it does not compose well when embedding apply configurations into other resources because any field
+must support a value of it's defined type, or a marker (map type).
 
 We considered using a different marker symbol to represent a unset field. We first considered a simple
 string value such as "__UNSET__".  This can be made to work for unsetting fields of objects and values
