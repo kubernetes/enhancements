@@ -122,6 +122,7 @@ thereby facilitating the efficient and effective deployment of pod workloads to 
 
 * Achieve seamless node capacity expansion through hot plugging resources.
 * Facilitate the reinitialization of resource managers (CPU manager, memory manager) to accommodate alterations in the node's resource allocation.
+* Recalculating the OOMScoreAdj and swap memory limit for existing pods.
 
 ### Non-Goals
 
@@ -136,13 +137,20 @@ thereby facilitating the efficient and effective deployment of pod workloads to 
 This KEP strives to enable node resource hot plugging by incorporating a polling mechanism within the kubelet to retrieve machine-information from cAdvisor's cache, which is already updated periodically.
 The kubelet will periodically fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
 Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
+With this proposal its also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize and tradeoff between performance overhead and OOMScoreAdj and swap limit correctness.
+
+Update in OOMScoreAdjust and swap limit
+    - The recalculation will help the existing pods to be closer to the expected value post-resize but carries an inherent overhead on the kubelet.
+
+Not Updating OOMScoreAdjust and swap limit
+    - Efficient, We can avoid the performance overhead required for recalculating the scores and may lead to incorrect eviction, with new pods being evicted as OOMScoreAdj will be high.
 
 ### User Stories
 
 #### Story 1
 
-As a Kubernetes user, I want to resize nodes with existing specialized hardware (such as GPUs, FPGAs, TPUs, etc.)  or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html) 
-to allocate more resources (CPU, memory) so that additional workloads, which depend on this hardware, can be efficiently scheduled and run without manual intervention.
+As a Kubernetes user, I want to allocate more resources (CPU, memory) to a node with existing specialized hardware (such as GPUs, FPGAs, TPUs, etc.) or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html) 
+so that additional workloads can leverage the hardware to be efficiently scheduled and run without manual intervention.
 
 #### Story 2
 
@@ -166,22 +174,28 @@ As a Cluster administrator, I want to resize a Kubernetes node dynamically, so t
 ### Risks and Mitigations
 
 - Change in OOMScoreAdjust value:
-  - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
-  - However, with change in memoryCapacity post up-scale, The OOMScoreAdjust of pod post up-scale may not be inline with the
-    precalculated scores of pod which are deployed before.
+    - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
+    - With change in memoryCapacity post up-scale, The existing OOMScoreAdjust may not be inline with the
+      actual OOMScoreAdjust for existing pods.
+        - This can be mitigated by recalculating the OOMScoreAdjust value for the existing pods. However, there can be an associated overhead for
+          recalculating the scores.
 - Change in Swap limit:
-  - The formula to calculate the swap limit is `<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-  - However, with change in nodeTotalMemory and totalPodsSwapAvailable post up-scale, The swap limit of pod post up-scale may not be inline with the
-    precalculated scores of pod which are deployed before.
+    - The formula to calculate the swap limit is `<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+    - With change in nodeTotalMemory and totalPodsSwapAvailable post up-scale, The existing swap limit may not be inline with the
+      actual swap limit for existing pods.
+        - This can be mitigated by recalculating the swap limit for the existing pods. However, there can be an associated overhead for
+          recalculating the scores.
+
 - Post up-scale any failure in resync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
 - Lack of coordination about change in resource availability across kubelet/runtime/plugins.
 
 - To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
 - The plugins/runtime should updated to react to change in resource information on the node.
+
+
 ## Design Details
 
-
-Below diagram is shows the interaction between kubelet and cAdvisor.
+Below diagram is shows the interaction between kubelet, node and cAdvisor.
 
 
 ```mermaid
@@ -196,6 +210,7 @@ sequenceDiagram
     cAdvisor-cache->>kubelet: update
     kubelet->>node: node status update
     kubelet->>node: re-initialize resource managers
+    kubelet->>node: Recalculate and update OOMScoreAdj <br> and Swap limit of pods
 ```
 
 The interaction sequence is as follows
@@ -203,25 +218,30 @@ The interaction sequence is as follows
 2. Kubelet's cache will be updated with the latest machine resource information.
 3. Node status updater will update the node's status with the latest resource information.
 4. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
+5. Kubelet will recalculate and update the OOMScoreAdj and swap limit for the existing pods.
 
-With increase in cluster resources the following components will updated
+With increase in cluster resources the following components will be updated
 
 1. Scheduler
    * Scheduler will automatically schedule any pending pods.
 
-2. Change in OOM score adjust
+2. Update in Node allocatable capacity.
+
+3. Resource managers will re-initialised.
+
+4. Change in OOM score adjust
     * Currently, the OOM score adjust is calculated by
       `1000 - (1000*containerMemReq)/memoryCapacity`
-    * So increase in memoryCapacity will result in updated OOM score adjust for pods deployed post resize.
+    * Increase in memoryCapacity will result in updated OOM score adjust for pods deployed post resize and also recalculate the same for existing pods.
 
-3. Change in Swap Memory limit
+5. Change in Swap Memory limit
    * Currently, the swap memory limit is calculated by 
  `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-   * So increase in nodeTotalMemory will result in updated swap memory limit for pods deployed post resize.
+   * Increase in nodeTotalMemory will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
 
 **Proposed Code changes**
 
-**Dynamic Node Scale Up logic**
+**Pseudocode for Resource Hotplug**
 
 ```go
 	if utilfeature.DefaultFeatureGate.Enabled(features.NodeResourceHotPlug) {
@@ -238,9 +258,16 @@ With increase in cluster resources the following components will updated
 				kl.setCachedMachineInfo(machineInfo)
 
 				// Resync the resource managers
-				if err := kl.ResyncComponents(machineInfo); err != nil {
+				if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
 					klog.ErrorS(err, "Error resyncing the kubelet components with machine info")
 				}
+				
+				// Recalculate OOMScoreAdj and Swap Limit.
+				// NOTE: we will make use UpdateContainerResources CRI method to update the values.
+                if err := kl.RecalculateOOMScoreAdjAndSwap(); err != nil {
+                    klog.ErrorS(err, "Error recalculating OOMScoreAdj and Swap")
+                }
+				
 			}
 		}
 	}
@@ -262,7 +289,7 @@ With increase in cluster resources the following components will updated
     )
 ```
 
-2. Adding a method Sync to all the resource managers and will be invoked once there is dynamic resource change.
+2. Adding a method Sync to all the resource managers and will be invoked once there is resource hotplug.
 
 ```go
         // SyncMachineInfo will sync the Manager with the latest machine info
@@ -302,8 +329,6 @@ Following scenarios need to be covered:
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `NodeResourceHotPlug`
   feature gate.
-* Support the basic functionality for scheduler to consider pod-level resource requests to find a suitable node.
-* Support the basic functionality for kubelet to translate pod-level requests/limits to pod-level cgroup settings.
 * Unit test coverage.
 * E2E tests.
 * Documentation mentioning high level design.
