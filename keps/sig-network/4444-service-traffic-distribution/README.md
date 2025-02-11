@@ -305,8 +305,10 @@ the value configured for `trafficDistribution`
 
 #### `PreferClose`
 * **Meaning:** Attempts to route traffic to endpoints within the same zone as
-  the client. If no endpoints are available within the zone, traffic would be
-  routed to other zones.
+  the client. A zone represents a logical failure domain and has the same
+  meaning as in the well-known label `topology.kubernetes.io/zone`. If no
+  endpoints are available within the zone, traffic would be routed to other
+  zones.
 * This preference will be implemented by the use of Hints within EndpointSlices.
 * We already use Hints to implement `service.kubernetes.io/topology-mode: Auto`
   In a similar manner, the EndpointSlice controller will now also populate hints
