@@ -2,7 +2,5 @@
 # "prod-readiness-approvers" group 
 # of http://git.k8s.io/enhancements/OWNERS_ALIASES
 kep-number: 5100
-alpha:
-  approver: ""
 beta: 
   approver: "@soltysh"
