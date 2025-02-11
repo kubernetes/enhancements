@@ -785,6 +785,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
 
+When [containerd](https://github.com/containerd/containerd/pull/10579) adds
+support for the feature, then the e2e tests will become available for that
+runtime as well.
+
 ### Graduation Criteria
 
 <!--
@@ -1068,7 +1072,18 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet but they will be.
+Manual testing that will be done:
+
+- Upgrade:
+  - Enable the feature in the kube-apiserver, kubelet and container runtime
+  - Create a workload which uses the feature
+  - Verify that the image volume has been mounted.
+
+- Rollback:
+  - Disable the feature by rolling back the kube-apiserver, kubelet or
+    container runtime
+  - Recreate the workload, which will now fail because of either the not
+    existing API or the unsupported runtime version.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
