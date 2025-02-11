@@ -85,7 +85,7 @@ There are three major motivations for the solution in this KEP.
 
 * Enable existing applications to run without modification.
 
-* Enable application developers, operators to transition to DRA gradually at
+* Enable application developers and operators to transition to DRA gradually at
   their own pace.
 
 * Enable cluster administrators to transition to DRA gradually at their own pace,
