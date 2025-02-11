@@ -198,7 +198,7 @@ which go beyond running particular images.
 - Mounting thousands of images in a single pod.
 - The enhancement leaves single file use case out for now and restrict the mount
   output to directories.
-- The runtimes (CRI-O, containerd, others) will have to agree on the
+- Out of scope: The runtimes (CRI-O, containerd, others) will have to agree on the
   implementation of how images are manifested as directories. We don't want
   to over-spec on selecting based on media types or other attributes now and can
   consider that for later.
@@ -577,7 +577,7 @@ sequenceDiagram
 
 8. **Security and Performance Optimization**:
    - Implement thorough security checks to mitigate risks such as path traversal attacks.
-   - Optimize performance for handling large OCI images, including caching strategies and efficient retrieval methods.
+   - Optimize performance for handling large OCI image volume sources, including caching strategies and efficient retrieval methods.
 
 #### Container Runtimes
 
@@ -865,7 +865,7 @@ in back-to-back releases.
       [`Mount`](https://github.com/kubernetes/cri-api/blob/010fdf8/pkg/apis/runtime/v1/api.proto#L221)
       message. Alternatively it would be possible to re-use the existing
       [`Mount.host_path`] field which is empty right now if an image volume is
-      being used.
+      being used (preferred).
     - If the sub path does not exist in the image, then runtimes should fail and
       return an error.
 - Expand unit and e2e tests.
@@ -923,11 +923,13 @@ Same as above: all the components must have support for it to work.
 Specifically, kube-apiserver will filter this field if it doesn't recognize/support it.
 If the kubelet doesn't support the field, it will not pull the image, and the path will not be present for the volume manager
 to mount it in, and the pod will fail.
-if the CRI implementation doesn't support it, then the PullImage request will fail and the pod creation will fail.
 
 If the kubelet does not support the feature because it's too old, then the
 container creation will fail because the volume manager is unable to mount the
 volume because no volume plugin is available for the provided source.
+
+If the CRI implementation doesn't support it, then the PullImage request will
+fail and the pod creation will fail.
 
 ## Production Readiness Review Questionnaire
 
@@ -1164,7 +1166,7 @@ Pick one more of these and delete the rest.
 
 Note: the pod's start SLI may be affected if the image that is being pulled is large. An accurate comparison in pod start time is
 if the contents of the image mount are stored in the container's image, rather than present on a different volume type, as the
-cost of pulling from a registry needs to be controlled for.
+cost of pulling from a registry needs to be accounted for.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
