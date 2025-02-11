@@ -8,20 +8,19 @@ status: implementable
 creation-date: 2024-03-06
 reviewers:
   - "@ffromani"
-  - "@klueska"                                                                          
   - "@swatisehgal"                                                                      
 approvers:
-  - "@sig-node-tech-leads"                                                              
+  - "@ffromani"
 see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.32"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -32,9 +31,10 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: "CPUManagerPolicyAlphaOptions"                                                
-    components:                                                                         
+  - name: "CPUManagerPolicyBetaOptions"
+    components:
       - kubelet
+
 disable-supported: true
 
 # The following PRR answers are required at beta release
