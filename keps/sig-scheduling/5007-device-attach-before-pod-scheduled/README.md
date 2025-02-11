@@ -330,43 +330,19 @@ This issue needs to be resolved before the beta is released.
 ### DRA Scheduler Plugin Design Overview
 
 This document outlines the design of the DRA Scheduler Plugin, focusing on the handling of fabric devices.
-Key additions include new attributes for device identification, enhancements to `AllocatedDeviceStatus`, and the process for handling `ResourceSlices` upon attachment failure.
+Key additions include `BindingConditions` and `BindingFailureConditions for device identification and preparetion, enhancements to `AllocatedDeviceStatus.Conditions`, and the process for handling `ResourceSlices` upon attachment failure.
 The composable controller design is also discussed, emphasizing efficient utilization of fabric devices.
 
 ![proposal](proposal.jpg)
 
 #### BasicDevice Enhancements
 
-To indicate whether a device is a fabric device, fields are added to the `Basic` within `Device`.
+To indicate that the device is a Fabric device or other device that requires some preparation (e.g. attachment), some fields are added to the `Basic` within `Device`.
 These fields will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
 
 ```go
-// Device represents one individual hardware instance that can be selected based
-// on its attributes. Besides the name, exactly one field must be set.
-type Device struct {
-    // Name is unique identifier among all devices managed by
-    // the driver in the pool. It must be a DNS label.
-    //
-    // +required
-    Name string
-
-    // Basic defines one device instance.
-    //
-    // +optional
-    // +oneOf=deviceType
-    Basic *BasicDevice
-}
-
 // BasicDevice represents a basic device instance.
 type BasicDevice struct {
-    // Attributes defines the set of attributes for this device.
-    // The name of each attribute must be unique in that set.
-    //
-    // The maximum number of attributes and capacities combined is 32.
-    //
-    // +optional
-    Attributes map[QualifiedName]DeviceAttribute
-
     // BindingConditions defines the conditions for binding.
     //
     // +optional
@@ -562,7 +538,7 @@ And until the device is actually attached to the node, the user does not know wh
 
 Because of this concept, the Pool and ResourceSlice exposed by Composable DRA controller are separate for each model.
 The devices in the Pool for each model have unique device names, but are essentially information about how many devices of this model are in the ResourceSlice.
-Composable DRA controoler also add a model name and so on into the attributes of each device.
+Composable DRA controller also add a model name and so on into the attributes of each device.
 
 ![composable-resourceslice](composable-resourceslice.png)
 
