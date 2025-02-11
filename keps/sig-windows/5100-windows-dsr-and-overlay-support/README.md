@@ -921,7 +921,7 @@ A troubleshooting guide for general Windows networking issues can be found at ht
 https://github.com/microsoft/SDN/ contains some additional troubleshooting scripts to collect detailed information and can help in troubleshooting
 - https://github.com/microsoft/SDN/blob/master/Kubernetes/windows/hns.v2.psm1 is a powershell module with cmdlets for inspecting HNS policies and endpoints
 - https://github.com/microsoft/SDN/blob/master/Kubernetes/windows/helper.psm1 contains useful helper functions for troubleshooting
-- https://github.com/microsoft/SDN/tree/master/Kubernetes/windows/debug contains various powershell scripts for enabling tracing, collectings stats and perf counterd, starting packet captures, etc
+- https://github.com/microsoft/SDN/tree/master/Kubernetes/windows/debug contains various powershell scripts for enabling tracing, collectings stats and perf counters, starting packet captures, etc
 
 Troubleshooting issues with Direct Server Return (DSR) on Windows:
 
@@ -930,7 +930,7 @@ Troubleshooting issues with Direct Server Return (DSR) on Windows:
 - If everything looks correct, log onto the node and inspect the HNS rules to ensure DSR is enabled for the load balancer rules.
   - Log onto the node and use `hnsdiag.exe list loadbalancers -d` to list all the load balancers and details about their rules.
     You should see `IsDSR:true` for load balancer policies proxied by kube-proxy.
-  - You can use `hnsdiag.exe` to get detailed infromation about local networks and endpoints in addition to loadbalancers.
+  - You can use `hnsdiag.exe` to get detailed information about local networks and endpoints in addition to loadbalancers.
 - If you are still having issues create an issue at https://github.com/microsoft/windows-containers
 
 Troubleshooting issues with overlay networking mode on Windows:
@@ -941,7 +941,7 @@ Troubleshooting issues with overlay networking mode on Windows:
 - If everything looks correct, log onto the node and inspect the HNS rules to ensure that the source VIP is being used correctly.
   - Log onto the node and use `hnsdiag.exe list loadbalancers -d` to list all the load balancers and details about their rules.
     You should see the source VIP being used for load balancer policies proxied by kube-proxy.
-  - You can use `hnsdiag.exe` to get detailed infromation about local networks and endpoints in addition to loadbalancers.
+  - You can use `hnsdiag.exe` to get detailed information about local networks and endpoints in addition to loadbalancers.
 - If you are still having issues create an issue at https://github.com/microsoft/windows-containers 
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
