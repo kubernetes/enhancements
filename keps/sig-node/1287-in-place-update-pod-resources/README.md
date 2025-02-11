@@ -295,36 +295,33 @@ The `ResizePolicy` field is immutable.
 
 #### Resize Status
 
-In addition to the above, a new field `Pod.Status.Resize[]`
-will be added.  This field indicates whether kubelet has accepted or rejected a
-proposed resize operation for a given resource.  Any time the
-`Pod.Spec.Containers[i].Resources.Requests` field differs from the
-`Pod.Status.ContainerStatuses[i].Resources` field, this new field explains why.
+Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizing`.
 
-This field can be set to one of the following values:
-* `InProgress` - the proposed resize has been accepted and is being actuated. A `Deferred` or
-  `Infeasible` resize will take precedence over `InProgress`.
-  Desired resources == Allocated resources != Actual resources.
+**PodResizePending** will track states where the spec has been resized, but the Kubelet has not yet
+allocated the resources. There are two reasons associated with this condition:
+
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
-  but is not possible right now; it will be re-evaluated on every pod sync.
-  Desired resources != Allocated resources.
-* `Infeasible` - the proposed resize is not feasible and is rejected; it will not
-  be re-evaluated. Desired resources != Allocated resources.
-* (no value) - there is no proposed resize.
-  Desired resources == Allocated resources == Acutal resources.
-* `Error` - if an error occurs while actuating the resize (see [Memory Limit Decreases](#memory-limit-decreases)
-  for an example), then the resize status will be set to `Error` and an event will report the
-  details. The error state behaves similarly to `InProgress`, and the allocated resize will be
-  retried on the next pod sync.
+  but is not possible right now; it will be regularly reevaluated.
+* `Infeasible` - the proposed resize is not feasible and is rejected; it may not
+  be re-evaluated.
 
-To make this field future-safe, consumers should assume that any unknown value
-means the same as `Deferred`.
+In either case, the condition's `message` will include details of why the resize has not been
+admitted. `lastTransitionTime` will be populated with the time the condition was added. `status`
+will always be `True` when the condition is present - if there is no longer a pending resized
+(either the resize was allocated or reverted), the condition will be removed.
 
-Prior to v1.33, the apiserver would populate an additional `Proposed` state to identify a new resize
-that has not yet been acknowledged by the Kubelet. This state will be deprecated in v1.33 and no
-longer populated (due to a race to set it between the apiserver & kubelet). Instead, the new
-[`ObservedGeneration`](https://github.com/kubernetes/enhancements/pull/5068) feature can be used to
-tell whether the resize status includes the latest resize request.
+**PodResizing** will track in-progress resizes, and should be present whenever allocated resources
+!= acknowledged resources (see [Resource States](#resource-states)). For successful synchronous
+resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
+error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
+populated with the error message. In the future, this condition will also be used for long-running
+resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)).
+
+Note that it is possible for both conditions to be present at the same time, for example if an error
+is encountered while actuating a resize and a new resize comes in that gets deferred.
+
+Prior to v1.33, the resize status was tracked by a dedicated `Pod.Status.Resize` field. This field
+will be deprecated, and not graduate to beta.
 
 #### CRI Changes
 
@@ -458,10 +455,10 @@ Spec.Containers[i].Resources.Requests) to the sum.
   Container resource limits.  Once all Containers are successfully updated, it
   updates Status...Resources to reflect new resource values and unsets
   Status.Resize.
-* If new desired resources don't fit, Kubelet will update the Status.Resize
-  field to "Infeasible" and does not act on the resize.
-* If new desired resources fit but are in-use at the moment, Kubelet will
-  update the Status.Resize field to "Deferred".
+* If new desired resources don't fit, Kubelet will add the `PodResizePending` condition with type
+  `Infeasible` and a message explaining why.
+* If new desired resources fit but are in-use at the moment, Kubelet will add the `PodResizePending`
+  condition with type `Deferred` and a message explaining why.
 
 In addition to the above, kubelet will generate Events on the Pod whenever a
 resize is accepted or rejected, and if possible at key steps during the resize
@@ -513,7 +510,6 @@ This is intentionally hitting various edge-cases for demonstration.
 
 1. kubelet runs the pod and updates the API
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `status.resize` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
     - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
@@ -523,7 +519,6 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request (e.g. `limits` are not below
       `requests`, ResourceQuota not exceeded, etc) and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.5
-    - `status.resize` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
     - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
@@ -533,7 +528,6 @@ This is intentionally hitting various edge-cases for demonstration.
     - The allocated & acknowledged resources are read back from checkpoint
     - Pods are resynced from the API server, but admitted based on the allocated resources
     - `spec.containers[0].resources.requests[cpu]` = 1.5
-    - `status.resize` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
     - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
@@ -541,74 +535,75 @@ This is intentionally hitting various edge-cases for demonstration.
 
 1. Kubelet syncs the pod, sees resize #1 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.5
-    - `status.resize` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]` added
     - actual CPU shares = 1024
 
 1. Resize #2: cpu = 2
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 2
-    - `status.resize` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]`
     - actual CPU shares = 1024
 
 1. Container runtime applied cpu=1.5
     - `spec.containers[0].resources.requests[cpu]` = 2
-    - `status.resize` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]`
     - actual CPU shares = 1536
 
 1. kubelet syncs the pod, and sees resize #2 (cpu = 2)
     - kubelet decides this is feasible, but currently insufficient available resources
     - `spec.containers[0].resources.requests[cpu]` = 2
-    - `status.resize[cpu]` = `"Deferred"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending].type` = `"Deferred"`
+    - `status.conditions[type==PodResizing]` removed
     - actual CPU shares = 1536
 
 1. Resize #3: cpu = 1.6
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.resize[cpu]` = `"Deferred"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending].type` = `"Deferred"`
     - actual CPU shares = 1536
 
 1. Kubelet syncs the pod, and sees resize #3 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.resize[cpu]` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending]` removed
+    - `status.conditions[type==PodResizing]` added
     - actual CPU shares = 1536
 
 1. Container runtime applied cpu=1.6
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.resize[cpu]` = `"InProgress"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizing]`
     - actual CPU shares = 1638
 
 1. Kubelet syncs the pod
     - `spec.containers[0].resources.requests[cpu]` = 1.6
-    - `status.resize[cpu]` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - `status.conditions[type==PodResizing]` removed
     - actual CPU shares = 1638
 
 1. Resize #4: cpu = 100
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 100
-    - `status.resize[cpu]` = unset
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
@@ -617,10 +612,10 @@ This is intentionally hitting various edge-cases for demonstration.
 1. Kubelet syncs the pod, and sees resize #4
     - this node does not have 100 CPUs, so kubelet cannot admit it
     - `spec.containers[0].resources.requests[cpu]` = 100
-    - `status.resize[cpu]` = `"Infeasible"`
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - `status.conditions[type==PodResizePending].type` = `"Infeasible"`
     - actual CPU shares = 1638
 
 #### Container resource limit update ordering
@@ -723,18 +718,20 @@ Impacts of a restart outside of resource configuration are out of scope.
   - On restart, Kubelet reads the latest pod from the API and triggers a pod sync, so same effect as
     observing the update.
 1. Updated pod is synced: Check if pod can be admitted
-  - No: resize status is deferred, no change to allocated resources
+  - No: add `PodResizePending` condition with type `Deferred`, no change to allocated resources
     - Restart: redo admission check, still deferred.
-  - Yes: resize status is in-progress, update allocated checkpoint
+  - Yes: add `PodResizing` condition, update allocated checkpoint
     - Restart before update: readmit, then update allocated
     - Restart after update: allocated != acknowledged --> proceed with resize
 1. Allocated != Acknowledged
   - Trigger an `UpdateContainerResources` CRI call, then update Acknowledged resources on success
   - Restart before CRI call: allocated != acknowledged, will still trigger the update call
   - Restart after CRI call, before acknowledged update: will redo update call
-  - Restart after acknowledged update: allocated == acknowledged, resize status cleared
+  - Restart after acknowledged update: allocated == acknowledged, condition removed
+  - In all restart cases, `LastTransitionTime` is propagated from the old pod status `PodResizing`
+    condition, and remains unchanged.
 1. PLEG updates PodStatus cache, triggers pod sync
-  - Pod status updated with actual resources, resize status cleared
+  - Pod status updated with actual resources, `PodResizing` condition removed
   - Desired == Allocated == Acknowledged, no resize changes needed.
 
 #### Notes
@@ -1532,7 +1529,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Add ResourceQuota details
     - Heuristic version skew handling in API validation
 - 2025-01-24 - v1.33 updates for planned beta
-    - Remove `Proposed` resize status
+    - Replace ResizeStatus with conditions
     - Improve memory limit downsize handling
     - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
       and update CRI `UpdateContainerResources` contract
