@@ -167,7 +167,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin.
-Fabric devices are those that are not directly connected to the server and require attachment to the server for use.
+A fabric device is a device that is placed outside the server via a PCIe or CXL switch.
+In order to use this device from K8s, we need to control the switch to connect a specific device to a specific physical server.
 
 In the current DRA implementation, fabric devices are attached after the scheduling decision, which leads to the following issue:
 
@@ -380,6 +381,12 @@ type BasicDevice struct {
     //
     // +optional
     UsageRestrictedToNode bool
+
+    // BindingTimeout indicates the prepare timeout period.
+    // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
+    //
+    // +optional
+    BindingTimeout int
 }
 ```
 
@@ -417,16 +424,15 @@ If Gates are present, the scheduler DRA plugin will perform the following steps 
 
 2. **Copy Gates**: Copy `BindingGates` and `BindingFailureGates` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
 3. **Wait for Conditions**: Wait for the following conditions:
-   - If `NeedToPreparing` is `True`, wait until `IsPrepared` is `True` before proceeding to Bind.
-   - If `PreparingFailed` is `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
-   - If the preparation takes longer than the `PreparingTimeout` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - Wait until all conditions in the BindingGates are `True` before proceeding to Bind.
+   - If any one of the conditions in the BindingFailureGates becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - If the preparation of a device takes longer than the `BindingTimeout` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
 
-To support these steps, the following keys are defined:
+To support these steps, for example, a DRA driver can include the following definitions in BindingGates or BindingFailureGates within a ResourceSlice:
 
 ```go
 const (
     // NeedToPreparing indicates that this device needs some preparation.
-    // If this flag is True, the scheduler waits in PreBind.
     NeedToPreparing = "kubernetes.io/need-to-preparing"
 
     // IsPrepared indicates the device ready state.
@@ -436,10 +442,6 @@ const (
     // PreparingFailed indicates the device preparation failed state.
     // If PreparingFailed is True, the scheduler will clear the allocation in the ResourceClaim and reschedule the Pod.
     PreparingFailed = "kubernetes.io/preparing-failed"
-
-    // PreparingTimeout indicates the prepare timeout period.
-    // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
-    PreparingTimeout = "kubernetes.io/preparing-timeout"
 )
 ```
 
@@ -451,7 +453,8 @@ This issue will be addressed separately as outlined in kubernetes/kubernetes#129
 #### PreBind Phase Timeout
 
 If the device attachment is successful, we expect it to take no longer than 5 minutes.
-However, to account for potential update lags, we would like to set a fixed timeout for the scheduler to 10 minutes.
+However, to account for potential update lags, we can set a timeout in the ResourceSlice.
+if it's not present in the ResourceSlice, the scheduler has 10 minutes as the default timeout.
 
 Even if the conditions indicating that the device is attached or that the attachment failed are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
@@ -764,7 +767,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: DRADeviceAttachDuringScheduling
+  - Feature gate name: DRAPrebindingGates
   - Components depending on the feature gate: kube-scheduler
 - [ ] Other
   - Describe the mechanism:
