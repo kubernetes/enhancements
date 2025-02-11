@@ -4,4 +4,4 @@ alpha:
 beta:
   approver: "@wojtek-t"
 stable:
-  approver: "@wojtek-t" # TODO(gauravkghildiyal): Change if someone else is reviewing.
+  approver: "@wojtek-t"

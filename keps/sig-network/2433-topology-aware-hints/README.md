@@ -701,8 +701,9 @@ enabled even if the annotation has been set on the Service.
     Tests.)](https://github.com/kubernetes/kubernetes/blob/468ce5918377ab4d4e3180b4fd33fdd2bdb16ec9/pkg/controller/endpointslice/reconciler_test.go#L1641-L1907)
   * Hints field is dropped when feature gate is off. [(Strategy Unit
     Tests.)](https://github.com/kubernetes/kubernetes/blob/468ce5918377ab4d4e3180b4fd33fdd2bdb16ec9/pkg/registry/discovery/endpointslice/strategy_test.go)
-  * TODO before GA: Test coverage in EndpointSlice controller for the transition
-    from enabled to disabled.
+  * Manual testing of feature gate enabling, disabling, upgrades, and rollbacks
+    was conducted, as detailed in the "Were upgrade and rollback tested? Was the
+    upgrade->downgrade->upgrade path tested?" section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -719,10 +720,91 @@ enabled even if the annotation has been set on the Service.
   with before the feature was enabled.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Per-Service enablement/disablement is covered in depth and feature gate
-  enablement and disablement will be covered before the feature graduates to GA.
-  In addition, manual testing covering combinations of
-  upgrade->downgrade->upgrade cycles will be completed prior to GA graduation.
+
+The `TopologyAwareHints` feature and the corresponding feature-gate has existed
+since k8s v1.21, with the feature being enabled by default since k8s 1.24 (~3
+years ago). That is one useful data point showing that there have not been any
+issues with `TopologyAwareHints` and the upgrade/rollback stories.
+
+In addition, manual testing was performed using the following steps:
+
+1. Create a v1.21.1 Kind cluster with the `TopologyAwareHints` feature-gate.
+
+```bash
+kind create cluster --name=topology-hints --config=<(cat <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  TopologyAwareHints: true
+nodes:
+- role: control-plane
+  image: kindest/node:v1.21.1
+- role: worker
+  image: kindest/node:v1.21.1
+EOF
+)
+```
+
+2. Create an EndpointSlice within the `Hints` field configured:
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: topology-hints
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 80
+endpoints:
+  - addresses:
+      - "10.0.0.1"
+    hints:
+      forZones:
+        - name: "zone-a"
+EOF
+```
+
+3. Verify that the EndpointSlice was created successfully and has the `Hints`
+   field populated.
+
+```bash
+kubectl get endpointslice topology-hints -o yaml
+```
+
+4. Rollback kube-apiserver to v1.20.0 (which has `TopologyAwareHints` feature
+   gate disabled by default)
+
+```bash
+docker exec -it topology-hints-control-plane /bin/bash
+
+# Edit file /etc/kubernetes/manifests/kube-apiserver.yaml, remove feature flag
+# and downgrade image to v1.20.0
+```
+
+5. Verify that the endpointslice is still there but no longer has the `Hints` field:
+
+```bash
+kubectl get endpointslice topology-hints -o yaml
+```
+
+6. Rollback kube-apiserver to v1.21.1 and re-enable `TopologyAwareHints` feature-gate.
+
+```bash
+docker exec -it topology-hints-control-plane /bin/bash
+
+# Edit file /etc/kubernetes/manifests/kube-apiserver.yaml, add feature flag and
+# upgrade image to v1.21.1
+```
+
+7. Verify that the EndpointSlice has the `Hints` field visible again (since it
+   was persisted in etcd).
+
+```bash
+kubectl get endpointslice topology-hints -o yaml
+```
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -734,6 +816,14 @@ enabled even if the annotation has been set on the Service.
 * **How can an operator determine if the feature is in use by workloads?**
   If the `endpointslices_changed_per_sync` metric has a non-zero value for the
   `auto` approach, this feature is in use.
+
+* **How can someone using this feature know that it is working for their
+  instance?**
+
+  With the new [reduced scope](#important-scope-reduction-feb-2025), the part
+  being classified as "having graduated to GA" only involves an API field
+  addition. Users can verify its functionality by describing an EndpointSlice
+  and checking if the `Hints` field is configured.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -798,6 +888,11 @@ enabled even if the annotation has been set on the Service.
   This could result in increased CPU utilization for kube-controller-manager
   (specifically  the EndpointSlice controller). Profiling will be performed to
   ensure that this increase is minimal.
+
+* **Can enabling / using this feature result in resource exhaustion of some node
+  resources (PIDs, sockets, inodes, etc.)?**
+
+  No.
 
 ### Troubleshooting
 
