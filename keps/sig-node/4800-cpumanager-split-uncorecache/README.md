@@ -185,14 +185,14 @@ This example shows the benefit of the `prefer-align-by-uncorecache` feature in c
 
 In the case where the NUMA boundary is larger than a socket (setting NPS0 on a dual-socket system), the full node's CPUs will be allocated to the container if it requires the total NUMA amount of CPUs. Otherwise, if the CPU requirement for the container is less than the total CPUs to the NUMA, the logic will begin with (`takeFullSecondLevel`). The node can not be over committed. 
 
-This CPU allocation policy will minimize the distribution of containers across uncore caches to improve performance while still maintaining the default packed logic. The scope will be initially be narrowed to implement uncore cache alignment to the default static CPU allocation behavior. The table below summarizes future enhancement plans to implement uncore cache alignment to be compatible with the distributed CPU allocation policies to reduce contention/noisy neighbor effects.
+This CPU allocation policy will minimize the distribution of containers across uncore caches to improve performance while still maintaining the default packed logic. The scope will be initially be narrowed to implement uncore cache alignment to the default NUMA packed static CPU allocation behavior. This feature will not be compatible with the `distribute-cpus-across-numa` CPU policy option. Distributing CPU allocations evenly across NUMAs for containers requiring more resources than a single NUMA can undermine the objective of minimizing CPU latency across uncore caches. As a result, more uncore cache allocations are distributed across NUMAs, and the cross cache latencies are compounded with cross NUMA latencies. This feature will also not be compatible with the `distribute-cpus-across-cores` CPU policy option since this option currently has compatibility conflicts with the `full-pcpus-only` CPU policy option.
 
 | Compatibility | alpha | beta | GA |
 | --- | --- | --- | --- |
 | full-pcpus-only | x | x | x |
-| distribute-cpus-across-numa  |   | x | x |
+| distribute-cpus-across-numa  |   |   |   |
 | align-by-socket | x | x | x |
-| distribute-cpus-across-cores |   | x | x |
+| distribute-cpus-across-cores |   |   |   |
 
 This feature follows a best-effort policy rather than a strict policy. A strict policy would prevent Guaranteed containers from being deployed if they exceed the size of an uncore cache CPU domain while a best-effort policy will still permit containers larger than an uncore cache CPU domain to be deployed. Additionally, under a strict policy, each container would be assigned its own dedicated uncore cache, which would limit the node to deploying a number of containers equal to the number of uncore caches available. A strict uncore cache alignment policy is not within the scope of this implementation. Execution of a strict uncore cache alignment policy will be pursued in a separate KEP.
 
