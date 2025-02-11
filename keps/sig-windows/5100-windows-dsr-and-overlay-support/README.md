@@ -199,7 +199,7 @@ DSR provides performance optimizations by allowing the return traffic routed thr
 More information on DSR on Windows can be found [here](https://techcommunity.microsoft.com/blog/networkingblog/direct-server-return-dsr-in-a-nutshell/693710).
 
 Overlay networking mode is a common networking mode used in Kubernetes clusters and is required by some for some important scenarios like network policy support with Calico CNI.
-Adding support for overlay networking mode in Windows kube-proxy will allow users to use more CNI soluitons with Windows nodes.
+Adding support for overlay networking mode in Windows kube-proxy will allow users to use more CNI solutions with Windows nodes.
 
 ### Goals
 
@@ -327,7 +327,7 @@ a) Backend endpoints are any IP's outside the cluster ==> Choose Node's IP as th
 b) Backend endpoints are IP addresses of a remote node => Choose Node's IP as the source VIP
 c) Everything else (Local POD's, Remote POD's, Node IP of current Node) ==> Choose the specified source VIP
 
-Everything else is handling by the Windows HNS.
+Everything else is handled by the Windows HNS.
 
 ### Test Plan
 
