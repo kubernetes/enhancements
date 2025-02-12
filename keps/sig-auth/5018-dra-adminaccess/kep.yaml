@@ -11,7 +11,7 @@ reviewers:
   - "@enj"
 approvers:
   - "@enj"
-  -  # SIG-Node
+  - "@mrunalp"
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
