@@ -226,7 +226,7 @@ func podsCompareBackoffCompleted(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 		return pInfo1.BackoffTime.Before(pInfo2.BackoffTime)
 	}
 	if pInfo1.Priority != pInfo2.Priority {
-		return pInfo1.Priority < pInfo2.Priority
+		return pInfo1.Priority > pInfo2.Priority
 	}
 	return pInfo1.BackoffTime.Before(pInfo2.BackoffTime)
 }
