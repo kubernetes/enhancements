@@ -417,7 +417,7 @@ N/A
 
 - [x] Metrics
   - Metric name:
-    - kubelet_pod_stop_signals_count (Guage measuring number of  pods configured with each stop signal)
+    - kubelet_pod_stop_signals_count (Gauge measuring number of  pods configured with each stop signal)
     - kubelet_pod_termination_grace_period_exceeded_total (Counter counting the number of Pods that doesn't get terminated gracefully with the duration of terminationGracePeriodSeconds)
   - [Optional] Aggregation method:
   - Components exposing the metric:
