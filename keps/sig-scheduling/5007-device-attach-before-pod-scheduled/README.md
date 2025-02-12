@@ -496,6 +496,7 @@ If a fabric device is selected, the scheduler waits for the device attachment du
 The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
 Once the attachment is complete, the controller updates the `ResourceClaim` to indicate the completion of the attachment.
 The scheduler receives this update, completes the `PreBind`.
+Note that in Composable system, it abandons binding by reporting a failure, forcing scheduler to rerun scheduling cycle and bind to the attached device, which is visible now as a local device.
 
 The composable controller removes device1 from the composable-device pool.
 ```yaml
