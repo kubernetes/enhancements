@@ -143,7 +143,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -678,8 +678,8 @@ For DSR support yes, manual verification was done to ensure that DSR can be enab
 The steps for the manual validation went as followed:
 
 - Create a cluster with 1 Linux control plane node and 2 Windows worker nodes.
-- Deployo a kube-proxy deamonSet with `--feature-gates=WinDSR=true` and `--enable-dsr=true` to Windows worker nodes.
-- Deploy IIS (Internet Information Services) on both Windows work nodes and expose the service with a LoadBalancer service.
+- Deploy a kube-proxy deamonSet with `--feature-gates=WinDSR=true` and `--enable-dsr=true` to Windows worker nodes.
+- Deploy IIS (Internet Information Services) on both Windows worker nodes and expose the service with a LoadBalancer service.
 - Once the service IP became available, test that the service is from the each Windows node and outside of the cluster.
 - Redeploy the kube-proxy deamonSet with `--enable-dsr=false` to Windows worker nodes.
 - Wait for Kube-proxy to start and test that the service is still reachable from each Windows node and outside of the cluster.
