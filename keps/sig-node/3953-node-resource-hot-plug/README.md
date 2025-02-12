@@ -23,6 +23,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
     - [Story 3](#story-3)
     - [Story 4](#story-4)
+    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -97,7 +98,7 @@ Currently, the node's resource configurations are recorded solely during the kub
 In a conventional Kubernetes environment, the cluster resources might necessitate modification because of inaccurate resource allocation during cluster initialization or escalating workload over time, 
 necessitating supplementary resources within the cluster.
 
-Contemporarily, kernel capabilities enable the dynamic addition of CPUs and memory to a node (References: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html).
+Contemporarily, kernel capabilities enable the dynamic addition of CPUs and memory to a node (for example: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html).
 This can be across different architecture and compute environments like Cloud, Bare metal or VM. During this exercise it can lead to Kubernetes being unaware of the node's altered compute capacities during a live-resize,
 causing the node to retain outdated information and leading to inconsistencies or an imbalance in the cluster, thus affecting the optimal scheduling and deployment of workloads. As a side-effect, it is also possible for the workloads
 to be force migrated to a different node, causing a temporary spike in the CPU/Memory utilisation which is undesirable.
@@ -116,7 +117,7 @@ However, this approach does carry a few drawbacks such as
 
 Hence, it is necessary to handle the updates in the compute capacity in a graceful fashion across the cluster, than adopting to reset the cluster components to achieve the same.
 
-Also, given that the capability to live-resize a node exists in the kernel, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
+Also, given that the capability to live-resize a node exists in the Linux and Windows kernels, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
 by the Kubernetes administrator.
 
 Node resource hot plugging proves advantageous in scenarios such as:
@@ -167,7 +168,7 @@ so that additional workloads can leverage the hardware to be efficiently schedul
 As a Kubernetes Application Developer, I want the kernel to optimize system performance by making better use of local resources when a node is resized, so that my applications run faster with fewer disruptions. This is achieved when there are
 Fewer Context Switches: With more CPU cores and memory on a resized node, the kernel has a better chance to spread workloads out efficiently. This can reduce contention between processes, leading to fewer context switches (which can be costly in terms of CPU time) 
 and less process interference and also reduces latency.
-Better Memory Allocation: If the kernel has more memory available, it can allocate larger contiguous memory blocks, which can lead to better memory locality (i.e., keeping related data closer in physical memory), 
+Better Memory Allocation: If the kernel has more memory available, it can allocate larger contiguous memory blocks, which can lead to better memory locality (i.e., keeping related data closer in physical memory),improved paging and swap limits thus 
 reducing latency for applications that rely on large datasets, in the case of a database applications.
 
 #### Story 3
@@ -257,7 +258,7 @@ With increase in cluster resources the following components will be updated
 5. Change in Swap Memory limit
    * Currently, the swap memory limit is calculated by 
  `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-   * Increase in nodeTotalMemory will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
+   * Increase in nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
 
 **Proposed Code changes**
 
