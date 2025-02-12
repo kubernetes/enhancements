@@ -91,7 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
     - [BasicDevice Enhancements](#basicdevice-enhancements)
-    - [AllocatedDeviceStatus Enhancements](#allocateddevicestatus-enhancements)
+    - [AllocatedDeviceStatus.Conditions Enhancements](#allocateddevicestatusconditions-enhancements)
     - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
