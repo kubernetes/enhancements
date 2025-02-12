@@ -27,10 +27,12 @@ tags, and then generate with `hack/update-toc.sh`.
     - [A tiny delay on the first scheduling attempts for newly created pods](#a-tiny-delay-on-the-first-scheduling-attempts-for-newly-created-pods)
     - [Backoff won't be working as a natural rate limiter in case of errors](#backoff-wont-be-working-as-a-natural-rate-limiter-in-case-of-errors)
     - [One pod in the backoffQ could starve the others](#one-pod-in-the-backoffq-could-starve-the-others)
+  - [Low priority pod could be chosen to pop, even if high priority pod has a slightly later backoff expiration](#low-priority-pod-could-be-chosen-to-pop-even-if-high-priority-pod-has-a-slightly-later-backoff-expiration)
 - [Design Details](#design-details)
   - [Popping from the backoffQ in activeQ's pop()](#popping-from-the-backoffq-in-activeqs-pop)
   - [Notifying activeQ condition when a new pod appears in the backoffQ](#notifying-activeq-condition-when-a-new-pod-appears-in-the-backoffq)
   - [Calling PreEnqueue for the backoffQ](#calling-preenqueue-for-the-backoffq)
+  - [Change backoffQ less function](#change-backoffq-less-function)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -177,7 +179,7 @@ Flushing from backoffQ to activeQ is done each second, taking all pods with back
 It means that, when they come to activeQ, they are sorted by priority there and taken in this order from activeQ.
 It is important, because preemption of a lower priority pod could happen if a higher priority pod is scheduled later.
 
-To mitigate this, key function of backoffQ's heap will be changed, quantifying the time to make one second windows in which pods will be sorted by priority.
+To mitigate this, `lessFn` function of backoffQ's heap will be changed, quantifying the time to make one second windows in which pods will be sorted by priority.
 Those whole windows will be eventually flushed to activeQ, making no change in current behavior.
 
 ## Design Details
@@ -211,10 +213,10 @@ Also, it means we'd have two paths that `PreEnqueue` plugins are invoked: when n
 and when pods are pushed into the backoffQ.
 At the moveToActiveQ level, these two paths could be distinguished by checking if the event is equal to `BackoffComplete`.
 
-### Change backoffQ key function
+### Change backoffQ less function
 
 As [mentioned](#low-priority-pod-could-be-chosen-to-pop-even-if-high-priority-pod-has-a-slightly-later-backoff-expiration) in risks,
-backoffQ's heap key function has to be changed to apply priority within 1 second windows.
+backoffQ's heap `lessFn` function has to be changed to apply priority within 1 second windows.
 The actual implementation takes backoff expiration times of two pods and compares which is lower.
 The new version will cut the milliseconds and use priorities to compare pods within those windows.
 To make ordering predictable, in case of equal priorities within the same window,
