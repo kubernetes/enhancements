@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# [KEP-5007](https://github.com/kubernetes/enhancements/issues/5007): DRA Device Attach Before Pod Scheduled
+# [KEP-5007](https://github.com/kubernetes/enhancements/issues/5007): DRA: Device Binding Conditions
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -91,7 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
     - [BasicDevice Enhancements](#basicdevice-enhancements)
-    - [AllocatedDeviceStatus.Conditions Enhancements](#allocateddevicestatusconditions-enhancements)
+    - [AllocatedDeviceStatus Enhancements](#allocateddevicestatus-enhancements)
     - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
     - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
@@ -244,7 +244,7 @@ The basic idea is the following:
    The overall flow of the `PreBind` process is as follows:
 
    - **Updating ResourceClaim**:
-     - The scheduler DRA plugin copies `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus.Conditions`.
+     - The scheduler DRA plugin copies `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
 
    - **Monitoring and Preparation by Composable DRA Controllers**:
      - Composable DRA Controllers monitor the `ResourceClaim`. If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
@@ -330,7 +330,7 @@ This issue needs to be resolved before the beta is released.
 ### DRA Scheduler Plugin Design Overview
 
 This document outlines the design of the DRA Scheduler Plugin, focusing on the handling of fabric devices.
-Key additions include `BindingConditions` and `BindingFailureConditions for device identification and preparetion, enhancements to `AllocatedDeviceStatus.Conditions`, and the process for handling `ResourceSlices` upon attachment failure.
+Key additions include `BindingConditions` and `BindingFailureConditions` for device identification and preparetion, enhancements to `AllocatedDeviceStatus`, and the process for handling `ResourceSlices` upon attachment failure.
 The composable controller design is also discussed, emphasizing efficient utilization of fabric devices.
 
 ![proposal](proposal.jpg)
@@ -349,6 +349,7 @@ type BasicDevice struct {
     BindingConditions []string
 
     // BindingFailureConditions defines the conditions for binding failure.
+    // If true, a binding failure occurred.
     //
     // +optional
     BindingFailureConditions []string
@@ -372,27 +373,40 @@ const (
 )
 ```
 
-#### AllocatedDeviceStatus.Conditions Enhancements
+#### AllocatedDeviceStatus Enhancements
 
-The `BindingConditions` and `BindingFailureConditions` fields within `AllocatedDeviceStatus.Conditions` are used to indicate the status of the device attachment.
+The `BindingConditions` and `BindingFailureConditions` fields within `AllocatedDeviceStatus` are used to indicate the status of the device attachment.
 These fields will contain a list of conditions, each representing a specific state or event related to the device.
 
 For this feature, following fields are added:
 
 ```go
-// AllocatedDeviceStatus.Conditions contains the status of an allocated device, if the
+// AllocatedDeviceStatus contains the status of an allocated device, if the
 // driver chooses to report it. This may include driver-specific information.
-type AllocatedDeviceStatus.Conditions struct {
+type AllocatedDeviceStatus struct {
     ...
     // BindingConditions defines the conditions for binding.
     //
     // +optional
-    BindingConditions map[string]bool
+    BindingConditions []string
 
     // BindingFailureConditions defines the conditions for binding failure.
+    // If true, a binding failure occurred.
     //
     // +optional
-    BindingFailureConditions map[string]bool
+    BindingFailureConditions []stirng
+
+    // UsageRestrictedToNode indicates if the usage of an allocation involving this device
+    // has to be limited to exactly the node that was chosen when allocating the claim.
+    //
+    // +optional
+    UsageRestrictedToNode bool
+
+    // BindingTimeoutSeconds indicates the prepare timeout period.
+    // If the timeout period is exceeded, the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
+    //
+    // +optional
+    BindingTimeoutSeconds *metav1.Duration
 }
 ```
 
@@ -404,7 +418,7 @@ When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform
 
 If Conditions are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
 
-2. **Copy Conditions**: Copy `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
+2. **Copy Conditions**: Copy `UsageRestrictedToNode`, `BindingTimeoutSeconds`, `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
 3. **Wait for Conditions**: Wait for the following conditions:
    - Wait until all conditions in the BindingConditions are `True` before proceeding to Bind.
    - If any one of the conditions in the BindingFailureConditions becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.

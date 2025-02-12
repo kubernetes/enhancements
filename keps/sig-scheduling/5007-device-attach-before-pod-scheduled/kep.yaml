@@ -1,4 +1,4 @@
-title: DRA Device Attach Before Pod Scheduled
+title: DRA: Device Binding Conditions
 kep-number: 5007
 authors:
   - "@KobayashiD27"
@@ -39,7 +39,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DRADeviceAttachDuringScheduling
+  - name: DRAPrebindingConditions
     components:
       - kube-scheduler
 disable-supported: true
