@@ -135,7 +135,8 @@ since it plays also rate limiting role, avoiding system overload due to too freq
 At the beginning of the scheduling cycle, a pod is popped from the activeQ.
 Currently, when activeQ is empty, it waits until some pod is placed into the queue.
 This KEP proposes to pop the pod from the backoffQ when the activeQ is empty,
-however moving pods from the backoffQ to activeQ will still work as before to avoid the problem of pods starvation, 
+however the current mechanism of moving pods from the backoffQ to activeQ (aka flushing)
+will still work as before to avoid the problem of pods starvation, 
 which was the original reason of introducing the backoffQ.
 
 To ensure the `PreEnqueue` is called for each pod taken into the scheduling cycle,
@@ -175,7 +176,7 @@ and the pod that had a smaller attempt number eventually won't be popped out.
 
 ### Low priority pod could be chosen to pop, even if high priority pod has a slightly later backoff expiration
 
-Flushing from backoffQ to activeQ is done each second, taking all pods with backoff expired.
+The current mechanism of flushing from backoffQ to activeQ is done each second, taking all pods with backoff expired.
 It means that, when they come to activeQ, they are sorted by priority there and taken in this order from activeQ.
 It is important, because preemption of a lower priority pod could happen if a higher priority pod is scheduled later.
 
