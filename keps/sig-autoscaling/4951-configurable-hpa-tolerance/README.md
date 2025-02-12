@@ -102,9 +102,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -283,7 +283,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -335,7 +335,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+N/A, the feature is tested using unit tests and e2e tests.
 
 ##### e2e tests
 
@@ -491,7 +491,8 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: HPAConfigurableTolerance
-  - Components depending on the feature gate: `kube-controller-manager`
+  - Components depending on the feature gate: `kube-controller-manager` and
+    `kube-apiserver`.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -517,7 +518,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 The feature can be disabled by restarting the `kube-controller-manager` with the feature gate set to `false`.
 
-Any `tolerance` values set on existing HPAs will be ignored by the `kube-controller-manager` when the feature gate is off.
+Any `tolerance` values set on existing HPAs will be ignored by the
+`kube-controller-manager` and `kube-apiserver` when the feature gate is off.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -537,6 +539,9 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will add a unit test verifying that HPAs with and without the new fields are
+properly validated, both when the feature gate is enabled or not.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -594,6 +599,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The presence of the new `tolerance` HPA field indicates that the feature is
+used.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -605,13 +613,18 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Events
+  - Event Reason: `SuccessfulRescale`
+
+The tolerance is applied on the ratio between the _current_ and _desired_ metric
+values. Users can get both values using
+[`kubectl describe`](https://github.com/kubernetes/kubernetes/blob/1b7a0591871772fbbc0fda430b3b73bc24c0e738/staging/src/k8s.io/kubectl/pkg/describe/describe.go#L4109)
+and use them to verify that scaling events are triggered when their ratio is out
+of tolerance.
+
+We will update the controller-manager logs to help users understand the behavior
+of the autoscaler. The data added to the logs will include the tolerance used
+for each scaling decision.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -630,18 +643,21 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+This KEP is not expected to have any impact on SLIs/SLOs as it doesn't introduce
+a new HPA behavior, but merely allows users to easily change the value of a
+parameter that's otherwise difficult to update.
+
+Standard HPA metrics (e.g.
+`horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can
+be used to verify the HPA controller health.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -649,6 +665,12 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Users may want to see a signal that autoscaling isn't happening because of the
+tolerance, but this is not directly related to this KEP (this problem already
+exists today with the hard-coded 10% tolerance), and taking this KEP as an
+opportunity to improve the situation is difficult (see
+[this thread](https://github.com/kubernetes/enhancements/pull/4954#discussion_r1857098884)).
 
 ### Dependencies
 
@@ -775,6 +797,8 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 
+No.
+
 ### Troubleshooting
 
 <!--
@@ -819,6 +843,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+2025-01-21: KEP PR merged.
 
 ## Drawbacks
 

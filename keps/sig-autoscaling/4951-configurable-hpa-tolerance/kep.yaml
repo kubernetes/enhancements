@@ -4,13 +4,13 @@ authors:
   - "@pr00se"
   - "@jm-franc"
 owning-sig: sig-autoscaling
-status: provisional
+status: implementable
 creation-date: 2024-11-05
 reviewers:
   - "@gjtempleton"
   - "@raywainman"
 approvers:
-  - TBD
+  - "@gjtempleton"
 
 see-also:
   - "/keps/sig-autoscaling/853-configurable-hpa-scale-velocity"
@@ -40,5 +40,5 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-#metrics:
-#  - my_feature_metric
+metrics:
+  - horizontal_pod_autoscaler_controller_metric_computation_duration_seconds
