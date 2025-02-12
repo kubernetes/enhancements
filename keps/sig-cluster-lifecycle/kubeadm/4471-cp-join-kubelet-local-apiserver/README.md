@@ -657,6 +657,8 @@ Major milestones might include:
 - 08.02.2024: KEP draft created.
 - 07.05.2024: KEP marked as implementable for 1.31 or later.
 - 12.07.2024: KEP adjusted to match discussed implementation.
+- 15.07.2024: KEP alpha implementation merged.
+- 06.02.2024: PRs to promote the feature gate to Beta.
 
 ## Drawbacks
 
