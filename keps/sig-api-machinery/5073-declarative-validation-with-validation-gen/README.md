@@ -864,8 +864,6 @@ In Kubernetes there are internal schema representations and versioned schema rep
 
 ### Handling Zero Values in Declarative Validation
 
-<<[UNRESOLVED what option to use for handing zero values in Declarative Validation ]>>
-
 Declarative validation has challenges dealing with zero values in Go types. The core issue stems from the fact that zero values can be treated both as valid inputs and equivalent to unspecified or unset values.. This creates discrepancies between how Go code handles validation and how declarative validation, based on the schema, would interpret the same data.  Ex: `ReplicationControllerSpec.MinReadySeconds` might legitimately be set to `0`, indicating that a pod is considered available immediately. This challenges the general assumption in some contexts that zero values for optional fields are inherently invalid, as Kubernetes can treat in some cases as set values or defaults.
 
 #### Difficulties with `+k8s:required` and `+k8s:default`
@@ -874,7 +872,7 @@ The straightforward approach of using the `+k8s:required` tag to enforce the pre
 
 #### Proposed Solutions
 
-1. <strong>Tri-State mutually exclusive options (Recommended): `+k8s:optional`, `+k8s:default`, `+k8s:required`:</strong>
+1. <strong>Tri-State mutually exclusive options: `+k8s:optional`, `+k8s:default`, `+k8s:required`:</strong>
     *   Treat `+k8s:optional`, `+k8s:default`, and `+k8s:required` as mutually exclusive options.
     *   Fields that allow valid zero values and have defaults would be explicitly tagged with neither `+k8s:optional` nor `+k8s:required`.
     *   Validation logic would need to be aware of this and handle zero values appropriately for such fields.
@@ -904,8 +902,6 @@ The linter, as previously described, will enforce rules to address valid zero-va
     *   Perform checks on other tag values based on any `+k8s:default` tag value (where applicable).
 
 The linter will flag any violations of these rules, ensuring consistent zero-value handling and preventing related errors. This automated enforcement is crucial for catching issues early in the development process.
-
-<<[/UNRESOLVED]>>
 
 ### Ratcheting
 
