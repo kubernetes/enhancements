@@ -298,7 +298,7 @@ The scheduler's restart should not pose an issue, as the decision to wait is bas
 After a scheduler restart, if the device attachment is not yet complete, the scheduler will wait again at PreBind.
 If the attachment is complete, it will pass through PreBind.
 
-**Scheduler does not guarantee to pick up the same node for the Pod after the restart**
+**Scheduler does not guarantee to pick up the same node for the Pod after the reschedule (after binding failure)**
 
 Basically scheduler should select the same node, however we need to consider the following scenarios:
  - In case of a failure, we might want to try a different node.
