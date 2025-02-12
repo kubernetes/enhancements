@@ -179,7 +179,8 @@ Flushing from backoffQ to activeQ is done each second, taking all pods with back
 It means that, when they come to activeQ, they are sorted by priority there and taken in this order from activeQ.
 It is important, because preemption of a lower priority pod could happen if a higher priority pod is scheduled later.
 
-To mitigate this, `lessFn` function of backoffQ's heap will be changed, quantifying the time to make one second windows in which pods will be sorted by priority.
+To mitigate this, `lessFn` function of backoffQ's heap will be changed, splitting the time to make one second windows (by ignoring milliseconds)
+in which pods will be sorted by priority.
 Those whole windows will be eventually flushed to activeQ, making no change in current behavior.
 
 ## Design Details
@@ -218,7 +219,7 @@ At the moveToActiveQ level, these two paths could be distinguished by checking i
 As [mentioned](#low-priority-pod-could-be-chosen-to-pop-even-if-high-priority-pod-has-a-slightly-later-backoff-expiration) in risks,
 backoffQ's heap `lessFn` function has to be changed to apply priority within 1 second windows.
 The actual implementation takes backoff expiration times of two pods and compares which is lower.
-The new version will cut the milliseconds and use priorities to compare pods within those windows.
+The new version will ignore the milliseconds and use priorities to compare pods within those windows.
 To make ordering predictable, in case of equal priorities within the same window,
 the whole backoff time expiration will be eventually compared. See the pseudocode:
 
