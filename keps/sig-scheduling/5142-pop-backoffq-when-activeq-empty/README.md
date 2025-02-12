@@ -106,7 +106,8 @@ This would allow to process potentially schedulable pods ASAP, eliminating a pen
 
 There are three queues in the scheduler:
 - activeQ contains pods ready for scheduling,
-- unschedulableQ holds pods that were unschedulable in their scheduling cycle and are waiting for cluster state to change,
+- unschedulableQ holds pods that were unschedulable in their scheduling cycle and are waiting for cluster state to change.
+  These pods are then moved to backoffQ to apply a penalty.
 - backoffQ stores pods that failed scheduling attempts (either due to being unschedulable or errors) and could be schedulable again,
   but applying a backoff penalty, scaled with the number of attempts.
 
@@ -154,7 +155,9 @@ This proposal will take those pods earlier, leading to losing this mechanism.
 
 After merging [kubernetes#128748](github.com/kubernetes/kubernetes/pull/128748),
 it will be possible to distinguish pods backing off because of errors from those backing off because of an unschedulable attempt.
-This information could be used when popping, by filtering only the pods that are from an unschedulable attempt or even splitting the backoffQ.
+To preserve the efficiency of the pop() function, it will be necessary to divide the backoffQ into two queues: 
+one for pods that were unschedulable, and another for those rejected due to an error.
+Then popping will be performed only from the former, keeping the error backoff intact.
 
 This has to be resolved before the beta is released, which means before the release of the feature.
 
@@ -165,8 +168,17 @@ and the backoff time is calculated based on the number of scheduling failures th
 If one pod has a smaller attempt counter than others,
 could the scheduler keep popping this pod ahead of other pods because the pod's backoff expires faster than others?
 Actually, that wouldn't happen because the scheduler would increment the attempt counter of pods from the backoffQ as well,
-which would make the backoff time of pods bigger every after the scheduling attempt,
+which would make the backoff time larger after each after the scheduling attempt,
 and the pod that had a smaller attempt number eventually won't be popped out.
+
+### Low priority pod could be chosen to pop, even if high priority pod has a slightly later backoff expiration
+
+Flushing from backoffQ to activeQ is done each second, taking all pods with backoff expired.
+It means that, when they come to activeQ, they are sorted by priority there and taken in this order from activeQ.
+It is important, because preemption of a lower priority pod could happen if a higher priority pod is scheduled later.
+
+To mitigate this, key function of backoffQ's heap will be changed, quantifying the time to make one second windows in which pods will be sorted by priority.
+Those whole windows will be eventually flushed to activeQ, making no change in current behavior.
 
 ## Design Details
 
@@ -176,7 +188,7 @@ To achieve the goal, activeQ's `pop()` method needs to be changed:
 1. If the activeQ is empty, then instead of waiting for a pod to arrive at the activeQ, popping from the backoffQ is tried.
 2. If the backoffQ is empty, then `pop()` is waiting for a pod as previously.
 3. If the backoffQ is not empty, then the pod is processed like the pod would be taken from the activeQ, including increasing attempts number.
-   It is poping from a heap data structure, so it should be fast enough not to cause any performance troubles.
+   It is popping from a heap data structure, so it should be fast enough not to cause any performance troubles.
 
 To support monitoring, when popping from the backoffQ,
 the `scheduler_queue_incoming_pods_total` metric with an `activeQ` queue and a new `PopFromBackoffQ` event label will be incremented.
@@ -198,6 +210,27 @@ if not check the next backoffQ pod, until it finds the pod that goes through all
 Also, it means we'd have two paths that `PreEnqueue` plugins are invoked: when new pods are created and entering the scheduling queue, 
 and when pods are pushed into the backoffQ.
 At the moveToActiveQ level, these two paths could be distinguished by checking if the event is equal to `BackoffComplete`.
+
+### Change backoffQ key function
+
+As [mentioned](#low-priority-pod-could-be-chosen-to-pop-even-if-high-priority-pod-has-a-slightly-later-backoff-expiration) in risks,
+backoffQ's heap key function has to be changed to apply priority within 1 second windows.
+The actual implementation takes backoff expiration times of two pods and compares which is lower.
+The new version will cut the milliseconds and use priorities to compare pods within those windows.
+To make ordering predictable, in case of equal priorities within the same window,
+the whole backoff time expiration will be eventually compared. See the pseudocode:
+
+```go
+func podsCompareBackoffCompleted(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
+	if pInfo1.BackoffTime.InSeconds() != pInfo2.BackoffTime.InSeconds() {
+    return pInfo1.BackoffTime.Before(pInfo2.BackoffTime)
+  }
+  if pInfo1.Priority != pInfo2.Priority {
+    return pInfo1.Priority < pInfo2.Priority
+  }
+	return pInfo1.BackoffTime.Before(pInfo2.BackoffTime)
+}
+```
 
 ### Test Plan
 
@@ -233,7 +266,7 @@ N/A
 
 - Feature implemented behind a feature flag and enabled by default.
 - All tests from [Test Plan](#test-plan) implemented.
-- Make sure [backoff in case of error](#backoff-wont-be-working-as-natural-rate-limiter-in-case-of-errors) is not skipped.
+- Make sure [backoff in case of error](#backoff-wont-be-working-as-a-natural-rate-limiter-in-case-of-errors) is not skipped.
 
 #### GA
 
