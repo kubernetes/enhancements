@@ -52,7 +52,7 @@
       - [Phase3: Finalization and GA (Core Team and community)](#phase3-finalization-and-ga-core-team-and-community)
     - [Tagging and Validating Against Versioned Types](#tagging-and-validating-against-versioned-types)
     - [Handling Zero Values in Declarative Validation](#handling-zero-values-in-declarative-validation)
-      - [Difficulties with <code>+required</code> and <code>+default</code>](#difficulties-with-required-and-default)
+      - [Difficulties with <code>+k8s:required</code> and <code>+k8s:default</code>](#difficulties-with-k8srequired-and-k8sdefault)
       - [Proposed Solutions](#proposed-solutions)
       - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
     - [Ratcheting](#ratcheting)
@@ -312,7 +312,7 @@ Based on this analysis we believe that the proposed `validation-gen` design can 
 
 1. Reviewer directly examines validation IDL tags on the APIs in the new types.go file (next to the API definitions).
     *    Reviewer grasps validation intent of each field as IDL tags provide a concise and declarative way to understand the validation rules at a glance
-3. CI linter job automatically verifies the consistency and proper usage of the specified IDL tags (eg: field doesn’t have both +required and +optional, etc.)
+3. CI linter job automatically verifies the consistency and proper usage of the specified IDL tags (eg: field doesn’t have both +k8s:required and +k8s:optional, etc.)
 4. Reviewer reviews PR focusing on the overall API design and ensuring the PR’s validation rules effectively support the API's intended behavior.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -457,7 +457,7 @@ func (etv *enumTagValidator) GetValidations(context Context, _ []string, payload
 }
 
 func init() {
-    AddToRegistry(EnumValidator) // Registers +enum
+    AddToRegistry(EnumValidator) // Registers +k8s:enum
 }
 ```
 
@@ -868,15 +868,15 @@ In Kubernetes there are internal schema representations and versioned schema rep
 
 Declarative validation has challenges dealing with zero values in Go types. The core issue stems from the fact that zero values can be treated both as valid inputs and equivalent to unspecified or unset values.. This creates discrepancies between how Go code handles validation and how declarative validation, based on the schema, would interpret the same data.  Ex: `ReplicationControllerSpec.MinReadySeconds` might legitimately be set to `0`, indicating that a pod is considered available immediately. This challenges the general assumption in some contexts that zero values for optional fields are inherently invalid, as Kubernetes can treat in some cases as set values or defaults.
 
-#### Difficulties with `+required` and `+default`
+#### Difficulties with `+k8s:required` and `+k8s:default`
 
-The straightforward approach of using the `+required` tag to enforce the presence of a field fails when the zero value is valid. Applying `+required` can incorrectly reject legitimate zero values. Similarly, using `+default` to explicitly document the default value (even if it's the zero value) creates problems because `+default` implies requiredness on the server side.
+The straightforward approach of using the `+k8s:required` tag to enforce the presence of a field fails when the zero value is valid. Applying `+k8s:required` can incorrectly reject legitimate zero values. Similarly, using `+k8s:default` to explicitly document the default value (even if it's the zero value) creates problems because `+k8s:default` implies requiredness on the server side.
 
 #### Proposed Solutions
 
-1. <strong>Tri-State mutually exclusive options (Recommended): `+optional`, `+default`, `+required`:</strong>
-    *   Treat `+optional`, `+default`, and `+required` as mutually exclusive options.
-    *   Fields that allow valid zero values and have defaults would be explicitly tagged with neither `+optional` nor `+required`.
+1. <strong>Tri-State mutually exclusive options (Recommended): `+k8s:optional`, `+k8s:default`, `+k8s:required`:</strong>
+    *   Treat `+k8s:optional`, `+k8s:default`, and `+k8s:required` as mutually exclusive options.
+    *   Fields that allow valid zero values and have defaults would be explicitly tagged with neither `+k8s:optional` nor `+k8s:required`.
     *   Validation logic would need to be aware of this and handle zero values appropriately for such fields.
     *   <strong>Drawback:</strong> This approach requires a linter to enforce the tri-state rule and prevent invalid combinations.
     *   <strong>Benefit:</strong> Simplifies the mental model by making the relationship between optionality, defaults, and requiredness explicit.
@@ -884,12 +884,12 @@ The straightforward approach of using the `+required` tag to enforce the presenc
     *   A new tag could be introduced to signify that a zero value is permissible, even with a default.
     *   <strong>Drawback:</strong> Adds complexity by introducing another tag and complicates the mental model.
 3. <strong>Compile-Time or Runtime Default Value Check:</strong>
-    *   <strong>Compile-Time Check:</strong> During code generation, the `+default` tag could be parsed, and if it refers to a zero value, validation logic could be adjusted accordingly.
+    *   <strong>Compile-Time Check:</strong> During code generation, the `+k8s:default` tag could be parsed, and if it refers to a zero value, validation logic could be adjusted accordingly.
     *   <strong>Drawback:</strong> Complex implementation, requires more information to be available during code generation.
     *   <strong>Runtime Check:</strong> Validation logic could check if the provided default value is a zero value and skip certain checks.
     *   <strong>Drawback:</strong> Considered overly-complicated ("gross") and potentially impacts performance.
     *   <strong>Benefit:</strong> Closest to correct.
-4. <strong>Make `+optional` on non-pointer fields be advisory:</strong>
+4. <strong>Make `+k8s:optional` on non-pointer fields be advisory:</strong>
     * If we find an optional string field, the optional tag can be used as documentation, but the actual validation will rely on the format-checking (e.g. dns-label). To an end user this means that what used to be a "field is required" error now becomes a "not a dns-label" error. Only slightly worse.
 
 #### Addressing the Problem with Valid Zero Values Using the Linter
@@ -897,11 +897,11 @@ The straightforward approach of using the `+required` tag to enforce the presenc
 The linter, as previously described, will enforce rules to address valid zero-value challenges. Specifically, it will:
 
 *   Enforce the chosen zero-value handling strategy
-    *   Tri-state solution: Ensure `+optional`, `+required`, and `+default` are mutually exclusive.
+    *   Tri-state solution: Ensure `+k8s:optional`, `+k8s:required`, and `+k8s:default` are mutually exclusive.
     *   `optional-default: zero-allowed solution`: Verify correct usage of this tag.
-*   Validate `+default` values
-    *   Check compatibility of `+default` values with field type and other validation rules (where applicable).
-    *   Perform checks on other tag values based on any `+default` tag value (where applicable).
+*   Validate `+k8s:default` values
+    *   Check compatibility of `+k8s:default` values with field type and other validation rules (where applicable).
+    *   Perform checks on other tag values based on any `+k8s:default` tag value (where applicable).
 
 The linter will flag any violations of these rules, ensuring consistent zero-value handling and preventing related errors. This automated enforcement is crucial for catching issues early in the development process.
 
@@ -1033,26 +1033,18 @@ func TestVersionedValidationByFuzzing(t *testing.T) {
 ```
 
 ###### strategy_test.go vs validation_test.go
-<<[UNRESOLVED should we move current validation_test.go logic to strategy_test.go as it makes more sense generally and aids this project? ]>>
-
-
 Currently, validation logic and associated tests are logically split across `validation.go` and `strategy.go`. The hand-written validation functions and associated tests reside in `validation.go` and `validation_test.go`  while `strategy.go` determines when to invoke these functions during API object creation and updates. With the introduction of declarative validation (controlled by the `DeclarativeValidation` feature gate)  the current logic split is worth considering moving from `validation_test.go` to `strategy_test.go` as the current logic split in the test is unfavorable for the migration as it requires additional plumbing work.
 
-The current approach in the prototype experiment to migrate ReplicationController involves directly injecting declarative validation and equivalency tests into `validation_test.go`. This is achieved by conditionally appending calls to `rest.ValidateDeclaratively` within the existing test cases, based on the `DeclarativeValidation` feature gate's status. This allows for a direct comparison of the outputs between hand-written and declarative validation within the same test framework.
+The current approach in the prototype experiment to migrate ReplicationController involves directly injecting declarative validation and equivalency tests into `validation_test.go`. This is achieved by conditionally appending calls to `rest.ValidateDeclaratively` within the existing test cases, based on the `DeclarativeValidation` feature gate's status. This allows for a direct comparison of the outputs between hand-written and declarative validation within the same test framework.  For v1.33 we plan on using this method for the initial small migration where we land the core pieces of `validation-gen`
 
-**Moving the feature gate check and declarative validation logic to `strategy_test.go` could offer several advantages</strong>:
-
+For v1.34 we plan on  - **moving the feature gate check and declarative validation logic to `strategy_test.go`**.  Doing this has the following benefits:
 *   **Reduced Test Duplication:** `validation_test.go` could be simplified, as it would no longer need to handle both hand-written and declarative validation paths.
 *   **Clearer Separation of Concerns:** `strategy.go` would be responsible for determining _when_ to validate, while `validation.go` would handle _how_ to validate.
 *   **Easier Migration:**  Transitioning to a fully declarative model would be smoother, as the core validation logic would already be invoked through the strategy.
 
-However, this approach also has potential drawbacks:
+Doing this requires an additional PR to moving existing hand-written validation logic from `validation.go` to `strategy.go` would but it would be straightforward (only moving files). This would be done **in a PR after the initial migration PR in v1.34 but before any additional migration work is done.**
 
-*   **Additional PRs for Initial Migration:** Moving existing hand-written validation logic from `validation.go` to `strategy.go` would result in additional work via a PR to move the related code but it would be straightforward (only moving files).
-
-Given the low complexity of moving this code prior to the changes, the enhanced logic split of moving the code, and the reduced work for the migration that moving this code would have currently the plan for Declarative Validation is that the current `validation_test.go` tests are moved to `strategy_test.go` in a PR prior to the migration PR.  
-
-<<[/UNRESOLVED]>>
+Given the low complexity of moving this code prior to the changes, the enhanced logic split of moving the code, and the reduced work for the migration that moving this code would have currently the plan for Declarative Validation is that the current `validation_test.go` tests are moved to `strategy_test.go`.
 
 ###### Error Message Equivalence
 
