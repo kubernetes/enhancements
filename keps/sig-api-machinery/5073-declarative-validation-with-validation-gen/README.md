@@ -1177,7 +1177,7 @@ We expect to hit the same performance numbers for API requests as we have with j
 
 4. Metrics
     *   Metric name: `apiserver_request_duration_seconds`
-    *   Metric name: `declarative_validation_mismatch_metric`
+    *   Metric name: `declarative_validation_mismatch`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
