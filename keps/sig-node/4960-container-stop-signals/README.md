@@ -228,6 +228,12 @@ The signal that we get from `ContainerConfig` can be validated with [ParseSignal
 
 Find the entire diff for containerd which was done for the POC [here](https://github.com/containerd/containerd/compare/main...sreeram-venkitesh:containerd:added-custom-stop-signal?expand=1).
 
+### Windows support
+
+After discussing with SIG Windows, we came to the decision that for Windows Pods we'll only support SIGTERM and SIGKILL as the valid stop signals. The behaviour of how kubelet handles stop signals is not different for Linux and Windows environments and the CRI API works in both cases.
+
+We will have additional validation for Windows Pods to restrict the set of valid stop signals to SIGTERM and SIGKILL. There will be an admission check that validates that the stop signal is only set to either SIGTERM or SIGKILL if spec.Os.Name == windows.
+
 ### User Stories (Optional)
 
 #### Story 1
@@ -272,6 +278,8 @@ Alpha:
 - Test that the validation returns the appropriate error message when an invalid string value is given for the stop signal
 - Tests for verifying behavior when feature gate is disabled after being used to create Pods where the stop signal field is used
 - Tests for verifying behavior when feature gate is reenabled after being disabled after creating Pods with stop signal
+- Test that the validation allows SIGTERM and SIGKILL signals for Windows Pods 
+- Test that the validation doesn't allow non valid signals for Windows Pods
   
 ##### e2e tests
 
@@ -283,6 +291,7 @@ Alpha:
    - When no stop signal is defined (Stop signal in Status should be SIGTERM)
 - Test that the stop signal is gracefully degraded when stop signal is specified but the container runtime is on a version that doesn't support the implementation
 - Test that the feature is gracefully degraded when stop signal is not supported in Kubelet but is supported in the container runtime
+- Test that Windows Pods can be created with the correct stop signals and that the containers are killed with the respective signals
 
 ### Graduation Criteria
 
@@ -291,12 +300,13 @@ Alpha:
 - Feature implemented behind a feature flag
 - CRI API implementation completed in containerd marked as experimental
 - CRI API implementation completed for CRI-O
+- Best effort support for Windows for SIGTERM and SIGKILL signals
 - Initial e2e tests completed and enabled, testing the feature against containerd
 - Unit tests for validation, e2e tests for version skew
 
 #### Beta
 
-- Add support for Windows
+- Further test Windows support and add e2e tests
 - Gather feedback from developers and surveys
 - e2e tests for CRI-O
 
