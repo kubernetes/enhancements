@@ -231,7 +231,7 @@ Find the entire diff for containerd which was done for the POC [here](https://gi
 
 ### Windows support
 
-After discussing with SIG Windows, we came to the decision that for Windows Pods we'll only support SIGTERM and SIGKILL as the valid stop signals. The behaviour of how kubelet handles stop signals is not different for Linux and Windows environments and the CRI API works in both cases.
+Currently using the hcsshim is the only way to run containers on Windows nodes. hcsshim [supports SIGTERM and SIGKILL and a few Windows specific CTRL events](https://github.com/microsoft/hcsshim/blob/e5c83a121b980b1b85f4df0813cfba2d83572bac/internal/signals/signal.go#L74-L126). After discussing with SIG Windows, we came to the decision that for Windows Pods we'll only support SIGTERM and SIGKILL as the valid stop signals. The behaviour of how kubelet handles stop signals is not different for Linux and Windows environments and the CRI API works in both cases.
 
 We will have additional validation for Windows Pods to restrict the set of valid stop signals to SIGTERM and SIGKILL. There will be an admission check that validates that the stop signal is only set to either SIGTERM or SIGKILL if spec.Os.Name == windows.
 
