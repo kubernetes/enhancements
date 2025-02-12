@@ -343,6 +343,22 @@ _This section must be completed when targeting beta graduation to a release._
 
   Yes. These were tested on a 1.27 kind cluster by enabling, disabling, and re-enabling the feature-gate on the kubelet.
 
+  Use a basic config.yaml:
+
+  ```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+```
+
+  1. Create kind cluster: `kind create cluster --name kubelet-tracing --image kindest/node:v1.27.0 --config config.yaml`
+  2. exec into kind "node" container: `docker exec -it <container id for node> sh`
+  3. use apt-get to install vim
+  4. Edit the kubelet configuration to enable the `KubeletTracing` feature gate: `vim /var/lib/kubelet/config.yaml`
+  5. Restart the kubelet: `systemctl restart kubelet`.
+  6. Verify that the node status is still being updated (not from within docker container): `kubectl describe no`
+  7. Repeat steps 2-6, but disable `KubeletTracing`, and verify that the kubelet works after the restart.
+  8. Repeat steps 2-6, but re-enable `KubeletTracing`, and verify that the kubelet works after the restart.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   No
 
