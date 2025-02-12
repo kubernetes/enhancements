@@ -882,7 +882,8 @@ in back-to-back releases.
 - Multiple examples of real world uses
 - Production support in both CRI-O and containerd
 - Allowing time for feedback
-
+- Consider a new `RuntimeConfig` field to indicate to end users if the feature
+  is supported or not.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1320,6 +1321,14 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+
+**The feature seems to be enabled but does not work:**
+
+- Ensure that the feature gate is enabled on the kube-apiserver and the kubelet
+- Ensure that the runtime supports the feature: If a runtime does not
+  support it, then container creation will most likely fail with an error that
+  "host path is not set". This means that the runtime is missing a CRI field
+  (`Mount.host_path`) while not being able to interpret `Mount.image`.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
