@@ -79,49 +79,59 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Glossary
 
-hotplug: dynamically add compute resources (CPU, memory) to the node, either via software (online offlined resources) or via hardware (physical additions while the system is running)
+Hotplug: Dynamically add compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (online offlined resources) or via hardware (physical additions while the system is running)
 
-hotunplug: dynamically remove compute resources (CPU, memory) to the node, either via software (make resources go offline) or via hardware (physical removal while the system is running)
+Hotunplug: Dynamically remove compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (make resources go offline) or via hardware (physical removal while the system is running)
 
 
 ## Summary
 
-The proposal seeks to facilitate hot plugging of node compute resources, thereby streamlining cluster resource capacity updates through node compute resource resizing, rather than introducing new nodes to the cluster.
+The proposal seeks to facilitate hot plugging of node compute resources(CPU, Memory, Swap Capacity and HugePages), thereby streamlining cluster resource capacity updates through node compute resource resizing rather than introducing new nodes to the cluster.
 The revised node configurations will be automatically propagated at both the node and cluster levels.
-Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager, in response to alterations in a node's CPU and memory configurations.
-This approach aims to optimize resource management, improve scalability, and minimize disruptions to cluster operations.
+
+Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager, in response to alterations in a node's CPU and memory configurations and 
+aims to optimize resource management, improve scalability, and minimize disruptions to cluster operations.
 
 ## Motivation
-Currently, the node's configurations are recorded solely during the kubelet bootstrap phase and subsequently cached. assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
+Currently, the node's resource configurations are recorded solely during the kubelet bootstrap phase and subsequently cached, assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
+In a conventional Kubernetes environment, the cluster resources might necessitate modification because of inaccurate resource allocation during cluster initialization or escalating workload over time, 
+necessitating supplementary resources within the cluster.
 
-However, contemporary kernel capabilities enable the dynamic addition of CPUs and memory to a node (References: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html). 
-This can result in Kubernetes being unaware of the node's altered compute capacities during a live-resize, causing the node to retain outdated information. 
-This can lead to inconsistencies or an imbalance in the cluster, affecting the optimal scheduling and deployment of workloads.
+Contemporarily, kernel capabilities enable the dynamic addition of CPUs and memory to a node (References: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html).
+This can be across different architecture and compute environments like Cloud, Bare metal or VM. During this exercise it can lead to Kubernetes being unaware of the node's altered compute capacities during a live-resize,
+causing the node to retain outdated information and leading to inconsistencies or an imbalance in the cluster, thus affecting the optimal scheduling and deployment of workloads. As a side-effect, it is also possible for the workloads
+to be force migrated to a different node, causing a temporary spike in the CPU/Memory utilisation which is undesirable.
 
-In a conventional Kubernetes environment, the cluster resources might necessitate modification due to the following factors:
-- Inaccurate resource allocation during cluster initialization.
-- Escalating workload over time, necessitating supplementary resources within the cluster.
+With the current state of implementation in the Kubernetes realm, the available workarounds to allow the cluster to be aware of the changes in the cluster's capacity is by 
+restarting the node or at-least restarting the kubelet, which does not have a certain set of best-practices to follow.
 
-To address these situations, we can:
-- Horizontally scale the cluster by incorporating additional compute nodes.
-- Vertically scale the cluster by augmenting node capacity. As a workaround for this issue, the method to capture node resizing within the cluster entails restarting the Kubelet.
+However, this approach does carry a few drawbacks such as
+ - Introducing a downtime for the existing/to-be-scheduled workloads on the cluster until the node is available.
+ - Necessity to reconfigure the underlying services post node-reboot.
+ - Managing the associated nuances that a kubelet restart or node reboot carries such as
+   - https://github.com/kubernetes/kubernetes/issues/109595
+   - https://github.com/kubernetes/kubernetes/issues/119645
+   - https://github.com/kubernetes/kubernetes/issues/125579
+   - https://github.com/kubernetes/kubernetes/issues/127793
 
-These strategies enable the cluster to adapt to varying resource demands, ensuring optimal performance and efficient resource utilization.
-However for Vertical scaling, the current implementation does not allow the Kubelet to be aware of the changes made to the compute capacity of the node
+Hence, it is necessary to handle the updates in the compute capacity in a graceful fashion across the cluster, than adopting to reset the cluster components to achieve the same.
+
+Also, given that the capability to live-resize a node exists in the kernel, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
+by the Kubernetes administrator.
 
 Node resource hot plugging proves advantageous in scenarios such as:
 - Efficiently managing resource demands with a limited number of nodes by increasing the capacity of existing nodes instead of provisioning new ones.
 - The procedure of establishing new nodes is considerably more time-intensive than expanding the capabilities of current nodes.
 - Improved inter-pod network latencies as the inter-node traffic can be reduced if more pods can be hosted on a single node.
 - Easier to manage the cluster with fewer nodes, which brings less overhead on the control-plane
+- Mitigate a few of the existing limitations/issues that are associated with a node/kubelet restart.
 
-Implementing this KEP will empower nodes to recognize and adapt to changes in their configurations, 
-thereby facilitating the efficient and effective deployment of pod workloads to nodes capable of meeting the required compute demands.
+Implementing this KEP will empower nodes to recognize and adapt to changes in their compute configurations and allow facilitating the efficient and effective deployment of pod workloads to nodes capable of meeting the required compute demands.
 
 ### Goals
 
 * Achieve seamless node capacity expansion through hot plugging resources.
-* Facilitate the reinitialization of resource managers (CPU manager, memory manager) to accommodate alterations in the node's resource allocation.
+* Enable the re-initialization of resource managers (CPU manager, memory manager) to accommodate alterations in the node's resource allocation.
 * Recalculating the OOMScoreAdj and swap memory limit for existing pods.
 
 ### Non-Goals
@@ -149,7 +159,7 @@ Not Updating OOMScoreAdjust and swap limit
 
 #### Story 1
 
-As a Kubernetes user, I want to allocate more resources (CPU, memory) to a node with existing specialized hardware (such as GPUs, FPGAs, TPUs, etc.) or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html) 
+As a Kubernetes user, I want to allocate more resources (CPU, memory) to a node with existing specialized hardware or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html)
 so that additional workloads can leverage the hardware to be efficiently scheduled and run without manual intervention.
 
 #### Story 2
@@ -168,6 +178,10 @@ As a Site Reliability Engineer (SRE), I want to reduce the operational complexit
 
 As a Cluster administrator, I want to resize a Kubernetes node dynamically, so that I can quickly hot plug resources without waiting for new nodes to join the cluster.
 
+#### Story 5
+
+As a Cluster administrator, I expect my existing workloads to function without having to undergo a disruption which is induced during capacity addition followed by a node/kubelet restart to
+detect the change in compute capacity, which can bring in additional complications.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -187,11 +201,17 @@ As a Cluster administrator, I want to resize a Kubernetes node dynamically, so t
           recalculating the scores.
 
 - Post up-scale any failure in resync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
+  - To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
+
 - Lack of coordination about change in resource availability across kubelet/runtime/plugins.
+  - The plugins/runtime should be updated to react to change in resource information on the node.
 
-- To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
-- The plugins/runtime should updated to react to change in resource information on the node.
+- Kubelet missing hotplug event or too many hotplug events
+  - Hotplug events are captured via periodic polling by the kubelet, this ensures that the capacity is updated in the poll cycle and can technically not miss the event/fail to handle a flood of events.
 
+- Handling downsize events
+  - Though there is no support through this KEP to handle an event of node-downsize, it's the onus of the cluster administrator to resize responsibly to avoid disruption as it lies out of the kubernetes realm.
+  - However, enabling this feature will ensure that the correct resource information is pushed across the cluster.
 
 ## Design Details
 
@@ -436,12 +456,15 @@ node configuration the system will continue to work in the same way.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Once disabled any hot plug of resources won't reflect at the cluster level. 
+Yes. The feature can be disabled by restarting kubelet with the feature-gate off.
+Once disabled any hot plug of resources won't reflect at the cluster level.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the feature is reenabled again, the node resources can be hot plugged in again. Cluster will be automatically updated
-with the new resource information.
+To reenanble the feature, need to turn on the feature-gate and restart the kubelet,
+with feature reenabled, the node resources can be hot plugged in again. Cluster will be automatically updated
+with the new resource information. If there are any pending pods due to lack of resources they will turn into
+running state.
 
 ###### Are there any tests for feature enablement/disablement?
 
