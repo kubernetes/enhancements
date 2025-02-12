@@ -368,8 +368,14 @@ _This section must be completed when targeting beta graduation to a release._
 
 None. Operators can use the absence of traces which an observability signal in their own right.
 
-##### Are there any missing metrics that would be useful to have to improve observability 
+##### Are there any missing metrics that would be useful to have to improve observability
+
   It would be helpful to have metrics about span generation and export: [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547)
+
+  There is progress on defining and implementing OpenTelemetry trace SDK self-observability metrics:
+
+  * Proposal for names: https://github.com/open-telemetry/semantic-conventions/pull/1631
+  * Prototype for OpenTelemetry-Go: https://github.com/open-telemetry/opentelemetry-go/pull/6153
 
 ### Dependencies
 
