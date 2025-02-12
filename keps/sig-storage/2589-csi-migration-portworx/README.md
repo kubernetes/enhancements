@@ -8,10 +8,6 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -32,7 +28,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -50,7 +45,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
-- [] (R) Production readiness review approved
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -74,7 +69,7 @@ used as described in its parent KEP. For all other contents, please refer to the
 
 ## Motivation
 
-Currently the Portworx volume provisioning happens through Portworx in-tree driver. As part of the parent KEP [CSI Migration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration), the Portworx in-tree driver needs to be deprecated in order to give to use Portworx CSI driver.
+Currently the Portworx volume provisioning happens through Portworx in-tree driver. As part of the parent KEP [CSI Migration](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration), the Portworx in-tree driver logic needs to be "migrated" to use Portworx CSI driver instead.
 
 ### Goals
 
@@ -87,12 +82,12 @@ Currently the Portworx volume provisioning happens through Portworx in-tree driv
 
 ## Proposal
 
-The in-tree to CSI migration feature is already in place in k/k. We just need to enable vendor specific feature gates for it to work for each vendor. 
+The in-tree to CSI migration feature is already in place in k/k. We just need to enable Portworx specific feature gates for it to work for Portworx driver.
 
 
 ### Risks and Mitigations
 
- - Portworx CSI driver needs to be already deployed in before enabling this feature.
+ - Portworx CSI driver needs to be already deployed before enabling this feature.
 
 ## Design Details
 
@@ -142,21 +137,27 @@ N/A
 
 * Alpha in 1.23 provided all tests are passing.
 * All functionality is guarded by alpha `CSIMigrationPortworx` feature gate.
+* Portworx CSI migration to Beta, off by default in 1.25. e2e test results are provided in the PR.
 * Beta in 1.31 with design validated by customer deployments
   (non-production)
-* Manual tests with in-tree Portworx volumes
+* Manual testing with in-tree Portworx volumes should be passing.
 * GA in 1.33, with `CSIMigrationPortworx` feature gate graduating to GA.
 
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+When `CSIMigrationPortworx` feature gate gets enabled and customers are not using Portworx security feature, the upgrade/downgrade will work without any changes to cluster objects or configurations.
+In case of downgrade, it will revert back to the existing behavior of using in-tree driver.
+
+With Portworx security feature enabled, customers will have to add certain annotations to in-tree PVs mentioning the CSI secret name/namespace which the kubelet or CSI sidecar containers can use(using `csi-translation-lib`) to pass secret contents to Portworx CSI driver for operations on in-tree PVs. The annotations to be added will be documented in Portworx documentation.
+The downgrade will work without any changes.
 
 ### Version Skew Strategy
 
 N/A
 
 ## Production Readiness Review Questionnaire
+Please refer to the [CSI Migration Production Readiness Review Questionnaire](https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/625-csi-migration#production-readiness-review-questionnaire).
 
 ### Feature Enablement and Rollback
 
