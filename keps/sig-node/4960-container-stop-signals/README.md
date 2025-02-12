@@ -11,6 +11,7 @@
   - [API](#api)
   - [CRI API](#cri-api)
   - [Container runtime changes](#container-runtime-changes)
+  - [Windows support](#windows-support)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
   - [Risks and Mitigations](#risks-and-mitigations)
