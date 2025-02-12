@@ -31,7 +31,7 @@
       - [Risk: we get hundreds of PRs from people migrating fields and can't review them all.](#risk-we-get-hundreds-of-prs-from-people-migrating-fields-and-cant-review-them-all)
         - [Mitigation: These are not urgent and we will have patterns which can be reviewed by more people.](#mitigation-these-are-not-urgent-and-we-will-have-patterns-which-can-be-reviewed-by-more-people)
       - [Risk: Versioned validation drifts between versions.](#risk-versioned-validation-drifts-between-versions)
-        - [Mitigation: round-trip testing + fuzzing + equivalence tests.](#mitigation-round-trip-testing--fuzzing--equivalence-tests)
+        - [Mitigation: round-trip testing + fuzzing + equivalence tests + linting.](#mitigation-round-trip-testing--fuzzing--equivalence-tests--linting)
       - [Risk: Migration to Declarative Validation introduces breaking change to API validation](#risk-migration-to-declarative-validation-introduces-breaking-change-to-api-validation)
         - [Mitigation: Ensure Invalid Objects Still Invalid](#mitigation-ensure-invalid-objects-still-invalid)
         - [Mitigation: Ensure Valid Old Objects Still Valid](#mitigation-ensure-valid-old-objects-still-valid)
@@ -44,16 +44,16 @@
     - [Catalog of Supported Validation Rules &amp; Associated IDL Tags](#catalog-of-supported-validation-rules--associated-idl-tags)
     - [Supporting Declarative Validation IDL tags On Shared Struct Fields](#supporting-declarative-validation-idl-tags-on-shared-struct-fields)
       - [<code>subfield</code> IDL Tag](#subfield-idl-tag)
-      - [<code>validation-gen</code> One-deep typedef support](#validation-gen-one-deep-typedef-support)
-        - [Proposed Solutions](#proposed-solutions)
+      - [<code>validation-gen</code> One-deep typedef Issue And Solution](#validation-gen-one-deep-typedef-issue-and-solution)
+        - [Solution](#solution)
     - [Migration Plan](#migration-plan)
       - [Phase1: Initialization (Responsibility of Contributors Implementing the KEP)](#phase1-initialization-responsibility-of-contributors-implementing-the-kep)
       - [Phase2: Scaling the Migration (Responsibility of Contributors Implementing the KEP and broader community)](#phase2-scaling-the-migration-responsibility-of-contributors-implementing-the-kep-and-broader-community)
       - [Phase3: Finalization and GA (Core Team and community)](#phase3-finalization-and-ga-core-team-and-community)
-    - [Tagging and Validating Against Internal vs Versioned Types](#tagging-and-validating-against-internal-vs-versioned-types)
+    - [Tagging and Validating Against Versioned Types](#tagging-and-validating-against-versioned-types)
     - [Handling Zero Values in Declarative Validation](#handling-zero-values-in-declarative-validation)
       - [Difficulties with <code>+required</code> and <code>+default</code>](#difficulties-with-required-and-default)
-      - [Proposed Solutions](#proposed-solutions-1)
+      - [Proposed Solutions](#proposed-solutions)
       - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
     - [Ratcheting](#ratcheting)
     - [Test Plan](#test-plan)
@@ -153,10 +153,10 @@ Declarative validation will also benefit Kubernetes users:
 
 Additionally Declarative Validation can be built upon to support features such as:
 
-*   Ability to give users direct access to the actual API validation rules (via publishing OpenAPI rules for native types), which are currently only available to developers willing and able to find and read the hand written validation rules.
-*   Ability to enable clients to perform validation of native types earlier in development workflows ("shift-left"), such as with a Git pre-submit linter.
-*   Ability to improve API composition. In particular CRDs that embed native types (such as PodTemplate), which gain validation of the native type automatically. This has the potential to simplify controller development and improve end user experiences when using CRDs.
-*   (Eventually) bring CRD validation and built-in validation together with the same set of server-side validations.
+*   Makes it possible to explore giving users direct access to the actual API validation rules (via publishing OpenAPI rules for native types), which are currently only available to developers willing and able to find and read the hand written validation rules.
+*   Makes it possible to explore API composition. In particular CRDs that embed native types (such as PodTemplate), which gain validation of the native type automatically. This has the potential to simplify controller development and improve end user experiences when using CRDs.
+*   Makes it possible to explore (eventually) bringing CRD validation and built-in validation together with the same set of server-side validations.
+*   Makes it possible to explore client-side validation ("shift-left")
 
 Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen) to get hands-on experience with this proposed enhancement.
 
@@ -173,13 +173,14 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 *   Enable development of linters for API definition and other API tool chains that use API validation rules and metadata. Further reducing development effort and risk of incorrect validation rules.
 *   Retain native (or nearly native) performance.
 *   Improve testing rigor by being vastly easier to test.
+*   Allow for client-side validation experiments.
 
 ### Non-Goals
 
 *   Eliminate 100% of existing hand-written validation.  The goal is to drastically reduce the # of hand-written validation cases only to those that are extra-ordinary but not replace all hand-written validation.
-*   Eliminate 100% of net-new hand-written validation
 *   To convert validation into a full-featured scripted language
-*   It is not a goal of this KEP directly to publish validation rules to OpenAPI, that is the goal of a TBD complementary KEP
+*   It is not a goal of this KEP directly to publish validation rules to OpenAPI
+*   It is not a goal of this KEP to expose unenforced validation markers in CR schemas in CR openapi.
 *   It is not a goal of this KEP directly to have declarative defaults, only declarative validation rules.  That is the goal of a TBD complementary KEP
 
 ## Proposal
@@ -332,9 +333,9 @@ The migration to declarative validation is not time-sensitive. We can proceed at
 
 #### Risk: Versioned validation drifts between versions.
 
-##### Mitigation: round-trip testing + fuzzing + equivalence tests.
+##### Mitigation: round-trip testing + fuzzing + equivalence tests + linting.
 
-FIXME...
+In order to prevent issues with versioned validation drifting between versions, we plan on using round-trip testing, fuzz testing, equivalence testing (including runtime equivalence testing with `DeclarativeValidationMismatchMetrics`) and lint rules which ensure that rules that should be synced across versions are.
 
 #### Risk: Migration to Declarative Validation introduces breaking change to API validation
 
@@ -760,9 +761,7 @@ This will also support chaining of subfield calls with other validators (includi
 ```
 
 
-#### `validation-gen` One-deep typedef support
-
-<<[UNRESOLVED is it ok that `validation-gen`'s currently design only supports one-deep typedef support?  There are potential solutions to extend this, see below]>>
+#### `validation-gen` One-deep typedef Issue And Solution
 
 In `validation-gen` simple one-deep typedefs work, but not two-deep.  
 
@@ -783,25 +782,15 @@ type Struct struct {
 }
 ```
 
-In the above example, FooField would be validated as a DNS label and have at least 4 characters which is expected.  What might also be expected though is that BarField would be validated as a DNS label, have at least 4 characters, and have no more than 16 characters. INCORRECT!  Due to Go's type system, the relationship of type Foo -> string is represented, but type Bar -> type Foo -> string is flattened to type Bar -> string.  This leads to a currently open question around the severity of this potential UX issue as well potential solutions on how this could be mitigated if needed.
+In the above example, FooField would be validated as a DNS label and require at least 4 characters which is expected.  What might also be expected though is that BarField would be validated as a DNS label, require at least 4 characters, and require having no more than 16 characters. INCORRECT!  Due to Go's type system, the relationship of type Foo -> string is represented, but type Bar -> type Foo -> string is flattened to type Bar -> string.  This leads to a currently open question around the severity of this potential UX issue as well potential solutions on how this could be mitigated if needed.
 
-##### Proposed Solutions
+##### Solution
 
-1. **Have it well documented that `validation-gen`only support one-deep typedef:
-    *   Pro: Doesn't require any additional architectural changes to `validation-gen`.
-    *   Con: Opens the door for potential UX issues for users and validations generally as there is the potential for unintended outcomes when adding IDL tags.
+**NOTE**: The solution below does not target the v1.33 timeline but v1.34+ when this functionality is more relevant as more users utilize Declarative Validation.
 
-2.  Re-discover the chain of typedefs to support and implement nested typedef for IDL tags 
-    *   Pro: Better UX for users as it reduces chance users get unintended outcomes when adding IDL tags.
-    *   Pro: More intuitive, allows for supporting nested typedef for IDL tags.
-    *   Con: Different than Go's "usual" semantic.
-    *   Con: Requires implementing logic for re-discovering the chain of typedef.
+To mitigate this issue for users we will implement the chain of typedefs logic and use this to lint IDL tags such that we issue warnings/errors to alert users of the behaviour of n-deep nested typedefs cases.  This way there is better UX for users as they are notified not to use IDL tags that might lead to unintended outcomes when adding IDL tags (vs only documenting this)
 
-3.  Implement the chain of typedefs logic BUT only use it to issue warnings/errors to not do that
-    *   Pro: Better UX for users as they are notified not to use IDL tags that might lead to unintended outcomes when adding IDL tags
-    *   Con: Requires implementing the chain of typedefs logic.
-
-<<[/UNRESOLVED]>>
+As we get feedback from our design partners, if there is a necessity to extend the above AST logic that is used for linting to instead allow for full support of n-deep nested typedefs we will implement re-discovering the chain of typedefs and implement nested typedef for IDL tags.
 
 ### Migration Plan
 
@@ -869,37 +858,9 @@ We should be able to start the migration when:
 
 
 
-### Tagging and Validating Against Internal vs Versioned Types
-<<[UNRESOLVED what option to use for tagging and validating against internal vs versioned types ]>>
+### Tagging and Validating Against Versioned Types
 
-In Kubernetes there are internal schema representations and versioned schema representations for k8s types. The IDL tags can be added to either set of types (and plumbed to validate against that type).  Below are the options and associated tradeoffs related to `validation-gen` using internal, versioned, or relevant combinations of the two:
-
-1. **Use versioned-type validation (Recommended)**.  Tags would be added on every version’s definition of a given type or field.
-    *   Pro: Validation is obvious for a given version by looking at types.go.
-    *   Con: Tags across versions need to stay in sync.
-        *   Rebuttal: This can be easily solved with tests.
-    *   Pro: Field-path differences between API versions are handled.
-    *   Con: Requires we deal with the performance implications up front.
-        *   Don’t want to convert internal &lt;-> versioned over and over.
-    *   Pro: other tags, including closely-related tags like +default are already defined on versioned types.
-2. **Use internal-type validation**.  Tags would be added on the “unversioned” definition of a given type or field.
-    *   Pro: No immediate performance implications.
-    *   Con: Need to also add ~equivalent tags to versioned types, in order to generate openapi. Tags across versions need to stay in sync (manually or with automation).
-        *   Harder to automate cross-checking.
-    *   Con: Need to handle field-path differences between versions (e.g. with post processing).
-    *   Con: closely-related tags like +default are already defined on versioned types, which means we need to "thread together" fields across internal and versioned, even across renames or refactoring.
-3. **Phased approach**:
-    *   Milestones:
-        *   1: Add Declarative validation using tags on internal type
-        *   2: Add tags on versioned types, enabling OpenAPI
-        *   3: Migrate declarative validation to versioned types
-    *   Pro: Isolates the critical, high risk work to the first milestone, allowing everyone to focus purely on achieving that with minimal distractions.
-    *   Con: Risk that we never get around to finishing all milestones.
-        *   Finishing only milestone 1 means we don't get any OpenAPI publication of validation tags
-        *   Finishing milestone 1 and 2 means we have tags on internal and versioned types that must be kept in sync, _increasing_ reviewer burden
-    *   Con: Increases total work by taking less direct path toward goals
-
-<<[/UNRESOLVED]>>
+In Kubernetes there are internal schema representations and versioned schema representations for k8s types. The IDL tags can be added to either set of types (and plumbed to validate against that type).  After analyzing the pros and cons of validating either the versioned or internal types for `validation-gen` the consensus is to use the versioned types for validation.  The pros of this approach include making validation rules explicit for each API version, naturally accommodating field-path variations between versions, and aligning with the existing use of tags on versioned types.  The cons to this approach include that with this approach (vs internal) tags will need to be synced across versions and that there are performance implications of doing additional one additional internal conversion during request handling (internal -> versioned).  To mitigate the issues with syncing tags across versions, we plan to have tests and linting to enforce syncing and for mitigating the performance implications see mitigations in the section - "Risk: Added latency to API request handling".
 
 ### Handling Zero Values in Declarative Validation
 
@@ -1164,13 +1125,17 @@ N/A. This change does not affect any communications going out of the apiserver. 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-*   DeclarativeValidation:
-    *   Beta: Since validation is used to persist objects to storage, if there was a mistake and it permits objects that should not be persisted, rollback may be impacted by preventing updates on that object until the error is fixed.
-    *   GA: Since validation is used to persist objects to storage, if there was a mistake and it permits objects that should not be persisted, rollback may be impacted by preventing updates on that object until the error is fixed.
+*   `DeclarativeValidation`:
+    *   Since validation is used to persist objects to storage, if there was a mistake and the feature permits objects that should not be persisted, rolling back (eg: via disabling the `DeclarativeValidation` featuregate) may be impacted by preventing updates on that object until the error is fixed.
+        *   In the case this occurs, the broken resource instance will need either correction or direct etcd deletion to resolve issues with preventing updates on the object.  If the resource is in a bad state but updates are not prevented, it may be possible to re-apply a version of the object or delete the object using the kubernetes API directly (kubectl, etc.).  In the case that updates are prevented, it may be necessary to modify or delete the resource in etcd directly (etcdctl, etc.). Be sure to backup the resource before attempting any modifications.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-*   DeclarativeValidation: If the port to declarative validation is not accurate, during an update, old parts of an object may be seen as invalid and need to be ratcheted.
+*   `DeclarativeValidation`:
+    *   The possible errors related to `Declarative` validation that would most likely cause a user to initially roll the feature back include:
+       *   Declarative validation rule for a resource is more permissive than hand-written validation rule it replaces -> objects can be written in states then shouldn't be in
+       *   Declarative validation rule for a resource is less permissive than the hand-written validation rule it replaces -> resources that should be created/updated are blocked from being created/updated
+    *   ^ For the above cases, if a user previously rolled back `DeclarativeValidation` and then reenabled the feature the same set of validations would be run that were run prior to being rolled back.  As such if there were initial issues with `DeclarativeValidation` it indicates a bug with the feature at that time and it likely should not be reenabled.  For information on how to resolve issues with resources that were caused related to validation rule mismatches when enabling `DeclarativeValidation`, see the above section: "Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?"
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1214,24 +1179,23 @@ kubernetes_feature_enabled{name="DeclarativeValidation",stage=""} 1
 
 ###### How can someone using this feature know that it is working for their instance?
 
-1. Events
-    *   Event Reason:
-2. API .status
-    *   Condition name:
-    *   Other field:
-3. Other (treat as last resort)
-    *   Details:
+This is not a user controllable feature
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+We expect to hit the same performance numbers for API requests as we have with just handwritten validation.  This will be benchmarked by looking at `apiserver_request_duration_seconds`.  In the case that declarative validation has meaningful performance impact, we believe there are performance improvements for validation generally that can be done to mitigate this.  For more information see the section - "Risk: Added latency to API request handling."
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 4. Metrics
-    *   Metric name: apiserver_request_duration_seconds
+    *   Metric name: `apiserver_request_duration_seconds`
+    *   Metric name: `declarative_validation_mismatch_metric`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+A useful metric for improving observability of this feature exists - apiserver_request_duration_seconds.  This metric allows us to compare how long requests take w/ and w/o `DeclarativeValidation` set which allows us to benchmark our implementation and understand any performance implications and allow us to mitigate them.  
+
+A missing metric that would potentially be useful would be more granular metrics of duration across of each part of the apiserver handler chain, in our case something like: `apiserver_request_validation_duration_seconds` would be even more helpful in comparing the performance of hand-written validaton vs declarative validation as the project progresses.
 
 ### Dependencies
 
@@ -1292,6 +1256,31 @@ No change in behavior.
 *   Since validation is used to persist objects to storage, if there was a mistake and it permits denies objects that should be persisted a cluster might end up in an unusable state.  As mentioned above we have test mitigations present to prevent this s.t. the validations are identical
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If the API server is failing to meet SLOs (latency, validation error-rate, etc.) and Declarative Validation is suspected as a cause, operators can diagnose issues by following these steps:
+
+1. **Gather Request-Level Details**
+    *   Identify the failing/high-latency HTTP requests. This typically involves looking at API server logs.
+        *   Record the verb (`CREATE` etc.), the resource type (e.g., `ReplicationController`), the namespace/name if applicable, and any relevant request parameters. 
+       *   ^ Be sure to submit this information when filing an issue (see step 5)
+    *   Idenify the existing-resource/new-object that is causing issues. If not already known from usage, try to map/reconstruct the suspect resource from the API server logs
+       *   ^ Be sure to submit this information when filing an issue (see step 5)
+2. **Check Relevant Metrics**
+    *   Use the `apiserver_request_duration_seconds` metric to check for differences in latency. Comparing `apiserver_request_duration_seconds` when `DeclarativeValidation` is enabled vs. disabled can reveal whether validation code generation or logic is causing performance regressions.
+    *   If you suspect correctness mismatches, enable the `DeclarativeValidationMismatchMetrics` feature gate and monitor the `declarative_validation_mismatch` metric. Any increments in that metric indicate a situation where the new declarative validation results differ from the legacy hand-written validation for the same request.
+3. **Inspect APIServer Logs**
+    *   With `DeclarativeValidationMismatchMetrics` enabled, you can check the API server logs for entries on mismatched validation outcomes. These logs will include details about the request (the resource, version, kind, namespace/name, and user) and which fields triggered the mismatch.
+    *   If the logs show repeated mismatches or errors for certain resource types, compare the declarative validation tags in `types.go` with the original hand-written logic to identify gaps or typos
+        *   ^ Be sure to submit this information when filing an issue (see step 5)
+4. **Compare Feature Gate Settings**
+    *   Verify whether `DeclarativeValidation` is enabled for all API servers in an HA environment. Partial enablement can sometimes lead to inconsistent behavior or unexpected rejections.
+    *   Temporarily disabling `DeclarativeValidation` can help isolate if new validation logic is the root cause. Bear in mind that rolling back may block updates on objects that were only valid under declarative validation rules if there is a bug related to this, so review “Can the feature be disabled once it has been enabled?” in this KEP in this case.
+5. **File or Triage Issues**
+    *   If you confirm that Declarative Validation logic is producing incorrect results or performance regressions, open a Github issue in the kubernetes/kubernetes repository. Include:
+        *   The exact failing resource object or field that triggers errors.
+        *   Logs, relevant metric snapshots (e.g., from `/metrics`), and your cluster’s configuration (feature gate state, etc.).
+6.  [optional] **Roll back** (only if absolutely necessary)
+    * Roll back (only if absolutely necessary) after confirming the downstream impact (see “Can the feature be disabled once it has been enabled?”).
 
 ## Implementation History
 
