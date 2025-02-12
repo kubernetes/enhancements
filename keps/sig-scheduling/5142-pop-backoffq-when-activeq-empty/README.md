@@ -168,7 +168,7 @@ and the backoff time is calculated based on the number of scheduling failures th
 If one pod has a smaller attempt counter than others,
 could the scheduler keep popping this pod ahead of other pods because the pod's backoff expires faster than others?
 Actually, that wouldn't happen because the scheduler would increment the attempt counter of pods from the backoffQ as well,
-which would make the backoff time larger after each after the scheduling attempt,
+which would make the backoff time larger after each scheduling attempt,
 and the pod that had a smaller attempt number eventually won't be popped out.
 
 ### Low priority pod could be chosen to pop, even if high priority pod has a slightly later backoff expiration
