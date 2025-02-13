@@ -4,13 +4,20 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Dynamic allocation of Multi-Instance GPUs (MIG) on NVIDIA hardware](#dynamic-allocation-of-multi-instance-gpus-mig-on-nvidia-hardware)
+  - [Multi-host Tensor Processing Unit (TPU) scheduling](#multi-host-tensor-processing-unit-tpu-scheduling)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Partial scheduling of pods for multi-host devices](#partial-scheduling-of-pods-for-multi-host-devices)
 - [Design Details](#design-details)
   - [Extending device and capacity pool with a set of mixins](#extending-device-and-capacity-pool-with-a-set-of-mixins)
   - [Defining device partitions in terms of consumed capacity in a composite device](#defining-device-partitions-in-terms-of-consumed-capacity-in-a-composite-device)
+  - [Defining multi-host devices](#defining-multi-host-devices)
+    - [Multi-host scheduling limitations](#multi-host-scheduling-limitations)
   - [Putting it all together for the MIG use-case](#putting-it-all-together-for-the-mig-use-case)
+  - [Using DRA for the multi-host use-case](#using-dra-for-the-multi-host-use-case)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -72,6 +79,11 @@ partitions to be created on demand. This leads to increased resource
 utilization as the size of each partitioned device can be matched in real-time
 to the workload requesting it.
 
+Devices represented in DRA don't necessarily have to be a single unit connected
+to a single machine, but can also be a logical device comprised of multiple
+devices connected to multiple machines. Similar to the single device partitioning,
+users might require either the full multi-host device or a subset.
+
 As DRA has evolved from what we now call "classic" DRA to "structured
 parameters" this ability to dynamically partition devices has been lost.
 This KEP proposes a method to bring this capability back within the framework
@@ -92,9 +104,21 @@ allocated, rather than requiring them to be created before.
 
 ## Motivation
 
-One of the primary motivating examples for supporting partitionable devices
-with DRA is to enable the dynamic allocation of Multi-Instance GPUs
-(MIG) on NVIDIA hardware. MIG devices are represented as fixed-size partitions
+We have several motivating examples for supporting partitionable devices with
+DRA, with the first two described in detail in this document. Additional details
+of the other use-cases can be found
+[here](https://docs.google.com/document/d/1lXGfnrBixRIMW9ESa-mv09Kisb2myVFV_A3nqPJ4FCQ/edit?usp=sharing).
+
+* Partitioning a single GPU into smaller partitions.
+* Multi-host scheduling of interconnected TPUs.
+* SR-IOV
+* Multi-host logical groupings to avoid deadlocks in LeaderWorkSet scheduling
+* Single-host allocations of multiple TPUs in valid topologies
+* Single-host allocations of multiple Inferentia and Trainium device in valid topologies
+
+### Dynamic allocation of Multi-Instance GPUs (MIG) on NVIDIA hardware
+
+MIG devices are represented as fixed-size partitions
 of a full GPU that consume a portion of its capacity across multiple
 dimensions. These dimensions include things like number of JPEG engines, number
 of multiprocessors, and the allocation of a specific set of fixed-size memory
@@ -221,7 +245,57 @@ done *after* the scheduler has allocated these devices, keeping the GPU free to
 be partitioned in different ways until the actual user-workload requesting them
 has been submitted.
 
-With his motivating example in mind. We define the following goals and
+### Multi-host Tensor Processing Unit (TPU) scheduling
+
+TPUs are connected to VMs, usually four TPUs per VM. In order to run large
+workloads that require multiple TPUs, groups of TPUs can be connected over
+a high-speed inter-chip interconnect, which is important to achieve the best
+performance. However, not all TPUs in the group are connected to each other,
+so we need to consider the topology when we make decisions about the allocation
+of TPUs to workloads.
+
+Due to the topology, only certain specific slices of TPUs can be used.
+For example, in a 64 TPU node pool there will be 16 VMs, each with 4
+TPUs. This allows for a number of possible multi-VM slices of different
+sizes:
+* 8x8 slice, which provides 64 TPUs across 16 nodes (shown in black)
+* 4x8 slices, which provides 32 TPUs across 8 nodes (shown in purple)
+* 4x4 slices, which provides 16 TPUs across 4 nodes (shown in green)
+* 2x4 slices, which provides 8 TPUs across 2 nodes (shown in red)
+
+![image](tpu-topology.png)
+
+For example, a user can request a 4x4 slice of TPUs with a `ResourceClaim`
+like the following:
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: tpu-device
+spec:
+  spec:
+    devices:
+      requests:
+      - name: 4x4-tpu
+        deviceClassName: tpu.google.com
+        selectors:
+        - cel:
+            expression: 'device.capacity['google-tpu'].tpus == quantity("16")
+```
+There are four "good" allocations for this request:
+* All TPUs on nodes 1, 2, 5, and 6.
+* All TPUs on nodes 3, 4, 7, and 8.
+* All TPUs on nodes 9, 10, 13, and 14.
+* All TPUs on nodes 11, 12, 15, and 16.
+A request like the one above must be allocated one of the four 4x4 slices
+or it should not succeed. A request asking for just 16 TPUs will likely
+result in allocation of TPUs across many VMs and without the interconnect,
+leading to poor performance. So we need to allow users to request a 
+partition of a device (in this case a 8x8 slice of TPUs) and account for
+the fact that this uses some of the capacity required for other slices.
+
+With these motivating examples in mind. We define the following goals and
 non-goals of this KEP.
 
 ### Goals
@@ -252,7 +326,7 @@ non-goals of this KEP.
 
 ## Proposal
 
-At a high level, this proposal is based around two new concepts:
+At a high level, this proposal is based around three new concepts:
 
 1. Capacity pool, which is a construct for defining the capacities available for
    sharing among partitions of a single physical device. Drivers will
@@ -268,10 +342,18 @@ At a high level, this proposal is based around two new concepts:
    they define explicitly on the device or resource pool. The objective is to reduce
    the duplication and overall footprint of `ResourceSlices`.
 
+1. Node selection delegated to devices. Node selection can be delegated to
+   each individual device, which allows different devices in the same
+   `ResourceSlice` to be available from different nodes. This provides
+   the flexibility to describe multi-host scenarios where a single logical
+   device might span multiple nodes.
+
 The implementation of these concepts requires several changes to the
 ResourceSlice API. It introduces two new fields on the `ResourceSliceSpec`.
 `CapacityPools` defines a list of `CapacityPools` while `Mixins` define the
-mixins.
+mixins. It also introduces a new field `PerDeviceNodeSelection` on the
+`ResourceSliceSpec` and new fields on the device that mirrors the node selector
+fields on the `ResourceSlice`.
 
 1. The `CapacityPools` field is a list of named `CapacityPool`s. Each
    defines a set of capacities that is available for devices. This makes it possible
@@ -318,13 +400,41 @@ mixins.
       available in the pool, the device can not be allocated. Only references
       to capacity pools in the same `ResourceSlice` is supported.
 
+1. Add a new field `PerDeviceNodeSelection` to the `ResourceSliceSpec` and the
+   fields `NodeName`, `NodeSelector` and `AllNodes` on the `CompositeDevice`.
+
+      1. The `PerDeviceNodeSelection` field is of type boolean and is mutually
+      exclusive with the existing node selection fields in the `ResourceSliceSpec`
+      (`NodeName`, `NodeSelector`, and `AllNodes`). If the value of this field is
+      `true`, then the node association must be specified on each device.
+
+      1. The fields `NodeName`, `NodeSelector`, and `AllNodes` fields mirror the
+      fields on the `ResourceSliceSpec` and are mutually exlusive. Setting
+      `NodeName` means the device is available on a specific node, setting the
+      `NodeSelector` field means the device is available on all nodes matching
+      the selector, while setting the `AllNodes` field to `true` means the
+      device is available on all nodes in the cluster.
+
 With these additions in place, the scheduler has everything it needs to support
-the dynamic allocation of both full devices and their (possibly overlapping)
-fixed-size partitions. That is to say, the scheduler now has the ability to
-"flatten" all devices and capacity pools by applying any referenced mixins as
+the dynamic allocation of full devices, their (possibly overlapping)
+fixed-size partitions, and multi-host devices. That is to say, the scheduler now has
+the ability to "flatten" all devices and capacity pools by applying any referenced mixins as
 well as track the capacities consumed by allocated devices. More details
 on the actual algorithm the scheduler follows to make allocation decisions
 based on the capacity pools can be found in the Design Details section below.
+
+### Risks and Mitigations
+
+#### Partial scheduling of pods for multi-host devices
+
+With multi-host devices, there will typically be multiple pods sharing a single
+`ResourceClaim`. DRA guarantees that the pods will not end up on nodes that are not
+part of the multi-host device. But it can not guarantee that all pods will be
+scheduled, since pods will be subject to any other constraints (like sufficient
+CPU and memory) during scheduling.
+
+A better story should be in place for beta, including a plan for alignment and
+possible integration with Kueue.
 
 ## Design Details
 
@@ -350,6 +460,18 @@ type ResourceSliceSpec struct {
   //
   // +optional
   Mixins ResourceSliceMixins
+
+  // PerDeviceNodeSelection defines whether the access from nodes to
+  // resources in the pool is set on the ResourceSlice level or on each
+  // device. If it is set to true, every device defined the ResourceSlice
+  // must specify this individually.
+  //
+  // Exactly one of NodeName, NodeSelector, AllNodes, and PerDeviceNodeSelection
+  // must be set.
+  //
+  // +optional
+  // +oneOf=NodeSelection
+  PerDeviceNodeSelection bool
 }
 
 // ResourceSliceMixins defines mixins for the ResourceSlice.
@@ -563,6 +685,35 @@ type CompositeDevice struct {
   // +required
   // +listType=atomic
   ConsumesCapacity []DeviceCapacityConsumption
+
+  // NodeName identifies the node where the device is available.
+  //
+  // Must only be set if Spec.PerDeviceNodeSelection is set.
+  // At most one of NodeName, NodeSelector and AllNodes can be set.
+  //
+  // +optional
+  // +oneOf=DeviceNodeSelection
+  NodeName string
+
+  // NodeSelector defines the nodes where the device is available.
+  //
+  // Must use exactly one term.
+  //
+  // Must only be set if Spec.PerDeviceNodeSelection is set.
+  // At most one of NodeName, NodeSelector and AllNodes can be set.
+  //
+  // +optional
+  // +oneOf=DeviceNodeSelection
+  NodeSelector *core.NodeSelector
+
+  // AllNodes indicates that all nodes have access to the device.
+  //
+  // Must only be set if Spec.PerDeviceNodeSelection is set.
+  // At most one of NodeName, NodeSelector and AllNodes can be set.
+  //
+  // +optional
+  // +oneOf=DeviceNodeSelection
+  AllNodes bool
 }
 
 // CapacityPoolMixin defines a mixin that a capacity pool can include.
@@ -697,9 +848,10 @@ type DeviceCapacityConsumption struct {
 ```
 
 As mentioned previously, the main features being added here are (1) the ability
-to include a set of mixins in a device or capacity pool definition, and (2) the
+to include a set of mixins in a device or capacity pool definition, (2) the
 ability to express that multiple devices draw from the same pool of capacity, so
-allocation of one device might make other devices unallocatable.
+allocation of one device might make other devices unallocatable, and (3) the
+ability to define multi-host devices.
 
 To simplify the conversation, we discuss each new feature separately, starting
 with "mixins" for both capacity pools and devices, which allows a set of mixins to
@@ -946,6 +1098,188 @@ Note that since the scheduler will go through these in order and select the firs
 smallest-to-largest order. Otherwise, the largest one will always be allocated.
 This may be improved through scoring mechanisms, but that is outside of the scope
 of this KEP. It is being tracked in https://github.com/kubernetes/enhancements/issues/4970.
+
+### Defining multi-host devices
+
+An example of a small 4x4 TPU slice with its partitions will look like the
+example below. Since the devices in the slice is connected to multiple nodes,
+it will typically be the responsibility of a central controller to publish the
+ResourceSlice.
+
+```yaml
+kind: ResourceSlice
+apiVersion: resource.k8s.io/v1beta1
+...
+spec:
+  perDeviceNodeSelection: true
+  pool:
+    ...
+  driver: tpu.dra.example.com
+  capacityPools:
+  - name: tpu-pool
+    capacity:
+      tpus-node-1:
+        value: "4"
+      tpus-node-2:
+        value: "4"
+      tpus-node-5:
+        value: "4"
+      tpus-node-6:
+        value: "4"
+  devices:
+  # 4x4 slice
+  - name: tpu-4x4-1
+    composite:
+      nodeSelector:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: IN
+            values:
+            - node-1
+            - node-2
+            - node-5
+            - node-6
+      capacity:
+        tpus: "16"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-1:
+            value: "4"
+          tpus-node-2:
+            value: "4"
+          tpus-node-5:
+            value: "4"
+          tpus-node-6:
+            value: "4"
+  # 2x4 slices
+  - name: tpu-2x4-1
+    composite:
+      nodeSelector:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: IN
+            values:
+            - node-1
+            - node-2
+      capacity:
+        tpus: "8"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-1:
+            value: "4"
+          tpus-node-2:
+            value: "4"
+  - name: tpu-2x4-2
+    composite:
+      nodeSelector:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: IN
+            values:
+            - node-5
+            - node-6
+      capacity:
+        tpus: "8"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-5:
+            value: "4"
+          tpus-node-6:
+            value: "4"
+  # 2x2 slices
+  - name: tpu-2x2-1
+    composite:
+      nodeName: node-1
+      capacity:
+        tpus: "4"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-1:
+            value: "4"
+  - name: tpu-2x2-2
+    composite:
+      nodeName: node-2
+      capacity:
+        tpus: "4"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-2:
+            value: "4"
+  - name: tpu-2x2-3
+    composite:
+      nodeName: node-5
+      capacity:
+        tpus: "4"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-5:
+            value: "4"
+  - name: tpu-2x2-4
+    composite:
+      nodeName: node-6
+      capacity:
+        tpus: "4"
+      consumesCapacity:
+      - capacityPool: tpu-pool
+        capacity:
+          tpus-node-6:
+            value: "4"
+```
+
+In the example we defined a single 4x4 slice. That means 16 TPUs and with
+4 TPUs per node, the device is available across four nodes. The node selector
+on the devices selects the 4 nodes used by this device. In the example it
+does with by the `IN` operator on the `kubernetes.io/hostname` key, but this
+could also be just a regular selector on a single label set on all nodes.
+
+The `CapacityPool` declares the available capacity. It needs to handle the
+TPU capacity on each node separately, since the TPUs are not interchangibly
+between nodes. The granularity required here depends on which devices are being
+made available, but for this example doing capacity per-node is sufficient.
+The devices declares the capacity they consume from the pool allowing the
+scheduler to determine which devices are still allocatable when some of the
+capacity has been used by other allocated devices.
+
+In the typical case, when a multi-host device is requested, the workload would
+have a number of pods that equals the number of nodes that make up the device.
+These pods will share the device, so they must be set up with a shared
+ResourceClaim. When the scheduler attempts to schedule the first pod for the
+workload, it will find a device that matches the request and allocate it for the
+ResourceClaim. Once the a device has been allocated for the claim, this also
+restricts the nodes where future pods using the device can be scheduled. To make
+sure that future pods will only be attempted for scheduling on eligible nodes, the
+scheduler will use `nodeName` or `nodeSelector` value from the device to determine the
+`nodeSelector` field on the `AllocationResult` in the `ResourceClaim`, rather
+than the `nodeName` or `nodeSelector` from the `ResourceSlice`. This makes sure
+that pods sharing the `ResourceClaim` can not get scheduled on nodes that aren't
+part of the device.
+
+#### Multi-host scheduling limitations
+The shared `ResourceClaim` and the device node selectors only guarantee that
+the pods for the workload will not be scheduled on nodes that are not part of
+the multi-host device. However, there is no guarantee that they can get scheduled on
+the nodes that make up the device, since that will be subject to any other
+constraints (like sufficient CPU and memory) during the scheduling process.
+
+Similarly, it is possible for users to create workloads that references multiple
+`ResourceClaim`s. These might reference different multi-host devices which might
+have node selectors that are only partially overlapping or not overlapping at
+all. In this situation, none or only a subset of the pods might end up being
+scheduled.
+
+DRA does not guarantee that all or none of the pods can be scheduled (i.e.
+group scheduling), so handling those situations will be up to the user or
+higher-level frameworks. For beta we aim to improve the story here,
+possibly through integration with Kueue.
 
 ### Putting it all together for the MIG use-case
 
@@ -2394,6 +2728,78 @@ mixins:
 The flattened version of this example can be found
 [here](https://gist.github.com/mortent/ddda505e2499c872549fa831dd2459c4).
 
+### Using DRA for the multi-host use-case
+
+In order to allocate a 2x4 TPU slice using the ResourceSlice
+[shown above](#defining-multi-host-devices), a ResourceClaim like the
+following can be used:
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: tpu-consumer-resource-claim
+spec:
+  devices:
+    requests:
+    - name: tpu-request
+      deviceClassName: tpu.google.com
+      selectors:
+      - cel:
+          expression: 'device.capacity["tpu.google.com"].tpus == quantity("8")'
+```
+
+This simply requests a device with 8 TPUs. Since there are 4 TPUs per node, this requires
+two pods, one for each node. A Deployment can be used to create the necessary number of
+pods:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tpu-consumer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tpu-consumer
+  template:
+    metadata:
+      labels:
+        app: tpu-consumer
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: tpu-consumer
+              topologyKey: kubernetes.io/hostname
+      resourceClaims:
+      - name: "tpu"
+        resourceClaimName: tpu-consumer-resource-claim
+      containers:
+      - name: workload
+        image: my-app
+        command: ["/bin/program"]
+        resources:
+          claims:
+          - name: "tpu"
+```
+
+Since the PodSpec references a ResourceClaim rather than a ResourceClaimTemplate, they will
+share the ResourceClaim. This will then also restrict the pods to run on the nodes that are
+targeted by the node selector on the allocated device. Now, in order to be able to take
+advantage of the TPUs that are connected to the two nodes, the pods need to be scheduled
+on separate nodes. The antiaffinity stanza in the PodSpec makes sure this happens.
+
+An alternative way to make sure the pods are scheduled on different nodes is to use both
+a shared claim for the logical multi-host device and separate single-node per-pod claims. This
+will force the pods to end up on separate nodes.
+
+
 ### Test Plan
 
 <!--
@@ -2482,6 +2888,8 @@ ensure they are handled by the scheduler as described in this KEP.
 
 - Gather feedback
 - Additional tests are in Testgrid and linked in KEP
+- Define the alignment and possible integration with Kueue
+- Improve the story for group scheduling
 
 #### GA
 
