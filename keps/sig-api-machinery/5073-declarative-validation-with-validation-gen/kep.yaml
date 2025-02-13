@@ -1,0 +1,52 @@
+title: Declarative Validation
+kep-number: 5073
+authors:
+  - "@aprindle"
+  - "@yongruilin"
+  - "@jpbetz"
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2024-01-21
+reviewers:
+  - deads2k
+  - msau42
+  - thockin
+approvers:
+  - deads2k
+
+see-also:
+  - "/keps/sig-api-machinery/4153-declarative-validation"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.33"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.33"
+  beta: "v1.33"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  # Switches apiserver to use declarative validation generated validation code
+  # instead of handwritten wherever possible
+  - name: DeclarativeValidation
+    components:
+      - kube-apiserver
+  # Adds logic to apiserver to run declarative validation and handwritten validation
+  # while not modifying actual validation path but only outputting any mismatch information as a metric
+  - name: DeclarativeValidationMismatchMode
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  # declarative-validatoin-mismatch tracks the number of mismatched valdation results and errors
+  # when comparing the outputs of hand-written validations vs declarative validations
+  - declarative-validation-mismatch

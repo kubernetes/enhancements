@@ -4,7 +4,7 @@ authors:
   - "@alexzielenski"
   - "@jpbetz"
 owning-sig: sig-api-machinery
-status: implementable
+status: superseded
 creation-date: 2023-08-20
 reviewers:
   - apelisse
