@@ -111,18 +111,17 @@ leading to a more stable and reliable API server.
 ## Proposal
 
 This proposal leverages the recent rewrite of the watchcache storage layer to
-use a B-tree (https://github.com/kubernetes/kubernetes/pull/126754) to enable
+use a B-tree ([kubernetes/kubernetes#126754](https://github.com/kubernetes/kubernetes/pull/126754)) to enable
 efficient serving of remaining types of LIST requests from the watchcache.
-This approach aims to improve the performance and stability of the API server by
-reducing the need to access etcd directly for historical data.
+This aims to improve API server performance and stability by minimizing direct etcd access for historical data retrieval.
+This aligns with the future extensions outlined in KEP-365 (Paginated Lists): [link to KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/365-paginated-lists#potential-future-extensions).
 
-See also https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/365-paginated-lists#potential-future-extensions
-
-This change increases the K8s dependency on cache, the impact of a bug in caching logic is severe.
-Any incorrect behavior will be persisted in a local apiserver, and is extreamly hard to debug.
-As the proposed changes will in the end cover all apiserver list calls behind a cache, we need a better way to detect issues. 
-We propose to add a automatic mechanism for validating cache consistency with etcd,
-allowing users to trust it's results withount need to manually debug.
+However, this increased reliance on the watchcache significantly elevates the impact of any bugs in the caching logic.
+Incorrect behavior would be locally within API server memory, making debugging exceptionally difficult.
+Given that the proposed changes will ultimately route *all* API server LIST calls through the cache,
+a robust mechanism for detecting inconsistencies is crucial.
+Therefore, we propose an automatic mechanism to validate cache consistency with etcd,
+providing users with confidence in the cache's accuracy without requiring manual debugging efforts.
 
 ### Snapshotting
 
