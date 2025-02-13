@@ -22,6 +22,8 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Requirements](#graduation-requirements)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
       - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
@@ -47,13 +49,22 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
-- [X] Production readiness review approved
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -242,15 +253,25 @@ Beta
 - [X] OpenTelemetry reaches GA
 - [X] Publish examples of how to use the OT Collector with kubernetes
 - [X] Allow time for feedback
-- [ ] Test and document results of upgrade and rollback while feature-gate is enabled.
-- [ ] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
-- [ ] Unit/integration test to verify connected traces in kubelet.
-- [ ] Revisit the format used to export spans.
-- [ ] Parity with the old text-based Traces
-- [ ] Connecting traces from container runtimes via the Container Runtime Interface
+- [X] Test and document results of upgrade and rollback while feature-gate is enabled.
+- [X] Add top level traces to connect spans in sync loops, incoming requests, and outgoing requests.
+- [X] Unit/integration test to verify connected traces in kubelet.
+- [X] Revisit the format used to export spans.
+- [X] Parity with the old text-based Traces
+- [X] Connecting traces from container runtimes via the Container Runtime Interface
   - https://github.com/kubernetes/kubernetes/pull/114504
 
 GA
+
+- [X] Feedback from users collected and incorporated over multiple releases
+
+### Upgrade / Downgrade Strategy
+
+Tracing will work if the kubelet version supports the feature, and will not export spans if it doesn't. It does not impact the ability to upgrade or rollback kubelet versions.
+
+### Version Skew Strategy
+
+Version skew isn't applicable because this feature only involves the kubelet.
 
 ## Production Readiness Review Questionnaire
 
@@ -319,19 +340,36 @@ _This section must be completed when targeting beta graduation to a release._
 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-  Upgrades and rollbacks will be tested while feature-gate is experimental
+
+  Yes. These were tested on a 1.27 kind cluster by enabling, disabling, and re-enabling the feature-gate on the kubelet.
+
+  Use a basic config.yaml:
+
+  ```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+```
+
+  1. Create kind cluster: `kind create cluster --name kubelet-tracing --image kindest/node:v1.27.0 --config config.yaml`
+  2. exec into kind "node" container: `docker exec -it <container id for node> sh`
+  3. use apt-get to install vim
+  4. Edit the kubelet configuration to enable the `KubeletTracing` feature gate: `vim /var/lib/kubelet/config.yaml`
+  5. Restart the kubelet: `systemctl restart kubelet`.
+  6. Verify that the node status is still being updated (not from within docker container): `kubectl describe no`
+  7. Repeat steps 2-6, but disable `KubeletTracing`, and verify that the kubelet works after the restart.
+  8. Repeat steps 2-6, but re-enable `KubeletTracing`, and verify that the kubelet works after the restart.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   No
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
 ###### How can an operator determine if the feature is in use by workloads?
 
   Operators are expected to have access to and/or control of the OpenTelemetry agent deployment and trace storage backend.
   KubeletConfiguration will show the FeatureGate and TracingConfiguration.
+
+  Workloads do not directly use this feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -344,33 +382,25 @@ _This section must be completed when targeting beta graduation to a release._
   
 ##### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [] Metrics
-  - Metric name: tbd [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547)
-  - Components exposing the metric: kubelet
+None. Operators can use the absence of traces which an observability signal in their own right.
 
-##### Are there any missing metrics that would be useful to have to improve observability 
-  To be determined.
+##### Are there any missing metrics that would be useful to have to improve observability
 
+  It would be helpful to have metrics about span generation and export: [opentelemetry-go issue #2547](https://github.com/open-telemetry/opentelemetry-go/issues/2547)
+
+  There is progress on defining and implementing OpenTelemetry trace SDK self-observability metrics:
+
+  * Proposal for names: https://github.com/open-telemetry/semantic-conventions/pull/1631
+  * Prototype for OpenTelemetry-Go: https://github.com/open-telemetry/opentelemetry-go/pull/6153
 
 ### Dependencies
-
-_This section must be completed when targeting beta graduation to a release._
 
 ###### Does this feature depend on any specific services running in the cluster?**
 
   Yes.  In the current version of the proposal, users must run the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector)
-  as a daemonset and configure a backend trace visualization tool (jaeger, zipkin, etc).
-
+  as a daemonset and configure a backend trace visualization tool (jaeger, zipkin, etc). There are also a wide variety of vendors and cloud providers which support OTLP.
 
 ### Scalability
-
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -401,13 +431,15 @@ previous answers based on experience in the field._
 
   The tracing client library has a small, in-memory cache for outgoing spans.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+  No.
+
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
-
-_This section must be completed when targeting beta graduation to a release._
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -415,14 +447,14 @@ _This section must be completed when targeting beta graduation to a release._
 
 ###### What are other known failure modes?
 
-  - [The controller is misconfigured and cannot talk to the collector or the collector cannot send traces to the backend]
+  - [The kubelet is misconfigured and cannot talk to the collector or the kubelet cannot send traces to the backend]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
       **kubelet logs, component logs, collector logs**
-    - Mitigations: **Disable KubeletTracing, update collector, backend configuration** 
+    - Mitigations: **Fix the kubelet configuration, update collector, backend configuration** 
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue? **go-opentelemetry sdk provides logs indicating failure**
-    - Testing: To be added.
+    - Testing: It isn't particularly useful to test misconfigurations.
 
 ## Implementation History
 
@@ -431,6 +463,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2022-03-29: KEP deemed not ready for Alpha in 1.24
 - 2022-06-09: KEP targeted at Alpha in 1.25
 - 2023-01-09: KEP targeted at Beta in 1.27
+- 2025-02-07: KEP targeted at Stable in 1.33
 
 ## Drawbacks
 
