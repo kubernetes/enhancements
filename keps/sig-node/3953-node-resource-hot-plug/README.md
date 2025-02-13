@@ -19,6 +19,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Handling HotUnplug Events](#handling-hotunplug-events)
+    - [Flow Control](#flow-control)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -155,6 +156,35 @@ With this proposal its also necessary to recalculate and update OOMScoreAdj and 
 
 Though this KEP focuses only on resource hotplug, It will enable the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
 For now, we will introduce an error mode in the kubelet to inform users about the shrink in the available resources in case of hotunplug.
+
+As the hotunplug events are not completely handled in this KEP, in such cases, it is imperative to move the node to the NotReady state when the current capacity of the node
+is lesser than the initial capacity of the node. This is only to point at the fact that the resources have shrunk on the node and may need attention/intervention.
+
+Once the node has transitioned to the NotReady state, it will be reverted to the ReadyState once when the node's capacity is reconfigured to match or exceed the last valid configuration.
+In this case, valid configuration refers to a state which can either be previous hot-plug capacity or the initial capacity in case there was no history of hotplug.
+
+#### Flow Control
+
+```
+T=0: Node initial Resources:
+    - Memory: 10G
+    - Node state: Ready
+
+T=1: Resize Instance to Hotplug Memory
+    - Current Memory: 10G
+    - Update Memory: 15G
+    - Node state: Ready
+
+T=2: Resize Instance to HotUnplug Memory
+    - Current Memory: 15G
+    - UpdatedMemory: 5G
+    - Node state: NotReady
+
+T=3: Resize Instance to Hotplug Memory
+    - Current Memory: 5G
+    - Updated Memory Size: 15G
+    - Node state: Ready
+```
 
 Few of the concerns surrounding hotunplug are listed below
 * Pod re-admission:
