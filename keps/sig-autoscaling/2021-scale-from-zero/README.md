@@ -600,7 +600,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. To downgrade the cluster to version that does not support scale-to-zero feature:
+Yes. To downgrade the cluster to version that does not support scale-to-zero feature or to disable to feature gate:
 
 1. Make sure there are no hpa objects with minReplicas=0 and maxReplicas=0. Here is a oneliner to update it to 1:
 
@@ -610,7 +610,7 @@ Yes. To downgrade the cluster to version that does not support scale-to-zero fea
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Nothing, the feature can be re-enabled without problems.
+Nothing, the feature can be re-enabled without problems and workload with `replicas: 0` targeted by a HPA will be scaled again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -644,7 +644,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-There are no expected side-effects when the rollout fails as new `enableScaleToZero` flag should only be enabled once the version upgraded completed and should be disabled before attempting a rollback.
+There are no expected side-effects when the rollout fails as the new `enableScaleToZero` flag should only be enabled once the version upgraded completed and should be disabled before attempting a rollback.
 
 In case this is missed, HPA for deployments with zero replicas will be disabled until replicas have been raised explicitly to at least `1`.
 
