@@ -18,6 +18,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Handling HotUnplug Events](#handling-hotunplug-events)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -132,8 +133,8 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 ### Goals
 
 * Achieve seamless node capacity expansion through hot plugging resources.
-* Enable the re-initialization of resource managers (CPU manager, memory manager) to accommodate alterations in the node's resource allocation.
-* Recalculating the OOMScoreAdj and swap memory limit for existing pods.
+* Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager to accommodate alterations in the node's resource allocation.
+* Recalculating and updating the OOMScoreAdj and swap memory limit for existing pods.
 
 ### Non-Goals
 
@@ -148,13 +149,22 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 This KEP strives to enable node resource hot plugging by incorporating a polling mechanism within the kubelet to retrieve machine-information from cAdvisor's cache, which is already updated periodically.
 The kubelet will periodically fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
 Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
-With this proposal its also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize and tradeoff between performance overhead and OOMScoreAdj and swap limit correctness.
+With this proposal its also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize. But this carries small overhead due to recalculation of swap and OOMScoreAdj.
 
-Update in OOMScoreAdjust and swap limit
-    - The recalculation will help the existing pods to be closer to the expected value post-resize but carries an inherent overhead on the kubelet.
+### Handling HotUnplug Events
 
-Not Updating OOMScoreAdjust and swap limit
-    - Efficient, We can avoid the performance overhead required for recalculating the scores and may lead to incorrect eviction, with new pods being evicted as OOMScoreAdj will be high.
+Though this KEP focuses only on resource hotplug, It will enable the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
+For now, we will introduce an error mode in the kubelet to inform users about the shrink in the available resources in case of hotunplug.
+
+Few of the concerns surrounding hotunplug are listed below
+* Pod re-admission:
+    * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
+      or if it has to be terminated due to resource crunch.
+* Recalculate OOM adjust score and Swap limits:
+    * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
+* Handling unplug of reserved CPUs.
+
+we intend to propose a separate KEP dedicated to hotunplug of resources to address the same.
 
 ### User Stories
 
@@ -811,9 +821,10 @@ VMs of cluster should support hot plug of compute resources for e2e tests.
 * Support hot-unplug of node resources:
   * Pod re-admission:
     * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
-      or if it has to be terminated due to memory crunch.
+      or if it has to be terminated due to resource crunch.
   * Recalculate OOM adjust score and Swap limits:
     * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
+  * Handling unplug of reserved CPUs.
   
 * Fetching machine info via CRI
     * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
