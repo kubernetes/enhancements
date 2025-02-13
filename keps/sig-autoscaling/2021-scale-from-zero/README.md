@@ -89,10 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
-    - [Unit tests](#unit-tests)
-    - [Integration tests](#integration-tests)
-    - [e2e tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -705,7 +705,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-Similar to autoscaling is confirmed today.
+When this feature is enabled for a workload scaled based on an object or external metric, the workload should be scaled to 0 replicas when the metric is 0.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -901,7 +901,16 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Failed to fetch the relevant object or external metrics.
+  - Detection: `ScalingActive: false` condition with `FailedGetExternalMetric` or `FailedGetObjectMetric` reason.
+  - Mitigations: manually scale the resource.
+  - Diagnostics: Related errors should be printed as the messages of `ScalingActive: false`.
+  - Testing: <https://github.com/kubernetes/kubernetes/blob/0e3818e02760afa8ed0bea74c6973f605ca4683c/pkg/controller/podautoscaler/replica_calculator_test.go#L451>
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `metric_computation_duration_seconds` to see which metric encountered the latency issue.
+If the latency problem is caused by metrics used for scaling to zero, you can remove those metrics again from your HPA(s).
 
 ## Implementation History
 
