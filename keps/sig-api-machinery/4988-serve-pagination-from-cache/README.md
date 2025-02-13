@@ -165,13 +165,28 @@ allowing users to trust it's results withount need to manually debug.
 ### Cache Inconsistency detection
 
 For the first iteration of the mechanism we will calculate the hash based on LIST response
-at some specific RV of each resource and expose it as a metric. Hash will be calculated for
-both cache and etcd, allowing users to setup an alert to detect if they don't match.
+at some specific RV of each resource and expose it as a metric.
 
-Once every 5 minutes (default compaction interval) we will send a LIST request to both etcd and
-watch cache and calculate hash of the response.
+For Alpha users should be able to setup an alert to detect if hash values for etcd and cache don't match.
+For Beta we plan to introduce a automatic action to purge the cache if inconsistent with etcd.
 
-TODO: Decide whether to calculate hash based on object fields or values stored in etcd.
+Once every 5 minutes (default compaction interval) for each resource we will
+send a LIST request to both etcd and watch cache and calculate hash of the response objects.
+Hash calculations will be shifted by random jitter (1-5 minutes) to minimize stacking multiple concurrent calculations.
+First we will make a non-consistant list with `RV=0` from cache, read the revision and send a exact revision list request `RV=X` to etcd.
+This way will validate the latest available in cache RV without needing to account cache staleness.
+
+New metric `apiserver_storage_hash` will expose last results of calculating hash using [64bit FNV](https://pkg.go.dev/hash/fnv) algorithm.
+To calculate the hash from LIST response we will calculate hash of response structure using approach similar to https://github.com/gohugoio/hashstructure.
+While decoding and calculating hash on the whole structure might be costly, we think it's acceptable if done with such high period when compared to cost of normal LISTs from etcd.
+Calculating hash on the structure itself allows us to mitigate issues with object versioning.
+
+Example metric:
+```
+apiserver_storage_hash{resource="pods", storage="etcd", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
+apiserver_storage_hash{resource="pods", storage="cache", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
+```
+Metric values for each resource should be updated atomically to prevent false positives.
 
 ### Risks and Mitigations
 
@@ -206,39 +221,23 @@ to implement this enhancement.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+We should add a test to validate purging of watch cache.
 
 ##### e2e tests
 
-Given we're only modifying kube-apiserver, integration tests are sufficient.
+We should add a tests that validates metrics exposed for inconsistency detection.
+Test should cover couple of resources including resources with conversion.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature gate
-- Feature is covered with unit and integration tests
-
+- Snapshotting implemented behind a feature gate disabled by default.
+- Inconsistency detection is implemented behind a feature gate enabled by default.
 
 #### Beta
 
-- Consistency mechanism is qualified
-- Feature is enabled by default
+- Inconsistency detection mechanism is qualified and no mismatch detected.
 
 #### GA
 
@@ -294,10 +293,7 @@ additional value on top of feature tests themselves.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Mismatch in hash label for different storage exposed by `apiserver_storage_hash` metric by the same apiserver.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
