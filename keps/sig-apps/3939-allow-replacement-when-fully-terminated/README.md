@@ -545,6 +545,9 @@ The following scenarios related to [tracking the terminating pods](#tracking-the
 - `FailureTarget` is added when backoffLimitCount is exceeded, or activeDeadlineSeconds timeout is exceeded
 - `SuccessCriteriaMet` is added when the `completions` are satisfied
 
+The `integration` tests are implemented in <https://github.com/kubernetes/kubernetes/blob/v1.31.0/test/integration/job/job_test.go>.
+Most relevant test is `TestJobPodReplacementPolicy`.
+
 ##### e2e tests
 
 Generally the only tests that are useful for this feature are when `PodReplacementPolicy: Failed`.  
@@ -567,6 +570,15 @@ done
 An e2e test can verify that deletion will not trigger a new pod creation until the exiting pod is fully deleted.
 
 If `podReplacementPolicy: TerminatingOrFailed` is specified we would test that pod creation happens closely after deletion.
+
+The `e2e` tests are implemented in <https://github.com/kubernetes/kubernetes/blob/v1.31.0/test/e2e/apps/job.go>.
+
+Test grid:
+
+- [`gce`](https://testgrid.k8s.io/sig-apps#gce)
+```
+Kubernetes e2e suite.[It] [sig-apps] Job should recreate pods only after they have failed if pod replacement policy is set to Failed
+```
 
 <!--
 This question should be filled when targeting a release.
@@ -600,7 +612,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Address reviews and bug reports from Beta users
 - Allow Job API clients tracking the number of the terminating pods until all
   the resources are released (see [tracking the terminating pods](#tracking-the-terminating-pods)).
-  Also, link provide links for the relevant integration tests in the KEP.
+  Also, provide links for the relevant integration tests in the KEP.
 - Lock the `JobPodReplacementPolicy` feature-gate to true
 
 #### Deprecation
@@ -966,7 +978,7 @@ In beta, we will add a new metric `job_pods_creation_total`.
 
 In [Risks and Mitigations](#risks-and-mitigations) we discuss the interaction with [3329-retriable-and-non-retriable-failures](https://github.com/kubernetes/enhancements/blob/master/keps/sig-apps/3329-retriable-and-non-retriable-failures/README.md).  
 We will have to guard against cases if `PodFailurePolicy` is off while this feature is on.  
-`PodFailurePolicy` is in beta and is enabled by default but we should guard against cases where `PodDisruptionCondition` is turned off.
+`PodFailurePolicy` is in stable and is locked to `true` by default but we should guard against cases where `PodDisruptionCondition` is turned off.
 
 #### Does this feature depend on any specific services running in the cluster?
 
@@ -993,7 +1005,7 @@ No
 
 #### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-For Job API, we are adding a enum field named `PodReplacementPolicy` which takes
+For Job API, we are adding an enum field named `PodReplacementPolicy` which takes
 either a `TerminatingOrFailed` or `Failed`
 
 - API type(s): enum
@@ -1067,9 +1079,7 @@ There are no other failure modes.
 
 #### What steps should be taken if SLOs are not being met to determine the problem?
 
-One could disable this feature.
-
-Or if one wants to keep the feature on and they could suspend the jobs that are using this feature.
+If one wants to keep the feature on and they could suspend the jobs that are using this feature.
 Setting `Suspend:True` in your JobSpec will halt the execution of all jobs.
 
 ## Implementation History
@@ -1078,6 +1088,14 @@ Setting `Suspend:True` in your JobSpec will halt the execution of all jobs.
 - 2023-05-19: KEP Merged.
 - 2023-07-16: Alpha PRs merged.
 - 2023-09-29: KEP marked for beta promotion.
+- 2023-10-24: Merged bugfix [Fix tracking of terminating Pods when nothing else changes](https://github.com/kubernetes/kubernetes/pull/121342)
+- 2023-10-24: Merged adding a metric required for beta promotion [feat: add job_pods_creation_total metric](https://github.com/kubernetes/kubernetes/pull/121481)
+- 2023-10-27: Merged [Switch feature flag to beta for pod replacement policy and add e2e test #121491](https://github.com/kubernetes/kubernetes/pull/121491)
+- 2024-06-11: [v1.31] Merged [Count terminating pods when deleting active pods for failed jobs #125175](https://github.com/kubernetes/kubernetes/pull/125175)
+- 2024-07-12: [v1.31] Merged [Delay setting terminal Job conditions until all pods are terminal #125510](https://github.com/kubernetes/kubernetes/pull/125510)
+
+This feature was promoted to beta in v1.29, but important updates were implemented in v1.31.
+For additional info, check the PRs linked above with the tag `[v1.31]`.
 
 ## Drawbacks
 
