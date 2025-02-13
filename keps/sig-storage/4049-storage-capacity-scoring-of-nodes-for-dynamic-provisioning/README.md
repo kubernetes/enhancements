@@ -87,11 +87,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Modify stateData to be able to store StorageCapacity](#modify-statedata-to-be-able-to-store-storagecapacity)
   - [Get the capacity of nodes for dynamic provisioning](#get-the-capacity-of-nodes-for-dynamic-provisioning)
   - [Scoring of nodes for dynamic provisioning](#scoring-of-nodes-for-dynamic-provisioning)
   - [Conditions for scoring static or dynamic provisioning](#conditions-for-scoring-static-or-dynamic-provisioning)
+  - [Feature Gate Consolidation](#feature-gate-consolidation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -262,6 +264,26 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+### Risks and Mitigations
+
+<!--
+What are the risks of this proposal, and how do we mitigate? Think broadly.
+For example, consider both security and how this will impact the larger
+Kubernetes ecosystem.
+
+How will security be reviewed, and by whom?
+
+How will UX be reviewed, and by whom?
+
+Consider including folks who also work outside the SIG or subproject.
+-->
+
+| Risk                                                                             | Impact | Mitigation                                         |
+| -------------------------------------------------------------------------------- | ------ | -------------------------------------------------- |
+| Misconfiguration of storage capacity scoring parameters                          | Medium | Provide documentation                              |
+| Potential performance overhead due to additional scoring calculations            | Low    | Optimize scoring algorithms                        |
+| Loss of optimized scheduling after downgrading to a version without this feature | Medium | Explain the impact of downgrading in documentation |
 
 ## Design Details
 
@@ -467,6 +489,10 @@ func (pl *VolumeBinding) Score(ctx context.Context, cs *framework.CycleState, po
 - 	return pl.scorer(classResources), nil
 }
 ```
+
+### Feature Gate Consolidation
+
+The `StorageCapacityScoring` feature gate will now control the functionality previously managed by the `VolumeCapacityPriority` feature gate, which will be deprecated. This consolidation focuses on enabling node scoring based on storage capacity, limited to the behaviors necessary for `StorageCapacityScoring`. Specifically, [the utilization shape points](https://github.com/kubernetes/enhancements/tree/49cff2e7c62800d1c87dbf5fac02c506209d1409/keps/sig-storage/1845-prioritization-on-volume-capacity#configuring-the-utilization-shape-points) have been supported because they are required for `StorageCapacityScoring`. However, [the weight of storage class](https://github.com/kubernetes/enhancements/tree/49cff2e7c62800d1c87dbf5fac02c506209d1409/keps/sig-storage/1845-prioritization-on-volume-capacity#configuring-the-weight-of-storage-class) has not been implemented ([ref1](https://github.com/kubernetes/enhancements/blob/10ff969c18772dc82cda02f7e9140c4840413e5d/keps/sig-storage/1845-prioritization-on-volume-capacity/README.md?plain=1#L201-L203), [ref2](https://github.com/kubernetes/kubernetes/pull/96347/files#diff-c4f8e3891e057e1f662eda397ce4f97d29de7d779d8a886ba2ec5a6df6f9d989R44)), and there are no plans to require it for `StorageCapacityScoring`, so it will not be implemented. For more details on the original proposal, see [KEP-1845](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/1845-prioritization-on-volume-capacity/README.md).
 
 ### Test Plan
 
