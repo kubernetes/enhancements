@@ -99,6 +99,8 @@ SIG Architecture for cross-cutting KEPs).
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -741,7 +743,7 @@ extending the production code to implement this enhancement.
 -->
 
 - `staging/src/k8s.io/client-go/tools/leaderelection`: 76.8
-- `pkg/controller/leaderelection`: `TODO` - `new controller tests`
+- `pkg/controller/leaderelection`: `77.8`
 
 ##### Integration tests
 
@@ -760,7 +762,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- `test/integration/apiserver/coordinatedleaderelection`: New file
+
+- `test/integration/apiserver/coordinatedleaderelection/*`: New directory
 
 ##### e2e tests
 
@@ -841,14 +844,31 @@ in back-to-back releases.
 -->
 
 #### Alpha
+
 - Feature implemented behind a feature flag
-- The strategy `MinimumCompatibilityVersionStrategy` is implemented
+- The strategy `OldestEmulationVersion` is implemented
+
+#### Beta
+
+- e2e & integration tests for coordinated leader election on various scenarios
+  + single leasecandidate
+  + multiple leasecandidates
+  + lease is preempted when another more suitable candidate is found
+  + Components that don't know about coordination mixed with those who do
+  + Downgrade to components that do not know about coordination
+  + Custom third party strategy controller
+- Lease pings are parallelized
+- Tests are included for third party strategies
+- Tests for disablement of the feature gate
+
+#### GA
+
+- Load test Coordinated Leader Election
+- Feature is enabled by default
 
 ### Upgrade / Downgrade Strategy
 
-If the `--leader-elect-resource-lock=coordinatedleases` flag is set and a
-component is downgraded from beta to alpha, it will need to either remove the
-flag or enable the alpha feature. All other upgrades and downgrades are safe.
+Upgrading requires enabling the feature gate `CoordinatedLeaderElection` and the group version `coordination.k8s.io/v1alpha2`. Downgrading will revert to the old leader election mechanism, but may have extra data in etcd for `LeaseCandidate` objects under the `coordination.k8s.io/v1alpha2` group version.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -930,16 +950,12 @@ well as the [existing list] of feature gates.
     - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning of
-    a node?
 
 ###### Does enabling the feature change any default behavior?
 
-No, even when the feature is enabled, a component must be configured with
-`--leader-elect-resource-lock=coordinatedleases` to use the feature.
+Yes, kube-scheduler and kube-controller-manager will use coordinated leader
+election instead of the default leader election mechanism if the feature is
+enabled.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -991,12 +1007,26 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollouts and rollbacks can fail in many ways. During the first rollout of the
+feature, there will be a mixed state of control planes using and not using
+coordinated leader election. Components not using CLE will race to obtain the
+best leader while the ones using CLE will defer the CLE controller to assign
+themselves as leader. We cannot guarantee the best leader is elected during
+mixed version states, but leader election will still be done.
+
+If the CLE controller has bugs, it may fail to or incorrectly select a leader
+and could lead to disruptions.
+
+If LeaseCandidate objects have incorrect version information, CLE controller may make an incorrect leader selection and potentially lead to version skew violations.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+If leases fail to renew that would be a sign for rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1006,11 +1036,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Integration tests include testing for skew scenarios.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1029,6 +1063,11 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+LeaseCandidate resource will be enabled and feature gate
+`CoordinatedLeaderElection` will be enabled. On the Lease object, a new field
+`Strategy` will be populated indicating the strategy used by coordinated leader
+election for selecting the most suitable leader.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1040,13 +1079,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- LeaseCandidate objects will exist for leader elected components, and the
+  `RenewTime` and `PingTime` fields will be recent (within 30 minutes).
+- Lease objects for leader elected components will be assigned and actively
+  renewing.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1065,18 +1101,22 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+When leader elected components are in the cluster, the leader must be timely
+selected and propagated via the Lease object. The lease must be actively
+renewed.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `apiserver_coordinated_leader_election_leader_changes{name="<component>"}`
+  - Metric name: `apiserver_coordinated_leader_election_leader_preemptions{name="<component>"}`
+  - Metric name: `apiserver_coordinated_leader_election_failures_total`
+  - Metric name: `apiserver_coordinated_leader_election_skew_preventions_total`
+  - Components exposing the metrics: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1084,6 +1124,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+n/a.
 
 ### Dependencies
 
@@ -1107,6 +1149,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -1135,6 +1179,17 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+Yes.
+
+- API call type: PUT
+- estimated throughput: Steady state is 3 requests per leader elected component
+  every 30 minutes to renew the LeaseCandidate. If there is churn in the control
+  plane, an extra 2N requests are performed on every change per leader elected
+  component, N representing the number of available control planes. The number
+  is 2N because N requests will be sent by the apiserver to ping all candidates,
+  and every request should be ack'd by the client.
+- watch on LeaseCandidate resources
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1144,6 +1199,9 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+- coordination.k8s.io/LeaseCandidate
+- One candidate will exist for each leader elected component for each control plane. Total amount is `# leader elected components` * `# control plane instances`
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1151,6 +1209,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1160,6 +1220,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+An additional `Strategy` field will be populated on all leases elected by CLE. This is a string enum.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1171,6 +1233,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1184,6 +1248,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1195,6 +1261,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+This is a control plane feature and does not affect node.
 
 ### Troubleshooting
 
@@ -1211,6 +1279,15 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server becomes unavailable, the CLE cannot function as it is built on
+top of the API server. It cannot monitor LeaseCandidates, update Leases, or
+elect new leaders. Existing leaders will continue to function until their Leases
+expire, but no new leaders will be elected until the API server recovers. 
+
+If etcd is unavailable, similar issues arise. The underlying lease mechanism
+relies on etcd for storage and coordination. Without etcd, Leases cannot be
+created, renewed, or monitored. 
+
 ###### What are other known failure modes?
 
 <!--
@@ -1226,7 +1303,20 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Leader election controller fails to elect a leader
+  - Detection: Via metrics `apiserver_coordinated_leader_election_failures_total` increasing and absence of leader in lease object
+  - Mitigations: Operators can disable feature gate.
+  - Diagnostics: Check kube-apiserver logs for messages on failing to elect the leader. Look at the lease object renewal times and holder, along with leasecandidate objects for the particular component.
+  - Testing: Integration test exists that prevents write access for the CLE controller and ensures that another controller takes over.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check whether the CLE controller is operating properly, check if API server is
+not overloaded, and in the worst case disable the feature by explicitly setting
+the feature gate to false. This information can be found in the controller and
+API server logs `kube-apiserver.log`. Additionally, looking through the `lease`
+and `leasecandidate` objects will provide insight on whether the leases and
+candidates are renewing properly.
 
 ## Implementation History
 
