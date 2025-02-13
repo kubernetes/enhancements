@@ -18,6 +18,7 @@
     - [CRI Changes](#cri-changes)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Resource States](#resource-states)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -25,14 +26,16 @@
     - [Container resource limit update ordering](#container-resource-limit-update-ordering)
     - [Container resource limit update failure handling](#container-resource-limit-update-failure-handling)
     - [CRI Changes Flow](#cri-changes-flow)
+    - [Kubelet Restart Analysis](#kubelet-restart-analysis)
     - [Notes](#notes)
   - [Lifecycle Nuances](#lifecycle-nuances)
   - [Atomic Resizes](#atomic-resizes)
+  - [Actuating Resizes](#actuating-resizes)
+  - [Memory Limit Decreases](#memory-limit-decreases)
   - [Sidecars](#sidecars)
   - [QOS Class](#qos-class)
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
-  - [Instrumentation](#instrumentation)
   - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
@@ -64,7 +67,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Allocated Resources](#allocated-resources-1)
+  - [Allocated Resource Limits](#allocated-resource-limits)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -216,8 +219,10 @@ PodStatus is extended to show the resources applied to the Pod and its Container
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers for running containers, and the allocated resources for non-running containers.
-* Pod.Status.Resize (new field, type map[string]string) explains what is
-  happening for a given resource on a given container.
+* Pod.Status.ContainerStatuses[i].AllocatedResources (new field, type v1.ResourceList) reports the
+  allocated resource requests.
+* Pod.Status.Conditions explain what is happening for a given resource on a given container (see
+  details [below](#resize-status)).
 
 The actual resources are reported by the container runtime in some cases, and for all other
 resources are copied from the latest snapshot of allocated resources. Currently, the resources
@@ -232,21 +237,12 @@ Additionally, a new `Pod.Spec.Containers[i].ResizePolicy[]` field (type
 
 When the Kubelet admits a pod initially or admits a resize, all resource requirements from the spec
 are cached and checkpointed locally. When a container is (re)started, these are the requests and
-limits used.
+limits used. Only the allocated requests are reported in the API, through the
+`Pod.Status.ContainerStatuses[i].AllocatedResources` field.
 
-The alpha implementation of In-Place Pod Vertical Scaling included `AllocatedResources` in the
-container status, but only included requests. This field will remain in alpha, guarded by the
-separate `InPlacePodVerticalScalingAllocatedStatus` feature gate, and is a candidate for future
-removal. With the allocated status feature gate enabled, Kubelet will continue to populate the field
-with the allocated requests from the checkpoint.
-
-The scheduler uses `max(spec...resources, status...resources)` for fit decisions, but since the
-actual resources are only relevant and reported for running containers, the Kubelet sets
-`status...resources` equal to the allocated resources for non-running containers.
-
-See [`Alternatives: Allocated Resources`](#allocated-resources-1) for alternative APIs considered.
-
-The allocated resources API should be reevaluated prior to GA.
+The scheduler uses `max(spec...resources, status...allocatedResources, status...resources)` for fit
+decisions, but since the actual resources are only relevant and reported for running containers, the
+Kubelet sets `status...resources` equal to the allocated resources for non-running containers.
 
 #### Subresource
 
@@ -257,9 +253,6 @@ following fields are allowed to be modified:
 * `.spec.containers[*].resources`
 * `.spec.initContainers[*].resources` (only for sidecars)
 * `.spec.resizePolicy`
-
-The `.status.resize` field will be reset to `Proposed` in the response, but cannot be modified in the
-request.
 
 #### Validation
 
@@ -277,65 +270,75 @@ the `/resize` subresource:
 To provide fine-grained user control, PodSpec.Containers is extended with
 ResizeRestartPolicy - a list of named subobjects (new object) that supports
 'cpu' and 'memory' as names. It supports the following restart policy values:
-* NotRequired - default value; resize the Container without restart, if possible.
-* RestartContainer - the container requires a restart to apply new resource values.
+* `PreferNoRestart` - default value; resize the Container without restart, if possible.
+  * `NotRequired` - Equivalent to `PreferNoRestart`, deprecated with v1.33.
+* `RestartContainer` - the container requires a restart to apply new resource values.
   (e.g.  Java process needs to change its Xmx flag) By using ResizePolicy, user
   can mark Containers as safe (or unsafe) for in-place resource update. Kubelet
   uses it to determine the required action.
 
-Note: `NotRequired` restart policy for resize does not *guarantee* that a container
-won't be restarted. The runtime may choose to stop the container if it is unable to
-apply the new resources without restarts.
+Note: `PreferNoRestart` restart policy for resize does not *guarantee* that a container won't be
+restarted. If the runtime knows a resize will trigger a restart, it should return an error instead,
+and the Kubelet will retry the resize on the next pod sync. The restart behavior when shrinking
+memory limits is not yet defined.
 
 Setting the flag to separately control CPU & memory is due to an observation
 that usually CPU can be added/removed without much problem whereas changes to
 available memory are more probable to require restarts.
 
 If more than one resource type with different policies are updated at the same
-time, then `RestartContainer` policy takes precedence over `NotRequired` policy.
+time, then `RestartContainer` policy takes precedence over `PreferNoRestart` policy.
 
 If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
-`NotRequired` to pass validation.  That said, any in-place resize may result
+`PreferNoRestart` to pass validation.  That said, any in-place resize may result
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
-The `ResizePolicy` field is mutable. Only append is strictly required to support in-place resize
-(for new resource requirements), and we may reevaluate full mutability if additional edge cases are
-discovered in implementation.
+The `ResizePolicy` field is immutable.
 
 #### Resize Status
 
-In addition to the above, a new field `Pod.Status.Resize[]`
-will be added.  This field indicates whether kubelet has accepted or rejected a
-proposed resize operation for a given resource.  Any time the
-`Pod.Spec.Containers[i].Resources.Requests` field differs from the
-`Pod.Status.ContainerStatuses[i].Resources` field, this new field explains why.
+Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizing`.
 
-This field can be set to one of the following values:
-* `Proposed` - the proposed resize (in Spec...Resources) has not been accepted or
-  rejected yet. Desired resources != Allocated resources.
-* `InProgress` - the proposed resize has been accepted and is being actuated. A new resize request
-  will reset the status to `Proposed`. Desired resources == Allocated resources != Actual resources.
+**PodResizePending** will track states where the spec has been resized, but the Kubelet has not yet
+allocated the resources. There are two reasons associated with this condition:
+
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
-  but is not possible right now; it will be re-evaluated.
-  Desired resources != Allocated resources.
-* `Infeasible` - the proposed resize is not feasible and is rejected; it will not
-  be re-evaluated. Desired resources != Allocated resources.
-* (no value) - there is no proposed resize.
-  Desired resources == Allocated resources == Acutal resources.
+  but is not possible right now; it will be regularly reevaluated.
+* `Infeasible` - the proposed resize is not feasible and is rejected; it may not
+  be re-evaluated.
 
-Any time the apiserver observes a proposed resize (a modification of a
-`Spec...Resources` field), it will automatically set this field to `Proposed`.
+In either case, the condition's `message` will include details of why the resize has not been
+admitted. `lastTransitionTime` will be populated with the time the condition was added. `status`
+will always be `True` when the condition is present - if there is no longer a pending resized
+(either the resize was allocated or reverted), the condition will be removed.
 
-To make this field future-safe, consumers should assume that any unknown value
-means the same as `Deferred`.
+**PodResizing** will track in-progress resizes, and should be present whenever allocated resources
+!= acknowledged resources (see [Resource States](#resource-states)). For successful synchronous
+resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
+error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
+populated with the error message. In the future, this condition will also be used for long-running
+resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)).
+
+Note that it is possible for both conditions to be present at the same time, for example if an error
+is encountered while actuating a resize and a new resize comes in that gets deferred.
+
+Prior to v1.33, the resize status was tracked by a dedicated `Pod.Status.Resize` field. This field
+will be deprecated, and not graduate to beta.
 
 #### CRI Changes
 
 As of Kubernetes v1.20, the CRI has included support for in-place resizing of containers via the
 `UpdateContainerResources` API, which is implemented by both containerd and CRI-O. Additionally, the
 `ContainerStatus` message includes a `ContainerResources` field, which reports the current resource
-configuration of the container.
+configuration of the container. `UpdateContainerResources` must be idempotent, if called with the
+same configuration multiple times.
+
+Starting with Kubernetes v1.33, the contract on the `UpdateContainerResources` call will be updated
+to specify that runtimes should not deliberately restart the container to adjust the resources. If a
+restart is required to resize, the runtime should return an error instead. There may be edge-cases
+where a restart can still be triggered (see [Memory Limit Decreases](#memory-limit-decreases)), so
+this is a best-effort requirement. There is no enforcement of this behavior.
 
 Even though pod-level cgroups are currently managed by the Kubelet, runtimes may rely need to be
 notified when the resource configuration changes. For example, this information should be passed
@@ -401,6 +404,38 @@ WindowsPodSandboxConfig.
 
 ## Design Details
 
+### Resource States
+
+In-place pod resizing adds a lot of new resource states. These are detailed in other sections of
+this KEP, but summarized here to help understand how they relate to each other.
+
+The Kubelet now tracks 4 sets of resources for each pod/container:
+
+1. Desired resources
+    - What the user (or controller) asked for
+    - Recorded in the API as the spec resources (`.spec.container[i].resources`)
+2. Allocated resources
+    - The resources that the Kubelet admitted, and intends to actuate
+    - Reported in the API through the `.status.containerStatuses[i].allocatedResources` field
+      (allocated requests only)
+    - Persisted locally on the node (requests + limits) in a checkpoint file
+3. Acknowledged resources
+    - The resource configuration that the Kubelet passed to the runtime to actuate
+    - Not reported in the API
+    - Persisted locally on the node in a checkpoint file
+    - See [Actuating Resizes](#actuating-resizes) for more details
+4. Actual resources
+    - The actual resource configuration the containers are running with, reported by the runtime,
+      typically read directly from the cgroup configuration
+    - Reported in the API via the `.status.conatinerStatuses[i].resources` field
+
+Changes are always propogated through these 4 resource states in order:
+
+```
+Desired --> Allocated --> Acknowledged --> Actual
+```
+
+
 ### Kubelet and API Server Interaction
 
 When a new Pod is created, Scheduler is responsible for selecting a suitable
@@ -417,16 +452,14 @@ allocated for all Pods in the Node, except the Pod being resized. For the Pod
 being resized, it adds the new desired resources (i.e
 Spec.Containers[i].Resources.Requests) to the sum.
 
-* If new desired resources fit, Kubelet accepts the resize, updates
-  the allocated resourcesa, and sets Status.Resize to
-  "InProgress".  It then invokes the UpdateContainerResources CRI API to update
-  Container resource limits.  Once all Containers are successfully updated, it
-  updates Status...Resources to reflect new resource values and unsets
-  Status.Resize.
-* If new desired resources don't fit, Kubelet will update the Status.Resize
-  field to "Infeasible" and does not act on the resize.
-* If new desired resources fit but are in-use at the moment, Kubelet will
-  update the Status.Resize field to "Deferred".
+* If new desired resources fit, Kubelet accepts the resize, updates the allocated resources, and
+  adds the `PodResizeInProgress` condition.  It then invokes the UpdateContainerResources CRI API to update
+  Container resource limits.  Once all Containers are successfully updated, it updates
+  Status...Resources to reflect new resource values and removes the condition.
+* If new desired resources don't fit, Kubelet will add the `PodResizePending` condition with type
+  `Infeasible` and a message explaining why.
+* If new desired resources fit but are in-use at the moment, Kubelet will add the `PodResizePending`
+  condition with type `Deferred` and a message explaining why.
 
 In addition to the above, kubelet will generate Events on the Pod whenever a
 resize is accepted or rejected, and if possible at key steps during the resize
@@ -454,136 +487,137 @@ added. This ensures that resizes don't affect previously admitted existing Pods.
 
 Scheduler continues to use Pod's Spec.Containers[i].Resources.Requests for
 scheduling new Pods, and continues to watch Pod updates, and updates its cache.
-To compute the Node resources allocated to Pods, it must consider pending
-resizes, as described by Status.Resize.
 
-For containers which have `Status.Resize = "Infeasible"`, it can
-simply use `Status.ContainerStatus[i].Resources`.
-
-For containers which have `Status.Resize = "Proposed"` or `"InProgress"`, it must be pessimistic
-and assume that the resize will be imminently accepted.  Therefore it must use
-the larger of the Pod's `Spec...Resources.Requests` and
-`Status...Resources.Requests` values.
+To compute the Node resources allocated to Pods, pending resizes must be factored in.
+The scheduler will use the maximum of:
+1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
+1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
+1. Allocated resources, reported in `.status.containerStatuses[i].allocatedResources`
 
 ### Flow Control
 
 The following steps denote the flow of a series of in-place resize operations
-for a Pod with ResizePolicy set to NotRequired for all its Containers.
-This is intentionally hitting various edge-cases to demonstrate.
+for a Pod with ResizePolicy set to PreferNoRestart for all its Containers.
+This is intentionally hitting various edge-cases for demonstration.
 
-```
-T=0: A new pod is created
+1. A new pod is created
     - `spec.containers[0].resources.requests[cpu]` = 1
+    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"PreferNoRestart"`
     - all status is unset
 
-T=1: apiserver defaults are applied
+1. Pod is scheduled
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `status.containerStatuses` = unset
-    - `status.resize[cpu]` = unset
+    - status still mostly unset
 
-T=2: kubelet runs the pod and updates the API
+1. kubelet runs the pod and updates the API
     - `spec.containers[0].resources.requests[cpu]` = 1
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `status.resize[cpu]` = unset
+    - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=3: Resize #1: cpu = 1.5 (via PUT or PATCH or /resize)
+1. Resize #1: cpu = 1.5 (via PUT or PATCH to /resize)
     - apiserver validates the request (e.g. `limits` are not below
       `requests`, ResourceQuota not exceeded, etc) and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `status.resize[cpu]` = "Proposed"
+    - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
 
-T=4: Kubelet watching the pod sees resize #1 and accepts it
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-        `status.resize[cpu]` = "InProgress"'
-      }
+1. Kubelet Restarts!
+    - The allocated & acknowledged resources are read back from checkpoint
+    - Pods are resynced from the API server, but admitted based on the allocated resources
+    - `spec.containers[0].resources.requests[cpu]` = 1.5
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1
+    - `acknowledged[cpu]` = 1
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - actual CPU shares = 1024
+
+1. Kubelet syncs the pod, sees resize #1 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "InProgress"
+    - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]` added
+    - actual CPU shares = 1024
 
-T=5: Resize #2: cpu = 2
+1. Resize #2: cpu = 2
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Proposed"
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]`
+    - actual CPU shares = 1024
 
-T=6: Container runtime applied cpu=1.5
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.5
-        `status.resize[cpu]` = unset
-      }
-    - apiserver fails the operation with a "conflict" error
-
-T=7: kubelet refreshes and sees resize #2 (cpu = 2)
-    - kubelet decides this is possible, but not right now
-    - kubelet sends patch {
-        `resourceVersion` = `<updated value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.5
-        `status.resize[cpu]` = "Deferred"
-      }
+1. Container runtime applied cpu=1.5
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Deferred"
-    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `acknowledged[cpu]` = 1.5
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1
+    - `status.conditions[type==PodResizing]`
+    - actual CPU shares = 1536
 
-T=8: Resize #3: cpu = 1.6
+1. kubelet syncs the pod, and sees resize #2 (cpu = 2)
+    - kubelet decides this is feasible, but currently insufficient available resources
+    - `spec.containers[0].resources.requests[cpu]` = 2
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
+    - `acknowledged[cpu]` = 1.5
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending].type` = `"Deferred"`
+    - `status.conditions[type==PodResizing]` removed
+    - actual CPU shares = 1536
+
+1. Resize #3: cpu = 1.6
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `status.resize[cpu]` = "Proposed"
+    - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending].type` = `"Deferred"`
+    - actual CPU shares = 1536
 
-T=9: Kubelet watching the pod sees resize #3 and accepts it
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-        `status.resize[cpu]` = "InProgress"'
-      }
+1. Kubelet syncs the pod, and sees resize #3 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "InProgress"
+    - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizePending]` removed
+    - `status.conditions[type==PodResizing]` added
+    - actual CPU shares = 1536
 
-T=10: Container runtime applied cpu=1.6
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.containerStatuses[0].resources.requests[cpu]` = 1.6
-        `status.resize[cpu]` = unset
-      }
+1. Container runtime applied cpu=1.6
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = unset
+    - `acknowledged[cpu]` = 1.6
+    - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
+    - `status.conditions[type==PodResizing]`
+    - actual CPU shares = 1638
+
+1. Kubelet syncs the pod
+    - `spec.containers[0].resources.requests[cpu]` = 1.6
+    - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
+    - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - `status.conditions[type==PodResizing]` removed
+    - actual CPU shares = 1638
 
-T=11: Resize #4: cpu = 100
+1. Resize #4: cpu = 100
     - apiserver validates the request and accepts the operation
-    - apiserver sets `resize[cpu]` to "Proposed"
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "Proposed"
+    - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
+    - actual CPU shares = 1638
 
-T=12: Kubelet watching the pod sees resize #4
-    - this node does not have 100 CPUs, so kubelet cannot accept
-    - kubelet sends patch {
-        `resourceVersion` = `<previous value>` # enable conflict detection
-        `status.resize[cpu]` = "Infeasible"'
-      }
+1. Kubelet syncs the pod, and sees resize #4
+    - this node does not have 100 CPUs, so kubelet cannot admit it
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `status.resize[cpu]` = "Infeasible"
+    - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
-```
+    - `status.conditions[type==PodResizePending].type` = `"Infeasible"`
+    - actual CPU shares = 1638
 
 #### Container resource limit update ordering
 
@@ -591,25 +625,29 @@ When in-place resize is requested for multiple Containers in a Pod, Kubelet
 updates resource limit for the Pod and its Containers in the following manner:
   1. If resource resizing results in net-increase of a resource type (CPU or
      Memory), Kubelet first updates Pod-level cgroup limit for the resource
-     type, and then updates the Container resource limit.
-  1. If resource resizing results in net-decrease of a resource type, Kubelet
-     first updates the Container resource limit, and then updates Pod-level
-     cgroup limit.
-  1. If resource update results in no net change of a resource type, only the
-     Container resource limits are updated.
+     type.
+  1. All container limit decreases are applied.
+  1. If all container limit decreases succeeded and resource resizing results in net-decrease of a
+     resource type, Kubelet then updates the Pod-level cgroup limit.
+  1. If all previous steps succeeded, container limit increases are applied.
 
 In all the above cases, Kubelet applies Container resource limit decreases
 before applying limit increases.
 
 #### Container resource limit update failure handling
 
-If multiple Containers in a Pod are being updated, and UpdateContainerResources
-CRI API fails for any of the containers, Kubelet will backoff and retry at a
-later time. Kubelet does not attempt to update limits for containers that are
-lined up for update after the failing container. This ensures that sum of the
-container limits does not exceed Pod-level cgroup limit at any point. Once all
-the container limits have been successfully updated, Kubelet updates the Pod's
-Status.ContainerStatuses[i].Resources to match the desired limit values.
+If an `UpdateContainerResources` request fails while container limit decreases are being applied,
+the remainder of the container limit decreases will be attempted, but container limit increases or
+pod limit decreases will not. This ensures that sum of the container limits does not exceed
+Pod-level cgroup limit at any point.
+
+If an `UpdateContainerResources` request fails while container limit increases are being applied,
+the remaining container limit increases will still be attempted.
+
+If any errors are raised during the resize process:
+- An event will be emitted with the error details
+- The ResizeStatus will be set to `Error`
+- The pod will be requeued for sync, and the resize will be retried on the next pod sync.
 
 #### CRI Changes Flow
 
@@ -659,6 +697,44 @@ Pod Status in response to user changing the desired resources in Pod Spec.
   in ContainerStatus.Resources to update ContainerStatuses[i].Resources.Limits
   for that Container in the Pod's Status.
 
+#### Kubelet Restart Analysis
+
+Analysis of Kubelet restarts happening at various points of resize, and how recovery happens.
+Impacts of a restart outside of resource configuration are out of scope.
+
+1. Kubelet Admits a new pod
+  - Resource allocation checkpointed before sending the pod to the pod workers
+  - Restart before checkpointing: pod goes through admission again as if new
+  - Restart after checkpointing: pod goes through admission using the allocated resources
+1. Kubelet creates a container
+  - Resources acknowledged after CreateContainer call succeeds
+  - Restart before acknowledgement: Kubelet issues a superfluous UpdatePodResources request
+  - Restart after acknowledgement: No resize needed
+1. Container starts, triggering a pod sync event
+  - Kubelet updates status with actual resources reported by runtime, allocated resources from checkpoint
+  - Allocated == Acknowledeged, so no resize needed
+  - No races around restart.
+1. Pod is resized in the API, Kubelet observes the update
+  - Triggers a pod sync
+  - On restart, Kubelet reads the latest pod from the API and triggers a pod sync, so same effect as
+    observing the update.
+1. Updated pod is synced: Check if pod can be admitted
+  - No: add `PodResizePending` condition with type `Deferred`, no change to allocated resources
+    - Restart: redo admission check, still deferred.
+  - Yes: add `PodResizing` condition, update allocated checkpoint
+    - Restart before update: readmit, then update allocated
+    - Restart after update: allocated != acknowledged --> proceed with resize
+1. Allocated != Acknowledged
+  - Trigger an `UpdateContainerResources` CRI call, then update Acknowledged resources on success
+  - Restart before CRI call: allocated != acknowledged, will still trigger the update call
+  - Restart after CRI call, before acknowledged update: will redo update call
+  - Restart after acknowledged update: allocated == acknowledged, condition removed
+  - In all restart cases, `LastTransitionTime` is propagated from the old pod status `PodResizing`
+    condition, and remains unchanged.
+1. PLEG updates PodStatus cache, triggers pod sync
+  - Pod status updated with actual resources, `PodResizing` condition removed
+  - Desired == Allocated == Acknowledged, no resize changes needed.
+
 #### Notes
 
 * If CPU Manager policy for a Node is set to 'static', then only integral
@@ -671,10 +747,6 @@ Pod Status in response to user changing the desired resources in Pod Spec.
 * If additional resize requests arrive when a Pod is being resized, those
   requests are handled after completion of the resize that is in progress. And
   resize is driven towards the latest desired state.
-* Lowering memory limits may not always take effect quickly if the application
-  is holding on to pages. Kubelet will use a control loop to set the memory
-  limits near usage in order to force a reclaim, and update the Pod's
-  Status.ContainerStatuses[i].Resources only when limit is at desired value.
 * Impact of Pod Overhead: Kubelet adds Pod Overhead to the resize request to
   determine if in-place resize is possible.
 * At this time, Vertical Pod Autoscaler should not be used with Horizontal Pod
@@ -710,6 +782,43 @@ intended.
 
 The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
 
+### Actuating Resizes
+
+The resources specified by the Kubelet are not guaranteed to be the actual resources configured for
+a pod or container. Examples include:
+- Linux kernel enforced minimums for CPU shares & quota
+- Systemd cgroup driver rounds CPU quota up to the nearest 10ms
+- NRI plugins can change resource configuration
+
+Therefore the Kubelet cannot reliably compare desired & actual resources to know whether to trigger
+a resize (a level-triggered approach).
+
+To accommodate this, the Kubelet stores the set of "acknowledged" resources per container.
+Acknowledged resources represent the resource configuration that was passed to the runtime (either
+via a CreateContainer or UpdateContainerResources call) and received a successful response. The
+acknowledged resources are checkpointed alongside the allocated resources to persist across
+restarts. There is the possibility that a poorly timed restart could lead to a resize request being
+repeated, so `UpdateContainerResources` must be idempotent.
+
+When a resize CRI request succeeds, the pod will be marked for resync to read the latest resources. If
+the actual configured resources do not match the desired resources, this will be reflected in the
+pod status resources, but not otherwise acted upon.
+
+If a resize request does not succeed, the Kubelet will retry the resize on every subsequent pod
+sync, until it succeeds or the container is terminated.
+
+### Memory Limit Decreases
+
+Setting the memory limit below current memory usage can cause problems. If the kernel cannot reclaim
+sufficient memory, the outcome depends on the cgroups version. With cgroups v1 the change will
+simply be rejected by the kernel, whereas with cgroups v2 it will trigger an oom-kill.
+
+In the initial beta release of in-place resize, we will **disallow** `PreferNoRestart` memory limit
+decreases, enforced through API validation. The intent is for this restriction to be relaxed in the
+future, but the design of how limit decreases will be approached is still undecided.
+
+Memory limit decreases with `RestartRequired` are still allowed.
+
 ### Sidecars
 
 Sidecars, a.k.a. restartable InitContainers can be resized the same as regular containers. There are
@@ -730,20 +839,19 @@ resize](#design-sketch-workload-resource-resize).
 ### Resource Quota
 
 With InPlacePodVerticalScaling enabled, resource quota needs to consider pending resizes. Similarly
-to how this is handled by scheduling, resource quota will use the maximum of
-`.spec.container[*].resources.requests` and `.status.containerStatuses[*].resources` to
-determine the effective request values.
+to how this is handled by scheduling, resource quota will use the maximum of: 
+1. Desired resources, computed from container requests in the pod spec, unless the resize is marked as `Infeasible`
+1. Actual resources, computed from the `.status.containerStatuses[i].resources.requests`
+1. Allocated resources, reported in `.status.containerStatuses[i].allocatedResources`
 
-To properly handle scale-down, this means that the resource quota controller now needs to evaluate
+To properly handle scale-down, resource quota controller now needs to evaluate
 pod updates where `.status...resources` changed.
 
 ### Affected Components
 
 Pod v1 core API:
 * extend API
-* auto-reset Status.Resize on changes to Resources
-* added validation allowing only CPU and memory resource changes,
-* set default for ResizePolicy
+* added validation allowing only CPU and memory resource changes
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 * for ResourceQuota, podEvaluator.Handler implementation is modified to allow
@@ -756,7 +864,8 @@ Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 Kubelet:
 * set Pod's Status.ContainerStatuses[i].Resources for Containers upon placing
   a new Pod on the Node,
-* update Pod's Status.Resize and Status...AllocatedResources upon resize,
+* update Pod's Status...AllocatedResources and Status...Resources upon resize,
+* manage the new `PodResizePending` and `PodResizeInProgress` conditions
 * change UpdateContainerResources CRI API to work for both Linux & Windows.
 
 Scheduler:
@@ -765,26 +874,6 @@ Scheduler:
 Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
-
-### Instrumentation
-
-The following new metric will be added to track total resize requests, counted at the pod level. In
-otherwords, a single pod update changing multiple containers and/or resources will count as a single
-resize request.
-
-`kubelet_container_resize_requests_total` - Total number of resize requests observed by the Kubelet.
-
-Label: `state` - Count resize request state transitions. This closely tracks the [Resize status](#resize-status) state transitions, omitting `InProgress`. Possible values:
-  - `proposed` - Initial request state
-  - `infeasible` - Resize request cannot be completed.
-  - `deferred` - Resize request cannot initially be completed, but will retry
-  - `completed` - Resize operation completed successfully (`spec.Resources == allocated resources == status.Resources`)
-  - `canceled` - Pod was terminated before resize was completed, or a new resize request was started.
-
-In steady state, `proposed` should equal `infeasible + completed + canceled`.
-
-The metric is recorded as a counter instead of a gauge to ensure that usage can be tracked over
-time, irrespective of scrape interval.
 
 ### Static CPU & Memory Policy
 
@@ -796,6 +885,7 @@ This will be reconsidered post-beta as a future enhancement.
 
 ### Future Enhancements
 
+1. Allow memory limits to be decreased, and handle the case where limits are set below usage.
 1. Kubelet (or Scheduler) evicts lower priority Pods from Node to make room for
    resize. Pre-emption by Kubelet may be simpler and offer lower latencies.
 1. Allow ResizePolicy to be set on Pod level, acting as default if (some of)
@@ -808,6 +898,8 @@ This will be reconsidered post-beta as a future enhancement.
    update to running Pods.
 1. Allow resizing local ephemeral storage.
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
+1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
+   runtime even if the allocated resources haven't changed.
 
 #### Mutable QOS Class "Shape"
 
@@ -1050,21 +1142,21 @@ Setup a namespace with min and max LimitRange and create a single, valid Pod.
 #### Resize Policy Tests
 
 Setup a guaranteed class Pod with two containers (c1 & c2).
-1. No resize policy specified, defaults to NotRequired. Verify that CPU and
+1. No resize policy specified, defaults to PreferNoRestart. Verify that CPU and
    memory are resized without restarting containers.
-1. NotRequired (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
+1. PreferNoRestart (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
    Verify that c1 is resized without restart, c2 is restarted on resize.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
+1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
    verify container is resized without restart.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 memory only,
+1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 memory only,
    verify container is resized with restart.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
+1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
 #### Backward Compatibility and Negative Tests
 
 1. Verify that Node is allowed to update only a Pod's AllocatedResources field.
-1. Verify that only Node account is allowed to udate AllocatedResources field.
+1. Verify that only Node account is allowed to update AllocatedResources field.
 1. Verify that updating Pod Resources in workload template spec retains current
    behavior:
    - Updating Pod Resources in Job template is not allowed.
@@ -1278,13 +1370,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  Metric: `kubelet_container_resize_requests_total` (see [Instrumentation](#instrumentation))
+  Metric: `apiserver_request_total{resource=pods,subresource=resize}`
+
+* **How can someone using this feature know that it is working for their instance?**
+
+  - If the Kubelet supports InPlacePodVerticalScaling, it will always set the `Resources` field in
+    container status.
+  - The `ResizeStatus` in the pod status should converge to the empty value, indicating the resize has completed.
+  - The `Resources` in the container status should converge to the resized resources, or an
+    approximation of it (see [Actuating Resizes](#actuating-resizes) for more details on
+    when these resources can diverge).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [x] Metrics
-    - Metric name: `kubelet_container_resize_requests_total`
-      - Components exposing the metric: kubelet
+    - Metric name: `apiserver_request_total{resource=pods,subresource=resize}`
+      - Components exposing the metric: apiserver
     - Metric name: `runtime_operations_duration_seconds{operation_type=container_update}`
       - Components exposing the metric: kubelet
     - Metric name: `runtime_operations_errors_total{operation_type=container_update}`
@@ -1292,15 +1393,14 @@ the health of the service?**
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-  - Using `kubelet_container_resize_requests_total`, `completed + infeasible + canceled` request count
-  should approach `proposed` request count in steady state.
+  - Resize requests should succeed (`apiserver_request_total{resource=pods,subresource=resize}` with non-success `code` should be low)
   - Resource update operations should complete quickly (`runtime_operations_duration_seconds{operation_type=container_update} < X` for 99% of requests)
   - Resource update error rate should be low (`runtime_operations_errors_total{operation_type=container_update}/runtime_operations_total{operation_type=container_update}`)
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-  - Kubelet admission rejections: https://github.com/kubernetes/kubernetes/issues/125375
+  - ~~Kubelet admission rejections: https://github.com/kubernetes/kubernetes/issues/125375~~ (DONE)
   - Resize operate duration (time from the Kubelet seeing the request to actuating the changes): this would require persisting more state about when the resize was first observed.
 
 ### Dependencies
@@ -1422,6 +1522,22 @@ _This section must be completed when targeting beta graduation to a release._
 - 2021-02-05 - Final consensus on allocatedResources[] and resize[]
 - 2022-05-01 - KEP 2273-kubelet-container-resources-cri-api-changes merged with this KEP
 - 2023-04-08 - Catch up KEP details to what is actually implemented
+- 2024-10-09 - v1.32 updates for planned beta
+    - Remove container-level status `AllocatedResources`
+    - Add `/resize` subresource specification
+    - Make `ResizePolicy` mutable
+    - Introduce best-effort `UpdatePodSandboxResources` CRI call
+    - Add sidecar resize support
+    - Describe the [Atomic Resizes](#atomic-resizes) principle
+    - Add ResourceQuota details
+    - Heuristic version skew handling in API validation
+- 2025-01-24 - v1.33 updates for planned beta
+    - Replace ResizeStatus with conditions
+    - Improve memory limit downsize handling
+    - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
+      and update CRI `UpdateContainerResources` contract
+    - Add back `AllocatedResources` field to resolve a scheduler corner case
+    - Introduce Acknowledged resources for actuation
 
 ## Drawbacks
 
@@ -1442,9 +1558,9 @@ information to express the idea and why it was not acceptable.
 We considered having scheduler approve the resize. We also considered PodSpec as
 the location to checkpoint allocated resources.
 
-### Allocated Resources
+### Allocated Resource Limits
 
-If we need allocated resources & limits in the pod status API, the following options have been
+If we need allocated limits in the pod status API, the following options have been
 considered:
 
 **Option 1: New field "AcceptedResources"**
