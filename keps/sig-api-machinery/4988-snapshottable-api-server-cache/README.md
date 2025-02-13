@@ -8,7 +8,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Snapshotting](#snapshotting)
-  - [Cache Inconsistency detection](#cache-inconsistency-detection)
+  - [Cache Inconsistency Detection Mechanism](#cache-inconsistency-detection-mechanism)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Memory overhead](#memory-overhead)
   - [Test Plan](#test-plan)
@@ -116,17 +116,11 @@ efficient serving of remaining types of LIST requests from the watchcache.
 This approach aims to improve the performance and stability of the API server by
 reducing the need to access etcd directly for historical data.
 
-While the overall goal is to have watch cache support all types of request, we
-will split the rollout into multiple phases that will be controlled by separate
-feature flags.
-* Phase 1: Support of paginated request.
-* Phase 2: Support of exact revision match.
-
 See also https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/365-paginated-lists#potential-future-extensions
 
 This change increases the K8s dependency on cache, the impact of a bug in caching logic is severe.
 Any incorrect behavior will be persisted in a local apiserver, and is extreamly hard to debug.
-As the proposed changes will in the end cover all apiserver list calls behind a cache, we need a better way to detect. 
+As the proposed changes will in the end cover all apiserver list calls behind a cache, we need a better way to detect issues. 
 We propose to add a automatic mechanism for validating cache consistency with etcd,
 allowing users to trust it's results withount need to manually debug.
 
@@ -162,26 +156,32 @@ allowing users to trust it's results withount need to manually debug.
 
 [Clone()]: https://pkg.go.dev/github.com/google/btree#BTree.Clone
 
-### Cache Inconsistency detection
+### Cache Inconsistency Detection Mechanism
 
-For the first iteration of the mechanism we will calculate the hash based on LIST response
-at some specific RV of each resource and expose it as a metric.
+We will periodically calculate a hash of the data in both the etcd datastore
+and the watch cache and compare them. For the Alpha phase, detection will be passive.
+A metric will be exposed, allowing users to configure alerts that trigger on hash mismatch,
+thus indicatory of potential inconsistency and enabling us to validate the mechanism.
+For the Beta phase, detection will become active, with automatic fallback to etcd if
+inconsistency is detected. This way we automaticaly restore the previous behavior.
 
-For Alpha users should be able to setup an alert to detect if hash values for etcd and cache don't match.
-For Beta we plan to introduce a automatic action to purge the cache if inconsistent with etcd.
+The implementation works as follows. Every 5 minutes, for each resource,
+a hash calculation is performed. To avoid concurrent calculations,
+the start time for each resource's calculation is randomly offset by 1 to 5 minutes.
+A non-consistent `LIST` request (`RV=0`) is sent to the watch cache to retrieve its latest available RV.
+This revision is then used to make a consistent `LIST` request (`RV=X`, where X is the revision from the cache) to etcd.
+This ensures comparison of the cache's latest state with the corresponding state in etcd,
+without explicit handling of potential cache staleness.
 
-Once every 5 minutes (default compaction interval) for each resource we will
-send a LIST request to both etcd and watch cache and calculate hash of the response objects.
-Hash calculations will be shifted by random jitter (1-5 minutes) to minimize stacking multiple concurrent calculations.
-First we will make a non-consistant list with `RV=0` from cache, read the revision and send a exact revision list request `RV=X` to etcd.
-This way will validate the latest available in cache RV without needing to account cache staleness.
+The 64-bit FNV algorithm (as implemented in [`hash/fnv`]([https://pkg.go.dev/hash/fnv](https://pkg.go.dev/hash/fnv)))
+is used to calculate the hash over the entire structure of the `LIST` response,
+using a technique similar to [gohugoio/hashstructure](https://github.com/gohugoio/hashstructure).
+While calculating the hash of the entire structure is computationally more expensive,
+the infrequency of this operation (every 5 minutes) makes the cost acceptable compared
+to frequent `LIST` operations directly against etcd.
+Hashing the entire structure helps prevent issues arising from object versioning differences.
 
-New metric `apiserver_storage_hash` will expose last results of calculating hash using [64bit FNV](https://pkg.go.dev/hash/fnv) algorithm.
-To calculate the hash from LIST response we will calculate hash of response structure using approach similar to https://github.com/gohugoio/hashstructure.
-While decoding and calculating hash on the whole structure might be costly, we think it's acceptable if done with such high period when compared to cost of normal LISTs from etcd.
-Calculating hash on the structure itself allows us to mitigate issues with object versioning.
-
-Example metric:
+The metric includes labels for `resource` (e.g., "pods"), `storage` (either "etcd" or "cache"), and `hash` (the calculated hash value). Example:
 ```
 apiserver_storage_hash{resource="pods", storage="etcd", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
 apiserver_storage_hash{resource="pods", storage="cache", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
@@ -213,7 +213,7 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-- Ensure the pagination is well tested
+- Add tests for LIST with pagination and providing exact RV.
 
 ##### Unit tests
 
@@ -221,7 +221,7 @@ to implement this enhancement.
 
 ##### Integration tests
 
-We should add a test to validate purging of watch cache.
+We should add a test to validate fallback to serving from etcd.
 
 ##### e2e tests
 
@@ -238,6 +238,7 @@ Test should cover couple of resources including resources with conversion.
 #### Beta
 
 - Inconsistency detection mechanism is qualified and no mismatch detected.
+- Fallback to etcd mechanism is implemented
 
 #### GA
 
@@ -259,15 +260,15 @@ instances is not needed.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PaginationFromCache
-  - Components depending on the feature gate: kube-apiserver
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+```
+feature-gates:
+  - name: DetectCacheInconsistency
+    components:
+      - kube-apiserver
+  - name: ListFromCacheSnapshot
+    components:
+      - kube-apiserver
+```
 
 ###### Does enabling the feature change any default behavior?
 
@@ -326,6 +327,8 @@ This is control-plane feature, not a workload feature.
 [API call latency SLI](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Yes, we are adding `apiserver_storage_hash` to check cache consistency.
 
 ### Dependencies
 

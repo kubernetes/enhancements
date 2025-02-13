@@ -1,4 +1,4 @@
-title: Serve pagination from cache
+title: Snapshottable API server cache
 kep-number: 4988
 authors:
   - "@serathius"
@@ -14,13 +14,17 @@ approvers:
 
 see-also:
   - "/keps/sig-api-machinery/2340-Consistent-reads-from-cache"
+  - "/keps/sig-api-machinery/365-paginated-lists"
 replaces: []
 stage: alpha
 latest-milestone: "v1.33"
 milestone:
   alpha: "v1.33"
 feature-gates:
-  - name: PaginationFromCache
+  - name: DetectCacheInconsistency
+    components:
+      - kube-apiserver
+  - name: ListFromCacheSnapshot
     components:
       - kube-apiserver
 disable-supported: true
