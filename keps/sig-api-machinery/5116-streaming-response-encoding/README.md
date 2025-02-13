@@ -237,13 +237,15 @@ Via feature gates
 
 ###### Does enabling the feature change any default behavior?
 
-No, we provide byte to byte compatibility.
+Not visible to user, responses will have byte to byte equivalence.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, without problem.
+Yes, via disabling the feature-gate in kube-apiserver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature is purely in-memory so it will just work as enabled for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -259,11 +261,11 @@ N/A
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+Errors in response encoding should be visible in number of 5XX status code in `apiserver_request_total` metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+The feature is purely in-memory so it will just work as enabled for the first time.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -274,19 +276,19 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
+Check the feature gates enabled on apiserver and whether there are any LIST requests.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-N/A
+Not visible to user, responses will have byte to byte equivalence.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+Latency and error rate of list requests shouldn't regress from official targets.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+Latency and error rate of list requests.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
