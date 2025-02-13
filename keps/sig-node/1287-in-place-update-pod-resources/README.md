@@ -219,9 +219,10 @@ PodStatus is extended to show the resources applied to the Pod and its Container
 * Pod.Status.ContainerStatuses[i].Resources (new field, type
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers for running containers, and the allocated resources for non-running containers.
-* Pod.Status.ContainerStatuses[i].AllocatedResources (new field) reports the allocated resource requests.
-* Pod.Status.Resize (new field, type map[string]string) explains what is
-  happening for a given resource on a given container.
+* Pod.Status.ContainerStatuses[i].AllocatedResources (new field, type v1.ResourceList) reports the
+  allocated resource requests.
+* Pod.Status.Conditions explain what is happening for a given resource on a given container (see
+  details [below](#resize-status)).
 
 The actual resources are reported by the container runtime in some cases, and for all other
 resources are copied from the latest snapshot of allocated resources. Currently, the resources
@@ -276,8 +277,10 @@ ResizeRestartPolicy - a list of named subobjects (new object) that supports
   can mark Containers as safe (or unsafe) for in-place resource update. Kubelet
   uses it to determine the required action.
 
-Note: `PreferNoRestart` restart policy for resize does not *guarantee* that a container
-won't be restarted.
+Note: `PreferNoRestart` restart policy for resize does not *guarantee* that a container won't be
+restarted. If the runtime knows a resize will trigger a restart, it should return an error instead,
+and the Kubelet will retry the resize on the next pod sync. The restart behavior when shrinking
+memory limits is not yet defined.
 
 Setting the flag to separately control CPU & memory is due to an observation
 that usually CPU can be added/removed without much problem whereas changes to
@@ -328,7 +331,7 @@ will be deprecated, and not graduate to beta.
 As of Kubernetes v1.20, the CRI has included support for in-place resizing of containers via the
 `UpdateContainerResources` API, which is implemented by both containerd and CRI-O. Additionally, the
 `ContainerStatus` message includes a `ContainerResources` field, which reports the current resource
-configuration of the container. `UpdateContainerResources` should be idempotent, if called with the
+configuration of the container. `UpdateContainerResources` must be idempotent, if called with the
 same configuration multiple times.
 
 Starting with Kubernetes v1.33, the contract on the `UpdateContainerResources` call will be updated
@@ -449,12 +452,10 @@ allocated for all Pods in the Node, except the Pod being resized. For the Pod
 being resized, it adds the new desired resources (i.e
 Spec.Containers[i].Resources.Requests) to the sum.
 
-* If new desired resources fit, Kubelet accepts the resize, updates
-  the allocated resources, and sets Status.Resize to
-  "InProgress".  It then invokes the UpdateContainerResources CRI API to update
-  Container resource limits.  Once all Containers are successfully updated, it
-  updates Status...Resources to reflect new resource values and unsets
-  Status.Resize.
+* If new desired resources fit, Kubelet accepts the resize, updates the allocated resources, and
+  adds the `PodResizeInProgress` condition.  It then invokes the UpdateContainerResources CRI API to update
+  Container resource limits.  Once all Containers are successfully updated, it updates
+  Status...Resources to reflect new resource values and removes the condition.
 * If new desired resources don't fit, Kubelet will add the `PodResizePending` condition with type
   `Infeasible` and a message explaining why.
 * If new desired resources fit but are in-use at the moment, Kubelet will add the `PodResizePending`
@@ -850,7 +851,6 @@ pod updates where `.status...resources` changed.
 
 Pod v1 core API:
 * extend API
-* auto-reset Status.Resize on changes to Resources
 * added validation allowing only CPU and memory resource changes
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
@@ -864,7 +864,8 @@ Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 Kubelet:
 * set Pod's Status.ContainerStatuses[i].Resources for Containers upon placing
   a new Pod on the Node,
-* update Pod's Status.Resize and Status...AllocatedResources upon resize,
+* update Pod's Status...AllocatedResources and Status...Resources upon resize,
+* manage the new `PodResizePending` and `PodResizeInProgress` conditions
 * change UpdateContainerResources CRI API to work for both Linux & Windows.
 
 Scheduler:
@@ -897,6 +898,8 @@ This will be reconsidered post-beta as a future enhancement.
    update to running Pods.
 1. Allow resizing local ephemeral storage.
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
+1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
+   runtime even if the allocated resources haven't changed.
 
 #### Mutable QOS Class "Shape"
 
