@@ -15,6 +15,7 @@
   - [Connected Traces with Nested Spans](#connected-traces-with-nested-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
   - [Kubelet Configuration](#kubelet-configuration)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -205,6 +206,10 @@ type TracingConfiguration struct {
 }
 
 ```
+
+### Risks and Mitigations
+
+There is a risk of memory usage incurred by storing spans prior to export. This is mitigated by limiting the number of spans that can be queued for export, and dropping spans if necessary to stay under that limit.
 
 ## Design Details
 
@@ -455,6 +460,10 @@ details). For now, we leave it here.
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue? **go-opentelemetry sdk provides logs indicating failure**
     - Testing: It isn't particularly useful to test misconfigurations.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+  If you believe tracing is causing issues (e.g. increasing memory consumption), try disabling it by not providing a configuration file. It can also be helpful to collect CPU or memory profiles if you think tracing might be to blame for higher resource usage.
 
 ## Implementation History
 
