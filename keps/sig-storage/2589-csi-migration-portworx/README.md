@@ -269,6 +269,16 @@ No
 The CSI operations like mounting a volume will fail.
 
 ###### What are other known failure modes?
+ - Volume mount failing for in-tree PVs when Portworx security feature is enabled.
+  - Detection: The pods using in-tree PVs will not be in running state, and the error would mention that the authorization token is missing.
+  - Mitigations: Customers will have to add certain annotations to in-tree PVs mentioning the CSI secret name/namespace which the kubelet or CSI sidecar containers can use(using `csi-translation-lib`) to pass secret contents to Portworx CSI driver for operations on in-tree PVs. 
+  Please note that adding these annotations for such PVs will be automatically done by Portworx platform upon upgrade, and it will also be documented in the Portworx documentation.
+  - Diagnostics: The pod using the in-tree PV will not be in running state, and the error would mention that the authorization token is missing.
+  - Testing: Manual testing has been done with in-tree Portworx volumes migrating to CSI.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+We need to check kubelet logs to determine any failures in Kubernetes while mounting volumes. Additionally, we can also check Portworx logs if there is any error originating from Portworx side.
 
 ## Implementation History
 
