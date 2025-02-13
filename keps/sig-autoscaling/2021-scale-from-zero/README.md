@@ -89,10 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -157,6 +157,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [Horizontal Pod Autoscaler][] (HPA) automatically scales the number of pods in any resource which supports the `scale` subresource based on observed CPU or memory utilization
 (or, with custom metrics support, on some other application-provided metrics) from one to many replicas. This proposal adds support for scaling from zero to many replicas and back to zero for object and external metrics.
 
+Scaling to zero is particularly effective for cost reduction when individual pods demand substantial resource requests, such as dedicated CPUs or GPUs. Since CPU and memory utilization can only be measured on running pods, scaling to zero will be limited to object and external metrics.
+
 [Horizontal Pod Autoscaler]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
 
 <!--
@@ -192,8 +194,10 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 With the addition of scaling based on object and external metrics it became possible to automatically adjust the number of running replicas based on an application
 provided metric. A typical use-case case for this is scaling the number of queue consumers based on the length of the consumed queue.
 
-In cases of a frequently idle queue or a less latency sensitive workload there is no need to run one replica at all times and instead you want to dynamically scale
-to zero replicas, especially if those replicas have high resource requests. If replicas are scale to 0, HPA also needs the ability to scale up once messages are available.
+In cases of a frequently idle queue or a less latency-sensitive workload, there is no need to keep one replica running at all times.
+Instead, you can dynamically scale to zero replicas, especially for workloads with high resource demands, such as those requiring GPUs.
+This approach not only reduces costs but also has significant energy-saving potential, particularly as GPU workloads become more prevalent.
+When replicas are scaled to zero, the HPA must also be capable of scaling back up as soon as messages become available.
 
 ### Goals
 
@@ -385,7 +389,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- N/A in this case.
 
 ##### e2e tests
 
@@ -398,6 +402,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+E2E tests will be added under <https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling> to test scale down to `0` and scale up
+with this feature enabled and scale down `1` without this feature.
 
 - <test>: <link to test coverage>
 
@@ -578,7 +585,6 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-
   HPA creation/update with `minReplicas: 0` is no longer rejected, if the `enableScaleToZero` field is set to true.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -593,7 +599,6 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-
 
 Yes. To downgrade the cluster to version that does not support scale-to-zero feature:
 
@@ -668,7 +673,7 @@ No yet as no implementation is available.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-Once this is in beta, the alpha flag can be removed.
+No.
 
 ### Monitoring Requirements
 
@@ -822,7 +827,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes, one additional boolean field.
+Yes, one additional boolean field inside the `spec` of every `HorizontalPodAutoscaler` resource.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -863,6 +868,7 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 No.
+
 ### Troubleshooting
 
 <!--
@@ -877,7 +883,9 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 Autoscaling will not occur, this is the same as the current behaviour.
+
 ###### What are other known failure modes?
 
 <!--
@@ -924,6 +932,10 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+Third-party solutions like [KEDA][] already support scaling to zero for various resource (e.g. [RabbitMQ Queues](https://keda.sh/docs/2.16/scalers/rabbitmq-queue/)). However, these solutions often introduce additional paradigms and complexity. Since Horizontal Pod Autoscaling is already a core feature of Kubernetes and supports scaling to one, adding native support for scaling to zero would be a valuable and low-complexity enhancement.
+
+[KEDA]: https://keda.sh/
 
 ## Infrastructure Needed (Optional)
 
