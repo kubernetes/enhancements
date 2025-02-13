@@ -268,8 +268,6 @@ Currently, it is proposed that:
 - The CRD manifest schema walking logic from https://github.com/openshift/crd-schema-checker is used. https://github.com/everettraven/crd-diff imports this logic.
 - The validation/validator pattern from https://github.com/everettraven/crd-diff is used. It clearly distinguishes between individual property validations and broader scoped CRD validations. Additionally, it has a validation pattern in place that checks for general CRD changes, compatibility of version-to-version, and compatibility of served versions.
 
-https://github.com/everettraven/crd-diff currently has some configuration logic in place, but it is highly repetitive and not a great user experience. This needs to be evaluated further and will likely result in a distinct configuration process for the new project.
-
 The tables below show any existing and proposed validations for each of the projects and whether or not they will be carried over to the new common project. Any validations that behave the same in
 both projects marked as being carried over will be combined into a single validation.
 
@@ -306,6 +304,8 @@ Validations in https://github.com/everettraven/crd-diff, both existing and propo
 
 Proposed validations are tracked via https://github.com/everettraven/crd-diff/issues/3.
 All validations have some form of configuration option. For more information on the configuration options that exist for each validation, see https://everettraven.github.io/crd-diff/#/validations
+This existing configuration approach is not ideal. It is highly repetitive and allows for configuration options that may not actually make sense. We should be more opinionated
+than this existing approach is. A new approach for configuration is proposed further down in this section.
 
 Validations in https://github.com/openshift/crd-schema-checker  both existing and proposed:
 
@@ -323,6 +323,35 @@ Validations in https://github.com/openshift/crd-schema-checker  both existing an
 | ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, this is already implemented as a subset of the `conditions` linter in `kal` |
 | NoNewRequiredFields | CRD | Validates that no new required fields are added | Yes | Yes |
 | MustNotExceedCostBudget | Property | Validates that `XValidations` don't exceed the CEL cost budget | Yes | No, if desired this is better suited for a linter in `kal` |
+
+#### Validation configuration
+
+The proposed approach for configuration of individual validations when using as a CLI is to use a configuration file.
+Projects that import validations in their Go code will have the ability to configure them through the Go API directly.
+
+The configuration file will be a YAML file with the following format:
+```yaml
+apiVersion: crdify.sigs.k8s.io/v1alpha1
+kind: ValidationConfiguration
+validations:
+- name: <validationName>
+  enforcement: Error || Warn || None
+  config: |
+    apiVersion: crdify.sigs.k8s.io/v1alpha1
+    kind: <validationName>Config
+    customField: value
+```
+
+This pattern is inspired from the Kubernetes API server admission plugin configuration pattern.
+
+Enforcement mode `Error` means that any incompatible changes the validation detects will result in an error being output to the terminal and the program exiting with a non-zero exit code.
+Enforcement mode `Warn` means that any incompatible changes the validation detects will result in a warning being output to the terminal and the program exiting with an exit-code of 0.
+Enforcement mode `None` means that the validation will not be run.
+
+Not all validations will have an arbitrary set of extra configuration options, but all validations that do _must_ have a default configuration.
+If a known validation is not specified in the configuration, the default for that validation will be used.
+
+The only way to enable, disable, and configure validations will be via this configuration file to encourage users to explicitly define an acceptable risk profile.
 
 ### Test Plan
 
