@@ -4,7 +4,7 @@ authors:
   - "@serathius"
 owning-sig: sig-api-machinery
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2024-12-11
 reviewers:
   - "@jpbetz"
@@ -28,4 +28,5 @@ feature-gates:
     components:
       - kube-apiserver
 disable-supported: true
-metrics: []
+metrics:
+ - apiserver_storage_hash
