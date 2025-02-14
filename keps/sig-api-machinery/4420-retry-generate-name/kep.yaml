@@ -4,7 +4,7 @@ authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2024-01-19
 reviewers:
   - "@deads2k"
