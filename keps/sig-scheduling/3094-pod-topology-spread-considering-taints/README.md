@@ -901,6 +901,10 @@ This through this both in small and large cases, again with respect to the
 -->
 No
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No
+
 ### Troubleshooting
 
 <!--
@@ -954,7 +958,7 @@ Major milestones might include:
 - 2021.01.12: KEP proposed for review, including motivation, proposal, risks,
 test plan and graduation criteria.
 - 2022.09.22: Graduate to Beta in v1.26.
-- 2024.10.10: Graduate to GA in v1.33.
+- 2025.02.14: Graduate to GA in v1.33.
 
 ## Drawbacks
 
