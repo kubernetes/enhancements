@@ -3,27 +3,9 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
 - [ ] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
@@ -49,32 +31,13 @@ You do not need a new KEP to move from beta to GA, for example. If
 new details emerge that belong in the KEP, edit the KEP. Once a feature has become
 "implemented", major changes should get new KEPs.
 
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
 **Note:** Any PRs to move a KEP to `implementable`, or significant changes once
 it is marked `implementable`, must be approved by each of the KEP approvers.
 If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5075: DRA: Dynamic Device Provisioning Support
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
+# KEP-5075: DRA: Consumable Capacity
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -112,20 +75,6 @@ tags, and then generate with `hack/update-toc.sh`.
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
@@ -143,10 +92,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
@@ -154,62 +99,46 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-This KEP is an extended enhancement from [KEP-4815: DRA: Add support for partitionable devices](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4815-dra-partitionable-devices) to support a request to provision a new device which can be a virtual device based on a shared root device or a remote or composable device from an available specification. Based on the published root devices or available device profiles from vendors or device provisioners, users can request a claim to provision their devices with specific amounts of resources within available capacities. 
-
+This KEP is an extended use case from the partitionable device [KEP-4815: DRA: Add support for partitionable devices](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4815-dra-partitionable-devices).
+The enhancement enables a shared device allocation with consumable capacity values.
+A shared device can be allocated to more than one resource claim with per-device resource requests.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+A motivating use case for supporting a shared network device which can be selected by more than one pods on demand (on claim). 
+The original discussion is in [this PR's comment thread](https://github.com/kubernetes-sigs/cni-dra-driver/pull/1#discussion_r1889265214).
+The limitation of current implementation has been addressed [here](https://github.com/kubernetes-sigs/cni-dra-driver/pull/1#discussion_r1890166449).
+The virtual network device is created and configured once the CNI is called based on the information of the master network device.
+The configured information specific to the generated device should be at the ResourceClaim, not the ResourceSlice. 
+However, the device in the ResourceClaim is now present, even though the device is listed in the ResourceSlice, and there is no attribute to differentiate between the master device and the actual share of the device.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+There are also similar use cases for requesting the device based on a specific root or device type in other contexts,
+including [Peer Pods](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/docs/architecture.md)
+and [Composable Disaggregated Infrastructure (CDI)](https://www.wwt.com/article/an-introduction-to-composable-disaggregated-infrastructure).
 
-A motivating use case for supporting dynamically-provisioned device is a virtual network device when to-be-allocated device will be created or partitioned on demand (on claim). The original discussion is in [this PR's comment thread](https://github.com/kubernetes-sigs/cni-dra-driver/pull/1#discussion_r1889265214) and the limitation of current implementation has been addressed [here](https://github.com/kubernetes-sigs/cni-dra-driver/pull/1#discussion_r1890166449). The virtual network device is created and configured once the CNI is called based on the information of the master network device. The configured information specific to the generated device should be at the ResourceClaim, not the ResourceSlice. However, the device in the ResourceClaim is now present, even though the device is listed in the ResourceSlice, and there is no attribute to differentiate between the master device and the actual provisioned device.
+This feature is also beneficial for the other sharable devices those are not with a scope of [KEP-4815](https://github.com/kubernetes/enhancements/issues/4815).
+For instance, this feature will be allow reserving memory fraction of virtual GPU in [the AWS virtual GPU device plugin](https://github.com/awslabs/aws-virtual-gpu-device-plugin) via DRA.
+The number of shares can be limited if needed.
 
-There are also similar use cases for requesting the device provision based on a specific root or device type in other contexts including [Peer Pods](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/docs/architecture.md) and [Composable Disaggregated Infrastructure (CDI)](https://www.wwt.com/article/an-introduction-to-composable-disaggregated-infrastructure). 
-
-This feature is also beneficial for the other provisonable devices those are not with a scope of [KEP-4815](https://github.com/kubernetes/enhancements/issues/4815). For instance, this feature will be allow reserving memory fraction of virtual GPU in [the AWS virtual GPU device plugin](https://github.com/awslabs/aws-virtual-gpu-device-plugin) via DRA. The number of provision can be limited if needed.
+Relations to related KEPs:
+- KEP 4815: The partitioned devices can further be a sharable device. 
+- KEP 5007: The allocated share can be provisioned at the pre-bind step.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-- Introduce an ability to allocating on-demand provisioned devices via DRA. This should cover the use cases of macvlan or ipvlan in a DRA driver for CNI and virtual accelerator devices with on-demand memory fraction.
-- Enhance a capability of secondary networks to dynamically allocate secondary networks based on present availabilities such as bandwidth.
-- Leverage the enhancement of capacity consumption from [KEP-4815](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4815-dra-partitionable-devices).
+- Introduce an ability to allocating on-demand shared devices via DRA. 
+  This should cover the use cases of macvlan or ipvlan in a DRA driver for CNI 
+  and virtual accelerator devices with on-demand memory fraction.
+- Enhance a capability of secondary networks to dynamically allocate secondary networks 
+  based on present availabilities such as bandwidth.
+- Enable capacity field to be consumable.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
-- Define device-specific or vendor-specific attributes.
+- Define driver-specific attributes and configs (such as CNI parameter config).
 - Support network security policy.
+- Support an aggregated resource consumption request. By default, the shared device can be allocated once for each pod's allocation. However, a user may want an aggrated ammount of resources which can come from a single or multiple shared device. This is related to [the comment about `distinctAttributes`](https://github.com/kubernetes/enhancements/pull/5104#discussion_r1943835445).
+- Support refined capacity consumption such as predefined blocks and minimum and maximum amount.
 
 ## Proposal
 
@@ -224,28 +153,84 @@ nitty-gritty.
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+
+Story|Driver|Claim|Context
+---|---|----|---
+1|shared device with capacity|request with resources|network
+2|-|request with resources|gpu
+3|-|request with selector|network
+4|-|request with all resources|network
+5|-|request with requests and limits|network
+6|shared device without capacity|request with no resource|network
+7|-|request with nil resource and AllowShared mode|any
 
 #### Story 1
-A user requests a secondary network based on their bandwidth demands without wanting to specify a device name nor present available bandwidth of each specific device. The DRA scheduler can dynamically select available devices based on their availability.
+A user requests a secondary network based on their bandwidth demands without wanting to specify a device name 
+nor present available bandwidth of each specific device. 
+The DRA scheduler can dynamically select available devices based on their availability.
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+kind: ResourceSlice
+...
+spec:
+  driver: cni.dra.networking.x-k8s.io
+  devices:
+  - name: eth1
+    basic:
+      shared: "true"
+      attributes:
+        name:
+          string: "eth1"
+      capacity:
+        bandwidth:
+          value: 10Gi
+- name: eth2
+    basic:
+      attributes:
+        name:
+          string: "eth1"
+      capacity:
+        bandwidth:
+          value: 10Gi
+---
+kind: DeviceClass
+metadata:
+  name: vlan-cni.networking.x-k8s.io
+```
+
+With the below ResourceClaim, either `eth1` or `eth2` can be selected. 
+The master field in the CNI config can be filled according to the selected device by the CNI DRA driver.
+
+```yaml
 kind: ResourceClaim
 ...
 spec:
   devices:
-    provisions:
-    - name: net1
+    requests:
+    - name: macvlan
       deviceClassName: vlan-cni.networking.x-k8s.io
       resources:
-        bandwidth:
-          quantity: 10Gi
+        requests:
+          bandwidth: "1Gi"
+    config:
+    - requests:
+      - macvlan
+      opaque:
+        driver: cni.dra.networking.x-k8s.io
+        parameters: # CNIParameters with the GVK, interface name and CNI Config (in YAML format).
+          apiVersion: cni.networking.x-k8s.io/v1alpha1
+          kind: CNI
+          ifName: "net1"
+          config:
+            cniVersion: 1.0.0
+            name: net1
+            plugins:
+            - type: macvlan
+              mode: bridge
+              ipam:
+                type: host-local
+                ranges:
+                - - subnet: 10.10.1.0/24
 ```
 
 #### Story 2
@@ -257,16 +242,16 @@ kind: ResourceClaim
 ...
 spec:
   devices:
-    provisions:
+    requests:
     - name: vgpu0
       deviceClassName: vgpu.nvidia.com
       resources:
-        memory:
-          quantity: 10Gi
+        requests:
+          memory: "10Gi"
 ```
 
 #### Story 3
-A user specifies a device source.
+A user specifies a sharted device by some attributes such as name.
 
 ```yaml
 apiVersion: resource.k8s.io/v1beta1
@@ -274,19 +259,19 @@ kind: ResourceClaim
 ...
 spec:
   devices:
-    provisions:
+    requests:
     - name: net1
       deviceClassName: vlan-cni.networking.x-k8s.io
       selectors:
       - cel:
           expression: "device.attributes['vlan-cni.networking.x-k8s.io'].name == 'eth1'"
       resources:
-        bandwidth:
-          quantity: 1Gi
+        requests:
+          bandwidth: "1Gi"
 ```
 
 #### Story 4
-A user defines more than one provision requests to get devices from different sources. From the following claim spec, the claim should provide two devices which have different device sources.
+A user reserves the shared device and blocks the others to get the same shared device.
 
 ```yaml
 apiVersion: resource.k8s.io/v1beta1
@@ -294,18 +279,95 @@ kind: ResourceClaim
 ...
 spec:
   devices:
-    provisions:
+    requests:
     - name: net1
       deviceClassName: vlan-cni.networking.x-k8s.io
       resources:
-        bandwidth:
-          quantity: 1Gi
-    - name: net2
+        all: "true"
+```
+
+#### Story 5
+A user defines resource limits when the device driver supports a burstable use.
+The CNI DRA driver can add a chained bandwidth CNI based on the bandwidth request.
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+...
+spec:
+  devices:
+    requests:
+    - name: net1
       deviceClassName: vlan-cni.networking.x-k8s.io
       resources:
-        bandwidth:
-          quantity: 1Gi
+        requests:
+          bandwidth: "1Gi"
+        limits:
+          bandwidth: "2Gi"
 ```
+
+#### Story 6
+A user requests one paired virtual device from a shared device with inifinite capacity. 
+
+```yaml
+kind: ResourceSlice
+...
+spec:
+  driver: cni.dra.networking.x-k8s.io
+  devices:
+  - name: eth1
+    shared: "true"
+    basic:
+      attributes:
+        name:
+          string: "eth1"
+---
+kind: DeviceClass
+metadata:
+  name: vlan-cni.networking.x-k8s.io
+```
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+...
+spec:
+  devices:
+    requests:
+    - name: net1
+      deviceClassName: vlan-cni.networking.x-k8s.io
+      resources: {}
+  ...
+  status:
+    reserveFor:
+    - name: example-pod
+      ...
+    allocation:
+      devices:
+        results:
+        - request: net1
+          device: eth1
+          resources: {}
+```
+
+#### Story 7
+A user requests a device regardless of whether the device is sharable or not.
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+...
+spec:
+  devices:
+    requests:
+    - name: any
+      deviceClassName: any.device
+      allocationMode: AllowShared
+```
+
+Regardless of shared or non-sharable devices, 
+`resources` field in ResourceClaim's status is set to nil,
+and this device cannot be allocated to the other claim.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -332,176 +394,261 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
-This enhancement system design introduces the terms `device source`, `provision limit`, `provision request`, and `provisioned device`.  In addition to the existing device instance, `device source` represents the root device or device specifiction as a source to provision or generate a new device allocated to the Pod. The number of provision per `device source` can be limited by the `provision limit`. Device sources are exposed by device vendors or provisioners via Publish API.
+This enhancement introduces a `shared` field within the `BasicDevice` of the ResourceSlice
+to mark whether the device is a shared device.
+If the device is marked as a shared device, all values in the capacity field are considered as consumable.
+If there is no capacity defined, the device is considered as having an **infinite** sharable capacity.
 
-Users can request for provisioning via `provision request`. The status of provisioning presents in the resource claim's status as a list of `provisioned device`.
+Users can define specific per-device resource requests through
+the newly added `ResourceRequest` field in the `DeviceRequest` of the `ResourceClaim`.
+In a resource request, users may define `Requests` and `Limits` or either of them
+to specify the claim's requirements. Similarly to the node resources, a request must be less than its limit.
+If either value is omitted, the other value will be implicitly applied. 
+`Requests` is used for verifying consumability of the shared device
+while `Limits` is optionally used for supporting burstable consumption controlled by the device driver.
+
+To request all available resources in the device capacity, users must set a flag `all` to "true".
+Regardless of whether the shared device has infinite sharable capacity or not,
+this flag will block the allocation of the shared device from the other claim.
+
+If the `resources` field has been defined, only shared device can be allocated.
+On the other hand, if the `resources` field is nil, only non-sharable devices are expected
+except the allocation mode `AllowShared` has been set.
+For allocationMode=AllowShared, both non-sharable devices and shared devices can be allocated.
+
+A shared device can only be allocated once its consumability has been verified
+and its attributes match the request's selectors and constraints.
+The newly added `resources` field in the `DeviceRequestAllocationResult` will be set when the allocation is successful.
+A device can be shared (allocated) to different pods. 
+However, claims from the same pod cannot allocate shares from the same shared device.
 
 ### API enhancement
 To enable this enhancement, the following API updates are proposed.
-#### ResourceSliceSpec
-- add `DeviceSources` in spec to lists some or all of the device sources in this pool.  
-- each `DeviceSource` contains `Device` information or specification and `ProvisionLimit` to allow admin to limit the number of provision.
+#### ResourceSliceSpec's BasicDevice
+
 ```go
-// ResourceSliceSpec contains the information published by the driver in one ResourceSlice.
-type ResourceSliceSpec struct {
- 
-    // ...
 
-	Devices []Device `json:"devices" protobuf:"bytes,6,name=devices"`
-
-	// DeviceSources lists some or all of the device sources in this pool.
-	//
-	// Must not have more than 128 entries.
-	//
-	// +optional
-	// +listType=atomic
-	DeviceSources []DeviceSource `json:"deviceSources" protobuf:"bytes,7,name=deviceSources"`
-}
-
-
-// DeviceSource defines one device source that can be selected
-// to provision a new device based on its capacity. Besides the name, exactly one field must be set.
-type DeviceSource struct {
-	// Device embeds definition of individual hardware instance
-	//
-	// Consumers can use the defined capacity to determine whether they can select this device source.
-	// The scheduler must consume and keep available capacity upon each allocation.
-	//
-	Device `json:",inline"`
-
-	// ProvisionLimit defines the maximum number of new devices which can be provisioned.
-	// Must be greater than zero if specified.
-	//
-	// Consumers must use this value to check whether they can select this device source.
-	//
-	// +optional
-	ProvisionLimit int64 `json:"provisionLimit" protobuf:"bytes,3,name=provisionLimit"`
+// BasicDevice defines one device instance.
+type BasicDevice struct {
+...
+   // Shared marks whether the device is shared.
+   // The device with shared="true" can be allocated to more than one claim,
+   // and all value in capacity is considered as consumable.
+   // If there is no capacity defined,
+   // the device is considered as having an infinity sharable capacity.
+   // +optional
+   // +default=false
+   // +featureGate=ConsumableCapacity
+   Shared bool `json:"shared" protobuf:"bytes,3,opt,name=shared"`
 }
 ```
-#### ResourceClaimSpec's DeviceClaim
-- add `ProvisionRequests` to represent individual provision requests for distinct new devices.
-- each `DeviceProvisionRequest` contains the `DeviceRequest` for device source and the resource request which must satisfy the device source's available capacity.
+
+#### ResourceClaimSpec's DeviceRequest
+
 ```go
-// DeviceClaim defines how to request devices with a ResourceClaim.
-type DeviceClaim struct {
-	// Requests represent individual requests for distinct devices which
-	// must all be satisfied. If empty, nothing needs to be allocated.
-	//
-	// +optional
-	// +listType=atomic
-	Requests []DeviceRequest `json:"requests" protobuf:"bytes,1,name=requests"`
+// ResourceRequest is a per-device resource request specification.
+type ResourceRequest struct {
+   // All marks requesting all resources from the shared device.
+   // Regardless of the number of capacity defined in the shared device, 
+   // this flag will block the allocation of the shared device from the other claims.
+   // +optional
+   // +default=false
+   All bool `json:"all" protobuf:"bytes,1,name=all"`
 
-	// ProvisionRequests represent individual provision requests for distinct new devices which
-	// must all be satisfied. If empty, nothing needs to be allocated.
-	//
-	// +optional
-	// +listType=atomic
-	ProvisionRequests []DeviceProvisionRequest `json:"provisions" protobuf:"bytes,2,name=provisions"`
-  
-    // ...
 
+   // Requirements define specific values of resource requirements of the device request.
+   // If all="true", this field is ignored.
+   // +optional
+   Requirements ResourceRequirements `json:",inline"`
 }
 
-// DeviceProvisionRequest is a request for new device provisioning.
-//
-// This is required for claiming the new device which is generated from a device source.
-type DeviceProvisionRequest struct {
-	// DeviceSource defines a request for device source.
-	DeviceSource DeviceRequest `json:"deviceSource" protobuf:"bytes,1,name=deviceSource"`
 
-	// Resources defines the set of resource requests for a claim from the selected device source.
-	// The name of each resource must be unique in that set.
-	//
-	// +optional
-	Resources map[QualifiedName]resource.Quantity `json:"resources,omitempty" protobuf:"bytes,2,rep,name=resources"`
+type ResourceRequirements struct {
+   // Requests describe the amount of resources to be reserved from the device.
+   // If Requests is omitted, it defaults to Limits if that is explicitly specified,
+   // otherwise to an implementation-defined value. Requests cannot exceed Limits.
+   // +optional
+   Requests map[QualifiedName]resource.Quantity `json:"requests,omitempty" protobuf:"bytes,2,rep,name=requests"`
+
+
+   // Limits define the maximum amount of per-device resources allowed.
+   // If Limits is omitted, it defaults to Requests if that is explicitly specified.
+   // This enables burstable usage when applicable.
+   // +optional
+   Limits map[QualifiedName]resource.Quantity `json:"limits" protobuf:"bytes,3,rep,name=limits"`
 }
+
 ```
-#### ResourceClaimStatus
-- add `ProvisionedDevices` to track a status of provisioned devices.
-- each `ProvisionedDeviceStatus` contains a status of allocated/selected device source and provision information which is speicific to device provisioners.
+
+#### ResourceClaimStatus's DeviceRequestAllocationResult
+
 ```go
-// ResourceClaimStatus tracks whether the resource has been allocated and what
-// the result of that was.
-type ResourceClaimStatus struct {
-  // ...
-
-	Devices []AllocatedDeviceStatus `json:"devices,omitempty" protobuf:"bytes,4,opt,name=devices"`
-
-	// ProvisionedDevices contains the status of each device provisioned for this claim.
-	//
-	// +optional
-	ProvisionedDevices []ProvisionedDeviceStatus `json:"provisionedDevices,omitempty" protobuf:"bytes,5,opt,name=provisionedDevices"`
+type DeviceRequestAllocationResult struct {
+ ...
+   // Resources indicates a per-device resource amount allocated by the claim request.
+   // Only the consumable capacity can be partially allocated.
+   // A summation of allocated request resources must be less than or equal each corresponding capacity.
+   // nil if the device is unshareable.
+   // +optional
+   // +featureGate=ConsumableCapacity
+   Resources *ResourceRequirements `json:"resources" protobuf:"bytes,6,opt,name=resources"`
 }
-
-// ProvisionedDeviceStatus contains the status of a provisioned device, if the
-// driver chooses to report it. This may include driver-specific information.
-type ProvisionedDeviceStatus struct {
-	// AllocatedDeviceSource reports information of the source device which is selected to provision the device.
-	AllocatedDeviceSource AllocatedDeviceStatus `json:"deviceSource" protobuf:"bytes,1,name=deviceSource"`
-
-	// ProvisionData contains provisioning-related information specific to the provisioned device.
-	//
-	// This data may include provisioner-specific information.
-	//
-	// +optional
-	ProvisionData *runtime.RawExtension `json:"provisionData,omitempty" protobuf:"bytes,2,opt,name=provisionData"`
-}
-
-```
-### Examples
-- ResourceSlice with a device source and its provision limit.
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceSlice
-...
-spec:
-  driver: cni.dra.networking.x-k8s.io
-  deviceSources:
-  - name: eth1
-    provisionLimit: 1000
-    basic:
-      attributes:
-        name:
-          string: "eth1"
-      capacity:
-        bandwidth:
-          quantity: 10Gi
-```
-- ResourceClaim with a provison request
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceClaim
-...
-spec:
-  devices:
-    provisions:
-    - name: net1
-      resources:
-        bandwidth:
-          quantity: 1Gi
-...
-status:
-  reserveFor:
-  - name: example-pod
-    ...
-  provisionedDevices:
-  - deviceSource:
-      driver: cni.dra.networking.x-k8s.io
-      device: eth1
-    provisionData: |
-      cniResult
 ```
 
 ### Scheduling enhancement
-- `Capacity` of the selected device source must be consumed by values defined in `resources` field of the provision request. The device source cannot be selected if the resource condition is not satisfied.
-- Device source can be selected once per provision request. Still, one provision request can generate more than one devices from the selected source.
-- Devices defined in the `DeviceSources` fields must not be defined in `Devices` field in the resource slice. On the other word, the device source should not be allocatable as a device instance.
+- define [share-related types and functions](https://github.com/sunya-ch/kubernetes/blob/kep-5075/staging/src/k8s.io/dynamic-resource-allocation/structured/share.go).
+
+  ```go
+  // AllocatedResources define a quantity set which is updatable.
+  // This field is used for aggregating allocated resources,
+  // and for calculating consumability.
+  type AllocatedResources map[resourceapi.QualifiedName]*resource.Quantity
+
+  // AllocatedResourceCollection collects a set of AllocatedResources
+  // for each shared device.
+  type AllocatedResourceCollection map[DeviceID]AllocatedResources
+  ```
+
+- shared device are handled separately from the other device.
+
+  - define `ListAllAllocatedShares` function separately from `ListAllAllocatedDevices`
+    ```go
+    type ResourceClaimTracker interface {
+      ...
+  	  ListAllAllocatedDevices() (sets.Set[structured.DeviceID], error)
+      // ListAllAllocatedShares lists all shared allocation from allocated ResourceClaims. The result is guaranteed to immediately include
+      // any changes made via AssumeClaimAfterAPICall(), and SignalClaimPendingAllocation().
+      ListAllAllocatedShares() (structured.AllocatedResourceCollection, error)
+      ...
+    }
+    ```
+
+  - define `foreachAllocatedResources` and add condition to not add shared device in `foreachAllocatedDevice`.
+
+    ```go
+    func foreachAllocatedDevice(claim *resourceapi.ResourceClaim, cb func(deviceID s)){
+        ...
+        if result.Resources != nil {
+          // Is considered as shared allocation.
+          continue
+        }
+    }
+
+    // foreachAllocatedResources invokes the provided callback for each
+    // device in the claim's resource allocation result which was allocated
+    // exclusively for the claim.
+    //
+    // Devices allocated with admin access can be shared with other
+    // claims and are skipped without invoking the callback.
+    //
+    // foreachAllocatedResources does nothing if the claim is not allocated.
+    func foreachAllocatedResources(claim *resourceapi.ResourceClaim, cb func(allocatedSharedDevice structured.SharedDeviceAllocation)) {
+      if claim.Status.Allocation == nil {
+        return
+      }
+      for _, result := range claim.Status.Allocation.Devices.Results {
+        // Kubernetes 1.31 did not set this, 1.32 always does.
+        // Supporting 1.31 is not worth the additional code that
+        // would have to be written (= looking up in request) because
+        // it is extremely unlikely that there really is a result
+        // that still exists in a cluster from 1.31 where this matters.
+        if ptr.Deref(result.AdminAccess, false) {
+          // Is not considered as allocated.
+          continue
+        }
+        claimedResources := result.Resources
+        if claimedResources == nil {
+          // Is not considered as shared allocation.
+          continue
+        }
+        deviceID := structured.MakeDeviceID(result.Driver, result.Pool, result.Device)
+        sharedAllocation := structured.NewSharedDeviceAllocation(deviceID, *claimedResources)
+
+        // None of the users of this helper need to abort iterating,
+        // therefore it's not supported as it only would add overhead.
+        cb(sharedAllocation)
+      }
+    }
+    ```
+
+  - use `foreachAllocatedShare` for `ListAllAllocatedShares`, `addDevices` and `removeDevices`.
+
+  - when allocate, 
+    - skip if the allocation is not `Shared`.
+    - check shared device condition and define `isConsumable` function to check whether the device is allocatable.
+
+    ```go
+
+    const (
+      DeviceAllocationModeExactCount  = DeviceAllocationMode("ExactCount")
+      DeviceAllocationModeAll         = DeviceAllocationMode("All")
+      DeviceAllocationModeAllowShared = DeviceAllocationMode("AllowShared")
+    )
+
+    func (alloc *allocator) allocateOne(r deviceIndices) (bool, error) {
+      ...
+        for _, slice := range pool.Slices {
+          for deviceIndex := range slice.Spec.Devices {
+            shared := alloc.isSharedDevice(slice, deviceIndex)
+            requestSharedDevice := request.Resources != nil
+            allowShared := request.AllocationMode == resourceapi.DeviceAllocationModeAllowShared
+            // Skip a non-shared deivce if a request includes resources to consume.
+            // Skip a shared device if an allocation mode is not AllowShared.
+            if !allowShared && shared || requestSharedDevice && !shared {
+              continue
+            }
+            ...
+            if shared {
+              // Next check consumable.
+              consumable, err := alloc.isConsumable(requestIndices{claimIndex: r.claimIndex, requestIndex: r.requestIndex}, slice, deviceIndex)
+              if err != nil {
+                return false, err
+              }
+              if !consumable {
+                alloc.logger.V(7).Info("Device not consumable", "device", deviceID)
+                continue
+              }
+            }
+            ...
+          }
+        }
+      ...
+    }
+
+    // isSharedDevice checks whether the device is shared.
+    // A device is considered as a shared device if the flag is set.
+    func (alloc *allocator) isSharedDevice(slice *draapi.ResourceSlice, deviceIndex int) bool {
+      basicDevice := slice.Spec.Devices[deviceIndex].Basic
+      if basicDevice == nil {
+        return false
+      }
+      return slice.Spec.Devices[deviceIndex].Basic.Shared
+    }
+    ```
+
+- add request's `resources` in `internalDeviceResult` for updating ResourceClaim status correspondingly
+
+  ```go
+  type internalDeviceResult struct {
+    request     string
+    id          DeviceID
+    slice       *draapi.ResourceSlice
+    resources   *resourceapi.ResourceRequirements
+    adminAccess *bool
+  }
+  ```
+
+  ```go
+  func (a *Allocator) Allocate(ctx context.Context, node *v1.Node) (finalResult []resourceapi.AllocationResult, finalErr error) {
+        ...
+      for i, internal := range internalResult.devices {
+        allocationResult.Devices.Results[i] = resourceapi.DeviceRequestAllocationResult{
+          ...
+          Resources: internal.resources,
+        }
+      }
+  }
+  ```
 
 ### Test Plan
 
@@ -516,7 +663,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -530,13 +677,6 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 ##### Unit tests
 
 <!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
 Additionally, for Alpha try to enumerate the core package you will be touching
 to implement this enhancement and provide the current unit coverage for those
 in the form of:
@@ -548,7 +688,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/staging/src/k8s.io/dynamic-resource-allocation/structured`: `<date>` - 85.6%
 
 ##### Integration tests
 
