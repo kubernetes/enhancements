@@ -7,10 +7,11 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Snapshotting](#snapshotting)
-  - [Cache Inconsistency Detection Mechanism](#cache-inconsistency-detection-mechanism)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Memory overhead](#memory-overhead)
+- [Design Details](#design-details)
+  - [Snapshotting](#snapshotting)
+  - [Cache Inconsistency Detection Mechanism](#cache-inconsistency-detection-mechanism)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -39,20 +40,20 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -123,6 +124,25 @@ a robust mechanism for detecting inconsistencies is crucial.
 Therefore, we propose an automatic mechanism to validate cache consistency with etcd,
 providing users with confidence in the cache's accuracy without requiring manual debugging efforts.
 
+### Risks and Mitigations
+
+#### Memory overhead
+
+B-tree snapshots are designed to minimize memory overhead by storing pointers to
+the actual objects, rather than the objects themselves. Since the objects are
+already cached to serve watch events, the primary memory impact comes from the
+B-tree structure itself. To quantify the memory overhead, we run 5k scalability tests.
+They should represent the worst case scenario, as they utilize large number of small objects.
+The results are promising:
+
+* **Object Allocations:** Allocation profile collected during the test test has
+  shown an increase of 7GB in object allocations, which translates to a
+  negligible 0.2% of total allocations.
+* **Memory Usage:** Memory in use profile collected during the test has shown
+  Btree memory usage of 300MB, representing a 1.3% of total memory used.
+
+## Design Details
+
 ### Snapshotting
 
 1. **Snapshot Creation:** When a watch event is received, the cacher creates
@@ -186,23 +206,6 @@ apiserver_storage_hash{resource="pods", storage="etcd", hash="f364dcd6b58ebf020c
 apiserver_storage_hash{resource="pods", storage="cache", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
 ```
 Metric values for each resource should be updated atomically to prevent false positives.
-
-### Risks and Mitigations
-
-#### Memory overhead
-
-B-tree snapshots are designed to minimize memory overhead by storing pointers to
-the actual objects, rather than the objects themselves. Since the objects are
-already cached to serve watch events, the primary memory impact comes from the
-B-tree structure itself. To quantify the memory overhead, we run 5k scalability tests.
-They should represent the worst case scenario, as they utilize large number of small objects.
-The results are promising:
-
-* **Object Allocations:** Allocation profile collected during the test test has
-  shown an increase of 7GB in object allocations, which translates to a
-  negligible 0.2% of total allocations.
-* **Memory Usage:** Memory in use profile collected during the test has shown
-  Btree memory usage of 300MB, representing a 1.3% of total memory used.
 
 ### Test Plan
 
@@ -384,6 +387,8 @@ For the first iteration we will enable users to define an alert on a metric and 
 Disabling the feature-gate.
 
 ## Implementation History
+
+- 1.33: KEP proposed and approved for implementation
 
 ## Drawbacks
 
