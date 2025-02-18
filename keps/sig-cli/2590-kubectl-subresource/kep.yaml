@@ -15,7 +15,8 @@ approvers:
   - "@soltysh"
   - "@ardaguclu"
 
-see-also: []
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
