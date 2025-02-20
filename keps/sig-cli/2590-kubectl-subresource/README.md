@@ -63,7 +63,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This document proposes adding a new `--subresource` flag to the following kubectl
 subcommands: `get`, `patch`, `edit`, `apply` and `replace`. The goal of this flag
-is to simplify the process of fetching and updating `status` and `scale` subresources.
+is to simplify the process of fetching and updating `status`, `scale` and `resize`
+subresources.
 
 ## Motivation
 
@@ -77,7 +78,7 @@ to work with the API in a generic fashion.
 ### Goals
 
 - Add a new flag `--subresource=[subresource-name]` to `get`, `patch`, `edit`, `apply`
-and `replace` kubectl commands to allow fetching and updating `status` and `scale`
+and `replace` kubectl commands to allow fetching and updating `status`, `scale` and `resize`
 subresources for all resources (built-in and custom resources) that support these.
 - Display pretty printed table columns for the `status` (uses same columns as the main resource)
 and `scale` subresources.
@@ -91,7 +92,7 @@ and `scale` subresources.
 
 kubectl commands like `get`, `patch`, `edit`, `apply` and `replace` will now contain a
 new flag `--subresource=[subresource-name]` which will allow fetching and updating
-`status` and `scale` subresources for all API resources.
+`status`, `scale` and `resize` subresources for all API resources.
 
 Note that the API contract against the subresource is identical to a full resource.
 Therefore updating the status subresource to hold new value which could potentially
@@ -344,7 +345,7 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 Cluster administrator can verify [audit entries](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/)
-looking for `kubectl` invocations targeting `scale` and `status` subresources.
+looking for `kubectl` invocations targeting `scale`, `status` and `resize` subresources.
 
 ###### How can someone using this feature know that it is working for their instance?
 
