@@ -3,7 +3,7 @@ kep-number: 5008
 authors:
   - "@joaquimrocha"
 owning-sig: sig-ui
-participating-sigs:
+participating-sigs: []
 status: provisional
 creation-date: 2024-12-19
 reviewers:
