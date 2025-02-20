@@ -60,17 +60,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -346,7 +346,7 @@ No integration tests are required. This feature is better tested with e2e tests.
 
 An e2e test to exercise deletion of PV prior to deletion of PVC for a `Bound` PV-PVC pair.
 
-- [test/e2e/storage/csimock/csi_honor_pv_reclaim_policy.go](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/storage/csimock/csi_honor_pv_reclaim_policy.go): [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling,storage&test=honor%20pv%20reclaim%20policy), [k8s-test-grid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-storage-alpha-beta-features&include-filter-by-regex=CSI%20Mock%20honor%20pv%20reclaim%20policy)
+- [test/e2e/storage/csimock/csi_honor_pv_reclaim_policy.go](https://github.com/kubernetes/kubernetes/blob/1b79b8952a53b83aedd7b892c615105260474c3a/test/e2e/storage/csimock/csi_honor_pv_reclaim_policy.go): [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling,storage&test=honor%20pv%20reclaim%20policy), [k8s-test-grid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-storage-alpha-beta-features&include-filter-by-regex=CSI%20Mock%20honor%20pv%20reclaim%20policy)
 
 ### Graduation Criteria
 
