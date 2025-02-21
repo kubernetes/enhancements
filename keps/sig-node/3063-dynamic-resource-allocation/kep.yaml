@@ -6,7 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
   - sig-autoscaling
-status: implementable
+status: withdrawn
 creation-date: 2021-05-17
 reviewers:
   - "@ahg-g"
@@ -24,13 +24,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.28"
+latest-milestone: "v1.32"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.26"
-  beta: "v1.29"
-  stable: "v1.31"
 
 feature-gates:
   - name: DynamicResourceAllocation
@@ -39,6 +37,11 @@ feature-gates:
       - kube-controller-manager
       - kube-scheduler
       - kubelet
+  - name: DRAControlPlaneController
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
 disable-supported: true
 
 metrics:

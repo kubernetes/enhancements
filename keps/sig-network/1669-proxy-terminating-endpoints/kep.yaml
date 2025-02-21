@@ -13,7 +13,7 @@ approvers:
   - "@thockin"
 creation-date: 2020-04-07
 last-updated: 2023-05-04
-status: implementable
+status: implemented
 see-also:
   - "/keps/sig-network/1672-tracking-terminating-endpoints/README.md"
   - https://github.com/kubernetes/kubernetes/issues/85643

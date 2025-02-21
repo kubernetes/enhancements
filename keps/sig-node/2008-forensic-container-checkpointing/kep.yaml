@@ -7,7 +7,7 @@ participating-sigs:
   - TBD
 status: implementable
 creation-date: 2020-09-16
-last-updated: 2022-05-17
+last-updated: 2024-02-08
 reviewers:
   - "@mrunalp"
   - "@elfinhe"
@@ -15,18 +15,18 @@ approvers:
   - "@dchen1107"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.25"
+latest-milestone: "v1.30"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.25"
-  beta: "v1.26"
-  stable: "v1.28"
+  beta: "v1.30"
+  stable: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

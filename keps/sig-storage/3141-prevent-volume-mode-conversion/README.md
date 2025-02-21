@@ -262,7 +262,7 @@ Consider including folks who also work outside the SIG or subproject.
 ## Design Details
 
 A new out-of-tree flag named `PreventVolumeModeConversion` will be introduced on 
-`external-snapshotter` and `external-provisioner`. Both of these components are 
+`snapshot-controller` and `csi-provisioner`. Both of these components are
 out-of-tree so this proposal will not require any in-tree feature gates. 
 
 ### Changes to VolumeSnapshotContent API
@@ -717,6 +717,8 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+There are no other known failure modes.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 The user needs to read the logs of the external-provisioner to determine the reason
@@ -734,6 +736,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2023-02-06: KEP updated to mark transition to beta off-by-default
+- 2023-12-23: KEP updated to mark transition to beta on-by-default
+- 2024-01-24: KEP updated to mark transition to stable
 
 ## Drawbacks
 

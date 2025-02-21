@@ -6,9 +6,9 @@ participating-sigs: [sig-network]
 reviewers: ['@thockin', '@danwinship', "@aojea"]
 approvers: ['@thockin']
 creation-date: "2023-02-03"
-status: implementable
-stage: beta
-latest-milestone: "v1.30"
+status: implemented
+stage: stable
+latest-milestone: "v1.31"
 milestone:
     alpha: "v1.28"
     beta: "v1.30"

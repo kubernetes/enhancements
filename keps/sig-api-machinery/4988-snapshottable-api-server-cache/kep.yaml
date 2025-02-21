@@ -1,0 +1,32 @@
+title: Snapshottable API server cache
+kep-number: 4988
+authors:
+  - "@serathius"
+owning-sig: sig-api-machinery
+participating-sigs: []
+status: implementable
+creation-date: 2024-12-11
+reviewers:
+  - "@jpbetz"
+approvers:
+- "@deads2k"
+- "@wojtek-t"
+
+see-also:
+  - "/keps/sig-api-machinery/2340-Consistent-reads-from-cache"
+  - "/keps/sig-api-machinery/365-paginated-lists"
+replaces: []
+stage: alpha
+latest-milestone: "v1.33"
+milestone:
+  alpha: "v1.33"
+feature-gates:
+  - name: DetectCacheInconsistency
+    components:
+      - kube-apiserver
+  - name: ListFromCacheSnapshot
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics:
+ - apiserver_storage_hash

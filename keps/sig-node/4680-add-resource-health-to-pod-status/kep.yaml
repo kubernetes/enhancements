@@ -1,0 +1,46 @@
+title: Add Resource Health Status to the Pod Status for Device Plugin and DRA
+kep-number: 4680
+authors:
+  - "@SergeyKanzhelev"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: implementable #provisional|X|implemented|deferred|rejected|withdrawn|replaced
+creation-date: 2024-05-31
+reviewers:
+  - "@ffromani"
+  - "@klueska"
+  - "@kad"
+  - "@pohly"
+  - "@johnbelamaric"
+approvers:
+  - "@mrunalp"
+
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources" # for AllocatedResources status field
+  - "/keps/sig-storage/1790-recover-resize-failure" # PVC status
+  - "/keps/sig-node/3063-dynamic-resource-allocation" # DRA
+  - "/keps/sig-node/3573-device-plugin" # Device Plugin
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha #|beta|stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.33"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.31" # 1.32 will contain an alpha2 with more features 
+  beta: "v1.34"
+  stable: "v1.36"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ResourceHealthStatus
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true

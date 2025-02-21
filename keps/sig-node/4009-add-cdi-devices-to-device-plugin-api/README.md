@@ -5,6 +5,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+- [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -33,19 +34,19 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -91,6 +92,10 @@ Resource Allocation (DRA) based implementation.
 
 * Allow Device Plugin authors to forward device requests to CRI runtimes as a CRI field.
 * Allow Device Plugin authors to use CDI to define the modifications required for containerised environments.
+
+## Proposal
+
+We propose a mechanism for device plugin authors to specify devices using Container Device Interface (CDI) names. The names of the requested devices are passed down as CRI fields to CRI runtimes which are ultimately responsible for making the requested devices accessible from a container.
 
 ## Design Details
 
@@ -148,14 +153,14 @@ However, these cases will be added in the existing integration tests:
 
 ##### e2e tests
 
-These cases will be added in the existing `e2e_node` tests:
-  - Device Plugin works with CDI devices
+This test case has been added to the existing `e2e_node` tests:
+  - DevicePlugin can make a CDI device accessible in a container
 
-Links to tests:
-- TBD: Will fill-in by code freeze
+Links to test grid:
+- https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cdi-device-plugins
 
 Links to k8s-triage for tests:
-- TBD: Will fill-in by code freeze
+- https://storage.googleapis.com/k8s-triage/index.html?job=ci-crio-cdi-device-plugins
 
 ### Graduation Criteria
 
@@ -205,7 +210,7 @@ plugins are not expected to break.
   - Components depending on the feature gate: kubelet
 - [x] Pass CDI devices to the kubelet over the new field in the device plugin API
   - Will enabling / disabling the feature require downtime of the control
-    plane? 
+    plane?
     No.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
@@ -236,7 +241,7 @@ when the feature is enabled, and silently ignored if the feature is disabled.
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 The failure of the kubelet would mean that fields from new device allocations
-will not be processed. 
+will not be processed.
 
 However, CDI device themselves are only interpereted at container start.
 Existing containers that were started with support for CDI devices will not be
@@ -346,6 +351,7 @@ N/A
 
 - 2023-05-15: KEP created
 - 2023-09-25: KEP updated to mark transition to beta
+- 2024-01-24: KEP updated to mark transition to stable
 
 ## Drawbacks
 

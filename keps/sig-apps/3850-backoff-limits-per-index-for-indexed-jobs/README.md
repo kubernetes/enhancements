@@ -15,7 +15,7 @@
     - [Performance benchmark](#performance-benchmark)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [The Job object too big](#the-job-object-too-big)
-  - [Expotential backoff delay issue](#expotential-backoff-delay-issue)
+  - [Exponential backoff delay issue](#exponential-backoff-delay-issue)
   - [Too fast Job status updates](#too-fast-job-status-updates)
 - [Design Details](#design-details)
   - [Job API](#job-api)
@@ -23,7 +23,7 @@
   - [Failed indexes format](#failed-indexes-format)
   - [Job completion](#job-completion)
   - [FailIndex action](#failindex-action)
-  - [Expotential backoff delay per index](#expotential-backoff-delay-per-index)
+  - [Exponential backoff delay per index](#exponential-backoff-delay-per-index)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -53,8 +53,8 @@
   - [Mutually exclusive backoffLimit and backoffLimitPerIndex](#mutually-exclusive-backofflimit-and-backofflimitperindex)
   - [Use bool field](#use-bool-field)
   - [Use enum field](#use-enum-field)
-  - [Global expotential backoff delay](#global-expotential-backoff-delay)
-  - [Expotential backoff delay with in-memory tracking](#expotential-backoff-delay-with-in-memory-tracking)
+  - [Global exponential backoff delay](#global-exponential-backoff-delay)
+  - [Exponential backoff delay with in-memory tracking](#exponential-backoff-delay-with-in-memory-tracking)
   - [Alternative ways to support high number of completions](#alternative-ways-to-support-high-number-of-completions)
     - [Keep failedIndexes field as a bitmap](#keep-failedindexes-field-as-a-bitmap)
     - [Keep the list of failed indexes in a dedicated API object](#keep-the-list-of-failed-indexes-in-a-dedicated-api-object)
@@ -72,15 +72,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -272,7 +272,7 @@ BenchmarkLargeFailureHandling/job_with_backoffLimitPerIndex_with_failures;_size=
 
 The above results show that the jobs using `.spec.backoffLimitPerIndex` are be
 slower for about 1% compared to regular indexed jobs. In practice the difference
-is expected to be covered by the expotential backoff delay due to pod failures.
+is expected to be covered by the exponential backoff delay due to pod failures.
 
 <!--
 What are the caveats to the proposal?
@@ -338,9 +338,9 @@ We believe that the scalability limits should be enough for most of Job use-case
 For workloads requiring larger jobs users should be able to create multiple Jobs,
 orchestrated by the [JobSet](https://github.com/kubernetes-sigs/jobset).
 
-### Expotential backoff delay issue
+### Exponential backoff delay issue
 
-Currently, a pod is recreated by the Job controller with expotential backoff
+Currently, a pod is recreated by the Job controller with exponential backoff
 delay (10s, 20s, 40s ...), counted from the last failure time.
 
 One complication is that the last failure time for failed pods may increase with
@@ -350,16 +350,16 @@ Thus, there is a risk that due to the presence
 of pods hitting the fallback the last failure time is continuously bumped,
 thus shifting the time to recreate the pod.
 
-This risk is present both when computing the expotential backoff delay globally
+This risk is present both when computing the exponential backoff delay globally
 (as for regular indexed Jobs), or per-index as proposed in in this KEP
-(see [Expotential backoff delay per index](#expotential-backoff-delay-per-index)).
+(see [Exponential backoff delay per index](#exponential-backoff-delay-per-index)).
 
 In order to mitigate this risk currently the time of last failure is recorded
 in-memory (globally for all pods within a Job). And a new failed pod may bump
 it only until it is added to the `uncountedTerminatedPods` structure.
 
 However, tracking the last failure time per index might be costly for memory
-consumption (see [Expotential backoff delay with in-memory tracking](#expotential-backoff-delay-with-in-memory-tracking)).
+consumption (see [Exponential backoff delay with in-memory tracking](#exponential-backoff-delay-with-in-memory-tracking)).
 
 Thus, in order to mitigate this risk we propose to compute the finish time for
 a pod as the first available value of the following (avoiding the ever-increasing
@@ -400,7 +400,7 @@ New items are added to the queue with a delay (1s for pod events, such as:
 delete, add, update). The delay allows for deduplication of the sync per Job.
 
 One place to queue a new item in the queue, specific to this KEP, is when
-the expotential backoff delay hasn't elapsed for any index (allowing pod
+the exponential backoff delay hasn't elapsed for any index (allowing pod
 recreation), then we requeue the next Job status update. The delay is computed
 as minimum of all delays computed for all indexes requiring pod recreation,
 but not less that 1s.
@@ -570,12 +570,12 @@ we add the corresponding index to the set of failed indexes represented by
 `.status.failedIndexes`. This action can only be used if backoff limit per index
 is used.
 
-### Expotential backoff delay per index
+### Exponential backoff delay per index
 
 First, we solve the issue of increasing failure time for deleted pods when the
 finalizer removal is delayed, by modifying the definition of the pod finish time,
 to avoid fallback to `now`
-(see also [Expotential backoff delay issue](#expotential-backoff-delay-issue)).
+(see also [Exponential backoff delay issue](#exponential-backoff-delay-issue)).
 
 Second, we compute the backoff delay within each index independently. The number
 of consecutive failures per-index can be derived from the
@@ -624,7 +624,7 @@ the following scenarios will be covered with unit tests:
 - marking of the Job as `Complete` only once all indexes are completed,
 - termination of Job execution and marking it as failed when
   `.spec.maxFailedIndexes` is exceeded.
-- calculation of the expotential backoff delay per index when `backoffLimitPerIndex`
+- calculation of the exponential backoff delay per index when `backoffLimitPerIndex`
   is used.
 - a fuzzer roundtrip test for API when `backoffLimit` is set to max int32.
 
@@ -662,12 +662,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 The following scenarios will be covered with integration tests:
-- enabling, disabling and re-enabling of the `JobBackoffLimitPerIndex` feature gate
-- handling of the `.spec.backoffLimitPerIndex` when the `FailIndex` action is used,
-- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` isn't set,
-- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` is set,
-- handling of the `.spec.backoffLimit` when `.spec.backoffLimitPerIndex` is set,
-- handling of the expotential backoff delay per index when `.spec.backoffLimitPerIndex` is set.
+- enabling, disabling and re-enabling of the `JobBackoffLimitPerIndex` feature gate ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L1030))
+- handling of the `.spec.backoffLimitPerIndex` when the `FailIndex` action is used ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L1888)),
+- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` isn't set ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L1688)),
+- handling of the `.spec.backoffLimitPerIndex` when `.spec.maxFailedIndexes` is set ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L1846)),
+- handling of the `.spec.backoffLimit` when `.spec.backoffLimitPerIndex` is set ([code](https://github.com/kubernetes/kubernetes/blob/master/test/integration/job/job_test.go#L1744)),
+- handling of the exponential backoff delay per index when `.spec.backoffLimitPerIndex` is set ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/integration/job/job_test.go#L1120)).
+
+The [k8s-triage] page for the [BackoffLimitPerIndex integration tests](https://storage.googleapis.com/k8s-triage/index.html?job=integration&test=BackoffLimitPerIndex).
 
 More integration tests might be added to ensure good code coverage based on the
 actual implementation.
@@ -686,9 +688,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 The following scenario is covered with e2e tests for Beta:
 - [sig-apps#gce](https://testgrid.k8s.io/sig-apps#gce):
-  - Job should execute all indexes despite some failing when using backoffLimitPerIndex
-  - Job should terminate job execution when the number of failed indexes exceeds maxFailedIndexes
-  - Job should mark indexes as failed when the FailIndex action is matched in podFailurePolicy
+  - Job should execute all indexes despite some failing when using backoffLimitPerIndex ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L602))
+  - Job should terminate job execution when the number of failed indexes exceeds maxFailedIndexes ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L635))
+  - Job should mark indexes as failed when the FailIndex action is matched in podFailurePolicy ([code](https://github.com/kubernetes/kubernetes/blob/20b12ad5c389ff74792988bf1e0c10fe2820d9a1/test/e2e/apps/job.go#L670))
+
+The [k8s-triage] page for the [BackoffLimitPerIndex e2e tests](https://storage.googleapis.com/k8s-triage/index.html?job=e2e&test=should%20mark%20indexes%20as%20failed%20when%20the%20FailIndex%20action%20is%20matched%20in%20podFailurePolicy%7Cshould%20terminate%20job%20execution%20when%20the%20number%20of%20failed%20indexes%20exceeds%20maxFailedIndexes%7Cshould%20execute%20all%20indexes%20despite%20some%20failing%20when%20using%20backoffLimitPerIndex).
 
 ### Graduation Criteria
 
@@ -757,7 +761,7 @@ in back-to-back releases.
 #### Alpha
 
 - the feature implemented behind the `JobBackoffLimitPerIndex` feature flag
-- change the logic of computing the expotential backoff delay (see [here](#expotential-backoff-delay-issue))
+- change the logic of computing the exponential backoff delay (see [here](#exponential-backoff-delay-issue))
 - user-facing documentation, including the warning for setting completions > 10^5
 - The `JobBackoffLimitPerIndex` feature flag disabled by default
 - Tests: unit and integration
@@ -777,9 +781,10 @@ in back-to-back releases.
 
 - Address reviews and bug reports from Beta users
 - Write a blog post about the feature
+- Revisit extending the [hands-on guide for Pod failure policy](https://kubernetes.io/docs/tasks/job/pod-failure-policy/)
+  to use `FailIndex`
 - Graduate e2e tests as conformance tests
 - Lock the `JobBackoffLimitPerIndex` feature gate
-- Declare deprecation of the `JobBackoffLimitPerIndex` feature gate in documentation
 
 ### Upgrade / Downgrade Strategy
 
@@ -1388,6 +1393,15 @@ Major milestones might include:
 - 2023-07-18: Merge the Job Controller PR [Support BackoffLimitPerIndex in Jobs](https://github.com/kubernetes/kubernetes/pull/118009)
 - 2023-08-04: Merge user-facing docs PR [Docs update for Job's backoff limit per index (alpha in 1.28)](https://github.com/kubernetes/website/pull/41921)
 - 2023-08-06: Merge KEP update reflecting decisions during the implementation phase [Update for KEP3850 "Backoff Limit Per Index"](https://github.com/kubernetes/enhancements/pull/4123)
+- 2023-10-02: [Update KEP-3850 "Backoff Limit Per Index" for Beta](https://github.com/kubernetes/enhancements/pull/4228)
+- 2023-10-20: [Introduce the job_finished_indexes_total metric](https://github.com/kubernetes/kubernetes/pull/121292)
+- 2023-10-23: [Graduate BackoffLimitPerIndex to Beta](https://github.com/kubernetes/kubernetes/pull/121356)
+- 2023-10-24: [Indicate Job Backoff Limit Per Index reason consts are beta](https://github.com/kubernetes/kubernetes/pull/121471)
+- 2023-10-25: [Backoff limit per index e2e test](https://github.com/kubernetes/kubernetes/pull/121368)
+- 2023-11-02: [Add remaining e2e tests for Job BackoffLimitPerIndex based on KEP](https://github.com/kubernetes/kubernetes/pull/121633)
+- 2023-11-02: [Benchmark job with backoff limit per index](https://github.com/kubernetes/kubernetes/pull/121393)
+- 2023-11-02: [Update KEP3850 "BackoffLimitPerIndex for Indexed Jobs"](https://github.com/kubernetes/enhancements/pull/4321)
+- 2025-02-07: [KEP3850: graduate Backoff Limit Per Index for Job to stable](https://github.com/kubernetes/enhancements/pull/5154)
 
 ## Drawbacks
 
@@ -1554,9 +1568,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Global expotential backoff delay
+### Global exponential backoff delay
 
-We could also consider leaving the expotential backoff delay as global and
+We could also consider leaving the exponential backoff delay as global and
 be enabled by a dedicated API field in the future KEP, say `backoffDelayPerIndex`.
 
 **Reasons for deferring / rejecting**
@@ -1566,9 +1580,9 @@ Thus, failures or successes in one index should not influence backoff delays
 for another index. We are leaving the decision to the community feeback and
 discussions though.
 
-### Expotential backoff delay with in-memory tracking
+### Exponential backoff delay with in-memory tracking
 
-Instead of modifying the definition of pod's finish time (see [Expotential backoff delay issue](#expotential-backoff-delay-issue))
+Instead of modifying the definition of pod's finish time (see [Exponential backoff delay issue](#exponential-backoff-delay-issue))
 we could keep track of the "failure time" for failed pods in-memory.
 
 **Reasons for deferring / rejecting**

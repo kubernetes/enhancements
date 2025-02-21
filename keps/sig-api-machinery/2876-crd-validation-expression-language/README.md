@@ -1266,6 +1266,9 @@ We don't expect it to. We will measure this before Beta.
 Specifically we will ddemonstrate an upper bound on the resource cost someone could incur with a CEL expression that is some some
 combination of large, compact, complex vs. similar combinations using existing validation rules (suggested by @liggitt)
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+We don't expect it to.
+
 ### Troubleshooting
 
 <!--

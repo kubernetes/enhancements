@@ -265,16 +265,16 @@ legacy tokens for security practices.
 
 #### Beta -> GA Graduation
 
-- [ ] In use by multiple distributions
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
-- [ ] Tests passing
+- [x] In use by multiple distributions
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
 
 #### Alpha -> Beta Graduation
 
-- [ ] Approved by PRR and scalability
+- [x] Approved by PRR and scalability
 - [x] Any known bugs fixed
-- [ ] Tests passing
+- [x] Tests passing
 
 ### Upgrade / Downgrade Strategy
 

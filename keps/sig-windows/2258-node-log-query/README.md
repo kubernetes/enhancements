@@ -226,34 +226,33 @@ tests will not be possible for this feature.
 
 ##### e2e tests
 
-We will add a test that query the kubelet service logs on Windows and Linux nodes.
-On Windows node, the same kubelet service logs will queried by explicitly
-specifying the log file. In Linux the explicit log file query will be tested by
-querying a random file in present in /var/log.
+Tests have been added that query the kubelet service logs on Linux nodes and
+Microsoft-Windows-Security-SPP logs on Windows nodes with various options.
 
-On the Linux side tests will be added to [kubelet node](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/kubelet.go)
-e2e tests. For Windows a new set of tests will be added to the existing
-[e2e tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows).
+These tests are part of the [kubelet node](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/node/kubelet.go)
+e2e tests that are run as a daily periodic job:
+- https://testgrid.k8s.io/sig-windows-master-release#capz-master-windows-alpha-nodelogquery
 
-- node: https://storage.googleapis.com/k8s-triage/index.html?sig=node
-- windows: https://storage.googleapis.com/k8s-triage/index.html?sig=windows
+This job runs tests against both Windows and Linux nodes.
 
 ### Graduation Criteria
 
 The plan is to introduce the feature as alpha in the v1.27 time frame behind the
-`NodeLogQuery` kubelet feature gate and using the `kubectl alpha node-logs`
-sub-command.
+`NodeLogQuery` kubelet feature gate and `enableSystemLogQuery` kubelet option.
 
 #### Alpha -> Beta Graduation
 
-The plan is to graduate the feature to beta in the v1.29 time frame. At that
-point we would have collected feedback from cluster administrators and
-developers who have enabled the feature. In addition we will provide a kubectl
-plugin for querying the logs more elegantly instead of using raw API calls.
+The plan is to graduate the feature to beta in the v1.30 time frame. So far we
+have not received any negative feedback from cluster administrators and
+developers who have enabled the feature.
+
+A [kubectl plugin](https://github.com/aravindhp/kubectl-node-logs) has been released
+and added to the Krew [index](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/node-logs.yaml)
+for querying the logs more elegantly instead of using raw API calls.
 
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.30 time frame at which point
+The plan is to graduate the feature to GA in the v1.32 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
@@ -287,15 +286,47 @@ a 404 will be returned.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+A rollout can fail on enabling the feature if there is a bug in the node log query code
+which can cause the kubelet to crash. However this has not been observed in practice or
+in the end to end tests. When the kubelet comes up successfully on enabling the feature,
+it will have no impact on workloads.
+There should be no impact on rolling back this feature.
+
+###### What specific metrics should inform a rollback?
+A kubelet crash on enabling just this feature would be an indicator that a rollback is
+required. So far no CPU or memory spikes have been observed on enabling this feature but
+that could be another indicator.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+Yes. The following manual tests were done:
+- Brought up a 1.30-alpha cluster without the kubelet feature gate and kubelet option. Enabled it
+  the feature and ensured that the feature worked. Disabled the feature and ensured that the
+  log proxy endpoint worked as before.
+- Brought up a 1.29 cluster and enabled the feature. Upgraded the kubelet to 1.30-alpha and ensured
+  that the feature continued to work. Downgraded the kubelet to 1.29 and ensured that the feature
+  continued to work. Upgraded the kubelet again to 1.30 and ensured that the feature worked.
+- Brought up a 1.29 cluster and enabled the feature. Upgraded the kubelet to 1.30-alpha and ensured
+  that the feature continued to work. Disabled the feature and downgraded the kubelet to 1.29 and
+  ensured that the log proxy endpoint worked as before. Upgraded the kubelet to 1.30-alpha and
+  ensured that the log proxy endpoint worked as before. Enabled the feature again and ensured it worked
+  as advertised.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+No
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
+While this feature does not affect any workloads an operator can determine if this feature
+is enabled by checking the kubelet logs for "feature gates: {map[NodeLogQuery:true]}".
+
+###### How can someone using this feature know that it is working for their instance?
+- [x] Other
+  - Details: The cluster administrator can confirm that this feature works by querying the kubelet log proxy
+    endpoint. Example: "kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
 
 ### Dependencies
-
-_This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
   - kubelet
@@ -312,8 +343,8 @@ _This section must be completed when targeting beta graduation to a release._
   No
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Yes. We will need to add a `NodeLogOptions` counterpart to
-  [PodLogOptions](https://github.com/kubernetes/kubernetes/blob/548ad1b8d35d51e6d33ea21dcc75d60a789b00e6/pkg/apis/core/types.go#L4409)
+  The feature does not introduce a new API from an API server perspective but
+  the existing kubelet proxy/log endpoint will have new features built into it.
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
@@ -330,9 +361,8 @@ operations covered by [existing SLIs/SLOs]?**
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
   In the case of large logs, there is potential for an increase in RAM and CPU
-  usage on the node when an attempt is made to stream them. Feedback from the
-  field during alpha will provide more clarity as we graduate from alpha to
-  beta.
+  usage on the node when an attempt is made to stream them. However, so far no
+  CPU or memory spikes have been reported from the field.
 
 ### Troubleshooting
 
@@ -342,6 +372,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - Updated on May 5th, 2021
 - Updated on Dec 13th, 2022
 - Updated on May 2nd, 2023
+- Updated on Feb 5th, 2024
 
 ## Drawbacks
 

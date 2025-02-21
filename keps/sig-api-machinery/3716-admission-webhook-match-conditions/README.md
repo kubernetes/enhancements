@@ -261,7 +261,7 @@ be performed in the webhook, and are out of scope for this proposal.
 
 **Risk: Attacker adds or changes a match condition to weaken an admission policy.**
 
-This is does not represent a new threat, as doing so would require update access to the admission
+This does not represent a new threat, as doing so would require update access to the admission
 registration object, and with that permission an attacker could already disable the policy through
 manipulating match rules, namespace selector, or object selector (or reroute the webhook entirely).
 
@@ -299,13 +299,9 @@ iterate as necessary.
 #### Performance
 
 The CEL expression evaluation will leverage the same [Resource Constraints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2876-crd-validation-expression-language#resource-constraints)
-used by CEL CRD Validation & CEL Admission Control. All the match conditions for a given webhook will
-share the same resource budget.
+used by CEL CRD Validation & CEL Admission Control. The runtime cost budgets are defined here [CEL Runtime Cost](https://github.com/kubernetes/kubernetes/blob/445869a59bdbd1c587b72b52c5da94c1d1c316a1/staging/src/k8s.io/apiserver/pkg/apis/cel/config.go#L22).
 
-<<[UNRESOLVED resource constraints ]>>
-_NON-BLOCKING for Alpha_
-Details TBD.
-<<[/UNRESOLVED]>>
+The per call limit is shared with Validating Admission Policy CEL expressions and set at roughly 0.1 second for each expression evaluation call. The total budget per object (i.e. per ValidatingWebhook) for CEL match conditions is roughly .25 seconds and 1/4 the budget of Validating Admission Policy limit. 
 
 ## Design Details
 
@@ -329,7 +325,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -342,25 +338,24 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-TBD - unit tests will be added as this feature is implemented.
-
 ##### Integration tests
 
 Test cases to add:
 
-- [ ] Feature gate enablement / disablement is a no-op when no `matchConditions` are set
-- [ ] Feature gate enablement / disablement works as expected when `matchConditions` are set
-- [ ] Single match condition:
-    - [ ] Request out of scope without `matchConditions`
-    - [ ] Request in scope without `matchConditions`, but not matching
-    - [ ] Request in scope without `matchConditions`, and also matching
-- [ ] Multiple match conditions, covering the same cases as the single-condition case
+- [X] Feature gate enablement / disablement is a no-op when no `matchConditions` are set (until graduation to GA as feature gate will go away)
+- [X] Feature gate enablement / disablement works as expected when `matchConditions` are set
+(until graduation to GA as feature gate will go away)
+- [X] Single match condition:
+    - [X] Request out of scope without `matchConditions`
+    - [X] Request in scope without `matchConditions`, but not matching
+    - [X] Request in scope without `matchConditions`, and also matching
+- [X] Multiple match conditions, covering the same cases as the single-condition case
 
 ##### e2e tests
 
 We will test the edge cases mostly in integration tests and unit tests.
 
-Once the feature is default enabled in beta, a single E2E test covering hte single-match-condition
+Once the feature is default enabled in beta, a single E2E test covering the single-match-condition
 cases outlined above will be added.
 
 ### Graduation Criteria
@@ -379,9 +374,15 @@ cases outlined above will be added.
 
 #### GA
 
-<<[UNRESOLVED resource constraints ]>>
-GA requirements TBD
-<<[/UNRESOLVED]>>
+- Promote appropriate E2E tests to conformance 
+  - https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apimachinery/webhook.go
+  - "should be able to create and update validating webhook configurations with match conditions"
+  - "should be able to create and update mutating webhook configurations with match conditions"
+  - "should reject validating webhook configurations with invalid match conditions"
+  - "should reject mutating webhook configurations with invalid match conditions"
+  - "should mutate everything except 'skip-me' configmaps"
+
+- Cover any missing test coverage
 
 ### Upgrade / Downgrade Strategy
 
@@ -467,9 +468,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-
-[Registry tests](https://github.com/kubernetes/kubernetes/blob/c4ebbeeb747cd3e2b1d83733a14d367a65723a45/pkg/registry/core/pod/strategy_test.go)
-will verify the drop disabled fields logic is correctly implemented.
+We will add tests that verify the functionality is turned off when feature gate is toggled off and turned on when toggled on.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -525,6 +524,21 @@ Metric name: `webhook_admission_match_condition_exclusions_total`
 Labels:
 - `name`: webhook name
 - `type`: `validate` or `admit`
+- `kind`: match condition on a `webhook` or `policy`
+- `operation`: the admission operation
+
+Metric name: `webhook_admission_match_condition_evaluation_errors_total`
+Labels:
+- `name`: webhook name
+- `type`: `validate` or `admit`
+- `kind`: match condition on a `webhook` or `policy`
+- `operation`: the admission operation
+
+Metric name: `webhook_admission_match_condition_evaluation_seconds`
+Labels:
+- `name`: webhook name
+- `type`: `validate` or `admit`
+- `kind`: match condition on a `webhook` or `policy`
 - `operation`: the admission operation
 
 <!--
@@ -542,8 +556,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-The metric `webhook_admission_match_condition_exclusions_total` should indicate if the precondition
-is used to exclude objects from invoking webhooks.
+The metric `webhook_admission_match_condition_evaluation_seconds` should indicate if the match conditions
+are being used and being evaluated for invoking webhooks.
 
 ###### How can someone using this feature know that it is working for their instance?
 

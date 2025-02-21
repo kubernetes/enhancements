@@ -1,0 +1,27 @@
+title: Go workspaces for k/k
+kep-number: 4402
+authors:
+  - "@thockin"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-release
+  - sig-api-machinery
+status: implemented
+creation-date: 2024-01-13
+reviewers:
+  - "@sttts"
+  - "@pohly"
+  - "@alexzielenski"
+approvers:
+  - "@jpbetz"
+  - "@liggitt"
+see-also:
+  - https://github.com/kubernetes/enhancements/tree/master/keps/sig-architecture/917-go-modules
+replaces: []
+stage: stable
+latest-milestone: "v1.30"
+milestone:
+  stable: "v1.30"
+feature-gates: []
+disable-supported: false
+metrics: []

@@ -20,6 +20,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.24):](#alpha-v124)
     - [Beta (v1.25):](#beta-v125)
+    - [GA (v1.30):](#ga-v130)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -38,20 +39,20 @@
 
 Items marked with (R) are required _prior to targeting to a milestone / release_.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -237,9 +238,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2022-06-17` - `86%`
-- `k8s.io/kubernetes/pkg/api/pod`: `2022-06-17` - `66.7%`
-- `k8s.io/kubernetes/pkg/apis/core/validation`: `2022-06-17` - `82.1%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2024-01-28` - `87.3%`
+- `k8s.io/kubernetes/pkg/api/pod`: `2024-01-28` - `74.8%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2024-01-28` - `83.9%`
 
 ##### Integration tests
 
@@ -250,7 +251,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-test: https://github.com/kubernetes/kubernetes/blob/19c8a2127177b43effb9bfe1de272d6f08ea56e8/test/integration/scheduler/filters/filters_test.go#L1060
+test: https://github.com/kubernetes/kubernetes/blob/c6064489223862fe1888fcbe0656ab1087461adb/test/integration/scheduler/filters/filters_test.go#L1349
 k8s-triage: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling&test=TestPodTopologySpreadFilter
 
 ##### e2e tests
@@ -280,7 +281,11 @@ So, E2E tests doesn't add extra value to integration tests.
 
 #### Beta (v1.25):
 
-- [ ] This feature will be enabled by default as a Beta feature in v1.25.
+- [x] This feature will be enabled by default as a Beta feature in v1.25.
+
+#### GA (v1.30):
+
+- [x] No particular issue is reported to this feature for a certain length of time.
 
 ## Production Readiness Review Questionnaire
 
@@ -335,7 +340,7 @@ Scheduling of new Pods is affected.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No - unit and integration tests will be added.
+No - we've only done the manual testing as described at [Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -424,6 +429,8 @@ logs or events for this purpose.
 -->
 
 The operator can query pods with `pod.spec.topologySpreadConstraints.minDomains` field set.
+And, after adopting `minDomains` in some Pods, they can confirm that `minDomains` impacts on the scheduling 
+by observing an increase in `plugin_evaluation_total{plugin="PodTopologySpread",extension_point="Filter"}`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -481,9 +488,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Yes. It would be useful if we could see which filter plugin affected Pod's scheduling results in metrics.
-
-Issue: https://github.com/kubernetes/kubernetes/issues/110643
+No.
 
 ### Dependencies
 
@@ -558,6 +563,20 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -615,6 +634,9 @@ Major milestones might include:
  - 2022-01-14: Initial KEP is merged. 
  - 2022-03-16: The implementation PRs are merged.
  - 2022-05-03: The MinDomain feature is released as alpha feature with Kubernetes v1.24 release.
+ - 2022-06-23: KEP is updated so that the MinDomain feature is moving to beta with Kubernetes v1.25 release.
+ - 2022-07-16: The feature gate is changed to be enabled by default.
+ - 2024-01-15: KEP is updated so that the MinDomain feature is moving to GA with Kubernetes v1.30 release.
 
 ## Drawbacks
 

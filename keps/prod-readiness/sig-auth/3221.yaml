@@ -1,3 +1,7 @@
 kep-number: 3221
 alpha:
   approver: "@deads2k"
+beta:
+  approver: "@jpbetz"
+stable:
+  approver: "@deads2k"

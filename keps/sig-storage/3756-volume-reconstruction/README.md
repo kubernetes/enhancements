@@ -104,19 +104,19 @@ SIG Architecture for cross-cutting KEPs).
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [  ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -338,35 +338,45 @@ When kubelet starts, VolumeManager starts DSWP and reconciler
 
 However, the first thing that the reconciler does before reconciling DSW and ASW
 is that it scans `/var/lib/kubelet/pods/*` and reconstructs **all** found
-volumes and adds them to ASW as *uncertain*. Only information that is available
-[in the Pod directory on the disk are reconstructed into ASW at this point.
-* Since the volume reconstruction can be imperfect and can miss `devicePath`,
-]()  VolumeManager adds all reconstructed volumes to `volumesNeedDevicePath`
-  array, to finish their reconstruction from `node.status.volumesAttached`
-  later.
-* All volumes that failed reconstruction are added to
-  `volumesFailedReconstruction` list.
+volumes and adds them to ASW as *uncertainly mounted* and *uncertainly attached*.
+Only information that is available in the Pod directory on the disk are
+reconstructed into ASW, because kubelet may not have connection to the API
+server at this point.
+
+The volume reconstruction can be imperfect:
+* It can miss `devicePath`, which may not be possible to reconstruct from the OS.
+* For CSI volumes, it cannot decide if a volume is attach-able to
+  [put it into](https://github.com/kubernetes/kubernetes/blob/89bfdf02762727506c9801d38b202873793d1106/pkg/kubelet/volumemanager/volume_manager.go#L368),
+  or to [remove it from](https://github.com/kubernetes/kubernetes/blob/5134520a3bc3604d14a10900c7e07481f62d5912/pkg/kubelet/volumemanager/reconciler/reconciler_common.go#L298)
+  `node.status.volumesInUse`, because it cannot read CSIDriver from the API
+  server yet.
+
+Kubelet puts the volumes to ASW as *uncertainly attached* and with possibly
+wrong `devicePath` it got from the volume plugin. Kubelet stores list of the
+reconstructed volumes in `volumesNeedUpdateFromNodeStatus` to fix both
+`devicePath` and attach-ability from `node.status.volumesAttached` once it
+establishes connection to the API server.
 
 After **ASW** is populated, reconciler starts its
-[reconciliation loop](https://github.com/kubernetes/kubernetes/blob/cca3d557e6ff7f265eca8517d7c4fa719077c8d1/pkg/kubelet/volumemanager/reconciler/reconciler_new.go#L33-L69):
+[reconciliation loop](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/reconciler/reconciler_new.go#L33-L75):
 1. `mountOrAttachVolumes()` - mounts (and attaches, if necessary) volumes that
    are in DSW, but not in ASW. This can happen even before DSW is fully
    populated.
 
-2. `updateReconstructedDevicePaths()` - once kubelet gets connection to the API
-   server and reads its own `Node.status`, volumes in `volumesNeedDevicePath`
-   (i.e. all reconstructed volumes) are updated from
-   `node.status.attachedVolumes`, overwriting any previous `devicePath` in
-   *uncertain* mounts (i.e. potentially overwriting the reconstructed
-   `devicePath` or even `devicePath` from `MountDevice` / `SetUp` that ended
-   as *uncertain* (e.g. timed out). This happens only once,
-   `volumesNeedDevicePath` is cleared afterwards.
+2. `updateReconstructedFromNodeStatus()` - once kubelet gets connection to the
+   API server and reads its own `node.status`, volumes in
+   `volumesNeedUpdateFromNodeStatus` (i.e. all reconstructed volumes) are
+   updated from `node.status.volumesAttached`, overwriting any previous
+   *uncertain attach-ability* and `devicePath` of *uncertain mounts* (i.e.
+   potentially overwriting the reconstructed `devicePath` or even `devicePath`
+   from `MountDevice` / `SetUp` that ended as *uncertain*). This
+   happens only once, `volumesNeedUpdateFromNodeStatus` is cleared afterwards.
 
 3. (Only once): Add all reconstructed volumes to `node.status.volumesInUse`.
 
 4. Only after DSW was fully populated (i.e. VolumeManager can tell if a volume
-   is really needed or not), **and** `devicePaths` were populated from
-   `node.status`, VolumeManager can start unmounting volumes and calls:
+   is really needed or not), **and** DSW was fixed from `node.status`,
+   VolumeManager can start unmounting volumes and calls:
    1. `unmountVolumes()` - unmounts pod local volume mounts (`TearDown`) that
       are in ASW and are not in DSW.
    2. `unmountDetachDevices()` - unmounts global volume mounts (`UnmountDevice`)
@@ -389,9 +399,9 @@ for volumes that are still *uncertain*, not to overwrite the *certain* ones.
 ### Old VolumeManager startup
 
 When kubelet starts, VolumeManager starts DSWP and the reconciler
-[in parallel](https://github.com/kubernetes/kubernetes/blob/575616cc72dbfdd070ead81ec29c0d4f00226487/pkg/kubelet/volumemanager/volume_manager.go#L288-L292).
+[in parallel](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/volume_manager.go#L288-L292).
 
-[The reconciler](https://github.com/kubernetes/kubernetes/blob/44b72d034852eb6da8916c82ce722af604b196c5/pkg/kubelet/volumemanager/reconciler/reconciler.go#L33-L45)
+[The reconciler](https://github.com/kubernetes/kubernetes/blob/16534deedf1e3f7301b20041fafe15ff7f178904/pkg/kubelet/volumemanager/reconciler/reconciler.go#L33-L45)
 then periodically does:
 1. `unmountVolumes()` - unmounts (`TearDown`) pod local volumes that are in
    ASW and are not in DSW. Since the ASW is initially empty, this call
@@ -434,9 +444,9 @@ We propose adding these new metrics, both to the old and new VolumeManager code:
     in ASW (those are not reconstructed).
 * `force_cleaned_failed_volume_operations_total` / `force_cleaned_failed_volume_operation_errors_total`: nr.
   of all / unsuccessful cleanups of volumes that failed reconstruction.
-* `orphaned_volumes_cleanup_errors_total`: nr. of reports
+* `orphan_pod_cleaned_volumes_errors`: nr. of pods that failed cleanup with errors
   like `orphaned pod "<uid>" found, but XYZ failed`
-  ([example](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L215)).
+  ([example](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L215)) in the last sync.
   These messages can be a symptom of failed reconstruction (e.g.
   [#105536](https://github.com/kubernetes/kubernetes/issues/105536)).
   Note that kubelet logs this periodically and bumping this metric periodically
@@ -444,11 +454,11 @@ We propose adding these new metrics, both to the old and new VolumeManager code:
   [`cleanupOrphanedPodDirs`](https://github.com/kubernetes/kubernetes/blob/4fac7486d41c033d6bba9dfeda2356e8189035cd/pkg/kubelet/kubelet_volumes.go#L168)
   needs to be changed to collect errors found during
   one `/var/lib/kubelet/pods/` check and report collected "nr of errors during
-  the last housekeeping sweep (every 2 seconds)".
-    * TODO: do we want to have a label to distinguish each error reason,
-      e.g. "Pod found, but volumes are still mounted on disk" from say
-      "orphaned pod %q found, but error occurred during reading of
-      volume-subpaths dir from disk"?
+  the last housekeeping sweep (every 2 seconds)". There is no label that would
+  distinguish between each error cause.
+* `orphan_pod_cleaned_volumes`: nr. of total pods that were attempted to be
+  cleaned up by `cleanupOrphanedPodDirs` in the last sync, both successful and
+  failed.
 
 ### Test Plan
 
@@ -555,6 +565,9 @@ https://prow.k8s.io/view/gs/kubernetes-jenkins/logs/ci-cri-containerd-e2e-cos-gc
 > Unexpected error while creating namespace: Post
 > "https://35.247.99.121/api/v1/namespaces": dial tcp 35.247.99.121:443:
 > connect: connection refused
+
+A whole new job was added to ensure static pods can start when kubelet restarts: [ci-kubernetes-e2e-storage-kind-disruptive](https://testgrid.k8s.io/sig-storage-kubernetes#kind-disruptive).
+There was a single installation flake in the last 14 days (captured on 2024-01-23).
 
 ### Graduation Criteria
 
@@ -759,7 +772,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Not yet. This will be a manual test.
+Yes, see https://github.com/kubernetes/enhancements/issues/3756#issuecomment-1906255361 (and expand `Details`).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -975,6 +988,20 @@ This through this both in small and large cases, again with respect to the
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+<!--
+Focus not just on happy cases, but primarily on more pathological cases
+(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
+If any of the resources can be exhausted, how this is mitigated with the existing limits
+(e.g. pods per node) or new limits added by this KEP?
+
+Are there any tests that were run/should be run to understand performance characteristics better
+and validate the declared limits?
+-->
+
+No.
+
 ### Troubleshooting
 
 <!--
@@ -1034,6 +1061,8 @@ Ensure that:
   and behind `SELinuxMountReadWriteOnce` feature gate.
 
 * 1.27: Splitting out as a separate KEP, targeting Beta in this release.
+
+* 1.30: GA.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

@@ -4,13 +4,14 @@ authors:
   - "@SergeyKanzhelev"
   - "@matthyx"
   - "@jpbetz"
+  - "@gjkim42"
 owning-sig: sig-node
 participating-sigs:
   - sig-scheduler
   - sig-apps
-status: implementable
+status: implemented
 creation-date: 2018-05-14
-last-updated: 2023-09-29
+last-updated: 2025-01-23
 reviewers:
   - "@mrunalp"      # overall
   - "@ffromani"     # resource management
@@ -21,22 +22,23 @@ approvers:
   - "@thockin"
 
 see-also:
+  - "/keps/sig-node/4438-sidecar-restart-termination"
 
 replaces:
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.29"
+latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.28"
   beta: "v1.29"
-  stable: "v1.32"
+  stable: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

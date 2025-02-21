@@ -1,3 +1,6 @@
 kep-number: 3715
 beta:
   approver: "@wojtek-t"
+stable:
+  approver: "@wojtek-t"
+

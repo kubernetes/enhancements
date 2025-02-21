@@ -13,17 +13,17 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/3243-respect-pod-topology-spread-after-rolling-upgrades"
 
-stage: alpha
+stage: stable
 
-latest-milestone: "v1.29"
+latest-milestone: "v1.33"
 
 milestone:
   alpha: "v1.29"
-  beta: "v1.30"
-  stable: "v1.32"
+  beta: "v1.31"
+  stable: "v1.33"
 
 feature-gates:
   - name: MatchLabelKeysInPodAffinity
     components:
       - kube-apiserver
-disable-supported: true
+disable-supported: false

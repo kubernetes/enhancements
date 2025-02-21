@@ -715,6 +715,10 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+The success rate of image pulls should remain the same with a parallel image pull limit set, compared to without it. For example,
+if a cluster admin has set an SLO of 99% of image pulls should succeed, then setting the parallel image pull limit should not lower
+the success rate to below 99%.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -924,7 +928,7 @@ Alpha feature was implemented in 1.27: <https://github.com/kubernetes/kubernetes
 
 ### Beta
 
-Add e2e tests(WIP):
+Add e2e tests <https://github.com/kubernetes/kubernetes/pull/121604>(WIP):
 
 1. A new node_e2e test to confirm image pull will be blocked if maxParallelImagePulls is reached.
 2. Verfiy behavior of image pull in parallel for same image using `imagePullPolicy:Always`.

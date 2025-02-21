@@ -16,6 +16,8 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+    - [Unit Tests](#unit-tests)
+    - [e2e Tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -28,6 +30,7 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+- [Drawbacks](#drawbacks)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Validating webhook](#validating-webhook)
@@ -38,27 +41,25 @@
 **ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
 of the targeted release**.
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations ([pull-kubernetes-csi-lib-volume-populator dashboard](https://testgrid.k8s.io/sig-storage-csi-other#pull-kubernetes-csi-lib-volume-populator), [pull-kubernetes-csi-volume-data-source-validator dashboard](https://testgrid.k8s.io/sig-storage-csi-other#pull-kubernetes-csi-volume-data-source-validator))
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -337,6 +338,18 @@ To test the `volume-data-source-validator`, we need to check the following cases
 - Creation of a PVC with a CRD `DataSourceRef` that's registered by a
   volume populator causes no events.
 
+#### Unit Tests
+
+- [controller tests](https://github.com/kubernetes-csi/lib-volume-populator/blob/master/populator-machinery/controller_test.go)
+- [util tests](https://github.com/kubernetes-csi/lib-volume-populator/blob/master/populator-machinery/util_test.go)
+- [metrics tests](https://github.com/kubernetes-csi/lib-volume-populator/blob/master/populator-machinery/metrics_test.go)
+
+#### e2e Tests
+
+- [provisioning.go Creating VolumePopulator CR datasource and Provision](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/testsuites/provisioning.go#L367)
+- [pull-kubernetes-csi-lib-volume-populator dashboard](https://testgrid.k8s.io/sig-storage-csi-other#pull-kubernetes-csi-lib-volume-populator)
+- [pull-kubernetes-csi-volume-data-source-validator dashboard](https://testgrid.k8s.io/sig-storage-csi-other#pull-kubernetes-csi-volume-data-source-validator)
+
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
@@ -357,7 +370,7 @@ To test the `volume-data-source-validator`, we need to check the following cases
 
 - Distributions including data populators as part of their distros (possibly
   a backup/restore implementation layered on top)
-- Allowing time for feedback
+- Feedback issues are addressed, please [GA Blocker list](https://github.com/kubernetes-csi/lib-volume-populator/issues?q=is%3Aissue+%22GA+Blocker%22)
 
 ### Upgrade / Downgrade Strategy
 
@@ -434,8 +447,6 @@ fields of API types, flags, etc.?**
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can an operator determine if the feature is in use by workloads?**
   Simply look at the data source field of the PVCs. Non-empty data sources with
   a Kind other than snapshot and PVC indicate this feature is in use. Also the
@@ -455,6 +466,14 @@ _This section must be completed when targeting beta graduation to a release._
   will supply population duration metrics called
   `volume_populator_operation_seconds` and number of operations and results
   including errors called `volume_populator_operation_count`.
+
+* **How can someone using this feature know that it is working for their instance?**
+  Look at the data source field of the PVCs. Non-empty data sources with
+  a Kind other than snapshot and PVC indicate this feature is in use. Also the
+  existence of any VolumePopulator.populator.storage.k8s.io CRs would indicate
+  that a populator is installed and could be used.
+  
+  Checking whether `AnyVolumeDataSource` FeatureGate has been set for the given component.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
@@ -489,7 +508,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
-  No
+  No.
 
 ### Dependencies
 
@@ -530,6 +549,11 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   The new data-source-validator controller will consist of a deployment with 1 or
   more replicas. It will watch PVCs and VolumePopulators and emit events on
   PVCs.
+
+* **Can enabling / using this feature result in resource exhaustion of some 
+node resources (PIDs, sockets, inodes, etc.)?**
+
+  No. 
 
 ### Troubleshooting
 
@@ -572,6 +596,12 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   sources of the PVCs that are having problems. Once the specific populator
   is determined, a populator-specific investigation will be needed, starting
   from looking at the logs for that populator.
+
+## Drawbacks
+
+  `DataSource` and `DataSourceRef` cannot be pointed to different resources.
+  While this is by design, it does not solve certain use case like restore volume 
+  from VolumeSnapshot, and then do volume population.
 
 ## Implementation History
 

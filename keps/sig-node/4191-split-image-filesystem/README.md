@@ -87,8 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
   - [User Deployment Options](#user-deployment-options)
     - [Current Deployment Options](#current-deployment-options)
-      - [Image File system and Node (Kubelet) FS same](#image-file-system-and-node-kubelet-fs-same)
-      - [Node FS and Image Filesystem separated](#node-fs-and-image-filesystem-separated)
+      - [Image File system (ImageFs) and NodeFs (kubelet) same](#image-file-system-imagefs-and-nodefs-kubelet-same)
+      - [NodeFs and Image Filesystem (ImageFs) separated](#nodefs-and-image-filesystem-imagefs-separated)
     - [New Deployment Options](#new-deployment-options)
       - [Node And Writeable Layer on same disk while Images stored on separate disk](#node-and-writeable-layer-on-same-disk-while-images-stored-on-separate-disk)
   - [Comment on Future Extensions](#comment-on-future-extensions)
@@ -104,11 +104,11 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+      - [End-to-End tests](#end-to-end-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha [Release the CRI API and Kubelet Changes]](#alpha-release-the-cri-api-and-kubelet-changes)
-    - [Alpha Part 2 [CRI-O, E2E Tests and CRITools]](#alpha-part-2-cri-o-e2e-tests-and-critools)
-    - [Alpha To Beta Promotion](#alpha-to-beta-promotion)
+    - [Alpha Milestone #1 [Release the CRI API and kubelet changes]](#alpha-milestone-1-release-the-cri-api-and-kubelet-changes)
+    - [Alpha Milestone #2 [CRI-O, E2E Tests and CRI tools]](#alpha-milestone-2-cri-o-e2e-tests-and-cri-tools)
+    - [Alpha To Beta Graduation](#alpha-to-beta-graduation)
     - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -122,7 +122,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Kubelet Disk Stats in CRI](#kubelet-disk-stats-in-cri)
+  - [kubelet Disk Stats in CRI](#kubelet-disk-stats-in-cri)
   - [Add container filesystem usage to image filesystem array](#add-container-filesystem-usage-to-image-filesystem-array)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -154,8 +154,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [] (R) Production readiness review completed
+- [] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -170,42 +170,42 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP is about enhancing Kubelet to be aware if a container runtime splits the image filesystem.  
+This KEP is about enhancing kubelet to be aware if a container runtime splits the image filesystem.  
 Aware in this case means that garbage collecting images, containers and reporting disk usage is all functional.
 
 ## Motivation
 
-Kubelet has two distinct filesystems: Node and Image. In typical deployments, users deploy Kubernetes where both the Node and Image filesystems are on the same disk. There are some requests to separate the storage into separate disks.  The most common request is to separate the writable layer from the read-only layer. Kubelet and Container data would be stored on the same disk while images would have their own disk.  This could be beneficial because images occupy a lot of disk space while the writeable layer is typically smaller.
+kubelet has two distinct filesystems: Node and Image. In typical deployments, users deploy Kubernetes where both the Node and Image filesystems are on the same disk. There are some requests to separate the storage into separate disks.  The most common request is to separate the writable layer from the read-only layer. kubelet and Container data would be stored on the same disk while images would have their own disk.  This could be beneficial because images occupy a lot of disk space while the writeable layer is typically smaller.
 
-Container IO can impact Kubelet and adding the ability for more disks could increase performance of Kubelet.
+Container IO can impact kubelet and adding the ability for more disks could increase performance of kubelet.
 
 However, it is not possible to separate the image layers and container writable layers on different disks.
 
 In the current implementation of separate disks, containers and images must be stored on the same disk.  So garbage collection, in case of node pressure (really image disk pressure) would GC images/containers on the image filesystem.
 
-If one separates writable layer (containers) from readable layer (images), then garbage collection and statistics must account for this separation.  Today this could potentially break Kubelet if the container runtime configures storage in this way.
+If one separates writable layer (containers) from readable layer (images), then garbage collection and statistics must account for this separation.  Today this could potentially break kubelet if the container runtime configures storage in this way.
 
 One downside of the separate disk is that pod data can be written in multiple locations.  The writeable layer of a container would go on the image filesystem and volume storage would go to the root fs.  There is another request to separate the root and the image filesystem to be writeable and read-only respective.  This means that pod data can be written on one disk while the other disk can be read-only.  Separting the writeable layer and the read-only layer will achieve this.
 
 ### Goals
 
-- Kubelet should still work if images/containers are separated into different disks.
-  - Support writable layer being on same disk as Kubelet
-  - Images can be on the separate filesystem.
+- kubelet should still work if images/containers are separated into different disks
+  - Support writable layer being on same disk as kubelet
+  - Images can be on the separate filesystem
 
 ### Possible Extensions in Post Alpha
 
-Kubelet, Images and Containers on all separate disks.
+kubelet, Images and Containers on all separate disks.
 
-This case is possible with this implementation as containerfs will be set up to read file statistics from a separate filesystem.  However, this is not in scope for Alpha.  
+This case is possible with this implementation as ContainerFS will be set up to read file statistics from a separate filesystem.  However, this is not in scope for Alpha.  
 If there is interest in this, this KEP could be extended to support this use case. Main areas to add would be testing.
 
 ### Non-Goals
 
-- Multiple nodes can not share the same filesystem.
-- Separating kubelet data into different filesystems.
+- Multiple nodes can not share the same filesystem
+- Separating kubelet data into different filesystems
 - Multiple image and/or container filesystems
-  - This KEP will start support for this but more work needs to be done to investigate CAdvisor/CRIStats/Eviction to support this.
+  - This KEP will start support for this but more work needs to be done to investigate CAdvisor/CRIStats/Eviction to support this
 
 ## Proposal
 
@@ -214,7 +214,7 @@ If there is interest in this, this KEP could be extended to support this use cas
 #### Story 1
 
 As a user, I would like to have my node configured so that I have a writeable filesystem and a readable filesystem.  
-Kubelet will write volume data and the container runtime will write writeable layers to the writeable filesystem while the container runtime will write the images to the read-only filesystem.
+kubelet will write volume data and the container runtime will write writeable layers to the writeable filesystem while the container runtime will write the images to the read-only filesystem.
 
 ### User Deployment Options
 
@@ -223,36 +223,36 @@ We will summarize the existing configurations that are possible today.
 
 #### Current Deployment Options
 
-##### Image File system and Node (Kubelet) FS same
+##### Image File system (ImageFs) and NodeFs (kubelet) same
 
 sda0: [writeable layer, emptyDir, logs, read-only layer, ephemeral storage]
 
-This is the default configuration for Kubernetes.  If container runtime is not configured in any special way, then NodeFS and ImageFS are assumed to be the same.
+This is the default configuration for Kubernetes.  If container runtime is not configured in any special way, then NodeFs and ImageFs are assumed to be the same.
 
-If the node only has a nodefs filesystem that meets eviction thresholds, the kubelet frees up disk space in the following order:
+If the node only has a NodeFs filesystem that meets eviction thresholds, the kubelet frees up disk space in the following order:
 
 - Garbage collect dead pods and containers
 - Delete unused images
 
 The way that pods are ranked for eviction also changes based on the filesystem.
 
-Kubelet sorts pods based on their total disk usage (local volumes + logs & writable layer of all containers)
+kubelet sorts pods based on their total disk usage (local volumes + logs & writable layer of all containers)
 
 [Node Pressure Eviction](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#reclaim-node-resources) lists the possible
 options for how to reclaim resources based on filesystem configuration.
 
 [Ephemeral-Storage](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#configurations-for-local-ephemeral-storage) explains how ephemeral-storage tracking works with different filesystem configurations.
 
-##### Node FS and Image Filesystem separated
+##### NodeFs and Image Filesystem (ImageFs) separated
 
 sda0: [emptyDir, logs, ephemeral storage]
 sda1: [writeable layer, read-only layer]
 
-If the node has a dedicated imagefs filesystem for container runtimes to use, the kubelet does the following:
+If the node has a dedicated ImageFs filesystem for container runtimes to use, the kubelet does the following:
 
 - If the node filesystem meets the eviction thresholds, the kubelet garbage collects dead pods and logs
-- If the imagefs filesystem meets the eviction thresholds, the kubelet deletes all unused images and containers.
-- If ImageFS has disk pressure we will mark node as unhealthy and not allow new pods to be admitted until image disk pressure is gone.
+- If the ImageFs filesystem meets the eviction thresholds, the kubelet deletes all unused images and containers
+- If ImageFs has disk pressure we will mark node as unhealthy and not allow new pods to be admitted until image disk pressure is gone
 
 In case of disk pressure on each filesystem, what is garbage collected/stored on the disk?
 
@@ -268,7 +268,7 @@ Image Filesystem:
 - Containers
 
 CAdvisor detects the different disks based on mountpoints.  So if a user mounts a separate disk to /var/lib/containers,
-Kubelet will think that the filesystem is split.
+kubelet will think that the filesystem is split.
 
 Users can write the writeable layer of a container and that would be stored on the image filesystem while data written in volumes can be written to the node filesystem.
 
@@ -276,11 +276,11 @@ Since this split case has two different filesystems that can have disk pressure,
 
 Node Pressure:
 
-- local volumes + logs of all containers
+- Local volumes + logs of all containers
 
 Image Pressure:
 
-- sorts pods based on the writeable layer usage of all containers
+- Sorts pods based on the writeable layer usage of all containers
 
 #### New Deployment Options
 
@@ -289,7 +289,7 @@ Image Pressure:
 sda0: [writable layer, emptyDir, logs, ephemeral storage]
 sda1: [read-only layer]
 
-A goal is to allow kubelet to have separate disks for read-only layer and everything else could be stored on the same disk as Kubelet.
+A goal is to allow kubelet to have separate disks for read-only layer and everything else could be stored on the same disk as kubelet.
 
 In case of disk pressure on each filesystem, what is garbage collected/stored on the disk?
 
@@ -313,7 +313,7 @@ So we want to comment on what work would be required to support these usecases.
 
 One extension can be multiple filesystems for images and containers.  
 The API allows for a list of filesystem usage per images and containers but there has been no work done to support
-this in the container runtimes or in Kubelet.
+this in the container runtimes or in kubelet.
 
 CAdvisor and Stats would need to be enhanced to allow for configurable amount of filesystems.  
 Currently, eviction manager is harded code to support a 1-to-1 relationship with a filesystem and a eviction signal.
@@ -325,12 +325,12 @@ b. Node and Images on same filesystem while Writeable layer on separate filesyst
 
 ### Risks and Mitigations
 
-By splitting the filesystem we allow more cases than what we currently support in Kubelet.
-To avoid bugs, we will validate on cases we don't currently support in Kubelet and return an error.
+By splitting the filesystem we allow more cases than what we currently support in kubelet.
+To avoid bugs, we will validate on cases we don't currently support in kubelet and return an error.
 
 The following cases will be validated and we will return an error if container runtime is set up for this:
 
-- More than 1 filesystem for images and containers.
+- More than one filesystem for images and containers
 
 We will validate if the CRI implementation is returning more than 1 filesystem and log a warning.
 
@@ -341,7 +341,7 @@ Once the disk is exceeds the limits set by `EvictionSoft` or `EvictionHard`, the
 Garbage collection of containers, images or pods will be kicked off (depending on which filesystem experiences disk pressure).  
 New workloads will not be accepted by that node until disk pressure resolves itself either by garbage collection removing enough or manually intervention.
 
-A mitigation for this is to initially support the case of the writeable layer being on the node filesystem (containerfs = nodefs), so we really are only monitoring two filesystems for pressure.
+A mitigation for this is to initially support the case of the writeable layer being on the node filesystem (ContainerFs same as NodeFs), so we really are only monitoring two filesystems for pressure.
 
 ## Design Details
 
@@ -349,7 +349,7 @@ A mitigation for this is to initially support the case of the writeable layer be
 
 We will switch to using `ImageFsInfo` but this will be guarded by a feature gate.
 
-CRI-O and Containerd return a single element in this case and Kubelet does not assume that there are multiple values in this array.  Regardless, we add an array to ImageFsInfoResponse.
+CRI-O and Containerd return a single element in this case and kubelet does not assume that there are multiple values in this array.  Regardless, we add an array to ImageFsInfoResponse.
 
 ```golang
 // ImageService defines the public APIs for managing images.
@@ -369,7 +369,7 @@ message ImageFsInfoResponse {
 }
 ```
 
-It is expected of the CRI implementation to return a unique identifier for images and containers so the Kubelet can ask CRI if the objects are stored on separate disks.
+It is expected of the CRI implementation to return a unique identifier for images and containers so the kubelet can ask CRI if the objects are stored on separate disks.
 In the dedicated disk for container runtime, images_filesystem and container_fileystem will be set to the same value.
 
 The CRI implementation can set this as needed.  The image and container filesystems are both arrays so this provides some extensibility in case these are stored on multiple disks.  
@@ -379,13 +379,13 @@ Container runtimes will need to implement ImageFsInfo
 - [CRI-O Implementation](https://github.com/cri-o/cri-o/blob/main/server/image_fs_info.go)
 - [Containerd implementation](https://github.com/containerd/containerd/blob/main/pkg/cri/server/imagefs_info.go)
 
-An Alpha->Beta goal would be to have an implementation of `crictl imagefsinfo` that can allow for more detailed reports of the image fs info.
+An Alpha to Beta graduation goal would be to have an implementation of `crictl imagefsinfo` that can allow for more detailed reports of the image fs info.
 
 See [PR](https://github.com/kannon92/cri-tools/pull/1) for an example.
 
 ### Stats Summary
 
-Stats Summary has a field called runtime and we will add a containerFs to the runtime field.
+Stats Summary has a field called runtime and we will add a ContainerFS to the runtime field.
 
 ```golang
 
@@ -397,7 +397,7 @@ type RuntimeStats struct {
 // +optional
 ImageFs *FsStats `json:"imageFs,omitempty"`
 + // Stats about the underlying filesystem where container's writeable layer is stored.
-+ // This filesystem could be the same as the primary (root) filesystem or the ImageFS.
++ // This filesystem could be the same as the primary (root) filesystem or the ImageFs.
 + // Usage here refers to the total number of bytes occupied by the writeable layer on the filesystem.
 + // +optional
 + ContainerFs *FsStats `json:"containerFs,omitempty"`
@@ -415,7 +415,7 @@ ImageFsStats(ctx context.Context) (*statsapi.FsStats, *statsapi.FsStats, error)
 }
 ```
 
-If we have a single image filesystem then ImageFs includes both writable and read-only layer.  In this case, `ImageFsStats` will return an identical object for ImageFs and ContainerFs.
+If we have a single image filesystem then ImageFs includes both writable and read-only layer.  In this case, `ImageFsStats` will return an identical object for ImageFS and ContainerFS.
 
 In a case where the container runtime does not return a container filesystem, we will assume that the image_filesystem=container_filesystem.
 This allows us kubelet to support container runtimes that have yet implemented the CRI implementation in `ImageFsInfo`.
@@ -458,7 +458,7 @@ No changes should be necessary in CAdvisor for this provider.
 ### Eviction Manager
 
 A new signal will be added to the eviction manager to reflect the filesystem for the writeable layer.  
-For the first release on this KEP, this will be either nodefs or imagefs.
+For the first release on this KEP, this will be either NodeFs or ImageFs.
 In separate disks, this could be a separate filesystem.
 
 ```golang
@@ -473,7 +473,7 @@ We do need to change the garbage collection based on the split filesystem case.
 
 (Split Filesystem) Writable and root plus ImageFs for images
 
-- NodeFs monitors ephemeral-storage, logs and writable layer.
+- NodeFs monitors ephemeral-storage, logs and writable layer
 - ImageFs monitors read-only
 
 Eviction manager decides the priority of eviction based on which filesystem is experencing pressure.
@@ -521,7 +521,7 @@ extending the production code to implement this enhancement.
 - (pkg/kubelet/server/stat): Sep 11th 2023 - 55
 
 This KEP will enhance coverage in the eviction manager by covering the case where `dedicatedImageFs` is true.  
-There is currently little test coverage when a separate imagefs is used.  [Issue-120061](https://github.com/kubernetes/kubernetes/issues/120061) has been created to help resolve this.
+There is currently little test coverage when a separate ImageFs is used.  [Issue-120061](https://github.com/kubernetes/kubernetes/issues/120061) has been created to help resolve this.
 
 We will also provide test cases for rolling back the changes in the eviction manager.
 
@@ -533,7 +533,7 @@ We will add test cases for `ImageStats` in case of positive and negative usage o
 
 Typically these type of tests are done with e2e tests.
 
-##### e2e tests
+##### End-to-End tests
 
 <!--
 This question should be filled when targeting a release.
@@ -556,49 +556,54 @@ However, there are a few complications with this goal.
 
 1 can be addressed by investigating the eviction tests and figure out the root cause of these failures.
 
-As part of this KEP, we should add testing around separate disks in upstream Kubernetes.  Since this is already a supported use case in Kubelet, there should be testing around this.
+As part of this KEP, we should add testing around separate disks in upstream Kubernetes.  Since this is already a supported use case in kubelet, there should be testing around this.
 
-Kubelet/CRI-O should be set up with configuration for a separate disk.  Eviction and Summary E2E tests should be added in the case of a separate disk.
+kubelet/CRI-O should be set up with configuration for a separate disk.  Eviction and Summary E2E tests should be added in the case of a separate disk.
 
 And tests for split image filesystem should be added.
 
 E2E Test Use Cases addition:
 
-- E2E tests for summary api with separate disk.
-  - Separate Disk - ImageFs reports separate disk from root when disk is mounted.
+- E2E tests for summary api with separate disk
+  - Separate Disk - ImageFs reports separate disk from root when disk is mounted
   - Split Disk - Writeable layer on Node, read-only layer on ImageFs
 - E2E tests for eviction api with separate disk
-  - Replicate existing disk pressure eviction e2e tests with disk.
+  - Replicate existing disk pressure eviction e2e tests with disk
+
+E2E tests for separate disk:
+
+- Presubmits - Added [separate ImageFs](https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgroupv2-imagefs-e2e-diskpressure)
+- Presubmits - Added [conformance test for ImageFs](https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagefs-e2e)
 
 ### Graduation Criteria
 
-#### Alpha [Release the CRI API and Kubelet Changes]
+#### Alpha Milestone #1 [Release the CRI API and kubelet changes]
 
 CRI API changes are composed in containerd and CRI-O so the CRI API must be released first.
 
-- Using `ImageFsInfo` is guarded with a feature gate.
-- Implementation for split image filesystem in Kubernetes.
-  - Eviction manager modifications in case of split filesystem.
+- Using `ImageFsInfo` is guarded with a feature gate
+- Implementation for split image filesystem in Kubernetes
+  - Eviction manager modifications in case of split filesystem
   - Summary and Stats Provider implementations
-- CRI API merged.
+- CRI API merged
 - Unit tests
 - E2E tests to cover separate image filesystem
-  - It is not possible to have e2e tests for split filesystem at this stage.
+  - It is not possible to have e2e tests for split filesystem at this stage
 
-#### Alpha Part 2 [CRI-O, E2E Tests and CRITools]
+#### Alpha Milestone #2 [CRI-O, E2E Tests and CRI tools]
 
 Shortly after this release and new CRI package, projects that consume the CRI API
 can be updated to use the new API features.
 
 - At least one CRI implementation supports split filesystem
 - E2E tests supporting the CRI implementation with split image filesystem
-- CRI-Tool changes for image fs
+- CRI tool changes for image fs
 
-#### Alpha To Beta Promotion
+#### Alpha To Beta Graduation
 
-- Gather feedback on other potential use cases.
-- Always set `KubeletSeparateDiskGC` to true so `ImageFsInfo` is used instead of `ImageStats` in all cases.
-- Always set `KubeletSeparateDiskGC` to true so that eviction manager will detect split file system and handle it correctly.
+- Gather feedback on other potential use cases
+- Always set `KubeletSeparateDiskGC` to true so `ImageFsInfo` is used instead of `ImageStats` in all cases
+- Always set `KubeletSeparateDiskGC` to true so that eviction manager will detect split file system and handle it correctly
 
 #### Stable
 
@@ -620,7 +625,7 @@ We will guard against a container runtime not returing a container filesystem in
 In this case we would assume that the image filesystem and the container filesystem are identical.
 
 Since older versions of the container runtimes do not have the ability to split the filesystem, we don't foresee much issue with this.
-Kubelet will not behave differently if the container and image filesystems are identical.
+kubelet will not behave differently if the container and image filesystems are identical.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -636,7 +641,7 @@ enhancement:
 
 ### Version Skew Strategy
 
-The initial release of this will be the CRI API and changes to Kubelet.  
+The initial release of this will be the CRI API and changes to kubelet.  
 
 We do not assume that container runtimes must implement this API so we will assume a single filesystem for images.
 
@@ -692,20 +697,20 @@ We will include a feature gate for best practices to guard against our code.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: KubeletSeparateDiskGC
-  - Components depending on the feature gate: Kubelet
+  - Components depending on the feature gate: kubelet
 - [x] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
-    It depends.  If the control plan is run on Kubelet, then yes.  If the control plane is not run on Kubelet, then no.
+    It depends.  If the control plan is run on kubelet, then yes.  If the control plane is not run on kubelet, then no
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? Yes. One needs to restart the container runtime on the node to turn on support for split image filesystem.
+    of a node? Yes. One needs to restart the container runtime on the node to turn on support for split image filesystem
 
 Our recommendation to roll this change back:
 
 1. Configure your container runtime to not split the image filesystem.
 2. Restart the container runtime.
-3. Restart Kubelet with feature flag off.
+3. Restart kubelet with feature flag off.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -715,14 +720,14 @@ The eviction manager will monitor the container filesystem if the image filesyst
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-There are two possibilities for this feature.
+There are two possibilities for this feature:
 
 1. Container runtime is configured for split disk
-2. Container runtime is not configured for split disk.
+2. Container runtime is not configured for split disk
 
 If the feature toggle is disabled in 1, then turning off the feature will tell eviction manager that the containerfs=imagefs.  
 The container garbage collection will try to delete the writeable layer on the image filesystem which may not be there.
-Kubelet will still run but there could be a possibility that the container filesystem will grow unchecked and eventually cause disk pressure.
+kubelet will still run but there could be a possibility that the container filesystem will grow unchecked and eventually cause disk pressure.
 
 In case 2, rolling back this feature will be possible because we will use `ImageStats` to compute the filesystem usage.
 Since the container runtime is configured to not split the disk, nothing would really be changed in this case.
@@ -827,7 +832,7 @@ question.
 
 - [x] Metrics
   - Metric name: node_collector_evictions_total
-  - Components exposing the metric: Kubelet
+  - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -857,11 +862,11 @@ No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-N/A.
+N/A
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-N/A.
+N/A
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -872,7 +877,7 @@ There is an additional field added to the CRI api for `ImageFsInfoResponse`.
   - Estimated amount of new objects: 1 element in the array
 - API type: ContainerFilesystem in Summary Stats
   - Estimated increase in size: 24 bytes plus a variable length string for the mount point
-  - Estimated amount of new objects: 1 ContainerFilesystem for Summary Stats.
+  - Estimated amount of new objects: 1 ContainerFilesystem for Summary Stats
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -884,11 +889,11 @@ Yes. We are adding a way to split the image filesystem so it will be possible fo
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Yes.  We are adding a way to split the image filesystem so it will be possible for inodes/disk space to be used.
+Yes. We are adding a way to split the image filesystem so it will be possible for inodes/disk space to be used.
 
-We will add a new eviction api for containerfs to handle a case if the container filesystem has disk pressure.  
+We will add a new eviction api for ContainerFS to handle a case if the container filesystem has disk pressure.  
 
-The split disk means that we will need to monitor image disk size on the imagefs and the writeable layer on the rootfs.
+The split disk means that we will need to monitor image disk size on the ImageFs and the writeable layer on the rootfs.
 
 ### Troubleshooting
 
@@ -905,7 +910,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-This feature does not interact with the API server and/or etcd as it is isolated to Kubelet.
+This feature does not interact with the API server and/or etcd as it is isolated to kubelet.
 
 ###### What are other known failure modes?
 
@@ -922,19 +927,68 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Pods do not start correctly
+    - Detection: The user notices that the desired pods are not starting correctly, and their status indicates an error or a failure related to image pull failures, which can then be traced to the Split Image Filesystem feature.
+    - Mitigations: The Split Image Filesystem feature can be disabled as a mitigation step. However, it is not without side effects, where any container images downloaded before would have to be downloaded again. Thus, further investigation would be recommended before a decision to disable this feature is made. The user should also ensure that if the feature is disabled, enough disk space will be available at the location where the ContainerFs filesystem is currently pointed against. A restart of kubelet will be required if this feature is to be disabled.
+    - Diagnostics: Kubernetes cluster events and specific pods statutes report image pull failures that are related to problems with one of the filesystem access permissions, storage volumes issues, mount points issues, etc., where none of the reported issues are related to disk space utilisation, which would otherwise trigger pods eviction. Reviewing CRI and kubelet service logs can help to determine the root cause. Additionally, reviewing operating system logs can be helpful and can be used to correlate events and any errors found in the service logs.
+    - Testing: A set of end-to-end tests aims to cover this scenario.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+The operator should ensure that:
+
+- The underlying node is currently not under high load due to high CPU utilisation, memory pressure or storage volume latency (with the focus on I/O wait times)
+- There is sufficient disk space available on the filesystem or volume that is used for the image filesystem to use to store data
+- There are a sufficient number of inodes free and available, especially if the filesystem does not support a dynamic inodes allocation, on the provisioned filesystem where the image filesystem will store data
+- The volume, if backed by a local block device or network-attached storage, has been made available to the image filesystem to be used to store data
+- The CRI, container runtimes and kubelet have access to the location on the filesystem or the volume (block device) where the image filesystem will be storing data
+- The system user, if either CRI, container runtimes or kubelet have been configured to use a system user other than the privileged one such as root, has access to the filesystem location or volume where the image filesystem will store data
+- The node components, such as the CRI, container runtimes and kubelet, are up and running, and service logs are free from errors that might otherwise impact or degrade any of the components mentioned earlier
+- The CRI, container runtimes and kubelet service logs are free from error reports about the configured ContainerFs, ImageFs, and otherwise configured filesystem location or storage volumes
+
+Additionally, the operator should also confirm that the necessary CRI and kubelet configuration has been deployed
+correctly and points to a correct path to a filesystem location where the image filesystem will be storing data.
+
+While troubleshooting issues potentially related to the Split Image Filesystem feature, it's best to focus on
+the following areas:
+
+- Current CPU and memory utilisation on the underlying node
+- Storage volumes, disk space availability, and sufficient inodes capacity
+- I/O wait times, read and write queue depths, and latency for the storage volumes
+- Any expected mount points, whether bind mounts or otherwise
+- Access permission issues
+- SELinux, AppArmor, or POSIX ACLs set up
+- The kernel message buffer (dmesg)
+- Operating system logs
+- Specific services logs, such as CRI, container runtimes and kubelet
+- Kubernetes cluster events with a focus on evictions of pods from affected nodes
+- Any relevant pods or workloads statuses
+- Kubernetes cluster health with a focus on the Control Plane and any affected nodes
+- Monitoring and alerting system or services, with a focus on recent and historic events (past 24 hours or so)
+
+If the Kubernetes cluster sports an observability solution, it would be useful to look at the collected usage
+metrics so that any problems found could potentially be correlated to events and usage data from the last 24
+hours or so.
+
+For cloud-based deployments, it would be prudent to interrogate any available monitoring dashboards for the node
+and any specific storage volume and to ensure that there is enough IOPS capacity provisioned and available, that
+the correct storage type has been provisioned, and that metrics such as burst capacity for IOPS and throughput
+aren't negatively impacted, should the storage volume support such features.
 
 ## Implementation History
 
 - Initial Draft (September 12th 2023)
+- KEP Merged (October 5th 2023)
+- Alpha Milestone #1 PRs merged (October 31st 2023)
+- Alpha Milestone #2 PRs merged (December 22nd 2023)
 
 ## Drawbacks
 
-This could increase the amount of ways to configure Kubelet to work and provide more difficulty in trouble shooting.
+This could increase the amount of ways to configure kubelet to work and provide more difficulty in trouble shooting.
 
 ## Alternatives
 
-### Kubelet Disk Stats in CRI
+### kubelet Disk Stats in CRI
 
 In this case, we considered bypassing CAdvisor and have CRI return node usage information entirely.  This would require container runtimes to report disk usage/total stats in the ImageFsInfo endpoint.
 

@@ -860,6 +860,10 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+2022-09-12: Initial KEP merged
+2022-10-10: Alpha implemention merged into kubernetes/kubernetes
+2025-01-31: Feature has been withdrawn and will be removed from the code
+
 ## Drawbacks
 
 <!--

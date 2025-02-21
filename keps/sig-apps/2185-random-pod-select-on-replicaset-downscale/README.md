@@ -208,8 +208,8 @@ Beta (v1.22):
 - Enable LogarithmicScaleDown feature gate by default
 - Enable `sorting_deletion_age_ratio` metric
 
-Stable (v1.23):
-- Remove LogarithmicScaleDown feature gate
+Stable (v1.31):
+- Lock LogarithmicScaleDown feature gate to true
 - Make this behavior standard
 
 ### Upgrade / Downgrade Strategy
@@ -230,9 +230,7 @@ behavior reduces the risk that it is an expectation from other components.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
-
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: LogarithmicScaleDown
     - Components depending on the feature gate: kube-controller-manager
@@ -243,53 +241,58 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node?
 
-* **Does enabling the feature change any default behavior?**
+###### Does enabling the feature change any default behavior?
   Yes, this changes the default assumption that the youngest pod in a replica set 
   will always be the one evicted. However, it still groups pods by their age and picks 
   from the youngest group.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   Yes. Existing workloads should see no change when disabling this feature.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
   Assumptions that the newest pod will be deleted first may break.
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
   Tests for feature disablement shouldn't be necessary, as this is already an assumed 
   (but not documented) controller behavior.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How can a rollout fail? Can it impact already running workloads?**
+###### How can a rollout or rollback fail? Can it impact already running workloads?
   This should not affect running workloads, though there is the possibility that the logic 
   panics which would cause kube-controller-manager to crash
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
   Increased pod deletions could indicate runaway/hot-loop failures in the scaledown logic.
   Availability of applications may also be affected. Though the intent of this is to provide 
   better available through more distributed victim selection, in cases of desired binpacking 
   pods may remain running on undesired nodes.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  This will be manually tested before the graduation to beta
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+  This is purely in-memory change for the controller, so upgrade/downgrade doesn't really change anything.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
   No
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
+  The feature is global, so it's always going to be used on any downscale.
 
-* **How can an operator determine if the feature is in use by workloads?**
-  The scaledown behavior of all replicasets will be affected by this featuregate being 
-  enabled, so somehow monitoring them will be necessary to determine it
+###### How can someone using this feature know that it is working for their instance?
+  - [ ] Events
+    - Event Reason:
+  - [ ] API .status
+    - Condition name:
+    - Other field:
+  - [x] Other (treat as last resort)
+    - Details:
+      A ReplicaSet with two ready pods whose Pod Cost annotation is not set, 
+      if the logarithmic values of the pod ready times are identical, 
+      the pod with the smaller UID will be downscaled first rather than 
+      the latest ready one
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
   - [x] Metrics
     - Metric name: sorting_deletion_age_ratio
     - [Optional] Aggregation method:
@@ -302,71 +305,52 @@ algorithm falls back to age. (Pod age is the final criteria in the sorting algor
 want to measure this ratio for deletions which don't use this feature, as those may validly fall 
 outside the desired range).
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
   There should be no values `>2` in the above metric when the Pod Cost annotation is unset 
   (see https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/2255-pod-cost) and 
   the pod's deletion was based on a timestamp comparison (rather than, for example, pod state).
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+  No, we didn't find any other gaps that could be covered by metrics.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
+###### Does this feature depend on any specific services running in the cluster?
   No, it is part of the controller-manager
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
-
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls?
   No
 
-* **Will enabling / using this feature result in introducing new API types?**
+###### Will enabling / using this feature result in introducing new API types?
   No
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+###### Will enabling / using this feature result in any new calls to the cloud provider?
   No
 
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
   No
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
   No
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   No, perhaps minimal increase in calculating the buckets for pod age
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+  No
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-_This section must be completed when targeting beta graduation to a release._
-
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
   N/a - this is not a feature of running workloads. The main controller will not work and 
   be unable to scale up or down if API or etcd are unavailable.
 
-* **What are other known failure modes?**
+###### What are other known failure modes?
 n/a
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
 n/a
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
@@ -376,6 +360,7 @@ n/a
 
 - 2021-01-06: Initial KEP submitted
 - 2021-05-07: Updated KEP for graduation to beta
+- 2024-05-21：Updated KEP for graduation to GA
 
 ## Drawbacks
 

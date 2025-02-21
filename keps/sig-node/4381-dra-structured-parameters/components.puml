@@ -1,0 +1,52 @@
+@startuml
+!theme reddress-lightblue
+skinparam componentStyle rectangle
+skinparam linetype ortho
+' left to right direction
+
+cloud "DRA driver" as driver {
+  component "kubelet plugin" as driverplugin
+}
+
+component Kubernetes {
+  component apiserver {
+    component namespaced {
+      file ResourceClaimTemplate
+      file Pod
+      file ResourceClaim
+     }
+     component "cluster-scoped" as clusterscoped {
+      file ResourceSlice
+      file DeviceClass
+     }
+  }
+  component scheduler {
+    component "resource plugin" as k8sresourceplugin
+  }
+  component "controller-manager" as controllermanager {
+    component "resource claim controller" as k8sresourceclaimcontroller
+  }
+  component kubelet {
+    component "plugin manager" as pluginmanager
+    component "resource manager" as resourcemanager
+  }
+}
+
+ResourceClaimTemplate <. Pod
+Pod <. ResourceClaim
+ResourceClaim .> DeviceClass
+
+Pod -u-> k8sresourceclaimcontroller
+ResourceClaimTemplate -u-> k8sresourceclaimcontroller
+ResourceClaim <-u- k8sresourceclaimcontroller
+
+Pod <--> kubelet
+Pod <--> scheduler
+ResourceClaim <--> k8sresourceplugin
+ResourceClaim --> driverplugin
+
+resourcemanager -[dotted,thickness=3]> driverplugin: gRPC
+driverplugin -> ResourceSlice
+ResourceSlice-> k8sresourceplugin
+pluginmanager <-[dotted,thickness=3]-> driverplugin
+@enduml

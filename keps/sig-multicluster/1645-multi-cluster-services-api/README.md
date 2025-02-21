@@ -107,6 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Port](#service-port)
     - [Headlessness](#headlessness)
     - [Session Affinity](#session-affinity)
+    - [Labels and Annotations](#labels-and-annotations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -118,6 +119,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
   - [Export services via label selector](#export-services-via-label-selector)
   - [Export via annotation](#export-via-annotation)
+  - [Other conflict resolution algorithms](#other-conflict-resolution-algorithms)
+  - [Exporting labels/annotations from the Service/ServiceExport objects](#exporting-labelsannotations-from-the-serviceserviceexport-objects)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -412,7 +415,17 @@ type ServiceExport struct {
         // +optional
         metav1.ObjectMeta `json:"metadata,omitempty"`
         // +optional
+        Spec ServiceExportSpec `json:"spec,omitempty"`
+        // +optional
         Status ServiceExportStatus `json:"status,omitempty"`
+}
+
+// ServiceExportSpec describes an exported service and extra exported information
+type ServiceExportSpec struct {
+        // +optional
+        ExportedLabels map[string]string `json:"exportedLabels"`
+        // +optional
+        ExportedAnnotations map[string]string `json:"exportedAnnotations"`
 }
 
 // ServiceExportStatus contains the current status of an export.
@@ -496,9 +509,13 @@ single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
 only if they are instances of the same service.
 
-All information about the service, including ports, backends and topology, will
-continue to be stored in the `Service` objects, which are each name mapped to a
-`ServiceExport`.
+Most information about the service, including ports, backends, topology and
+session affinity, will continue to be stored in the `Service` objects, which
+are each name mapped to a `ServiceExport`. This does not apply for labels and
+annotations which are stored in `ServiceExport` directly in `spec.exportedLabels`
+and `spec.exportedAnnotations`. Exporting labels and annotations is optionally
+supported by MCS-API implementations. If supported, annotations or labels must
+not be exported from the `metadata` of the `Service` or `ServiceExport` resources.
 
 Deleting a `ServiceExport` will stop exporting the name-mapped `Service`.
 
@@ -882,8 +899,9 @@ clusterset, associated with the derived `ServiceImport`. One or more
 `EndpointSlice` containing only endpoints from a single source cluster. These
 `EndpointSlice` objects will be marked as managed by the clusterset service
 controller, so that the endpoint slice controller doesn’t delete them.
-`EndpointSlices` will have an owner reference to their associated
-`ServiceImport`.
+
+When a service is un-exported, the associated EndpointSlices will be deleted.
+The specific mechanism by which they are deleted is an implementation detail.
 
 Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
 given `EndpointSlice` will reference its `ServiceImport` using the label
@@ -994,10 +1012,16 @@ The conflict will be resolved by assigning precedence based on each
 A derived service will be accessible with the clusterset IP at the ports
 dictated by child services. If the external properties of service ports for a
 set of exported services don’t match, the clusterset service will expose the
-union of service ports declared on its constituent services. Should a port name
-be used for multiple non-identical (`port`, `protocol`, `appProtocol`) service
-ports by different constituent services, the conflict resolution policy will
-determine which values are used by the derived service.
+union of service ports declared on its constituent services.
+
+Like regular services, the resulting ports must respect two rules:
+- Have no duplicated names (including unnamed/empty name)
+- Two ports must not have the same protocol and port number
+
+As a result, MCS-API implementations should merge ports from constituent
+services first based on port name then by the protocol and port number pair.
+The conflict resolution policy will determine which of the duplicated ports
+are used by the ServiceImport.
 
 #### Headlessness
 
@@ -1010,6 +1034,13 @@ policy.
 Session affinity affects a service as a whole for a given consumer. The derived
 service's session affinity will be decided according to the conflict resolution
 policy.
+
+#### Labels and Annotations
+
+If supported, exporting labels and annotations would affect a `Service` as a whole
+for a given consumer. The derived service's labels and annotations will be decided
+according to the conflict resolution if the set of name/value pairs are not identical
+between the constituent clusters.
 
 ### Test Plan
 
@@ -1227,7 +1258,7 @@ retain the flexibility of selectors.
 
 ### Export via annotation
 
-`ServiceExport` as described has no spec and seems like it could just be
+`ServiceExport` initially had no spec and seemed like it could just be
 replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
 service is found with the annotation, it would be considered marked for export
 to the clusterset. The controller would then create `EndpointSlices` and an
@@ -1239,6 +1270,47 @@ but requiring changes to `Service` makes this a much more invasive proposal to
 achieve the same result. As the use of a multi-cluster service implementation
 would be an optional addon, it doesn't warrant a change to such a fundamental
 resource.
+
+### Other conflict resolution algorithms
+
+When a service has a ServiceExport and a ServiceImport, we could have taken the
+approach of favoring a "local truth" by giving a higher precedence to the locally
+exported Service in the conflict resolution algorithm. This alternative
+approach was not adopted, as in this KEP we favored global consistency across
+the ClusterSet.
+
+The conflict resolutions algorithm could also have been based on majority
+instead of ServiceExport oldness. However, with this approach, we would have
+to consider a tie breaking factor that could have also been based on age. This
+would complicate the implementation of MCS-API and, most importantly, might be
+more confusing for users. Having just one simple deciding factor based on
+ServiceExport oldness makes resolving conflicts straightforward, and this
+alternative conflict resolution algorithm could hinder this ease of use.
+
+### Exporting labels/annotations from the Service/ServiceExport objects
+
+`Service` and `ServiceExport` have labels and annotations which could be used during
+export and propagated to the `ServiceImport`. However various tools such as kubectl or
+ArgoCD add some labels and annotations which would then need to be actively
+filtered to avoid any conflict. Filtering those labels and annotations is not
+something easy and we chose to avoid this problem entirely by not using the metadata
+object and adding dedicated fields in the spec of the `ServiceExport` resource.
+
+Also if we were using the labels and annotations from the metadata of either the
+`ServiceExport` or `Service` resources, it may be more confusing for users as it
+would be the only fields present in both resources. For instance, should an
+implementation merge the labels/annotations from both objects? Should it favor one?
+Should it takes only from the `Service` object? With dedicated fields for labels
+and annotations in the spec of the `ServiceExport` resource, it may becomes more
+straightforward that each resource have their own labels and annotations in their
+metadata and that the exported labels and annotations are from the dedicated
+fields in the `ServiceExport` spec.
+
+We also favored dedicated fields on the `ServiceExport` resource to allow for better
+flexibility, as it will allow to export labels and annotations fully decorrelated
+from the `Service` and `ServiceExport` metadata. More flexibility could also be
+achieved with CEL expression on the `ServiceExport` at the cost of greater
+complexity (managing CEL expressions on potentially many `ServiceExport` across clusters).
 
 ## Infrastructure Needed
 <!--

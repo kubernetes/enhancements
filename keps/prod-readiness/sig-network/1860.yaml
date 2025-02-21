@@ -4,3 +4,7 @@
 kep-number: 1860
 alpha:
   approver: "@wojtek-t"
+beta:
+  approver: "@wojtek-t" # temptative
+stable:
+  approver: "@wojtek-t"

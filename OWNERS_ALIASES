@@ -3,6 +3,7 @@ aliases:
     - deads2k
     - fedebongio
     - jpbetz
+    - sttts
   sig-apps-leads:
     - janetkuo
     - kow3ns
@@ -19,18 +20,16 @@ aliases:
     - ritazh
   sig-autoscaling-leads:
     - gjtempleton
-    - mwielgus
+    - maciekpytel
   sig-cli-leads:
-    - KnVerey
+    - ardaguclu
     - eddiezane
-    - natasha41575
+    - mpuckett159
     - soltysh
   sig-cloud-provider-leads:
-    - andrewsykim
     - bridgetkromhout
     - cheftako
     - elmiko
-    - nckturner
   sig-cluster-lifecycle-leads:
     - CecileRobertMichon
     - fabriziopandini
@@ -44,12 +43,11 @@ aliases:
     - palnabarun
   sig-docs-leads:
     - divya-mohan0209
-    - kbhawkey
+    - katcosgrove
     - natalisucks
-    - onlydole
     - reylejano
-    - sftim
     - tengqm
+    - salaxander
   sig-etcd-leads:
     - ahrtr
     - jmhbnz
@@ -58,16 +56,18 @@ aliases:
   sig-instrumentation-leads:
     - dashpole
     - dgrisonnet
-    - ehashman
     - logicalhan
+    - rexagod
+    - richabanker
   sig-k8s-infra-leads:
     - BenTheElder
     - ameukam
     - dims
     - upodroid
+    - xmudrii
   sig-multicluster-leads:
     - jeremyot
-    - pmorie
+    - skitt
   sig-network-leads:
     - aojea
     - danwinship
@@ -79,6 +79,7 @@ aliases:
     - dchen1107
     - derekwaynecarr
     - mrunalp
+    - haircommander
   sig-release-leads:
     - Verolop
     - cpanato
@@ -125,7 +126,7 @@ aliases:
     - apelisse
     - kwiesmueller
   wg-batch-leads:
-    - alculquicondor
+    - kannon92
     - mwielgus
     - soltysh
     - swatisehgal
@@ -174,31 +175,28 @@ aliases:
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
   enhancements-reviewers:
     - annajung
     - jeremyrickard
     - johnbelamaric
     - kikisdeliveryservice
-    - mrbobbytables
     - palnabarun
   kep-tools-approvers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
-    - mrbobbytables
     - palnabarun
   prod-readiness-approvers:
-    - johnbelamaric
     - deads2k
-    - wojtek-t
+    - johnbelamaric
     - jpbetz
+    - soltysh
+    - wojtek-t
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
@@ -221,4 +219,8 @@ aliases:
   provider-vmware:
     - cantbewong
     - frapposelli
+  sig-node-tech-leads:
+    - dchen1107
+    - derekwaynecarr
+    - mrunalp
 ## END CUSTOM CONTENT

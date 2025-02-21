@@ -6,7 +6,7 @@ owning-sig: sig-storage
 participating-sigs:
 creation-date: 2022-01-23
 last-updated: 2021-01-23
-status: implementable
+status: implemented
 reviewers:
   - "@msau42"
   - "gnufied"

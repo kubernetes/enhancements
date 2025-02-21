@@ -9,6 +9,12 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Following sections will be added](#following-sections-will-be-added)
+  - [Following fields will be moved (without any change in name, data-type and default values)](#following-fields-will-be-moved-without-any-change-in-name-data-type-and-default-values)
+  - [Following fields will be changed](#following-fields-will-be-changed)
+  - [Following fields will be added](#following-fields-will-be-added)
+  - [Following fields will have different default values](#following-fields-will-have-different-default-values)
+  - [Following fields will be dropped](#following-fields-will-be-dropped)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -34,10 +40,10 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -71,7 +77,7 @@ This resulted in a configuration format, that had various different options grou
 - Backend agnostic options are marked as backed specific options (eg. syncPeriod,  minSyncPeriod).
 - Options specific to a backend are used by other backends (eg. masqueradeBit and masqueradeAll).
 
-[kubernetes/issues/117909](https://github.com/kubernetes/kubernetes/issues/117909) captures all the mis configurations in details.
+[kubernetes/issues/117909](https://github.com/kubernetes/kubernetes/issues/117909) captures all the misconfigurations in details.
 
 Clearly, this made the configuration both hard to use and to maintain. Therefore, a plan to restructure and stabilize the config format is needed.
 
@@ -127,6 +133,53 @@ The mitigations to those risks:
 
 ## Design Details
 
+### Following sections will be added
+| Field   | Comments                                            |
+|---------|-----------------------------------------------------|
+| Linux   | new section for linux (platform-specific) options   |
+| Windows | new section for windows (platform-specific) options |
+
+### Following fields will be moved (without any change in name, data-type and default values)
+| v1alpha1               | v1alpha2            | Comments                                                         |
+|------------------------|---------------------|------------------------------------------------------------------|
+| Conntrack              | Linux.Conntrack     | moved from root(generic) to linux (platform-specific) section    |
+| OOMScoreAdj            | Linux.OOMScoreAdj   | moved from root(generic) to linux (platform-specific) section    |
+| IPTables.MasqueradeAll | Linux.MasqueradeAll | moved from iptables (backend-specific) to root (generic) section |
+| NFTables.MasqueradeAll | Linux.MasqueradeAll | moved from nftables (backend-specific) to root (generic) section |
+| IPTables.SyncPeriod    | SyncPeriod          | moved from iptables (backend-specific) to root (generic) section |
+| NFTables.SyncPeriod    | SyncPeriod          | moved from nftables (backend-specific) to root (generic) section |
+| IPVS.SyncPeriod        | SyncPeriod          | moved from ipvs (backend-specific) to to root (generic) section  |
+| IPTables.MinSyncPeriod | MinSyncPeriod       | moved from iptables (backend-specific) to root (generic) section |
+| NFTables.MinSyncPeriod | MinSyncPeriod       | moved from nftables (backend-specific) to root (generic) section |
+| IPVS.MinSyncPeriod     | MinSyncPeriod       | moved from ipvs (backend-specific) to root (generic) section     |
+
+### Following fields will be changed
+| v1alpha1           | v1alpha2                 | DataType     | Comments                                                                                                       |
+|--------------------|--------------------------|--------------|----------------------------------------------------------------------------------------------------------------|
+| ClusterCIDR        | DetectLocal.ClusterCIDRs | list[string] | list of CIDR ranges for detecting local traffic                                                                |
+
+### Following fields will be added
+| Field                | DataType         | Default Value | Comments                                                                                                 |
+|----------------------|------------------|---------------|----------------------------------------------------------------------------------------------------------|
+| IPVS.MasqueradeBit   | integer (32-bit) | 14            | IPVS will use this field instead of IPTables.MasqueradeBit                                               |
+| Windows.RunAsService | boolean          | false         | new field for existing --windows-service command line flag                                               |
+| ConfigHardFail       | boolean          | true          | if set to true, kube-proxy will exit rather than just warning on config errors                           |
+| NodeIPOverride       | list[string]     |               | list of primary node IPs                                                                                 |
+| IPFamilyPolicy       | string           |               | controls nodeIP(s) detection, allowed values: [`SingleStack` \| `PreferDualStack` \| `RequireDualStack`] |
+
+### Following fields will have different default values
+| Field                       | v1alpha1 (default) | v1alpha2 (default) | 
+|-----------------------------|--------------------|--------------------|
+| IPTables.LocalhostNodePorts | true               | false              |
+| BindAddressHardFail         | false              | true               |
+
+
+### Following fields will be dropped
+| Key          | Comments                                 |
+|--------------|------------------------------------------|
+| PortRange    | dropped as no longer used by kube-proxy  |
+| BindAddress  | dropped in favor of NodeIPOverride       |
+
 
 ### Test Plan
 
@@ -137,11 +190,17 @@ to implement this enhancement.
 ##### Prerequisite testing updates
 
 
-##### Unit tests
-
+##### Unit tests 
+There will addition of new tests and modification of existing ones in the following packages:
+- `k8s.io/kubernetes/cmd/kubeadm/app/componentconfigs`: `2024-01-21` - `76%`
+- `k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy`: `2024-01-21` - `78%`
+- `k8s.io/kubernetes/cmd/kubeadm/app/util/config`: `2024-01-21` - `70.5%`
+- `k8s.io/kubernetes/cmd/kubeadm/app/util/config/strict`: `2024-01-21` - `100%`
+- `k8s.io/kubernetes/cmd/kube-proxy/app`: `2024-01-21` - `43.6%`
+- `k8s.io/kubernetes/pkg/proxy/apis/config/scheme`: `2024-01-21` - `100%`
+- `k8s.io/kubernetes/pkg/proxy/apis/config/validation`: `2024-01-21` - `84.2%`
 
 ##### Integration tests
-
 
 ##### e2e tests
 
@@ -156,9 +215,19 @@ The config should be considered graduated to beta if it:
 
 ### Upgrade / Downgrade Strategy
 
+Users are able to use the `v1alpha1` or `v1alpha2` API. Since they only affect the 
+configuration of the proxy, there is no impact to running workloads.
+
+The existing flags `--config` and `--write-config-to` can be used to convert any existing
+v1alpha1 to v1alpha2 kube-proxy configuration. `--config` can consume and decode any
+supported version, `--write-config-to` will always write using latest version.
+```bash
+/usr/local/bin/kube-proxy --config old-v1alpha1.yaml --write-config-to new-v1alpha2.yaml
+```
 
 ### Version Skew Strategy
 
+N/A
 
 ## Production Readiness Review Questionnaire
 
@@ -168,80 +237,65 @@ The config should be considered graduated to beta if it:
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [x] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+Operators can use the config API via --config command line flag for kube-proxy.
+To disable, operators can remove --config flag and use other command line flags
+to configure the proxy.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes, by removing --config command line flag for kube-proxy.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+N/A
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+The e2e framework does not currently support changing configuration files.
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+There are intensive unit tests for all the API versions.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+A malformed configuration will cause the proxy to fail to start. Running
+workloads are not affected.
+
 ###### What specific metrics should inform a rollback?
+
+- `sync_proxy_rules_duration_seconds` being empty or fairly high.
+- Spike in any of the following metrics:
+  - `network_programming_duration_seconds`
+  - `sync_proxy_rules_endpoint_changes_pending`
+  - `sync_proxy_rules_service_changes_pending`
+- A spike in difference of `sync_proxy_rules_last_queued_timestamp_seconds` and `sync_proxy_rules_last_timestamp_seconds`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+N/A
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No. 
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+N/A
+
 ###### How can someone using this feature know that it is working for their instance?
 
+N/A
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -271,8 +325,7 @@ No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes.
-[WIP]
+Yes, `v1alpha2` will be introduced for kube-proxy.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -280,8 +333,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes.
-[WIP]
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -300,19 +352,27 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A
 
 ###### What are other known failure modes?
 
+None. 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+N/A
 
 ## Implementation History
-
+- 2019-09-20: KEP introduced with motivation.
+- 2023-11-17: KEP for v1alpha2 configuration sent for review, including proposal,
+  test plan, and PRR questionnaire.
 
 ## Drawbacks
 
+N/A
+
 ## Alternatives
 
-## Infrastructure Needed (Optional)
+N/A
 
+## Infrastructure Needed (Optional)

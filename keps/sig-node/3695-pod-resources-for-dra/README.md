@@ -61,17 +61,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-We propose an enhancement to the PodResources API to include resources allocated by [Dynamic Resource Allocation (DRA)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation). We also propose to extend the API to be more friendly for consumption by CNI meta-plugins.
+We propose an enhancement to the PodResources API to include resources allocated by [Dynamic Resource Allocation (DRA)](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3063-dynamic-resource-allocation). 
 This KEP extends [2043-pod-resource-concrete-assigments](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2043-pod-resource-concrete-assigments) and [2403-pod-resources-allocatable-resources](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2403-pod-resources-allocatable-resources).
 
 ## Motivation
 
-One of the primary motivations for this KEP is to extend the PodResources API to allow node monitoring agents to access information about resources allocated by DRA. The PodResources API is also being used by CNI meta-plugins like [multus](https://github.com/k8snetworkplumbingwg/multus-cni) and [DANM](https://github.com/nokia/danm) to add resources allocated by device plugins as CNI arguments. This extension can be used to allow these CNI plugins to reference resources allocated by DRA as well. Additional extensions to the API will also make it easier for CNI meta-plugins to access resources allocated to a specific pod, rather than having to filter through resources for all pods on the node.
+One of the primary motivations for this KEP is to extend the PodResources API to allow node monitoring agents to access information about resources allocated by DRA.
 
 ### Goals
 
 - To allow node monitoring agents to know the allocated DRA resources for Pods on a node.
-- To allow the DRA feature to work with CNIs that require complex network devices such as RDMA. DRA resource drivers will allocate the resources, and the meta-plugin will read the allocated [CDI Devices](https://github.com/container-orchestrated-devices/container-device-interface) using the PodResources API. The meta-plugin will then inject the device-id of these CDI Devices as CNI arguments and invoke other CNIs (just as it does for devices allocated by the device plugin today).
+- To allow node components to use the PodResourcesAPI to use the DRA information to develop new features and integrations.
 
 ### Non-Goals
 
@@ -110,6 +110,7 @@ retrieve PodResources from, rather than having to query all of them all at
 once.
 
 The full PodResources API (including our proposed extensions) can be seen below:
+
 ```protobuf
 // PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
@@ -159,7 +160,7 @@ message ContainerMemory {
     TopologyInfo topology = 3;
 }
 
-// ContainerDevices contains information about the devices assigned to a container by device plugin
+// ContainerDevices contains information about the devices assigned to a container
 message ContainerDevices {
     string resource_name = 1;
     repeated string device_ids = 2;
@@ -178,15 +179,22 @@ message NUMANode {
 
 // DynamicResource contains information about the devices assigned to a container by DRA
 message DynamicResource {
-    string class_name = 1;
+    // tombstone: removed in 1.31 because claims are no longer associated with one class
+    // string class_name = 1;
     string claim_name = 2;
     string claim_namespace = 3;
     repeated ClaimResource claim_resources = 4;
 }
 
-// ClaimResource contains per plugin resource information
+// ClaimResource contains resource information. The driver name/pool name/device name
+// triplet uniquely identifies the device. Should DRA get extended to other kinds
+// of resources, then device_name will be empty and other fields will get added.
+// Each device at the DRA API level may map to zero or more CDI devices.
 message ClaimResource {
     repeated CDIDevice cdi_devices = 1 [(gogoproto.customname) = "CDIDevices"];
+    string driver_name = 2;
+    string pool_name = 3;
+    string device_name = 4;
 }
 
 // CDIDevice specifies a CDI device information
@@ -200,8 +208,8 @@ message CDIDevice {
 
 // GetPodResourcesRequest contains information about the pod
 message GetPodResourcesRequest {
-    string name = 1;
-    string namespace = 2;
+    string pod_name = 1;
+    string pod_namespace = 2;
 }
 
 // GetPodResourcesResponse contains information about the pod the devices
@@ -241,7 +249,7 @@ restarts).
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/kubelet/apis/podresources`: `01-24-2023` - `61.5%`
+- `k8s.io/kubernetes/pkg/kubelet/apis/podresources`: `10-08-2024` - `75.3%`
 
 ##### Integration tests
 
@@ -261,12 +269,12 @@ These cases will be added in the existing e2e tests:
 
 #### Alpha
 
-- [ ] Feature implemented behind a feature flag.
-- [ ] e2e tests completed and enabled.
+- [x] Feature implemented behind a feature flag. (https://github.com/kubernetes/kubernetes/pull/115847)
+- [x] e2e tests completed and enabled. (https://github.com/kubernetes/kubernetes/pull/116846)
 
 #### Beta
 
-- [ ] Gather feedback from consumers of the DRA feature and k8snetworkplumbingwg working group
+- [ ] Gather feedback from consumers of the DRA feature.
 - [ ] No major bugs reported in the previous cycle.
 
 #### GA
@@ -286,7 +294,6 @@ To a vendor changes in the API should always be backwards compatible.
 ### Version Skew Strategy
 
 Kubelet will always be backwards compatible, so going forward existing plugins are not expected to break.
-
 
 ## Production Readiness Review Questionnaire
 ### Feature Enablement and Rollback
@@ -428,6 +435,8 @@ N/A.
 ## Implementation History
 
 - 2023-01-12: KEP created
+
+- 2024-09-10: KEP Updated to reflect the current state of the implementation.
 
 ## Drawbacks
 

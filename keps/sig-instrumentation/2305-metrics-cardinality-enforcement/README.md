@@ -1,6 +1,4 @@
-# Dynamic Cardinality Enforcement
-
-## Table of Contents
+# KEP-2305: Dynamic Cardinality Enforcement
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -9,10 +7,13 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -27,6 +28,8 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 ## Release Signoff Checklist
 
@@ -81,6 +84,14 @@ We will expose the machinery and tools to bind a metric's labels to a discrete s
 It is *not a goal* to define the allowlist for each Kubernetes component metrics.
 
 ## Proposal
+
+We should be able to *dynamically configure* an allowlist of label values for a metric.
+
+### Risks and Mitigations
+
+None, we are actually providing a mitigation to cardinality explosion by limiting the number of allowed values for a label.
+
+## Design Details
 
 The simple solution to this problem would be for each metric added to keep the unbounded dimensions in mind and prevent it from happening. SIG instrumentation has already explicitly stated this in our instrumentation guidelines: which says that ["one should know a comprehensive list of all possible values for a label at instrumentation time."](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md#dimensionality--cardinality). The problem is more complicated. First, SIG Instrumentation doesn't have a way to validate adherence to SIG instrumentation guidelines outside of reviewing PRs with instrumentation changes. Not only is this highly manual, and error-prone, we do not have a terrific existing procedure for ensuring SIG Instrumentation is tagged on relevant PRs. Even if we do have such a mechanism, it isn't a fully sufficient solution because:
 
@@ -270,8 +281,6 @@ This would then be interpreted by our machinery as this:
 
 ```
 
-## Design Details
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -290,6 +299,14 @@ For `Alpha`, unit test to .
 - `staging/src/k8s.io/component-base/metrics/gauge_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for gauges if the metric encounters label values outside our explicit allowlist of values`
 - `staging/src/k8s.io/component-base/metrics/histogram_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for histograms if the metric encounters label values outside our explicit allowlist of values`
 - `staging/src/k8s.io/component-base/metrics/summary_test.go`: `4/3/21` - `verify that the metric label will be set to "unexpected" for summaries if the metric encounters label values outside our explicit allowlist of values`
+
+##### Integration tests
+
+Unit tests suffice for the testing of this feature.
+
+##### e2e tests
+
+Unit tests suffice for the testing of this feature.
 
 ### Graduation Criteria
 
@@ -317,137 +334,151 @@ N/A
 ## Production Readiness Review Questionnaire
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: MetricCardinalityEnforcement
-    - Components depending on the feature gate: All components that emit metrics, i.e. (at the time of writing),
-      - cmd/kube-apiserver
-      - cmd/kube-controller-manager
-      - cmd/kubelet
-      - pkg/kubelet/metrics
-      - pkg/kubelet/prober
-      - pkg/kubelet/server
-      - pkg/proxy/metrics
-      - cmd/kube-scheduler
-      - pkg/volume/util
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: MetricCardinalityEnforcement
+  - Components depending on the feature gate: All components that emit metrics, i.e. (at the time of writing),
+    - cmd/kube-apiserver
+    - cmd/kube-controller-manager
+    - cmd/kubelet
+    - pkg/kubelet/metrics
+    - pkg/kubelet/prober
+    - pkg/kubelet/server
+    - pkg/proxy/metrics
+    - cmd/kube-scheduler
+    - pkg/volume/util
 
-* **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
-  Using this feature requires restarting the component with the allowlist flag enabled. Once enabled, the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values. 
+###### Does enabling the feature change any default behavior?
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
-  Yes, disabling the feature gate can revert it back to existing behavior
+Any change of default behavior may be surprising to users or break existing
+automations, so be extremely careful here.
+Using this feature requires restarting the component with the allowlist flag enabled. Once enabled, the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values. 
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
   
-* **What happens if we re-enable the feature if it was previously rolled back?**
-  The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value. Note that metrics are a memory-only construct and do not persist, but re-generated across restarts.
+Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+Describe the consequences on existing workloads (e.g., if this is a runtime
+feature, can it break the existing applications?).
+Yes, disabling the feature gate can revert it back to existing behavior
   
-* **Are there any tests for feature enablement/disablement?**
-  Using unit tests to cover the combination cases w/wo feature and w/wo allowlist.
+###### What happens if we reenable the feature if it was previously rolled back?
+  
+The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value. Note that metrics are a memory-only construct and do not persist, but re-generated across restarts.
+  
+###### Are there any tests for feature enablement/disablement?
+
+Using unit tests to cover the combination cases w/wo feature and w/wo allowlist.
   
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
-  Using this feature requires restarting the component with the allowlist flag enabled.
-* **What specific metrics should inform a rollback?**
-  None.
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
-  In alpha, we can do some manual tests on enable/disable allowlist flag and enable/disable feature gate.
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
-  A component metric flag for ingesting allowlist to be added.
+Try to be as paranoid as possible - e.g., what if some components will restart
+mid-rollout?
+Using this feature requires restarting the component with the allowlist flag enabled.
+
+###### What specific metrics should inform a rollback?
+None.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+  
+Describe manual testing that was done and the outcomes.
+Longer term, we may want to require automated upgrade/rollback tests, but we
+are missing a bunch of machinery and tooling and can't do that now.
+In alpha, we can do some manual tests on enable/disable allowlist flag and enable/disable feature gate.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+A component metric flag for ingesting allowlist to be added.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
 
-* **How can an operator determine if the feature is in use by workloads?**
-  The out-of-bound data will be recorded with label "unexpected" rather than the specific value.
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
-  None.
+The out-of-bound data will be recorded with label "unexpected" rather than the specific value.
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  None.
+###### How can someone using this feature know that it is working for their instance?
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-  - `cardinality_enforcement_unexpected_categorizations_total`: Increments whenever any metric falls into the "unexpected" case (i.e., goes out of the defined bounds).
+The out-of-bound data will be recorded with label "unexpected" rather than the specific value.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+None.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+None.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+- `cardinality_enforcement_unexpected_categorizations_total`: Increments whenever any metric falls into the "unexpected" case (i.e., goes out of the defined bounds).
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
+###### Does this feature depend on any specific services running in the cluster?
 
-* **Does this feature depend on any specific services running in the cluster?**
-  No.
+No.
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+###### Will enabling / using this feature result in any new API calls?
 
-_For beta, this section is required: reviewers must answer these questions._
+No.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in any new API calls?**
-  No.
+No.
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  No.
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
-  No.
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
-  No.
+No.
 
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
-  Checking metrics label against allowlist may increase the metric recording time.
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-* **Will enabling / using this feature result in non-negligible increase of 
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  No.
+No.
 
-* **Can enabling / using this feature result in resource exhaustion of some 
-node resources (PIDs, sockets, inodes, etc.)?**
-  No.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+Checking metrics label against allowlist may increase the metric recording time.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?**
+
+No.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
+###### How does this feature react if the API server and/or etcd is unavailable?
 
-_This section must be completed when targeting beta graduation to a release._
+No additional impact comparing to what already exists.
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-  No additional impact comparing to what already exists.
-* **What are other known failure modes?**
-  None.
+###### What are other known failure modes?
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-  None.
+None.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+None.
 
 ## Implementation History
 
 2020-04-15: KEP opened
 
 2020-05-19: KEP marked implementable
+
+2021-02-08: Graduate to alpha
+
+2023-05-07: Graduate to beta
+
+2024-01-20: Graduate to stable
+
+## Drawbacks
+
+None have been identified.
+
+## Alternatives
+
+Manually keep track of all the values a label can have while adding a new label to a metric. And have a rigorous review process for PRs that add new metrcs/metric labels. But this approach is manual and error prone.

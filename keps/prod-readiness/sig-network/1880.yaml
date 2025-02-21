@@ -1,3 +1,7 @@
 kep-number: 1880
 alpha:
   approver: "@johnbelamaric"
+beta:
+  approver: "@soltysh"
+stable:
+  approver: "@soltysh"

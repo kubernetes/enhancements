@@ -12,16 +12,16 @@ approvers:
   - "@josephburnett"
   - "@gjtempleton"
 creation-date: 2020-02-18
-last-updated: 2023-02-02
+last-updated: 2024-01-15
 status: implementable
 
-latest-milestone: "1.27"
-stage: "beta"
+latest-milestone: "1.30"
+stage: "stable"
 
 milestone:
   alpha: "v1.20"
   beta: "v1.27"
-  stable: "v1.29"
+  stable: "v1.30"
 
 feature-gates:
   - name: HPAContainerMetrics

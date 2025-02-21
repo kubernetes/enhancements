@@ -24,7 +24,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.29)](#alpha-129)
-    - [Future Alpha versions](#future-alpha-versions)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -110,7 +109,7 @@ within the new file structure
 Add a configuration format having specific precedence order and defined failure modes for configuring authorizer chain. See [Design Details](#design-details) for more details.
 
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - name: system-webhook
@@ -171,7 +170,7 @@ Note: The above are hypothetical for now since there has been no decision on
 protection rules for system CRDs. The below example is only for demonstration
 purposes.
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - type: Webhook
@@ -212,7 +211,7 @@ separate webhooks, leading to more predictable outcomes.
 
 The below example is only for demonstration purposes.
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - name: system-crd-protector
@@ -313,17 +312,18 @@ reloader would pick up the changes. There would be a minutes order of delay.
 The configuration would be validated at startup and the API server will fail to
 start if the configuration is invalid.
 
-The API server will periodically reload the configuration at a specific time
-interval. If it or any of referenced files change, and the new configuration
-passes validation, then the new configuration will be used for the Authorizer
-chain. The reloader will also check if the webhook is healthy, thereby
-preventing any typo/misconfiguration with the Webhook resulting in bad
-Authorizer config. If healthcheck on the webhook failed, the last known good
+The API server will periodically reload the configuration when an observed file 
+event occurs or a 1 minute poll is encountered. All non-webhook authorizer types 
+are required to remain unchanged in the file on reload. Reload must not add or 
+remove Node or RBAC authorizers. They can be reordered, but cannot be added or 
+removed. If the new configuration passes validation, then the new configuration 
+will be used for the Authorizer chain. The reloader will also check if the webhook 
+is healthy, thereby preventing any typo/misconfiguration with the Webhook resulting 
+in bad Authorizer config. If healthcheck on the webhook failed, the last known good
 config will be used. In the next iteration of reload, if webhook is found to be
 healthy, the new config will be used. Logging and metrics would be used to
 signal success/failure of a config reload so that cluster admins can have
-observability over this process. Reload must not add or remove Node or RBAC
-authorizers. They can be reordered, but cannot be added or removed.
+observability over this process.
 
 The proposed structure is illustrated below:
 
@@ -331,7 +331,7 @@ The proposed structure is illustrated below:
 values.
 
 ```yaml
-apiVersion: apiserver.config.k8s.io/v1alpha1
+apiVersion: apiserver.config.k8s.io/v1beta1
 kind: AuthorizationConfiguration
 authorizers:
   - type: Webhook
@@ -347,7 +347,7 @@ authorizers:
       # Same as setting `--authorization-webhook-cache-authorized-ttl` flag
       # Default: 5m0s
       authorizedTTL: 30s
-      # The duration to cache 'authorized' responses from the webhook
+      # The duration to cache 'unauthorized' responses from the webhook
       # authorizer.
       # Same as setting `--authorization-webhook-cache-unauthorized-ttl` flag
       # Default: 30s
@@ -460,49 +460,100 @@ while the feature is in alpha and beta.
 
 ### Monitoring
 
-We will add the following 4 metrics:
+We will add the following metrics:
 
 1. `apiserver_authorization_decisions_total`
 
-This will be incremented on round-trip of an authorizer. It will track total
-authorization decision invocations across the following labels.
+This will be incremented when an authorizer makes a terminal decision (allow or deny).
+It will track total authorization decision invocations across the following labels.
 
 Labels {along with possible values}:
-- `mode` {<authorizer_name>} # when authorizer is a webhook, prepend `webhook_`
-- `decision` {Allow, Deny}
-
-**Note:** Some examples of <authorizer_name>: `RBAC`, `Node`, `ABAC`, `webhook_<name>`.
+- `type` {<authorizer_type>}
+  - value matches the configuration `type` field, e.g. `RBAC`, `ABAC`, `Node`, `Webhook`
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field, e.g. `rbac`, `node`, `abac`, `<webhook name>`
+- `decision` {allowed, denied}
 
 2. `apiserver_authorization_webhook_evaluations_total`
 
-This will be incremented on round-trip of an authorization webhook. It will track
-total invocation counts across the following labels.
+This will be incremented on round-trip of an authorization webhook.
+It will track total invocation counts across the following labels.
 
-- `name`
-- `code` {"incomplete_request", "bad_response"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `result` {canceled, timeout, error, success}
+  - `canceled`: the call invoking the webhook request was canceled
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
+  - `success`: the webhook response completed and was well-formed
 
-3. `apiserver_authorization_webhook_evaluations_duration_seconds`
+3. `apiserver_authorization_webhook_duration_seconds`
 
 This is a Histogram metric that will track the total round trip time of the requests to the webhook.
 
 Labels {along with possible values}:
-- `name`
-- `code` {"incomplete_request", "bad_response", "ok"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `result` {canceled, timeout, error, success}
+  - `canceled`: the call invoking the webhook request was canceled
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
+  - `success`: the webhook response completed and was well-formed
 
 4. `apiserver_authorization_webhook_evaluations_fail_open_total`
 
-This metric will be incremented when a webhook returns `code != errAuthzWebhookOKCode` and
-decision on error is not set to `deny`.
+This metric will be incremented when a webhook request times out or
+returns an invalid response, and the failurePolicy is set to `NoOpinion`.
 
 Labels {along with possible values}:
 
-- `name`
-- `code` {"incomplete_request", "bad_response"}
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+- `result` {timeout, error}
+  - `timeout`: the webhook request timed out
+  - `error`: the webhook response completed and was invalid
 
-5. `apiserver_authorization_configuration_reload_last_timestamp_seconds`
+5. `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds`
 
-This Gauge metric will record last time in seconds when an authorization reload was performed.
-- `status` {success, fail}
+This Gauge metric will record last time in seconds when an authorization reload was performed, partitioned by apiserver_id_hash and status.
+- `apiserver_id_hash`
+- `status` (`success` or `failure`)
+
+6. `apiserver_authorization_config_controller_automatic_reloads_total`
+
+This Counter metric records the total number of reload successes and failures, partitioned by API server apiserver_id_hash and status.
+- `apiserver_id_hash`
+- `status` (`success` or `failure`)
+
+7. `apiserver_authorization_match_condition_evaluation_errors_total`
+
+This will be incremented when an authorization webhook encounters a match condition error.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+
+8. `apiserver_authorization_match_condition_exclusions_total`
+
+This will be incremented when an authorization webhook is skipped because match conditions exclude it.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
+
+9. `apiserver_authorization_match_condition_evaluation_seconds`
+
+Authorization match condition evaluation time in seconds.
+
+Labels {along with possible values}:
+- `type` {<authorizer_type>}
+  - Currently only `Webhook` authorizers support match conditions
+- `name` {<authorizer_name>}
+  - value matches the configuration `name` field
 
 ### Test Plan
 
@@ -561,12 +612,10 @@ the scenarios.
 - Add feature flag for gating usage
 - Unit tests and Integration tests to be written
 
-#### Future Alpha versions
-
-- Revisit on the items mentioned in Non-Goals and see if any needs to be implemented
-
 #### Beta
 
+- Observability and metrics complete
+- File reloading functionality complete
 - Address user reviews and iterate (if needed, keep in Alpha until changes stabilize)
 - Feature flag will be turned on by default
 
@@ -576,17 +625,24 @@ the scenarios.
 
 ### Upgrade / Downgrade Strategy
 
-While the feature is in Alpha, there is no change if cluster administrators want to
-keep on using command line flags.
+There is no change if cluster administrators want to keep on using command line flags.
 
-When the feature goes to Beta/GA or the cluster administrators want to configure
-authorizers using a config file, they need to make sure the config file exists before
-upgrading the cluster. Similarly when downgrading clusters, they would need to add
-the flags back to their bootstrap mechanism.
+If the cluster administrators wants to configure authorizers using a config file,
+they need to make sure the config file exists before upgrading the cluster.
+When downgrading clusters, they would need to switch their invocation back to use flags.
+
+In clusters with multiple API servers, rippling out authorization configuration changes
+using a rolling strategy is recommended, verifying the change is effective and functional
+on one API server before proceeding to the next API server.
+
+The recommended strategy to switch from command line flags to a config file is to:
+
+1. Switch from command line flags to a config file that expresses an identical configuration
+2. Once all servers are successfully operating with the config file, roll out config modifications
 
 ### Version Skew Strategy
 
-Not applicable.
+Not applicable, authorizers are configured per API server.
 
 ## Production Readiness Review Questionnaire
 
@@ -598,6 +654,8 @@ Not applicable.
   - Feature gate name: `StructuredAuthorizationConfiguration`
   - Components depending on the feature gate:
         - kube-apiserver
+- [x] Other
+  - `kube-apiserver` command-line flag: `--authorization-config`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -625,8 +683,6 @@ command line flags should return an error.
 
 ### Rollout, Upgrade and Rollback Planning
 
-> Note: This section is required when targeting Beta to a release.
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 A rollout can fail when the authorization configuration file being passed doesn't
@@ -644,23 +700,14 @@ Not applicable.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD.
+No. There is no data stored for this feature which persists between upgrade / downgrade,
+or between enable / disable. The feature is purely an API server configuration option.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No.
 
 ### Monitoring Requirements
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
-> Note: To be elaborated more during Beta graduation since this section
-must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -724,8 +771,6 @@ None
 
 ### Scalability
 
-> Note: This section is good-to-have for Alpha.
-
 ###### Will enabling / using this feature result in any new API calls?
 
 No. No additional calls will be made to the Kubernetes API Server.
@@ -749,7 +794,7 @@ cluster administrator defines multiple webhooks.
 
 **Note**: This is a result of the intended feature.
 If multiple webhooks are defined and one or more of them are unreachable, the
-request latency would get a hit but this is upto the configuration made by the
+request latency would get a hit but this is up to the configuration made by the
 user. The feature implementation itself doesn't introduce any change to the
 existing SLIs/SLOs.
 
@@ -775,21 +820,11 @@ For use-cases where the CEL filters would pre-filter requests even before the ne
 be dispatched to a webhook, there would be a performance improvement due to lower
 number of network calls.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature exists only in the API server.
+
 ### Troubleshooting
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
-> Note: To be elaborated more during Beta graduation since this section
-must be completed when targeting beta to a release.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -797,19 +832,16 @@ No effect.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
+- Configuration file cannot be loaded at server start
+  - Detection: API server process exits
+  - Mitigation: Revert to previous success invocation or configuration
+  - Diagnostics: Configuration validation errors are logged at default verbosity.
+  - Testing: Configuration file loading and validation is unit tested
+- Configuration file cannot be reloaded while server is running
+  - Detection: `apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds` metric
+    indicates the `failure` status timestamp is most recent.
+  - Mitigation: Revert to previous success invocation or configuration
+  - Diagnostics: Configuration validation errors are logged at default verbosity.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -820,7 +852,8 @@ For each of them, fill in the following information by copying the below templat
 - [x] 2023-06-15 - KEP Accepted as implementable
 - [x] 2023-07-05 - Implementation started
 - [x] 2023-09-27 - Update KEP according to actual state
-- [ ] 2023-12-DD First release (1.29) when feature available
+- [x] 2023-12-15 - First release (1.29) when feature available
+- [x] 2024-01-29 - Targeting beta in 1.30
 
 ## Drawbacks
 

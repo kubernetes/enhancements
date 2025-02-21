@@ -132,20 +132,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -238,8 +238,8 @@ At a high level, the proposal is to modify the StatefulSet and Job controllers t
 as a pod label at pod creation time (for jobs, this would only apply to jobs in
 Indexed completion mode). The details of this are outlined in the Design Details section below.
 
-StatefulSet pod label: `statefulset.kubernetes.io/pod-index`
-Indexed Job pod label: `batch.kubernetes.io/job-completion-index` (same as existing annotation)
+- StatefulSet pod label: `apps.kubernetes.io/pod-index`
+- IndexedJob pod label: `batch.kubernetes.io/job-completion-index` (same as existing annotation)
 
 ### User Stories (Optional)
 
@@ -256,7 +256,7 @@ As a user, I would like to lookup a job's pod logs by its index.
 
 #### Story 2
 As a user, I would like to target traffic to a specific pod index (e.g., index 0) in a StatefulSet 
-or Indexed Job. Instead of creating a service which matche an entire Job, I'd like to create a
+or Indexed Job. Instead of creating a service which matches an entire Job, I'd like to create a
 service which matches only the "head" pod, which will be more performant, especially for a large
 number of pods.
 
@@ -311,7 +311,7 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-The StatefulSet controller will only need a minor update to the [newStatefulSetPod](https://github.com/kubernetes/kubernetes/blob/fb5e9ef3b2a6f2136d54868187431c345e59f55f/pkg/controller/statefulset/stateful_set_utils.go#L458) function, to set the pod ordinal as the label `statefulset.kubernetes.io/pod-index`. This call is downstream from the [newVersionedStatefulSetPod](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controller/statefulset/stateful_set_control.go#LL416C7-L416C7) call, which generates
+The StatefulSet controller will only need a minor update to the [newStatefulSetPod](https://github.com/kubernetes/kubernetes/blob/fb5e9ef3b2a6f2136d54868187431c345e59f55f/pkg/controller/statefulset/stateful_set_utils.go#L458) function, to set the pod ordinal as the label `apps.kubernetes.io/pod-index`. This call is downstream from the [newVersionedStatefulSetPod](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controller/statefulset/stateful_set_control.go#LL416C7-L416C7) call, which generates
 the StatefulSet pods before creating them as necessary in [CreateStatefulPod](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controller/statefulset/stateful_set_control.go#L433).
 
 Similarly, the Job controller would need to add the completion index as a label [here](https://github.com/kubernetes/kubernetes/blob/release-1.27/pkg/controller/job/job_controller.go#L1480)
@@ -330,7 +330,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[X] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -361,8 +361,8 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
-- `k8s.io/kubernetes/pkg/controller/job`: `05/18/2023` - `90.4%`
-- `k8s.io/kubernetes/pkg/controller/statefulset`: `05/18/2023` - `85.7%`
+- `k8s.io/kubernetes/pkg/controller/job`: `10/09/2024` - `92%`
+- `k8s.io/kubernetes/pkg/controller/statefulset`: `10/09/2024` - `85.6%`
 
 ##### Integration tests
 
@@ -381,8 +381,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Unit tests will ensure the new label is correctly added to pods, and
-integration tests will verify that the label is only added to pods from newly created StatefulSets and Indexed Jobs, not existing workloads. 
+- Existing Integration will be updated as a criteria for GA
 
 ##### e2e tests
 
@@ -396,8 +395,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-E2E tests will not provide any additional coverage that isn't already covered by unit + integration tests, 
-since we are simply adding a label, so no e2e tests will be necessary for this change.
+The e2e test check for value of the label: https://github.com/kubernetes/kubernetes/blob/d9c46d8ecb1ede9be30545c9803e17682fcc4b50/test/e2e/apps/job.go#L435-L467
 
 ### Graduation Criteria
 
@@ -411,7 +409,9 @@ existing label which other things may depend on, for example).
 - Docs are clear about what happens if two pods get the same value (it is set by workload controllers, nothing in the API system will prevent collisions from happening).
 
 #### GA
-Fix any potentially reported bugs.
+- the PodIndexLabel feature-gate will be locked and the code will ignore it
+- Add integration/e2e test for StatefulSet controller, `PodIndexLabel` feature 
+- Update existing integration test for IndexedJob to validate the label value 
 
 <!--
 **Note:** Generally we also wait at least two releases between beta and
@@ -467,7 +467,7 @@ enhancement:
 N/A. This feature doesn't require coordination between control plane components,
 the changes to each controller are self-contained. 
 
-If there were version skew between the control plane components and the node components, where the control plane components were at version N where this feature exists, and the node componets were at version N-1 where this feature does not exist, there would be no adverse affects, the new label would simply be added to StatefulSet/Indexed Job pods. 
+If there were version skew between the control plane components and the node components, where the control plane components were at version N where this feature exists, and the node components were at version N-1 where this feature does not exist, there would be no adverse affects, the new label would simply be added to StatefulSet/Indexed Job pods. 
 
 ## Production Readiness Review Questionnaire
 
@@ -529,7 +529,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes, a new label is added to pods created for StatefulSet (statefulset.kubernetes.io/pod-index) and Indexed Jobs (batch.kubernetes.io/job-completion-index)
+Yes, a new label is added to pods created for StatefulSet (apps.kubernetes.io/pod-index) and Indexed Jobs (batch.kubernetes.io/job-completion-index)
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -615,7 +615,189 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-It will be tested manually prior to beta launch.
+
+For StatefulSet
+
+1. kind kubernetes 1.31 cluster was created
+```
+# k version
+Client Version: v1.30.3
+Kustomize Version: v5.0.4-0.20230601165947-6ce0bf390ce3
+Server Version: v1.31.0
+```
+2. A sample statefulset was created, since default value feature gate is PodIndexLabel is true, the pods had following labels:
+```
+# k get pods -oyaml | grep '    name: example-statefulset-\|index'
+      apps.kubernetes.io/pod-index: "0"
+    name: example-statefulset-0
+      apps.kubernetes.io/pod-index: "1"
+    name: example-statefulset-1
+      apps.kubernetes.io/pod-index: "2"
+    name: example-statefulset-2
+```
+3. The controller-manager yaml was modified to disable the feature gate, for testing downgrades:
+```
+# k logs -f -n kube-system kube-controller-manager-kind-1.31-dra-control-plane  | grep feature
+I1008 21:12:12.361613       1 flags.go:64] FLAG: --feature-gates=":DynamicResourceAllocation=true,:PodIndexLabel=false"
+I1008 21:12:30.602829       1 controllermanager.go:749] "Controller is disabled by a feature gate" controller="storageversion-garbage-collector-controller" requiredFeatureGates=["APIServerIdentity","StorageVersionAPI"]
+I1008 21:12:30.653581       1 controllermanager.go:749] "Controller is disabled by a feature gate" controller="service-cidr-controller" requiredFeatureGates=["MultiCIDRServiceAllocator"]
+```
+The controller did not re-write the pod labels, as expected
+```
+# k get pods -oyaml | grep '    name: example-statefulset-\|index'
+      apps.kubernetes.io/pod-index: "0"
+    name: example-statefulset-0
+      apps.kubernetes.io/pod-index: "1"
+    name: example-statefulset-1
+      apps.kubernetes.io/pod-index: "2"
+    name: example-statefulset-2
+```
+4. The statefulset was deleted and re-created, pods were created without the index label
+```
+# k get pods -oyaml | grep '    name: example-statefulset-\|index'
+    name: example-statefulset-0
+    name: example-statefulset-1
+    name: example-statefulset-2
+```
+5. The controller-manager yaml was modified to enable the feature gate, for testing upgrade
+```
+# k logs -f -n kube-system kube-controller-manager-kind-1.31-dra-control-plane  | grep feature
+I1008 21:14:46.348747       1 flags.go:64] FLAG: --feature-gates=":DynamicResourceAllocation=true"
+```
+The controller-manager did not update the labels 
+```
+# k get pods -oyaml | grep '    name: example-statefulset-\|index'
+    name: example-statefulset-0
+    name: example-statefulset-1
+    name: example-statefulset-2
+```
+6. The statefulset was deleted and re-created, pods were created with the index label
+```
+# k get pods -oyaml | grep '    name: example-statefulset-\|index'
+      apps.kubernetes.io/pod-index: "0"
+    name: example-statefulset-0
+      apps.kubernetes.io/pod-index: "1"
+    name: example-statefulset-1
+      apps.kubernetes.io/pod-index: "2"
+    name: example-statefulset-2
+```
+
+For IndexedJob
+
+1. kind kubernetes 1.31 cluster was created
+```
+# k version
+Client Version: v1.30.3
+Kustomize Version: v5.0.4-0.20230601165947-6ce0bf390ce3
+Server Version: v1.31.0
+```
+2. A sample IndexedJob was created, since default value feature gate is PodIndexLabel is true, the pods had following labels:
+```
+# k get pods -oyaml | grep '    name: sample-indexed-job-[0-9]\|job-completion-index'
+      batch.kubernetes.io/job-completion-index: "0"
+      batch.kubernetes.io/job-completion-index: "0"
+    name: sample-indexed-job-0-8sgb7
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "1"
+      batch.kubernetes.io/job-completion-index: "1"
+    name: sample-indexed-job-1-f9mz4
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "2"
+      batch.kubernetes.io/job-completion-index: "2"
+    name: sample-indexed-job-2-5gxwz
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+```
+3. The controller-manager yaml was modified to disable the feature gate, for testing downgrades:
+```
+# k logs -f -n kube-system kube-controller-manager-kind-1.31-dra-control-plane  | grep feature
+I1010 02:33:21.331424       1 flags.go:64] FLAG: --feature-gates=":DynamicResourceAllocation=true,:PodIndexLabel=false"
+```
+The controller did not re-write the pod labels, as expected
+```
+# k get pods -oyaml | grep '    name: sample-indexed-job-[0-9]\|job-completion-index'
+      batch.kubernetes.io/job-completion-index: "0"
+      batch.kubernetes.io/job-completion-index: "0"
+    name: sample-indexed-job-0-8sgb7
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "1"
+      batch.kubernetes.io/job-completion-index: "1"
+    name: sample-indexed-job-1-f9mz4
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "2"
+      batch.kubernetes.io/job-completion-index: "2"
+    name: sample-indexed-job-2-5gxwz
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+```
+4. The IndexedJob was deleted and re-created, pods were created without the index label (some of the output is truncated 
+for brevity)
+```
+# k get pods -oyaml | grep -A 4 '    name: sample-indexed-job-[0-9]\|labels'
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-0-8ttb5
+--
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-1-tvjqc
+--
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-2-r75jw
+```
+5. The controller-manager yaml was modified to enable the feature gate, for testing upgrade
+```
+# k logs -f -n kube-system kube-controller-manager-kind-1.31-dra-control-plane  | grep feature
+I1010 02:39:22.329026       1 flags.go:64] FLAG: --feature-gates=":DynamicResourceAllocation=true,:PodIndexLabel=true"
+```
+The controller-manager did not update the labels
+```
+# k get pods -oyaml | grep -A 4 '    name: sample-indexed-job-[0-9]\|labels'
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-0-8ttb5
+--
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-1-tvjqc
+--
+    labels:
+      batch.kubernetes.io/controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      batch.kubernetes.io/job-name: sample-indexed-job
+      controller-uid: bf96f9c0-b7ec-4c7e-9a4c-9cca20b26d35
+      job-name: sample-indexed-job
+    name: sample-indexed-job-2-r75jw
+```
+6. The IndexedJob was deleted and re-created, pods were created with the index label
+```
+# k get pods -oyaml | grep '    name: sample-indexed-job-[0-9]\|job-completion-index'
+      batch.kubernetes.io/job-completion-index: "0"
+      batch.kubernetes.io/job-completion-index: "0"
+    name: sample-indexed-job-0-d7d7m
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "1"
+      batch.kubernetes.io/job-completion-index: "1"
+    name: sample-indexed-job-1-gg9sv
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+      batch.kubernetes.io/job-completion-index: "2"
+      batch.kubernetes.io/job-completion-index: "2"
+    name: sample-indexed-job-2-nfxlr
+            fieldPath: metadata.labels['batch.kubernetes.io/job-completion-index']
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -641,7 +823,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-- Check if StatefulSet pods have the label `statefulset.kubernetes.io/pod-index`.
+- Check if StatefulSet pods have the label `apps.kubernetes.io/pod-index`.
 - Check if Indexed Job pods have the label `batch.kubernetes.io/job-completion-index`.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -660,7 +842,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [X] API .metadata
   - Condition name: 
   - Other field: 
-    - `.metadata.labels['statefulset.kubernetes.io/pod-index']` for StatefulSets
+    - `.metadata.labels['apps.kubernetes.io/pod-index']` for StatefulSets
     - `.metadata.labels['batch.kubernetes.io/job-completion-index']` for Indexed Jobs
 - [ ] Other (treat as last resort)
   - Details:
@@ -882,6 +1064,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 - 2023-05-17: KEP published
+- 2023-07-14: Feature merged with feature gate in beta
+- 2024-10-09: Feature graduated to GA
 
 ## Drawbacks
 

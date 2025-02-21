@@ -16,13 +16,13 @@ creation-date: 2019-08-22
 last-updated: 2022-10-05
 status: implementable
 
-latest-milestone: "1.26"
+latest-milestone: "1.30"
 stage: "beta"
 
 milestone:
   alpha: "v1.20"
-  beta: "v1.26"
-  stable: "v1.27"
+  beta: "v1.30"
+  stable: "TBD"
 
 feature-gates:
   - name: StorageVersionAPI

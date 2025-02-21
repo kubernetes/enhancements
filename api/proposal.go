@@ -36,12 +36,18 @@ const (
 	AlphaStage  Stage = "alpha"
 	BetaStage   Stage = "beta"
 	StableStage Stage = "stable"
+	Deprecated  Stage = "deprecated"
+	Disabled    Stage = "disabled"
+	Removed     Stage = "removed"
 )
 
 var ValidStages = []Stage{
 	AlphaStage,
 	BetaStage,
 	StableStage,
+	Deprecated,
+	Disabled,
+	Removed,
 }
 
 func (s Stage) IsValid() error {
@@ -138,6 +144,7 @@ type Milestone struct {
 	Stable     string `json:"stable" yaml:"stable"`
 	Deprecated string `json:"deprecated" yaml:"deprecated,omitempty"`
 	Removed    string `json:"removed" yaml:"removed,omitempty"`
+	Disabled   string `json:"disabled" yaml:"disabled,omitempty"`
 }
 
 type FeatureGate struct {

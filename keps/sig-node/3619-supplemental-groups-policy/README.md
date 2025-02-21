@@ -18,9 +18,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext)
     - [User in ContainerStatus](#user-in-containerstatus)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field)
   - [CRI](#cri)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext)
     - [user in ContainerStatus](#user-in-containerstatus-1)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Deploy a Security Policy to enforce <code>SupplementalGroupsPolicy</code> field](#story-1-deploy-a-security-policy-to-enforce-supplementalgroupspolicy-field)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -29,9 +31,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API](#kubernetes-api-1)
     - [SupplementalGroupsPolicy in PodSecurityContext](#supplementalgroupspolicy-in-podsecuritycontext-1)
     - [User in ContainerStatus](#user-in-containerstatus-2)
+    - [NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field](#nodefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1)
   - [CRI](#cri-1)
     - [SupplementalGroupsPolicy in SecurityContext](#supplementalgroupspolicy-in-securitycontext-1)
     - [user in ContainerStatus](#user-in-containerstatus-3)
+    - [features in StatusResponse which contains supplemental_groups_policy field](#features-in-statusresponse-which-contains-supplemental_groups_policy-field-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -80,17 +84,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -201,6 +205,30 @@ Note that both policies diverge from the semantics of [`config.User` OCI image c
 
 To provide users/administrators to know which identities are actually attached to the container process, it proposes to introduce new `User` field in `ContainerStatus`. `User` is an object which consists of `Uid`, `Gid`, `SupplementalGroups` fields for linux containers. This will help users to identify unexpected identities. This field is derived by CRI response (See [user in ContainerStatus](#user-in-containerstatus-1) section).
 
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+
+Because the actual control(calculation) of supplementary groups to be attached to the first container process will happen inside of CRI implementations (container runtimes), it proposes to add `NodeFeatures` field in `NodeStatus` which contains the `SupplementalGroupsPolicy` feature field inside of it like below so that kubernetes can correctly understand whether underlying CRI implementation implements the feature or not. The field is populated by CRI response.
+
+```golang
+type NodeStatus struct {
+	// Features describes the set of features implemented by the CRI implementation.
+	Features *NodeFeatures
+}
+type NodeFeatures struct {
+	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+	SupplementalGroupsPolicy *bool
+}
+```
+
+Recently [KEP-3857: Recursive Read-only (RRO) mounts](https://kep.k8s.io/3857) introduced `RuntimeHandlers[].Features`. But it is not fit to use for this KEP because RRO mounts requires inspecting [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) to understand whether the low-level OCI runtime supports RRO or not. However, for this KEP(SupplementalGroupsPolicy), it does not need to inspect [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md) because this KEP only affects  [`Process.User.additionalGid`](https://github.com/opencontainers/runtime-spec/blob/main/config.md#user) and does not depend on [the OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). So, introducing new `NodeFeatures` in `NodeStatus` does not conflict with `RuntimeHandlerFeatures` as we can clearly define how to use them as below:
+
+- `NodeFeatures`(added in this KEP):
+  - focusses on features that depend only on cri implementation, be independent of runtime handlers(low-level container runtimes), (i.e. it should not require to inspect to any information from oci runtime-spec's features).
+- `RuntimeHandlerFeature` (introduced in KEP-3857):
+  -  focuses features that depend on the runtime handlers, (i.e. dependent to the information exposed by oci runtime-spec's features).
+
+See [this section](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field-1) for details.
+
 ### CRI
 
 #### SupplementalGroupsPolicy in SecurityContext
@@ -231,6 +259,30 @@ message ContainerUser {
   // details in "Design Details" section
 }
 ```
+
+#### features in StatusResponse which contains supplemental_groups_policy field
+
+To propagate whether the runtime supports fine-grained supplemental group control to `NodeFeatures.SupplementalGroupsPolicy`, it proposes to add a corresponding field `features` in `StatusResponse`. 
+
+```proto
+// service RuntimeService {
+// ...
+//     rpc Status(StatusRequest) returns (StatusResponse) {}
+// }
+message StatusResponse {
+...
+    // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
+    RuntimeFeatures features = ?;
+}
+message RuntimeFeatures {
+    // supplemental_groups_policy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+    bool supplemental_groups_policy = 1;
+}
+```
+
+As discussed in [Kubernetes API section](#runtimefeatures-in-nodestatus-which-contains-supplementalgroupspolicy-field), `RuntimeHandlerFeature` introduced in [KEP-3857](https://kep.k8s.io/3857) should focus on features only for ones which requires to inspect [OCI runtime spec's Feature](https://github.com/opencontainers/runtime-spec/blob/main/features.md). But `RuntimeFeatuers` proposed in this KEP should focus on ones which does NOT require to inepect it.
+
 
 ### User Stories (Optional)
 
@@ -356,6 +408,53 @@ type LinuxContainerUser struct {
 // }
 ```
 
+#### NodeFeatures in NodeStatus which contains SupplementalGroupsPolicy field
+
+```golang
+type NodeStatus struct {
+	// Features describes the set of implemented features implemented by the CRI implementation.
+	// +featureGate=SupplementalGroupsPolicy
+	// +optional
+	Features *NodeFeatures
+
+	// The available runtime handlers.
+	// +featureGate=RecursiveReadOnlyMounts
+	// +optional
+	RuntimeHandlers []RuntimeHandlers
+}
+
+// NodeFeatures describes the set of implemented features implemented by the CRI implementation.
+// THE FEATURES CONTAINED IN THE NodeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
+// (I.E. IT SHOULD NOT REQUIRE TO INSPECT TO ANY INFORMATION FROM OCI RUNTIME-SPEC'S FEATURES).
+type NodeFeatures {
+	// SupplementalGroupsPolicy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+	// +optional
+	SupplementalGroupsPolicy *bool
+}
+
+// NodeRuntimeHandler is a set of runtime handler information.
+type NodeRuntimeHandler struct {
+	// Runtime handler name.
+	// Empty for the default runtime handler.
+	// +optional
+	Name string
+	// Supported features in the runtime handlers.
+	// +optional
+	Features *NodeRuntimeHandlerFeatures
+}
+
+// NodeRuntimeHandlerFeatures is a set of features implementedy by the runtime handler.
+// THE FEATURES CONTAINED IN THE NodeRuntimeHandlerFeatures SHOULD DEPEND ON THE RUNTIME HANDLERS,
+// (I.E. DEPENDENT TO THE INFORMATION EXPOSED BY OCI RUNTIME-SPEC'S FEATURES).
+type NodeRuntimeHandlerFeatures struct {
+	// RecursiveReadOnlyMounts is set to true if the runtime handler supports RecursiveReadOnlyMounts.
+	// +featureGate=RecursiveReadOnlyMounts
+	// +optional
+	RecursiveReadOnlyMounts *bool
+	// Reserved: UserNamespaces *bool
+}
+```
+
 ### CRI
 
 #### SupplementalGroupsPolicy in SecurityContext
@@ -414,6 +513,48 @@ message LinuxContainerUser {
 // }
 ```
 
+#### features in StatusResponse which contains supplemental_groups_policy field
+
+```proto
+// service RuntimeService {
+// ...
+//     rpc Status(StatusRequest) returns (StatusResponse) {}
+// }
+message StatusResponse {
+...
+    // Runtime handlers.
+    repeated RuntimeHandler runtime_handlers = 3;
+
+    // features describes the set of features implemented by the CRI implementation.
+    // This field is supposed to propagate to NodeFeatures in Kubernetes API.
+    RuntimeFeatures features = ?;
+}
+
+// RuntimeFeatures describes the set of features implemented by the CRI implementation.
+// THE FEATURES CONTAINED IN THE RuntimeFeatures SHOULD DEPEND ON ONLY CRI IMPLEMENTATION, BE INDEPENDENT ON RUNTIME HANDLERS,
+// (I.E. IT SHOULD NOT REQUIRE TO INSPECT TO ANY INFORMATION FROM OCI RUNTIME-SPEC'S FEATURES).
+message RuntimeFeatures {
+    // supplemental_groups_policy is set to true if the runtime supports SupplementalGroupsPolicy and ContainerUser.
+    bool supplemental_groups_policy = 1;
+}
+
+// message RuntimeHandler {
+//     // Name must be unique in StatusResponse.
+//     // An empty string denotes the default handler.
+//     string name = 1;
+//     // Supported features.
+//     RuntimeHandlerFeatures features = 2;
+// }
+
+// RuntimeHandlerFeatures is a set of features implementedy by the runtime handler.
+// THE FEATURES CONTAINED IN THE RuntimeHandlerFeatures SHOULD DEPEND ON THE RUNTIME HANDLERS,
+// (I.E. DEPENDENT TO THE INFORMATION EXPOSED BY OCI RUNTIME-SPEC'S FEATURES).
+message RuntimeHandlerFeatures {
+    bool recursive_read_only_mounts = 1;
+    bool user_namespaces = 2;
+}
+```
+
 ### Test Plan
 
 <!--
@@ -459,8 +600,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/apis/core/validation`: `<date>(t.b.d.)` - `<test coverage>(t.b.d.)`
-  - validation tests for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User`
+- `k8s.io/kubernetes/pkg/api/pod/util.go`: `2024-08-13` - `68.7%`
+  - It tests `dropDisabledFields` for `PodSecurityContext.SupplementalGroups`, `ContainerStatus.User` fields
+  - Note: The test these field values when enabling/disabling this feature.
 
 ##### Integration tests
 
@@ -472,12 +614,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- Kubernetes API
-  - When `SupplementalGroupsPolicy=Strict`, groups of the container process must be ones specified by API: <link to test coverage(t.b.d.)>
-  - When `SupplementalGroupsPolicy=Merge`, groups of the container process contains both groups specified by API and groups of the primary user from the image: <link to test coverage(t.b.d.)>
-  - For running pods, `ContainerStatus.User` contains the correct identities of the containers: <link to test coverage(t.b.d.)>
-- CRI
-  - I will also add symmetrical integration tests to https://github.com/kubernetes-sigs/cri-tools
+See [e2e tests](#e2e-tests) below.
 
 ##### e2e tests
 
@@ -491,9 +628,21 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- When creating a Pod with `SupplementalGroupsPolicy=Strict`, the pods will run with only groups specified by API: <link to test coverage(t.b.d.)>
-- When creating a Pod with `SupplementalGroupsPolicy=Merge`, the pods will run with groups specified by API and groups from the image: <link to test coverage(t.b.d.)>
-- When creating a Pod and it starts, each `ContainerStatus.User` contain the correct identities of the containers: <link to test coverage(t.b.d.)>
+- Kubernetes: <https://github.com/kubernetes/kubernetes/blob/v1.31.0/test/e2e/node/security_context.go>
+  - When creating a Pod with `SupplementalGroupsPolicy=Strict`
+    - the containers in the pod will run with only groups specified by the API, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - When creating a Pod with `SupplementalGroupsPolicy=Merge`
+    - the containers in the pod will run with groups specified by API and groups from the container image, and
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers, and
+  - When creating a Pod without `SupplementalGroupsPolicy` (equivalent behaviour with `Merge`)
+    - the pod will run with with groups specified by API and groups from the image
+    - once it starts, `ContainerStatus.User` contains the correct identities of the containers
+  - _Note: above e2e tests will self-skip if the node does not support `SupplementalGroupsPolicyFeature` detected by `Node.Status.Featuers.SupplementalGroupsPolicy` field._
+- critools(critest): <https://github.com/kubernetes-sigs/cri-tools/blob/v1.31.0/pkg/validate/security_context_linux.go>
+  - Symmetric test cases with Kubernetes e2e tests except for the case of _without `SupplementalGroupsPolicy`_ because `SupplementalGroupsPolicy` always has value(default is `Merge`).
+  - _Note: above tests will self-skip if the runtime does not support `SupplementalGroupsPolicyFeature` detected by `StatusResponse.features.supplemental_groups_policy` field._
+
 
 ### Graduation Criteria
 
@@ -523,8 +672,44 @@ Because this KEP's core implementation(i.e. `SupplementalGroupsPolicy` handling)
 
 ### Version Skew Strategy
 
-- CRI must support this feature, especially when using `SupplementalGroupsPolicy=Strict`.
-- kubelet must be at least the version of control-plane components.
+Existing pods will still work as intended, as the new field is missing there
+(i.e. no `SupplementalGroupsPolicy` fields in existing Pods' spec).
+
+For upgrade, it will not change any current behaviors. But, please note that if you plan to use `Strict` SupplementalGroupsPolicy after the upgrade,
+we assume your CRI runtime in the cluster also support this feature (See ["Dependencies"](#dependencies) section).
+If there are some nodes whose CRI runtime does NOT support this feature, 
+- the creation of pods with `Strict` policy will be rejected depending if the feature levels of the upgraded version was beta or above,
+- the `Strict` policy will fallback to `Merge` silently if the feature level of the upgraded version was alpha.
+Please see the below matrix for more details.
+
+For downgrade, when the functionality wasn't yet used, downgrade will not be affected. But, when the functionality, especially `Strict` SupplementalGroupsPolicy, was already used, there need to be caution:
+- the running containers will continue to run with its effective policy as long as the container was not recreated.
+- However, when the containers in such pods are recreated in the node, the behavior will be varied by downgraded version, the downgraded feature gate value, and its CRI runtime support status (see the below matrix).
+
+The below matrix summarizes what will happen by upgraded/downgraded target versions, target feature gate, target CRI runtime support status:
+
+|     Target<br />kubelet version     | Target<br/>Feature Gate | Target<br/>CRI runtime<br /> support the feature? |                Pod's policy                 |         Effective Policy         | Rejected By Kubelet? | `.containerStatuses.user` reported? |
+| :---------------------------------: | :---------------------: | :-----------------------------------------------: | :-----------------------------------------: | :------------------------------: | :------------------: | :---------------------------------: |
+| <1.31<br/>(does not know the field) |           N/A           |                      Yes/No                       |                  `Strict`                   | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|      1.31 or 1.32<br/>(Alpha)       |         `True`          |                        YES                        |                  `Strict`                   |             `Strict`             |          NO          |                 YES                 |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 YES                 |
+|                                     |                         |                        NO                         |                  `Strict`                   | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |         `False`         |                        YES                        | `Strict`<br />(set when the feature was on) |             `Strict`             |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |                         |                        NO                         | `Strict`<br />(set when the feature was on) | `Merge`<br />(fallback silently) |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|     >=1.33<br />(Beta or above)     |  `True`<br />(default)  |                        YES                        |                  `Strict`                   |             `Strict`             |          NO          |                 YES                 |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 YES                 |
+|                                     |                         |                        NO                         |                  `Strict`                   |                -                 |   __REJECTED__(*)    |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |         `False`         |                        YES                        |  `Strict`<br />(set when the feature was)   |             `Strict`             |          NO          |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+|                                     |                         |                        NO                         |  `Strict`<br />(set when the feature was)   |                -                 |   __REJECTED__(*)    |                 NO                  |
+|                                     |                         |                                                   |           `Merge`<br />/(not set)           |             `Merge`              |          NO          |                 NO                  |
+
+_(*): See ["What specific metrics should inform a rollback?"](#what-specific-metrics-should-inform-a-rollback) for details_
 
 ## Production Readiness Review Questionnaire
 
@@ -600,11 +785,18 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. It can be disabled after enabled. However, users should pay attention that gids of container processes in pods with `Strict` policy would change. It means the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+Yes. It can be disabled after enabled.
+When disabled, you can not create pods with `SupplementalGroupsPolicy` fields and no `.status.containerStatuses[*].user` will be reported in pod status.
+Please note if there are pods that have been created with `Strict` policy, the policy of the containers in such pods will keep enforced even after its disablement.
+
+See ["Version Skew Strategy"](#version-skew-strategy) for more complex cases (including upgrading/downgrading).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Just the policy `Stcict` is reenabled. Users should pay attention that gids of containers in pods with `Stcict` policy would change. It means that the action might break the application in permission. We plan to provide a way for users to detect which pods are affected.
+The `SupplementalGroupsPolicy` field in pod spec and `.status.containerStatuses[*].user` in pod status will be available again.
+As described above section, for pods that have been created with `Strict` policy before, the policy of the containers in such pods will still keep enforced after its re-enablement.
+
+See ["Version Skew Strategy"](#version-skew-strategy) for more complex cases (including upgrading/downgrading).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -621,7 +813,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Planned for Alpha.
+Yes, see [Unit tests](#unit-tests) section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -641,12 +833,52 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+As long as you does not use the `SupplementalGroupsPolicy` fields, rollout or rollback will be safe. And, there is no impact to already running workloads because the feature have backward compatible.
+
+However, if there exist pods with `SupplementalGroupsPolicy` fields when to rollout/rollback, there need to be caution.
+Please see the matrix in ["Version Skew Strategy"](#version-skew-strategy) section for details.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+As long as you does not use the `SupplementalGroupsPolicy` fields, rollout or rollback will be safe as described in the above section.
+
+However, if there exist pods with `SupplementalGroupsPolicy` fields when to rollout/rollback, pod creation rejection might happen when
+- the feature level of rollout-ed/rollback-ed version is beta or above, and
+- pods with `Strict` policy (set when the feature gate was on previously) are scheduled to the nodes whose CRI runtime does NOT support this feature.
+
+In that case, please look for an event saying indicating SupplementalGroupsPolicy is not supported by the node as the rollback signal.
+
+```console
+$ kubectl get events -o json -w
+...
+{
+    ...
+    "kind": "Event",
+    "message": "Error: SupplementalGroupsPolicy is not supported in this node.",
+    ...
+}
+...
+```
+
+Also, the following kubelet metrics are also useful to check:
+
+- `kubelet_running_pods`: Shows the actual number of pods running
+- `kubelet_desired_pods`: The number of pods the kubelet is trying to run
+
+If these metrics are different, it means there are desired pods that can't be set to running.
+If that is the case, checking the pod events to see if they are failing for SupplementalGroupsPolicy reasons
+(like the errors shown in above) is advised, in which case it is recommended to rollback.
+
+Even this KEP does NOT include kube-scheduler integration to ensure to let the scheduler place pods requires
+the feature(`Strict` policy) to the nodes which support this feature, you can use node labels and
+pod's `nodeSelector`/`nodeAffinity` to mitigate pod rejection or error events. Please see
+["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+section below for details.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -656,11 +888,21 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+During the beta phase, the following test will be manually performed:
+- Enable the `SupplementalGroupsPolicy` feature gate for kube-apiserver and kubelet.
+- Create a pod with `supplementalGroupsPolicy` specified.
+- Disable the `SupplementalGroupsPolicy` feature gate for kube-apiserver, and confirm that the pod gets rejected.
+- Enable the `SupplementalGroupsPolicy` feature gate again, and confirm that the pod gets scheduled again.
+- Do the same for kubelet too.
+
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -679,6 +921,12 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Inspect the `supplementalGroupsPolicy` fields in Pods. You can check if the following `jq` command prints non-zero number:
+
+```bash
+kubectl get pods -A -o json | jq '[.items[].spec.securityContext? | select(.supplementalGroupsPolicy)] | length'
+```
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -692,8 +940,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
+- [x] API .status
+  - Condition name: `containerStatuses.user`
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
@@ -715,16 +963,24 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+- `supplementalGroupsPolicy=Strict`: 100% of pods were scheduled into a node with the feature supported.
+  Even this KEP does NOT include scheduler integration, please see
+  ["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature) section for this.
+
+- `supplementalGroupsPolicy=Merge`: 100% of pods were scheduled into a node with or without the feature supported.
+
+- `supplementalGroupsPolicy` is unset: 100% of pods were scheduled into a node with or without the feature supported.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - [Optional] Aggregation method: `kubectl get events -o json -w`
+  - Components exposing the metric: kubelet -> kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -734,6 +990,24 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Potentially, kube-scheduler could implement a rule to avoid scheduling a pod with `supplementalGroupsPolicy: Strict`
+to a node not supporting this feature. 
+
+However, this is not covered by this KEP. It is because that more generic way would be nice in Kubernetes so that scheduler can schedule pods which requires node feature X
+to the nodes which support node feature X.
+
+As of v1.33, although kubernetes does not offer such generic way to do this, cluster admins can maintain node labels and use `nodeSelector`/`nodeAffinity` in pods instead.
+
+There are several way to automate them:
+
+- By Mutating Webhook:
+  - for nodes, which transforms `Node.Status.Feature.SupplementalGroupsPolicy` field to some node label(say `supplementalgroupspolicy-supported: "true" | "false"`),
+  - for pods, which mutates an additional `.spec.nodeSelector: { "supplementalgroupspolicy-supported": "true" }` when the pod specifies `Strict` policy.
+- By Mutating Admission Policy:
+  - although the feature is still alpha as of v1.32, you can write the equivalent policy to do this.
+
+If you appropriately managed the node labels and pods' `nodeSelector`/`nodeAffinity`, the error events or pod rejection will not expect to happen. Instead, you will need to watch `Pending` pods if there are sufficient number of nodes supporting SupplementalGroupsPolicy in the cluster.
 
 ### Dependencies
 
@@ -758,6 +1032,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
+Container runtimes supporting [CRI api v0.31.0](https://github.com/kubernetes/cri-api/tree/v0.31.0) or above.
+
+For example, 
+- containerd: v2.0 or later
+- CRI-O: v1.31 or later
+
 ### Scalability
 
 <!--
@@ -769,6 +1049,20 @@ For beta, this section is required: reviewers must answer these questions.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+
+A pod with `supplementalGroupsPolicy: Strict` may be rejected by kubelet with the probablility of $$B/A$$,
+where $$A$$ is the number of all the nodes that may potentially accept the pod,
+and $$B$$ is the number of the nodes that may potentially accept the pod but does not support this feature.
+This may affect scalability.
+
+To evaluate this risk, users may run
+`kubectl get nodes -o json | jq '[.items[].status.features]'`
+to see how many nodes support `supplementalGroupsPolicy: true` before using `Strict` policy.
+
+To mitigate this probability, you can also manage node labels and pod's `nodeSelector`/`nodeAffinity` to
+ensure pods with `Strict` policy to the nodes which support SupplementalGroupPolicy feature.
+Please see ["Are there any missing metrics that would be useful to have to improve observability of this feature?"](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature) section.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -875,6 +1169,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+A pod cannot be created, just as in other pods.
+
 ###### What are other known failure modes?
 
 <!--
@@ -890,7 +1186,20 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Make sure that the node is running with CRI runtime which supports this feature.
+- Make sure that `crictl info` (with the latest crictl)
+  reports that `supplemental_groups_policy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  the CRI runtime's log.
+- Make sure that `kubectl get nodes -o json | jq '[.items[].status.features]'`
+  (with the latest kubectl and control plane)
+  reports that `supplementalGroupsPolicy` is supported.
+  Otherwise upgrade the CRI runtime, and make sure that no relevant error is printed in
+  kubelet's log.
 
 ## Implementation History
 
@@ -906,6 +1215,7 @@ Major milestones might include:
 -->
 
 - 2023-02-10: Initial KEP published.
+- v1.31.0(2024-08-13): Alpha
 
 ## Drawbacks
 

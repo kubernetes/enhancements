@@ -626,6 +626,7 @@ the previous in-tree implementations.
 - 2021-02-09 - Add production readiness review for alpha stage.
 - 2021-08-04 - First Kubernetes release (v1.22) with `DisableCloudProviders` and `DisableKubeletCloudCredentialProviders` feature gates.
 - 2023-09-02 - Enable external CCMs by default for k/k CI.
+- 2023-05-07 - All the in-tree cloud providers have been removed.
 
 ## Drawbacks
 

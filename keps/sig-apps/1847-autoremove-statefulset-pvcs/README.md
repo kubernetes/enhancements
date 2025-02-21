@@ -77,16 +77,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-  - [X] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -164,7 +165,7 @@ so that scale-up can leverage the existing volumes. When the application is fini
 volumes created by the StatefulSet are no longer needed and can be automatically
 reclaimed.
 
-The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete, which
+The user would set `persistentVolumeClaimRetentionPolicy.whenDeleted` to `Delete`, which
 would ensure that the PVCs created automatically during the StatefulSet
 activation is deleted once the StatefulSet is deleted.
 
@@ -234,11 +235,29 @@ are the only PVCs modified with an ownerRef. Other PVCs referenced by the Statef
 template are not affected by this behavior.
 
 OwnerReferences are used to manage PVC deletion. All such references used for
-this feature will set the controller field to the StatefulSet. This will be used
-to distinguish references added by the controller from, for example,
-user-created owner references. When ownerRefs is removed, it is understood that
-only those ownerRefs whose controller field matches the StatefulSet in question
-are affected.
+this feature will set the controller field to the StatefulSet or Pod as
+appropriate. This will be used to distinguish references added by the controller
+from, for example, user-created owner references. When ownerRefs is removed, it
+is understood that only those ownerRefs whose controller field matches the
+StatefulSet or Pod in question are affected.
+
+The controller flag will be set for these references. If there is already a
+different (non-StatefulSet) controller set for a PVC, an ownerRef will not be
+added. This will mean that the autodelete functionality will not be operative. An
+event will be created to reflect this.
+
+To summarize,
+
+**If the StatefulSet is a controller owner**,
+  * the PVC lifecycle will be full managed by the StatefulSet controller
+  * old owner references will be updated with `controller=false` to `controller=true`
+    (see Upgrade / Downgrade Strategy, below).
+  * remove itself as the owner and controller when the retain policy is specified in the StatefulSet.
+
+**If someone else is the controller**, 
+  * the PVC lifecycle will not be touched by the StatefulSet controller. The PVC
+    will stay when the delete policy is specified in the StatefulSet.
+  * old StatefulSet owner references will be removed.
 
 ### Volume delete policy for the StatefulSet created PVCs
 
@@ -342,31 +361,33 @@ to implement this enhancement.
 
 #### Unit tests
 
-- `k8s.io/kubernetes/pkg/controller/statefulset`: `2022-06-15`: `85.5%`
-- `k8s.io/kubernetes/pkg/registry/apps/statefulset`: `2022-06-15`: `68.4%`
-- `k8s.io/kubernetes/pkg/registry/apps/statefulset/storage`: `2022-06-15`: `64%`
+From https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=statefulset
 
+- `k8s.io/kubernetes/pkg/controller/statefulset`: `2024-10-07`: `86.5%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset`: `2022-10-07`: `62.7%`
+- `k8s.io/kubernetes/pkg/registry/apps/statefulset/storage`: `2022-10-07`: `64%`
   
 ##### Integration tests
 
-- `test/integration/statefulset`: `2022-09-21`: These do not appear to be
-  running in a job visible to the triage dashboard, see for example a search
-  for the previously existing [TestStatefulSetStatusWithPodFail](https://storage.googleapis.com/k8s-triage/index.html?test=TestStatefulSetStatusWithPodFail).
+- `test/integration/statefulset`: `2024-10-07`: [No failures](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=TestAutodeleteOwnerRefs)
 
 Added `TestAutodeleteOwnerRefs` to `k8s.io/kubernetes/test/integration/statefulset`.
 
 ##### E2E tests
 
-- `[gci-gce-statefulset](https://testgrid.k8s.io/google-gce#gci-gce-statefulset)`: `2022-09-21`: `0 Failures`
-  - Note that as this KEP is behind the `StatefulSetAutoDeletePVC` feature gate,
-    tests for this KEP are not being run.
+- `[gci-gce-statefulset](https://testgrid.k8s.io/google-gce#gci-gce-statefulset)`: `2024-10-07`: `0 Failures`
+- [triage](https://storage.googleapis.com/k8s-triage/index.html?test=.*StatefulSetPersistentVolumeClaimPolicy.*): `2024-10-09`:
+  - Flakey failures in `ci-kubernetes-kind-e2e-parallel`, `ci-kubernetes-kind-e2e-parallel-1-30` and
+    `ci-kubernetes-kind-ipv6-e2e-parallel-1-31` also had failures in many other tests, so appears to
+    be general infrastructure flake.
+  - ` [sig-apps] StatefulSet Non-retain StatefulSetPersistentVolumeClaimPolicy should delete PVCs
+    after adopting pod (WhenScaled)` seems to have real flakes which will be investigated.
 
 Added `Feature:StatefulSetAutoDeletePVC` tests to `k8s.io/kubernetes/test/e2e/apps/`.
 
 ##### Upgrade/downgrade & feature enabled/disable tests
 
-Should be added as an e2e tests, but we have not figured out if there is a
-mechanism to run upgrade/downgrade tests.
+The following scenarios were manuall tested.
 
     1. Create statefulset in previous version and upgrade to the version 
        supporting this feature. The PVCs should remain intact.
@@ -374,6 +395,45 @@ mechanism to run upgrade/downgrade tests.
        remain intact and the others with set policies before upgrade 
        gets deleted based on if the references were already set.
 
+Since `rancher.io/local-path` now provides a default storage class, StatefulSets
+can be tested with kind with the following procedure.
+
+* Create a [kind](https://kind.sigs.k8s.io/) cluster with the following `config.yaml`.
+  ```
+  apiVersion: kind.x-k8s.io/v1alpha4
+  kind: Cluster
+  featureGates:
+    StatefulSetAutoDeletePVC: false
+  nodes:
+  - role: control-plane
+    image: kindest/node:v1.31.0
+  ```
+  This is done with `kind create cluster --config config.yaml`
+* The configuration adds the feature gate to all control plane services. In a
+  kind cluster, these are stored in the `/etc/kubernetes/manifests` directory of
+  the kind docker container serving as the control plane node. The manifests are
+  reconciled to the control plane, so the cluster can be upgraded or downgraded
+  from the StatefulSet retention policy feature with bash script like the
+  following.
+  ```
+  for c in kube-apiserver kube-controller-manager kube-scheduler; do
+    docker exec kind-control-plane \
+      sed -i -r "s|(StatefulSetAutoDeletePVC)=false|\1=true|" \
+      /etc/kubernetes/manifests/$c.yaml
+    echo $c updated
+  done
+  ```
+  To downgrade, swap false for true in the above. Note that the kind control
+  plane will be unreachable for a minute or so while the reconciliation occurs.
+  
+For the upgrade scenario, a StatefulSet was created in a cluster with the
+feature gate disabled. The feature gate was enabled, the StatefulSet was scaled
+down or deleted, and it was confirmed that no PVCs were deleted.
+
+In the downgrade scenario, four StatefulSets were created with all possibilities
+of WhenScaled and WhenDeleted policies. After downgraded, it was confirmed that
+(1) no PVCs are deleted when the StatefulSet is scaled down, and (2) PVCs are
+deleted when the WhenDeleted policy is Delete, and the StatefulSet is deleted.
 
 ### Graduation Criteria
 
@@ -385,7 +445,10 @@ mechanism to run upgrade/downgrade tests.
 - (Done) Enable feature gate for e2e pipelines
 
 #### GA release
-- Validate with customer workloads
+- (Done) Validate with customer workloads. There has been no customer feedback
+  aside from some unrelated issues on GKE which showed that customers were using
+  delete strategies, and analysis of owner references on PVCs that motivated
+  [#122400](https://github.com/kubernetes/kubernetes/issues/122400).
 
 
 ### Upgrade / Downgrade Strategy
@@ -394,14 +457,34 @@ This features adds a new field to the StatefulSet. The default value for the new
 maintains the existing behavior of StatefulSets.
 
 On a downgrade, the `PersistentVolumeClaimRetentionPolicy` field will be hidden on
-any StatefulSets. The behavior in this case will be identical to mutating they
+any StatefulSets. The behavior in this case will be identical to mutating the
 policy field to `Retain`, as described above, including the edge cases
 introduced if this is done during a scale-down or StatefulSet deletion.
 
+The initial beta version did not set the controller flag in the owner
+reference. This was fixed in later versions, so that the controller flag is
+set. The behavior is then as follows.
+
+* If the StatefulSet or one of its Pods is a controller, owner references are
+  updated as specified by the retention policy.
+* If the StatefulSet or one of its Pods is an owner but not a controller,
+  * if there is no other controller, the StatefulSet or Pod owners will be set
+    as controller (ie, they are assumed to be from the initial beta version and
+    updated).
+  * The controller will be updated as specified by the retention policy.
+* If there is another resource that is a controller,
+  * any (non-controler) StatefulSet or Pod owner reference is removed.
+  * The retention policy is ignored.
+
 ### Version Skew Strategy
-There are only kube-controller-manager changes involved (in addition to the
-apiserver changes for dealing with the new StatefulSet field). Node components
-are not involved so there is no version skew between nodes and the control plane.
+There are only apiserver and kube-controller-manager changes involved. Node
+components are not involved so there is no version skew between nodes and the
+control plane. Since the api changes are backwards compatible, as long as the
+apiserver version which originally added the new StatefulSet fields is rolled
+out before the kube-controller-manager, behavior will be correct. Since the alpha
+API has been out since 1.23 and there have been no incompatible changes to the
+API, the order of any modern apiserver & kube-controller-manager rollout should
+not matter anyway.
 
 ## Production Readiness Review Questionnaire
 
@@ -471,8 +554,7 @@ are not involved so there is no version skew between nodes and the control plane
 
 ##### Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?
-  Enabling the feature also enables the `PersistentVolumeClaimRetentionPolicy`
-  api field.
+  No
 
 ### Monitoring Requirements
 
@@ -537,8 +619,8 @@ of this feature?
   have been happening anyway, manually.
 
 ##### Will enabling / using this feature result in increasing size or count of the existing API objects?
-  - PVC, new ownerRef.
-  - StatefulSet, new field
+  - PVC, new ownerRef; ~64 bytes
+  - StatefulSet, new field; ~8 bytes (holds string enumeration either "Delete" or "Retain"
 
 ##### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
   No. (There are currently no StatefulSet SLOs?)
@@ -590,6 +672,8 @@ stateful set controller lives) should be examined and/or restarted.
   - 1.21, KEP created.
   - 1.23, alpha implementation.
   - 1.27, graduation to beta.
+  - 1.31, fix controller references.
+  - 1.32, graduation to GA.
 
 ## Drawbacks
 The StatefulSet field update is required.

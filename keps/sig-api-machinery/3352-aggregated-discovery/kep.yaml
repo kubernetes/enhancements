@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-cli
-status: implementable
+status: implemented
 creation-date: 2022-06-07
 reviewers:
   - "@apelisse"
@@ -16,19 +16,21 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@lavalamp"
+  - "@jpbetz"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.27"
+latest-milestone: "v1.30"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.26"
   beta: "v1.27"
+  stable: "v1.30"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

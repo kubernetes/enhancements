@@ -3,8 +3,9 @@ kep-number: 3221
 authors:
   - "@100mik"
   - "@palnabarun"
+  - "@ritazh"
 owning-sig: sig-auth
-status: implementable
+status: implemented
 creation-date: 2022-06-21
 reviewers:
   - "@deads2k"
@@ -14,10 +15,12 @@ approvers:
   - "@liggitt"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/101762
-stage: alpha
-latest-milestone: "v1.29"
+stage: stable
+latest-milestone: "v1.32"
 milestone:
   alpha: "v1.29"
+  beta: "v1.30"
+  stable: "v1.32"
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
@@ -25,3 +28,13 @@ feature-gates:
     components:
       - kube-apiserver
 disable-supported: true
+metrics:
+- apiserver_authorization_decisions_total{type, name, decision}
+- apiserver_authorization_webhook_duration_seconds{name, result}
+- apiserver_authorization_webhook_evaluations_total{name, result}
+- apiserver_authorization_webhook_evaluations_fail_open_total{name, result}
+- apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds{apiserver_id_hash, status}
+- apiserver_authorization_config_controller_automatic_reloads_total{apiserver_id_hash, status}
+- apiserver_authorization_match_condition_evaluation_errors_total{type, name}
+- apiserver_authorization_match_condition_exclusions_total{type, name}
+- apiserver_authorization_match_condition_evaluation_seconds{type, name}

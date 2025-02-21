@@ -107,9 +107,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [With sidecar container feature](#with-sidecar-container-feature)
   - [Resources calculation for scheduling and pod admission](#resources-calculation-for-scheduling-and-pod-admission)
   - [Exposing Pod Resource requirements](#exposing-pod-resource-requirements)
-    - [Goals of exposing the Pod.TotalResourcesRequested field](#goals-of-exposing-the-podtotalresourcesrequested-field)
-    - [Implementation details](#implementation-details)
-    - [Notes for implementation](#notes-for-implementation)
     - [Resources calculation and Pod QoS evaluation](#resources-calculation-and-pod-qos-evaluation)
     - [Resource calculation and version skew](#resource-calculation-and-version-skew)
   - [Topology and CPU managers](#topology-and-cpu-managers)
@@ -181,15 +178,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -394,18 +391,16 @@ and more details can be found in the section
 Sidecar containers will not block Pod completion - if all regular containers
 complete, sidecar containers will be terminated.
 
-During the sidecar startup stage the restart behavior will be similar to init
-containers. If Pod `restartPolicy` is `Never`, sidecar container failed during
-startup will NOT be restarted and the whole Pod will fail. If Pod
-`restartPolicy` is `Always` or `OnFailure`, it will be restarted.
+The `restartPolicy` field for individual init containers can override the
+Pod-level `restartPolicy` for sidecar containers. As a result, even if the Pod's
+`restartPolicy` is set to `Never` or `OnFailure`, sidecar containers will still
+be restarted.
 
-Once sidecar container is started (`postStart` completed and startup probe
-succeeded), this containers will be restarted even when the Pod `restartPolicy`
-is `Never` or `OnFailure`. Furthermore, sidecar containers will be restarted
-even during Pod termination.
+Note, a separate KEP https://github.com/kubernetes/enhancements/issues/4438 will enable
+sidecar containers to be restarted even during Pod termination.
 
 In order to minimize OOM kills of sidecar containers, the OOM adjustment for
-these containers will match or exceed the OOM score adjustment of regular
+these containers will match or fall below the OOM score adjustment of regular
 containers in the Pod. This intent to solve the issue
 https://github.com/kubernetes/kubernetes/issues/111356 
 
@@ -862,76 +857,10 @@ It is too much to ask of users to perform this even more complex calculation
 simply to know the amount of free capacity they need for a given resource to
 allow a pod to schedule.
 
-#### Goals of exposing the Pod.TotalResourcesRequested field
-
-- Allow Kubernetes users to quickly identify the effective resource requirements
-  for a pending or scheduled pod directly via observing the pod status.
-- Ability to cluster autoscaler, karpenter etc to collect a bunch of resource
-  unavailable/unschedulable pods and easily sum up their
-  `TotalResourcesRequested` to add nodes
-- Allow consuming the Pod Requested Resources via metrics:
-  - Make sure kube_pod_resource_requests formula is up to date
-  - Consider exposing Pod Requirements as a Pod state metric via
-    https://github.com/kubernetes/kube-state-metrics/blob/main/docs/pod-metrics.md 
-- Provide a well documented, reusable, exported function to be used to calculate
-  the effective resource requirements for a v1.Pod struct.
-- Eliminate duplication of the pod resource requirement calculation within
-  `kubelet` and `kube-scheduler`.
-
-Note: in order to support the [Downgrade strategy](#downgrade-strategy), scheduler
-will ignore the presence of the feature gate when calculating resources. This will
-prevent overbooking of nodes when scheduler ignored sidecar when calculating resources
-and scheduled too many Pods on the Node that had the feature gate enabled.
-
-#### Implementation details
-
-We propose making two changes to satisfy the two primary consumers of the
-effective pod resource requests, users and other Kubernetes ecosystem software
-components.
-
-The first change is to add a field to `PodStatus` to represent the effective
-resource requirements for the pod.  The field is named
-`TotalResourcesRequested`. This field allows users to inspect running and
-pending pods to quickly determine their effective resource requirements. The
-field will be first populated by scheduler in the
-[updatePod](https://github.com/kubernetes/kubernetes/blob/815e651f397a6f5691efb26b0d4f3bddb034668c/pkg/scheduler/schedule_one.go#L943).
-
-The updating of this field would occur the existing
-[generateAPIPodStatus](https://github.com/kubernetes/kubernetes/blob/a668924cb60901b413abc1fe7817bc7969167064/pkg/kubelet/kubelet_pods.go#L1459) method.
-
-```
-// TotalResourcesRequested is the effective resource requirements for this pod, taking into consideration init containers, sidecars, containers and pod overhead.
-// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/  
-// +optional  
-TotalResourcesRequested ResourceList `json:"totalResourcesRequested,omitempty" protobuf:"bytes,8,opt,name=totalResourcesRequested"`
-```
-
-The second change is to update the [PodRequestsAndLimitsReuse](https://github.com/kubernetes/kubernetes/blob/dfc9bf0953360201618ad52308ccb34fd8076dff/pkg/api/v1/resource/helpers.go#L64) function to support
-the new calculation and, if possible, re-use this functionality the other places
-that pod resource requests are needed (e.g. kube-scheduler, kubelet).  This
-ensures that components within Kubernetes have an identical computation for
-effective resource requirements and will reduce maintenance effort. Currently
-this function is only used for the metrics `kube_pod_resource_request` and
-`kube_pod_resource_limit` that are exposed by `kube-scheduler` which align with the
-values that will also now be reported on the pod status.
-
-A correct, exported function is particularly useful for other Kubernetes
-ecosystem components that need to know the resource requirements for pods that
-don’t exist yet.  For example, an autoscaler needs to know what the resource
-requirements will be for DaemonSet pods when they are created to incorporate
-them into its calculations if it supports scale to zero.
-
-#### Notes for implementation
-
-This change could be made in a phased manner:
-- Refactor to use the `PodRequestsAndLimitsReuse` function in all situations where pod resource requests are needed.
-- Add the new `TotalResourcesRequested` field on `PodStatus` and modify
-  `kubelet` & `kube-scheduler` to update the field.
-
-These two changes are independent of the sidecar and in-place resource update
-KEPs.  The first change doesn’t present any user visible change, and if
-implemented, will in a small way reduce the effort for both of those KEPs by
-providing a single place to update the pod resource calculation.
+This KEP will not expose the total resource requests field to end user
+as many decisions on this field need to be made from other KEPs: InPlace pod update 
+and Pod Level resources. We do not want to make it harder for those new KEPs
+to be implemented by exposing this field prematurely.
 
 #### Resources calculation and Pod QoS evaluation
 
@@ -1281,68 +1210,6 @@ to know in early stages of the KEP IMHO.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 #### Alpha
 
 - Feature implemented behind a feature flag
@@ -1353,29 +1220,14 @@ in back-to-back releases.
 #### Beta
 
 - Implement proper termination ordering.
-- Allow sidecar containers to restart during the shutdown of the Pod.
 - Add tests with feature activation and deactivation (see [Feature Enablement and Rollback](#feature-enablement-and-rollback)).
 
 #### GA
 
-- Enable `livenessProbe` during the shutdown of the Pod for sidecar containers that restart.
-- Allow to apply security policies on all containers in `initContainers`
-    collection. Example may be disabling `kubectl exec` on containers in
-    `initContainers` collection.
+- All known issues are fixed
+- Production use feedback addressed
 
 ### Upgrade / Downgrade Strategy
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
 
 #### Upgrade strategy
 
@@ -1559,7 +1411,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Not yet, but it is planned/required to add them before graduation to Beta.
+See https://github.com/kubernetes/kubernetes/pull/129731/ introducing this test with the emulated version.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1614,9 +1466,10 @@ that might indicate a serious problem?
     - Labels:code, container_type (should be `init_container`)
     - Components exposing the metric: `kubelet-metrics`
     - Symptoms: high number of errors indicates that the kubelet is unable to start the sidecar containers
-- [X] Events
-  - Event name: TBD
-  - Symptoms: high number of events indicates that the TGPS has been exceeded and sidecars have been terminated not gracefully
+- [X] API objects
+  - Pods stuck in Pending state of Init container running.
+    - Type: API objects
+    - Symptoms: when the new field `restartPolicy:Always` was mistakenly stripped out by a webhook, Pod will get stuck.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1744,9 +1597,6 @@ Pick one more of these and delete the rest.
     - Type: Counter 
     - Labels:code, container_type (should be `init_container`)
     - Components exposing the metric: `kubelet-metrics`
-- [X] Events
-  - Event name: TBD
-  - should not appear, unless TGPS is exceeded and sidecars are terminated
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1924,18 +1774,18 @@ For each of them, fill in the following information by copying the below templat
   - Detection: high number of events indicating TGPS has been exceeded
   - Mitigations: ensure timely termination of main containers
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: https://github.com/kubernetes/kubernetes/blob/b4f902f0371485505ff4eda39975e67bfa9b0727/test/e2e_node/container_lifecycle_test.go#L4977-L5077
 - Main container or sidecar use a preStop hook consuming TGPS, leading to remaining sidecars being terminated
   - Detection: high number of events indicating TGPS has been exceeded
   - Mitigations: ensure preStop hooks are not delaying termination
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: https://github.com/kubernetes/kubernetes/blob/b4f902f0371485505ff4eda39975e67bfa9b0727/test/e2e_node/container_lifecycle_test.go#L4272-L4408
 - Sidecar container uses a preStop hook that make the container exit during Pod shutdown, sidecar is restarted, leading
 to a CrashLoopBackOff
   - Detection: sidecar in CrashLoopBackOff during termination
   - Mitigations: ensure preStop hooks are not making the container to exit, document best practices
   - Diagnostics: Events
-  - Testing: TBD
+  - Testing: no testing needed as this is a best practice implementing sidecars
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1957,7 +1807,8 @@ Major milestones might include:
 - 2018-05-14: First proposal.
 - 2023-06-09: Target 1.28 for Alpha.
 - 2023-07-08: Alpha implementation merged.
-- TODO: PRR completed and graduation to beta proposed.
+- 1.29: feature is in Beta
+- 1.33: feature is graduated to Stable
 
 ## Drawbacks
 
