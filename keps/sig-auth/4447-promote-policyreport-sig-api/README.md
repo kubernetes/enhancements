@@ -866,7 +866,8 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
-- Adopt PolicyReport as an official, in-tree Kubernetes API
+- Adopt PolicyReport as an official, in-tree Kubernetes API.
+This option was ruled out as reports are best managed as a Custom Resource, and not in-tree.
 
 ## Infrastructure Needed (Optional)
 * a new repository called `policy-report-api` under the `kubernetes-sigs` org
