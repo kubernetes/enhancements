@@ -35,7 +35,7 @@
     - [BucketClass](#bucketclass)
     - [BucketAccess](#bucketaccess)
     - [BucketAccessClass](#bucketaccessclass)
-    - [BucketAccess secret data](#bucketaccess-secret-data)
+    - [BucketAccess Secret data](#bucketaccess-secret-data)
   - [COSI Driver](#cosi-driver)
     - [COSI Driver gRPC API](#cosi-driver-grpc-api)
       - [DriverGetInfo](#drivergetinfo)
@@ -382,10 +382,7 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
    4. Controller sets `objectstorage.k8s.io/has-bucketaccess-references` annotation on corresponding BucketClaim
       (block claim from being deleted until access is deleted)
    5. If BucketClaim not ready, exit with retry
-   6. If Bucket-BucketClaim binding is not valid, exit with (without?) retry
-      <!-- TODO: discuss how to make controller update access when bucketclaim updated
-           - owner ref on claim? (managing could be tricky, and "ownership" semantic is iffy)
-           - annotation for each access on claim? (managing could be tricky) -->
+   6. If Bucket-BucketClaim binding is not valid, exit and retry when Bucket/Claim updated
    7. Once everything looks good on Bucket+Claim, set corresponding Bucket name on BucketAccess status
 5. COSI Sidecar detects the BucketAccess resource
    1. BucketAccess status now shows corresponding Bucket name, so sidecar can provision
@@ -436,20 +433,18 @@ If sidecar does cleanup first -- i.e., remove user before finalizers/annotations
 2. COSI Sidecar detects BucketAccess resource's deletion timestamp
    1. Initially, Sidecar does nothing, waiting for Controller to set `objectstorage.k8s.io/controller-cleanup-finished` annotation
 3. Controller detects BucketAccess resource's deletion timestamp
-   1.
-
-   1. <!-- TODO: this would be where BA controller checks for protection finalizer on BA, if we implement that -->
-   2. Sidecar removes `objectstorage.k8s.io/cleanup` finalizer from the BucketAccess Secret
-   3. Sidecar deletes the BucketAccess Secret
-   4. Sidecar calls the COSI driver via gRPC to revoke the associated access credentials <!-- TODO: discuss ordering -->
-4. If OSP returns de-provision fail, COSI sidecar reports error to BucketAccess status and retries gRPC call
-5. When OSP returns de-provision success, COSI sidecar:
+   1. Controller removes `objectstorage.k8s.io/has-bucketaccess-references` from BucketClaim if this is the last BucketAccess against the BucketClaim
+      1. This allows BucketClaim to start deletion, if applicable
+   2. Controller applies `objectstorage.k8s.io/controller-cleanup-finished`, allowing Sidecar to finish cleanup
+4. Sidecar detects change to resource
+   1. Sidecar removes `objectstorage.k8s.io/cleanup` finalizer from the BucketAccess Secret
+   2. Sidecar deletes the BucketAccess Secret <!-- TODO: discuss ordering -->
+   3. Sidecar calls the COSI driver via gRPC to revoke the associated access credentials <!-- TODO: discuss ordering -->
+5. If OSP returns de-provision fail, COSI sidecar reports error to BucketAccess status and retries gRPC call
+6. When OSP returns de-provision success, COSI sidecar:
    1. Removes `objectstorage.k8s.io/cleanup` finalizer from BucketAccess
 
-COSI Controller is responsible for watching BucketAccesses and BucketClaims and removing the
-`objectstorage.k8s.io/bucket-claim-protection` finalizer from BucketClaims when BucketAccesses no longer
-reference it. This mirrors how Kubernetes handles the `kubernetes.io/pvc-protection` finalizer:
-https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/pvcprotection/pvc_protection_controller.go
+COSI Controller is responsible for watching BucketAccesses and BucketClaims and removing the `objectstorage.k8s.io/bucket-claim-protection` finalizer from BucketClaims when BucketAccesses no longer reference it. This mirrors how Kubernetes handles the `kubernetes.io/pvc-protection` finalizer: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/pvcprotection/pvc_protection_controller.go
 
 #### Attaching Bucket Information to Pods
 
@@ -458,24 +453,13 @@ User attaches bucket information to their workload's application pod.
 1. User references the BucketAccess secret using the pod volume downward API in their pod spec
 2. User configures pod container(s) to mount secret data items as desired
 
-<!-- TODO: link to location where bucket access secret data is specified -->
+See [BucketAccess Secret data](#bucketaccess-secret-data) section for more details.
 
-The BucketAccess secret can be provided to the pod using any Kubernetes {secret -> pod} attachment
-mechanism. This naturally includes mounting data into environment variables and files. Mounting
-credential data into files is slightly more secure than environment variables and is thus
-recommended. However, each application has different requirements, and some may require environment
-variables for configuring access.
-
-<!-- TODO: do we need to consider BucketClass here? if so, how? -->
-
+The BucketAccess secret can be provided to the pod using any Kubernetes {Secret -> Pod} attachment mechanism. This naturally includes mounting data into environment variables and files. Mounting credential data into files is slightly more secure than environment variables and is thus recommended. However, each application has different requirements, and some may require environment variables for configuring access.
 
 ### Sharing Buckets
 
-This section describes the current design for sharing buckets with other namespaces. As of COSI
-v1alpha2, any BucketClaims created in one namespace cannot be accessed in another namespace. I.e. no
-bucket sharing is possible. In future versions, a namespace-level access control will be enforced,
-and Buckets will be constrained to particular namespaces using selectors. Admins will be able to
-control which namespaces can access which buckets using namespace selectors.
+This section describes the current design for sharing buckets with other namespaces. As of COSI v1alpha2, any BucketClaims created in one namespace cannot be accessed in another namespace. I.e. no bucket sharing is possible. In future versions, a namespace-level access control will be enforced, and Buckets will be constrained to particular namespaces using selectors. Admins will be able to control which namespaces can access which buckets using namespace selectors.
 
 ### COSI API Reference
 
@@ -711,6 +695,8 @@ BucketAccess {
     // TODO: will have to update this to a list when 1-access:many-buckets support is added
     BoundBucketName string
 
+    // ^^^ TODO: new in v1alpha2, discuss
+
     // AccessGranted indicates the successful grant of privileges to access the bucket.
     AccessGranted bool
 
@@ -718,23 +704,21 @@ BucketAccess {
     // sidecar once access has been successfully granted.
     AccountID string
 
+    // Parameters holds a copy of the BucketAccessClass opaque parameters at the time of
+    // BucketAccess provisioning. These parameters are kept to ensure the BucketAccess can be
+    // modified/deleted even after BucketAccessClass mutation/deletion.
+    Parameters map[string]string
+
+    // ^^^ TODO: new in v1alpha2, discuss
+
     // ErrorMessage is the most recent error message. This cleared when provisioning is successful.
     ErrorMessage string
   }
 ```
 
-BucketAccessClass can be used to specify a authorization mechanism. It can be one of
-- KEY  (**default**)
-- IAM
+The `credentialsSecretName` is the name of the Kubernetes Secret that COSI will generate containing endpoint, credentials, and other information needed to access the OSP bucket. The same Secret can be referenced by Pods to access the OSP bucket.
 
-The KEY based mechanism is where access and secret keys are generated to be provided to pods. IAM
-style is where pods are implicitly granted access to buckets by means of a metadata service. IAM
-style access provides greater control for the infra/cluster administrator to rotate secret tokens,
-revoke access, change authorizations etc., which makes it more secure.
-
-The `credentialsSecretName` is the name of the secret that COSI will generate containing credentials to access the bucket. The same secret name has to be set in the podSpec as well as the projected secret volumes.
-
-In case of IAM style authentication, along with the `credentialsSecretName`, `serviceAccountName` field must also be specified. This will map the specified serviceaccount to the appropriate service account in the OSP.
+In case of IAM style authentication, along with the `credentialsSecretName`, `serviceAccountName` field must also be specified. This will map the specified ServiceAccount to the appropriate service account in the OSP.
 
 #### BucketAccessClass
 
@@ -764,7 +748,13 @@ BucketAccessClass {
 }
 ```
 
-#### BucketAccess secret data
+BucketAccessClass can be used to specify a authorization mechanism. It can be one of
+- KEY  (**default**)
+- IAM
+
+The KEY based mechanism is where access and secret keys are generated to be provided to Pods. IAM-style is where pods are implicitly granted access to buckets by means of a metadata service. IAM-style access provides greater control for the Administrator to rotate secret tokens, revoke access, change authorizations etc., potentially making it more secure.
+
+#### BucketAccess Secret data
 
 All buckets have this data:
 
@@ -824,46 +814,29 @@ DriverGetInfoResponse{
 
 This gRPC call creates a bucket in the OSP, and returns information about the new bucket. This API must be idempotent.
 
-<!-- TODO: discuss this!!!!
+COSI uses `Request.name` as an idempotency key. The driver should ensure that multiple DriverCreateBucket calls for the same name do not result in more than one OSP backend bucket being provisioned corresponding to that name. Using or appending random identifiers can lead to multiple unused buckets being created in the OSP backend in the event of timing-related driver/sidecar failures or restarts.
 
-COSI Sidecar currently uses the name of the Bucket resource in the "name" field. This is enough information to identify individual buckets within a single Kubernetes cluster. If an OSP needs to support multiple Kubernetes clusters, the OSP driver will have to implement some mechanism for identifying which Kubernetes cluster the driver is running in and use that information along with the Bucket name to ensure non-colliding internal bucket names. I'm guessing this is why CSI provisioner implemented a configurable prefix?
+The Sidecar uses the name of the Bucket resource as the input value for `Request.name`. This will be `bc-<BucketClaim.UID>` for dynamically-provisioned Buckets -- statistically likely to be globally unique even between multiple Kubernetes clusters. This is guaranteed to be unique per-Kubernetes-cluster for statically-provisioned Buckets.
 
-CSI also uses `PV.name` for the idempotency key. Maybe this is fine.
-CSI handles this by setting the `<prefix>-<PVC.UID>` as the Bucket name for dynamic PVs, where prefix is `pvc-` by default.
-Should we continue to follow suit? Are there issues with how CSI did this?
+Input `parameters` are the opaque parameters copied from the Bucket (originating from BucketClass). Drivers can use these parameters to configure OSP bucket features based on the Administrator's BucketClass configuration.
 
-Why not use the Bucket UID?
-
-Dynamic buckets are currently named by BucketCLASS name appended with BucketCLAIM UID. This seems odd. Why not CLAIM name+uid, or follow suit with CSI and use `<prefix>-`+Claim.UID?
-
-Or, as is sort of implied by the v1alpha1 spec that shows `br-$uuid`, this could merely be the UUID of the bucket. Using the UUID would also help prevent against global collisions, meaning that most backends wouldn't practically have to worry about a shared backend with multiple k8s clusters.
-
-UIDs are a fixed length, so it should be easy for a driver to separate the UID from bucket name if desired.
-
-Proposal below:
--->
-
-The Sidecar uses a deterministic value for `Request.name`. This should be a concatenation of the Bucket object name and Bucket object UID to uniquely and globally identify provisioning requests for OSP buckets. UID is enough to ensure uniqueness, but Bucket object name is included in order to help developers and administrators correlate OSP backend buckets to COSI Bucket objects at a glance.
-
-When a driver creates an OSP backend bucket, it should use `Request.name` as an idempotency key. The driver should ensure that multiple DriverCreateBucket calls for the same name do not result in more than one OSP backend bucket being provisioned corresponding to that name Using or appending random identifiers can lead to multiple unused buckets being created in the OSP backend in the event of timing-related driver/sidecar failures or restarts.
-
-The returned `bucketID` should be a unique identifier for the bucket known to the driver. This value will be used by COSI to make all subsequent calls related to this bucket, so the driver must be able to correlate `bucketID` to the OSP backend bucket. It is easiest for drivers to use the request `name` field as both `bucketID` and as the OSP backend bucket identifier, but this is not strictly required.
+The returned `bucketID` should be a unique identifier for the OSP bucket known to the driver. This value will be used by COSI to make all subsequent calls related to this bucket, so the driver must be able to correlate `bucketID` to the OSP backend bucket. It is easiest for drivers to use the request `name` field as both `bucketID` and as the OSP backend bucket identifier, but this is not strictly required.
 
 ```go
 DriverCreateBucket(DriverCreateBucketRequest) DriverCreateBucketResponse
 
 DriverCreateBucketRequest{
-  "name": "<Bucket object name>", // TODO: will change based on above discussion
-  "parameters": {
+  "name": "<Bucket.name>", // will be "bc-<BucketClaim.UID>" for dynamically-provisioned Buckets
+  "parameters": { // copied from Bucket.parameters
     "<key>": "<value>"
     // ...
   }
 }
 
 DriverCreateBucketResponse{
-  "bucketID": "<ID returned by driver>" // e.g., "
+  "bucketID": "<ID returned by driver>" // will be applied to Bucket.status.bucketID
   "bucketInfo": {
-    "s3": {
+    "s3": { // will be one of protocols in BucketClass
       "bucketName": "<name of bucket as used by clients>",
       "region": "<region>", // e.g., "us-west-1"
       "endpoint": "<endpoint used by clients for access>" // e.g., "s3.amazonaws.com"
@@ -880,11 +853,11 @@ DriverCreateBucketResponse{
 Note: the driver is expected to return the well-known gRPC return code `AlreadyExists` when the bucket already exists but is incompatible with the request.
 
 Example showing use where identities differ between request, OSP backend, and returned ID:
-- Sidecar `Request.name` = `my-bucket-aaaaa-bbbb-cccc-dddddd`
-- Driver creates OSP backend bucket ID by appending `cosi-`: `cosi-my-bucket-aaaaa-bbbb-cccc-dddddd`
-- Driver `Response.bucketID` returns base64-encoded form of OSP backend bucket name: `Y29zaS1teS1idWNrZXQtYWFhYWEtYmJiYi1jY2NjLWRkZGRkZA==`
+- Sidecar `Request.name` = `bc-aaaaa-bbbb-cccc-dddddd`
+- Driver creates OSP backend bucket ID by appending `cosi-`: `cosi-bc-aaaaa-bbbb-cccc-dddddd`
+- Driver `Response.bucketID` returns base64-encoded form of OSP backend bucket name: `Y29zaS1iYy1hYWFhYS1iYmJiLWNjY2MtZGRkZGRk`
 
-In this example, the driver is using `Request.name` as the basis for the provision request and also wants to include additional information in the OSP backend bucket ID. It appends `cosi-`, which is safe to append because it is not random information. When returning `Response.bucketID`, it returns an encoded form that is easy to decode back into the OSP backend bucket ID on subsequent gRPC calls. For S3, the `bucketInfo.s3.bucketName` field would be `cosi-my-bucket-aaaaa-bbbb-cccc-dddddd` since that is the bucket name S3 clients will use.
+In this example, the driver is using `Request.name` as the basis for the provision request and also wants to include additional information in the OSP backend bucket ID. It appends `cosi-`, which is safe to append because it is not random information. When returning `Response.bucketID`, it returns an encoded form that is easy to decode back into the OSP backend bucket ID on subsequent gRPC calls. For S3, the `bucketInfo.s3.bucketName` field would be `cosi-bc-aaaaa-bbbb-cccc-dddddd` since that is the bucket name S3 clients will use.
 
 ##### DriverValidateBucket
 
@@ -899,77 +872,82 @@ Possibly ControllerGetVolume?
 
 ##### DriverGrantBucketAccess
 
-This gRPC call creates a set of access credentials for a bucket. This API must be idempotent. The input to this call is the id of the bucket, a set of opaque parameters and name of the account. This `accountName` field is the concatenation of the characters ba (short for BucketAccess) and its UID. It is used as the idempotency key for requests to the drivers regarding a particular BA.
+This gRPC call creates a set of access credentials for a bucket. This API must be idempotent.
 
-The returned `accountID` should be a unique identifier for the account in the OSP. This value could be the name of the account too. This value will be included in all subsequent calls to the driver for changes to the BucketAccess.
+`bucketID` used for input is the same ID returned by the driver in [DriverCreateBucket](#drivercreatebucket).
 
+This `accountName` field is the concatenation of the characters `ba-` (short for BucketAccess) and the BucketAccess UID. It is used as the idempotency key for requests to the drivers regarding a particular BA. The driver should ensure that multiple DriverGrantBucketAccess calls for the same `accountName` do not result in more than one OSP backend bucket access being provisioned corresponding to that name. Using or appending random identifiers can lead to multiple unused bucket accesses being created in the OSP backend in the event of timing-related driver/sidecar failures or restarts.
+
+`authenticationType` holds the BucketAccessClass AuthenticationType field and tells the driver whether to provision a user with access keys (KEY) or a service account (IAM).
+
+Input `parameters` are the opaque parameters copied from the BucketAccessClass. Drivers can use these parameters to configure OSP bucket access features based on the Administrator's BucketAccessClass configuration.
+
+The returned `accountID` should be a unique identifier for the account in the OSP. This value will be included in all subsequent calls to the driver for changes to the BucketAccess. As `bucketID` is to Bucket, `accountID` is to BucketAccess.
+
+Returned `credentials` will be transformed into [BucketAccess secret data](#bucketaccess-secret-data).
+
+```go
+DriverGrantBucketAccess(DriverGrantBucketAccessRequest) DriverGrantBucketAccessResponse
+
+DriverGrantBucketAccessRequest{
+    "bucketID": "<Bucket.status.bucketID>", // e.g., "ba-<BucketClaim.UID>
+    "accountName": "ba-<BucketAccess.UID>"
+    "protocol": "<protocol>", // e.g., "s3", copied from BucketAccess
+    "authenticationType": "<authType>" // e.g., IAM/KEY, copied from BucketAccessClass
+    "parameters": { // copied from BucketAccessClaim.parameters
+        "key": "value",
+        // ...
+    }
+}
+
+DriverGrantBucketAccessResponse {
+  "accountID": "<ID returned by driver>", // will be applied to BucketAccess.status.accountID
+  "credentials": {
+    "s3": { // must match input protocol
+      "accessKeyID": "<s3 access key id>", // e.g., "AKIAODNN7EXAMPLE"
+      "accessSecretKey": "<s3 access secret key>" // e.g., "wJaUtnFEMI/K..."
+  }
+}
 ```
-    DriverGrantBucketAccess
-    |---------------------------------------------|       |-----------------------------------------------|
-    | grpc DriverGrantBucketAccessRequest{        | ===>  | DriverGrantBucketAccessResponse{              |
-    |     "bucketID": "br-$uuid",                 |       |   "accountID": "bar-$uuid",                   |
-    |     "accountName": "ba-$uuid"              |       |   "credentials": {                            |
-    |     "authenticationType": "KEY"             |       |      "s3": {                                  |
-    |     "parameters": {                         |       |        "accessKeyID": "AKIAODNN7EXAMPLE",     |
-    |          "key": "value",                    |       |        "accessSecretKey": "wJaUtnFEMI/K..."   |
-    |      }                                      |       |      }                                        |
-    | }                                           |       |   }                                           |
-    |---------------------------------------------|       | }                                             |
-                                                          |-----------------------------------------------|
-```
+
+Note: the driver is expected to return the well-known gRPC return code `AlreadyExists` when the bucket already exists but is incompatible with the request.
 
 ##### DriverDeleteBucket
 
 This gRPC call deletes a bucket in the OSP.
 
-Initiated by sidecar to driver:
-```
-grpc DriverDeleteBucketRequest{
-  bucketID: "br-$uuid"
-  parameters: {
+```go
+DriverDeleteBUcket(DriverDeleteBucketRequest) DriverDeleteBucketResponse
+
+DriverDeleteBucketRequest{
+  bucketID: "<Bucket.name>"
+  parameters: { // copied from Bucket
     "key": "value"
+    // ...
   }
 }
-```
 
-Driver response:
-```grpc
 DriverDeleteBucketResponse{} // empty with return code
 ```
 
-// TODO: specify return codes for error/success situations here
-
 ##### DriverRevokeBucketAccess
-
-// TODO: do we need to specify this somewhere, or is it captured?
-
-BAC-A     BA
-params -> params
-
-BAC-A'
-params'
-
-del(BA) params (not params')
 
 This gRPC call revokes access granted to a particular account.
 
-Initiated by sidecar to driver:
-```grpc
-grpc DriverRevokeBucketAccessRequest{
-  bucketID: "br-$uuid"
-  accountID: "bar-$uuid"
-  parameters: { // should be from the params copied to BucketAccess
+```go
+DriverRevokeBucketAccess(DriverRevokeBucketAccessRequest) DriverRevokeBucketAccessResponse
+
+DriverRevokeBucketAccessRequest{
+  bucketID: "<Bucket.status.bucketID>"
+  accountID: "<BucketAccess.status.accountID>"
+  parameters: { // copied from BucketAccess.status.parameters
     "key": "value"
+    // ...
   }
 }
-```
 
-Driver response:
-```grpc
 DriverRevokeBucketAccessResponse{} // empty with return code
 ```
-
-// TODO: specify return codes for error/success situations here
 
 ### Test Plan
 
