@@ -1,0 +1,29 @@
+id: "4595"
+prnumber: ""
+name: 4595-cel-crd-additionalprintercolumns
+title: CEL for CRD AdditionalPrinterColumns
+kep-number: "4595"
+authors: ['@sreeram-venkitesh']
+owning-sig: sig-api-machinery
+participating-sigs: [sig-api-machinery]
+reviewers: ['@alexzielenski']
+approvers: ['@jpbetz']
+creation-date: "2024-04-26"
+last-updated: v1.31
+status: provisional
+stage: alpha
+
+latest-milestone: "1.31"
+
+milestone:
+    alpha: "1.31"
+    beta: ""
+    stable: ""
+
+feature-gates:
+  - name: CRDAdditionalPrinterColumnCEL
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
