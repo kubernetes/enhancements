@@ -51,3 +51,4 @@ metrics:
   - volume_manager_selinux_pod_context_mismatch_warnings_total
   - volume_manager_selinux_volume_context_mismatch_errors_total
   - volume_manager_selinux_volume_context_mismatch_warnings_total
+  - selinux_warning_controller_selinux_volume_conflict
