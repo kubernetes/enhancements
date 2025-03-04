@@ -100,8 +100,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP is an extended use case from the partitionable device [KEP-4815: DRA: Add support for partitionable devices](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4815-dra-partitionable-devices).
-The enhancement enables a shared device allocation with consumable capacity values.
-A shared device can be allocated to more than one resource claim with per-device resource requests.
+The enhancement introduces a `shared` property to allow allocating device to more than a single claim. 
+Additionally, a `consumable` property is added to the device capacity. 
+With `consumable` field, the shared device can guarantee the total amount of per-device resource sharing among multiple claims is under the defined capacity. 
 
 ## Motivation
 
@@ -126,19 +127,21 @@ Relations to related KEPs:
 
 ### Goals
 
-- Introduce an ability to allocating on-demand shared devices via DRA. 
+- Introduce an ability to allocating shared devices via DRA to more than one pods.
   This should cover the use cases of macvlan or ipvlan in a DRA driver for CNI 
   and virtual accelerator devices with on-demand memory fraction.
 - Enhance a capability of secondary networks to dynamically allocate secondary networks 
-  based on present availabilities such as bandwidth.
+  based on present capacities such as bandwidth.
 - Enable capacity field to be consumable.
 
 ### Non-Goals
 
 - Define driver-specific attributes and configs (such as CNI parameter config).
 - Support network security policy.
-- Support an aggregated resource consumption request. By default, the shared device can be allocated once for each pod's allocation. However, a user may want an aggrated ammount of resources which can come from a single or multiple shared device. This is related to [the comment about `distinctAttributes`](https://github.com/kubernetes/enhancements/pull/5104#discussion_r1943835445).
-- Support refined capacity consumption such as predefined blocks and minimum and maximum amount.
+- Support an aggregated resource consumption request. 
+  By default, the shared device can be allocated once for each pod's allocation.
+  However, a user may want an aggrated ammount of resources which can come from a single or multiple shared device. 
+  This is related to [the comment about `distinctAttributes`](https://github.com/kubernetes/enhancements/pull/5104#discussion_r1943835445).
 
 ## Proposal
 
@@ -153,27 +156,36 @@ nitty-gritty.
 
 ### User Stories (Optional)
 
+See [all concrete use cases](https://docs.google.com/document/d/1U0u2uErpYcf-RooPEws5oDMiJ9kT2uDoWNjcWrLH224/edit?tab=t.f3ylp1uxsq1c).
 
-Story|Driver|Claim|Context
----|---|----|---
-1|shared device with capacity|request with resources|network
-2|-|request with resources|gpu
-3|-|request with selector|network
-4|-|request with all resources|network
-5|-|request with requests and limits|network
-6|shared device without capacity|request with no resource|network
-7|-|request with nil resource and AllowShared mode|any
+This KEP focuses on the request with selection of shared device (`device.shared == "true"`).
+
+```yaml
+selectors:
+  - cel:
+      expression: |-
+        device.shared["resource-driver.example.com"] == "true"
+```
+
+Story|Consumable Capacity|Selector|Resource Request|AllocationMode|Context
+---|---|---|---|---|---
+1|no|no|no|Exact(1)|network
+2|no|no|no|Exact(2)|network
+3|no|yes|no|Exact(1)|network
+4|yes|no|yes|Exact(1)|network
+5|no|no|yes|Exact(1)|network
+6|both|no|yes|Exact(1)|network
 
 #### Story 1
-A user requests a secondary network based on their bandwidth demands without wanting to specify a device name 
-nor present available bandwidth of each specific device. 
-The DRA scheduler can dynamically select available devices based on their availability.
+
+A DRA driver advertises a shared device 
+and a user simply requests a shared device.
 
 ```yaml
 kind: ResourceSlice
 ...
 spec:
-  driver: cni.dra.networking.x-k8s.io
+  driver: simple-cni.dra.networking.x-k8s.io
   devices:
   - name: eth1
     basic:
@@ -181,25 +193,28 @@ spec:
       attributes:
         name:
           string: "eth1"
-      capacity:
-        bandwidth:
-          value: 10Gi
-- name: eth2
+  - name: eth2
     basic:
+      shared: "true"
       attributes:
         name:
-          string: "eth1"
-      capacity:
-        bandwidth:
-          value: 10Gi
----
-kind: DeviceClass
-metadata:
-  name: vlan-cni.networking.x-k8s.io
+          string: "eth2"
 ```
 
-With the below ResourceClaim, either `eth1` or `eth2` can be selected. 
-The master field in the CNI config can be filled according to the selected device by the CNI DRA driver.
+A common shared device class is defined below.
+
+```yaml
+kind: DeviceClass
+metadata:
+  name: simple-shared.networking.x-k8s.io
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "simple-cni.dra.networking.x-k8s.io" &&
+        device.shared["simple-cni.dra.networking.x-k8s.io"] == "true"
+```
+
+Then, a user defines the following resource claim.
 
 ```yaml
 kind: ResourceClaim
@@ -208,15 +223,12 @@ spec:
   devices:
     requests:
     - name: macvlan
-      deviceClassName: vlan-cni.networking.x-k8s.io
-      resources:
-        requests:
-          bandwidth: "1Gi"
+      deviceClassName: simple-shared.networking.x-k8s.io
     config:
     - requests:
       - macvlan
       opaque:
-        driver: cni.dra.networking.x-k8s.io
+        driver: simple-cni.dra.networking.x-k8s.io
         parameters: # CNIParameters with the GVK, interface name and CNI Config (in YAML format).
           apiVersion: cni.networking.x-k8s.io/v1alpha1
           kind: CNI
@@ -232,142 +244,203 @@ spec:
                 ranges:
                 - - subnet: 10.10.1.0/24
 ```
+> The device config is out of the KEP scope. From this point, the request config will be omitted for simplicity.
 
 #### Story 2
-A user reserves that fractions of memory for the virtual GPU.
+
+With the same resource as story 1, a user requests two devices.
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaim
 ...
 spec:
   devices:
     requests:
-    - name: vgpu0
-      deviceClassName: vgpu.nvidia.com
-      resources:
-        requests:
-          memory: "10Gi"
+    - name: macvlan
+      deviceClassName: simple-shared.networking.x-k8s.io
+      allocationMode: ExactCount
+      count: 2
 ```
 
 #### Story 3
-A user specifies a sharted device by some attributes such as name.
+With the same resource as story 1, a user specifies a sharted device by some attributes such as name.
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaim
 ...
 spec:
   devices:
     requests:
     - name: net1
-      deviceClassName: vlan-cni.networking.x-k8s.io
+      deviceClassName: simple-shared.networking.x-k8s.io
       selectors:
       - cel:
-          expression: "device.attributes['vlan-cni.networking.x-k8s.io'].name == 'eth1'"
-      resources:
-        requests:
-          bandwidth: "1Gi"
+          expression: |-
+            device.attributes["simple-cni.dra.networking.x-k8s.io"].name == "eth1"
 ```
 
 #### Story 4
-A user reserves the shared device and blocks the others to get the same shared device.
 
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceClaim
-...
-spec:
-  devices:
-    requests:
-    - name: net1
-      deviceClassName: vlan-cni.networking.x-k8s.io
-      resources:
-        all: "true"
-```
-
-#### Story 5
-A user defines resource limits when the device driver supports a burstable use.
-The CNI DRA driver can add a chained bandwidth CNI based on the bandwidth request.
-
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceClaim
-...
-spec:
-  devices:
-    requests:
-    - name: net1
-      deviceClassName: vlan-cni.networking.x-k8s.io
-      resources:
-        requests:
-          bandwidth: "1Gi"
-        limits:
-          bandwidth: "2Gi"
-```
-
-#### Story 6
-A user requests one paired virtual device from a shared device with inifinite capacity. 
+A DRA driver specifies a consumable capacity with a minimum consume condition,
+and a user requests the consumable resource.
+A scheduler selects devices according to the availability.
 
 ```yaml
 kind: ResourceSlice
 ...
 spec:
-  driver: cni.dra.networking.x-k8s.io
+  driver: guaranteed-cni.dra.networking.x-k8s.io
   devices:
   - name: eth1
-    shared: "true"
     basic:
+      shared: "true"
       attributes:
         name:
           string: "eth1"
----
-kind: DeviceClass
-metadata:
-  name: vlan-cni.networking.x-k8s.io
+      capacity:
+        bandwidth:
+          consumable: "true"
+          consumeConstraint:
+            minimum: "1Mi"
+          value: "10Gi"
 ```
 
+A shared device class with guaranteed bandwidth is defined below.
+
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+kind: DeviceClass
+metadata:
+  name: bandwidth-guaranteed-cni.networking.x-k8s.io
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "guaranteed-cni.dra.networking.x-k8s.io" &&
+        device.shared["guaranteed-cni.dra.networking.x-k8s.io"] == "true" &&
+        device.capacities["guaranteed-cni.dra.networking.x-k8s.io"].bandwidth.consumable == "true"
+```
+
+Then, a user defines the following resource claim.
+
+```yaml
 kind: ResourceClaim
 ...
 spec:
   devices:
     requests:
     - name: net1
-      deviceClassName: vlan-cni.networking.x-k8s.io
-      resources: {}
-  ...
-  status:
-    reserveFor:
-    - name: example-pod
-      ...
-    allocation:
-      devices:
-        results:
-        - request: net1
-          device: eth1
-          resources: {}
+      deviceClassName: bandwidth-guaranteed-cni.networking.x-k8s.io
+      capacity:
+        requests:
+          bandwidth: "1Gi"
 ```
 
-#### Story 7
-A user requests a device regardless of whether the device is sharable or not.
+#### Story 5
+
+A DRA driver specifies a non-consumable capacity, 
+and a user specifies a minimum bandwidth requested on a shared device.
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+kind: ResourceSlice
+...
+spec:
+  driver: extended-cni.dra.networking.x-k8s.io
+  devices:
+  - name: eth1
+    basic:
+      shared: "true"
+      attributes:
+        name:
+          string: "eth1"
+      capacity:
+        bandwidth:
+          value: 10Gi
+```
+
+A shared device class is defined below.
+
+```yaml
+kind: DeviceClass
+metadata:
+  name: extended-cni.networking.x-k8s.io
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "extended-cni.dra.networking.x-k8s.io" &&
+        device.shared["extended-cni.dra.networking.x-k8s.io"] == "true" &&
+        device.capacities["extended-cni.dra.networking.x-k8s.io"].bandwidth.consumable != "true"
+```
+
+Then, a user defines the following resource claim.
+
+```yaml
 kind: ResourceClaim
 ...
 spec:
   devices:
     requests:
-    - name: any
-      deviceClassName: any.device
-      allocationMode: AllowShared
+    - name: net1
+      deviceClassName: extended-cni.networking.x-k8s.io
+      capacity:
+        requests:
+          memory: "1Gi"
 ```
 
-Regardless of shared or non-sharable devices, 
-`resources` field in ResourceClaim's status is set to nil,
-and this device cannot be allocated to the other claim.
+#### Story 6
+
+A DRA driver specifies both consumable count to limit number of claim to share and non-consumable bandwidth capacity, 
+and a user specifies a minimum bandwidth requested on a shared device.
+
+```yaml
+kind: ResourceSlice
+...
+spec:
+  driver: complex-cni.dra.networking.x-k8s.io
+  devices:
+  - name: eth1
+    basic:
+      shared: "true"
+      attributes:
+        name:
+          string: "eth1"
+      capacity:
+        bandwidth:
+          value: 10Gi
+        count:
+          consumable: "true"
+          consumeConstraint:
+            sets: [1]
+          value: 1000
+```
+
+A shared device class is defined below.
+
+```yaml
+kind: DeviceClass
+metadata:
+  name: complex-cni.networking.x-k8s.io
+  selectors:
+  - cel:
+      expression: |-
+        device.driver == "complex-cni.dra.networking.x-k8s.io" &&
+        device.shared["complex-cni.dra.networking.x-k8s.io"] == "true" &&
+        device.capacities["complex-cni.dra.networking.x-k8s.io"].bandwidth.consumable != "true"
+```
+
+Then, a user defines the following resource claim.
+
+```yaml
+kind: ResourceClaim
+...
+spec:
+  devices:
+    requests:
+    - name: net1
+      deviceClassName: extended-cni.networking.x-k8s.io
+      capacity:
+        requests:
+          memory: "1Gi"
+          count: 1
+```
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -395,32 +468,23 @@ Consider including folks who also work outside the SIG or subproject.
 ## Design Details
 
 This enhancement introduces a `shared` field within the `BasicDevice` of the ResourceSlice
-to mark whether the device is a shared device.
-If the device is marked as a shared device, all values in the capacity field are considered as consumable.
-If there is no capacity defined, the device is considered as having an **infinite** sharable capacity.
+to mark whether the device is a shared device. A shared device can be assigned to more than one claim if it satisfies the request.
 
-Users can define specific per-device resource requests through
-the newly added `ResourceRequest` field in the `DeviceRequest` of the `ResourceClaim`.
-In a resource request, users may define `Requests` and `Limits` or either of them
-to specify the claim's requirements. Similarly to the node resources, a request must be less than its limit.
-If either value is omitted, the other value will be implicitly applied. 
-`Requests` is used for verifying consumability of the shared device
-while `Limits` is optionally used for supporting burstable consumption controlled by the device driver.
+The enhancement also adds a `consumable` and `ConsumeConstraint` field to `DeviceCapacity` 
+to specify whether the capacity is consumable or not and to specify constraints of the consumable capacity request.
+Users can define specific per-device resource requests through the newly added `CapacityRequest` field in the `DeviceRequest`.
 
-To request all available resources in the device capacity, users must set a flag `all` to "true".
-Regardless of whether the shared device has infinite sharable capacity or not,
-this flag will block the allocation of the shared device from the other claim.
-
-If the `resources` field has been defined, only shared device can be allocated.
-On the other hand, if the `resources` field is nil, only non-sharable devices are expected
-except the allocation mode `AllowShared` has been set.
-For allocationMode=AllowShared, both non-sharable devices and shared devices can be allocated.
+`Requests` of `CapacityRequest` is used for verifying minimum device capacity. 
+If the capacity is consumable, the amount available for allocation is determined 
+by subtracting the aggregated allocation results of current claims from the device's capacity as defined in the resource slice. 
+The subtracted amount will be used solely by the allocator and will not be reflected in the resource slice.
 
 A shared device can only be allocated once its consumability has been verified
 and its attributes match the request's selectors and constraints.
-The newly added `resources` field in the `DeviceRequestAllocationResult` will be set when the allocation is successful.
-A device can be shared (allocated) to different pods. 
+The newly added `capacity` field in the `DeviceRequestAllocationResult` will be set when the allocation is successful.
 However, claims from the same pod cannot allocate shares from the same shared device.
+
+User needs to explicitly add the select condition device.shared to identify whether to select the shared device or not. 
 
 ### API enhancement
 To enable this enhancement, the following API updates are proposed.
@@ -436,34 +500,76 @@ type BasicDevice struct {
    // and all value in capacity is considered as consumable.
    // If there is no capacity defined,
    // the device is considered as having an infinity sharable capacity.
+   //
    // +optional
    // +default=false
    // +featureGate=ConsumableCapacity
-   Shared bool `json:"shared" protobuf:"bytes,3,opt,name=shared"`
+   Shared *bool `json:"shared" protobuf:"bytes,3,opt,name=shared"`
 }
+
+// DeviceCapacity describes a quantity associated with a device.
+type DeviceCapacity struct {
+   // Value defines how much of a certain device capacity is available.
+   //
+   // +required
+   Value resource.Quantity `json:"value" protobuf:"bytes,1,rep,name=value"`
+
+
+   // Consumable identifies whether the capacity is consumable or not.
+   //
+   // +optional
+   // +default=false
+   // +featureGate=ConsumableCapacity
+   Consumable *bool `json:"consumable" protobuf:"bytes,2,opt,name=consumable"`
+
+
+   // ConsumeConstraints refines constraints for consumable capacity.
+   // This field is only applied when consumable is "true".
+   //
+   // +optional
+   // +default=false
+   // +featureGate=ConsumableCapacity
+   *ConsumeConstraint `json:"consumeConstraint" protobuf:"bytes,3,rep,name=consumeConstraint"`
+}
+
+type ConsumeConstraint struct {
+   // Set defines a set of acceptable quantities of consuming requests.
+   // +optional
+   // +oneOf=QuantityCondition
+   Set *[]resource.Quantity `json:"set" protobuf:"bytes,2,opt,name=set"`
+
+
+   // ConsumeRange defines an acceptable quantity range of consuming requests.
+   // +optional
+   // +oneOf=QuantityCondition
+   *ConsumeRange `json:",inline"`
+}
+
+
+type ConsumeRange struct {
+   // +optional
+   Minimum *resource.Quantity `json:"minimum" protobuf:"bytes,1,opt,name=minimum"`
+   // +optional
+   Maximum *resource.Quantity `json:"maximum" protobuf:"bytes,2,opt,name=maximum"`
+}
+
 ```
 
 #### ResourceClaimSpec's DeviceRequest
 
 ```go
-// ResourceRequest is a per-device resource request specification.
-type ResourceRequest struct {
-   // All marks requesting all resources from the shared device.
-   // Regardless of the number of capacity defined in the shared device, 
-   // this flag will block the allocation of the shared device from the other claims.
-   // +optional
-   // +default=false
-   All bool `json:"all" protobuf:"bytes,1,name=all"`
 
-
-   // Requirements define specific values of resource requirements of the device request.
-   // If all="true", this field is ignored.
+type DeviceRequest struct {
+...
+   // Capacity defines resource requirements against capacity.
+   //
    // +optional
-   Requirements ResourceRequirements `json:",inline"`
+   // +featureGate=ConsumableCapacity
+   Capacity *CapacityRequirements `json:"resources,omitempty" protobuf:"bytes,7,opt,name=resources"`
 }
 
 
-type ResourceRequirements struct {
+type CapacityRequirements struct {
    // Requests describe the amount of resources to be reserved from the device.
    // If Requests is omitted, it defaults to Limits if that is explicitly specified,
    // otherwise to an implementation-defined value. Requests cannot exceed Limits.
@@ -471,11 +577,11 @@ type ResourceRequirements struct {
    Requests map[QualifiedName]resource.Quantity `json:"requests,omitempty" protobuf:"bytes,2,rep,name=requests"`
 
 
+   // Potentially enhancement field.
    // Limits define the maximum amount of per-device resources allowed.
-   // If Limits is omitted, it defaults to Requests if that is explicitly specified.
    // This enables burstable usage when applicable.
    // +optional
-   Limits map[QualifiedName]resource.Quantity `json:"limits" protobuf:"bytes,3,rep,name=limits"`
+   // Limits map[QualifiedName]resource.Quantity `json:"limits" protobuf:"bytes,3,rep,name=limits"`
 }
 
 ```
@@ -483,30 +589,38 @@ type ResourceRequirements struct {
 #### ResourceClaimStatus's DeviceRequestAllocationResult
 
 ```go
+
 type DeviceRequestAllocationResult struct {
  ...
-   // Resources indicates a per-device resource amount allocated by the claim request.
-   // Only the consumable capacity can be partially allocated.
-   // A summation of allocated request resources must be less than or equal each corresponding capacity.
-   // nil if the device is unshareable.
+   // Shared indicates whether the allocated device is shared.
+   //
+   // +required
+   // +featureGate=ConsumableCapacity
+   Shared bool `json:"shared" protobuf:"bytes,6,name=device"`
+
+
+   // ConsumedCapacity indicates a per-device capacity amount consumed by the claim request.
+   // A summation of consumed request capacity must be less than or equal each corresponding capacity.
+   //
    // +optional
    // +featureGate=ConsumableCapacity
-   Resources *ResourceRequirements `json:"resources" protobuf:"bytes,6,opt,name=resources"`
+   ConsumedCapacity *map[QualifiedName]resource.Quantity `json:"consumedCapacity,omitempty" protobuf:"bytes,7,rep,name=consumedCapacity"`
 }
+
 ```
 
 ### Scheduling enhancement
 - define [share-related types and functions](https://github.com/sunya-ch/kubernetes/blob/kep-5075/staging/src/k8s.io/dynamic-resource-allocation/structured/share.go).
 
   ```go
-  // AllocatedResources define a quantity set which is updatable.
-  // This field is used for aggregating allocated resources,
+  // AllocatedCapacity define a quantity set which is updatable.
+  // This field is used for aggregating allocated capacity,
   // and for calculating consumability.
-  type AllocatedResources map[resourceapi.QualifiedName]*resource.Quantity
+  type AllocatedCapacity map[resourceapi.QualifiedName]*resource.Quantity
 
-  // AllocatedResourceCollection collects a set of AllocatedResources
+  // AllocatedCapacityCollection collects a set of AllocatedCapacity
   // for each shared device.
-  type AllocatedResourceCollection map[DeviceID]AllocatedResources
+  type AllocatedCapacityCollection map[DeviceID]AllocatedCapacity
   ```
 
 - shared device are handled separately from the other device.
@@ -516,9 +630,9 @@ type DeviceRequestAllocationResult struct {
     type ResourceClaimTracker interface {
       ...
   	  ListAllAllocatedDevices() (sets.Set[structured.DeviceID], error)
-      // ListAllAllocatedShares lists all shared allocation from allocated ResourceClaims. The result is guaranteed to immediately include
+      // ListAllAllocatedSharedDevices lists all shared allocation from allocated ResourceClaims. The result is guaranteed to immediately include
       // any changes made via AssumeClaimAfterAPICall(), and SignalClaimPendingAllocation().
-      ListAllAllocatedShares() (structured.AllocatedResourceCollection, error)
+      ListAllAllocatedSharedDevices() (structured.AllocatedCapacityCollection, error)
       ...
     }
     ```
@@ -528,50 +642,26 @@ type DeviceRequestAllocationResult struct {
     ```go
     func foreachAllocatedDevice(claim *resourceapi.ResourceClaim, cb func(deviceID s)){
         ...
-        if result.Resources != nil {
-          // Is considered as shared allocation.
-          continue
-        }
-    }
-
-    // foreachAllocatedResources invokes the provided callback for each
-    // device in the claim's resource allocation result which was allocated
-    // exclusively for the claim.
-    //
-    // Devices allocated with admin access can be shared with other
-    // claims and are skipped without invoking the callback.
-    //
-    // foreachAllocatedResources does nothing if the claim is not allocated.
-    func foreachAllocatedResources(claim *resourceapi.ResourceClaim, cb func(allocatedSharedDevice structured.SharedDeviceAllocation)) {
-      if claim.Status.Allocation == nil {
-        return
-      }
-      for _, result := range claim.Status.Allocation.Devices.Results {
-        // Kubernetes 1.31 did not set this, 1.32 always does.
-        // Supporting 1.31 is not worth the additional code that
-        // would have to be written (= looking up in request) because
-        // it is extremely unlikely that there really is a result
-        // that still exists in a cluster from 1.31 where this matters.
-        if ptr.Deref(result.AdminAccess, false) {
-          // Is not considered as allocated.
-          continue
-        }
-        claimedResources := result.Resources
-        if claimedResources == nil {
-          // Is not considered as shared allocation.
+        if result.Shared {
           continue
         }
         deviceID := structured.MakeDeviceID(result.Driver, result.Pool, result.Device)
-        sharedAllocation := structured.NewSharedDeviceAllocation(deviceID, *claimedResources)
+        cb(deviceID)
+    }
 
-        // None of the users of this helper need to abort iterating,
-        // therefore it's not supported as it only would add overhead.
+    func foreachAllocatedSharedDevice(claim *resourceapi.ResourceClaim, cb func(allocatedSharedDevice structured.SharedDeviceAllocation)) {
+      ...
+        if !result.Shared || result.ConsumedCapacity == nil {
+          continue
+        }
+        deviceID := structured.MakeDeviceID(result.Driver, result.Pool, result.Device)
+        sharedAllocation := structured.NewSharedDeviceAllocation(deviceID, result.ConsumedCapacity)
         cb(sharedAllocation)
-      }
+      ...
     }
     ```
 
-  - use `foreachAllocatedShare` for `ListAllAllocatedShares`, `addDevices` and `removeDevices`.
+  - use `foreachAllocatedSharedDevice` for `ListAllAllocatedShares`, `addDevices` and `removeDevices`.
 
   - when allocate, 
     - skip if the allocation is not `Shared`.
@@ -590,25 +680,17 @@ type DeviceRequestAllocationResult struct {
         for _, slice := range pool.Slices {
           for deviceIndex := range slice.Spec.Devices {
             shared := alloc.isSharedDevice(slice, deviceIndex)
-            requestSharedDevice := request.Resources != nil
-            allowShared := request.AllocationMode == resourceapi.DeviceAllocationModeAllowShared
-            // Skip a non-shared deivce if a request includes resources to consume.
-            // Skip a shared device if an allocation mode is not AllowShared.
-            if !allowShared && shared || requestSharedDevice && !shared {
+            ...
+            success, err := alloc.CmpRequestOverCapacity(requestIndices{claimIndex: r.claimIndex, requestIndex: r.requestIndex}, slice, deviceIndex)
+            if err != nil {
+              return false, err
+            }
+            if !success {
+              alloc.logger.V(7).Info("Device has no enough capacity", "device", deviceID)
               continue
             }
             ...
-            if shared {
-              // Next check consumable.
-              consumable, err := alloc.isConsumable(requestIndices{claimIndex: r.claimIndex, requestIndex: r.requestIndex}, slice, deviceIndex)
-              if err != nil {
-                return false, err
-              }
-              if !consumable {
-                alloc.logger.V(7).Info("Device not consumable", "device", deviceID)
-                continue
-              }
-            }
+            allocated, deallocate, err := alloc.allocateDevice(r, device, false, shared)
             ...
           }
         }
@@ -632,8 +714,9 @@ type DeviceRequestAllocationResult struct {
   type internalDeviceResult struct {
     request     string
     id          DeviceID
+    shared      bool
     slice       *draapi.ResourceSlice
-    resources   *resourceapi.ResourceRequirements
+    capacity    *map[resourceapi.QualifiedName]resource.Quantity
     adminAccess *bool
   }
   ```
@@ -641,12 +724,15 @@ type DeviceRequestAllocationResult struct {
   ```go
   func (a *Allocator) Allocate(ctx context.Context, node *v1.Node) (finalResult []resourceapi.AllocationResult, finalErr error) {
         ...
-      for i, internal := range internalResult.devices {
-        allocationResult.Devices.Results[i] = resourceapi.DeviceRequestAllocationResult{
-          ...
-          Resources: internal.resources,
+        for i, internal := range internalResult.devices {
+          allocationResult.Devices.Results[i] = resourceapi.DeviceRequestAllocationResult{
+            ...
+            Shared:      internal.shared,
+          }
+          if internal.capacity != nil {
+            allocationResult.Devices.Results[i].ConsumedCapacity = *internal.capacity
+          }
         }
-      }
   }
   ```
 
@@ -676,37 +762,28 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
+The unit tests should include
+- Extension of TestAllocator in `structured` module. 
+
+  The allocator should be able to handle the above user stories.
+
+  `AllocatedCapacityCollection` will be added to the test case structure.
+
+  ```go
+    testcases := map[string]struct {
+      ...
+      allocatedCapacityDevices AllocatedCapacityCollection
+      ...
+    }
+  ```
+
+- `ListAllAllocatedSharedDevices` unit test to get AllocatedCapacityCollection without non-sharable devices.
+
 - <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `k8s.io/kubernetes/staging/src/k8s.io/dynamic-resource-allocation/structured`: `<date>` - 85.6%
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
+- Add test user story 1 to 6 in in `scheduler_perf/dra.go` when defining a shared device with and without consumable capacity.
 - <test>: <link to test coverage>
 
 ##### e2e tests
