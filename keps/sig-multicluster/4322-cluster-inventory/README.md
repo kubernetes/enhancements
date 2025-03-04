@@ -524,11 +524,161 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Properties
 
-Name/value pairs to represent properties of the clusters. It could be a
-collection of ClusterProperty resources, but could also be info based on
+Name/value pairs to represent properties of the clusters. One possible usage of properties is 
+to help another controller to make workload orchestration decisions. They could be 
+a set of [About-API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid)
+ClusterProperty resources collected from the member clusters, but could also be info based on
 other implementations. The name of the cluster property can be predefined
 name from ClusterProperty resources and is allowed to be customized by
 different cluster managers.
+
+For all the about-api ClusterProperty that clusterProfile would honor, it MUST have a label with key “multicluster.x-k8s.io/clusterProfile” and value of “true”.
+
+Here are a few ClusterProperty that the clusterProfile API would also support. 
+
+##### cluster-endpoints.k8s.io
+It is a list of the url that can reach the api-server of the k8s cluster
+  * All clusterProfile API implementation MUST have this property.
+  * It could contain IP addresses too
+  
+Here is an example of a cluster-endpoints.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: cluster-endpoints.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+spec:
+  value: ["100.3.3.4:5683","qs-oar7gr9p.azmk8s.io:443"]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: cluster-endpoints.k8s.io
+     value:  ["100.3.3.4:5683","qs-oar7gr9p.azmk8s.io:443"]
+```
+
+##### location.topology.k8s.io
+It contains the location of the k8s cluster
+* It could be a country, region, zone, or any other location information
+* It is immutable
+
+Here is an example of a location.topology.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: location.topology.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+Spec:
+  value: cloud.google/us-east1
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: location.topology.k8s.io
+     value: cloud.google/us-east1
+```
+
+##### count.node.k8s.io
+It contains the total number of nodes in the k8s clusters
+* The value is dynamic but not changing fast.
+
+Here is an example of a count.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: count.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+Spec:
+  value: 120
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: count.node.k8s.io
+     value: 120
+```
+
+##### type.node.k8s.io
+It contains the list of type of node in the k8s clusters
+* The list is dynamic but does not change much unless there is a node auto provisioner.
+
+Here is an example of a type.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: type.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+Spec:
+  value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: type.node.k8s.io
+     value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
+```
+##### metrics-endpoints.k8s.io
+It contains an array of the type, url pair that one can query the metrics (for example, a Prometheus or Grafana endpoint for PromQL) of the cluster
+* It could contain IP addresses too
+* The list is dynamic but should not change much.
+
+Here is an example of a metrics-endpoints.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: metrics-endpoints.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+Spec:
+  value: [{"Prometheus":"100.3.3.4:9990"}, {"Grafana":"example.grafana.io:9990"}]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: metrics-endpoints.k8s.io
+     value: [{"Prometheus":"100.3.3.4:9990"}, {"Grafana":"example.grafana.io:9990"}]
+```
+
+##### group.customResource.k8s.io
+It contains an array of custom resources definitions (CRDs) group that this cluster supports.
+* The list is dynamic but should not change much.
+
+Here is an example of a group.customResource.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: group.customResource.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: “true”
+Spec:
+  value: ["argoproj.io","kubeflow.org","istio.io","volcano.sh"]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: group.customResource.k8s.io
+     value: ["argoproj.io","kubeflow.org","istio.io","volcano.sh"]
+```
+
+###### Property Ladder
+This KEP does not mean to contain an exhaustive list of all the cluster properties the community will support. Thus, we want to lay out the process 
+that a new property can be added to the list in the future. Here is what we propose
+1. A property is first implemented as an extension property which means there is no guarantee that the property will be supported by any cluster managers.
+2. The sponsor of the property brings up a discussion agenda with the use case and motivation of upgrading the extension property to a **standard** property in one of the multi-cluster SIG meetings.
+   * The community can vote on the case and if it has over 66% of the vote, it becomes a standard property thus become part of the ClusterProfile API KEP.
+3. After a property becomes  a standard for over 6 months, the SIG leads can have another vote to see if there is consensus to move a property to the **core** group
+   which means every cluster manager that implements the ClusterProfile API must implement this property.
+
 
 #### Conditions
 
