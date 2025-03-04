@@ -1402,6 +1402,8 @@ Major milestones might include:
 - 2023-11-02: [Benchmark job with backoff limit per index](https://github.com/kubernetes/kubernetes/pull/121393)
 - 2023-11-02: [Update KEP3850 "BackoffLimitPerIndex for Indexed Jobs"](https://github.com/kubernetes/enhancements/pull/4321)
 - 2025-02-07: [KEP3850: graduate Backoff Limit Per Index for Job to stable](https://github.com/kubernetes/enhancements/pull/5154)
+- 2025-02-25: [Add Job e2e for tracking failure count per index](https://github.com/kubernetes/kubernetes/pull/130390)
+- 2025-03-01: [Graduate Backoff Limit Per Index as stable](https://github.com/kubernetes/kubernetes/pull/130061)
 
 ## Drawbacks
 
