@@ -5,7 +5,7 @@ authors:
   - "@jensentanlo"
 owning-sig: sig-apps
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2023-04-26
 reviewers:
   - "@alculquicondor"
