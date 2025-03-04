@@ -548,7 +548,7 @@ kind: ClusterProperty
 metadata:
   name: cluster-endpoints.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 spec:
   value: ["100.3.3.4:5683","qs-oar7gr9p.azmk8s.io:443"]
 ```
@@ -561,7 +561,10 @@ properties:
 
 ##### location.topology.k8s.io
 It contains the location of the k8s cluster
-* It could be a country, region, zone, or any other location information
+* It could contain the country, region, zone, rack or any other location information with a 
+  hierarchical structure separated by a slash (/).
+* The exact format of the location is up to the cluster manager to define. Each implementation should add a prefix 
+  to the location string to avoid collision with other vendors.
 * It is immutable
 
 Here is an example of a location.topology.k8s.io ClusterProperty
@@ -571,20 +574,20 @@ kind: ClusterProperty
 metadata:
   name: location.topology.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 Spec:
-  value: cloud.google/us-east1
+  value: cloud.google/NA/us-east1
 ```
 Here is the corresponding ClusterProfile API
 ```yaml
 properties:
    - name: location.topology.k8s.io
-     value: cloud.google/us-east1
+     value: cloud.google/NA/us-east1
 ```
 
 ##### count.node.k8s.io
 It contains the total number of nodes in the k8s clusters
-* The value is dynamic but not changing fast.
+* The value is dynamic but should not change fast.
 
 Here is an example of a count.node.k8s.io ClusterProperty
 ```yaml
@@ -593,7 +596,7 @@ kind: ClusterProperty
 metadata:
   name: count.node.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 Spec:
   value: 120
 ```
@@ -606,6 +609,8 @@ properties:
 
 ##### type.node.k8s.io
 It contains the list of type of node in the k8s clusters
+* The content of the list is up to the cluster manager to define. 
+  * Each element in the array could be the sku of the node from a cloud provider, or the type of the node on premise.
 * The list is dynamic but does not change much unless there is a node auto provisioner.
 
 Here is an example of a type.node.k8s.io ClusterProperty
@@ -615,7 +620,7 @@ kind: ClusterProperty
 metadata:
   name: type.node.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 Spec:
   value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
 ```
@@ -625,9 +630,34 @@ properties:
    - name: type.node.k8s.io
      value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
 ```
+
+##### distribution.node.k8s.io
+It contains the node count for each node type in the k8s clusters
+* Each element in the list is a key-value pair representing the type of the node and its count.
+* The value is dynamic but should not change fast.
+
+Here is an example of a distribution.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: distribution.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: [{"largeCPU":5}, {"smallMem":5}]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: distribution.node.k8s.io
+     value: [{"largeCPU":5}, {"smallMem":5}]
+```
+
 ##### metrics-endpoints.k8s.io
 It contains an array of the type, url pair that one can query the metrics (for example, a Prometheus or Grafana endpoint for PromQL) of the cluster
-* It could contain IP addresses too
+* Each element in the listing is a key-value pair representing the type of the metrics endpoint and its url.
+    * It could contain IP addresses too
 * The list is dynamic but should not change much.
 
 Here is an example of a metrics-endpoints.k8s.io ClusterProperty
@@ -637,7 +667,7 @@ kind: ClusterProperty
 metadata:
   name: metrics-endpoints.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 Spec:
   value: [{"Prometheus":"100.3.3.4:9990"}, {"Grafana":"example.grafana.io:9990"}]
 ```
@@ -650,6 +680,7 @@ properties:
 
 ##### group.customResource.k8s.io
 It contains an array of custom resources definitions (CRDs) group that this cluster supports.
+* Each element in the list is a string representing the group name of the CRD.
 * The list is dynamic but should not change much.
 
 Here is an example of a group.customResource.k8s.io ClusterProperty
@@ -659,7 +690,7 @@ kind: ClusterProperty
 metadata:
   name: group.customResource.k8s.io
   labels:
-    multicluster.x-k8s.io/clusterProfile: “true”
+    multicluster.x-k8s.io/clusterProfile: true
 Spec:
   value: ["argoproj.io","kubeflow.org","istio.io","volcano.sh"]
 ```
