@@ -277,7 +277,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Aggregation Layer
 
-![Alt text](https://user-images.githubusercontent.com/26771552/244544622-8ade44db-b22b-4f26-880d-3eee5bc1f913.png?raw=true "Optional Title")
+![mvp_with_agg_discovery](https://github.com/user-attachments/assets/71eb4418-304c-4464-9266-3f1b7a4e4eb3)
 
 1. A new filter will be added to the [handler chain] of the aggregation layer.
 This filter will maintain the following internal caches:
