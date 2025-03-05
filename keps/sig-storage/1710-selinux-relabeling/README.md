@@ -499,7 +499,7 @@ Therefore, if configured properly, all Pods in the same namespace run with the s
   Kubelet mount behavior stays the same as it is in the previous step.
   Cluster admin can check the cluster metrics and they can proactively opt out from mounting all volumes with SELinux by setting `SELinuxChangePolicy: Recursive` in all Pods that need to mix privileged and unprivileged Pods.
   The field accepts only value `Recursive` at this stage!
-  The field value has no effect on volume mounting or relabeling, however, it is reflected in `volume_manager_selinux_volume_context_mismatch_warnings_total`, `selinux_controller_selinux_label_mismatch`, and `selinux_controller_selinux_label_mismatch` metrics.
+  The field value has no effect on volume mounting or relabeling, however, it is reflected in `volume_manager_selinux_volume_context_mismatch_warnings_total` and `selinux_warning_controller_selinux_volume_conflict` metrics.
   The cluster admin can see that nr. of problematic Pods decreases.
     * A kubernetes distribution may choose to block upgrade to 1.M (that has `SELinuxMount` enabled), until the cluster admin fixes all problematic Pods.
 4. Cluster admin updates to 1.M, where `SELinuxMount` is enabled by default.
@@ -527,7 +527,7 @@ Phase 1 + 2 (no breaking change yet):
   * It is emitted only when the `SELinuxMountReadWriteOncePod` feature gate is enabled (on by default in 1.28).
   * It is emitted by kubelet, in the code path that will really block starting a pod when `SELinuxMount` feature gate is enabled.
   * It misses Pods that run on different nodes that would not run if they landed on the same node.
-* `selinux_controller_selinux_label_mismatch`, `selinux_controller_selinux_change_policy_mismatch`: names of Pods that may not start if `SELinuxMount` feature gate is enabled *and* the Pods land on the same node.
+* `selinux_warning_controller_selinux_volume_conflict`: names of Pods that may not start if `SELinuxMount` feature gate is enabled *and* the Pods land on the same node.
 * SELinuxController, if enabled, will send events to Pods that may not start if `SELinuxMount` feature gate is enabled.
 
 As of 2024-09-04, telemetry numbers from OpenShift show that less than 2% of the clusters have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
@@ -587,15 +587,35 @@ When it sees a pair of Pods that conflict, it emits a metric and an event to bot
 * The event either mentions both Pods by name (if both are in the same namespace) or just something generic (when they are in different namespaces, so the event does not leak sensitive information).
   The controller keeps in-memory list of Pods+volumes that were reported, so it does not emit the same event again on re-sync.
   The same event may be sent after KCM restart.
-* `selinux_controller_selinux_change_policy_mismatch{pod1_namespace="ns1", pod1_name="pod1", pod1_uid="abcdef", pod1_volume="vol1", pod1_policy="Recursive", pod2_namespace="ns2", pod2_name="pod2", pod2_uid="abcdef", pod2_volume="vol2", pod2_policy="MountOption"}`.
+* The metric is called `selinux_warning_controller_selinux_volume_conflict`.
   Value of the metric for a given pod1+pod2 combination is either 1 or the metric is not reported at all.
   In a cluster without any conflicts, the metrics is empty.
-* `selinux_controller_selinux_label_mismatch{pod1_namespace="ns1", pod1_name="pod1", pod1_volume="vol1", pod1_uid="abcdef", pod1_label="system_u:object_r:container_file_t:s0:c10,c0", pod2_namespace="ns2", pod2_name="pod2", pod2_uid="abcdef",  pod2_volume="vol2", pod2_label="system_u:object_r:spc_1:s0"}`
-  Value of the metric for a given pod1+pod2 combination is either 1 or the metric is not reported at all.
-  In a cluster without any conflicts, the metrics is empty.
-  * This metric must not be reported for Privileged and unprivileged Pods with both having `SELinuxChangePolicy: Recursive`.
-  * This metric must not be reported for two Pods with `SELinuxChangePolicy: Recursive` and two different labels using the same volume, but with different subpaths.
-  * A cluster admin should be able to list conflicting pods by querying the metric easily.
+  * Example of SELinuxChangePolicy conflict on two pods:
+    ```
+    selinux_warning_controller_selinux_volume_conflict{
+      pod1_name="testpod-c1",
+      pod1_namespace="default",
+      pod1_value="MountOption",
+      pod2_name="testpod-c2",
+      pod2_namespace="default",
+      pod2_value="Recursive",
+      property="SELinuxChangePolicy"}
+    ```
+  * Example of SELinux label conflict on two pods:
+    ```
+    selinux_warning_controller_selinux_volume_conflict{
+      pod1_name="testpod-c1",
+      pod1_namespace="default",
+      pod1_value="system_u:object_r:container_file_t:s0:c0,c1",
+      pod2_name="testpod-c2",
+      pod2_namespace="default",
+      pod2_value="system_u:object_r:container_file_t:s0:c0,c2",
+      property="SELinuxLabel"}
+    ```
+    * This metric must not be reported for Privileged and unprivileged Pods with both having `SELinuxChangePolicy: Recursive`.
+    * This metric must not be reported for two Pods with `SELinuxChangePolicy: Recursive` and two different labels using the same volume.
+      User has explicitly opted out from the SELinuxMount behavior, they must have other means how to run two pods with different SELinux labels, for example anti-affinity or using different subpath of the volumes.
+* A cluster admin can list conflicting pods by querying the metric easily.
     
 TBD: limit the metric to X thousands of conflicts?
 
