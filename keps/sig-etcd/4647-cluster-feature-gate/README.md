@@ -17,6 +17,7 @@
     - [Data Compatibility Risks During Feature Value Change](#data-compatibility-risks-during-feature-value-change)
     - [Feature Implementation Change Risks](#feature-implementation-change-risks)
 - [Design Details](#design-details)
+  - [Set the Basis](#set-the-basis)
   - [Register New Feature Gates](#register-new-feature-gates)
   - [Set the Feature Gates](#set-the-feature-gates)
   - [Consensus Algorithm](#consensus-algorithm)
@@ -165,6 +166,11 @@ if s.FeatureEnabled(FeatureA) && s.ClusterVersion() >= "3.7" {implementation 2}
 ```
 This way the cluster would work consistently because there is a single ClusterVersion across the whole cluster.
 
+It may not be necessary for some changes if the changes do not affect user facing apis or data consistency.
+We would only make version based switching optional and best effort, at the discretion of the developers and reviewers. 
+
+However, we should make sure the feature is well tested for mixed version scenarios in robustness test.
+
 ## Design Details
 
 On high level, a cluster feature gate would need:
@@ -174,6 +180,53 @@ On high level, a cluster feature gate would need:
 1. an [interface](#interface-change-for-server-code) to query if a feature is enabled for the whole cluster to be used in the server code.
 1. [client APIs](#client-apis-changes) to query if a feature is enabled for the whole cluster.
 1. a way to [remove a feature gate][#feature-removal] when it is no longer useful or have graduated.
+
+### Set the Basis
+
+Before we proceed to the design details, we need to think through several questions.
+
+1. Do the cluster features need to tied to the cluster version?
+
+   Imaging the following scenario:
+   * every server in the cluster is on 3.7, and have a new Alpha feature enabled, which would write a new field to wal.
+   * downgrade is enabled, so cluster version is downgraded to 3.6.
+   When the cluster version is downgrade to 3.6, the flags of each member are not changed. But we should still disable the Alpha feature, so that any new data written would be compatible after the downgrade.
+
+   So similar to how cluster version determines the capability, cluster features should also be tied to the cluster version.
+
+   In addition, a server can run with 3.N or 3.N-1 binary version with 3.N-1 cluster version with the same values of cluster feature gates. 
+   The feature implementation for Alpha and Beta features might change between different binary versions.
+   See [Feature Implementation Change Risks](#feature-implementation-change-risks) about how we we can mitigate the risks in this scenario.
+
+2. Do we need a leader to set the final values of features? 
+
+   To decide the final values of features, we can do one of 
+
+   a. rely on the leader to send a raft request to set the cluster feature values. This is how most of the properties of the cluster is set. 
+   But in the past we have had some issues with stale leader trying to compete with current leader. This would add yet another decision for the leader to handle.
+
+   b. individual members decide the feature values by reconciling the proposed values locally after receiving them from each member. 
+   This approach has the benefit of skipping a raft step, but has the risk of inconsistent behavior among the mixed version members if there is any change in the reconciliation logic between versions. 
+
+   Considering the feature setting for a cluster is most likely idempotent, the risk of issues with stale leader is actually most smaller than other uses cases of the leader, we will pick the first approach.
+
+3. What happens before the cluster feature value setting raft request is sent?
+
+   When a new cluster starts, the cluster starts to accept requests once a leader is elected. At this point, the cluster version might be `nil` or set to the `MinClusterVersion = "3.0.0"`. 
+   The leader would not have decided the values of cluster feature gates yet. What should be the values for the cluster features during that time?
+   * if we set the cluster feature gate to `nil` or tie it to the `MinClusterVersion`, every cluster feature would be off at that moment. This would also apply to GA features as well.
+     * but suppose `featureA` GAs at version 3.7, and is removed at 3.8, if we start a new cluster with 2 nodes at 3.7, and 1 node at 3.8, 
+     during the period when the cluster feature gate is `nil`, `featureA` would be disabled in the 3.7 members, and enabled in the 3.8 members because the feature code is already removed in 3.8 and forever on. 
+     This would pose great challenges requiring either we can never clean up GA features or we cannot allow starting a cluster with mixed version members. Both are not feasible.
+
+   * we also cannot set the cluster feature values according to the local server version either, because we run the risk of a feature set to different values between members of different versions for a mixed version cluster. 
+
+   * essentially, we would need a starting cluster version that is not `3.0.0` and every member agrees on. 
+
+
+For simplicity of the design, we would only consider the following cluster configuration cases:
+* when a new cluster starts, all cluster members have the same major.minor version, and have the same feature configurations.
+* a cluster can be upgraded, downgraded, and updated in rolling sequence. For a limited time, the cluster can have mixed versions and mixed configurations. Eventually all cluster members will have the same major.minor version, and in the intermediate state, the cluster version should be set to the min version of all the members, and we will use the cluster version to set the cluster feature gate.
 
 ### Register New Feature Gates
 
@@ -225,13 +278,6 @@ To guarantee consistent value of if a feature is enabled in the whole cluster, t
 1. The leader sends the final `ClusterParams` values in `ClusterParamsSetRequest` through raft if there is any change in `ClusterParams`. 
 
 1. Each member applies the updates to their `ClusterParams`, and saves the results in the `cluster` bucket in the backend.
-
-A few other alternatives we have evaluated:
-1. Is it better to initialize the `ClusterParams` with nil or cluster version defaults when we have not received the updates of `proposed_cluster_params` from all members?
-In either case, there would be a state change from the initial state to the final state. If we choose to use the version defaults, even though different member might have different default values of the cluster parameters, compared with if the initial state is nil, the change would still be smaller because defaults rarely change between patch versions, and most users would run with parameters close the default values. 
-
-1. Should individual members decide the `ClusterParams` by reconciling `proposed_cluster_params` locally instead of relying on a leader to determine the final values and send a raft request to set the final `ClusterParams`?
-If we allow individual members decide the final `ClusterParams`, the logic to reconcile the `proposed_cluster_params` of all members to a common cluster setting - `UpdateClusterParamsIfNeeded` has to be the same across all patch versions. On the other hand, if we use a single leader to make the final decision, we would have the flexibility to change the implementation of `UpdateClusterParamsIfNeeded` in patch versions without risking split brains. 
 
 ![cluster feature gate consensus algorithm](./cluster_feature_gate.png "cluster feature gate consensus algorithm")
 
