@@ -17,11 +17,13 @@
     - [Data Compatibility Risks During Feature Value Change](#data-compatibility-risks-during-feature-value-change)
     - [Feature Implementation Change Risks](#feature-implementation-change-risks)
 - [Design Details](#design-details)
+  - [Set the Basis](#set-the-basis)
   - [Register New Feature Gates](#register-new-feature-gates)
   - [Set the Feature Gates](#set-the-feature-gates)
   - [Consensus Algorithm](#consensus-algorithm)
     - [New Raft Proto Changes](#new-raft-proto-changes)
     - [New Backend Schema Changes](#new-backend-schema-changes)
+    - [Detailed sequence of events for different scenarios](#detailed-sequence-of-events-for-different-scenarios)
     - [Start a New Cluster](#start-a-new-cluster)
     - [Restart a Member](#restart-a-member)
     - [Remove a Member](#remove-a-member)
@@ -29,7 +31,7 @@
     - [Cluster Upgrade](#cluster-upgrade)
     - [Cluster Online Downgrade](#cluster-online-downgrade)
     - [Cluster Offline Downgrade](#cluster-offline-downgrade)
-  - [How to Add a New Learner](#how-to-add-a-new-learner)
+    - [Add a New Learner](#add-a-new-learner)
   - [Interface Change for Server Code](#interface-change-for-server-code)
   - [Client APIs Changes](#client-apis-changes)
   - [Feature Removal](#feature-removal)
@@ -39,9 +41,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Milestone 1](#milestone-1)
-    - [Milestone 2](#milestone-2)
-    - [Milestone 3](#milestone-3)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -134,7 +136,7 @@ In a HA cluster, they would need to restart each server node one by one with fea
 
 Now with the cluster feature gate, the feature would be disabled once it is disabled in one server, and we can deterministically tell if the feature is enabled or disabled for the whole cluster at any moment and easier to write tests to ensure correctness.
 
-This story applies similar to the upgrade/downgrade scenarios as well.
+This story applies similarly to the upgrade/downgrade scenarios as well.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -152,7 +154,7 @@ How do we handle the data change?
 1. if the etcd server knows this feature, it should be able to handle the data when the feature is on or off. How it handles the data at WAL entry `i` is determined by the cluster feature flag set from raft before WAL entry `i`. 
 1. if the etcd server does not know this feature, i.e. its version is not compatible with this feature, it means the data is not compatible with the storage version. The storage version migration should handle cleaning up older or newly introduced data.
 
-Overall, when developers introduce new data with a feature, they should be careful to include data cleaning in `schema.UnsafeMigrate`. But we prefer not to have a mechanism to disallow such features to be turned off after they are turned on because new features could be buggy, we need to keep the option to be able to turn it off without bring down the whole cluster.
+Overall, when developers introduce new data scheme with a feature, they should be careful to include data cleaning in `schema.UnsafeMigrate`. But we prefer not to have a mechanism to disallow such features to be turned off after they are turned on because new features could be buggy, we need to keep the option to be able to turn it off without bring down the whole cluster.
 
 #### Feature Implementation Change Risks
 
@@ -165,6 +167,11 @@ if s.FeatureEnabled(FeatureA) && s.ClusterVersion() >= "3.7" {implementation 2}
 ```
 This way the cluster would work consistently because there is a single ClusterVersion across the whole cluster.
 
+It may not be necessary for some changes if the changes do not affect user facing apis or data consistency.
+We would only make version based switching optional and best effort, at the discretion of the developers and reviewers. 
+
+However, we should make sure the feature is well tested for mixed version scenarios in robustness test.
+
 ## Design Details
 
 On high level, a cluster feature gate would need:
@@ -173,7 +180,51 @@ On high level, a cluster feature gate would need:
 1. a [consensus algorithm](#consensus-algorithm) to determine if a feature is enabled for the whole cluster, even in mixed version scenarios.
 1. an [interface](#interface-change-for-server-code) to query if a feature is enabled for the whole cluster to be used in the server code.
 1. [client APIs](#client-apis-changes) to query if a feature is enabled for the whole cluster.
-1. a way to [remove a feature gate][#feature-removal] when it is no longer useful or have graduated.
+1. a way to [remove a feature gate](#feature-removal) when it is no longer useful or have graduated.
+1. to support consistency during online upgrade/downgrade.
+
+### Set the Basis
+
+Before we proceed to the design details, we need to think through several questions.
+
+1. Do the cluster features need to tied to the cluster version?
+
+   Imaging the following scenario:
+   * every server in the cluster is on 3.7, and have a new Alpha feature enabled, which would write a new field to wal.
+   * downgrade is enabled, so cluster version is downgraded to 3.6.
+   When the cluster version is downgrade to 3.6, the flags of each member are not changed. But we should still disable the Alpha feature, so that any new data written would be compatible after the downgrade.
+
+   So similar to how cluster version determines the capability, cluster features should also be tied to the cluster version. There is also a difference between the feature flag value set initially when a server starts and the feature value eventually set at the cluster even when the flag value is consistent across all members.
+
+2. Do we need a leader to set the final values of features? 
+
+   To decide the final values of features, we can do one of 
+
+   a. rely on the leader to send a raft request to set the cluster feature values. This is how most of the properties of the cluster is set. 
+   But in the past we have had some issues with stale leader trying to compete with current leader. This would add yet another decision for the leader to handle.
+
+   b. individual members decide the feature values by reconciling the proposed values locally after receiving them from each member. 
+   This approach has the benefit of skipping a raft step, but has the risk of inconsistent behavior among the mixed version members if there is any change in the reconciliation logic between versions. 
+
+   Considering the feature setting for a cluster is most likely idempotent, the risk of issues with stale leader is actually much smaller than other uses cases of the leader, we will pick the first approach.
+
+3. What happens before the cluster feature value setting raft request is sent?
+
+   When a new cluster starts, the cluster starts to accept requests once a leader is elected. At this point, the cluster version might be `nil` or set to the `MinClusterVersion = "3.0.0"`. 
+   The leader would not have decided the values of cluster feature gates yet. What should the values for the cluster features be during that time on a server?
+   * if we set the cluster feature gate to `nil` or tie it to the `MinClusterVersion`, every cluster feature would be off at that moment. This would also apply to GA features as well.
+     * but suppose `featureA` GAs at version 3.7, and the switch code is removed at 3.8, if we start a new cluster with 2 nodes at 3.7, and 1 node at 3.8, 
+     during the period when the cluster feature gate is `nil`, `featureA` would be disabled in the 3.7 members, and enabled in the 3.8 members because the feature code is already removed in 3.8 and forever on. 
+     This would pose great challenges requiring either we can never clean up GA features or we cannot allow starting a cluster with mixed version members. Both are not feasible.
+
+   * we also cannot set the cluster feature values purely based on the local server version either, because we run the risk of a feature set to different values between members of different versions for a mixed version cluster. 
+
+   * essentially, we would need a starting cluster version that is not `3.0.0` and every member agrees on. 
+
+
+For simplicity of the design, we would only consider the following cluster configuration cases:
+* when a new cluster starts, all cluster members have the same major.minor version, and have the same feature configurations.
+* a cluster can be upgraded, downgraded, and updated in rolling sequence. For a limited time, the cluster can have mixed versions and mixed configurations. Eventually all cluster members will have the same major.minor version, and in the intermediate state, the cluster version should be set to the min version of all the members, and we will use the cluster version to set the cluster feature gate.
 
 ### Register New Feature Gates
 
@@ -214,39 +265,40 @@ We do not support dynamically changing the feature gates when the server is runn
 
 To guarantee consistent value of if a feature is enabled in the whole cluster, the leader would decide if the feature is enabled for all cluster members, and propagate the information to all members. To make our algorithm also extensible to other cluster level parameters, we will change our discussions of the consensus algorithm from cluster feature gates to a more general concept of cluster parameters.
 
-1. When a cluster starts, similar to `ClusterVersion`, the `ClusterParams` would be set to nil, which means all cluster level features are disabled, and other parameters are unknown.
+1. When a server starts, it bootstraps its `ClusterParams` from existing value from the backend or WAL, or from the defaults based on its local server version if it is a brand new cluster.
 
-1. When the there is an update of `ClusterVersion`, the `ClusterParams` would be reset to the default values at the new `ClusterVersion`, because the `ClusterParams` values at the previous `ClusterVersion` may no longer be applicable to the new version, thus invalid. The new default `ClusterParams` is set as part of the `ClusterVersionSetRequest`. At the same time, when a server applies updates of the `ClusterVersion`, it will set the `ClusterParams` to the new default `ClusterParams` sent by the leader, all the old `proposed_cluster_params` of all the members stored on the server will be reset to nil to wait for the new values to be refreshed. Each field in `ClusterParams` will have a `versionpb.etcd_version_field` annotation to indicate when it is introduced, and the default should be empty if `ClusterVersion` is smaller than the version when the filed is introduced.
+1. When a server starts, it sends its original flag values of `--cluster-feature-gates` and other cluster params through a new `ProposedClusterParams` field in the `MemberAttributes` update in `publishV3`. In the `ProposedClusterParams`, there is also a `MinCompatibilityVersion` field set to the `ServerVersion.MajorMinor`.
 
-1. Whenever there is an update in `ClusterVersion` or the server itself, the server would propose the values of `ClusterParams` by publishing a new `Attributes.proposed_cluster_params` field [through raft](https://github.com/etcd-io/etcd/blob/e37a67e40b3f5ff8ef81f9de6e7f475f17fda32b/server/etcdserver/server.go#L1745). (see the [discussion](#push-vs-poll-when-leader-decides-cluster-feature-gate) about why we choose to push the information through raft)
+1. Whenever a server receives `MemberAttributes` update of any member, it will check the new `ProposedClusterParams.MinCompatibilityVersion` against its `ClusterParams.MinCompatibilityVersion`, and will panic if the `ProposedClusterParams.MinCompatibilityVersion` is less than `ClusterParams.MinCompatibilityVersion`. This would make sure a brand new cluster always starts with the same version (Major.Minor) for all members.
+   * if it is an existing cluster with the cluster version set already, `ClusterParams.MinCompatibilityVersion` would be equal to the `ClusterVersion`, and new servers would be rejected if its server version is lower than the `ClusterVersion` unless downgrade is enabled.
+   * if it is a new cluster, the cluster would not start successfully unless all members have the same Major.Minor version based on `MinCompatibilityVersion`.
 
-1. Whenever the leader receives member attribute update from raft, it will `UpdateClusterParamsIfNeeded`: decide the values for the `ClusterParams` based on the proposed values of all members if none of the `proposed_cluster_params` is missing. The leader waits for all members' update instead of all the `proposed_cluster_params` it has received so far because we do not want the `ClusterParams` to change up to N times when a N-node cluster bootstraps.
+1. After a leader is elected, the leader will decide the `ClusterParams` by 
+   * setting `ClusterParams.MinCompatibilityVersion` to the `ClusterVersion` if `ClusterVersion != nil && ClusterVersion > MinClusterVersion`
+   * reconciling the boolean feature enablement based on the flag values in `ProposedClusterParams` from all the voting `MemberAttributes` it has received if the feature value can be set at the `ClusterParams.MinCompatibilityVersion`.
+   * setting the default values for params not explicitly set based on the `ClusterParams.MinCompatibilityVersion`.
 
-1. The leader sends the final `ClusterParams` values in `ClusterParamsSetRequest` through raft if there is any change in `ClusterParams`. 
+1. we are changing the `monitorClusterVersions` loop to send `ClusterVersionSetRequest` whenever there is an update of `ClusterVersion` or `ClusterParams`, with a new `ClusterParams` field in `ClusterVersionSetRequest`.
+   * another option is to add a new `monitorClusterParams` loop to send `ClusterParamsSetRequest`. This would be much more complicated because whenever `ClusterVersion` is updated, we have to update `ClusterParams` in a single request to ensure compatibility with the version. That means we could potentially have 2 parallel requests to update `ClusterParams` from the `monitorClusterVersions` and `monitorClusterParams` loops, which could result in racing conditions.
+   * ideally `ClusterVersion` should just be a subfield in `ClusterParams` and we can rename the functions and requests, but due to backward compatibility, we cannot easily change that.
 
-1. Each member applies the updates to their `ClusterParams`, and saves the results in the `cluster` bucket in the backend.
-
-A few other alternatives we have evaluated:
-1. Is it better to initialize the `ClusterParams` with nil or cluster version defaults when we have not received the updates of `proposed_cluster_params` from all members?
-In either case, there would be a state change from the initial state to the final state. If we choose to use the version defaults, even though different member might have different default values of the cluster parameters, compared with if the initial state is nil, the change would still be smaller because defaults rarely change between patch versions, and most users would run with parameters close the default values. 
-
-1. Should individual members decide the `ClusterParams` by reconciling `proposed_cluster_params` locally instead of relying on a leader to determine the final values and send a raft request to set the final `ClusterParams`?
-If we allow individual members decide the final `ClusterParams`, the logic to reconcile the `proposed_cluster_params` of all members to a common cluster setting - `UpdateClusterParamsIfNeeded` has to be the same across all patch versions. On the other hand, if we use a single leader to make the final decision, we would have the flexibility to change the implementation of `UpdateClusterParamsIfNeeded` in patch versions without risking split brains. 
-
-![cluster feature gate consensus algorithm](./cluster_feature_gate.png "cluster feature gate consensus algorithm")
+1. When a member receives `ClusterVersionSetRequest`, it applies the updates to their `ClusterParams`, and saves the results in the `cluster` bucket in the backend.
 
 #### New Raft Proto Changes
 
 ```proto
 message Feature {
-  option (versionpb.etcd_version_msg) = "3.6";
+  option (versionpb.etcd_version_msg) = "3.7";
   string name = 1;
   bool enabled = 2;
 }
 // Parameters that need consensus in the whole cluster to function properly.
 message ClusterParams {
-  option (versionpb.etcd_version_msg) = "3.6";
-  repeated Feature feature_gates = 1;
+  option (versionpb.etcd_version_msg) = "3.7";
+  // min_compatibility_version makes sure the new cluster starts with only members with version equal to min_compatibility_version
+  // and existing cluster only accepts members with version ge to min_compatibility_version.
+  string min_compatibility_version = 1;
+  repeated Feature feature_gates = 2;
 }
 
 message Attributes {
@@ -255,90 +307,46 @@ message Attributes {
   string name = 1;
   repeated string client_urls = 2;
   // the values of all cluster level parameters set by the configuration of the member server.
-  ClusterParams proposed_cluster_params = 3 [(versionpb.etcd_version_field)="3.6"];
-}
-
-message ClusterParamsSetRequest {
-  option (versionpb.etcd_version_msg) = "3.6";
-
-  // the consensus values of all cluster level parameters for the whole cluster.
-  ClusterParams cluster_params = 1;
+  ClusterParams proposed_cluster_params = 3 [(versionpb.etcd_version_field)="3.7"];
 }
 
 message ClusterVersionSetRequest {
   option (versionpb.etcd_version_msg) = "3.5";
 
   string ver = 1;
-  // the default values of all cluster level parameters for the whole cluster at the cluster version.
-  ClusterParams cluster_params = 2 [(versionpb.etcd_version_field)="3.6"];
+  // cluster level parameters for the whole cluster at the cluster version.
+  ClusterParams cluster_params = 2 [(versionpb.etcd_version_field)="3.7"];
 }
 ```
 
 #### New Backend Schema Changes
 We will save the consensus values of `ClusterParams` in the `Cluster` bucket in the backend.
 
+#### Detailed sequence of events for different scenarios
 #### Start a New Cluster
-
-Fig. a above shows how the consensus of `ClusterParams` is reached for a new cluster:
-1. When a new cluster starts, before `ClusterVersion` is set, the `ClusterParams` would be `nil`, and all features would be considered disabled. 
-1. When the leader sends an update message of the `ClusterVersion`, the leader will also include in the `ClusterVersionSetRequest` message the default values of `ClusterParams` for that `ClusterVersion`. This is to ensure the `ClusterParams` is always compatible with the `ClusterVersion`.
-1. Whenever the `ClusterVersionSet` is applied in a server, the member will propose new `ClusterParams` values based on its own flags and the `ClusterVersion`.
-1. Whenever the leader applies the `ClusterMemberAttrSet` from a member, it would try to `UpdateClusterParamsIfNeeded` by reconciling the `proposed_cluster_params` from all the members: 
-   * if the `proposed_cluster_params` from any member is missing, the `ClusterParams` would not be changed.
-     * [NOTE] even though different members might have different patch versions with different default values, the `ClusterParams` values would not flip-flop when the leader changes because either the `ClusterParams` would not update due to some member's `proposed_cluster_params` still missing or the `ClusterParams` would be already based on the proposed values of all members instead of the defaults.
-     * [NOTE] the leader would wait for all the members to send in their `proposed_cluster_params` instead of setting the `ClusterParams` based on the `proposed_cluster_params` it has received so far, because it is generally better to move the parameters from the initial to the final state in one step, instead of changing it in N(member) number of steps and being also dependent on the order of the messages the leader receives.
-   * if none of the member `proposed_cluster_params` is `nil`, it will run the reconciliation logic to determine the new `ClusterParams`. Specifically for cluster feature gates:
-     * a feature is disabled if the feature is proposed to be `false` by any member
-     * a feature is enabled only if the feature is proposed to be `true` by all members
-     * a feature is disabled if it is missing from the proposal of any member.
-1. If there is a change in `ClusterParams`, the leader will send `ClusterParamsSetRequest` through raft to set the final values of the `ClusterParams` to all members. 
 
 #### Restart a Member
 
-Fig. b above shows how the consensus of `ClusterParams` is reached when a member of an existing cluster restarts:
-1. When the member bootstraps, it will load the saved `ClusterVersion` and `ClusterParams` from the backend. Since the `ClusterVersion` is always `<=` the server binary version, the server binary should be able to recognize all fields in the `ClusterParams` (we do not allow feature or cluster parameter backport).
-1. After bootstrapping, the new server will use the new local command line flags to update its new `proposed_cluster_params` through `member.Attributes` as part of the server [`Start()`](https://github.com/etcd-io/etcd/blob/67743348dcd2deb1819fded2336749449ebf95d2/server/etcdserver/server.go#L532) process.
-1. The leader will received the updated `member.Attributes.proposed_cluster_params` message from the restarted member, and update the cluster parameters for the whole cluster.
-
 #### Remove a Member
-
-Fig. c above shows how the consensus of `ClusterParams` is reached when removing a member from an existing cluster:
-1. After the leader applies the config change to remove a member, it will directly call the `UpdateClusterParamsIfNeeded` logic, update the `ClusterParams` based on the `proposed_cluster_params` of the remaining members, and send the updated `ClusterParams` values to the whole cluster.
 
 #### Add a New Member
 
-Fig. d above shows how the consensus of `ClusterParams` is reached when adding a new member to an existing cluster:
-1. After the cluster applies the ConfChange request to add a member, when the leader calls `UpdateClusterParamsIfNeeded`, no update would be sent because the `proposed_cluster_params` of the new member is still missing.
-1. After the new member starts, it will update its `ClusterVersion` either by applying the `ClusterVersionSet` WAL entry or by applying a snapshot. In both cases, the member will propose new `ClusterParams` values based on its own flags and the `ClusterVersion` as part of the [`OnSet()`](https://github.com/etcd-io/etcd/blob/8b1b69b1e26621e1038f78a3fe84e0919b00034d/server/etcdserver/api/membership/cluster.go#L618) call.
-1. The leader decides and sends the new `ClusterParams` values after it receives the `proposed_cluster_params` of the new member.
-
 #### Cluster Upgrade
-
-Cluster upgrade is very similar to [Restart a Member](#restart-a-member), except in the end, the `ClusterVersion` will be upgraded after all members have been upgraded. 
-1. When upgrading the `ClusterVersion`, the `ClusterParams` will be set to the default values at the new `ClusterVersion` first.
-1. After upgrading the `ClusterVersion`, each member will send the new `proposed_cluster_params` based on local flags and the new higher `ClusterVersion`.
-1. The leader will decide and update the final values of the `ClusterParams` after it receives the new `proposed_cluster_params` from all members.
 
 #### Cluster Online Downgrade
 
-The online downgrade process is started by `etcdctl downgrade enable`.
-1. When downgrading the `ClusterVersion`, the `ClusterParams` will be set to the default values at the new lower `ClusterVersion` first.
-1. After downgrading the `ClusterVersion`, each member will send the new `proposed_cluster_params` based on local flags and the new lower `ClusterVersion`.
-1. The leader will decide and update the values of the `ClusterParams` after it receives the new `proposed_cluster_params` from all members.
-1. Now the `ClusterParams` and any new WAL entries should be compatible with the lower `ClusterVersion`.
-1. The server will `UpdateStorageVersion`, and become ready to be downgraded.
-1. Each server is restarted one by one, and the `ClusterParams` will be updated following the same process as in the [Restart a Member](#restart-a-member).
+1. The online downgrade process is started by `etcdctl downgrade enable`.
 
 #### Cluster Offline Downgrade
 If a cluster parameter is available in the lower version, the lower version should be able to handle its data.
 If a cluster parameter is not available in the lower version, then its data should be already handled by the `UnsafeMigrate` function. 
 So the only part we need to add to the offline downgrade process is in `UnsafeMigrate`, prune any feature:value pair that is not available to the target version.
 
-### How to Add a New Learner
+#### Add a New Learner
 
-When a new learner joins the cluster, it should not affect the `ClusterParams` of the existing cluster. The learner should also handle data in the same way as the rest of the cluster. 
+The leader decides the `ClusterParams` based on the `ProposedClusterParams` of voting members only. So when a new learner joins the cluster, it should not affect the `ClusterParams` of the existing cluster. The learner will receive `ClusterParams` from the leader and handle data in the same way as the rest of the cluster. 
 
-So we require the proposed `ClusterParams` of the learner to be consistent with the existing cluster. If there are inconsistencies, the learner should not be allowed to join the cluster.
+When a learner is promoted, the leader will reconcile the `ClusterParams` based on the updated list of voting members and update the `ClusterParams` if needed.
 
 ### Interface Change for Server Code
 
@@ -435,27 +443,6 @@ So to make it possible to remove a feature, we require a feature to go through t
 The figure below shows an example of how a GA feature can be removed.
 ![ga feature removal](./etcd_ga_feature_removal.png "ga feature removal")
 
-One corner case we need to consider is: when a new cluster starts, before it establishes the final `ClusterVersion`, the `ClusterVersion` will be set nil first then `MinClusterVersion=3.0`. For both cases `ClusterParams` would be nil and no feature would be enabled. If the code path for `FeatureA=false` is removed in some servers, and still exists in some other servers, we need to make sure `FeatureA=true` even when `ClusterVersion == nil|"3.0"`. 
-There are two ways we can solve this issue: 
-1. the leader would need to use the default value of the feature if `PreRelease == Deprecated && LockToDefault == true` at the binary version even when `ClusterVersion == nil|MinClusterVersion`. This assumes a feature would not be removed unless it has been stable at `PreRelease == Deprecated && LockToDefault == true` lifecycle for at least 1 minor version.
-    ```go
-    func (c *RaftCluster) FeatureEnabled(f featuregate.Feature) {
-      if c.Params != nil && enabled, ok := c.Params.FeatureGates[f]; ok {
-        return enabled
-      }
-      if c.version == nil || c.version == MinClusterVersion {
-        featureSpec := clusterFeatureGate.GetAll(binaryVersion)[f]
-        if featureSpec.PreRelease == Deprecated && featureSpec.LockToDefault == true {
-          return featureSpec.Default
-        }
-      }
-      return false
-    }
-    ```
-2. make the cluster not ready to serve until the actual `ClusterCluster` is established. This would ensure there is no version jump from `3.0` to `3.6` for example, and the cluster is not serving traffic when `ClusterParams == nil`. But this would break the HA assumption (meaning the cluster should be able to server when the majority of servers are online) during bootstrapping.
-
-To respect the HA assumption, we think Option 1 is probably the better choice even though it is a bit hacky.
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -480,37 +467,33 @@ We will also add downgrade/upgrade e2e tests to make sure the feature gate does 
 
 ### Graduation Criteria
 
-#### Milestone 1
+#### Alpha
 
-* cluster level feature gate implemented.
-  * new raft changes added.
-  * cluster feature gate added to the server code, and used by a cluster level experimental feature.
-  * feature metrics added.
-  * e2e tests added for the feature gate equivalent of the selected experimental feature.
-  * robustness tests added for current version.
+- Feature implemented behind a server level feature flag `ClusterFeatureGate`.
+- Unit tests added.
+- Initial e2e tests added.
+- Metrics added.
+- cluster level feature gate client API implemented.
 
-#### Milestone 2
-* cluster level feature gate client API implemented.
-  * grpc endpoints added.
-  * `clientv3` function added.
-  * `etcdctl` command added.
+#### Beta
 
-#### Milestone 3
+- e2e tests for upgrade & downgrade scenarios completed.
+- robustness tests with a test cluster feature gate added for current version.
+- robustness tests with a test cluster feature gate added for downgrade/upgrade scenarios.
+- backport cluster level feature gate client API to 3.6 to return not implemented(404).
+- documentation.
 
-* cluster level feature gate fully tested.
-  * feature gates clean up added to `schema.UnsafeMigrate`.
-  * backport cluster level feature gate client API to return not implemented(404).
-  * e2e tests for upgrade & downgrade & mixed version scenarios completed.
-  * robustness tests with upgrade & downgrade & mixed version scenarios completed. 
-  * documentation.
+#### GA
+
+- A real cluster level feature is implemented with the cluster feature gate.
 
 ### Upgrade / Downgrade Strategy
 
 For regular downgrade process, `schema.UnsafeMigrate` should clean up feature gates that are not available in the target version.
 
-The feature gate feature would available in 3.6+. 
-Because `proposed_cluster_params` and `ClusterParams` raft messages or fields will not be sent if `ClusterVersion < 3.6`, no backporting is needed for 3.5, and no feature gate would be available. 
-When upgrading/downgrading between 3.5 and 3.6, no feature would be enabled if there is at least one member with version 3.5.
+The feature gate feature would available in 3.7+. 
+Because `proposed_cluster_params` and `ClusterParams` raft messages or fields will not be sent if `ClusterVersion < 3.7`, no backporting is needed for 3.6, and no feature gate would be available. 
+When upgrading/downgrading between 3.6 and 3.7, no feature would be enabled if cluster version is 3.6.
 
 ### Version Skew Strategy
 
