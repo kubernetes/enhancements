@@ -74,7 +74,7 @@ there is little to no tooling that enable developers to ensure they are followin
 This KEP aims to improve the Kubernetes-native API development experience by adding two sig-api-machinery subprojects for:
 
 - Linting Kubernetes APIs written in Go based on the [Kubernetes API conventions][kube-api-conventions]
-- Validating changes to CustomResourceDefinition schemas in YAML
+- Validating changes to CustomResourceDefinition schemas
 
 [kube-api-conventions]:(https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
 [making-changes-to-apis]:(https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md)
@@ -83,11 +83,9 @@ This KEP aims to improve the Kubernetes-native API development experience by add
 
 - Create tooling to help developers writing Kubernetes APIs in Go to follow best practices and Kubernetes API conventions
 - Create tooling to help developers writing CustomResourceDefinitions avoid making breaking changes
+- Create tooling for validating CustomResourceDefinition schema changes at admission time
 
 ### Non-Goals
-
-- Create tooling for validating CustomResourceDefinition schema changes at admission time
-    - This is a non-goal of this KEP in particular to keep the scope of this KEP to only include the individual tooling. A separate KEP may be written, focusing on addressing this goal.
 
 ## Proposal
 
@@ -109,7 +107,7 @@ It cannot, and will not detect changes to the code, and therefore cannot assert 
 
 ### CRD Schema Change Validation
 
-Create a CLI tool that evaluates the differences between an old and new CRD in YAML to identify changes that may break users.
+Create a CLI tool and optional admission plugin that evaluates the differences between an old and new CRD to identify changes that may break users.
 
 All validations are exported in Go packages that can be imported and consumed by other projects.
 
@@ -117,9 +115,9 @@ Some examples of how the CLI may be used:
 
 - Comparing CRD that exists on cluster to a local YAML file of the same CRD - `crdify kube://mycrd.example.org file://mycrd.yaml`
 - Comparing CRD across git revisions (could be used in CI systems) - `crdify git://main?path=mycrd.yaml git://HEAD?path=mycrd.yaml`
-- Comparing CRD from git revision to a local file - `crdify git://main?path=mycrd.yaml file://mycrd.yaml`
+- Comparing CRD from git revision to a local YAML file - `crdify git://main?path=mycrd.yaml file://mycrd.yaml`
 
-The schema change validation will focus on changes that may break users, and changes that can be detected by comparing the CRD schemas in YAML.
+The schema change validation will focus on changes that may break users, and changes that can be detected by comparing the CRD schemas.
 It will not focus on static analysis, which will be the focus of the linter.
 
 ### Why do we need both?
@@ -134,7 +132,7 @@ To implement some of the desired checks, for example ensuring that a required fi
 On the other hand, typical linter implementations do not provide the ability to compare two versions of a file, and identify changes that may break users.
 Some CRD authors are also known to have used tools like `yaml-patch` to make changes to CRDs post generation.
 
-Capturing breaking changes (such as tightening constraints on a field) requires comparing the CRD schemas old and new state, in the form of YAML.
+Capturing breaking changes (such as tightening constraints on a field) requires comparing the CRD schemas old and new state.
 
 These two types of checks create a divide or static and transitional analysis, and are best served by two separate tools.
 The linter will focus on all checks that do not need to inspect transitions, and the CRD schema change validation will focus on all checks that do need to inspect transitions.
@@ -179,8 +177,6 @@ The linter will focus on all checks that do not need to inspect transitions, and
 
 **How**: Using an admission controller/plugin that rejects CRD update operations if it would result in a breaking change
 
-**Note for reviewers**: Adding an admission controller/plugin to enact this behavior is not part of this enhancement, but it is a use case that could be enabled by the introduction of the projects being proposed.
-
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
@@ -192,6 +188,7 @@ To mitigate the risk of having a negative impact to the Kubernetes ecosystem, it
 - Kubernetes Package Manager project maintainers (Helm, Operator Lifecycle Manager, etc.)
 - Cluster administrators (where it makes sense)
 - sig-api-machinery tech leads
+- Kubernetes API Reviewers
 
 ## Design Details
 
@@ -336,10 +333,8 @@ kind: ValidationConfiguration
 validations:
 - name: <validationName>
   enforcement: Error || Warn || None
-  config: |
-    apiVersion: crdify.sigs.k8s.io/v1alpha1
-    kind: <validationName>Config
-    customField: value
+  config: # map[string]interface{}
+    configField: configValue
 ```
 
 This pattern is inspired from the Kubernetes API server admission plugin configuration pattern.
@@ -352,6 +347,13 @@ Not all validations will have an arbitrary set of extra configuration options, b
 If a known validation is not specified in the configuration, the default for that validation will be used.
 
 The only way to enable, disable, and configure validations will be via this configuration file to encourage users to explicitly define an acceptable risk profile.
+
+#### Optional Admission Controller/Plugin
+There is existing work done that allows for running the CLI produced by https://github.com/openshift/crd-schema-checker
+as an admission plugin to validate CRD compatibility at admission time.
+
+The existing work will be moved to the new project and updated to consume any changes necessary based on the proposed
+merging of the two existing validation tools.
 
 ### Test Plan
 
