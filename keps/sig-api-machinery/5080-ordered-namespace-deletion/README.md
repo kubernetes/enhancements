@@ -7,6 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Feature Gate handling](#feature-gate-handling)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1 - Pod VS NetworkPolicy](#story-1---pod-vs-networkpolicy)
     - [Story 2 - having finalizer conflicts with deletion order](#story-2---having-finalizer-conflicts-with-deletion-order)
@@ -139,6 +140,12 @@ the resources associated with this namespace should be deleted in order:
 - Delete all pods in the namespace (in an undefined order).
 - Wait for all the pods to be stopped or deleted.
 - Delete all the other resources in the namespace (in an undefined order).
+
+### Feature Gate handling
+
+Due to this KEP is addressing the security concern and we do wanna give options to close security gaps in the past,
+the feature gate will be introduced as beta and on by default in 1.33 release. We will backport the feature gate with off-by-default
+configuration to all supported releases. See [the detailed discussion on slack](https://kubernetes.slack.com/archives/CJH2GBF7Y/p1741258168683299)
 
 ### User Stories (Optional)
 
