@@ -62,7 +62,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This proposal introduces two new sig-api-machinery subprojects to improve the experience of developing Kubernetes APIs (including CRDs).
 
-A linter, `kube-api-linter` (aka `kal`) as a golangci-lint plugin for evaluating Go types that are used to generate both built-in types and CRDs, to ensure they follow the Kubernetes API conventions and best practices.
+A linter, `kube-api-linter` as a golangci-lint plugin for evaluating Go types that are used to generate both built-in types and CRDs, to ensure they follow the Kubernetes API conventions and best practices.
 
 A CRD schema upgrade checker, `crdify` as a CLI that compares generated CRD schemas to identify changes to the CRD schema, and ensure that any changes are compatible.
 
@@ -202,14 +202,14 @@ There is already existing work done on this in https://github.com/JoelSpeed/kal 
 #### As a golangci-lint plugin
 `goalngci-lint` is a popular linter for Go code, already adopted within the Kubernetes ecosystem, that allows for the creation of custom linters.
 
-By building linters based on the `go/analysis` package, and integrating them as a [plugin](https://golangci-lint.run/plugins/module-plugins/), `kal` integrates into the existing `golangci-lint` framework.
+By building linters based on the `go/analysis` package, and integrating them as a [plugin](https://golangci-lint.run/plugins/module-plugins/), `kube-api-linter` integrates into the existing `golangci-lint` framework.
 
-`golangci-lint` here provides several helpful features:* Exception handling - `golangci-lint` has a powerful exception handling configuration system that is already well established. By integrating as a plugin, `kal` users can leverage this system to ignore specific rules for specific files or directories.
-* Integration with CI/CD - `golangci-lint` is already integrated into many CI/CD systems, and by creating a plugin, `kal` can be integrated into these systems as well.
-* Release tooling - `golangci-lint custom` can be used to build a custom `golangci-lint` binary with the `kal` plugin included, making it easy to distribute and use.
-* Output formatting - `golangci-lint` already has a well established pattern for printing results, and integrations into IDEs and other tools. `kal` can also leverage this as a plugin.
-* Fixes - `golangci-lint` can automatically apply fixes if a linter supplies them. `kal` implements `SuggestedFixes` for many rules, enabling users to automatically fix issues.
-* Diffing - `golangci-lint` is often used with the `--new-from-rev` flag that allows catching only new issues in a PR. `kal` can leverage this to ensure that new types are compliant with the rules, without needing to fix existing issues.
+`golangci-lint` here provides several helpful features:* Exception handling - `golangci-lint` has a powerful exception handling configuration system that is already well established. By integrating as a plugin, `kube-api-linter` users can leverage this system to ignore specific rules for specific files or directories.
+* Integration with CI/CD - `golangci-lint` is already integrated into many CI/CD systems, and by creating a plugin, `kube-api-linter` can be integrated into these systems as well.
+* Release tooling - `golangci-lint custom` can be used to build a custom `golangci-lint` binary with the `kube-api-linter` plugin included, making it easy to distribute and use.
+* Output formatting - `golangci-lint` already has a well established pattern for printing results, and integrations into IDEs and other tools. `kube-api-linter` can also leverage this as a plugin.
+* Fixes - `golangci-lint` can automatically apply fixes if a linter supplies them. `kube-api-linter` implements `SuggestedFixes` for many rules, enabling users to automatically fix issues.
+* Diffing - `golangci-lint` is often used with the `--new-from-rev` flag that allows catching only new issues in a PR. `kube-api-linter` can leverage this to ensure that new types are compliant with the rules, without needing to fix existing issues.
 
 Some of the above may be considered nice to have, but the decision to leverage `golangci-lint` enables us to focus on implementing the rules, and not the actual linter tooling. 
 
@@ -311,18 +311,18 @@ Validations in https://github.com/openshift/crd-schema-checker  both existing an
 
 | Name | Scope | Description | Implemented | Carry |
 | ---- | ----- | ----------- | ----------- | ----- |
-| NoBools | Property | Validates that CRD properties are not of type `boolean` | Yes | No, already implemented as a linter in `kal` |
-| NoFloats | Property | Validates that CRD properties are not of type `number` | Yes | No, already implemented as a linter in `kal` |
-| NoUints | Property | Validates that CRD properties are not of type `uint` | Yes | No, already implemented as a linter in `kal` |
+| NoBools | Property | Validates that CRD properties are not of type `boolean` | Yes | No, already implemented as a linter in `kube-api-linter` |
+| NoFloats | Property | Validates that CRD properties are not of type `number` | Yes | No, already implemented as a linter in `kube-api-linter` |
+| NoUints | Property | Validates that CRD properties are not of type `uint` | Yes | No, already implemented as a linter in `kube-api-linter` |
 | NoFieldRemoval | CRD | Validates that existing fields are not removed from a CRD | Yes | Yes |
 | NoEnumRemoval | Property | Validates that existing enum values are not removed from a property | Yes | Yes |
-| NoMaps | Property | Validates that CRD properties of type `object` do not have an `additionalProperties` field specified | Yes | No, if desired this is better suited for a linter in `kal` |
+| NoMaps | Property | Validates that CRD properties of type `object` do not have an `additionalProperties` field specified | Yes | No, if desired this is better suited for a linter in `kube-api-linter` |
 | NoDataTypeChange | Property | Validates that property type is not changed | Yes | Yes |
-| MustHaveStatus | CRD | Validates that the CRD has a status subresource | Yes | No, this is already implemented as a linter in `kal` |
-| ListsMustHaveSSATags | Property | Validates that lists have the `x-kubernetes-list-type` tag for server side apply | Yes | No, this is desired as a linter in `kal` |
-| ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, this is already implemented as a subset of the `conditions` linter in `kal` |
+| MustHaveStatus | CRD | Validates that the CRD has a status subresource | Yes | No, this is already implemented as a linter in `kube-api-linter` |
+| ListsMustHaveSSATags | Property | Validates that lists have the `x-kubernetes-list-type` tag for server side apply | Yes | No, this is desired as a linter in `kube-api-linter` |
+| ConditionsMustHaveSSATags | Property | Validates that status conditions fields have the appropriate tags for server side apply | Yes | No, this is already implemented as a subset of the `conditions` linter in `kube-api-linter` |
 | NoNewRequiredFields | CRD | Validates that no new required fields are added | Yes | Yes |
-| MustNotExceedCostBudget | Property | Validates that `XValidations` don't exceed the CEL cost budget | Yes | No, if desired this is better suited for a linter in `kal` |
+| MustNotExceedCostBudget | Property | Validates that `XValidations` don't exceed the CEL cost budget | Yes | No, if desired this is better suited for a linter in `kube-api-linter` |
 
 #### Validation configuration
 
@@ -518,5 +518,5 @@ Instead of making `kube-api-linter` a golangci-lint linter, creating a standalon
 
 Two new GitHub Repositories:
 
-- kubernetes-sigs/kube-api-linter (or kubernetes-sigs/kal)
+- kubernetes-sigs/kube-api-linter
 - kubernetes-sigs/crdify
