@@ -248,11 +248,13 @@ Kubernetes project, under the auspices of Kubernetes SIG UI.
 This means the Headlamp project repo is moved under the kubernetes-sigs GitHub
 organization.
 
-There are two other repositories under the current Headlamp K8s org: _plugins_,
-and _website_; these representing the plugins that maintained by Headlamp's
-core developers, and the website of the project, respectively. The website
-domain is already managed by the CNCF (since Headlamp is a CNCF Sandbox
-project).
+There are two other repositories under the current Headlamp K8s org:
+[plugins](https://github.com/headlamp-k8s/plugins), and
+[website](https://github.com/headlamp-k8s/headlamp-website); these representing
+the plugins that maintained by Headlamp's core developers, and the website of
+the project. This proposal entails only the move of the headlamp-k8s/headlamp
+repository under the kubernetes-sig organization. Other repositories may be
+proposed to be moved as well at a later stage.
 
 ### User Stories
 
