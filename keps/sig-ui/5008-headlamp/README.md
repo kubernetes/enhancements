@@ -162,6 +162,8 @@ Given the adotion of Headlamp as a tool or as a base building block for other
 solutions by different companies and organizations, having Headlamp as part of
 the Kubernetes project under the SIG UI will also allow us to deepen the
 community ties as we continue to develop the project.
+This [Github issue](https://github.com/headlamp-k8s/headlamp/issues/2897)
+tracks the progress of items related to this move.
 
 ### Background
 
