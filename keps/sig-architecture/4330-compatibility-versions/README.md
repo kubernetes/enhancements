@@ -725,17 +725,18 @@ The API fields include will match what is described in the "API Fields" section.
 
 ### Version introspection
 
-The `/version` endpoint will be augmented to report binary version when this feature
+The `/version` endpoint will be augmented to report emulation version and min compatibility version when this feature
 is enabled. Note that this changes default behavior by always including a new field
 in `/version` responses.  E.g.
 
 ```json
 {
   "major": "1",
-  "minor": "30",
-  "binaryMajor": "1",
-  "binaryMinor": "32",
-  "compatibility": "29",
+  "minor": "32",
+  "emulationMajor": "1",
+  "emulationMinor": "31",
+  "minCompatibilityMajor": "1",
+  "minCompatibilityMinor": "30",
   "gitVersion": "v1.30.0",
   "gitCommit": "<something>",
   "gitTreeState": "clean",
