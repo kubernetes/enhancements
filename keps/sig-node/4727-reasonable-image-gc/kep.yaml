@@ -1,0 +1,42 @@
+title: reasonable --image-gc-high-threshold according to imagefs.available hard evict option
+kep-number: 4727
+authors:
+  - "@olderTaoist"
+owning-sig: sig-node
+participating-sigs:
+status: provisional
+creation-date: 2024-06-13
+reviewers:
+  - "@SergeyKanzhelev"
+  - "@haircommander"
+
+approvers:
+  - TBD
+
+
+see-also:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.32"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.32"
+#  beta: "v1.33"
+#  stable: "v1.34"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ImageGCBeforeStorageEviction
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
