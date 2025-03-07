@@ -286,9 +286,6 @@ minikube. Once my local cluster is installed I’m presented with a tutorial
 plugin which guides me through the various aspects of the UI and Kubernetes
 concepts.
 
-_**Note:** We have the minikube installer plugin in POC but the tutorial plugin
-is not something we currently have._
-
 #### Story 3
 
 As a cluster admin I was to provide a user interface for my users. I choose
