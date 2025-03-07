@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5008: Introducing Kubernetes Desktop
+# KEP-5008: Move Headlamp to the SIG UI
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -137,9 +137,9 @@ updates.
 -->
 
 This proposal aims to improve the graphical user interface experience in
-Kubernetes by introducing a Kubernetes Desktop application and an improved
-in-cluster web user interface, both based on the [Headlamp](https://headlamp.dev)
-project.
+Kubernetes, particularly in what comes to flexibility of UI solutions, and
+including the desktop experience it provides, by having the
+[Headlamp](https://headlamp.dev) project and its maintainers join the SIG UI.
 
 ## Motivation
 
@@ -157,6 +157,13 @@ the box experience for end users and a foundation for vendors and other
 projects to integrate with and build upon. Essentially, we think Headlamps'
 ability to be adapted and used across many scenarios allows it to serve as a
 central hub for the CNCF community and projects.
+
+Given the adotion of Headlamp as a tool or as a base building block for other
+solutions by different companies and organizations, having Headlamp as part of
+the Kubernetes project under the SIG UI will also allow us to deepen the
+community ties as we continue to develop the project.
+This [Github issue](https://github.com/headlamp-k8s/headlamp/issues/2897)
+tracks the progress of items related to this move.
 
 ### Background
 
@@ -235,11 +242,19 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The proposal is to ship the Headlamp experience as a new Kubernetes Desktop
-and Kubernetes in-cluster UI.
+The proposal is to continue the development of Headlamp as part of the
+Kubernetes project, under the auspices of Kubernetes SIG UI.
 
-This means the Headlamp project will become a part of the Kubernetes project
-under the auspices of Kubernetes SIG UI.
+This means the Headlamp project repo is moved under the kubernetes-sigs GitHub
+organization.
+
+There are two other repositories under the current Headlamp K8s org:
+[plugins](https://github.com/headlamp-k8s/plugins), and
+[website](https://github.com/headlamp-k8s/headlamp-website); these representing
+the plugins that maintained by Headlamp's core developers, and the website of
+the project. This proposal entails only the move of the headlamp-k8s/headlamp
+repository under the kubernetes-sig organization. Other repositories may be
+proposed to be moved as well at a later stage.
 
 ### User Stories
 
@@ -270,9 +285,6 @@ Headlamp Desktop app to guide me in installing a local kubernetes cluster using
 minikube. Once my local cluster is installed I’m presented with a tutorial
 plugin which guides me through the various aspects of the UI and Kubernetes
 concepts.
-
-_**Note:** We have the minikube installer plugin in POC but the tutorial plugin
-is not something we currently have._
 
 #### Story 3
 
