@@ -14,8 +14,8 @@
     - [New Validations Vs Migrating Validations](#new-validations-vs-migrating-validations)
     - [New Validation Tests](#new-validation-tests)
     - [Ensuring Validation Equivalence With Testing](#ensuring-validation-equivalence-with-testing)
-  - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationMismatchMetrics</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationmismatchmetrics)
-    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationMismatchMetrics</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationmismatchmetrics-will-target-beta-from-the-beginning)
+  - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationtakeover)
+    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationtakeover-will-target-beta-from-the-beginning)
   - [Linter](#linter)
   - [Documentation Generation](#documentation-generation)
 - [Analysis of existing validation rules](#analysis-of-existing-validation-rules)
@@ -232,10 +232,11 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 *   Introduce new validation tests, test framework and migration test utilities
     * No field can go thru migration without a robust test for the field in question and maintainer review scrutiny which proves that it is validated correctly before the change and after.
     *   Create migration test pattern and utilities which support testing equivalence between hand-written validation and declarative validation (de-risks migration problems)
-*   Introduce featuregate: `DeclarativeValidation`
-    *   Safety mechanism in case a mistake is made so that users can turn off Declarative Validation and get back to a healthy validation state.  (de-risks migration problems)
-*   Introduce featuregate: `DeclarativeValidationMismatchMetrics`
-    *   Runtime check which emits declarative-validation-mismatch metric allowing for tests and users to identify any mismatching validation logic between hand-written and declarative validations.
+*   Introduce featuregate: `DeclarativeValidation` and `DeclarativeValidationTakeover`
+    *   Combined allow for safety mechanism in case a mistake is made so that we can safely compare validation errors but have the handwritten validations still be authoritative along the request path.  Additionally users can turn off Declarative Validation and get back to a healthy validation state if necessary.  (de-risks migration problems)
+*   Introduce runtime verification testing which emit
+    * `declarative_validation_mismatch_total` metric allowing for tests and users to identify any mismatching validation logic between hand-written and declarative validations.
+    * `declarative_validation_panic_total` metric which counts the number of panics (recovered) that occur in declarative validation code as an extra precaution.
 *   Migration
     *   Migrate schema from one type of a core API group to prove the viability of the approach, in a single PR.
         *   PR will leverage `validation-gen` test framework to demonstrate 100% validation equivalence across hand-written and declarative validation for migrated field(s).
@@ -279,21 +280,24 @@ As part of the process for migrating fields, contributors will scrutinize and im
 
 #### Ensuring Validation Equivalence With Testing
 
-For testing the migration and ensuring that the validation is identical across current hand-written validation and declarative validations, an equivalence test will be added to all migrated fields, schemas, etc. in the respective validation_test.go.  This will verify that the the outputs for validation_test.go are identical across enabling and disabling the featuregate - `DeclarativeValidation`.
+For testing the migration and ensuring that the validation is identical across current hand-written validation and declarative validations, an equivalence test will be added to all migrated fields, schemas, etc. in the respective validation_test.go.  This will verify that the outputs for validation_test.go are identical across enabling and disabling the featuregate - `DeclarativeValidation`.
 
-Verifying that a field/type that is migrated is appropriately tested with proper changes to validation_test.go, equivalence testing, etc. will be human-drivern enforced in PR review for the related community migration PR
+Verifying that a field/type that is migrated is appropriately tested with proper changes to validation_test.go, equivalence testing, etc. will be human-driven enforced in PR review for the related community migration PR.
 
-Additionally to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create an additional runtime check controlled by a new feature gate - `DeclarativeValidationMismatchMetrics`.  When this is enabled, both hand-written and declarative validation will be run (parallel to the actual validation logic which is unchanged by the flag) and any mismatches will be output under the metric - `declarative-validation-mismatch`.
+Additionally, to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create a runtime check controlled by the `DeclarativeValidation` and `DeclarativeValidationTakeover` feature gates. When `DeclarativeValidation` is enabled, both hand-written and declarative validation will be run.  Any mismatches will be logged and a `declarative_validation_mismatch_total` metric will be incremented.  The `DeclarativeValidationTakeover` gate controls which result (imperative or declarative) is returned to the user.
+### Introduce Feature Gates: `DeclarativeValidation` & `DeclarativeValidationTakeover`
 
-### Introduce Feature Gates: `DeclarativeValidation` & `DeclarativeValidationMismatchMetrics`
+Two new feature gates will be introduced:
 
-A new feature gate - `DeclarativeValidation` will be created as part of Declarative Validation.  This feature gate will toggle the behaviour of routing the validation for specified number of fields for a schema (and later full schemas) to use declarative validation vs the hand-written validation.  In Beta this will enable a partial migration where initially a small number of fields of a single schema  will be ported to declarative validation and this will increase over time until all validation logic is declarative.  During the Beta lifecycle more and more validations will be ported until they all are in which case the feature will move to GA.  For more information see the “Migration Plan” section.
+*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationTakeover` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
 
-Additionally a new feature gate - `DeclarativeValidationMismatchMetrics` will be created.  For more information see the "Test Plan" section.
+*   **`DeclarativeValidationTakeover`**: This gate determines *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.  When `DeclarativeValidationTakeover` is enabled, the declarative validation result is returned. When disabled (and `DeclarativeValidation` is enabled), the imperative result is returned.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.  This gate allows for a phased rollout where we can first verify equivalence, and *then* switch to using the declarative results.
 
-#### `DeclarativeValidation` & `DeclarativeValidationMismatchMetrics` Will Target Beta From The Beginning
+#### `DeclarativeValidation` & `DeclarativeValidationTakeover` Will Target Beta From The Beginning
 
-Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally DeclarativeValidation is targeting Beta with default:true.  This is because Declarative Validation is not new functionality but an alternative implementation of validation and users should not be able to perceive any changes when swapping hand-written validation w/ identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism  in case a mistake is made so that users can turn it off and get back to safety.  There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behaviour, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth` which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230))
+Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally, `DeclarativeValidation` is targeting Beta with `default:true`.  This is because Declarative Validation is not new functionality, but an alternative implementation of validation, and users should not be able to perceive any changes when swapping hand-written validation with identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism in case a mistake is made so that users can turn it off and get back to safety. There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behavior, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth`, which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230)). 
+
+`DeclarativeValidationTakeover` will default to `false` initially in Beta.  This way during the initial rollout we can "soak" and verify that the errors produced for a replaced validation rule (handwritten -> declarative) are identical.  Over time the goal is to flip `DeclarativeValidationTakeover` to be default `true` such that for fields where declarative validation rules exist, they are used as the authoritative validation rule.
 
 ### Linter
 
@@ -371,7 +375,7 @@ The migration to declarative validation is not time-sensitive. We can proceed at
 
 ##### Mitigation: round-trip testing + fuzzing + equivalence tests + linting.
 
-In order to prevent issues with versioned validation drifting between versions, we plan on using round-trip testing, fuzz testing, equivalence testing (including runtime equivalence testing with `DeclarativeValidationMismatchMetrics`) and lint rules which ensure that rules that should be synced across versions are.
+In order to prevent issues with versioned validation drifting between versions, we plan on using round-trip testing, fuzz testing, equivalence testing (including runtime equivalence testing with `declarative_validation_mismatch_total`) and lint rules which ensure that rules that should be synced across versions are.
 
 #### Risk: Migration to Declarative Validation introduces breaking change to API validation
 
@@ -449,7 +453,8 @@ Requests are received as the versioned type, so it should be feasible to avoid e
     *   Test fixture
     *   Linter
     *   Documentation generator
-*   Feature gates - `DeclarativeValidation`& `DeclarativeValidationMismatchMetrics`
+*   Feature gates - `DeclarativeValidation`& `DeclarativeValidationTakeover`
+*   Metrics - `declarative_validation_mismatch_total` & `declarative_validation_panic_total`
 *   Testing
     *   Equivalency tests (verifyVersionedValidationEquivalence in prototype)
         *   validation_test.go
@@ -979,25 +984,21 @@ https://github.com/jpbetz/kubernetes/blob/validation-gen/staging/src/k8s.io/code
 ##### Runtime verification testing
 
 In addition to unit and fuzz tests, we will offer a means of running declarative validation in a "mismatch mode"
-such that the presence of mismatches between declarative validation and hand written validation can
+such that the presence of mismatches between declarative validation and hand-written validation can
 be safely checked against production workloads.
 
-When a `DeclarativeValidationMismatchMetrics` feature gate is enabled, the following will be collected for each validation operation:
+When the `DeclarativeValidation` feature gate is enabled, both imperative and declarative validation are executed. The results are compared.
 
-A. Errors from running all hand written validation
-B. Errors from running only hand written validation for non-converted validations (using validation opts)
-C. Errors from running declarative validation
-
-This data will be used to check if A-B == C. That is, the declarative validation errors should be equivalent to the errors that hand written validation produces for all validation that has been converted to declarative.
-
-If the errors do not match, a 'declarative-validation-mismatch' metric will be incremented and information
+If the errors do not match, a 'declarative_validation_mismatch_total' metric will be incremented and information
 about the mismatch will be written to the apiserver's logs.
 
-This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
-- Enable `DeclarativeValidationMismatchMetrics`
-- Soak for a desired duration across some number of clusters
-- Check the metrics to ensure no mismatches have been found
+The `DeclarativeValidationTakeover` feature gate controls *which* set of validation errors (imperative or declarative) are returned to the user.  When `DeclarativeValidationTakeover` is true, the declarative errors are returned; otherwise, the imperative errors are returned.
 
+This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
+- Enable `DeclarativeValidation` (with `DeclarativeValidationTakeover` *disabled*).
+- Soak for a desired duration across some number of clusters.
+- Check the metrics to ensure no mismatches have been found.
+- Enable `DeclarativeValidationTakeover`.
 ##### Integration tests
 
 ###### 	Migration Equivalency Tests
@@ -1136,6 +1137,8 @@ N/A. This change does not affect any communications going out of the apiserver. 
 1. Feature gate (also fill in values in `kep.yaml`)
     *   Feature gate name: DeclarativeValidation
     *   Components depending on the feature gate: kube-apiserver
+    *   Feature gate name: DeclarativeValidationTakeover
+    *   Components depending on the feature gate: kube-apiserver
 2. Other
     *   Describe the mechanism:
     *   Will enabling / disabling the feature require downtime of the control plane?
@@ -1144,8 +1147,11 @@ N/A. This change does not affect any communications going out of the apiserver. 
 ###### Does enabling the feature change any default behavior?
 
 *   `DeclarativeValidation`
-    *   Beta: Swaps a portion of the validations from using native validations to generated validation code (from IDL tags).
-    *   GA: Uses entirely Declarative Validations for user errors. Legacy hand-written validations removed over time.
+    *   Beta: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
+    *   GA: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
+*   `DeclarativeValidationTakeover`
+    *   Beta: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
+    *   GA: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1291,9 +1297,9 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
        *   ^ Be sure to submit this information when filing an issue (see step 5)
 2. **Check Relevant Metrics**
     *   Use the `apiserver_request_duration_seconds` metric to check for differences in latency. Comparing `apiserver_request_duration_seconds` when `DeclarativeValidation` is enabled vs. disabled can reveal whether validation code generation or logic is causing performance regressions.
-    *   If you suspect correctness mismatches, enable the `DeclarativeValidationMismatchMetrics` feature gate and monitor the `declarative_validation_mismatch` metric. Any increments in that metric indicate a situation where the new declarative validation results differ from the legacy hand-written validation for the same request.
+    *   If you encounter logs related to mismatches, monitor the `declarative_validation_mismatch` metric. Any increments in that metric indicate a situation where the new declarative validation results differ from the legacy hand-written validation for the same request.
 3. **Inspect APIServer Logs**
-    *   With `DeclarativeValidationMismatchMetrics` enabled, you can check the API server logs for entries on mismatched validation outcomes. These logs will include details about the request (the resource, version, kind, namespace/name, and user) and which fields triggered the mismatch.
+    *   You can check the API server logs for entries on mismatched validation outcomes. These logs will include details about the request (the resource, version, kind, namespace/name, and user) and which fields triggered the mismatch.
     *   If the logs show repeated mismatches or errors for certain resource types, compare the declarative validation tags in `types.go` with the original hand-written logic to identify gaps or typos
         *   ^ Be sure to submit this information when filing an issue (see step 5)
 4. **Compare Feature Gate Settings**

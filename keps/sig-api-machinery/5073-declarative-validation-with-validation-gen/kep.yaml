@@ -40,13 +40,14 @@ feature-gates:
       - kube-apiserver
   # Adds logic to apiserver to run declarative validation and handwritten validation
   # while not modifying actual validation path but only outputting any mismatch information as a metric
-  - name: DeclarativeValidationMismatchMode
+  - name: DeclarativeValidationTakeover
     components:
       - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  # declarative-validatoin-mismatch tracks the number of mismatched valdation results and errors
-  # when comparing the outputs of hand-written validations vs declarative validations
-  - declarative-validation-mismatch
+  # Number of times declarative validation results differed from handwritten validation results for core types.
+  - declarative_validation_mismatch_total
+  # Number of times declarative validation has panicked during validation.
+  - declarative_validation_panic_total
