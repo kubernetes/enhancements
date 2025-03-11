@@ -896,9 +896,10 @@ When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
 the underlying `Service` to be created in each importing cluster within the
 clusterset, associated with the derived `ServiceImport`. One or more
 `EndpointSlice` resources will exist for the exported `Service`, with each
-`EndpointSlice` containing only endpoints from a single source cluster. These
-`EndpointSlice` objects will be marked as managed by the clusterset service
-controller, so that the endpoint slice controller doesn’t delete them.
+`EndpointSlice` containing only endpoints from a single source cluster. An
+`EndpointSlice` created by an mcs-controller must be marked as managed by the
+mcs-controller, not the default `EndpointSlice` controller to avoid any conflicts
+between the controllers.
 
 When a service is un-exported, the associated EndpointSlices will be deleted.
 The specific mechanism by which they are deleted is an implementation detail.
