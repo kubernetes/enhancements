@@ -374,25 +374,24 @@ fields on the `ResourceSlice`.
 
     1. The `Device` field is a list of named `DeviceMixin`s. These define
       attributes and capacities that can be used to extend what is defined
-      explicitly in a new device type called `CompositeDevice` (introduced
+      explicitly in `BasicDevice` (introduced
       in more detail below). Mixins cannot be allocated directly,
       but can only be referenced by composite devices.
     
     1. The `DeviceCapacityConsumption` field defines a list of named 
        `DeviceCapacityConsumptionMixin`s. These define capacities that can be
-       used to extend the capacity consumption defined explicitly in a
-       `CompositeDevice`. The capacity pool is not specified in the
+       used to extend the capacity consumption defined explicitly in fields under
+       `BasicDevice`. The capacity pool is not specified in the
        `DeviceCapacityConsumptionMixin`, but rather provided when the mixin
        is referenced from the device.
 
-1. Introduce a new device type called `CompositeDevice` which has the same
-   fields as a `BasicDevice`, plus two more. The first is a field called
+1. Introduce a couple of new fields added under `BasicDevice`. The first is a field called
    `Includes` and lists the device mixins for the device, while the second is
    called `ConsumesCapacity` and defines the capacity the device will draw
    from the capacity pools.
 
     1. The `Includes` field serves to reference a set of `DeviceMixin`s that a
-      `CompositeDevice` can reference to extend the set of attributes,
+      `BasicDevice` can reference to extend the set of attributes,
       capacities it defines explicitly.
 
     1. The `ConsumesCapacity` field defines the capacities the device
@@ -401,7 +400,7 @@ fields on the `ResourceSlice`.
       to capacity pools in the same `ResourceSlice` is supported.
 
 1. Add a new field `PerDeviceNodeSelection` to the `ResourceSliceSpec` and the
-   fields `NodeName`, `NodeSelector` and `AllNodes` on the `CompositeDevice`.
+   fields `NodeName`, `NodeSelector` and `AllNodes` on the `Device`.
 
       1. The `PerDeviceNodeSelection` field is of type boolean and is mutually
       exclusive with the existing node selection fields in the `ResourceSliceSpec`
@@ -613,16 +612,7 @@ type Device struct {
   // +optional
   // +oneOf=deviceType
   Basic *BasicDevice
-
-  // Composite defines one composite device instance.
-  //
-  // +optional
-  // +oneOf=deviceType
-  Composite *CompositeDevice
-}
-
-// CompositeDevice defines one device instance.
-type CompositeDevice struct {
+  
   // Includes defines the set of device mixins that this device includes.
   //
   // The propertes of each included mixin are applied to this device in
@@ -2905,9 +2895,17 @@ drivers that they provide to customers.
 
 ### Version Skew Strategy
 
-All of the API extensions proposed in this KEP are embedded under a new
-`CompositeDevice` type which is a one-of inside of the existing `Device`
-type. Since all API extensions are embedded in this way, there is no risk for
+All of the API extensions proposed in this KEP are embedded under the
+`BasicDevice` type which is a one-of inside of the existing `Device`
+type. The new function will be offered through the newly added fields under `BasicDevice`.
+The kube-scheduler is expected to match the kube-apiserver minor version, 
+but may be up to one minor version older (to allow live upgrades).
+In the release it's been added, the feature will be disabled by default and not recognized by other components. 
+Whoever enabled the feature manually would take the risk of component like kube-scheduler being old and not recognize 
+the fields. After one releases, it should work perfectly.
+
+
+Since all API extensions are embedded in this way, there is no risk for
 version skew downgrades because these devices will never have existed in older
 clusters. For upgrades, we will need to be sure not to directly extend this new
 device type with new fields, but rather introduce a new one-of if more /
