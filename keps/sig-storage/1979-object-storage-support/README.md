@@ -60,6 +60,7 @@
   - [BucketClass field on Bucket resource](#bucketclass-field-on-bucket-resource)
   - [Protocols spec on BucketClaim](#protocols-spec-on-bucketclaim)
   - [Updating BucketAccess Secrets](#updating-bucketaccess-secrets)
+  - [IAM authentication type](#iam-authentication-type)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -303,7 +304,7 @@ The fundamental key to this design is the bi-directional "pointer" between Bucke
 1. Admin allows User to use BucketClass
 2. User creates BucketClaim that uses BucketClass
 3. COSI controller observes BucketClaim
-   1. Controller applies `objectstorage.k8s.io/cleanup` finalizer to the BucketClaim
+   1. Controller applies `objectstorage.k8s.io/bucketclaim-protection` finalizer to the BucketClaim
    2. Controller looks up corresponding Bucket
    3. If Bucket does not exist, Controller creates intermediate Bucket resource with these details:
       1. Bucket.name is `bc-`+`<BucketClaim.UID>` (safe if multiple controllers active)
@@ -313,7 +314,7 @@ The fundamental key to this design is the bi-directional "pointer" between Bucke
    5. Controller waits for the intermediate Bucket to be reconciled by COSI sidecar
 4. COSI Sidecar detects intermediate Bucket resource
    1. If the Bucket's driver matches the sidecar's driver, continue
-   2. Sidecar applies `objectstorage.k8s.io/cleanup` finalizer to intermediate Bucket
+   2. Sidecar applies `objectstorage.k8s.io/bucket-protection` finalizer to intermediate Bucket
    3. Sidecar calls the COSI driver via gRPC to provision the OSP bucket
    4. If OSP returns provision fail, COSI sidecar reports error to Bucket status and retries w/ backoff
 5. When OSP returns provision success, COSI sidecar updates Bucket status `ReadyToUse` to true
@@ -339,7 +340,7 @@ In early COSI feedback and in other object storage self-service frameworks, user
    3. Admin must ensure that the Bucket binds only to a specific BucketClaim by specifying the BucketClaim parent reference by namespace and name
 2. COSI sidecar detects the Bucket resource
    1. If the Bucket's driver matches the sidecar's driver, continue
-   2. Sidecar applies `objectstorage.k8s.io/cleanup` finalizer to Bucket
+   2. Sidecar applies `objectstorage.k8s.io/bucket-protection` finalizer to Bucket
    3. Sidecar calls the COSI driver via gRPC call to check that the existing OSP bucket exists
    4. Sidecar exits with retry backoff if existing bucket is nonexistent
    5. When Bucket prep is successful, COSI sidecar updates Bucket status `ReadyToUse` to true
@@ -348,7 +349,7 @@ In early COSI feedback and in other object storage self-service frameworks, user
 4. COSI controller observes BucketClaim
    1. Controller validates BucketClaim fields
    2. Controller looks up corresponding Bucket - if DNE, retry with backoff (or when Bucket is created)
-   3. Controller applies `objectstorage.k8s.io/cleanup` finalizer to BucketClaim
+   3. Controller applies `objectstorage.k8s.io/bucketclaim-protection` finalizer to BucketClaim
    4. If BucketClaim reference set by admin on Bucket doesn't match, error out
    5. Apply Full BucketClaim reference info (with UID) to Bucket spec (Bucket is now bound to claim)
    6. Set BucketClaim status to point to Bucket (claim is now bound to Bucket)
@@ -381,10 +382,10 @@ When a BucketClaim with Bucket reclaim policy `Reclaim` that is deleted, the Buc
       1. If Bucket doesn't exist, go to **CLEANUP** (Bucket was deleted or never existed)
       2. If Bucket-BucketClaim binding is not valid, error out
       3. Apply `objectstorage.k8.io/bucketclaim-being-deleted` annotation to Bucket
-         (tells controller that it's safe to proceed with Bucket deprovisioning)
+         (tells Sidecar that it's safe to proceed with Bucket deprovisioning)
       4. If Bucket deletion policy is `Delete`, add deletion timestamp to Bucket
       5. If `Retain`, nothing more for Controller to do
-      6. **CLEANUP**: Controller removes BucketClaim `objectstorage.k8s.io/cleanup` finalizer
+      6. **CLEANUP**: Controller removes BucketClaim `objectstorage.k8s.io/bucketclaim-protection` finalizer
 3. COSI Sidecar detects Bucket update
    1. If the Bucket's driver matches the sidecar's driver, continue
    2. If `objectstorage.k8.io/bucketclaim-being-deleted` annotation, continue
@@ -392,7 +393,7 @@ When a BucketClaim with Bucket reclaim policy `Reclaim` that is deleted, the Buc
       1. If Bucket has nil deletion timestamp, exit (do not deprovision without deletion timestamp)
       2. Sidecar calls the COSI driver via gRPC to de-provision the OSP bucket
       3. If OSP returns provision fail, Sidecar reports error to Bucket status and retries gRPC call
-      4. When OSP returns provision success, remove Bucket `objectstorage.k8s.io/cleanup` finalizer
+      4. When OSP returns provision success, remove Bucket `objectstorage.k8s.io/bucket-protection` finalizer
    4. If deletion policy is `Retain`, nothing more to do
 
 COSI Sidecar should not have Bucket delete permissions.
@@ -400,9 +401,6 @@ COSI Sidecar should not have Bucket delete permissions.
 #### Generating Bucket Access Credentials
 
 User requests access to a BucketClaim for their workload's application.
-
-For the purposes of this part of the COSI spec, access credentials can refer to any supported access control mechanism. This could be username+password, an IAM-style service account, or other
-protocol-specific access terminology.
 
 Access credentials are represented by BucketAccess objects. The separation of BucketClaim and BucketAccess is a reflection of the usage pattern of object storage, where buckets are always accessed over the network, and all access is subject to authentication and authorization. The lifecycle of a bucket and its access are not tightly coupled.
 
@@ -416,7 +414,7 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
 4. COSI Controller detects the BucketAccess resource
    1. Controller looks up corresponding BucketClaim
    2. If BucketClaim is being deleted, error without retry
-   3. Controller sets `objectstorage.k8s.io/cleanup` finalizer on BucketAccess
+   3. Controller sets `objectstorage.k8s.io/bucketaccess-protection` finalizer on BucketAccess
    4. Controller sets `objectstorage.k8s.io/has-bucketaccess-references` annotation on corresponding BucketClaim
       (block claim from being deleted until access is deleted)
    5. If BucketClaim not ready, exit with retry
@@ -427,15 +425,14 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
 5. COSI Sidecar detects the BucketAccess resource
    1. BucketAccess status now shows corresponding Bucket name and BucketAccess info, so sidecar can provision
    2. If the BucketAccess's driver matches the sidecar's driver, continue
-   3. Sidecar applies `objectstorage.k8s.io/cleanup` finalizer to the BucketAccess if needed
+   3. Sidecar applies `objectstorage.k8s.io/bucketaccess-protection` finalizer to the BucketAccess if needed
    4. Sidecar looks up the Bucket to get necessary info
    5. If Bucket has `objectstorage.k8.io/bucketclaim-being-deleted` annotation or deletion timestamp, error without retry
       (this indicates the claim is being deleted, possibly race condition missed in Controller)
    6. Sidecar calls the COSI driver via gRPC to generate unique access credentials for the Bucket
-      1. For `IAM` auth, driver is responsible for setting up the ServiceAccount at this step
    7. If OSP returns provision fail, Sidecar reports error to BucketAccess status and retries gRPC call
    8. When OSP returns provision success, COSI sidecar:
-      1. Applies `objectstorage.k8s.io/cleanup` finalizer to the Secret
+      1. Applies `objectstorage.k8s.io/bucketaccess-protection` finalizer to the Secret
       2. Updates the BucketAccess Secret with all info needed to access the OSP bucket
       3. Updates BucketAccess status `ReadyToUse` to true
 
@@ -449,16 +446,15 @@ COSI does not set up or manage mounting BucketAccess information to Pods consumi
 2. COSI Controller detects BucketAccess resource's deletion timestamp
    1. Initially, Controller does nothing, waiting for Sidecar to set `objectstorage.k8s.io/sidecar-cleanup-finished` annotation
 3. COSI Sidecar detects BucketAccess resource's deletion timestamp
-   1. Sidecar removes `objectstorage.k8s.io/cleanup` finalizer from the BucketAccess Secret
+   1. Sidecar removes `objectstorage.k8s.io/bucketaccess-protection` finalizer from the BucketAccess Secret
    2. Sidecar deletes the BucketAccess Secret (should happen before OSP access is removed via gRPC)
    3. Sidecar calls the COSI driver via gRPC to revoke the associated access credentials
    4. If OSP returns de-provision fail, COSI sidecar reports error to BucketAccess status and retries gRPC call
-      1. For `IAM` auth, driver is responsible for cleaning up the ServiceAccount at this step
    5. When OSP returns de-provision success, COSI sidecar:
       1. Sets `objectstorage.k8s.io/sidecar-cleanup-finished` annotation on BucketAccess
 4. Controller detects BucketAccess resource update, with deletion timestamp
    1. Controller removes `objectstorage.k8s.io/has-bucketaccess-references` from BucketClaim if this is the last BucketAccess against the BucketClaim (this allows BucketClaim to start deletion, if applicable)
-   2. Controller removes `objectstorage.k8s.io/cleanup` from BucketAccess
+   2. Controller removes `objectstorage.k8s.io/bucketaccess-protection` from BucketAccess
 
 #### Attaching Bucket Information to Pods
 
@@ -484,10 +480,12 @@ This section describes the current design for sharing buckets with other namespa
 Annotations:
 - `objectstorage.k8s.io/bucketclaim-being-deleted`: applied to a Bucket when the Controller detects that the Bucket's bound BucketClaim is being deleted
 - `objectstorage.k8s.io/has-bucketaccess-references`: applied to a BucketClaim when the Controller detects that one or more BucketAccesses reference the claim
-- `objectstorage.k8s.io/sidecar-cleanup-finished`: applied to a BucketAccess when the Sidecar has finished cleaning up, allowing the Controller to begin its cleanup operations
+- `objectstorage.k8s.io/sidecar-cleanup-finished`: applied to a BucketAccess when the Sidecar has finished cleaning up, allowing the Controller to begin its final cleanup operations
 
 Finalizers:
-- `objectstorage.k8s.io/cleanup`: prevents a COSI-managed resource from being deleted until COSI has cleaned up underlying resources and/or OSP data
+- `objectstorage.k8s.io/bucketclaim-protection`: applied to BucketClaims to prevent them from being deleted until COSI has cleaned up intermediate and underlying resources
+- `objectstorage.k8s.io/bucket-protection`: applied to Buckets to prevent them from being deleted until COSI has cleaned up underlying resources
+- `objectstorage.k8s.io/bucketaccess-protection`: applied to BucketAccesses and BucketAccess Secrets to prevent them from being deleted until COSI has cleaned up underlying resources
 
 #### Bucket
 
@@ -511,7 +509,7 @@ Bucket {
     // +required
     DeletionPolicy DeletionPolicy
 
-    // Name of the BucketClaim that resulted in the creation of this Bucket.
+    // References the BucketClaim that resulted in the creation of this Bucket.
     // For statically-provisioned buckets, set the namespace and name of the BucketClaim that is
     // allowed to bind to this Bucket.
     BucketClaim corev1.ObjectReference
@@ -623,14 +621,9 @@ A resource to access a Bucket. BucketAccess is namespace-scoped.
 
 For many OSP drivers, each BucketAccess will correspond with a unique OSP backend 'user' (e.g., an S3 user). COSI suggests this as a starting point, but this is not a strict requirement.
 
-COSI's expectation is that unique BucketAccess-BucketClaim pairings should not result in BucketAccesses that are able to read or write unrelated BucketClaims. Stated another way, BucketAccess A referencing BucketClaim A should not be able to read or write to BucketClaim B, referenced by BucketAccess B.
-<!-- TODO: is this true? What is to stop an OSP driver from setting configs on a BucketAccessClass that gives all users of that BAClass read permissions to all other BAccesses that reference it? And why should COSI have a reason to disallow this possibly-reasonable scenario?
-should cosi instead say " BAccess 'A' with BAClass 'AC' should not have access to BAccess 'B' with BAClass 'BC' " ?
-Is even that an overstep on COSI's part? -->
+COSI end Users should generally expect that BucketAccess-BucketClaim pairings should not result in BucketAccesses that are not able to read or write unrelated BucketClaims. Stated another way, BucketAccess A referencing BucketClaim A should generally not be able to read or write to BucketClaim B. COSI drivers may choose to have options for different operating modes to support niche scenarios, but this should be the default assumption for BucketAccess provisioning.
 
 COSI does not support static provisioning for BucketAccesses. Portability is still maintained because object storage accesses do not hold critical application data. Any BucketClaim can have a new, valid BucketAccess created for it at any time to provide access to the data. Because of this, it follows that it is possible to reclaim access to a Bucket that was ported without need for static access provisioning.
-
-A User or Administrator who needs to make modifications to an underlying OSP access likely needs to do so because the OSP driver is missing features for managing a desired configuration and not because static access provisioning is intrinsically necessary. Static BucketAccess provisioning would be possible to implement, but doing so would be immensely complicated. COSI, OSP drivers, Admins, and/or Users could (and probably would) each have different expectations and desires about how to handle corner cases in static access policies, and COSI couldn't reasonably enforce consistent handling of those expectations. Design and dev work would be immense, and risk for bugs would be high. Because of this COSI design decision, some Admins will undoubtedly make modifications to OSP accesses using manual OSP access tools. These manual modifications will be done at the Admin's risk. The OSP driver is not guaranteed to preserve such modifications, and the OSP driver may get stuck in a position where it doesn't know how to continue managing the BucketAccess.
 
 ```go
 BucketAccess {
@@ -659,11 +652,6 @@ BucketAccess {
     AccessSecretName string
 
     // ^^^ TODO: this has more info than just credentials, like endpoint, so renamed from CredentialsSecretName
-
-    // ServiceAccountName is the name of the serviceAccount that COSI will map to the OSP service
-    // account when IAM-style authentication is specified.
-    // +optional
-    ServiceAccountName string
   }
 
   Status BucketAccessStatus {
@@ -685,11 +673,6 @@ BucketAccess {
     // BucketAccessClass mutation/deletion.
     DriverName string
 
-    // AuthenticationType holds a copy of the BucketAccessClass authentication type at the time of
-    // BucketAccess provisioning. This is kept to ensure the BucketAccess can be modified/deleted
-    // even after BucketAccessClass mutation/deletion.
-    AuthenticationType AuthenticationType
-
     // Parameters holds a copy of the BucketAccessClass opaque parameters at the time of
     // BucketAccess provisioning. These parameters are kept to ensure the BucketAccess can be
     // modified/deleted even after BucketAccessClass mutation/deletion.
@@ -703,7 +686,7 @@ BucketAccess {
 
 The `credentialsSecretName` is the name of the Kubernetes Secret that COSI will generate containing endpoint, credentials, and other information needed to access the OSP bucket. The same Secret can be referenced by Pods to access the OSP bucket.
 
-In case of IAM style authentication, `serviceAccountName` field must be specified along with the `credentialsSecretName`. This will map the specified ServiceAccount to the appropriate service account in the OSP.
+A User or Administrator who needs to make modifications to an OSP access underlying a BucketAccess likely needs to do so because the OSP driver is missing features for managing a desired configuration and not because static access provisioning is intrinsically necessary. Static BucketAccess provisioning would be possible to implement, but doing so would be complicated. COSI, OSP drivers, Admins, and/or Users could (and probably would) each have different expectations and desires about how to handle corner cases in static access policies, and COSI couldn't reasonably enforce consistent handling of those expectations. Design and dev work would be large, and risk for bugs would be high. Because of this COSI design decision, some Admins will undoubtedly make modifications to OSP accesses using manual OSP access tools. These manual modifications will be done at the Admin's risk. The OSP driver is not guaranteed to preserve such modifications, and the OSP driver may get stuck in a position where it doesn't know how to continue managing the BucketAccess.
 
 #### BucketAccessClass
 
@@ -720,12 +703,6 @@ BucketAccessClass {
   // +required
   DriverName string
 
-  // AuthenticationType denotes the style of authentication.
-  // It can be one of:
-  //  - KEY: access, secret tokens based authentication
-  //  - IAM: implicit authentication of pods to the OSP based on service account mappings
-  AuthenticationType AuthenticationType
-
   // Parameters is an opaque map for passing in configuration to a driver
   // for granting access to a bucket
   // +optional
@@ -733,18 +710,11 @@ BucketAccessClass {
 }
 ```
 
-BucketAccessClass can be used to specify a authorization mechanism. It can be one of
-- KEY (**default**)
-- IAM
-
-The KEY based mechanism is where access and secret keys are generated to be provided to Pods. IAM-style is where pods are implicitly granted access to buckets by means of a metadata service. IAM-style access provides greater control for the Administrator to rotate secret tokens, revoke access, change authorizations etc., potentially making it more secure.
-
 #### BucketAccess Secret data
 
 All buckets have this data:
 
 - `COSI_PROTOCOL`: The protocol for accessing the bucket. (`S3`, `Azure`, `GCS`)
-- `COSI_AUTHENTICATION_TYPE`: The authentication type for accessing the bucket. (`KEY`/`IAM`)
 
 S3 buckets have this additional data:
 
@@ -753,10 +723,6 @@ S3 buckets have this additional data:
 - `COSI_S3_ACCESS_KEY_ID`: S3 access key ID, e.g., `AKIAIOSFODNN7EXAMPLE`
 - `COSI_S3_ACCESS_SECRET_KEY`: S3 access secret key, e.g., `wJalrXUtnFEMI/K...`
 - `COSI_S3_REGION`: S3 region, e.g., `us-west-1`
-
-<!-- TODO: any other fields needed? service account name? -->
-
-<!-- TODO: mention of when fields are not present. e.g., no keys when IAM enabled ??? -->
 
 Azure buckets (blobs) have this additional data:
 
@@ -771,7 +737,6 @@ Note that COSI maintainership currently lacks GCS input or experience as of v1al
 - `COSI_GCS_BUCKET_NAME`: GCS bucket name (must be client-facing OSP bucket ID)
 - `COSI_GCS_ACCESS_ID`: HMAC access ID
 - `COSI_GCS_ACCESS_SECRET`: HMAC secret
-- `COSI_GCS_SERVICE_ACCOUNT_NAME`: GCS service account name
 
 ### COSI Driver
 
@@ -864,8 +829,6 @@ This gRPC call creates a set of access credentials for a bucket. This API must b
 
 This `accountName` field is the concatenation of the characters `ba-` (short for BucketAccess) and the BucketAccess UID. It is used as the idempotency key for requests to the drivers regarding a particular BA. The driver should ensure that multiple DriverGrantBucketAccess calls for the same `accountName` do not result in more than one OSP backend bucket access being provisioned corresponding to that name. Using or appending random identifiers can lead to multiple unused bucket accesses being created in the OSP backend in the event of timing-related driver/sidecar failures or restarts.
 
-`authenticationType` holds the BucketAccessClass AuthenticationType field and tells the driver whether to provision a user with access keys (KEY) or a service account (IAM).
-
 Input `accessParameters` are the opaque parameters copied from the BucketAccessClass. Drivers can use these parameters to configure OSP bucket access features based on the Administrator's BucketAccessClass configuration.
 
 The returned `accountID` should be a unique identifier for the account in the OSP. This value will be included in all subsequent calls to the driver for changes to the BucketAccess. As `bucketID` is to Bucket, `accountID` is to BucketAccess.
@@ -879,7 +842,6 @@ DriverGrantBucketAccessRequest{
   "bucketID": "<Bucket.status.bucketID>", // e.g., "ba-<BucketClaim.UID>", "my-static-bucket"
   "accountName": "ba-<BucketAccess.UID>"
   "protocol": "<protocol>", // e.g., "S3", copied from BucketAccess.spec.protocol
-  "authenticationType": "<authType>" // e.g., IAM/KEY, copied from BucketAccess.status.authenticationType
   "parameters": { // copied from BucketAccess.status.parameters
       "key": "value",
       // ...
@@ -962,7 +924,7 @@ Expected to be idempotent and return OK when OSP bucket access does not exist.
 
 - API is reviewed and accepted
 - Design COSI APIs to support Greenfield, Green/Brown Field, Brownfield and Static Driverless provisioning
-- Design COSI APIs to support authentication using access/secret keys, and IAM.
+- Design COSI APIs to support authentication using access/secret keys
 - Evaluate gaps, update KEP and conduct reviews for all design changes
 - Develop unit test cases to demonstrate that the above mentioned use cases work correctly
 
@@ -1020,6 +982,16 @@ COSI v1alpha1 KEP had `Protocols` as a spec field on BucketClaims (and Buckets) 
 ### Updating BucketAccess Secrets
 
 COSI v1alpha1 specified that if a BucketAccess Secret already exists, then it is assumed that credentials have already been generated, and the Secret is not overridden. In practice, this disallows Administrators from rotating credentials internally. Because other important bucket connection details are present in the Secret (e.g., endpoints), this also makes it impossible for systems to change hosting locations over time. COSI must be able to update the Secret to reflect the OSP's most up-to-date information.
+
+### IAM authentication type
+
+COSI v1alpha1 included specifications for supporting two authentication types:
+- KEY: standard key-based authentication
+- IAM: AWS IAM-style authentication tied to Kubernetes ServiceAccounts
+
+COSI's v1alpha1 spec and implementation did not set any expectations, designs, or implementation in place to manage IAM or ServiceAccounts. The selection and configuration were merely passed to drivers to do with as desired. The implied expectation was that drivers would be able to create or modify Kubernetes ServiceAccounts, with unclear boundaries and guidelines. In COSI v1alpha2, COSI removed authentication options entirely, assuming key-based authentication is the standard. This removes a large area of ambiguity from the COSI spec and also removes a potentially-troublesome expectation that COSI drivers have permissions to modify Kubernetes ServiceAccounts.
+
+Users of the ObjectBucketClaim precursor to COSI only have key-based auth options, and users have not requested ServiceAccount support. If this is any prediction for COSI, it is likely to be some time before COSI users ask for ServiceAccount support. COSI decided to defer possible designs for this feature to the future, where they can be designed with more clarity and safety.
 
 ## Production Readiness Review Questionnaire
 
