@@ -911,6 +911,7 @@ This will be reconsidered post-beta as a future enhancement.
 1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
    runtime even if the allocated resources haven't changed.
 1. Allow resizing containers with swap allocated.
+1. Prioritize resizes when resources are freed, or at least make ordering deterministic.
 
 #### Mutable QOS Class "Shape"
 
