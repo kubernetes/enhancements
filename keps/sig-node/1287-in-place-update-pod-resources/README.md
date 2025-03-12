@@ -32,6 +32,7 @@
   - [Atomic Resizes](#atomic-resizes)
   - [Actuating Resizes](#actuating-resizes)
   - [Memory Limit Decreases](#memory-limit-decreases)
+  - [Swap](#swap)
   - [Sidecars](#sidecars)
   - [QOS Class](#qos-class)
   - [Resource Quota](#resource-quota)
@@ -364,11 +365,6 @@ message UpdatePodSandboxResourcesRequest {
     LinuxContainerResources overhead = 2;
     // Optional resources represents the sum of container resources for this sandbox
     LinuxContainerResources resources = 3;
-
-    // Unstructured key-value map holding arbitrary additional information for
-    // sandbox resources updating. This can be used for specifying experimental
-    // resources to update or other options to use when updating the sandbox.
-    map<string, string> annotations = 4;
 }
 
 message UpdatePodSandboxResourcesResponse {}
