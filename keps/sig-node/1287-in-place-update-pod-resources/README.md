@@ -298,7 +298,7 @@ The `ResizePolicy` field is immutable.
 
 #### Resize Status
 
-Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizing`.
+Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizeInProgress`.
 
 **PodResizePending** will track states where the spec has been resized, but the Kubelet has not yet
 allocated the resources. There are two reasons associated with this condition:
@@ -313,7 +313,7 @@ admitted. `lastTransitionTime` will be populated with the time the condition was
 will always be `True` when the condition is present - if there is no longer a pending resized
 (either the resize was allocated or reverted), the condition will be removed.
 
-**PodResizing** will track in-progress resizes, and should be present whenever allocated resources
+**PodResizeInProgress** will track in-progress resizes, and should be present whenever allocated resources
 != acknowledged resources (see [Resource States](#resource-states)). For successful synchronous
 resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
 error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
@@ -539,7 +539,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
-    - `status.conditions[type==PodResizing]` added
+    - `status.conditions[type==PodResizeInProgress]` added
     - actual CPU shares = 1024
 
 1. Resize #2: cpu = 2
@@ -547,7 +547,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
-    - `status.conditions[type==PodResizing]`
+    - `status.conditions[type==PodResizeInProgress]`
     - actual CPU shares = 1024
 
 1. Container runtime applied cpu=1.5
@@ -555,7 +555,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
-    - `status.conditions[type==PodResizing]`
+    - `status.conditions[type==PodResizeInProgress]`
     - actual CPU shares = 1536
 
 1. kubelet syncs the pod, and sees resize #2 (cpu = 2)
@@ -565,7 +565,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizePending].type` = `"Deferred"`
-    - `status.conditions[type==PodResizing]` removed
+    - `status.conditions[type==PodResizeInProgress]` removed
     - actual CPU shares = 1536
 
 1. Resize #3: cpu = 1.6
@@ -583,7 +583,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `acknowledged[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizePending]` removed
-    - `status.conditions[type==PodResizing]` added
+    - `status.conditions[type==PodResizeInProgress]` added
     - actual CPU shares = 1536
 
 1. Container runtime applied cpu=1.6
@@ -591,7 +591,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
-    - `status.conditions[type==PodResizing]`
+    - `status.conditions[type==PodResizeInProgress]`
     - actual CPU shares = 1638
 
 1. Kubelet syncs the pod
@@ -599,7 +599,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
     - `acknowledged[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
-    - `status.conditions[type==PodResizing]` removed
+    - `status.conditions[type==PodResizeInProgress]` removed
     - actual CPU shares = 1638
 
 1. Resize #4: cpu = 100
@@ -721,7 +721,7 @@ Impacts of a restart outside of resource configuration are out of scope.
 1. Updated pod is synced: Check if pod can be admitted
   - No: add `PodResizePending` condition with type `Deferred`, no change to allocated resources
     - Restart: redo admission check, still deferred.
-  - Yes: add `PodResizing` condition, update allocated checkpoint
+  - Yes: add `PodResizeInProgress` condition, update allocated checkpoint
     - Restart before update: readmit, then update allocated
     - Restart after update: allocated != acknowledged --> proceed with resize
 1. Allocated != Acknowledged
@@ -729,10 +729,10 @@ Impacts of a restart outside of resource configuration are out of scope.
   - Restart before CRI call: allocated != acknowledged, will still trigger the update call
   - Restart after CRI call, before acknowledged update: will redo update call
   - Restart after acknowledged update: allocated == acknowledged, condition removed
-  - In all restart cases, `LastTransitionTime` is propagated from the old pod status `PodResizing`
+  - In all restart cases, `LastTransitionTime` is propagated from the old pod status `PodResizeInProgress`
     condition, and remains unchanged.
 1. PLEG updates PodStatus cache, triggers pod sync
-  - Pod status updated with actual resources, `PodResizing` condition removed
+  - Pod status updated with actual resources, `PodResizeInProgress` condition removed
   - Desired == Allocated == Acknowledged, no resize changes needed.
 
 #### Notes
