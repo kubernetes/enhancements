@@ -428,6 +428,7 @@ The Kubelet now tracks 4 sets of resources for each pod/container:
     - The actual resource configuration the containers are running with, reported by the runtime,
       typically read directly from the cgroup configuration
     - Reported in the API via the `.status.conatinerStatuses[i].resources` field
+        - _Note: for non-running contiainers `.status.conatinerStatuses[i].resources` will be the Allocated resources._
 
 Changes are always propogated through these 4 resource states in order:
 
