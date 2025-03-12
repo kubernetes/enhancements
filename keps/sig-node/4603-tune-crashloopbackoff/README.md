@@ -1341,9 +1341,9 @@ kubelet will crash/be unable to start, like it does with other invalid kubelet
 configuration today.
 
 If on a given node at a given time, the per-node configured maximum backoff is
-higher than the current initial value, but within validation limits as it is
+higher than the default maximum backoff, but within validation limits as it is
 lower than 300s, it will be honored. In other words, operator-invoked
-configuration will have precedence over the default, even if it is slower, as
+configuration for the maximum backoff will have precedence over the default, even if it is slower, as
 long as it is valid.
 
 If `crashloopbackoff.maxSeconds` `KubeletConfiguration` exists but
@@ -1352,16 +1352,17 @@ not honor the `crashloopbackoff.maxSeconds` `KubeletConfiguration`. In other wor
 operator-invoked per node configuration will not be honored if the overall
 feature gate is turned off.
 
-scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value
----------|---------|----------|---------
-_today's behavior_ | disabled | disabled | 10s
-_new default only_ | enabled | disabled | 1s
-_faster per node config_ | disabled | 2s | 2s
-" | enabled | 2s | 2s
-_slower per node config_ | enabled | 10s | 10s
-" |  enabled | 300s | 300s
-" |  disabled | 11s | 11s
-" |  disabled | 300s | 300s
+scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value | Effective maximum value
+---------|---------|----------|---------|---------
+_today's behavior_ | disabled | disabled | 10s | 300s
+_new default only_ | enabled | disabled | 1s | 60s
+_faster per node config_ | disabled | 60s | 10s | 60s
+" | disabled | 2s | 2s | 2s
+" | enabled | 2s | 1s | 2s
+" | enabled | 30s | 1s | 30s 
+_slower per node config_  |  enabled | 300s | 1s | 300s
+" |  enabled | 61s | 1s | 61s
+_valid node config that reimplements today's behavior_ |  disabled | 300s | 10s | 300s
 _invalid per node config_ | disabled | 301s | kubelet crashes
 " | enabled | 301s | kubelet crashes
 
