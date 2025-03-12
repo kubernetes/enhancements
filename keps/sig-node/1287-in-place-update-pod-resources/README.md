@@ -314,7 +314,7 @@ will always be `True` when the condition is present - if there is no longer a pe
 (either the resize was allocated or reverted), the condition will be removed.
 
 **PodResizeInProgress** will track in-progress resizes, and should be present whenever allocated resources
-!= acknowledged resources (see [Resource States](#resource-states)). For successful synchronous
+!= actuated resources (see [Resource States](#resource-states)). For successful synchronous
 resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
 error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
 populated with the error message. In the future, this condition will also be used for long-running
@@ -419,7 +419,7 @@ The Kubelet now tracks 4 sets of resources for each pod/container:
     - Reported in the API through the `.status.containerStatuses[i].allocatedResources` field
       (allocated requests only)
     - Persisted locally on the node (requests + limits) in a checkpoint file
-3. Acknowledged resources
+3. Actuated resources
     - The resource configuration that the Kubelet passed to the runtime to actuate
     - Not reported in the API
     - Persisted locally on the node in a checkpoint file
@@ -433,7 +433,7 @@ The Kubelet now tracks 4 sets of resources for each pod/container:
 Changes are always propogated through these 4 resource states in order:
 
 ```
-Desired --> Allocated --> Acknowledged --> Actual
+Desired --> Allocated --> Actuated --> Actual
 ```
 
 
@@ -513,7 +513,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. kubelet runs the pod and updates the API
     - `spec.containers[0].resources.requests[cpu]` = 1
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `acknowledged[cpu]` = 1
+    - `actuated[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1024
 
@@ -522,23 +522,23 @@ This is intentionally hitting various edge-cases for demonstration.
       `requests`, ResourceQuota not exceeded, etc) and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `acknowledged[cpu]` = 1
+    - `actuated[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1024
 
 1. Kubelet Restarts!
-    - The allocated & acknowledged resources are read back from checkpoint
+    - The allocated & actuated resources are read back from checkpoint
     - Pods are resynced from the API server, but admitted based on the allocated resources
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1
-    - `acknowledged[cpu]` = 1
+    - `actuated[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - actual CPU shares = 1024
 
 1. Kubelet syncs the pod, sees resize #1 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.5
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `acknowledged[cpu]` = 1
+    - `actuated[cpu]` = 1
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - `status.conditions[type==PodResizeInProgress]` added
     - actual CPU shares = 1024
@@ -554,7 +554,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. Container runtime applied cpu=1.5
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `acknowledged[cpu]` = 1.5
+    - `actuated[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1
     - `status.conditions[type==PodResizeInProgress]`
     - actual CPU shares = 1536
@@ -563,7 +563,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - kubelet decides this is feasible, but currently insufficient available resources
     - `spec.containers[0].resources.requests[cpu]` = 2
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `acknowledged[cpu]` = 1.5
+    - `actuated[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizePending].type` = `"Deferred"`
     - `status.conditions[type==PodResizeInProgress]` removed
@@ -573,7 +573,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.5
-    - `acknowledged[cpu]` = 1.5
+    - `actuated[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizePending].type` = `"Deferred"`
     - actual CPU shares = 1536
@@ -581,7 +581,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. Kubelet syncs the pod, and sees resize #3 and admits it
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `acknowledged[cpu]` = 1.5
+    - `actuated[cpu]` = 1.5
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizePending]` removed
     - `status.conditions[type==PodResizeInProgress]` added
@@ -590,7 +590,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. Container runtime applied cpu=1.6
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `acknowledged[cpu]` = 1.6
+    - `actuated[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.5
     - `status.conditions[type==PodResizeInProgress]`
     - actual CPU shares = 1638
@@ -598,7 +598,7 @@ This is intentionally hitting various edge-cases for demonstration.
 1. Kubelet syncs the pod
     - `spec.containers[0].resources.requests[cpu]` = 1.6
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `acknowledged[cpu]` = 1.6
+    - `actuated[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - `status.conditions[type==PodResizeInProgress]` removed
     - actual CPU shares = 1638
@@ -607,7 +607,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - apiserver validates the request and accepts the operation
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `acknowledged[cpu]` = 1.6
+    - `actuated[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - actual CPU shares = 1638
 
@@ -615,7 +615,7 @@ This is intentionally hitting various edge-cases for demonstration.
     - this node does not have 100 CPUs, so kubelet cannot admit it
     - `spec.containers[0].resources.requests[cpu]` = 100
     - `status.containerStatuses[0].allocatedResources[cpu]` = 1.6
-    - `acknowledged[cpu]` = 1.6
+    - `actuated[cpu]` = 1.6
     - `status.containerStatuses[0].resources.requests[cpu]` = 1.6
     - `status.conditions[type==PodResizePending].type` = `"Infeasible"`
     - actual CPU shares = 1638
@@ -708,7 +708,7 @@ Impacts of a restart outside of resource configuration are out of scope.
   - Restart before checkpointing: pod goes through admission again as if new
   - Restart after checkpointing: pod goes through admission using the allocated resources
 1. Kubelet creates a container
-  - Resources acknowledged after CreateContainer call succeeds
+  - Resources actuated after CreateContainer call succeeds
   - Restart before acknowledgement: Kubelet issues a superfluous UpdatePodResources request
   - Restart after acknowledgement: No resize needed
 1. Container starts, triggering a pod sync event
@@ -724,17 +724,17 @@ Impacts of a restart outside of resource configuration are out of scope.
     - Restart: redo admission check, still deferred.
   - Yes: add `PodResizeInProgress` condition, update allocated checkpoint
     - Restart before update: readmit, then update allocated
-    - Restart after update: allocated != acknowledged --> proceed with resize
-1. Allocated != Acknowledged
-  - Trigger an `UpdateContainerResources` CRI call, then update Acknowledged resources on success
-  - Restart before CRI call: allocated != acknowledged, will still trigger the update call
-  - Restart after CRI call, before acknowledged update: will redo update call
-  - Restart after acknowledged update: allocated == acknowledged, condition removed
+    - Restart after update: allocated != actuated --> proceed with resize
+1. Allocated != Actuated
+  - Trigger an `UpdateContainerResources` CRI call, then update Actuated resources on success
+  - Restart before CRI call: allocated != actuated, will still trigger the update call
+  - Restart after CRI call, before actuated update: will redo update call
+  - Restart after actuated update: allocated == actuated, condition removed
   - In all restart cases, `LastTransitionTime` is propagated from the old pod status `PodResizeInProgress`
     condition, and remains unchanged.
 1. PLEG updates PodStatus cache, triggers pod sync
   - Pod status updated with actual resources, `PodResizeInProgress` condition removed
-  - Desired == Allocated == Acknowledged, no resize changes needed.
+  - Desired == Allocated == Actuated, no resize changes needed.
 
 #### Notes
 
@@ -794,10 +794,10 @@ a pod or container. Examples include:
 Therefore the Kubelet cannot reliably compare desired & actual resources to know whether to trigger
 a resize (a level-triggered approach).
 
-To accommodate this, the Kubelet stores the set of "acknowledged" resources per container.
-Acknowledged resources represent the resource configuration that was passed to the runtime (either
+To accommodate this, the Kubelet stores the set of "actuated" resources per container.
+Actuated resources represent the resource configuration that was passed to the runtime (either
 via a CreateContainer or UpdateContainerResources call) and received a successful response. The
-acknowledged resources are checkpointed alongside the allocated resources to persist across
+actuated resources are checkpointed alongside the allocated resources to persist across
 restarts. There is the possibility that a poorly timed restart could lead to a resize request being
 repeated, so `UpdateContainerResources` must be idempotent.
 
@@ -1538,7 +1538,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
       and update CRI `UpdateContainerResources` contract
     - Add back `AllocatedResources` field to resolve a scheduler corner case
-    - Introduce Acknowledged resources for actuation
+    - Introduce Actuated resources for actuation
 
 ## Drawbacks
 
