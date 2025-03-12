@@ -820,6 +820,15 @@ future, but the design of how limit decreases will be approached is still undeci
 
 Memory limit decreases with `RestartRequired` are still allowed.
 
+### Swap
+
+Currently (v1.33), if swap is enabled & configured, burstable pods are allocated swap based on their
+memory requests. Since resizing swap requires more thought and additional design, we will forbid
+resizing memory requests of such containers for now. Since the API server is not privy to the node's
+swap configuration, this will be surfaced as resizes being marked `Infeasible`.
+
+We try to relax this restriction in the future.
+
 ### Sidecars
 
 Sidecars, a.k.a. restartable InitContainers can be resized the same as regular containers. There are
@@ -901,6 +910,7 @@ This will be reconsidered post-beta as a future enhancement.
 1. Handle pod-scoped resources (https://github.com/kubernetes/enhancements/pull/1592)
 1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
    runtime even if the allocated resources haven't changed.
+1. Allow resizing containers with swap allocated.
 
 #### Mutable QOS Class "Shape"
 
