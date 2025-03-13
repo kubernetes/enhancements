@@ -260,9 +260,28 @@ bogged down.
 
 #### Story 1
 
+Observability solutions often use a node-local agent deployed as a DaemonSet in
+Kubernetes to collect observability data. In this archtecture, the DaemonSet
+may be deployed across many nodes with different workloads running on them. For
+instance, consider an example where Prometheus is deployed as a DaemonSet. Some
+workloads are specifically designed to aggregate and export metrics (Kube State
+Metrics, Statsd, cAdvisor, and others). On the nodes where these metrics-heavy
+workloads are scheduled, the node-local Prometheus collector will have much
+more work to do and thus will consume more CPU/memory resources.
 
+Following the implementation of this proposal, the resource requests can be
+customized to each node to remediate overprivisioning and underprovisioning of
+resources across the DaemonSet.
 
 #### Story 2
+
+Networking agents may have a similar use case. For instance, kube-proxy
+sometimes does not set resource requests or limits. In general, networking is a
+high priority. However, under load, kube-proxy may consume more resources
+leading to scheduling problems. With VPA enabled for a kube-proxy DaemonSet,
+the resource requests could be set to an appropriate level on each node that
+would allow the scheduler to better estimate the actual capacity available on
+the node, after considering the capacity needed for kube-proxy.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -279,6 +298,18 @@ because other controllers have different characteristics that will require
 different design assumptions and implementations. For instance, narrowing the
 scope to DaemonSets allows us to ignore the potential interactions with
 Hortizonal Pod Autoscaling.
+
+One similar problem considered in the past was [scaling based on node
+metadata](https://github.com/kubernetes/autoscaler/issues/5928). That issue
+broadly suggests that workloads be given more capacity on larger nodes. That
+heuristic may be good enough for some use cases, and this proposal implicitly
+allows for the possibility of extending the "scope" field to support such a
+feature in the future. However, this proposal may also address the same
+underlying need more precisely. Conversely, scaling based on node metadata
+alone would not meet the needs of some of the motivating use cases for this
+proposal, because the underlying assumption of scaling based on node metadata
+is that the workload scales directly proportionally to the node.  We know this
+is not the case in all circumstances.
 
 ### Risks and Mitigations
 
@@ -344,12 +375,16 @@ level, they would be able to offer such a feature with minimal modification to
 the canoncial API.
 
 In addition, validation rules using OpenAPI schema and CEL will be added to the
-API to ensure that Scape is not set to an invalid value.
+API to ensure that Scope is not set to an invalid value.
 
 When this feature is enabled, the internal representation of the
 VerticalPodAutoscaler will be divided into N objects, where N is the number of
 Nodes with a pod scheduled. Aside from this difference, most mechanics of
-VerticalPodAutoscaling will remain unchanged.
+VerticalPodAutoscaling will remain fundamentally unchanged.
+
+When using Metrics Server, the VerticalPodAutoscalerCheckpoints will also be
+divided into separate resources, by scope. When the storage is Prometheus,
+VerticalPodAutoscalerCheckpoints are not created.
 
 Internally, the
 [ClusterState](https://github.com/kubernetes/autoscaler/blob/vpa-release-1.3/vertical-pod-autoscaler/pkg/recommender/model/cluster.go#L38-L63)
