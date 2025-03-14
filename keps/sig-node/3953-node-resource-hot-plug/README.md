@@ -18,8 +18,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Handling HotUnplug Events](#handling-hotunplug-events)
-    - [Flow Control](#flow-control)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -29,11 +27,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Handling hotplug events](#handling-hotplug-events)
+    - [Flow Control for updating swap limit for containers](#flow-control-for-updating-swap-limit-for-containers)
+  - [Handling HotUnplug Events](#handling-hotunplug-events)
+    - [Flow Control](#flow-control)
   - [Test Plan](#test-plan)
       - [Unit tests](#unit-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.33)](#phase-1-alpha-target-133)
+    - [Phase 1: Alpha (target 1.34)](#phase-1-alpha-target-134)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -147,54 +149,10 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 ## Proposal
 
-This KEP strives to enable node resource hot plugging by incorporating a polling mechanism within the kubelet to retrieve machine-information from cAdvisor's cache, which is already updated periodically.
-The kubelet will periodically fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
+This KEP strives to enable node resource hot plugging by making the kubelet to watch and retrieve machine resource information from cAdvisor's cache as and when it changes, cAdvisor's cache is already updated periodically.
+The kubelet will fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
 Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
 With this proposal its also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize. But this carries small overhead due to recalculation of swap and OOMScoreAdj.
-
-### Handling HotUnplug Events
-
-Though this KEP focuses only on resource hotplug, It will enable the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
-For now, we will introduce an error mode in the kubelet to inform users about the shrink in the available resources in case of hotunplug.
-
-As the hotunplug events are not completely handled in this KEP, in such cases, it is imperative to move the node to the NotReady state when the current capacity of the node
-is lesser than the initial capacity of the node. This is only to point at the fact that the resources have shrunk on the node and may need attention/intervention.
-
-Once the node has transitioned to the NotReady state, it will be reverted to the ReadyState once when the node's capacity is reconfigured to match or exceed the last valid configuration.
-In this case, valid configuration refers to a state which can either be previous hot-plug capacity or the initial capacity in case there was no history of hotplug.
-
-#### Flow Control
-
-```
-T=0: Node initial Resources:
-    - Memory: 10G
-    - Node state: Ready
-
-T=1: Resize Instance to Hotplug Memory
-    - Current Memory: 10G
-    - Update Memory: 15G
-    - Node state: Ready
-
-T=2: Resize Instance to HotUnplug Memory
-    - Current Memory: 15G
-    - UpdatedMemory: 5G
-    - Node state: NotReady
-
-T=3: Resize Instance to Hotplug Memory
-    - Current Memory: 5G
-    - Updated Memory Size: 15G
-    - Node state: Ready
-```
-
-Few of the concerns surrounding hotunplug are listed below
-* Pod re-admission:
-    * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
-      or if it has to be terminated due to resource crunch.
-* Recalculate OOM adjust score and Swap limits:
-    * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
-* Handling unplug of reserved CPUs.
-
-we intend to propose a separate KEP dedicated to hotunplug of resources to address the same.
 
 ### User Stories
 
@@ -247,17 +205,23 @@ detect the change in compute capacity, which can bring in additional complicatio
 - Lack of coordination about change in resource availability across kubelet/runtime/plugins.
   - The plugins/runtime should be updated to react to change in resource information on the node.
 
-- Kubelet missing hotplug event or too many hotplug events
-  - Hotplug events are captured via periodic polling by the kubelet, this ensures that the capacity is updated in the poll cycle and can technically not miss the event/fail to handle a flood of events.
+- Kubelet missing on processing hotplug instance(s)
+  - Kubelet observes the underlying node for any hotplug of resources as and when generated, 
+    this ensures that the capacity is updated in set intervals and can technically not miss to update the actual capacity obtained from cAdvisor.
 
 - Handling downsize events
-  - Though there is no support through this KEP to handle an event of node-downsize, it's the onus of the cluster administrator to resize responsibly to avoid disruption as it lies out of the kubernetes realm.
-  - However, enabling this feature will ensure that the correct resource information is pushed across the cluster.
+  - Though, there is no support through this KEP to handle an event of node-downsize, it's the onus of the cluster administrator to resize responsibly to avoid disruption as it lies out of the kubernetes realm.
+  - However, in a situation of downsize an error mode is returned by the kubelet and the node is marked as `NotReady`.
+
+- Workloads that are dependent on the initial node configuration, such as:
+  - Workloads that spawns per-CPU processes (threads, workpools, etc.)
+  - Workloads that depend on the CPU-Memory relationships (e.g Processes that depend on NUMA/NUMA alignment.)
+  - Dependency of external libraries/device drivers to support CPU hotplug as a supported feature.
+
 
 ## Design Details
 
 Below diagram is shows the interaction between kubelet, node and cAdvisor.
-
 
 ```mermaid
 sequenceDiagram
@@ -265,76 +229,173 @@ sequenceDiagram
     participant kubelet
     participant cAdvisor-cache
     participant machine-info
-    kubelet->>cAdvisor-cache: Poll
+    kubelet->>cAdvisor-cache: fetch
     cAdvisor-cache->>machine-info: fetch
     machine-info->>cAdvisor-cache: update
     cAdvisor-cache->>kubelet: update
-    kubelet->>node: node status update
+    alt if increase in resource
+    kubelet->>node: recalculate and update OOMScoreAdj <br> and Swap limit of containers
     kubelet->>node: re-initialize resource managers
-    kubelet->>node: Recalculate and update OOMScoreAdj <br> and Swap limit of pods
+    kubelet->>node: node status update with new capacity
+    else if decrease in resource
+    kubelet->>node: set node status to not ready
+    end
 ```
 
-The interaction sequence is as follows
-1. Kubelet will be polling in interval to fetch the machine resource information from cAdvisor's cache, Which is currently updated every 5 minutes.
-2. Kubelet's cache will be updated with the latest machine resource information.
-3. Node status updater will update the node's status with the latest resource information.
-4. Kubelet will reinitialize the resource managers to keep them up to date with dynamic resource changes.
-5. Kubelet will recalculate and update the OOMScoreAdj and swap limit for the existing pods.
+The interaction sequence is as follows:
+1. Kubelet will fetch machine resource information from cAdvisor's cache, Which is configurable a flag in cAdvisor `update_machine_info_interval`.
+2. If the machine resource is increased:
+    * Recalculate, update OOMScoreAdj and Swap limit of all the running containers.
+    * Re-initialize resource managers.
+    * Update node with new resource.
+3. If the machine resource is decreased.
+    * Set node status to not ready. (This will be reverted when the current capacity exceeds or matches either the previous hot-plug capacity or the initial capacity 
+      in case there was no history of hotplug.)
 
-With increase in cluster resources the following components will be updated
-
-1. Scheduler
-   * Scheduler will automatically schedule any pending pods.
-
-2. Update in Node allocatable capacity.
-
-3. Resource managers will re-initialised.
-
-4. Change in OOM score adjust
+With increase in cluster resources the following components will be updated:
+1. Change in OOM score adjust:
     * Currently, the OOM score adjust is calculated by
       `1000 - (1000*containerMemReq)/memoryCapacity`
     * Increase in memoryCapacity will result in updated OOM score adjust for pods deployed post resize and also recalculate the same for existing pods.
 
-5. Change in Swap Memory limit
+2. Change in Swap Memory limit:
    * Currently, the swap memory limit is calculated by 
  `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
    * Increase in nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
+
+3. Resource managers will re-initialised.
+
+4. Update in Node allocatable capacity.
+
+5. Scheduler:
+    * Scheduler will automatically schedule any pending pods.
+    * This is done as an expected behavior and does not require any changes in the existing design of the scheduler, as the scheduler `watches` the
+      available capacity of the node and creates pods accordingly.
+
+
+### Handling hotplug events
+
+Once the capacity of the node is altered, the following are the sequence of events that occur in the kubelet. If any errors are 
+observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event under the node object.
+1. Resizing existing containers:
+    a.With the increased memory capacity of the nodes, the kubelet proceeds to update fields that are directly related to
+      the available memory on the host. This would lead to recalculation of oom_score_adj and swap_limits.
+    b.This is achieved by invoking the CRI API - UpdateContainerResources.
+
+2. Reinitialise Resource Manager:
+     a. Resource managers such as CPU,Memory are updated with the latest available capacities on the host. This posts the latest
+        available capacities under the node.
+     b. This is achieved by calling ResyncComponents() of ContainerManager interface to re-sync the resource managers.
+3. Updating the node allocatable resources:
+     a. As the scheduler keeps a tab on the available resources of the node, post updating the available capacities,
+        the scheduler proceeds to schedule any pending pods.
+
+
+#### Flow Control for updating swap limit for containers
+
+Formula to calculate Swap Limit: `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+```
+T=0: Node Resources:
+        - Memory: 6G
+        - Swap: 4G
+     Pod:
+        - container1
+            - MemoryRequest: 2G
+            - State: Running
+     Runtime:
+        - <cgroup_path>/memory.swap.max: 1.33G
+        
+T=1: Resize Instance to Hotplug Memory:
+        - Memory: 8G
+        - Swap: 4G
+     Pod:
+        - container1
+            - MemoryRequest: 2G
+            - State: Running
+     Runtime:
+        - <cgroup_path>/memory.swap.max: 1G
+```
+
+Similar flow is applicable for updating oom_score_adj.
+
+### Handling HotUnplug Events
+
+Though this KEP focuses only on resource hotplug, It will enable the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
+For now, we will introduce an error mode in the kubelet to inform users about the shrink in the available resources in case of hotunplug.
+
+As the hot-unplug events are not completely handled in this KEP, in such cases, it is imperative to move the node to the NotReady state when the current capacity of the node
+is lesser than the initial capacity of the node. This is only to point at the fact that the resources have shrunk on the node and may need attention/intervention.
+
+Once the node has transitioned to the NotReady state, it will be reverted to the ReadyState once when the node's capacity is reconfigured to match or exceed the last valid configuration.
+In this case, valid configuration refers to a state which can either be previous hot-plug capacity or the initial capacity in case there was no history of hotplug.
+
+#### Flow Control
+
+```
+T=0: Node initial Resources:
+    - Memory: 10G
+    - Pod: Memory
+
+T=1: Resize Instance to Hotplug Memory
+    - Current Memory: 10G
+    - Update Memory: 15G
+    - Node state: Ready
+
+T=2: Resize Instance to HotUnplug Memory
+    - Current Memory: 15G
+    - UpdatedMemory: 5G
+    - Node state: NotReady
+
+T=3: Resize Instance to Hotplug Memory
+    - Current Memory: 5G
+    - Updated Memory Size: 15G
+    - Node state: Ready
+```
+
+Few of the concerns surrounding hotunplug are listed below
+* Pod re-admission:
+    * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
+      or if it has to be terminated due to resource crunch.
+* Recalculate OOM adjust score and Swap limits:
+    * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
+* Handling unplug of reserved CPUs.
+
+we intend to propose a separate KEP dedicated to hotunplug of resources to address the same.
 
 **Proposed Code changes**
 
 **Pseudocode for Resource Hotplug**
 
 ```go
-	if utilfeature.DefaultFeatureGate.Enabled(features.NodeResourceHotPlug) {
-		// Handle the node dynamic scale up
-		machineInfo, err := kl.cadvisor.MachineInfo()
-		if err != nil {
-			klog.ErrorS(err, "Error fetching machine info")
-		} else {
-			cachedMachineInfo, _ := kl.GetCachedMachineInfo()
-            // Avoid collector collects it as a timestamped metric
-            // See PR #95210 and #97006 for more details.
-                machineInfo.Timestamp = time.Time{}
-			if !reflect.DeepEqual(cachedMachineInfo, machineInfo) {
-				kl.setCachedMachineInfo(machineInfo)
-
-				// Resync the resource managers
-				if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
-					klog.ErrorS(err, "Error resyncing the kubelet components with machine info")
-				}
-				
-				// Recalculate OOMScoreAdj and Swap Limit.
-				// NOTE: we will make use UpdateContainerResources CRI method to update the values.
-                if err := kl.RecalculateOOMScoreAdjAndSwap(); err != nil {
-                    klog.ErrorS(err, "Error recalculating OOMScoreAdj and Swap")
-                }
-				
-			}
-		}
-	}
+func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
+syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.PodLifecycleEvent) bool {
+    .
+    .
+    case machineInfo := <-kl.nodeResourceManager.MachineInfo():
+        // Resize the containers.
+        klog.InfoS("Resizing containers due to change in MachineInfo")
+        if err := resizeContainers(); err != nil {
+            klog.ErrorS(err, "Failed to resize containers with change in machine info")
+            kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
+            break
+        }
+        
+        // Resync the resource managers.
+        klog.InfoS("ResyncComponents resource managers because of change in MachineInfo")
+        if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
+            klog.ErrorS(err, "Failed to resync resource managers with machine info update")
+            kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
+            break
+        }
+        
+        // Update the cached MachineInfo.
+        kl.setCachedMachineInfo(machineInfo)
+    .
+    .
+}
 ```
 
-**Changes to resource managers to adapt to dynamic scale up of resources**
+**Changes to resource managers to adapt to hotplug of resources**
 
 1. Adding ResyncComponents() method to ContainerManager interface
 ```go
@@ -369,7 +430,7 @@ to implement this enhancement.
 2. Add necessary tests in kubelet_pods_test.go to check for the pod cleanup and pod addition workflow.
 3. Add necessary tests in eventhandlers_test.go to check for scheduler behaviour with dynamic node capacity change.
 4. Add necessary tests in resource managers to check for managers behaviour to adopt dynamic node capacity change.
-
+5. Add necessary tests to validate change in oom_score and swap limit for containers post resize.
 
 ##### e2e tests
 
@@ -385,8 +446,7 @@ Following scenarios need to be covered:
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.33)
-
+#### Phase 1: Alpha (target 1.34)
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `NodeResourceHotPlug`
   feature gate.
@@ -835,7 +895,8 @@ nodes capacity may be lower than existing workloads memory requirement.
 
 ## Alternatives
 
-Horizontally scale the cluster by incorporating additional compute nodes.
+* Horizontally scale the cluster by incorporating additional compute nodes.
+* Use fake placeholder resources that are available but not enabled (e.g., balloon drivers)
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
@@ -860,3 +921,7 @@ VMs of cluster should support hot plug of compute resources for e2e tests.
     * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
     * Presently, resource managers are updated through regular polling. Once the CRI APIs are enhanced to fetch machine information, we can significantly enhance the reinitialization of resource managers, 
       enabling them to respond more effectively to resize events.
+
+* Knobs to alter Kube and System reserved
+    * Currently, these values are calculated and set by individual cloud providers or vendors.
+    * This can be further explored to enable options to set the kube and system reserved capacities as tunables.
