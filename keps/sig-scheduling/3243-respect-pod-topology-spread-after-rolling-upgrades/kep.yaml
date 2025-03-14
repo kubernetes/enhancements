@@ -37,6 +37,9 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-scheduler
+  - name: MatchLabelKeysInPodTopologySpreadSelectorMerge
+    components:
+      - kube-apiserver
 
 disable-supported: true
 

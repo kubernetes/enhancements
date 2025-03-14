@@ -401,7 +401,7 @@ kube-apiserver modifies the `labelSelector` like the following:
 In addition, kube-scheduler will handle `matchLabelKeys` within the cluster-level default constraints 
 in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
 
-Finally, the feature will be guarded by a new feature flag. If the feature is 
+Finally, the feature will be guarded by a new feature flag `MatchLabelKeysInPodTopologySpread`. If the feature is 
 disabled, the field `matchLabelKeys` and corresponding `labelSelector` are preserved 
 if it was already set in the persisted Pod object, otherwise new Pod with the field 
 creation will be rejected by kube-apiserver.
@@ -419,6 +419,9 @@ So, for a safe upgrade path from v1.32 to v1.33, kube-scheduler would handle not
 from the default constraints, but also all incoming pods during v1.33. 
 We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.34 for efficiency, 
 assuming kube-apiserver handles `matchLabelKeys` of all incoming pods.
+
+This implementation change can be disabled by the `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag.
+(See more details in [Feature Enablement and Rollback](#feature-enablement-and-rollback))
 
 ### Test Plan
 
@@ -652,6 +655,14 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
+- `MatchLabelKeysInPodTopologySpread` feature flag will toggle enabling `MatchLabelKeys` in `TopologySpreadConstraint`.
+- `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag will toggle merging the key-value labels 
+  corresponding to `MatchLabelKeys` into `LabelSelector` of `TopologySpreadConstraint`.
+
+The `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag has been added in v1.33 and enabled by default.
+This flag can be disabled to revert [the implementation design change in v1.33](#v133-design-change-and-a-safe-upgrade-path) 
+and go back to the previous behavior.
+
 ###### How can this feature be enabled / disabled in a live cluster?
 
 <!--
@@ -667,6 +678,9 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelKeysInPodTopologySpread`
   - Components depending on the feature gate: `kube-scheduler`, `kube-apiserver`
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `MatchLabelKeysInPodTopologySpreadSelectorMerge`
+  - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
 
