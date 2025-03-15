@@ -465,105 +465,7 @@ Optimizations like caching or lazy sub-schema resolution can be candidates of be
 #### Unsetting values
 
 Since there is no field manager used for the merge, the server side apply merge
-algorithm will only add and replace values. This is because server side apply is
-designed to only unset values that were previously owned by the field manager
-but excluded from the apply configuration.
-
-To work around this limitation, we will take advantage of CEL's optional type
-feature to make it possible to express that a value should be unset. For example:
-
-```cel
-Object{
-  spec: Object.spec{
-    ?fieldToRemoveIfPresent: optional.none()
-  }
-}
-```
-The policy declaratively describes that, in the final object, if fieldToRemoveIfPresent presents it should be removed or no-op otherwise.
-
-The optional.none() function creates a CEL object defined as optional(T) where T is the type of the receiving field. 
-In conjunction with standard CEL macros, simple expressions can perform more complicated and precise operations.
-
-For example, to remove the env of a sidecar container, filter by its name.
-
-```yaml
-mutations:
-  - patchType: "ApplyConfiguration"
-    expression: >
-        Object{
-            spec: Object.spec{
-                containers: object.spec.containers{
-                    object.spec.containers.filter(c, c.name == "sidecar")
-                    .map(c, Object.spec.containers.item{
-                        ?env: optional.none()
-                    })
-                }
-            }
-        }
-
-```
-
-We will track which fields are unset in this way and remove them after the
-server side apply merge algorithm is run.
-
-This solves the vast majority of value removal needs. Specifically:
-
-| Schema type | Merge type | Example of how to unset a value                                                  |
-|-------------| -----------|----------------------------------------------------------------------------------|
-| struct      | atomic     | ```Object{ spec: Object.spec{ structField: {?fieldToRemove: optional.none()}}}``` |
-| struct      | granular   | `?fieldToRemove: optional.none()`                                                |
-| map         | atomic     | `mapField: object.spec.mapField.filter(k, k != "keyToRemove")`                   |
-| map         | granular   | `mapField: {?"keyToRemove": optional.none()}`                                    |
-| list        | atomic     | Use `JSONPatch`                                                                  |
-| list        | set        | `setField: object.spec.setField.filter(e, e != "itemToRemove")`                  |
-| list        | map        | See below                                                                        |
-| list        | granular   | See below                                                                        | 
-
-
-List with "map" merge type:
-  - Filter `objects.filter(<list>, <keys-to-remove>)` could be used for the deletion
-  - For associatedList with multiple keys like example above, a directive field added could be used to indicate the deletion.
-```yaml
-mutations:
-  - patchType: "ApplyConfiguration"
-    expression: >
-      Object{
-        spec: Object.spec{
-                assocListField: [Object.spec.assocListField{
-                       keyField1: "key1",
-                       keyField2: "key2",
-                       _: optional.none()
-                }]
-        }
-}
-
-```
-
-For examples of removing item from List with Map filtered by a subfield:
-```yaml
-mutations:
-  - patchType: "ApplyConfiguration"
-    expression: >
-        Object{
-            spec: Object.spec{
-                containers: object.spec.containers.filter(c, c.envvar != "remove-this-container")
-                }
-            }
-        }
-
-```
-
-For granular list removal, a use case would be removing an item with a sub field named `remove-this-item`.
-```yaml
-mutations:
-  - patchType: "ApplyConfiguration"
-    expression: >
-      Object{
-        spec: Object.spec{
-                granularList: object.spec.granularList.filter(c, c.subField != "remove-this-item")
-        }
-      }
-```
+algorithm will only add and replace values. To unset values, JSON Patch mutations must be used.
 
 ##### Safety
 
@@ -840,11 +742,9 @@ Object{
 #### Use case: Remove an annotation
 
 ```cel
-Object{
-  metadata: Object.metadata{
-    annotations:
-      ?"annotation-to-unset": optional.none()
-  }
+JSONPatch{
+    op: "remove",
+    path: "/metadata/annotations/annotation-to-unset"
 }
 ```
 
