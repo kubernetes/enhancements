@@ -82,15 +82,15 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-    - [ ] e2e Tests for all Beta API Operations (endpoints)
-    - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+    - [X] e2e Tests for all Beta API Operations (endpoints) - [dashboard](https://testgrid.k8s.io/sig-storage-kubernetes#kind-storage-alpha-beta-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+    - [X] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
     - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
     - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -240,9 +240,9 @@ The CSI create request will be extended to add mutable parameters. A new Control
 
 #### Default VolumeAttributesClass
 
-A default VolumeAttributesClass can be specified for the Kubernetes cluster. This default VolumeAttributesClass is then used to dynamically provision storage for PersistentVolumeClaims that do not require any specific VolumeAttributesClass. A cluster admin can use annotation to manage default VolumeAttributesClass. The default VolumeAttributesClass has an annotation volumeattributesclass.kubernetes.io/is-default-class set to true. Any other value or absence of the annotation is interpreted as false. 
+For GA, the VolumeAttributesClass feature does not support a default VolumeAttributesClass. This is because there is already a natural default for VolumeAttributesClass: no VolumeAttributesClass associated with the PersistentVolumeClaim. Furthermore, with a default, there would be added overhead for cluster operators in making sure a cluster's default StorageClass and default VolumeAttributesClass are compatible. 
 
-Note: For Kubernetes versions ≤ v1.31, the VolumeAttributesClass feature does not support a default VolumeAttributesClass. This is because there is already a natural default for VolumeAttributesClass: no VolumeAttributesClass associated with the PersistentVolumeClaim. Furthermore, with a default, there would be added overhead for cluster operators in making sure a cluster's default StorageClass and default VolumeAttributesClass are compatible. Use-cases and support for Default VolumeAttributesClass will be re-evaluated during this feature's beta in Kubernetes v1.31.
+For future design, a default VolumeAttributesClass can be specified for the Kubernetes cluster. This default VolumeAttributesClass is then used to dynamically provision storage for PersistentVolumeClaims that do not require any specific VolumeAttributesClass.
 
 #### Pre-provisioned Volume
 
@@ -694,10 +694,7 @@ VolumeAttributesClass parameters can be considered as best-effort parameters, th
 
 * Basic unit tests for performance and quota system.
 * API conformance tests
-* E2E tests with happy tests in the [K8s storage framework](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/testsuites) for different drivers testing
-* E2E tests using mock driver to cause failure on create, update and recovering cases
-  * [K8s storage framework](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/storage/testsuites)
-  * [csi-tes](https://github.com/kubernetes-csi/csi-test)
+* E2E tests: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/storage/volumeattributesclass.go
 * Test coverage of quota usage with ResourceQuota and LimitRange
 * Measure latency impact to CreateVolume during beta and provide feedback to operators
 * Upgrade and rollback test when the feature gate changes to beta
@@ -717,12 +714,7 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
-
-- The behavior with feature gate and API turned on/off and mix match
-- The happy path with creating and modifying volume successfully with VolumeAttributesClass
-  - [E2E CSI Test PR](https://github.com/kubernetes/kubernetes/pull/124151/)
-  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=storage&test=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
-  - [Testgrid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+N/A. Please see e2e tests session below.
 
 ##### e2e tests
 
@@ -736,6 +728,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
+- The behavior with feature gate and API turned on/off and mix match
 - Create VolumeAttributesClass successfully
 - Delete VolumeAttributesClass with finalizer fails
 - Delete VolumeAttributesClass without finalizer succeeds
@@ -744,7 +737,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Give a driver that does not ControllerModifyVolume, CSI volume should not be modified.
 - If ControllerModifyVolume fails, PVC should have appropriate events.
 
-[API Conformance Test PR](https://github.com/kubernetes/kubernetes/pull/121849)
+- [API Conformance Test PR](https://github.com/kubernetes/kubernetes/pull/121849)
+- [E2E CSI Test PR](https://github.com/kubernetes/kubernetes/pull/124151/)
+- [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?sig=storage&test=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
+- [Testgrid](https://testgrid.k8s.io/sig-storage-kubernetes#kind-alpha-features&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5BFeature%3AVolumeAttributesClass%5D&include-filter-by-regex=%5C%5BFeature%3AVolumeAttributesClass%5C%5D)
 
 ##### Stress tests
 
@@ -843,7 +839,27 @@ A metric `controller_modify_volume_errors_total` will indicate a problem with th
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO Upgrade and rollback will be tested when the feature gate will change to beta.
+Tested in Beta:
+
+1. Enable both feature flag and beta API in api-server, create PVC with VAC1, and then modify to VAC2
+2. Turn off the feature flag first, and then try to modify PVC back to VAC1, got error: 
+
+```
+The PersistentVolumeClaim "test-pvc" is invalid: spec.volumeAttributesClassName: Forbidden: update 
+is forbidden when the VolumeAttributesClass feature gate is disabled
+```
+The pod and volume are both up and running.
+
+3. Turn off the beta API, this time ``kubectl get vac`` got error:
+```
+Error from server (NotFound): Unable to list "storage.k8s.io/v1beta1, Resource=volumeattributesclasses": 
+the server could not find the requested resource
+```
+
+The pod and volume are both up and running.
+
+4. Turn on both feature flag and beta API in api-server again. ``kubectl get vac`` shows the VACs again. Change PVC back to VAC1, modify is applied.
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -922,7 +938,7 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes. The VAC protection controller will be expensive because it needs to LIST PVCs/PVs but the call volume should be low.
+Yes. The VAC protection controller will be expensive because it needs to LIST PVCs/PVs but the call rate should be low because it is user triggered by changing VAC in the PVC.
 
 - API call type: PATCH PVC
 - estimated throughput: low, only once for PVCs that have
@@ -953,7 +969,7 @@ Using this feature may result in non-negligible increase of resource usage IF cu
 - external-resizer CPU and memory will see a non-negligible increase if users increased the number of concurrent operations via the `--workers` flag. We follow the strategy of sharing that limit between `ControllerExpandVolume` and `ControllerModifyVolume` RPCs, similar to how external-provisioner functions. 
 - The API-Server may see a spike of CPU when processing relevant changes.
 
-Stress tests will determine increase in resource usage at varying amounts of concurrent volume modifications. 
+Stress tests will determine increase in resource usage at varying amounts of concurrent volume modifications.
 
 ### Troubleshooting
 
