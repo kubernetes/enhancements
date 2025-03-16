@@ -467,7 +467,6 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-![overview](./aio6.png "overview of design details")
 
 #### Glossary
 - Individual repository - An existing repository in the kubernetes-csi/ org in Github e.g. the external-attacher repository.
@@ -500,7 +499,7 @@ After investigation, we found that there isn't clear advantage to switch to k8s 
 We designed the AIO repo's RBAC policy to mirror that of individual repos, where each controller maintains its own policy. Driver maintainers should apply proper RBAC when enabling specific controllers in AIO
 more discuss info in ![here](https://docs.google.com/document/d/1z7OU79YBnvlaDgcvmtYVnUAYFX1w9lyrgiPTV7RXjHM/edit?tab=t.0#bookmark=id.l9u181gxf6ie.)
 
-We plan to combine informer caches of different controllers in the [future](#Milestone-merge-sidecar-informer-caches))
+We plan to combine informer caches of different controllers in the [future](#Milestone-merge-sidecar-informer-caches)
 
 ##### Command Line
 
@@ -531,17 +530,22 @@ example PR: https://github.com/kubernetes-csi/external-attacher/pull/620
 
 poc version: https://github.com/mauriciopoppe/csi-sidecars
 
+monorepo attacher: https://github.com/mauriciopoppe/csi-sidecars/tree/main/pkg/attacher
+
 
 #### Development workflow
+
+![overview](./aio6.png "overview of design details")
 
 After we see the Monorepo component running fine in integration/e2e tests in k8s, we need to perform a hard cut so that new deployment goes in the monorepo component only.
 
 ##### AIO MonoRepo state definition
 
-- Alpha (inner-verified): Current state of AIO MonoRepo
-- Beta (production-verified): Available for production environments, a Cloud vendor can using it in its production environment.
-- GA (released): Official released, Available for accept PRs from SIG Storage Developer
-- standalone: Never need sync codes from individual repos, AIO MonoRepo become the source of truth
+- Design: Current state of AIO MonoRepo
+- [Alpha](#Milestone-monorepo-component-has-passed-all-e2e-test): all six sidecar repo had been integrated into mono repo, All the e2e tests has passed.
+- [Beta](#Milestone-available-for-use-by-cloud-vendors-in-their-environments) (production-verified): six sidecars working through CSI hostpath, three cloud vendor can using it in its production environment.
+- [GA](#Milestone-three-cloud-vendors-start-using-the-monorepo-component) (released): Official released, Available for accept PRs from SIG Storage Developer
+- [standalone](#Milestone-all-individual-repo-has-been-into-deprecated-state): Never need sync codes from individual repos, AIO MonoRepo become the source of truth
 
 
 ##### Individual repository state definition
@@ -598,25 +602,37 @@ POC: https://github.com/mauriciopoppe/csi-sidecars-aio-poc
 
 #### Milestone-setup-a-repository-inside-kubernetes-csi
 
+Design phase
+
 #### Milestone-Build-the-project-using-a-modified-copy-of-release-tools
+
+Design phase
 
 #### Milestone-set-up-new-test-infra-jobs-to-test-the-project-through-the-hostpath-CSI-Driver
 
+Design phase
+
 #### Milestone-mirroring-of-nested-directories-to-repos-in-kubernetes-csi
+
+Design phase
 
 #### Milestone-definition-of-the-development-workflow
 
+Design phase
+
 #### Milestone-migration-of-CSI-Drivers-to-the-new-model 
 
-#### Milestone-monorepo-component-has-passed-all-e2e-test
+Design phase
+
+#### Milestone-all-six-sidecar-repo-had-been-integrated-into-monorepo
 
 Alpha phase
 
-#### Milestone-available-for use by cloud vendors in their environments.
+#### Milestone-be-ready-to-accept-PR-from-community
 
 Beta phase
 
-#### Milestone-be-ready-to-accept-PR-from-community
+#### Milestone-six-sidecars-working-through-CSI-hostpath
 
 Beta phase
 
