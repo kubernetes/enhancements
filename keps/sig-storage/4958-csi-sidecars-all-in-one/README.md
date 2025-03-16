@@ -467,7 +467,6 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-![overview](./aio6.png "overview of design details")
 
 #### Glossary
 - Individual repository - An existing repository in the kubernetes-csi/ org in Github e.g. the external-attacher repository.
@@ -492,15 +491,15 @@ cons:
 - Version skew scenario becomes confusing for the cluster administrator e.g. they deploy the CSI Sidecars v1.x, cluster is upgraded to v1.{x+3} (CP upgrade first, NP later), nodepools would have CSI sidecar at v1.{x+3} with kubelet at v1.x
 - k/k at 1.27.5 - CSI 1.27.0 or (different mapping still)
 
-After investigation, we found that there isn't clear advantage to switch to k8s versioning, so we chose to keep Semantic Versioning in monorepo.
+After investigation, we found that there isn't clear advantage to switch to k8s versioning, ***so we chose to keep Semantic Versioning in monorepo.***
 
 
 ##### RBAC policy
 
 We designed the AIO repo's RBAC policy to mirror that of individual repos, where each controller maintains its own policy. Driver maintainers should apply proper RBAC when enabling specific controllers in AIO
-more discuss info in ![here](https://docs.google.com/document/d/1z7OU79YBnvlaDgcvmtYVnUAYFX1w9lyrgiPTV7RXjHM/edit?tab=t.0#bookmark=id.l9u181gxf6ie.)
+more discuss info in [here](https://docs.google.com/document/d/1z7OU79YBnvlaDgcvmtYVnUAYFX1w9lyrgiPTV7RXjHM/edit?tab=t.0#bookmark=id.l9u181gxf6ie.)
 
-We plan to combine informer caches of different controllers in the [future](#Milestone-merge-sidecar-informer-caches))
+We plan to combine informer caches of different controllers in the [future](#Milestone-merge-sidecar-informer-caches)
 
 ##### Command Line
 
@@ -529,19 +528,21 @@ example PR: https://github.com/kubernetes-csi/external-attacher/pull/620
 
 #### Monorepo component
 
-poc version: https://github.com/mauriciopoppe/csi-sidecars
+monorepo attacher: https://github.com/mauriciopoppe/csi-sidecars/tree/main/pkg/attacher
 
+We would like to keep the gomod and others before individual repo goes to deprecated state
 
 #### Development workflow
 
-After we see the Monorepo component running fine in integration/e2e tests in k8s, we need to perform a hard cut so that new deployment goes in the monorepo component only.
+![overview](./aio6.png "overview of design details")
 
 ##### AIO MonoRepo state definition
 
-- Alpha (inner-verified): Current state of AIO MonoRepo
-- Beta (production-verified): Available for production environments, a Cloud vendor can using it in its production environment.
-- GA (released): Official released, Available for accept PRs from SIG Storage Developer
-- standalone: Never need sync codes from individual repos, AIO MonoRepo become the source of truth
+- Design: Current state of AIO MonoRepo
+- [Alpha](#Milestone-monorepo-component-has-passed-all-e2e-test): all six sidecar repo had been integrated into mono repo, All the e2e tests has passed.
+- [Beta](#Milestone-available-for-use-by-cloud-vendors-in-their-environments) (production-verified): six sidecars working through CSI hostpath, three cloud vendor can using it in its production environment.
+- [GA](#Milestone-three-cloud-vendors-start-using-the-monorepo-component) (released): Official released, Available for accept PRs from SIG Storage Developer, Development of individual repo start to switch to monorepo component
+- [standalone](#Milestone-all-individual-repo-has-been-into-deprecated-state): Never need sync codes from individual repos, AIO MonoRepo become the source of truth
 
 
 ##### Individual repository state definition
@@ -586,37 +587,50 @@ List of fixed issues related with panics:
 - Keeping the monorepo and the existing sidecars repo up to date after the migration for X releases
 
 
-
-
 ### MileStone
 
+---
+design phase
 #### Milestone (completed): 
 Develop a minimal proof of concept
 
 POC: https://github.com/mauriciopoppe/csi-sidecars-aio-poc
 
+#### Milestone-definition-of-the-development-workflow(completed)
+
+--- 
+prepare phase
+
+#### Milestone-sidecar-entry-codes-have-been-modified.
+
 
 #### Milestone-setup-a-repository-inside-kubernetes-csi
 
-#### Milestone-Build-the-project-using-a-modified-copy-of-release-tools
-
-#### Milestone-set-up-new-test-infra-jobs-to-test-the-project-through-the-hostpath-CSI-Driver
 
 #### Milestone-mirroring-of-nested-directories-to-repos-in-kubernetes-csi
 
-#### Milestone-definition-of-the-development-workflow
+
+#### Milestone-Build-the-project-using-a-modified-copy-of-release-tools
+
+
+#### Milestone-set-up-new-test-infra-jobs-to-test-the-project-through-the-hostpath-CSI-Driver
+
 
 #### Milestone-migration-of-CSI-Drivers-to-the-new-model 
 
-#### Milestone-monorepo-component-has-passed-all-e2e-test
+
+---
+
+
+#### Milestone-all-six-sidecar-repo-had-been-integrated-into-monorepo
 
 Alpha phase
 
-#### Milestone-available-for use by cloud vendors in their environments.
+#### Milestone-be-ready-to-accept-PR-from-community
 
 Beta phase
 
-#### Milestone-be-ready-to-accept-PR-from-community
+#### Milestone-six-sidecars-working-through-CSI-hostpath
 
 Beta phase
 
