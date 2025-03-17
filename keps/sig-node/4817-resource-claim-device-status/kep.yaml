@@ -45,5 +45,4 @@ feature-gates:
 disable-supported: true
 
 metrics:
-  - resourceclaim_status_devices_update_attempts_total
-  - resourceclaim_status_devices_update_failures_total
+  - apiserver_request_total{group="resource.k8s.io", version="v1beta1", resource="resourceclaims", subresource="status"}

@@ -524,7 +524,7 @@ No
 
 Check the `ResourceClaim.Status.Devices`.
 
-The metrics `resourceclaim_status_devices_update_attempts_total` will increase. 
+The metrics `apiserver_request_total` with labels `group="resource.k8s.io",version="v1beta1",resource="resourceclaims",subresource="status"` will increase.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -544,8 +544,7 @@ N/A
 
 - [x] Metrics
   - Metric name:
-    - "resourceclaim_status_devices_update_attempts_total"
-    - "resourceclaim_status_devices_update_failures_total"
+    - `apiserver_request_total{group="resource.k8s.io", version="v1beta1", resource="resourceclaims", subresource="status"}`
   - [Optional] Aggregation method:
   - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
