@@ -12,7 +12,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Partial scheduling of pods for multi-host devices](#partial-scheduling-of-pods-for-multi-host-devices)
 - [Design Details](#design-details)
-  - [Extending device and capacity pool with a set of mixins](#extending-device-and-capacity-pool-with-a-set-of-mixins)
+  - [Extending device and counter set with a set of mixins](#extending-device-and-counter-set-with-a-set-of-mixins)
   - [Defining device partitions in terms of consumed capacity in a composite device](#defining-device-partitions-in-terms-of-consumed-capacity-in-a-composite-device)
   - [Defining multi-host devices](#defining-multi-host-devices)
     - [Multi-host scheduling limitations](#multi-host-scheduling-limitations)
@@ -255,7 +255,7 @@ so we need to consider the topology when we make decisions about the allocation
 of TPUs to workloads.
 
 Due to the topology, only certain specific slices of TPUs can be used.
-For example, in a 64 TPU node pool there will be 16 VMs, each with 4
+For example, in a 64 TPU node counter set there will be 16 VMs, each with 4
 TPUs. This allows for a number of possible multi-VM slices of different
 sizes:
 * 8x8 slice, which provides 64 TPUs across 16 nodes (shown in black)
@@ -328,9 +328,9 @@ non-goals of this KEP.
 
 At a high level, this proposal is based around three new concepts:
 
-1. Capacity pool, which is a construct for defining the capacities available for
+1. Counter set, which is a construct for defining the capacities available for
    sharing among partitions of a single physical device. Drivers will
-   typically create a capacity pool that specifies all the available capacities of
+   typically create a counter set that specifies all the available capacities of
    a physical device and then define the partitions available for DRA. Each
    partition will specify how much capacity it will consume from the capacity
    pool, which allows the scheduler to keep track of available capacity in
@@ -356,7 +356,7 @@ mixins. It also introduces a new field `PerDeviceNodeSelection` on the
 fields on the `ResourceSlice`.
 
 1. The `SharedCounters` field is a list of named `CounterSet`s. Each
-   defines a set of capacities that is available for devices. This makes it possible
+   defines a set of counters that is available for devices. This makes it possible
    to define overlapping partitions of devices, while still making sure that no
    device can be allocated if the necessary capacity is not available. A `CounterSet`
    can optionally reference one or more `CounterSetMixin`s using the `Includes` field
@@ -381,7 +381,7 @@ fields on the `ResourceSlice`.
     1. The `DeviceCounterConsumption` field defines a list of named 
        `DeviceCounterConsumptionMixin`s. These define capacities that can be
        used to extend the capacity consumption defined explicitly in fields under
-       `BasicDevice`. The capacity pool is not specified in the
+       `BasicDevice`. The counter set is not specified in the
        `DeviceCounterConsumptionMixin`, but rather provided when the mixin
        is referenced from the device.
 
@@ -395,8 +395,8 @@ fields on the `ResourceSlice`.
       capacities it defines explicitly.
 
     1. The `ConsumesCounter` field defines the capacities the device
-      will draw from the capacity pool when allocated. Therefore, if this capacity isn't
-      available in the pool, the device can not be allocated. Only references
+      will draw from the counter set when allocated. Therefore, if this capacity isn't
+      available in the counter set, the device can not be allocated. Only references
       to capacity pools in the same `ResourceSlice` is supported.
 
 1. Add a new field `PerDeviceNodeSelection` to the `ResourceSliceSpec` and the
@@ -418,7 +418,7 @@ With these additions in place, the scheduler has everything it needs to support
 the dynamic allocation of full devices, their (possibly overlapping)
 fixed-size partitions, and multi-host devices. That is to say, the scheduler now has
 the ability to "flatten" all devices and capacity pools by applying any referenced mixins as
-well as track the capacities consumed by allocated devices. More details
+well as track the counters consumed by allocated devices. More details
 on the actual algorithm the scheduler follows to make allocation decisions
 based on the capacity pools can be found in the Design Details section below.
 
@@ -484,7 +484,7 @@ type ResourceSliceMixins struct {
   // than duplicate them.
   //
   // The total number of device mixins, device capacity consumption mixins, 
-  // capacity pool mixins, basic devices must be less than 128.
+  // counter set mixins, basic devices must be less than 128.
   //
   // +optional
   // +listType=atomic
@@ -495,9 +495,8 @@ type ResourceSliceMixins struct {
   // that a device will consume from a counter set.
   //
   // This makes it possible to define a set of shared counters that
-  // are not tied to a specific counter set. The counter set is inferred by context
-  // in which the DeviceCounterConsumptionMixin is referenced from
-  // the device.
+  // are not tied to a specific counter set. 
+  // The counter set is specified when the DeviceCounterConumptionMixin is reference from the device.
   //
   // The total number of device mixins, device counter consumption mixins, 
   // counter set mixins, basic devices must be
@@ -830,7 +829,7 @@ type Counter struct {
 ```
 
 As mentioned previously, the main features being added here are (1) the ability
-to include a set of mixins in a device or capacity pool definition, (2) the
+to include a set of mixins in a device or counter set definition, (2) the
 ability to express that multiple devices draw from the same pool of capacity, so
 allocation of one device might make other devices unallocatable, and (3) the
 ability to define multi-host devices.
@@ -839,7 +838,7 @@ To simplify the conversation, we discuss each new feature separately, starting
 with "mixins" for both capacity pools and devices, which allows a set of mixins to
 extend the properties defined explicitly.
 
-### Extending device and capacity pool with a set of mixins
+### Extending device and counter set with a set of mixins
 
 A simple example the defines a set of mixins and includes them in the
 definition of 4 NVIDIA A100 GPUs can be seen below:
@@ -965,17 +964,17 @@ devices:
       - name: common-gpu-consumption
 ```
 
-As you can see, a capacity pool mixin is created and it defines the
-capacities available for each gpu. This is then referenced in four
+As you can see, a counter set mixin is created and it defines the
+counters available for each gpu. This is then referenced in four
 separate capacity pools, each of which maps to a single physical
 GPU.
 Then, three device mixins are created called "system-attributes",
 "common-gpu-attributes", and "common-gpu-capacities", which all get included in
 the definitons of the actual GPU devices themselves, along with their own
-device-specific attributes (and device-specific capacities if there were any). 
+device-specific attributes (and device-specific counters if there were any). 
 A device capacity consumption mixin is also created called "common-gpu-consumption"
 which is referenced from all the devices together with a reference to the
-capacity pool from which the capacities will be drawn.
+counter set from which the counters will be drawn.
 
 With this in place, the scheduler can parse these device definitions and
 "flatten" them into a set devices that pull capacity from a set of pools. The
@@ -1053,7 +1052,7 @@ devices:
 In this example, five devices are defined: a full GPU called "gpu-0" and four
 partitions of "gpu-0" called "gpu-0-partion-0", "gpu-0-partion-1",
 "gpu-0-partion-2", and "gpu-0-partion-3" respectively. The physical GPU is
-represented as a shared capacity pool, from which all five devices draw their
+represented as a shared counter set, from which all five devices draw their
 capacity. It also sets up a device mixin for the partitions that defines the
 advertised resource availability and a device capacity consumption mixin that
 defines the capacity the device draws from the capaity pool. This allows the
@@ -1277,10 +1276,10 @@ together in a discrete set of ways to construct a MIG device with a particular
 "profile". These resources include things like "memory", "number of JPEG
 engines", "discrete memory slices on the physical GPU die", etc.
 
-Using the capacity pool to represent the "bag" of capacities, we can define
+Using the counter set to represent the "bag" of counters, we can define
 a set of devices that pull specific capacity from that pool.
 
-For example, a capacity pool for an NVIDIA A100 GPU looks as follows:
+For example, a counter set for an NVIDIA A100 GPU looks as follows:
 ```yaml
 sharedCounters:
 - name: gpu-0-pool
@@ -1440,14 +1439,14 @@ capacity pools can be seen below.
 sharedCounters:
 - includes:
   - name: mock-nvidia-a100
-  name: gpu-0-capacity-pool
+  name: gpu-0-counter-set
 - includes:
   - name: mock-nvidia-a100
-  name: gpu-1-capacity-pool
+  name: gpu-1-counter-set
 devices:
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-gpu-mock-nvidia-a100-sxm4-40gb-capacity-consumption
       - name: memory-slices-0-7
@@ -1460,7 +1459,7 @@ devices:
   name: gpu-0
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-1
@@ -1473,7 +1472,7 @@ devices:
   name: gpu-0-mig-1g.10gb-0-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2-3
@@ -1486,7 +1485,7 @@ devices:
   name: gpu-0-mig-1g.10gb-2-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-5
@@ -1499,7 +1498,7 @@ devices:
   name: gpu-0-mig-1g.10gb-4-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6-7
@@ -1512,7 +1511,7 @@ devices:
   name: gpu-0-mig-1g.10gb-6-7
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0
@@ -1525,7 +1524,7 @@ devices:
   name: gpu-0-mig-1g.5gb-0
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-1
@@ -1538,7 +1537,7 @@ devices:
   name: gpu-0-mig-1g.5gb-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2
@@ -1551,7 +1550,7 @@ devices:
   name: gpu-0-mig-1g.5gb-2
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-3
@@ -1564,7 +1563,7 @@ devices:
   name: gpu-0-mig-1g.5gb-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4
@@ -1577,7 +1576,7 @@ devices:
   name: gpu-0-mig-1g.5gb-4
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-5
@@ -1590,7 +1589,7 @@ devices:
   name: gpu-0-mig-1g.5gb-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6
@@ -1603,7 +1602,7 @@ devices:
   name: gpu-0-mig-1g.5gb-6
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0
@@ -1616,7 +1615,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-0
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-1
@@ -1629,7 +1628,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2
@@ -1642,7 +1641,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-2
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-3
@@ -1655,7 +1654,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4
@@ -1668,7 +1667,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-4
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-5
@@ -1681,7 +1680,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6
@@ -1694,7 +1693,7 @@ devices:
   name: gpu-0-mig-1g.5gb-me-6
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-1
@@ -1707,7 +1706,7 @@ devices:
   name: gpu-0-mig-2g.10gb-0-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2-3
@@ -1720,7 +1719,7 @@ devices:
   name: gpu-0-mig-2g.10gb-2-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-5
@@ -1733,7 +1732,7 @@ devices:
   name: gpu-0-mig-2g.10gb-4-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-3g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-3
@@ -1746,7 +1745,7 @@ devices:
   name: gpu-0-mig-3g.20gb-0-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-3g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-7
@@ -1759,7 +1758,7 @@ devices:
   name: gpu-0-mig-3g.20gb-4-7
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-4g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-3
@@ -1772,7 +1771,7 @@ devices:
   name: gpu-0-mig-4g.20gb-0-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-0-capacity-pool
+    - counterSet: gpu-0-counter-set
       includes:
       - name: common-mig-7g.40gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-7
@@ -1785,7 +1784,7 @@ devices:
   name: gpu-0-mig-7g.40gb-0-7
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-gpu-mock-nvidia-a100-sxm4-40gb-capacity-consumption
       - name: memory-slices-0-7
@@ -1798,7 +1797,7 @@ devices:
   name: gpu-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-1
@@ -1811,7 +1810,7 @@ devices:
   name: gpu-1-mig-1g.10gb-0-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2-3
@@ -1824,7 +1823,7 @@ devices:
   name: gpu-1-mig-1g.10gb-2-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-5
@@ -1837,7 +1836,7 @@ devices:
   name: gpu-1-mig-1g.10gb-4-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6-7
@@ -1850,7 +1849,7 @@ devices:
   name: gpu-1-mig-1g.10gb-6-7
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0
@@ -1863,7 +1862,7 @@ devices:
   name: gpu-1-mig-1g.5gb-0
 - composite:
     consumesCapacity:
-    - capacityPool: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-1
@@ -1876,7 +1875,7 @@ devices:
   name: gpu-1-mig-1g.5gb-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2
@@ -1889,7 +1888,7 @@ devices:
   name: gpu-1-mig-1g.5gb-2
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-3
@@ -1902,7 +1901,7 @@ devices:
   name: gpu-1-mig-1g.5gb-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4
@@ -1915,7 +1914,7 @@ devices:
   name: gpu-1-mig-1g.5gb-4
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-5
@@ -1928,7 +1927,7 @@ devices:
   name: gpu-1-mig-1g.5gb-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6
@@ -1941,7 +1940,7 @@ devices:
   name: gpu-1-mig-1g.5gb-6
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0
@@ -1954,7 +1953,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-0
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-1
@@ -1967,7 +1966,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2
@@ -1980,7 +1979,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-2
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-3
@@ -1993,7 +1992,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4
@@ -2006,7 +2005,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-4
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-5
@@ -2019,7 +2018,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-1g.5gb-me-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-6
@@ -2032,7 +2031,7 @@ devices:
   name: gpu-1-mig-1g.5gb-me-6
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-1
@@ -2045,7 +2044,7 @@ devices:
   name: gpu-1-mig-2g.10gb-0-1
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-2-3
@@ -2058,7 +2057,7 @@ devices:
   name: gpu-1-mig-2g.10gb-2-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-2g.10gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-5
@@ -2071,7 +2070,7 @@ devices:
   name: gpu-1-mig-2g.10gb-4-5
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-3g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-3
@@ -2084,7 +2083,7 @@ devices:
   name: gpu-1-mig-3g.20gb-0-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-3g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-4-7
@@ -2097,7 +2096,7 @@ devices:
   name: gpu-1-mig-3g.20gb-4-7
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-4g.20gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-3
@@ -2110,7 +2109,7 @@ devices:
   name: gpu-1-mig-4g.20gb-0-3
 - basic:
     consumesCounter:
-    - counterSet: gpu-1-capacity-pool
+    - counterSet: gpu-1-counter-set
       includes:
       - name: common-mig-7g.40gb-mock-nvidia-a100-sxm4-40gb
       - name: memory-slices-0-7
