@@ -447,7 +447,7 @@ rules:
 - apiGroups:
   - certificates.k8s.io
   resources:
-  - signer
+  - signers
   resourceNames:
   - example.com/my-signer
   verbs:
