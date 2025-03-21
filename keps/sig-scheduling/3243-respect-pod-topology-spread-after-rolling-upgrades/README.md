@@ -90,7 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Possible misuse](#possible-misuse)
     - [The update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
 - [Design Details](#design-details)
-  - [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path)
+  - [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -407,7 +407,7 @@ if it was already set in the persisted Pod object, otherwise new Pod with the fi
 creation will be rejected by kube-apiserver.
 Also kube-scheduler will ignore `matchLabelKeys` in the cluster-level default constraints configuration.
 
-### [v1.33] design change and a safe upgrade path
+### [v1.34] design change and a safe upgrade path
 Previously, kube-scheduler just internally handled `matchLabelKeys` before the calculation of scheduling results.
 But, we changed the implementation design to the current form to make the design align with PodAffinity's `matchLabelKeys`. 
 (See the detailed discussion in [the alternative section](#implement-matchlabelkeys-in-only-either-the-scheduler-plugin-or-kube-apiserver))
@@ -415,9 +415,9 @@ But, we changed the implementation design to the current form to make the design
 However, this implementation change could break `matchLabelKeys` of unscheduled pods created before the upgrade
 because kube-apiserver only handles `matchLabelKeys` at pods creation, that is,
 it doesn't handle `matchLabelKeys` at existing unscheduled pods.	
-So, for a safe upgrade path from v1.32 to v1.33, kube-scheduler would handle not only `matchLabelKeys` 
-from the default constraints, but also all incoming pods during v1.33. 
-We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.34 for efficiency, 
+So, for a safe upgrade path from v1.33 to v1.34, kube-scheduler would handle not only `matchLabelKeys` 
+from the default constraints, but also all incoming pods during v1.34. 
+We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.35 for efficiency, 
 assuming kube-apiserver handles `matchLabelKeys` of all incoming pods.
 
 ### Test Plan
@@ -619,8 +619,8 @@ enhancement:
 
 There's no version skew issue.
 
-We changed the implementation design between v1.33 and v1.34, but we designed the change not to involve any version skew issue
-as described at [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path).
+We changed the implementation design between v1.34 and v1.35, but we designed the change not to involve any version skew issue
+as described at [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path).
 
 ## Production Readiness Review Questionnaire
 
@@ -1086,7 +1086,7 @@ and scheduler plugin shouldn't have special treatment for any labels/fields.
 Technically, we can implement this feature within the PodTopologySpread plugin only;
 merging the key-value labels corresponding to `MatchLabelKeys` into `LabelSelector` internally 
 within the plugin before calculating the scheduling results.
-This is the actual implementation up to 1.32.
+This is the actual implementation up to 1.33.
 But, it may confuse users because this behavior would be different from PodAffinity's `MatchLabelKeys`.
 
 Also, we cannot implement this feature only within kube-apiserver because it'd make it
