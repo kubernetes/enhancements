@@ -90,7 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Possible misuse](#possible-misuse)
     - [The update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
 - [Design Details](#design-details)
-  - [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path)
+  - [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -401,13 +401,13 @@ kube-apiserver modifies the `labelSelector` like the following:
 In addition, kube-scheduler will handle `matchLabelKeys` within the cluster-level default constraints 
 in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
 
-Finally, the feature will be guarded by a new feature flag. If the feature is 
+Finally, the feature will be guarded by a new feature flag `MatchLabelKeysInPodTopologySpread`. If the feature is 
 disabled, the field `matchLabelKeys` and corresponding `labelSelector` are preserved 
 if it was already set in the persisted Pod object, otherwise new Pod with the field 
 creation will be rejected by kube-apiserver.
 Also kube-scheduler will ignore `matchLabelKeys` in the cluster-level default constraints configuration.
 
-### [v1.33] design change and a safe upgrade path
+### [v1.34] design change and a safe upgrade path
 Previously, kube-scheduler just internally handled `matchLabelKeys` before the calculation of scheduling results.
 But, we changed the implementation design to the current form to make the design align with PodAffinity's `matchLabelKeys`. 
 (See the detailed discussion in [the alternative section](#implement-matchlabelkeys-in-only-either-the-scheduler-plugin-or-kube-apiserver))
@@ -415,10 +415,13 @@ But, we changed the implementation design to the current form to make the design
 However, this implementation change could break `matchLabelKeys` of unscheduled pods created before the upgrade
 because kube-apiserver only handles `matchLabelKeys` at pods creation, that is,
 it doesn't handle `matchLabelKeys` at existing unscheduled pods.	
-So, for a safe upgrade path from v1.32 to v1.33, kube-scheduler would handle not only `matchLabelKeys` 
-from the default constraints, but also all incoming pods during v1.33. 
-We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.34 for efficiency, 
+So, for a safe upgrade path from v1.33 to v1.34, kube-scheduler would handle not only `matchLabelKeys` 
+from the default constraints, but also all incoming pods during v1.34. 
+We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.35 for efficiency, 
 assuming kube-apiserver handles `matchLabelKeys` of all incoming pods.
+
+This implementation change can be disabled by the `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag.
+(See more details in [Feature Enablement and Rollback](#feature-enablement-and-rollback))
 
 ### Test Plan
 
@@ -619,8 +622,8 @@ enhancement:
 
 There's no version skew issue.
 
-We changed the implementation design between v1.33 and v1.34, but we designed the change not to involve any version skew issue
-as described at [[v1.33] design change and a safe upgrade path](#v133-design-change-and-a-safe-upgrade-path).
+We changed the implementation design between v1.34 and v1.35, but we designed the change not to involve any version skew issue
+as described at [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path).
 
 ## Production Readiness Review Questionnaire
 
@@ -652,6 +655,15 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
+- `MatchLabelKeysInPodTopologySpread` feature flag will toggle enabling `MatchLabelKeys` in `TopologySpreadConstraint`.
+- `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag will toggle merging the key-value labels 
+  corresponding to `MatchLabelKeys` into `LabelSelector` of `TopologySpreadConstraint`.
+  This flag cannot be enabled on its own, and has to be enabled together with `MatchLabelKeysInPodTopologySpread`.
+
+The `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag has been added in v1.34 and enabled by default.
+This flag can be disabled to revert [the implementation design change in v1.34](#v134-design-change-and-a-safe-upgrade-path) 
+and go back to the previous behavior.
+
 ###### How can this feature be enabled / disabled in a live cluster?
 
 <!--
@@ -667,6 +679,9 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelKeysInPodTopologySpread`
   - Components depending on the feature gate: `kube-scheduler`, `kube-apiserver`
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `MatchLabelKeysInPodTopologySpreadSelectorMerge`
+  - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1086,7 +1101,7 @@ and scheduler plugin shouldn't have special treatment for any labels/fields.
 Technically, we can implement this feature within the PodTopologySpread plugin only;
 merging the key-value labels corresponding to `MatchLabelKeys` into `LabelSelector` internally 
 within the plugin before calculating the scheduling results.
-This is the actual implementation up to 1.32.
+This is the actual implementation up to 1.33.
 But, it may confuse users because this behavior would be different from PodAffinity's `MatchLabelKeys`.
 
 Also, we cannot implement this feature only within kube-apiserver because it'd make it
