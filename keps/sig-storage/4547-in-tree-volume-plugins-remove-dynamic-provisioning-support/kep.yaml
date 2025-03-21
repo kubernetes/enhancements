@@ -1,0 +1,38 @@
+title: In-tree volume plugins remove dynamic provisioning support
+kep-number: TBD
+authors:
+  - "@carlory"
+owning-sig: sig-storage
+participating-sigs:
+status: provisional
+creation-date: 2024-03-14
+reviewers:
+  - "@xing-yang"
+approvers:
+  - "@xing-yang"
+
+see-also:
+  - "/keps/sig-storage/625-csi-migration"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.31"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.31"
+  beta: TBD
+  stable: TBD
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
