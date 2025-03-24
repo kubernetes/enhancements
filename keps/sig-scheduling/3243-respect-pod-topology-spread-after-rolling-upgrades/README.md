@@ -420,7 +420,8 @@ from the default constraints, but also all incoming pods during v1.34.
 We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.35 for efficiency, 
 assuming kube-apiserver handles `matchLabelKeys` of all incoming pods.
 
-This implementation change can be disabled by the `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag.
+Also, in case of bugs in this new design, users can disable this feature through a new feature flag, 
+`MatchLabelKeysInPodTopologySpreadSelectorMerge` (enabled by default).
 (See more details in [Feature Enablement and Rollback](#feature-enablement-and-rollback))
 
 ### Test Plan
@@ -655,14 +656,18 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
-- `MatchLabelKeysInPodTopologySpread` feature flag will toggle enabling `MatchLabelKeys` in `TopologySpreadConstraint`.
-- `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag will toggle merging the key-value labels 
-  corresponding to `MatchLabelKeys` into `LabelSelector` of `TopologySpreadConstraint`.
-  This flag cannot be enabled on its own, and has to be enabled together with `MatchLabelKeysInPodTopologySpread`.
+- `MatchLabelKeysInPodTopologySpread` feature flag enables the `MatchLabelKeys` feature in `TopologySpreadConstraint`.
+- `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag enables the new design described at 
+   [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path). 
+  - If `MatchLabelKeysInPodTopologySpreadSelectorMerge` is disabled while `MatchLabelKeysInPodTopologySpread` is enabled, 
+    Kubernetes handles `MatchLabelKeys` with the classic design, kube-scheduler handles it. 
+    However, that's basically not recommended unless you encounter a bug in a new design behavior.
+  - This flag cannot be enabled on its own, and has to be enabled together with `MatchLabelKeysInPodTopologySpread`. 
+    Enabling `MatchLabelKeysInPodTopologySpreadSelectorMerge` alone has no effect, and `matchLabelKeys` will be ignored.
 
 The `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag has been added in v1.34 and enabled by default.
 This flag can be disabled to revert [the implementation design change in v1.34](#v134-design-change-and-a-safe-upgrade-path) 
-and go back to the previous behavior.
+and go back to the previous behavior in case of bug.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
