@@ -260,15 +260,18 @@ It will be replaced by:
 + if (1.0-downTolerance) <= usageRatio && usageRatio <= (1.0+upTolerance) { /* ... */ }
 ```
 
-Since the added field is optional and it's omission results in no change to the existing
-autoscaling behavior, this feature can be added to the current API
-version `pkg/apis/autoscaling/v2`.
+Since the added field is optional and its omission does not change the existing
+autoscaling behavior, this feature will only be added to the latest stable API
+version `pkg/apis/autoscaling/v2`. Older versions (i.e. `v1`, `v2beta1`,
+`v2beta2`) will not include the new field, but converters will be updated where
+needed to comply with [round-trip requirements][].
 
 The feature presented in this KEP only allows users to tune an existing parameter, and
 as such doesn't require any new HPA Events or modify any Status. The validation logic
 will be updated to ensure that the `tolerance` field cannot be set to a negative value.
 
 [replica_calculator.go]: https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/replica_calculator.go
+[round-trip requirements]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-parts-of-the-api
 
 ### Test Plan
 
