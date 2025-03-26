@@ -413,24 +413,24 @@ If a BucketClaim is in deleting state, no new BucketAccesses can be created for 
 3. COSI Sidecar detects the BucketAccess resource
    1. Initially, corresponding Bucket in BucketAccess status is unknown, so sidecar exits with no action
 4. COSI Controller detects the BucketAccess resource
-   1. Controller looks up corresponding BucketClaim
-   2. If BucketClaim is being deleted, error without retry
+   1. Controller looks up corresponding BucketClaim(s)
+   2. If any BucketClaim is being deleted, error without retry
    3. Controller sets `objectstorage.k8s.io/bucketaccess-protection` finalizer on BucketAccess
-   4. Controller sets `objectstorage.k8s.io/has-bucketaccess-references` annotation on corresponding BucketClaim
+   4. Controller sets `objectstorage.k8s.io/has-bucketaccess-references` annotation on corresponding BucketClaim(s)
       (block claim from being deleted until access is deleted)
-   5. If BucketClaim not ready, exit with retry
-   6. If Bucket-BucketClaim binding is not valid, exit and retry when Bucket/Claim updated
-   7. Once everything looks good on Bucket+Claim:
-      1. Set corresponding Bucket name on BucketAccess status
+   5. If BucketClaim(s) not ready, exit with retry
+   6. If any Bucket-BucketClaim binding is not valid, exit and retry when Bucket/Claim updated
+   7. Once everything looks good on Bucket+Claim(s):
+      1. Set corresponding Bucket references on BucketAccess status
       2. Copy BucketAccessClass specs and parameters to BucketAccess status
-5. COSI Sidecar detects the BucketAccess resource
-   1. BucketAccess status now shows corresponding Bucket name and BucketAccessClass info, so sidecar can provision
+5. COSI Sidecar detects the BucketAccess resource update
+   1. BucketAccess status now shows corresponding Bucket(s) BucketAccessClass info, so sidecar can provision
    2. If the BucketAccess's driver matches the sidecar's driver, continue
    3. Sidecar applies `objectstorage.k8s.io/bucketaccess-protection` finalizer to the BucketAccess if needed
-   4. Sidecar looks up the Bucket to get necessary info
-   5. If Bucket has `objectstorage.k8.io/bucketclaim-being-deleted` annotation or deletion timestamp, error without retry
-      (this indicates the claim is being deleted, possibly race condition missed in Controller)
-   6. Sidecar calls the COSI driver via gRPC to generate unique access credentials for the Bucket
+   4. Sidecar looks up the Bucket(s) to get necessary info
+   5. If any Bucket has `objectstorage.k8.io/bucketclaim-being-deleted` annotation or deletion timestamp, error without retry
+      (this indicates one or more claims are being deleted, possibly race condition missed in Controller)
+   6. Sidecar calls the COSI driver via gRPC to generate unique access credentials for the Bucket(s)
    7. If OSP returns provision fail, Sidecar reports error to BucketAccess status and retries gRPC call
    8. When OSP returns provision success, COSI sidecar:
       1. Applies `objectstorage.k8s.io/bucketaccess-protection` finalizer to the Secret
@@ -473,8 +473,6 @@ The BucketAccess secret can be provided to the pod using any Kubernetes {Secret 
 This section describes the current design for sharing buckets with other namespaces. As of COSI v1alpha2, any BucketClaims created in one namespace cannot be accessed in another namespace. I.e. no bucket sharing is possible. In future versions, a namespace-level access control will be enforced, and Buckets will be constrained to particular namespaces using selectors. Admins will be able to control which namespaces can access which buckets using namespace selectors.
 
 ### COSI API Reference
-
-<!-- TODO: clarify how to reuse access for multiple buckets -->
 
 #### Annotations and finalizers
 
@@ -641,14 +639,39 @@ COSI end Users should generally expect that BucketAccess-BucketClaim pairings sh
 COSI does not support static provisioning for BucketAccesses. Portability is still maintained because object storage accesses do not hold critical application data. Any BucketClaim can have a new, valid BucketAccess created for it at any time to provide access to the data. Because of this, it follows that it is possible to reclaim access to a Bucket that was ported without need for static access provisioning.
 
 ```go
+// BucketAccessMode is the read/write mode a BucketAccess should have for a BucketClaim
+// Supported values:
+// - ReadWrite - read and write access allowed
+// - WriteOnly - only write access allowed
+// - ReadOnly - only read access allowed
+BucketAccessMode string
+
+BucketClaimReference {
+  // The name of the BucketClaim this BucketAccess should have permissions for.
+  // The BucketClaim must be in the same namespace as the BucketAccess.
+  BucketClaimName string
+
+  // AccessMode is the Read/Write access mode that this BucketAccess should have for the BucketClaim
+  AccessMode BucketAccessMode
+}
+
+BucketReference {
+  // The name of the Bucket this BucketAccess should have permissions for.
+  BucketName string
+
+  // AccessMode is the Read/Write access mode that this BucketAccess should have for the Bucket.
+  AccessMode BucketAccessMode
+}
+
 BucketAccess {
   TypeMeta
   ObjectMeta
 
   Spec BucketAccessSpec {
-    // BucketClaimName is the name of the BucketClaim.
+    // BucketClaims is the list of BucketClaims this access should have permissions for.
+    // Multiple references to the same BucketClaim are not permitted.
     // +required
-    BucketClaimName string
+    BucketClaims []BucketClaimReference
 
     // BucketAccessClassName is the name of the BucketAccessClass.
     // +required
@@ -673,11 +696,10 @@ BucketAccess {
     // sidecar once access has been successfully granted.
     AccountID string
 
-    // AccessedBucketName is the name of the Bucket resource that the access corresponds to. This is
-    // filled in by the Controller based on the BucketClaim so that the Sidecar knows what Bucket
-    // to allow access to for this BucketAccess.
-    // TODO: will have to update this to a list when 1-access:many-buckets support is added
-    AccessedBucketName string
+    // AccessedBuckets is the list of Buckets the access corresponds to, each with its related
+    // access mode. This is filled in by the Controller based on the BucketClaim so that the Sidecar
+    // knows what Buckets to allow access to for this BucketAccess.
+    AccessedBuckets []BucketReference
 
     // DriverName holds a copy of the BucketAccessClass driver name at the time of BucketAccess
     // provisioning. This is kept to ensure the BucketAccess can be modified/deleted even after
@@ -698,6 +720,8 @@ BucketAccess {
 The `credentialsSecretName` is the name of the Kubernetes Secret that COSI will generate containing endpoint, credentials, and other information needed to access the OSP bucket. The same Secret can be referenced by Pods to access the OSP bucket.
 
 A User or Administrator who needs to make modifications to an OSP access underlying a BucketAccess likely needs to do so because the OSP driver is missing features for managing a desired configuration and not because static access provisioning is intrinsically necessary. Static BucketAccess provisioning would be possible to implement, but doing so would be complicated. COSI, OSP drivers, Admins, and/or Users could (and probably would) each have different expectations and desires about how to handle corner cases in static access policies, and COSI couldn't reasonably enforce consistent handling of those expectations. Design and dev work would be large, and risk for bugs would be high. Because of this COSI design decision, some Admins will undoubtedly make modifications to OSP accesses using manual OSP access tools. These manual modifications will be done at the Admin's risk. The OSP driver is not guaranteed to preserve such modifications, and the OSP driver may get stuck in a position where it doesn't know how to continue managing the BucketAccess.
+
+In the future, [sharing buckets](#sharing-buckets) across namespaces can be allowed by adding a namespace field to BucketClaimReference.
 
 #### BucketAccessClass
 
@@ -882,7 +906,14 @@ DriverGrantBucketAccess(DriverGrantBucketAccessRequest) DriverGrantBucketAccessR
 
 DriverGrantBucketAccessRequest{
   "bucketID": "<Bucket.status.bucketID>", // e.g., "ba-<BucketClaim.UID>", "my-static-bucket"
-  "accountName": "ba-<BucketAccess.UID>"
+  "buckets": [
+    {
+      "bucketID": "<Bucket.status.bucketID>", // e.g., "ba-<BucketClaim.UID>", "my-static-bucket"
+      "accessMode": "<accessMode>", // ReadWrite, ReadOnly, WriteOnly
+    },
+    // optional additional buckets the access should have permissions for
+  ],
+  "accountName": "ba-<BucketAccess.UID>",
   "protocol": "<protocol>", // e.g., "S3", copied from BucketAccess.spec.protocol
   "parameters": { // copied from BucketAccess.status.parameters
       "key": "value",
