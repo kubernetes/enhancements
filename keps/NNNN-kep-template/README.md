@@ -44,6 +44,10 @@ When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
 focused. If you disagree with what is already in a document, open a new PR
 with suggested changes.
 
+Wrap long lines instead of using one line per paragraph. When updating, change
+as few lines as possible. This helps with anchoring review comments.
+Semantic line breaks (https://sembr.org/) are useful.
+
 One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
 You do not need a new KEP to move from beta to GA, for example. If
 new details emerge that belong in the KEP, edit the KEP. Once a feature has become
