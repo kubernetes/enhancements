@@ -372,7 +372,7 @@ spec:
 
 #### Administrator Quota Restrictions
 
-A cluster admin wants to control costs while giving application developers the freedom to optimize their applications. They set a per VolumeAttributesClass limit to the maximum count of PVCs that can be specified in a cluster ResourceQuota. When an application dev modifies a PVC to request a higher tier of VolumeAttributesClass but there is no quota, the request is rejected. As the ResourceQuota is a cluster-scoped object, only the cluster admin and not application devs can change limits.
+A cluster admin wants to control costs while giving application developers the freedom to optimize their applications. They set a per VolumeAttributesClass limit to the maximum count of PVCs that can be specified in a cluster ResourceQuota. When an application dev modifies a PVC to request a higher tier of VolumeAttributesClass but there is no quota, the request is rejected. As the ResourceQuota is a namespaced object, only the cluster admin and not application devs can change limits.
 
 An example of defining ResourceQuota with [Scope](https://kubernetes.io/docs/concepts/policy/resource-quotas/#quota-scopes) for VolumeAttributesClass:
 
@@ -383,6 +383,7 @@ metadata:
   name: gold-pvcs
 spec:
   hard:
+    requests.storage: "10Gi"
     count/persistentvolumeclaims: "10"
   scopeSelector:
     matchExpressions:
@@ -391,7 +392,7 @@ spec:
       values: ["gold"]
 ```
 
-The VolumeAttributesClass scope restricts a quota to track the following resource: PVCs in a VolumeAttributesClass. We are calculating spec.volumeAttributesClass, status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName with support of matchExpressions(In, NotIn, Exists, DoesNotExist).
+The VolumeAttributesClass scope restricts a quota to track the following resource: PVCs in a VolumeAttributesClass and capacity. We are calculating spec.volumeAttributesClass, status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName with support of matchExpressions(In, NotIn, Exists, DoesNotExist).
 
 Note: 
 1. The quota check is only happening at the spec.volumeAttributesClass update. Thus quota check will NOT block status(status.currentVolumeAttributesClass and status.modifyVolumeStatus.targetVolumeAttributesClassName) update in external-resizer.
