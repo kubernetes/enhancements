@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
@@ -115,7 +114,7 @@ func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	)
 
 	if writeErr := ioutil.WriteFile(newPath, template, os.ModePerm); writeErr != nil {
-		return errors.Wrapf(writeErr, "writing KEP data to file")
+		return fmt.Errorf("writing KEP data to file: %w", writeErr)
 	}
 
 	return nil

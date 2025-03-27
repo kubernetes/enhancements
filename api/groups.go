@@ -18,13 +18,12 @@ package api
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
 	"sort"
-
-	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/pkg/yaml"
 )
@@ -92,18 +91,13 @@ var _ GroupFetcher = &RemoteGroupFetcher{}
 func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
 	resp, err := http.Get(f.GroupsListURL)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching SIG list")
+		return nil, fmt.Errorf("fetching SIG list: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(
-			fmt.Sprintf(
-				"invalid status code when fetching SIG list: %d",
-				resp.StatusCode,
-			),
-		)
+		return nil, fmt.Errorf("invalid status code when fetching SIG list: %d", resp.StatusCode)
 	}
 
 	re := regexp.MustCompile(`- dir: (.*)$`)
@@ -118,7 +112,7 @@ func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, errors.Wrap(err, "scanning SIG list")
+		return nil, fmt.Errorf("scanning SIG list: %w", err)
 	}
 
 	sort.Strings(result)
@@ -130,23 +124,18 @@ func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
 func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 	resp, err := http.Get(f.OwnersAliasesURL)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching owners aliases")
+		return nil, fmt.Errorf("fetching owners aliases: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(
-			fmt.Sprintf(
-				"invalid status code when fetching owners aliases: %d",
-				resp.StatusCode,
-			),
-		)
+		return nil, fmt.Errorf("invalid status code when fetching owners aliases: %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "reading owners aliases")
+		return nil, fmt.Errorf("reading owners aliases: %w", err)
 	}
 
 	config := &struct {
@@ -154,7 +143,7 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 	}{}
 
 	if err := yaml.UnmarshalStrict(body, config); err != nil {
-		return nil, errors.Wrap(err, "unmarshalling owners aliases")
+		return nil, fmt.Errorf("unmarshalling owners aliases: %w", err)
 	}
 
 	var result []string

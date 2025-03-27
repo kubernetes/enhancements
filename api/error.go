@@ -17,7 +17,7 @@ limitations under the License.
 package api
 
 import (
-	"github.com/pkg/errors"
+	"errors"
 )
 
 var (

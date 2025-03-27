@@ -17,11 +17,11 @@ limitations under the License.
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/pkg/kepval"
@@ -87,7 +87,7 @@ func (r *Repo) Validate() (
 
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
-		return warnings, valErrMap, errors.Wrap(err, "walking repository")
+		return warnings, valErrMap, fmt.Errorf("walking repository: %w", err)
 	}
 
 	if len(files) == 0 {
@@ -130,7 +130,7 @@ func (e fatalValidationError) Unwrap() error { return e.Err }
 func validateFile(r *Repo, prrDir, filename string) error {
 	kepFile, err := os.Open(filename)
 	if err != nil {
-		return &fatalValidationError{Err: errors.Wrapf(err, "could not open file %s", filename)}
+		return &fatalValidationError{Err: fmt.Errorf("could not open file %s: %w", filename, err)}
 	}
 	defer kepFile.Close()
 
@@ -138,14 +138,14 @@ func validateFile(r *Repo, prrDir, filename string) error {
 	kepHandler, prrHandler := r.KEPHandler, r.PRRHandler
 	kep, kepParseErr := kepHandler.Parse(kepFile)
 	if kepParseErr != nil {
-		return errors.Wrap(kepParseErr, "parsing KEP file")
+		return fmt.Errorf("parsing KEP file: %w", kepParseErr)
 	}
 	kep.Filename = filename
 
 	// TODO: This shouldn't be required once we push the errors into the
 	//       parser struct
 	if kep.Error != nil {
-		return &fatalValidationError{Err: errors.Wrapf(kep.Error, "%v has an error", filename)}
+		return &fatalValidationError{Err: fmt.Errorf("%v has an error: %w", filename, kep.Error)}
 	}
 
 	return kepval.ValidatePRR(kep, prrHandler, prrDir)

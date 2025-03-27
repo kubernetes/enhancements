@@ -25,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/pkg/yaml"
 )
@@ -177,7 +176,7 @@ func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return kep, errors.Wrap(err, "reading file")
+		return kep, fmt.Errorf("reading file: %w", err)
 	}
 
 	// this file is just the KEP metadata
@@ -187,8 +186,8 @@ func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
 	}
 
 	if err := yaml.UnmarshalStrict(metadata, &kep); err != nil {
-		k.Errors = append(k.Errors, errors.Wrap(err, "error unmarshalling YAML"))
-		return kep, errors.Wrap(err, "unmarshalling YAML")
+		k.Errors = append(k.Errors, fmt.Errorf("error unmarshalling YAML: %w", err))
+		return kep, fmt.Errorf("unmarshalling YAML: %w", err)
 	}
 
 	if err := k.validateStruct(kep); err != nil {

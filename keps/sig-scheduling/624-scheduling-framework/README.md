@@ -588,7 +588,7 @@ func NewServiceAffinity(args *runtime.Unknown, h FrameworkHandle) (Plugin, error
         LabelName, LabelValue string
     }
     if err := json.Unmarshal(args.Raw, &config); err != nil {
-        return nil, errors.Wrap(err, "could not parse args")
+        return nil, fmt.Errorf("could not parse args: %w", err)
     }
     //...
 }

@@ -17,13 +17,13 @@ limitations under the License.
 package kepval
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/blang/semver/v4"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
@@ -32,7 +32,7 @@ import (
 func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	requiredPRRApproval, err := isPRRRequired(kep)
 	if err != nil {
-		return errors.Wrap(err, "checking if PRR is required")
+		return fmt.Errorf("checking if PRR is required: %w", err)
 	}
 
 	if !requiredPRRApproval {
@@ -55,24 +55,24 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	}
 
 	if err != nil {
-		return errors.Wrapf(err, "could not open file %s", prrFilepath)
+		return fmt.Errorf("could not open file %s: %w", prrFilepath, err)
 	}
 
 	// TODO: Create a context to hold the parsers
 	prr, prrParseErr := h.Parse(prrFile)
 	if prrParseErr != nil {
-		return errors.Wrap(prrParseErr, "parsing PRR approval file")
+		return fmt.Errorf("parsing PRR approval file: %w", prrParseErr)
 	}
 
 	// TODO: This shouldn't be required once we push the errors into the
 	//       parser struct
 	if prr.Error != nil {
-		return errors.Wrapf(prr.Error, "%v has an error", prrFilepath)
+		return fmt.Errorf("%v has an error: %w", prrFilepath, prr.Error)
 	}
 
 	stagePRRApprover, err := prr.ApproverForStage(kep.Stage)
 	if err != nil {
-		return errors.Wrapf(err, "getting PRR approver for %s stage", kep.Stage)
+		return fmt.Errorf("getting PRR approver for %s stage: %w", kep.Stage, err)
 	}
 
 	if stagePRRApprover == "" {
@@ -85,13 +85,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 
 	validApprover := api.IsOneOf(stagePRRApprover, h.PRRApprovers)
 	if !validApprover {
-		return errors.New(
-			fmt.Sprintf(
-				"this contributor (%s) is not a PRR approver (%v)",
-				stagePRRApprover,
-				h.PRRApprovers,
-			),
-		)
+		return fmt.Errorf("this contributor (%s) is not a PRR approver (%v)", stagePRRApprover, h.PRRApprovers)
 	}
 
 	return nil
@@ -116,12 +110,12 @@ func isPRRRequired(kep *api.Proposal) (required bool, err error) {
 	// TODO: Consider making this a function
 	prrRequiredAtSemVer, err := semver.ParseTolerant("v1.21")
 	if err != nil {
-		return required, errors.Wrap(err, "creating a SemVer object for PRRs")
+		return required, fmt.Errorf("creating a SemVer object for PRRs: %w", err)
 	}
 
 	latestSemVer, err := semver.ParseTolerant(kep.LatestMilestone)
 	if err != nil {
-		return required, errors.Wrap(err, "creating a SemVer object for latest milestone")
+		return required, fmt.Errorf("creating a SemVer object for latest milestone: %w", err)
 	}
 
 	if latestSemVer.LT(prrRequiredAtSemVer) {
