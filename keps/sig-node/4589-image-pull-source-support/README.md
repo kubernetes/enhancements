@@ -154,7 +154,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The proposal aims to address the challenge of verifying which registry an image is being pulled from when deploying applications in private Kubernetes clusters having image mirrors configured. Currently, users have to manually check the runtime logs to determine which registry was being used, but this approach can be time-consuming and error-prone. The proposed solution seeks to provide transparency by adding a new field or update existing field in the pod resource that indicates whether the image was pulled from a public or mirrored registry. This would help users to better manage their applications' dependencies, troubleshoot issues related to image availability, and ensure compliance with organizational security policies.
+The proposal aims to address the challenge of verifying which registry an image is being pulled from when deploying applications in Kubernetes having multiple image mirrors configured. Currently, users have to manually check the runtime logs to determine which registry was being used, but this approach can be time-consuming and error-prone. The proposed solution seeks to provide transparency by adding a new field in the container status as well as in the image inspect section which provides the details of the registry from where the image is pulled. This would help users to better manage their applications' dependencies, troubleshoot issues related to image availability, and ensure compliance with organization security policies.
 
 ## Motivation
 
@@ -162,13 +162,13 @@ As the Kubernetes is evolving in the cloud sector and users are willing to have 
 
 ### Goals
 
-* Pod describe should show the correct registry details which the runtime has pulled.
-* Crictl should list the correct registry details which the runtime has pulled.
-* For a specific image, there can be multiple mirrors configured and based on which image the runtime pulls, the same has to be shown in the above 2 points.
+* Container Status section should show the actual pull source of the image
+* Inspecting Container Image using cri-tools should show the actual pull source of the image
 
 ### Non-Goals
 
 * Not concerned about the image field in the container spec which may or may not be the same as the one being pulled by runtime.
+* Not concerned about the mirrors which are configured only for digest pulls.
 
 ## Proposal
 
@@ -180,7 +180,9 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-This KEP aims to provide the exact registry details of a container image in the pod status and in the crictl image list, pulled by the runtime when multiple mirrors are configured.
+This KEP aims to introduce a new field in the Container Status as well as in the Container Image resections, inorder to provide the exact registry details of a image pulled by the runtime irrespective of the mirroring configuration. 
+* When no mirrors are configured, the registry details in the new field should be same as the one mentioned in the container spec section
+* When mirrors are configured, the image source details in the new field should be the one runtime used to pull that image.
 
 ### User Stories (Optional)
 
@@ -203,6 +205,14 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+* When the imagePullPolicy is set to "Always" and when there are more than one 
+  mirrors configured for that image, the kubelet queries the container image registry 
+  to resolve the name to an image digest. If the kubelet has a container image with that exact 
+  digest cached locally, the kubelet uses its cached image and in this case, it is possible that 
+  the image digest might have been pulled from different source but the imagePullSource 
+  would still be pointing to an existing pulled source.
+* If the image is pulled outside of Kubernetes ecosystem, the imageSource field won't be set 
+  in the Image status. Hence its not possible to find the pull source of that image.
 
 ### Risks and Mitigations
 
@@ -217,6 +227,7 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+Not applicable for this KEP
 
 ## Design Details
 
@@ -226,6 +237,148 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+Inorder to achieve the goals of this KEP, a new field needs to be added in the Container Status & Container Image sections which the kubectl & the cri-tools should be able to display these new fields when prompted. 
+
+Changes required in cri-api
+
+```
+message ContainerStatus {
+  ...
+  ...
+  // Actual source of the pulled image by runtime
+  string image_pull_source = x;
+}
+
+message Image {
+  ...
+  ...
+  // Actual source of the pulled image by runtime
+  string pull_source = x;
+}
+```
+
+Changes required in Container Runtimes
+* Runtime shoult store the actual pull source of the image information in its internal store to persist reboots.
+* Runtime should return the image pull source in the ImageStatusResponse of ImageStatus CRI.
+* Runtime should return the image pull source in the ContainerStatusResponse of ContainerStatus CRI.
+
+Changes required in Kubelet
+* Add a new field in the Status struct to display the image pull source
+  ```
+  type Status struct {
+    ...
+    ...
+    // Image Pull Source
+    ImagePullSource string
+    ...
+  }
+  ```
+  * Update the ImagePullSource while translating the values from ContainerStatus to Status struct
+  ```
+  func toKubeContainerStatus(status *runtimeapi.ContainerStatus, runtimeName string) *kubecontainer.Status {
+    ...
+    ...
+    cStatus := &kubecontainer.Status{
+      ...
+      ...
+		  ImagePullSource:     status.ImagePullSource,
+      ...
+    }
+    ...
+    return cStatus
+  }
+  ```
+
+Changes required in cri-tools
+* Update the cri-api go dependencies & vendors
+
+Changes required in kubectl
+* Update the cri-api go dependencies & vendors
+
+### POC
+* https://github.com/kubernetes/kubernetes/pull/131158
+* https://github.com/cri-o/cri-o/pull/9098
+
+```
+# crictl inspect <container>
+  "status": {
+    "annotations": {
+      "pod": "podsandbox"
+    },
+    "createdAt": "2025-04-03T06:06:14.608836Z",
+    "exitCode": 0,
+    "finishedAt": "0001-01-01T00:00:00Z",
+    "id": "8faef03b64eb64292fe47fe9e3edaf678e1558cba224e1235c75cb66d849010e",
+    "image": {
+      "annotations": {},
+      "image": "registry.fedoraproject.org/fedora:40",
+      "runtimeHandler": "",
+      "userSpecifiedImage": ""
+    },
+    "imageId": "6bbc4f22ddd87449bbe5585d55bd00fae8dd266785ff9b3dd38f481e51c8921f",
+    "imagePullSource": "registry.fedoraproject.org/fedora-minimal:40",
+    "imageRef": "registry.fedoraproject.org/fedora@sha256:38f45f977e83faf99fec515f906d60279dd4c9f82b58e9d2cb1e7a16e8f84cc7",
+    "labels": {},
+    "logPath": "/var/log/crio/pods/2bb1c798c22e096a1fa488f857792a949e8f30edbcdb8e25837ce2b2663746dd/8faef03b64eb64292fe47fe9e3edaf678e1558cba224e1235c75cb66d849010e.log",
+    "message": "",
+    "metadata": {
+      "attempt": 0,
+      "name": "podsandbox-sleep"
+    },
+    "mounts": [],
+    "reason": "",
+    "resources": {
+      "linux": {
+        "cpuPeriod": "10000",
+        "cpuQuota": "20000",
+        "cpuShares": "512",
+        "cpusetCpus": "",
+        "cpusetMems": "",
+        "hugepageLimits": [],
+        "memoryLimitInBytes": "268435456",
+        "memorySwapLimitInBytes": "268435456",
+        "oomScoreAdj": "30",
+        "unified": {}
+      }
+    },
+    "startedAt": "2025-04-03T06:06:14.621803632Z",
+    "state": "CONTAINER_RUNNING",
+    "user": {
+      "linux": {
+        "gid": "0",
+        "supplementalGroups": [
+          "0"
+        ],
+        "uid": "0"
+      }
+    }
+  }
+
+# crictl inspecti <image-id>
+  "status": {
+    "id": "6bbc4f22ddd87449bbe5585d55bd00fae8dd266785ff9b3dd38f481e51c8921f",
+    "pinned": false,
+    "pullSource": "registry.fedoraproject.org/fedora-minimal:40",
+    "repoDigests": [
+      "registry.fedoraproject.org/fedora@sha256:38f45f977e83faf99fec515f906d60279dd4c9f82b58e9d2cb1e7a16e8f84cc7",
+      "registry.fedoraproject.org/fedora@sha256:a60f1599fdb3b86255a11c66b81d894d4d5fe81c161e032b8ab658b258feadd2"
+    ],
+    "repoTags": [
+      "registry.fedoraproject.org/fedora:40"
+    ],
+    "size": "169342689",
+    "spec": {
+      "annotations": {
+        "org.opencontainers.image.base.digest": "",
+        "org.opencontainers.image.base.name": ""
+      },
+      "image": "",
+      "runtimeHandler": "",
+      "userSpecifiedImage": ""
+    },
+    "username": ""
+  }
+```
 
 ### Test Plan
 
@@ -240,7 +393,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -272,7 +425,39 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+Without mirror configuration
+* Create a pod with container having the image with a specific tag and verify the value 
+  of imagePullSource field in the Status section is same as the one mentioned in the 
+  container spec.
+* Create a pod with container having the image with digest and verify the value 
+  of imagePullSource field in the Status section is same as the one mentioned in the 
+  container spec.
+
+With mirror configuration
+* Create a pod with container having the image with a specific tag and verify the value 
+  of "imagePullSource" field in the "Status" section is same as the one configured in 
+  the registries.conf when the "pull-from-mirror" is set to "all"
+* Create a pod with container having the image with a specific tag and verify the value 
+  of "imagePullSource" field in the "Status" section is same as the one configured in 
+  the registries.conf when the "pull-from-mirror" is set to "tag-only"
+* Create a pod with container having the image with digest and verify the value 
+  of "imagePullSource" field in the "Status" section is same as the one configured in 
+  the registries.conf when the "pull-from-mirror" is set to "all"
+* Create a pod with contatiner having the image with digest and verify the value 
+  of the "imagePullSource" in the "Status" section is same as the one mentioned 
+  in the container spec, when the "pull-from-mirror" is set to "digest-only" for that 
+  mirror in the registries.conf
+* Create a pod with contatiner having the image with a specific tag and verify the value 
+  of the "imagePullSource" in the "Status" section is same as the one mentioned 
+  in the container spec, when the "pull-from-mirror" is set to "digest-only" for that 
+  mirror in the registries.conf
+* Create a pod with contatiner having the image with digest and verify the value 
+  of the "imagePullSource" in the "Status" section is same as the one mentioned 
+  in the container spec, when the "pull-from-mirror" is set to "tag-only" for that 
+  mirror in the registries.conf
+
+Repeat the above tests and verify the "pullSource" field in the "Status" section of Image 
+using "crictl inspecti <imageid>" command.
 
 ##### Integration tests
 
@@ -399,6 +584,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+Eventhough the new field is optional, it is recommended to update the Container Runtimes before 
+updating the Kubelet.
 
 ## Production Readiness Review Questionnaire
 
@@ -441,16 +628,7 @@ well as the [existing list] of feature gates.
 [feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+Not applicable for this KEP
 
 ###### Does enabling the feature change any default behavior?
 
@@ -458,6 +636,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+Not applicable for this KEP
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -471,8 +650,11 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Not applicable for this KEP
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Not applicable for this KEP
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -488,6 +670,7 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+Not applicable for this KEP
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -506,6 +689,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+Not applicable for this KEP
 
 ###### What specific metrics should inform a rollback?
 
@@ -513,6 +697,7 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+Not applicable for this KEP
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -521,12 +706,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Not applicable for this KEP
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+Not applicable for this KEP
 
 ### Monitoring Requirements
 
@@ -536,6 +723,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+Not applicable for this KEP
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -544,6 +732,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Not applicable for this KEP
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -555,14 +744,10 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Container.Status
+  - imagepullsource: registry.k8s.io/image:tag
+- [x] Image.Status
+  - pullsource: registry.k8s.io/image:tag
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -580,19 +765,14 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+Not applicable for this KEP
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+Not applicable for this KEP
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -600,6 +780,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Not applicable for this KEP
 
 ### Dependencies
 
@@ -623,6 +804,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+Not applicable for this KEP
 
 ### Scalability
 
@@ -650,6 +832,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -659,6 +842,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -667,6 +851,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -676,6 +861,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+  - API type(s): ContainerStatus, Image
+  - Estimated increase in size: 
+  - Estimated amount of new objects: Not applicable
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -687,6 +875,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -699,6 +888,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -711,6 +901,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No
 
 ### Troubleshooting
 
@@ -726,6 +917,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+Not applicable for this KEP
 
 ###### What are other known failure modes?
 
@@ -741,6 +933,7 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+Not applicable for this KEP
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -762,6 +955,7 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+Not applicable for this KEP
 
 ## Alternatives
 
@@ -770,6 +964,7 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+Not applicable for this KEP
 
 ## Infrastructure Needed (Optional)
 
@@ -778,3 +973,4 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+Not applicable for this KEP
