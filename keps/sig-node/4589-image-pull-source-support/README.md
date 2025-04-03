@@ -273,7 +273,7 @@ Changes required in Kubelet
     ...
   }
   ```
-  * Update the ImagePullSource while translating the values from ContainerStatus to Status struct
+* Update the ImagePullSource while translating the values from ContainerStatus to Status struct
   ```
   func toKubeContainerStatus(status *runtimeapi.ContainerStatus, runtimeName string) *kubecontainer.Status {
     ...
@@ -476,8 +476,6 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
-
 ##### e2e tests
 
 <!--
@@ -489,8 +487,6 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-
-- <test>: <link to test coverage>
 
 ### Graduation Criteria
 
