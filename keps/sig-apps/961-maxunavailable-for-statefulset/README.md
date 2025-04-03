@@ -365,7 +365,7 @@ For PMP=Parallel, we will use Choice 2.
 For PMP=OrderedReady, the plan for alpha was to go with Choice 3 to ensure we can support ordering guarantees while also
 making sure the rolling updates are fast, but for simplicity Choice 1 was implemented instead.
 
-We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isRunningAndAvailable`, fixing https://github.com/kubernetes/kubernetes/issues/112307.
+We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isUnavailable`, fixing https://github.com/kubernetes/kubernetes/issues/112307.
 
 https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L740
 
@@ -465,7 +465,7 @@ New proposed implementation:
     // New Check here //
     ////////////////////
     ////////////////////
-    if !isRunningAndAvailable(replicas[target], set.Spec.MinReadySeconds) || isTerminating(replicas[target]) {
+    if isUnavailable(replicas[target], set.Spec.MinReadySeconds) || isTerminating(replicas[target]) {
         unavailablePods++
       }
     }
@@ -508,11 +508,7 @@ New proposed implementation:
 
 #### Metrics
 
-Similar to what we have for deployments, we can add a new metric named `kube_statefulset_spec_strategy_rollingupdate_max_unavailable` which just lets users know the maximum number of unavailable replicas during a rolling update of a StatefulSet. This would be add to kube-state-metrics.
-
-<!-- We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable):
-
-We already have a check for that, and for now we are just firing a log entry at [pkg/controller/statefulset/stateful_set_control.go#L767](https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L767). Here we could fire the new metric increasing the count for statefulset_unavailability_violation, with labels including the StatefulSet namespace, statefulset_name, and a reason. Reason here being `exceededMaxUnavailable`. -->
+We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable)
 
 ### Test Plan
 
@@ -682,10 +678,7 @@ in back-to-back releases.
 #### Beta
 
 - Enabled by default with default value of 1 with upgrade/downgrade tested at least manually.
-  <<[UNRESOLVED need consensus on metric @knelasevero @atiratree @dgrisonnet @wojtek-t]>>
-  After consensus on metric this section can change accordingly. Discussion at https://github.com/kubernetes/enhancements/pull/4474#discussion_r1524772738. tl;dr: implement statefulset_unavailability_violation or implement something simpler like kube_statefulset_spec_strategy_rollingupdate_max_unavailable and where to put it (ksm, in-tree, etc)
-- new metric added here
-  <<[/UNRESOLVED]>>
+- Added `statefulset_unavailability_violation` metric in-tree
 - It is necessary to update the firstUnhealthyPod calculation to correctly call processCondemned. New tests should cover this and take into consideration that the controller should first wait for the predecessor condemned pods to become available before deleting them and delete the pod with the highest ordinal number
 - minReadySeconds and maxUnavailable bugs https://github.com/kubernetes/kubernetes/issues/123911, https://github.com/kubernetes/kubernetes/issues/112307, https://github.com/kubernetes/kubernetes/issues/119234 and https://github.com/kubernetes/kubernetes/issues/123918 should be fixed before promotion of maxUnavailable.
 - Additional unit/e2e/integration tests listed in the test plan should be added covering the newly found bugs.
@@ -844,11 +837,8 @@ that might indicate a serious problem?
 
 Administrators should monitor the following metrics to assess the need for a rollback:
 
-<<[UNRESOLVED need consensus on metric @knelasevero @atiratree @dgrisonnet @wojtek-t]>>
-After consensus on metric this section can change accordingly. Discussion at https://github.com/kubernetes/enhancements/pull/4474#discussion_r1524772738. tl;dr: implement statefulset_unavailability_violation or implement something simpler like kube_statefulset_spec_strategy_rollingupdate_max_unavailable and where to put it (ksm, in-tree, etc)
-<<[/UNRESOLVED]>>
-
-- `kube_statefulset_spec_strategy_rollingupdate_max_unavailable`: This metric reflects the configured maxUnavailable value for StatefulSets. Significant deviations from expected values during updates, or if the actual unavailable pod count consistently exceeds this configuration, may indicate misconfigurations or issues with feature behavior.
+- `statefulset_unavailability_violation`: Ths metric reflects the number of times the maxUnavailable condition is violated (i.e. spec.replicas - availableReplicas > maxUnavailable).
+Mutiple violations of maxUnavailable might indicate issues with feature behavior.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -899,10 +889,8 @@ kubectl get statefulsets -o yaml | grep maxUnavailable
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<<[UNRESOLVED need consensus on metric @knelasevero @atiratree @dgrisonnet @wojtek-t]>>
-After consensus on metric this section can change accordingly. Discussion at https://github.com/kubernetes/enhancements/pull/4474#discussion_r1524772738. tl;dr: implement statefulset_unavailability_violation or implement something simpler like kube_statefulset_spec_strategy_rollingupdate_max_unavailable and where to put it (ksm, in-tree, etc)
-<<[/UNRESOLVED]>>
-Users can verify the maxUnavailable feature is working for their StatefulSets by observing the behavior of their application during rolling updates. Specifically, they should monitor the update progress of StatefulSets against the maxUnavailable value they have configured. This can be done by tracking the number of pods that are unavailable at any given time during the update process and ensuring it does not exceed the specified maxUnavailable limit.
+Users can verify the maxUnavailable feature is working for their StatefulSets by observing the behavior of their application during rolling updates. Specifically, they should monitor the update progress of StatefulSets against the maxUnavailable value they have configured. This can be done by tracking the number of pods that are unavailable at any given time during the update process and ensuring it does not exceed the specified maxUnavailable limit. Users can also view the `statefulset_unavailability_violation` metric to see if there have been instances
+where the feature is not working as intended.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -948,14 +936,9 @@ Pick one more of these and delete the rest.
         - Scope: Counts the total number of retries for StatefulSet update operations within the work queue. This metric provides insight into the stability and reliability of the StatefulSet update process, indicating potential issues when high.
         - Components Exposing the Metric: `kube-controller-manager`
 
-    <<[UNRESOLVED need consensus on metric @knelasevero @atiratree @dgrisonnet @wojtek-t]>>
-    After consensus on metric this section can change accordingly. Discussion at https://github.com/kubernetes/enhancements/pull/4474#discussion_r1524772738. tl;dr: implement statefulset_unavailability_violation or implement something simpler like kube_statefulset_spec_strategy_rollingupdate_max_unavailable and where to put it (ksm, in-tree, etc)
-    New metric should be mentioned here and how to be used in a query.
-    <<[/UNRESOLVED]>>
-    <!-- - Metric name: statefulset_unavailability_violation
-
-
-  - Components exposing the metric: kube-controller-manager -->
+  - Metric name: `statefulset_unavailability_violation`
+    - Scope: Counts the number of times maxUnavailable has been violated (i.e spec.replicas - availableReplicas > maxUnavailable).
+    - Components Exposing the Metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
