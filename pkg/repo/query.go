@@ -17,10 +17,10 @@ limitations under the License.
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
@@ -95,7 +95,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 	if r.TokenPath != "" {
 		logrus.Infof("Setting GitHub token: %v", r.TokenPath)
 		if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
-			return nil, errors.Wrapf(tokenErr, "setting GitHub token")
+			return nil, fmt.Errorf("setting GitHub token: %w", tokenErr)
 		}
 	}
 
@@ -105,7 +105,7 @@ func (r *Repo) Query(opts *QueryOpts) ([]*api.Proposal, error) {
 		// KEPs in the local filesystem
 		localKEPs, err := r.LoadLocalKEPs(sig)
 		if err != nil {
-			return nil, errors.Wrap(err, "loading local KEPs")
+			return nil, fmt.Errorf("loading local KEPs: %w", err)
 		}
 
 		allKEPs = append(allKEPs, localKEPs...)
