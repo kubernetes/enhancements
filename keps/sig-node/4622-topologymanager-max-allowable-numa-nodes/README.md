@@ -69,20 +69,19 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -108,6 +107,7 @@ In this KEP, we propose a new TopologyManager Policy Option called `max-allowabl
 - It does not attempt to remove the state explosion that still exists in the TopologyManager.
 
 ### User Stories (Optional)
+
 #### Story 1
 
 As a developer in the AI space, I want to use AI accelerators "super chips" which expose ARM cores with more than 8 NUMA nodes.  
@@ -139,17 +139,17 @@ The risk associated with implementing this new proposal is minimal. It pertains 
 Users can configure the value of maxAllowableNUMANodes in the TopologyManager when the kubelet starts up, It will fail and abort if the user sets the value is lower than the current hardcoded default (8).
 
 ```go
-		case MaxAllowableNUMANodes:
-			optValue, err := strconv.Atoi(value)
-			if err != nil {
-				return opts, fmt.Errorf("bad value for option %q: %w", name, err)
-			}
-			opts.MaxAllowableNUMANodes = optValue
+  case MaxAllowableNUMANodes:
+   optValue, err := strconv.Atoi(value)
+   if err != nil {
+    return opts, fmt.Errorf("bad value for option %q: %w", name, err)
+   }
+   opts.MaxAllowableNUMANodes = optValue
       ...
 
-	if opts.MaxAllowableNUMANodes < defaultMaxAllowableNUMANodes {
-		return opts, fmt.Errorf("value for option %q is lower than defaultMaxAllowableNUMANodes: %d", MaxAllowableNUMANodes, opts.MaxAllowableNUMANodes)
-	}
+  if opts.MaxAllowableNUMANodes < defaultMaxAllowableNUMANodes {
+    return opts, fmt.Errorf("value for option %q is lower than defaultMaxAllowableNUMANodes: %d", MaxAllowableNUMANodes, opts.MaxAllowableNUMANodes)
+  }
 ```
 
 ### Test Plan
@@ -165,7 +165,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[x] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -234,10 +234,6 @@ For beta:
 
 - Verify the input validation with the existing e2e tests(e.g. 9 or 10 or something bigger than the current default but not "too big")
 
-For GA:
-
-- degrading the node and checking the node is reported as degraded
-
 ### Graduation Criteria
 
 #### Beta
@@ -249,7 +245,7 @@ For GA:
 
 #### GA
 
-- Add a metrics: `kubelet_topology_manager_admission_time`.
+- An existing metric: `kubelet_topology_manager_admission_time` can be used.
 
 ### Upgrade / Downgrade Strategy
 
@@ -313,11 +309,13 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 1.31:
+
 - enable by default
 - allow gate to disable the feature
 - release note
 
-1.32:
+1.33:
+
 - promote to GA
 - cannot be disabled
 - release note
@@ -334,16 +332,17 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: 
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
     - `TopologyManagerPolicyBetaOptions`
     - `TopologyManagerPolicyOptions`
   - Components depending on the feature gate: `kubelet`
-- [x] Change the kubelet configuration to set a TopologyManager policy of static and a TopologyManager policy option of `max-allowable-numa-nodes`
-  - Will enabling / disabling the feature require downtime of the control plane? 
+- [X] Change the kubelet configuration to set a TopologyManager policy of static and a TopologyManager policy option of `max-allowable-numa-nodes`
+  - Will enabling / disabling the feature require downtime of the control plane?
     No
   - Will enabling / disabling the feature require downtime or reprovisioning of a node? (Do not assume Dynamic Kubelet Config feature is enabled).
     Yes -- kubelet restart is required.
+
 ###### Does enabling the feature change any default behavior?
 
 <!--
@@ -351,7 +350,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No. 
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -414,7 +413,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-We have a metric which records the topology manager admission time: `kubelet_topology_manager_admission_time`.
+We have an existing metric which records the topology manager admission time: `kubelet_topology_manager_admission_time`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -441,7 +440,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-We add a metric: `kubelet_topology_manager_admission_time` for kubelet, which can be used to check if the setting is causing unacceptable performance drops.
+An existing metric: `kubelet_topology_manager_admission_time` for kubelet  can be used to check if the setting is causing unacceptable performance drops.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -469,10 +468,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [x] Other (treat as last resort)
   - Details: If their system has more than 8 NUMA nodes, the TopologyManager is turned on and the kubelet is not crashing, then the feature is working.
 
@@ -501,7 +500,7 @@ The value of max-allowable-numa-nodes does not (in and of itself) affect the lat
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name: kubelet_topology_manager_admission_time
   - Components exposing the metric: kubelet
 
@@ -658,6 +657,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 N/A
 
 ###### What are other known failure modes?
@@ -683,6 +683,7 @@ Major milestones might include:
 
 - 2024-05-08 - initial KEP draft created
 - 2024-06-06 - updates per review feedback
+- 2025-02-12 - promote it to GA
 
 ## Drawbacks
 
