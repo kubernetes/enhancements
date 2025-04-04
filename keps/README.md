@@ -3,8 +3,6 @@
 A Kubernetes Enhancement Proposal (KEP) is a way to propose, communicate and coordinate on new efforts for the Kubernetes project.
 You can read the full details of the project in [KEP-0000](sig-architecture/0000-kep-process/README.md).
 
-This process is still in a _beta_ state and is mandatory for all enhancements beginning release 1.14.
-
 ## Quick start for the KEP process
 
 1. Socialize an idea with a sponsoring SIG.
