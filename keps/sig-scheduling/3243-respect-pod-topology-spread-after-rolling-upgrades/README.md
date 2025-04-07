@@ -1081,6 +1081,7 @@ Major milestones might include:
  - 2022-06-08: KEP merged
  - 2023-01-16: Graduate to Beta
  - 2025-01-23: Change the implementation design to be aligned with PodAffinity's `matchLabelKeys`
+ - 2025-04-07: Add a new feature flag `MatchLabelKeysInPodTopologySpreadSelectorMerge` and update milestone
 
 ## Drawbacks
 
