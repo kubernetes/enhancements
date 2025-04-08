@@ -367,9 +367,9 @@ making sure the rolling updates are fast, but for simplicity Choice 1 was implem
 
 We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isUnavailable`, so that `minReadySeconds` is respected.
 
-https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L740
-
 Alpha implementation:
+
+https://github.com/kubernetes/kubernetes/blob/v1.33.0-beta.0/pkg/controller/statefulset/stateful_set_control.go#L718
 
 ```go
 ...
@@ -434,77 +434,7 @@ Alpha implementation:
 ...
 ```
 
-New proposed implementation:
-
-```go
-...
-    // we compute the minimum ordinal of the target sequence for a destructive update based on the strategy.
-    updateMin := 0
-    maxUnavailable := 1
-    if set.Spec.UpdateStrategy.RollingUpdate != nil {
-      updateMin = int(*set.Spec.UpdateStrategy.RollingUpdate.Partition)
-
-      // if the feature was enabled and then later disabled, MaxUnavailable may have a value
-      // more than 1. Ignore the passed in value and Use maxUnavailable as 1 to enforce
-      // expected behavior when feature gate is not enabled.
-      var err error
-      maxUnavailable, err = getStatefulSetMaxUnavailable(set.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, replicaCount)
-      if err != nil {
-        return &status, err
-      }
-    }
-
-    // Collect all targets in the range between getStartOrdinal(set) and getEndOrdinal(set). Count any targets in that range
-    // that are unhealthy i.e. terminated or not running and available as unavailable). Select the
-    // (MaxUnavailable - Unavailable) Pods, in order with respect to their ordinal for termination. Delete
-    // those pods and count the successful deletions. Update the status with the correct number of deletions.
-    unavailablePods := 0
-    for target := len(replicas) - 1; target >= 0; target-- {
-    ////////////////////
-    ////////////////////
-    // New Check here //
-    ////////////////////
-    ////////////////////
-    if isUnavailable(replicas[target], set.Spec.MinReadySeconds) || isTerminating(replicas[target]) {
-        unavailablePods++
-      }
-    }
-
-    if unavailablePods >= maxUnavailable {
-      logger.V(2).Info("StatefulSet found unavailablePods, more than or equal to allowed maxUnavailable",
-        "statefulSet", klog.KObj(set),
-        "unavailablePods", unavailablePods,
-        "maxUnavailable", maxUnavailable)
-      return &status, nil
-    }
-
-    // Now we need to delete MaxUnavailable- unavailablePods
-    // start deleting one by one starting from the highest ordinal first
-    podsToDelete := maxUnavailable - unavailablePods
-
-    deletedPods := 0
-    for target := len(replicas) - 1; target >= updateMin && deletedPods < podsToDelete; target-- {
-
-      // delete the Pod if it is healthy and the revision doesnt match the target
-      if getPodRevision(replicas[target]) != updateRevision.Name && !isTerminating(replicas[target]) {
-        // delete the Pod if it is healthy and the revision doesnt match the target
-        logger.V(2).Info("StatefulSet terminating Pod for update",
-          "statefulSet", klog.KObj(set),
-          "pod", klog.KObj(replicas[target]))
-        if err := ssc.podControl.DeleteStatefulPod(set, replicas[target]); err != nil {
-          if !errors.IsNotFound(err) {
-            return &status, err
-          }
-        }
-        deletedPods++
-        status.CurrentReplicas--
-      }
-    }
-    return &status, nil
-
-	}
-...
-```
+New proposed implementation: https://github.com/kubernetes/kubernetes/pull/130909
 
 #### Metrics
 
@@ -604,8 +534,10 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `test/e2e/apps/statefulset.go`: - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used. - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a
-  StatefulSet setting `minReadySeconds` and `updateStrategy.rollingUpdate.maxUnavailable` and checking for a correct rollout specially when scaling down during a rollout.
+- `test/e2e/apps/statefulset.go`: 
+  - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used. 
+  - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a 
+    StatefulSet setting `minReadySeconds` and `updateStrategy.rollingUpdate.maxUnavailable` and checking for a correct rollout specially when scaling down during a rollout.
 
 ## Graduation Criteria
 
@@ -709,6 +641,9 @@ enhancement:
   - This is a new field, it will only be enabled after an upgrade. To maintain the
     previous behavior, you can disable the feature gate manually in Beta or leave
     the field unconfigured.
+  - This field was set in alpha before upgrading:
+    - If the flag was enabled, it continue to be enabled in Beta
+    - If the flag was disabled, it will continue to be disbled in Beta
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
   - This feature is enabled by default in Beta so you can configure the maxUnavailable
@@ -719,7 +654,7 @@ enhancement:
 - If we try to set this field, it will be silently dropped.
 - If the object with this field already exists, we maintain is as it is, but the controller
   will just ignore this field.
-- downgrade of kube-apiserver to a version with the feature flag was disabled, when the field was previously set - it gets cleared, new operations setting the field will be silently dropped
+- downgrade of kube-apiserver to a version with the feature flag was disabled, when the field was previously set - the field gets ignored by controller, and controller behaves as if the field is not set
 - downgrade of kube-controller-manager to version with the feature flag disabled, when the field was previously set - the field gets ignored by controller, and controller behaves as if the field is not set
 - downgrade of either kube-apiserver or kube-controller-manager to a version with the feature flag was disabled, when the field was not set the behavior doesn't change
 
@@ -738,12 +673,12 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-- If both api-server and kube-controller-manager enabled this feature, then `maxUnavailable` will take effect.
-- If only api-server enabled this feature, because statefulset controller is unaware of this feature, then we'll
+- If both api-server and kube-controller-manager have a version where the feature is enabled, then `maxUnavailable` will take effect.
+- If only api-server has a version where the feature is enabled, because statefulset controller is unaware of this feature, then we'll
   fall into the default rolling-update behavior, one pod at a time.
-- If only kube-controller-manager enabled this feature, then this field is invisible to users, we'll keep the default
+- If only kube-controller-manager has a version where the feature is enabled, then this field is invisible to users, we'll keep the default
   rolling-update behavior, one pod at a time.
-- If both api-server and kube-controller-manager disabled this feature, then only one Pod will be updated
+- If both api-server and kube-controller-manager have a version where the feature is enabled, then only one Pod will be updated
   at a time as the default behavior.
 
 ## Production Readiness Review Questionnaire
@@ -763,6 +698,7 @@ No, the default behavior remains the same.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, you can disable the feature-gate manually once it's in Beta, this will affect StatefulSets that are in the middle of a rollout when the feature gets disabled.
+If the feature is disabled in the middle of the rollout, the rollout will continue as if maxUnavailable is 1.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -810,19 +746,19 @@ Feature Flag Consistency Across Control Plane: Inconsistencies in applying the f
 
 1. Feature Enabled on kube-apiserver and Disabled on kube-controller-manager:
 
-- The maxUnavailable setting is accepted by the API server but ignored by the controller. This could lead to slower rollouts than expected because the controller doesn't act on the provided `maxUnavailable` values.
+  - The maxUnavailable setting is accepted by the API server but ignored by the controller. This could lead to slower rollouts than expected because the controller doesn't act on the provided `maxUnavailable` values.
 
 2. Feature Disabled on kube-apiserver and Enabled on kube-controller-manager:
 
-- Attempts to use `maxUnavailable` in StatefulSet specifications will be rejected by the API server. Users won't be able to leverage the feature even though the controller is capable of interpreting it.
+  - Attempts to use `maxUnavailable` in StatefulSet specifications will be rejected by the API server. Users won't be able to leverage the feature even though the controller is capable of interpreting it.
 
 3. Feature Enabled on Both kube-apiserver and kube-controller-manager:
 
-- This is the ideal scenario where the feature works as intended, allowing users to specify `maxUnavailable` for controlled updates.
+  - This is the ideal scenario where the feature works as intended, allowing users to specify `maxUnavailable` for controlled updates.
 
 4. Feature Disabled on Both kube-apiserver and kube-controller-manager:
 
-- StatefulSet updates revert to the default Kubernetes behavior, ignoring any `maxUnavailable` settings even if previously specified.
+  - StatefulSet updates revert to the default Kubernetes behavior, ignoring any `maxUnavailable` settings even if previously specified.
 
 In scenarios 1 and 2, running workloads could be impacted due to the mismatch in feature flag settings. For instance, expected rolling update strategies might not be applied, potentially affecting application availability or update speed.
 
@@ -844,29 +780,29 @@ Mutiple violations of maxUnavailable might indicate issues with feature behavior
 
 A manual test was performed, as follows:
 
-1. Create a cluster in 1.23.
-2. Upgrade to 1.24.
+1. Create a cluster in 1.33.
+2. Upgrade to 1.34.
 3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
 4. Verify a rollout and check if only 3 pods are unavailable at a time ([currently with a bug if podManagementPolicy is set to Parallel](https://github.com/kubernetes/kubernetes/issues/112307))
-5. Downgrade to 1.23.
+5. Downgrade to 1.33.
 6. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1
 7. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
-8. Upgrade to 1.24.
+8. Upgrade to 1.34.
 9. Verify that the rollout has default behavior of only having one pod unavailable at a time
    Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
 
 TODO:
 A manual test will be performed, as follows:
 
-1. Create a cluster in 1.29.
-2. Upgrade to 1.31.
+1. Create a cluster in 1.33.
+2. Upgrade to 1.34.
 3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
 4. Verify a rollout and check if only 3 pods are unavailable at a time
 5. Check if rollout is also fine with podManagementPolicy set to Parallel
-6. Downgrade to 1.29.
+6. Downgrade to 1.33.
 7. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1 (MaxUnavailableStatefulSet feature gate disabled by default).
 8. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
-9. Upgrade to 1.31.
+9. Upgrade to 1.34.
 10. Verify that the rollout has default behavior of only having one pod unavailable at a time
     Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
 
@@ -1024,9 +960,9 @@ For each of them, fill in the following information by copying the below templat
 - 2019-01-01: KEP created.
 - 2019-08-30: PR Implemented with tests covered.
 - <<[UNRESOLVED bugs found in alpha and blockers to promotion @knelasevero @atiratree @bersalazar @leomichalski]>>
-  Will be able to update this section when I have PRs merged and the dates for that.
+  Open PRs: https://github.com/kubernetes/kubernetes/pull/130909, https://github.com/kubernetes/kubernetes/pull/130951
   <<[/UNRESOLVED]>>
-- 2024-XX-XX: Bump to Beta.
+- 2025-XX-XX: Bump to Beta.
 
 ## Drawbacks
 
