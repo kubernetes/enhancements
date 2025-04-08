@@ -766,7 +766,7 @@ Yes, you can disable the feature-gate manually once it's in Beta, this will affe
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again. [Even if this is a new field, it only gets cleared if it was not set before (if it was nil). So if it is set it continues to exist and is enforced.](https://github.com/kubernetes/kubernetes/blob/bb67eb5bd237334d6d0343aa382b351002653404/pkg/registry/apps/statefulset/strategy.go#L120-L137). This will affect StatefulSets that are in the middle of a rollout when the feature gets re-enabled.
+If we disable the feature-gate and reenable it again, then the `maxUnavailable` will take effect again. [Even if this is a new field, it only gets cleared if it was not set before (if it was nil). So if it is set it continues to exist and is enforced.](https://github.com/kubernetes/kubernetes/blob/bb67eb5bd237334d6d0343aa382b351002653404/pkg/registry/apps/statefulset/strategy.go#L120-L137) This will affect StatefulSets that are in the middle of a rollout when the feature gets re-enabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
