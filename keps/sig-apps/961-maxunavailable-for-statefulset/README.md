@@ -941,12 +941,12 @@ For each of them, fill in the following information by copying the below templat
 
 - Incorrect Handling of minReadySeconds During StatefulSet Updates with Parallel Pod Management
   - Detection:
-    - Monitor the status.availableReplicas of the StatefulSet during rolling updates. A significant drop below the expected number of available replicas, considering the maxUnavailable setting, could indicate the issue.
+    - Monitor the `statefulset_unavailability_violation` metric of the StatefulSet during rolling updates. A large value of this metric could indicate the issue.
     - Review StatefulSet events or controller logs for rapid succession of pod updates without adherence to minReadySeconds, which could confirm that the delay is not being respected.
   - Mitigations:
     - Temporarily adjust the podManagementPolicy to OrderedReady as a workaround to ensure minReadySeconds is respected during updates, though this may slow down the rollout process.
     - Setting maxUnavailable back to 1 or disabling the feature is a possibility.
-    - Upgrade your cluster to 1.31, where this feature is promoted to beta, and the issue is fixed.
+    - Upgrade your cluster to 1.34, where this feature is promoted to beta, and the issue is fixed.
   - Diagnostics:
     - Events should be the first place one should look when trying to diagnose this failure mode.
     - If events are not sufficient, detailed logging could be enabled for the StatefulSet controller to capture the sequence and timing of pod updates during a rollout.
