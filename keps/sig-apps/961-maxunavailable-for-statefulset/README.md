@@ -365,7 +365,7 @@ For PMP=Parallel, we will use Choice 2.
 For PMP=OrderedReady, the plan for alpha was to go with Choice 3 to ensure we can support ordering guarantees while also
 making sure the rolling updates are fast, but for simplicity Choice 1 was implemented instead.
 
-We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isUnavailable`, fixing https://github.com/kubernetes/kubernetes/issues/112307.
+We are keeping implementation the same for beta release, going the simpler route, but instead of checking for healthy pods in the part of the code that decides what is a `unavailablePod`, we check for `isUnavailable`, so that `minReadySeconds` is respected.
 
 https://github.com/kubernetes/kubernetes/blob/eb8f3f194fed16484162aebdaab69168e02f8cb4/pkg/controller/statefulset/stateful_set_control.go#L740
 
