@@ -6,27 +6,29 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
   - sig-network
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+status: implementable
 creation-date: 2025-30-01
 reviewers:
   - "@johnbelamaric"
   - "@catblade"
+  - "@pohly"
+  - "@dom4ha"
+  - "@LionelJouin"
 approvers:
-  - TBD
+  - "@dom4ha"
 
 see-also:
-#  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-#  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-# replaces:
-#   - "/keps/sig-ccc/3456-replaced-kep"
+  - "/keps/sig-scheduling/4815-dra-partitionable-devices"
+  - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-scheduling/5007-device-attach-before-pod-scheduled"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha|beta|stable
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.32"
+latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -37,9 +39,11 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DynamicDeviceProvision
+  - name: DRAConsumableCapacity
     components:
       - kube-scheduler
+      - kubelet
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
