@@ -133,6 +133,18 @@ risk of early reporting for nodes under pressure. We intend to address this conc
 by conducting careful experimentation with PSI threshold values to identify the optimal
 default threshold to be used for reporting the nodes under heavy resource pressure.
 
+> [!IMPORTANT]
+> After some investigation we understood that
+> we cannot directly/solely use PSI metrics at node level to identify nodes under "pressure" and taint them.
+
+Experimental results show that a CPU intensive pod with stringent CPU limit is reporting a really high PSI pressure
+even if the pressure is only due to CPU throttling and not by competition with neighbors.
+But due to how the PSI interface is defined, this is reported also on the kubelet slice and at node level.
+So having a badly configured pod on the node, is enough to get a relevant PSI pressure reported at node level
+even if the node is not really suffering.
+This raises a significant concern about phase 2
+(utilize the node level PSI metric to set node condition and node taints).
+
 ## Design Details
 
 #### Phase 1
