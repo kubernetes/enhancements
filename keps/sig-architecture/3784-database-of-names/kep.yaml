@@ -1,0 +1,35 @@
+title: A database of Kubernetes-owned names
+kep-number: 3784
+authors:
+  - "@thockin"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-network
+  - sig-docs
+status: provisional #|implementable|implemented|deferred|rejected|withdrawn|replaced
+creation-date: 2023-01-26
+reviewers:
+  - "@sftim"
+approvers:
+  - "@sftim"
+see-also: []
+replaces: []
+
+stage: stable # No code
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.27"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.27"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
