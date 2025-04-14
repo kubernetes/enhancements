@@ -231,7 +231,6 @@ and make progress.
 -->
 
 * Expand the set of mutable fields.
-* Populate `metadata.generation` and `status.ObservedGeneration` on mirror pods.
 
 ## Proposal
 
@@ -458,19 +457,12 @@ regressions back to decreasing values.
 
 #### Mirror pods
 
-We will consider populating `metadata.generation` and `status.observedGeneration` out of scope for mirror 
-pods. This means:
-
-* The API server never sets `metadata.generation` for mirror pods.
-* If there is `metadata.generation` or `status.observedGeneration` set in the incoming config for a static pod, we ignore and drop them on the API side.
-* Kubelet never sets `status.observedGeneration` for mirror pods (it will need to explicitly exclude them).
-
-This is because the kubelet currently computes the internal pod UID of a mirror pod
-using a hash of the podspec, meaning that any update to the podspec results in the kubelet
-seeing it as a pod deletion followed by creation of a new pod. This defeats the
-purpose of generation tracking, since the generation of a mirror pod will always
-be 1. To fully support generation for mirror pods, more changes to the kubelet's
-logic will be expected.
+The kubelet currently computes the internal pod UID of a mirror pod using a hash of the podspec, 
+meaning that any update to the podspec results in the kubelet seeing it as a pod deletion followed 
+by creation of a new pod. To fully support generation for mirror pods more changes to the kubelet's logic 
+will be expected. For now, we will not treat mirror pods in any special way. This means that due
+to the way that mirror pods are implemented, the generation (and observedGeneration) of a mirror pod 
+will always be 1.
 
 #### Future enhancements
 
