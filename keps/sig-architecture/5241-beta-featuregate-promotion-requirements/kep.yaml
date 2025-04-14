@@ -1,0 +1,31 @@
+title: Beta Feature Gate Promotion Requirements
+kep-number: 5241
+authors:
+  - "@deads2k"
+owning-sig: sig-architecture
+participating-sigs:
+status: implemented
+creation-date: 2025-04-02
+reviewers:
+  - "@liggitt"
+  - "@thockin"
+approvers:
+  - "@johnbelamaric"
+  - "@dims"
+  - "@derekwaynecarr"
+
+see-also:
+  - "/keps/sig-architecture/3136-beta-apis-off-by-default"
+replaces:
+
+stage: stable
+
+latest-milestone: "v1.34"
+
+milestone:
+  stable: "v1.34"
+
+feature-gates:
+disable-supported: false
+
+metrics:
