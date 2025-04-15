@@ -944,6 +944,74 @@ The linter, as previously described, will enforce rules to address valid zero-va
 
 The linter will flag any violations of these rules, ensuring consistent zero-value handling and preventing related errors. This automated enforcement is crucial for catching issues early in the development process.
 
+### Subresources
+
+#### Status style subresources
+
+These are subresources that:
+
+- Share the root resource. (Same Kind, same storage object).
+- Typically, have constraints on which fields may be updated.
+- In some cases, may allow updates not otherwise allowed.
+
+Examples:
+
+  - `pods/status` may update to the `metadata` and `status` stanzas, but not the `spec` stanza.
+  - `resourceclaims/status` may only update the `status` stanza, but not the `metadata` or `spec` stanza.
+  - `pods/resize` may update `spec.container[*].resources` fields, which are immutable via the root `pods` resource.
+  - `certificatesigningrequests/approval` may add/remove/modify the Approved/Denied status conditions.
+
+To validate these fields, Declarative Validation will:
+
+- Does NOT constraint which fields a subresource operation is allowed to write. This will  
+  responsibility of "field wiping". Field wiping logic is expected to be handled in resource
+  strategies by modifying (wiping) the incoming object before it is validated.
+- Validates the entire resource using same declarative validation as used to validate the root
+  resource. But, allows validation tags to perform conditional validation based on the subresource.
+- Uses ratcheting to skip validation of unchanged fields. Combined with field wiping, this
+  isolates the actual validation performed to the subset of fields that are allowed to be updated
+  via the subresource.
+
+Examples:
+
+  - `pods/status` will be validated with the same declarative validation tags as the root `pods` resource after field wiping has been applied to the `spec`.
+  - `pods/resize` will be validated with the same declarative validation tags as the root `pods`, but the root resource validation will consult the 
+    subresource parameter when validating `spec.container[*].resources` to ensure immutability unless updated via the `pods/resize` subresource via
+    a rule such as: `+k8s:if('subresources != ["resize"]')=+k8s:immutable`
+
+To support these types of subresources, declarative validation will be extended to:
+
+- Provide a "subresources" parameter that is accessible via validation tags so that conditional validation is possible.
+
+#### Scale style subresources
+
+These are subresources that:
+
+- Have a different Kind than the root resource.
+- Share the storage object of the root resource. (updates to the subresource fields result in writes to corresponding stored to fields of the root resource).
+
+Examples:
+
+- Update to `pods/scale` may modify `spec.replicas` to cause an update to the `spec.replicas` field of the root `pods` resource.
+- Create of `pods/binding` provides a `target` to cause the `pod.spec.nodeName` to be set on the root `pods` resource (but only if nodeName is not already set).
+
+To validate these fields, Declarative Validation will (in the storage layer of an API definition):
+
+- Validates the subresource declaratively.
+- Relies on the resource's storage layer to apply the write to the root resource.
+- Validates the root resource normally.
+- Uses ratcheting to skip validation of unchanged fields.
+
+To support these types of subresources, declarative validation will be extended to:
+
+- Accept the mapping from internal type to versioned type of scale style subresources so that a `ValidateDeclaratively(..., internal.Scale, ...)` request
+  is mapped to the same Scale group/version as the request (for example, `autoscaling.k8s.io/v1`) and then validated.
+- https://github.com/jpbetz/kubernetes/pull/141 provides an example of how to migrate a resource to scale subresource declarative validation.
+
+#### Streaming subresources
+
+Streaming endpoints such as `pod/exec`, `pod/attach` and `pod/portForward` are not validated normally and will not be migrated to declarative validation. 
+
 ### Ratcheting
 
 As `validation-gen`‘s go validation code has old object access we can write any transition rule we want for validation ratcheting. `validation-gen` has access to the old and new state of obj for any field.  This gives us a building block to make any flavor of ratcheting we would need in theory.  We can think the basic form of ratcheting as - “allow old value to be written in updates even if now not valid as long as it doesn’t change -> easy to test”.  If old = new -> short circuit validation (don’t care if it failed).  If certain ratcheting needs syntactic sugar, we can add that as well based ont the current `validation-gen` design. An example of what ratcheting validation logic might look like for `validation-gen` is below:
