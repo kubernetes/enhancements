@@ -55,6 +55,10 @@
     - [Difficulties with <code>+k8s:required</code> and <code>+k8s:default</code>](#difficulties-with-k8srequired-and-k8sdefault)
     - [Proposed Solutions](#proposed-solutions)
     - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
+  - [Subresources](#subresources)
+    - [Status-Type Subresources](#status-type-subresources)
+    - [Scale-Type Subresources](#scale-type-subresources)
+    - [Streaming Subresources](#streaming-subresources)
   - [Ratcheting](#ratcheting)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -946,71 +950,67 @@ The linter will flag any violations of these rules, ensuring consistent zero-val
 
 ### Subresources
 
-#### Status style subresources
+#### Status-Type Subresources
 
-These are subresources that:
+These subresources have the following characteristics:
 
-- Share the root resource. (Same Kind, same storage object).
-- Typically, have constraints on which fields may be updated.
-- In some cases, may allow updates not otherwise allowed.
+* They operate on the same underlying storage object as the primary resource (i.e., same `kind`, same object in etcd).
+* Updates via these subresources are typically constrained to specific fields within the object.
+* In some cases, they permit writes to fields normally disallowed via the primary resource.
 
-Examples:
+**Examples:**
 
-  - `pods/status` may update to the `metadata` and `status` stanzas, but not the `spec` stanza.
-  - `resourceclaims/status` may only update the `status` stanza, but not the `metadata` or `spec` stanza.
-  - `pods/resize` may update `spec.container[*].resources` fields, which are immutable via the root `pods` resource.
-  - `certificatesigningrequests/approval` may add/remove/modify the Approved/Denied status conditions.
+* `pods/status`: Allows updates only to the `metadata` and `status` stanzas, prohibiting changes to the `spec`.
+* `resourceclaims/status`: Allows updates only to the `status` stanza, prohibiting changes to `metadata` or `spec`.
+* `pods/resize`: Allows updates to `spec.container[*].resources` fields, which are normally immutable after Pod creation via the primary `pods` resource.
+* `certificatesigningrequests/approval`: Allows adding, removing, or modifying Approve/Deny conditions within the `status`.
 
-To validate these fields, Declarative Validation will:
+**Validation Process for Status-Type Subresources:**
 
-- Does NOT constraint which fields a subresource operation is allowed to write. This will  
-  responsibility of "field wiping". Field wiping logic is expected to be handled in resource
-  strategies by modifying (wiping) the incoming object before it is validated.
-- Validates the entire resource using same declarative validation as used to validate the root
-  resource. But, allows validation tags to perform conditional validation based on the subresource.
-- Uses ratcheting to skip validation of unchanged fields. Combined with field wiping, this
-  isolates the actual validation performed to the subset of fields that are allowed to be updated
-  via the subresource.
+Declarative Validation handles these as follows:
 
-Examples:
+1.  **Field Wiping (Pre-Validation):** Declarative Validation *does not* constrain which fields a subresource operation can write. Instead, this responsibility lies with the resource's strategy implementation. The strategy modifies the incoming object *before* validation, effectively "wiping" or resetting any fields the specific subresource operation is not allowed to change.
+2.  **Full Resource Validation:** The *entire*, modified resource object is then validated using the *same* set of declarative validation rules applied to the primary resource.
+3.  **Conditional Validation:** Validation rules can use a special `subresources` parameter (e.g., `subresources == ['status']`) to apply conditional logic. This allows rules to behave differently depending on whether the update comes via the primary resource or a specific subresource.
+4.  **Ratcheting:** Declarative Validation uses ratcheting, meaning it skips validation checks on fields that have not changed from the existing stored object. Combined with field wiping, this effectively isolates the validation to only the subset of fields that the subresource operation is intended and permitted to modify.
 
-  - `pods/status` will be validated with the same declarative validation tags as the root `pods` resource after field wiping has been applied to the `spec`.
-  - `pods/resize` will be validated with the same declarative validation tags as the root `pods`, but the root resource validation will consult the 
-    subresource parameter when validating `spec.container[*].resources` to ensure immutability unless updated via the `pods/resize` subresource via
-    a rule such as: `+k8s:if('subresources != ["resize"]')=+k8s:immutable`
+**Validation Examples:**
 
-To support these types of subresources, declarative validation will be extended to:
+* An update via `pods/status` first has its `spec` field changes wiped by the Pod strategy. Then, the entire Pod object is validated using the standard Pod validation rules. Ratcheting skips checks on unchanged `metadata` or `status` fields.
+* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:if('subresources != ["resize"]')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
 
-- Provide a "subresources" parameter that is accessible via validation tags so that conditional validation is possible.
+**Support required:**
 
-#### Scale style subresources
+* To enable conditional validation, declarative validation provides access to the `subresources` parameter within validation rule expressions.
 
-These are subresources that:
+#### Scale-Type Subresources
 
-- Have a different Kind than the root resource.
-- Share the storage object of the root resource. (updates to the subresource fields result in writes to corresponding stored to fields of the root resource).
+These subresources have the following characteristics:
 
-Examples:
+* They often represent a different API `kind` (e.g., `autoscaling/v1.Scale`) than the resource they modify (e.g., `apps/v1.Deployment`).
+* Despite being a different `kind`, updates to the subresource modify fields within the underlying storage object of the *primary* resource.
 
-- Update to `pods/scale` may modify `spec.replicas` to cause an update to the `spec.replicas` field of the root `pods` resource.
-- Create of `pods/binding` provides a `target` to cause the `pod.spec.nodeName` to be set on the root `pods` resource (but only if nodeName is not already set).
+**Examples:**
 
-To validate these fields, Declarative Validation will (in the storage layer of an API definition):
+* An update to `deployments/scale` modifies the `spec.replicas` field within the stored `Deployment` object.
+* Creating a `Binding` object via `pods/binding` sets the `spec.nodeName` field on the target `Pod` object.
 
-- Validates the subresource declaratively.
-- Relies on the resource's storage layer to apply the write to the root resource.
-- Validates the root resource normally.
-- Uses ratcheting to skip validation of unchanged fields.
+**Validation Process for Scale-Type Subresources:**
 
-To support these types of subresources, declarative validation will be extended to:
+Declarative Validation involves multiple steps, coordinated with the storage layer:
 
-- Accept the mapping from internal type to versioned type of scale style subresources so that a `ValidateDeclaratively(..., internal.Scale, ...)` request
-  is mapped to the same Scale group/version as the request (for example, `autoscaling.k8s.io/v1`) and then validated.
-- https://github.com/jpbetz/kubernetes/pull/141 provides an example of how to migrate a resource to scale subresource declarative validation.
+1.  **Subresource Validation:** The incoming subresource object itself (e.g., the `autoscaling/v1.Scale` object) is validated using *its own* declarative rules.
+2.  **Storage Layer Application:** The resource's storage layer logic translates the validated subresource update into changes on the primary resource's fields (e.g., mapping the `Scale` object's `spec.replicas` to the `Deployment` object's `spec.replicas`).
+3.  **Primary Resource Validation:** The *modified primary resource* (e.g., `Deployment`) is then validated using *its* standard declarative validation rules.
+4.  **Ratcheting:** Ratcheting is applied during the primary resource validation, skipping checks on fields that were not affected by the scale operation.
 
-#### Streaming subresources
+**Support required:**
 
-Streaming endpoints such as `pod/exec`, `pod/attach` and `pod/portForward` are not validated normally and will not be migrated to declarative validation. 
+* No significant changes to declarative validation are required to implement this type of subresource. https://github.com/jpbetz/kubernetes/pull/141 provides an example of migrating a `/scale` subresource and includes some implementation details.
+
+#### Streaming Subresources
+
+Subresources such as `pods/exec`, `pods/attach`, and `pods/portforward` do not require declarative validation, as they operate on data streams, not structured resource data.
 
 ### Ratcheting
 
