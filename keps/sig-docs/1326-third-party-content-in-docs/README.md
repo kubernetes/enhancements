@@ -128,6 +128,16 @@ other projects in the Kubernetes org, and content from other OSS projects that
 are necessary for Kubernetes to function. Third-party content must be linked
 whenever possible, rather than duplicated or hosted in k/website.
 
+- capture equivalent policies for subprojects, with the aim of ensuring that
+  Kubernetes components have maintainable docs that avoid vendor pitches and
+  that are relevant to end users. Third party content must be linked whenever
+  possible.
+
+  For integration components, such as in-project code for integrating with a
+  specific cloud provider, each component **SHOULD** decide on one canonical location
+  for the documentation (either within the Kubernetes project, or hosted with that
+  provider, but not both).
+
 2. Revise the documentation when the KEP is approved:
 
 - **Third-party content:** Notify stakeholders of all affected content via
