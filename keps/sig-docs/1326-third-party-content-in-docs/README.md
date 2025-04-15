@@ -138,6 +138,7 @@ in-project code and its mandatory dependencies.
 
 2. Revise the Kubernetes documentation (after the KEP is approved):
 
+
    - **Third-party content:** Notify stakeholders of all affected content via
      GitHub issues and via a single message containing a summary of all affected
      content to kubernetes-dev@googlegroups.com that non-conforming content will be
@@ -153,6 +154,16 @@ in-project code and its mandatory dependencies.
      notify stakeholders via GitHub issues in k/website and via a single message 
      containing a summary of all affected content to kubernetes-dev@googlegroups.com
      that non-conforming content will be removed after 90 days.
+     Third party content must be hyperlinked when possible; if there is an external guide for a component that is not part of Kubernetes,
+     hyperlink to that rather than duplicate it in-project.
+
+SIG Docs will liaise and recommend equivalent policies for Kubernetes subprojects, with the
+aim of ensuring that Kubernetes components have maintainable docs that avoid vendor pitches
+and that are relevant to end users.
+
+For integration components, such as in-project code for integrating with a specific cloud
+provider, each component **SHOULD** decide on one canonical location for the documentation
+(either within the Kubernetes project, or hosted with that provider, but not both).
 
 In all cases where content would be removed, provide adequate time for the
 relevant SIG to review changes and notify stakeholders.
