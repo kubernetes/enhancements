@@ -3,28 +3,28 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [X] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [X] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [X] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5246: Migrate to systemd's cgroup v1 CPU shares to v2 CPU weight formula
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -79,7 +79,10 @@ tags, and then generate with `hack/update-toc.sh`.
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
+  - [Examples for the current state](#examples-for-the-current-state)
 - [Motivation](#motivation)
+  - [A non-Kubernetes workload has a much higher priority in v2](#a-non-kubernetes-workload-has-a-much-higher-priority-in-v2)
+  - [A too-small granularity](#a-too-small-granularity)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -128,7 +131,7 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -173,6 +176,70 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+Kubernetes was originally implemented with v1 in mind.
+In cgroup v1, the CPU shares were defined very simply by assigning the container's CPU requests in a millicpu form.
+
+As an example, for a container requesting 1 CPU (which equals to `1024m` cpu): `cpu.shares = 1024`.
+
+After a while, when there was a need to support and move the focus to cgroup v2, a [dedicated KEP-2254](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2) was submitted.
+
+Cgroup v1 and v2 have very different ranges of values for CPU shares and weight.
+
+Cgroup v1 uses a range of `[2^1 - 2^18]  == [2 - 262144]` for CPU shares.
+
+Cgroup v2 uses a range of `[10^0 - 10^4] == [1 - 10000]` for CPU weight.
+
+As part of this KEP, it was agreed to use the following formula to perform the conversion from cgroup v1's cpu.shares to cgroup v2's CPU weight, as can be seen [here](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2#phase-1-convert-from-cgroups-v1-settings-to-v2):
+
+`cpu.weight = (1 + ((cpu.shares - 2) * 9999) / 262142)     // convert from [2-262144] to [1-10000]`
+
+### Examples for the current state
+
+Let's start with an example to understand how the cgroup configuration looks like on both environments.
+
+I'll use the following dummy pod and run it on v1 and v2 setups:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dummy-sleeping-pod
+spec:
+  containers:
+  - name: sleep-container
+    image: busybox
+    command: ["sleep", "infinity"]
+    resources:
+      requests:
+        cpu: 1
+```
+
+On cgroup v1 the underlying configuration is pretty intuitive:
+```shell
+> k exec -it dummy-sleeping-pod -- sh -c "cat /sys/fs/cgroup/cpu/cpu.shares"
+1024
+```
+
+On v2, the configuration looks like the following:
+```shell
+> k exec -it dummy-sleeping-pod -- sh -c "cat /sys/fs/cgroup/cpu.weight"
+39
+```
+
+And indeed, according to the formula above, `cpu.weight = (1+((1024-2)*9999)/262142) ~= 39.9`.
+
+If I would change the pod to consume only `100m` CPU, the configuration will look like the following:
+on v1:
+```shell
+> k exec -it dummy-sleeping-pod -- sh -c "cat /sys/fs/cgroup/cpu/cpu.shares"
+102
+```
+
+on v2:
+```shell
+> k exec -it dummy-sleeping-pod -- sh -c "cat /sys/fs/cgroup/cpu.weight"
+4
+```
+
 ## Motivation
 
 <!--
@@ -184,12 +251,38 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+The above formula focuses on converting the values from one range to another, keeping the values in the same percentile in this range. As an example, if a certain value of cpu shares is 20% of the range, it will stay 20% of the range when it's converted to cgroup v2.
+
+However, this imposes several problems.
+
+### A non-Kubernetes workload has a much higher priority in v2
+The default CPU shares for cgroup v1 is `1024`.
+This means that when kubernetes workloads would compete with non-kubernetes workloads (system daemons, drivers, kubelet itself, etc), a container requesting 1 CPU has the same CPU priority as a "regular" process. Asking for less than 1 CPU will grand lower priority, and vice-versa.
+
+However, in cgroup v2, the default CPU weight is `100`.
+This means that (as can be seen above) a container asking for 1 CPU now has less than 40% of the default CPU weight.
+
+The implication is that Kubernetes workloads have much less CPU priority against non-Kubernetes workloads under v2.
+
+### A too-small granularity
+As can be seen above, a container that requests for `100m` CPU only has a CPU weight of `4`, while on v1 it would have `102` CPU shares.
+
+This value is not granular enough.
+This is relevant for use-cases in which sub-cgroups need to be configured inside a container to further distribute resources inside the container.
+
+As an example, there could be a container running a few CPU intensive processes and one managerial process that does not need to consume a lot of CPU, but needs to be very responsive. In such a case, sub-cgroups can be created inside the container, leaving 90% of the weight to the CPU-bound processes and 10% to the other process.
+
+
 ### Goals
 
 <!--
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+- Just like in cgroup v1, when a container asks for 1 CPU it should get the default amount of CPU weight, which is `100`.
+In the same way, asking for 500m CPU should result in having `50` CPU weight, and so on.
+This aligns the v1 and v2 behaviors.
+- Track that the different layers (OCI, CRI, Kubelet, etc) are aligned with the new formula.
 
 ### Non-Goals
 
@@ -197,6 +290,8 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+- Introduce new APIs to configure cgroups.
+- Change CPU priorities between Kubernetes workloads.
 
 ## Proposal
 
@@ -209,6 +304,25 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+As [suggested](https://github.com/kubernetes/kubernetes/issues/131216#issuecomment-2806442083)
+by the [original KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2254-cgroup-v2) author,
+we should migrate to systemd's formula for converting CPU shares to CPU weight.
+
+The current formula that we're using is:
+`cpu.weight = (1 + ((cpu.shares - 2) * 9999) / 262142)`
+
+While systemd's formula is:
+`cpu.weight = 1 + ((cpu.shares – 2) × 99) / (1024 – 2)`
+
+The main difference between the formulas is that the first one focuses on converting the values from one range to another,
+keeping the values in the same percentile in this range.
+The second one focuses on aligning the values to the default CPU weight of `100` for a container requesting 1 CPU.
+Accordingly, 512m CPU will result in a value of `50`, which aligns with the default v1 CPU shares of `512` for a container requesting 1 CPU.
+
+Let cpu.shares be 1024. Therefore: `1 + ((cpu.shares – 2) × 99) / (1024 – 2) == 100`.
+
+Let cpu.shares be 512. Therefore: `1 + ((cpu.shares – 2) × 99) / (1024 – 2) == 50.4031 ~= 50`.
+
 ### User Stories (Optional)
 
 <!--
@@ -219,8 +333,14 @@ bogged down.
 -->
 
 #### Story 1
+As a Kubernetes user, when I used to work with v1, a container asking for 1 CPU had the same CPU shares as a non-kubernetes
+workload. After moving to cgroup v2 I expect this behavior to stay the same, but instead,
+the CPU priority for Kubernetes workloads is much lower than non-kubernetes workloads compared to v1.
 
 #### Story 2
+As a Kubernetes user, I want to be able to configure sub-cgroups inside a container to further
+distribute resources inside the container. While I could do that nicely with v1, with v2 the granularity is not fine-grained enough.
+As an example, `100m` CPU on v2 results with `4` CPU weight, while on v1 it would be `102` shares.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -230,6 +350,11 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+- A significant amount of the work would need to land in other layers, mainly OCI runtimes and the CRI.
+- We'll probably need a CRI configuration to ensure coordination between the CRI and the OCI runtimes implementations,
+and to ensure it lands at the same version, as suggested
+[here](https://github.com/kubernetes/kubernetes/issues/131216#issuecomment-2806656165).
 
 ### Risks and Mitigations
 
@@ -244,6 +369,13 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+The main risk comes from the fact that we use the same formula for a decent amount of time, hence there's always
+a risk that a user relies on the exact values that we're using.
+
+That being said, the formula in entirely an implementation detail that's most probably not being counted
+to have certain concrete values. In any way, we should ensure that the new formula is well documented
+and that the change is properly communicated to the users.
 
 ## Design Details
 
