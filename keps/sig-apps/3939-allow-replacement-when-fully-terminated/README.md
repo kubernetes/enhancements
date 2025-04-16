@@ -614,6 +614,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   the resources are released (see [tracking the terminating pods](#tracking-the-terminating-pods)).
   Also, provide links for the relevant integration tests in the KEP.
 - Lock the `JobPodReplacementPolicy` feature-gate to true
+- Restore the `.status.terminating` assertion for JobSuccessPolicy Conformance Tests in the following:
+  - https://github.com/kubernetes/kubernetes/blob/44c230bf5c321056e8bc89300b37c497f464f113/test/e2e/apps/job.go#L514-L515
+  - https://github.com/kubernetes/kubernetes/blob/44c230bf5c321056e8bc89300b37c497f464f113/test/e2e/apps/job.go#L556-L557
+  - https://github.com/kubernetes/kubernetes/blob/44c230bf5c321056e8bc89300b37c497f464f113/test/e2e/apps/job.go#L597-L598
 
 #### Deprecation
 
