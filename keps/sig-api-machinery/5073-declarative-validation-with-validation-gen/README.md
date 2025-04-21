@@ -971,7 +971,7 @@ These subresources have the following characteristics:
 1.  **Field Wiping (Pre-Validation):** Declarative Validation *does not* scope which fields a subresource operation can write. Instead, this responsibility lies with the resource's strategy implementation. The strategy modifies the incoming object *before* validation, "wiping" or resetting any fields the specific subresource operation is not allowed to change. Once wiped, the ratcheting mechanism (below) will skip validation of these fields, since wiping ensures that they are unchanged.
 2.  **Full Resource Validation:** The *entire*, modified resource object is validated against the primary resource's versioned type. That is, *same* set of declarative validation rules applied to the primary resource and to status-type subresources.
 3.  **Conditional Validation:** Validation rules can use a special `subresource` parameter (e.g., `subresource == '/status'`) to apply conditional logic. This allows rules to behave differently depending on whether the update comes via the primary resource or a specific subresource.
-4.  **Ratcheting:** Declarative Validation uses ratcheting, meaning it skips validation checks on fields that have not changed from the existing stored object. Combined with field wiping, this scopes validation to only the subset of fields that the subresource operation is intended and permitted to modify.
+4.  **Ratcheting:** Declarative Validation uses ratcheting, meaning validation does not fail for fields that have not changed from the existing stored object. Combined with field wiping, this scopes validation to only the subset of fields that the subresource operation is intended and permitted to modify.
 
 **Validation Examples:**
 
