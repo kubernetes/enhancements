@@ -304,7 +304,7 @@ extending the production code to implement this enhancement.
 ##### Integration tests
 
 <!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
+Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
 Integration tests allow control of the configuration parameters used to start the binaries under test.
 This is different from e2e tests which do not allow configuration of parameters.
 Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
