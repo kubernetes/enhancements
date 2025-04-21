@@ -955,7 +955,7 @@ The linter will flag any violations of these rules, ensuring consistent zero-val
 These subresources have the following characteristics:
 
 * They operate on the same underlying storage object as the primary resource (i.e., same `kind`, same object in etcd).
-* Updates via these subresources are typically scoped to specific fields within the object. Changes to field values not in scope are tyipcally reset, or "wiped", before validation.
+* Updates via these subresources are typically scoped to specific fields within the object. Changes to field values not in scope are typically reset, or "wiped", before validation.
 * In some cases, they permit updates to fields that cannot be changed via the primary resource.
 
 **Examples:**
@@ -1004,7 +1004,7 @@ These subresources have the following characteristics:
 **Support required:**
 
 * Declarative validation will need to provide a easy way for a storage layer to map the internal type of a subresource to the
-  requested versioned type of that resource.  For primary resoruce validation, the information is present in the requestInfo of
+  requested versioned type of that resource.  For primary resource validation, the information is present in the requestInfo of
   the context, but for these validations, the storage layer typically [manages a mapping](https://github.com/kubernetes/kubernetes/blob/30469e180361d7da07b0fee6d47c776fa2cf3e86/pkg/registry/core/replicationcontroller/storage/storage.go#L170-L177) which will need to
   be used. https://github.com/jpbetz/kubernetes/pull/141 provides an example of migrating a `/scale` subresource and 
   introduces utilities for managing the subresource mapping.
