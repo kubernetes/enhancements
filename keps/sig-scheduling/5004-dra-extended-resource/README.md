@@ -446,7 +446,7 @@ type PodStatus struct {
 ```
 
 For example, if a pod has requested for foo.domain/bar, and it is
-scheduled to run on a node that has advertised foo.domain/bar in `ResourceSlice`,
+scheduled to run on a node that where foo.domain/bar was mapped to devices in a DeviceClass,
 then the pod's status is like below:
 
 ```yaml
