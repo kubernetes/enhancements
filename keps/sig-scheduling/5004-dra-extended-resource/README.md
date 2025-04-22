@@ -346,7 +346,7 @@ extended resource. The resource claim object has the following properties:
   * Its `status.allocation.devices` and `status.allocation.reservedFor` are
     used.
   * It does not have annotation `resource.kubernetes.io/pod-claim-name:` as
-    it is created for the extended resource request in a pod spec, not for a
+    it is created for the extended resource request(s) in a pod spec, not for a
     claim in the pod spec.
   * At most one such claim object is created per pod. For example, if the pod
     requests for foo1.domain/bar and foo2.domain/bar, the allocation of devices
