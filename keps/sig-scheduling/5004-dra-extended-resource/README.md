@@ -238,7 +238,7 @@ non-goals of this KEP.
 
 The basic idea is the following:
 
-1. Introduce `extended resource backed by DRA`. It is like the current extended
+1. Introduce an `extended resource backed by DRA` concept. It is like the current extended
    resource backed by device plugin, in that, it has a string name, and a
    discrete countable quantity. Its capacity is provided through DRA
    `ResourceSlice`, its consumption is specified through pod's extended
