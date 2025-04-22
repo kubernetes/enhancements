@@ -330,7 +330,7 @@ type DeviceClassSpec struct {
 	// All devices matched by the device class can be used to satisfy the extended resource requests in pod's spec.
 	//
 	// +optional
-	ExtendedResourceName *string `json:"extendedResourceName,omitempty" protobuf:"bytes,4,opt,name=extendedResourceName"`
+	ExtendedResourceName *string
 }
 ```
 
