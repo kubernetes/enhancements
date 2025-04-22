@@ -244,7 +244,7 @@ The basic idea is the following:
    `ResourceSlice`s, its consumption is specified through pod's extended
    resource request.
 1. Introduce a field `ExtendedResourceName` to `DeviceClass` to allow cluster
-   administrators to advertise certain class of devices as extended resource.
+   administrators to treat certain class of devices as an extended resource.
 1. Introduce a special `ResourceClaim` object to keep track of device allocations
    for all extended resource requests backed by DRA for a pod. kube-scheduler
    uses DRA scheduling algorithm to fit pod's extended resource request to a
