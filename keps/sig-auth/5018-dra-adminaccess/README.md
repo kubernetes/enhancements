@@ -179,7 +179,7 @@ objects as privileged. This feature includes:
    ```yaml
    metadata:
      labels:
-       kubernetes.io/dra-admin-access: "true"
+       resource.k8s.io/admin-access: "true"
    ```
 
    Assumptions:
@@ -194,7 +194,7 @@ objects as privileged. This feature includes:
 
    In the REST storage layer, validate requests to create and update
    `ResourceClaim` or `ResourceClaimTemplate` objects with `adminAccess: true`.
-   Only authorize if namespace has the `kubernetes.io/dra-admin-access` label.
+   Only authorize if namespace has the `resource.k8s.io/admin-access: "true"` label.
 
 1. Grants privileged access to the requested device:
 
@@ -212,7 +212,7 @@ objects as privileged. This feature includes:
 ### Workflow
 
 1. A cluster administrator labels an admin namespace with
-   `kubernetes.io/dra-admin-access`.
+   `resource.k8s.io/admin-access: "true"`.
 
 1. Users who are authorized to create `ResourceClaim` or `ResourceClaimTemplate`
    objects in this admin namespace can set `adminAccess: true` field if they
@@ -284,7 +284,7 @@ shouldn't have allowed unrestricted access.
 Starting in Kubernetes 1.33 (when this KEP was introduced), a validation has
 been added to the REST storage layer to only authorize `ResourceClaim` or
 `ResourceClaimTemplate` with `adminAccess: true` requests if their namespace has
-the `kubernetes.io/dra-admin-access` label to only allow it for users with
+the `resource.k8s.io/admin-access: "true"` label to only allow it for users with
 additional privileges.
 
 The below flowchart starts with `ResourceClaim` creation from
@@ -401,7 +401,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 The scheduler plugin and resource claim controller are covered by the workloads
 in
-https://github.com/kubernetes/kubernetes/blob/master/test/test/integration/scheduler_perf/dra/performance-config.yaml
+https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler_perf/dra/performance-config.yaml
 
 Those tests run in:
 
@@ -415,7 +415,7 @@ Those tests run in:
 - Additional test cases will be added to `test/integration/scheduler_perf` to
   ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
   requests are only authorized if their namespace has the
-  `kubernetes.io/dra-admin-access` label as described in this KEP.
+  `resource.k8s.io/admin-access: "true"` label as described in this KEP.
 
 ##### e2e tests
 
@@ -436,7 +436,7 @@ was developed as part of the overall DRA development effort. We have extended
 this test driver to enable `DRAAdminAccess` feature gate and added tests to
 ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
 requests are only authorized if their namespace has the
-`kubernetes.io/dra-admin-access` label as described in this KEP.
+`resource.k8s.io/admin-access: "true"` label as described in this KEP.
 
 Test links:
 
