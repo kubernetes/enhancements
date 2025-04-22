@@ -337,7 +337,7 @@ type DeviceClassSpec struct {
 ### Resource Claim API
 
 A special resource claim object is created to keep track of device allocations for
-extended resource. The resource claim object has following properties:
+extended resource. The resource claim object has the following properties:
 
   * It is namespace scoped, like other resource claim objects.
   * It is owned by a pod, like other resource claim objects.
