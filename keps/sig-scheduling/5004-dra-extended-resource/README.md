@@ -283,8 +283,8 @@ to admit a pod and pass the allocated devices to the containers in the pod to ru
 
 Note the following cluster setup configuration and constraint:
 
-* One node in cluster has a extended resource backed by DRA, and another node in the
-cluster has the same named extended resource backend by device plugin.
+* One node in cluster can have an extended resource backed by DRA, and another node in the
+cluster can have the same named extended resource backed by a Device Plugin.
 
 * One node in a cluster cannot have both extended resource backed by DRA, and same
   named extended resource backed by device plugin at the same time. This implies
