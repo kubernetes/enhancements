@@ -380,15 +380,13 @@ type DeviceRequest struct {
 }
 ```
 
-As shown above, device request must have a name, and it must be a DNS label.
-kube-scheduler creates one `DeviceRequest` per extended resource backed by DRA
-per container in the pod. The name of the `DeviceRequest` is determined by the
-container name, and the extended resource backed by DRA name. It is in the
-form of "c%d-e%d", where the first %d is the index of the container in the pod.
+To enable the kubelet to map devices back to the containers which requested them,
+the kube-scheduler creates one `DeviceRequest` per extended resource backed by DRA
+per container in the pod. The name of the `DeviceRequest` has the form "container-%d-request-%d", where the first %d is the index of the container in the pod.
 The second %d is the index of the extended resource inside the container
 resource requests. For example, if the first container in the pod has an
 extended resource backed by DRA which is the 3rd such request in the container,
-then the name of the `DeviceRequest` is "c0-e2".
+then the name of the `DeviceRequest` is "container-0-request-2".
 
 ### Pod API
 
