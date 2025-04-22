@@ -327,7 +327,7 @@ type DeviceClassSpec struct {
 	Config []DeviceClassConfiguration `json:"config,omitempty" protobuf:"bytes,2,opt,name=config"`
 
 	// ExtendedResourceName defines a mapping to the extended resource API.
-	// All devices matched by the device class can be used to satisfy the extended resource requests in pod's spec.
+	// All devices matched by the device class can be used to satisfy extended resource requests in pod's spec using this name.
 	//
 	// +optional
 	ExtendedResourceName *string
