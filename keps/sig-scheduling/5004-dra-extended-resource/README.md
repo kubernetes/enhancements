@@ -223,7 +223,7 @@ non-goals of this KEP.
 * Device plugin API must not change. The existing device plugin drivers must
   continue working without change.
 
-* DRA driver API must not change. Core kubernetes (kube-scheduler, kubelet) is
+* DRA driver API must not change. Core Kubernetes (kube-scheduler, kubelet) is
   preferred over DRA driver for any change needed to support the feature.
 
 ### Non-Goals
