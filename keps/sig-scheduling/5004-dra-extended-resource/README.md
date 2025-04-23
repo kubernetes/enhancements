@@ -15,7 +15,7 @@
     - [EventsToRegister](#eventstoregister)
     - [PreFilter](#prefilter)
     - [Filter](#filter)
-    - [Score](#score)
+    - [PostFilter](#postfilter)
     - [Reserve](#reserve)
     - [Unreserve](#unreserve)
     - [Prebind](#prebind)
@@ -210,8 +210,8 @@ non-goals of this KEP.
 
 ### Goals
 
-* Introduce the ability to advertise DRA resources as extended resources, and
-  for the scheduler to consider them for allocation.
+* Enable cluster administrators to specify devices advertised by DRA drivers to satisfy
+  extended resource requests.
 
 * Enable application operators to use the existing extended resource request in
   pod spec to request for DRA resources.
@@ -241,7 +241,7 @@ The basic idea is the following:
 1. Introduce an `extended resource backed by DRA` concept. It is like the current extended
    resource backed by device plugin, in that, it has a string name, and a
    discrete countable quantity. Its capacity can be derived from DRA
-   `ResourceSlice`s, its consumption is specified through pod's extended
+   `ResourceSlice`, its consumption is specified through pod's extended
    resource request.
 1. Introduce a field `ExtendedResourceName` to `DeviceClass` to allow cluster
    administrators to treat certain class of devices as an extended resource.
@@ -254,8 +254,12 @@ The basic idea is the following:
    which devices were picked. More details on this special `ResourceClaim`
    follow below.  When using extended resources advertised for a node by device
    plugin, the existing resource tracking reserves them.
-1. kubelet asks DRA driver to prepare devices in the special `ResourceClaim`,
-   and pass the devices to containers in a pod with the extended resource requests.
+1. Introduce a field `ExtendedResourceClaimStatus` to pod's `Status`, such that
+   kubelet cloud use it to find the special `ResourceClaim`, then kubelet asks
+   DRA driver to prepare devices in the special `ResourceClaim`, after which
+   kubelet passes the devices to containers in the pod with the extended
+   resource requests, based on the container/extended resource to device
+   request mapping in the `ExtendedResourceClaimStatus`.
 
 Some quick clarifications around the basic concepts: extended resource backed by
 device plugin, extended resource backed by DRA, and dynamic resource.
@@ -284,7 +288,7 @@ to admit a pod and pass the allocated devices to the containers in the pod to ru
 Note the following cluster setup configuration and constraint:
 
 * One node in cluster can have an extended resource backed by DRA, and another node in the
-cluster can have the same named extended resource backed by a Device Plugin.
+cluster can have the same named extended resource backed by Device Plugin.
 
 * One node in a cluster cannot have both extended resource backed by DRA, and same
   named extended resource backed by device plugin at the same time. This implies
@@ -295,8 +299,8 @@ cluster can have the same named extended resource backed by a Device Plugin.
 
 ### Device Class API
 The extended resource name to DRA device mapping can be specified at
-`DeviceClassSpec`. The same extended resource name can be given to different
-device classes, and one device class can have at most one extended resource name.
+`DeviceClassSpec`. The same extended resource name can be given to at most one 
+device class, and one device class can have at most one extended resource name.
 
 Cluster administrator is soly responsible for creating device classes, and the
 mapping between the class of devices and the extended resource name.
@@ -310,22 +314,6 @@ application that uses the devices.
 // DeviceClassSpec is used in a [DeviceClass] to define what can be allocated
 // and how to configure it.
 type DeviceClassSpec struct {
-	// Each selector must be satisfied by a device which is claimed via this class.
-	//
-	// +optional
-	// +listType=atomic
-	Selectors []DeviceSelector `json:"selectors,omitempty" protobuf:"bytes,1,opt,name=selectors"`
-
-	// Config defines configuration parameters that apply to each device that is claimed via this class.
-	// Some classses may potentially be satisfied by multiple drivers, so each instance of a vendor
-	// configuration applies to exactly one driver.
-	//
-	// They are passed to the driver, but are not considered while allocating the claim.
-	//
-	// +optional
-	// +listType=atomic
-	Config []DeviceClassConfiguration `json:"config,omitempty" protobuf:"bytes,2,opt,name=config"`
-
 	// ExtendedResourceName defines a mapping to the extended resource API.
 	// All devices matched by the device class can be used to satisfy extended resource requests in pod's spec using this name.
 	//
@@ -341,17 +329,24 @@ extended resource. The resource claim object has the following properties:
 
   * It is namespace scoped, like other resource claim objects.
   * It is owned by a pod, like other resource claim objects.
-  * It has `spec` of devices.requests, with each request name being a hash of the
-    container name and the extended resource backed by DRA name inside the container.
+  * It has `Spec` of device.requests, with each request name being an encoding
+    of the container name and the extended resource backed by DRA name inside
+    the container. It is needed to map allocated devices back to the container
+    which requested them.
   * Its `status.allocation.devices` and `status.allocation.reservedFor` are
     used.
   * It does not have annotation `resource.kubernetes.io/pod-claim-name:` as
     it is created for the extended resource request(s) in a pod spec, not for a
     claim in the pod spec.
-  * At most one such claim object is created per pod. For example, if the pod
+  * It does have annotation `resource.kubernetes.io/extended-resource-claim: pod-name` as
+    it is created, deleted, updated by the scheduler. It is used by scheduler
+    to find the resource claim it has created, and ensure at most one such
+    claim per pod.
+  * At most one such claim object is created per pod. For example, if a pod
     requests for foo1.domain/bar and foo2.domain/bar, the allocation of devices
-    for each are recorded in DeviceResourceRequestAllocationResult, and
-    one claim object with two `Results` is created for the pod.
+    for each are recorded in DeviceResourceRequestAllocationResult, and just 
+    one claim object with allocation `Results` that lists all allocated devices
+    is created for the pod.
 
 The special resource claim object lifecycle is managed by the scheduler and
 garbage collector.
@@ -365,6 +360,8 @@ garbage collector.
   * It is *deleted*
     * either together with the owning pod's deletion.
     * or by the scheduler dynamic resource plugin during unReserve phase.
+    * or by the scheduler dynamic resource plugin during PostFilter phase.
+  * It is *discovered* by the kubelet via `pod.Status.ExtendedResourceClaimStatus`
   * It is *read* by the kubelet DRA device driver to prepare the devices listed
     therein when preparing to run the pod.
 
@@ -382,7 +379,8 @@ type DeviceRequest struct {
 
 To enable the kubelet to map devices back to the containers which requested them,
 the kube-scheduler creates one `DeviceRequest` per extended resource backed by DRA
-per container in the pod. The name of the `DeviceRequest` has the form "container-%d-request-%d", where the first %d is the index of the container in the pod.
+per container in the pod. The name of the `DeviceRequest` has the form
+"container-%d-request-%d", where the first %d is the index of the container in the pod.
 The second %d is the index of the extended resource inside the container
 resource requests. For example, if the first container in the pod has an
 extended resource backed by DRA which is the 3rd such request in the container,
@@ -403,7 +401,7 @@ type PodExtendedResourceClaimStatus struct {
         // Names identifies the mapping of <container, extended resource backed by DRA> to  device request.
         // +patchMergeKey=requestName
         // +patchStrategy=merge,retainKeys
-        // +listType=map
+        // +listType=atomic
         // +listMapKey=requestName
         // +featureGate=DynamicResourceAllocation
         Names []ContainerExtendedResourceRequest `json:"names" patchStrategy:"merge,retainKeys" patchMergeKey:"requestName" protobuf:"bytes,1,rep,name=names"`
@@ -444,7 +442,7 @@ type PodStatus struct {
 ```
 
 For example, if a pod has requested for foo.domain/bar, and it is
-scheduled to run on a node that where foo.domain/bar was mapped to devices in a DeviceClass,
+scheduled to run on a node where foo.domain/bar was mapped to devices in a DeviceClass,
 then the pod's status is like below:
 
 ```yaml
@@ -453,10 +451,10 @@ status:
    - names:
      - container-name
      - foo.domain/bar
-     - c0-e2
+     - container-0-request-2
    resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
 ```
-where `deviceRequest` name is "c0-e2", and container-name is the first container
+where `deviceRequest` name is "container-0-request-2", and container-name is the first container
 in the pod, foo.domain/bar is the 3rd extended resource in the container's requests.
 
 Note the validations for extendedResourceClaimStatus are different from the
@@ -490,8 +488,8 @@ type Resource struct {
 
 	// NEW!
 	// DynamicResources: keep track of extended resources backed by DRA to device classes
-  // The map's key is the extended resource name that has at least one device
-  // class advertises it.
+	// The map's key is the extended resource name that has at least one device
+	// class advertises it.
 	DynamicResources map[v1.ResourceName][]string
 }
 ```
@@ -532,7 +530,12 @@ It checks if the pod has any container requests for extended resources backed by
 If not, and no claims in the pod, then the plugin can return early, as there
 is nothing to do.
 
-If the pod still needs to be considered by the plugin, then it creates a
+If the pod still needs to be considered by the plugin, then it checks if the
+special resource claim for extended resources backed by DRA has been created
+before by scheduler, by checking resource claim name having pod name in the
+annotation `resource.kubernetes.io/extened-resource-claim: pod-name`.
+
+If found, scheduler would reuse it. If not found, scheduler would create a
 special resource claim that has empty spec. The exact spec needs to be decided
 during Filter phase, as some node may have device plugin provide the capacity
 for the extended resource, some other node may have DRA provide the capacity.
@@ -545,11 +548,10 @@ dynamicresource plugin needs to try allocate the resource by filling in the
 special claim's `Spec.Devices.Requests` field.
 
 One `request` is created per container, and per extended resource backed by DRA
-in the container. The `DeviceClass` in the request is randomly picked if there
-are multiple device classes advertising the extended resource. The `Name` of the
-request is determined by the container name and the extended resource name, in
-case the name conflicts with an existing device request, the next choice is
-deterministically picked until there is no conflict.
+in the container. The `DeviceClass` in the request is the device class that has
+the matching `ExtendedResourceName` field (one extended resource name can be in
+at most one device class). The `Name` of the request is determined by the
+container name and the extended resource name.
 
 The allocator needs to be modified to allow for the special resource claim for
 extended resource backed by DRA, which could vary by node. The `Allocate`
@@ -561,10 +563,10 @@ created during the preFilter phase.
 If there is an allocation for a node, the allocation, and the claim are
 recorded in cyclestate.
 
-#### Score
-If two nodes can fit the pod, one node has installed device plugin, the other
-has installed DRA, score the DRA node higher. This is not going to be
-considered in ALPHA.
+#### PostFilter
+If the special resource claim is not available, i.e., the claim cannot be bound
+to the node, then scheduler would deallocate it, and delete it during
+PostFilter phase.
 
 #### Reserve
 Reserve the in-memory `ResourceClaim` and its allocation results in the assume
@@ -630,12 +632,12 @@ extending the production code to implement this enhancement.
 - `<package>`: `<date>` - `<test coverage>`
 -->
 
-Start of v1.33 development cycle (v1.33.0-alpha.x-xxx-xxxxxxxxxxxx):
+Start of v1.34 development cycle (v1.33.0):
 
-- `k8s.io/dynamic-resource-allocation/cel`: ??.?%
-- `k8s.io/dynamic-resource-allocation/structured`: ??.?%
-- `k8s.io/kubernetes/pkg/controller/resourceclaim`: ??.?%
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: ??.?%
+- `k8s.io/dynamic-resource-allocation/cel`: 88.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 90.5%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 65.4%
 
 ##### Integration tests
 
@@ -671,9 +673,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 End-to-end testing depends on a working resource driver and a container runtime
 with CDI support. A [test
 driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
-was developed as part of the overall DRA development effort. We will extend
-this test driver to enable support for `ExtendedResourceName`s and add tests to
-ensure they are handled by the scheduler as described in this KEP.
+was developed as part of the overall DRA development effort. We will add tests to
+ensure `ExtendedResourceName`s are handled by the scheduler as described in this KEP.
 
 ### Graduation Criteria
 
@@ -702,8 +703,9 @@ drivers that they provide to customers.
 ### Version Skew Strategy
 
 All of the API extensions proposed in this KEP is the optional
-`ExtendedResourceName`. There is no risk for version skew downgrades
-because these `ResourceSlice` and `Devices` will never have existed in
+`ExtendedResourceName` in `DeviceClass`, and `ExtendedResourceClaimStatus` in
+`Pod`. There is no risk for version skew downgrades
+because these `DeviceClass` and `Pod` will never have existed in
 older clusters.
 
 ## Production Readiness Review Questionnaire
@@ -717,6 +719,7 @@ older clusters.
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
@@ -725,11 +728,11 @@ No
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Applications that were already deployed and are running will continue to
-work. They will also continue to work when restarted because the CDI devices that
+work. They will continue to work when restarted because the CDI devices that
 have been prepared for them won't change across the restart.
 
-The DRA driver itself should also be able to survive a rollback, It
-will just lose the ability to advertise devices as extended resources.
+The DRA driver itself should also be able to survive a rollback, as there is no
+DRA driver change in this KEP.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -740,14 +743,9 @@ the accounting for them is updated in the scheduler.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Objects with the API additions introduced in the KEP are never written by
-Kubernetes components themselves. They are written by 3rd-party drivers.
-However, the scheduler does consume these objects and track information from
-them in order to make scheduling decisions.
-
-Unit tests will be written in the scheduler to verify that enabling /
+Unit tests will be written in the scheduler and kubelet to verify that enabling /
 disabling of the DRAExtendedResource feature gate is non-disruptive to the
-scheduler.
+scheduler and kubelet.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -893,13 +891,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-Will be considered for beta.
+No.
 
 ### Scalability
 
-No. The API extensions in this KEP are limited to the existing `ResourceSlice`
-object, with no additional requirements to consume this object by additional
-components.
+No. The API extensions in this KEP are limited to at most one claim for extended resource backed by DRA per pod.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -912,13 +908,13 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes. With the extensions proposed in this KEP, individual
-`ResourceSlices` have additional fields available to them, thus increasing
-their overall signature.but it is ultimately up to how 3rd party vendors decide to use them.
+`DeviceClass`  and `Pod` have additional fields, thus increasing
+their overall signature. In addition,  there is the special resource claim for
+extended resource by DRA, there is at most one such claim per pod.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes. The time to allocate a device to a claim (and thus schedule the first pod
-that references that claim) will be affected.
+Yes. The time to allocate a device to a pod with extended resource request will be affected.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -967,7 +963,7 @@ Will be considered for beta.
 
 ## Implementation History
 
-- Kubernetes 1.33: KEP accepted as "???".
+- Kubernetes 1.34: KEP accepted.
 
 ## Drawbacks
 
