@@ -68,8 +68,11 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [ResourceSlice resources will be harder to understand](#resourceslice-resources-will-be-harder-to-understand)
+    - [More attributes, capacities and counters might worsen worst-case scheduling](#more-attributes-capacities-and-counters-might-worsen-worst-case-scheduling)
 - [Design Details](#design-details)
   - [API](#api)
+  - [Implementation](#implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -123,7 +126,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -144,7 +147,9 @@ scheduler when selecting devices for user requests in ResourceClaims.
 
 With this KEP, DRA drivers can define metadata in mixins separately from specific
 devices and include them in a device by reference. This reduces the duplication
-in ResourceSlices and allows for more compact device definitions. 
+in ResourceSlices and allows for more compact device definitions. It also enables
+defining devices with more attributes, capacities and consumed counters than without
+mixins. Mixins can also be used in counter sets.
 
 ## Motivation
 
@@ -171,6 +176,8 @@ also limits the number of partitionable devices for a single physical device.
 - Enable a more compact way to define devices in ResourceSlices so duplication can
   be reduced and a larger number of devices can be published within a single
   ResourceSlice.
+- Enable defining devices with more attributes, capacities, and consumed counters.
+- Enable defining counter sets with more counters.
 
 ### Non-Goals
 
@@ -201,8 +208,8 @@ types of mixins that will be supported:
 
 1. The `DeviceCounterConsumption` field defines a list of named
    `DeviceCounterConsumptionMixin`s. These define counters that can be
-   used to extend the counter consumption defined explicitly `DeviceCounterConsumption`
-   objects in the `ConsumesCounters` list on `Device`. The `CounterSet` from
+   used to extend the counter consumption defined explicitly in `DeviceCounterConsumption`
+   in the `ConsumesCounters` list on `Device`. The `CounterSet` from
    which the counters will be consumed is not specified in the
    `DeviceCounterConsumptionMixin`, but rather provided when the mixin is
    referenced from the device.
@@ -230,7 +237,10 @@ duplication and reducing the size of the ResourceSlice object.
 ### Risks and Mitigations
 
 This change doesn't really affect the functionality of DRA, it just
-provides a more compact way to define devices in ResourceSlices.
+provides a more compact way to define devices in ResourceSlices. But it
+still have some consequences worth pointing out here.
+
+#### ResourceSlice resources will be harder to understand
 
 The biggest challenge with this change is that it adds a level of
 indirection for the `Device` and `CounterSet` definitions, meaning
@@ -239,6 +249,12 @@ that it gets harder to understand the ResourceSlice objects.
 We have discussed adding a kubectl command or a plugin that will allow
 users to see the fully flattened versions of a ResourceSlice. But this
 is not in scope for alpha.
+
+#### More attributes, capacities and counters might worsen worst-case scheduling
+
+With mixins, DRA driver authors can choose to create more complex devices,
+which might lead to worse scheduling performance. But it is up to DRA driver
+authors to do this, so it is not something that can be triggered by normal users.
 
 ## Design Details
 
@@ -467,8 +483,22 @@ type DeviceCounterConsumptionMixinRef struct {
 }
 ```
 
+### Implementation
+
 The DRA scheduler plugin will flatten the counter sets and devices before
-going through the allocation process.
+going through the allocation process. This will happen as part of conversion
+from the `v1beta1` API to the types defined in 
+[`k8s.io/dynamic-resource-allocation/api`](https://github.com/kubernetes/dynamic-resource-allocation/tree/master/api).
+
+If the mixins feature is disabled during this process, any devices or counter sets that
+references mixins will be droppped. This also means that all devices that references
+a dropped counter set will also be dropped. The result is that the scheduler will not
+see those devices. From the users point of view, the consequence is that the scheduler
+might pick a different device than expected or fails to allocate any device at all. But we
+think this failure mode is preferable than allowing the scheduler to make allocation decisions
+based on incomplete data.
+
+###
 
 ### Test Plan
 
@@ -555,15 +585,15 @@ used by the scheduler.
 ### Upgrade / Downgrade Strategy
 
 Mixins will no longer work when downgrading to a release without support for it.
-Since the mixins and include fields will be dropped, it means the scheduler will
-have an incorrect view of the ResourceSlice and might make incorrect allocation
-decisions.
+As described in the [Implementation](#implementation) section, devices that uses
+mixins or reference counter sets that is using mixins, will not be visible to the
+scheduler.
 
 ### Version Skew Strategy
 
 During version skew where the apiserver supports the feature and the scheduler
-doesn't, the scheduler will see an incomplete view of the ResourceSlice. This
-means it might make incorrect allocation decisions.
+doesn't, the devices that is using the mixins feature will be dropped and
+not visible to the scheduler (ref [Implementation](#implementation)).
 
 ## Production Readiness Review Questionnaire
 
@@ -783,11 +813,24 @@ size of the ResourceSlice object. However, it also provides features that
 allows drivers to represent devices and counter sets in a more compact way,
 thereby potentially reducing the size of the ResourceSlice object.
 
+To manage the worst-case size of the `ResourceSlice` object, the following limits
+are introduced in addition to the ones already described in the
+[Partitionable Devices KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4815-dra-partitionable-devices#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects):
+* The total number of attributes, capacities and counters defined in mixins in a
+  `ResourceSlice` is limited to 256.
+* The total number of mixins allowed in `Device`, `CounterSet` and
+  `DeviceCounterConsumption` is limited to 8.
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 Flattening the devices and counter sets will require slightly more work, but
 this is unlikely to have any meaningful impact on the time used for allocation.
+
+It does allow DRA driver authors to create more complex devices, with a larger
+number of attributes, capacities and counters. It also allows for larger number
+of counters in the counter sets. This can worsen the worst-case scheduling
+performance.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -832,7 +875,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 1.33: first KEP revision as part of the Partitionable Devices KEP
-- 1.34: split out into a separate KEP and implementation.
+- 1.34: split out into a separate KEP and initial implementation.
 
 ## Drawbacks
 

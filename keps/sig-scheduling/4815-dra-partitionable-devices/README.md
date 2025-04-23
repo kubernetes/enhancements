@@ -350,7 +350,10 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
    defines a set of counters that is available for devices. This makes it possible
    to define overlapping partitions of devices, while still making sure that no
    device can be allocated if the necessary counters (i.e. resources) is not
-   available.
+   available. Each counter is identified by its name and the name of its set.
+   Nesting counters inside sets was chosen because it enables referencing a mixin
+   (link to other KEP here) with a list of counters in different counter sets and it
+   makes it possible to align groups of counters with the underlying physical devices.
 
 1. Introduce a new field, `ConsumesCounters` under `Device`. It specifies
    the amount the device will draw for the counters in the referenced `CounterSet`.
@@ -1139,7 +1142,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 The existing [integration tests for kube-scheduler which measure
 performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
-will be extended to cover the overheaad of running the additional logic to
+will be extended to cover the overhead of running the additional logic to
 support the features in this KEP. These also serve as [correctness
 tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
 as part of the normal Kubernetes "integration" jobs which cover [the dynamic
@@ -1161,8 +1164,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 End-to-end testing depends on a working resource driver and a container runtime
 with CDI support. A [test
 driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
-was developed as part of the overall DRA development effort. We will extend
-this test driver to enable support for `PartitionableDevice`s and add tests to
+was developed as part of the overall DRA development effort. We are extending
+this test driver to enable support for `PartitionableDevice`s and adding tests to
 ensure they are handled by the scheduler as described in this KEP.
 
 ### Graduation Criteria
@@ -1193,11 +1196,11 @@ drivers that they provide to customers.
 
 ### Version Skew Strategy
 
-The API extensions proposed in this KEP are added as new fields on the
-`ResourceSliceSpec` and `Device` types. All the fields will be behind
+The API extensions added through this KEP is as new fields on the
+`ResourceSliceSpec` and `Device` types. All the fields are behind
 a feature flag. The kube-scheduler is expected to match the kube-apiserver minor version, 
 but may be up to one minor version older (to allow live upgrades).
-In the release it's been added, the feature will be disabled by default and not recognized by other components. 
+In the release it's been added, the feature is disabled by default and not recognized by other components. 
 Whoever enabled the feature manually would take the risk of component like kube-scheduler being old and not recognize 
 the fields. After one releases, it should work perfectly.
 
@@ -1207,6 +1210,8 @@ clusters. For upgrades, it will be the responsibility of the user to make sure
 that all components in the cluster have been updated to a version that supports
 the feature. If they are not, components might not see all fields in a ResourceSlice
 and therefore make "incorrect" decisions.
+For downgrades, the user first has to disable the use of partitionable devices in
+DRA drivers before making changes to the cluster which disable the feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -1418,7 +1423,25 @@ Yes. With the extensions proposed in this KEP, individual
 `ResourceSlices` have additional fields available to them, thus increasing
 their overall signature. A separate Mixins feature was previously part of this
 change, but will now be handled separately. It will add features that let
-users define devices in a more compact way and thereby reducing the size of API objects.
+users define devices in a more compact way and thereby reducing the size of API
+objects. But it is ultimately up to how 3rd party vendors decide to use them.
+
+To limit the size of the `ResourceSlice` objects we have implemented several limits that
+is enforced by validation:
+* The maximum number of counters in a single `ResourceSlice` is limited to 32.
+* The maximum number of devices in a single `ResourceSlice` is limited to 128.
+
+For each `Device` the following limits are enforced:
+* The maximum number of attributes and capacity in a single `Device` is limited to 32.
+* The maximum number of consumed counters in a single `Device` is limited to 32.
+
+Across all `Device` objects in a `ResourceSlice`, the following limits are enforced:
+* The total number of consumed counters across all `Device` objects in a single `ResourceSlice`
+  is limited to 1024.
+
+The `ResourceSlice`-wide limits on fields within the `Device` object is used to allow users
+to decide whether to have few devices with many properties or many devices with few properties.
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1473,6 +1496,7 @@ Will be considered for beta.
 ## Implementation History
 
 - Kubernetes 1.32: KEP accepted as "implementable".
+- Kubernetes 1.33: Implemented as an alpha feature.
 
 ## Drawbacks
 
