@@ -976,11 +976,11 @@ These subresources have the following characteristics:
 **Validation Examples:**
 
 * An update via `pods/status` first has its `spec` field changes wiped by the Pod strategy. Then, the entire Pod object is validated using the standard Pod validation rules. Ratcheting skips checks on unchanged `metadata` or `status` fields.
-* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:if('subresource != "/resize"')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
+* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:exceptSubresource("/resize"')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
 
 **Support required:**
 
-* To enable conditional validation, declarative validation provides access to the `subresources` parameter within validation rule expressions.
+* Conditional validation, provided by dedicated `+k8s:subresource` and `+k8s:exceptSubresource` tags and a `subresources` parameter within validation rule expressions (e.g. `+k8s:if('subresource != "/resize"')=+k8s:immutable`).
 
 #### Scale-Type Subresources
 
@@ -1008,10 +1008,15 @@ These subresources have the following characteristics:
   the context, but for these validations, the storage layer typically [manages a mapping](https://github.com/kubernetes/kubernetes/blob/30469e180361d7da07b0fee6d47c776fa2cf3e86/pkg/registry/core/replicationcontroller/storage/storage.go#L170-L177) which will need to
   be used. https://github.com/jpbetz/kubernetes/pull/141 provides an example of migrating a `/scale` subresource and 
   introduces utilities for managing the subresource mapping.
+* Conditional validation, provided by dedicated `+k8s:subresource` and `+k8s:exceptSubresource` tags and a `subresources` parameter within validation rule expressions (e.g. `+k8s:if('subresource != "/scale"')=...`).
 
 #### Streaming Subresources
 
-Subresources such as `pods/exec`, `pods/attach`, and `pods/portforward` do not require declarative validation, as they operate on data streams, not structured resource data.
+Subresources such as `pods/exec`, `pods/attach`, and `pods/portforward` often have "options" as structured resource data. Declarative
+validation will support validation of such resources using the same mechanisms as scale-type subresources, only since the resource
+is not stored, the use case is much simpler and only requires the "Subresource Validation" step.
+
+The streamed data does not require declarative validation, as it is not structured resource data.
 
 ### Ratcheting
 
