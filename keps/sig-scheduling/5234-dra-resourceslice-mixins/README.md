@@ -595,6 +595,12 @@ During version skew where the apiserver supports the feature and the scheduler
 doesn't, the devices that is using the mixins feature will be dropped and
 not visible to the scheduler (ref [Implementation](#implementation)).
 
+The exception here is in 1.34 (the first version where this feature is in alpha).
+If the APIServer is at 1.34 and the scheduler is at 1.33, the APIServer will send
+the new fields, but the scheduler will not know what to do about them. It will end
+up ignoring them, which can lead to incorrect scheduling decisions. Note that this
+scenario only applies to the initial 1.34 release and will not apply for 1.35+.
+
 ## Production Readiness Review Questionnaire
 
 <!--

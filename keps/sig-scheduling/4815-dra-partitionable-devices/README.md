@@ -352,8 +352,9 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
    device can be allocated if the necessary counters (i.e. resources) is not
    available. Each counter is identified by its name and the name of its set.
    Nesting counters inside sets was chosen because it enables referencing a mixin
-   (link to other KEP here) with a list of counters in different counter sets and it
-   makes it possible to align groups of counters with the underlying physical devices.
+   ([KEP-5234](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5234-dra-resourceslice-mixins))
+   with a list of counters in different counter sets and it makes it possible
+   to align groups of counters with the underlying physical devices.
 
 1. Introduce a new field, `ConsumesCounters` under `Device`. It specifies
    the amount the device will draw for the counters in the referenced `CounterSet`.
