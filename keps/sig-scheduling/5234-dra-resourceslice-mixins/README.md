@@ -69,6 +69,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [ResourceSlice resources will be harder to understand](#resourceslice-resources-will-be-harder-to-understand)
+    - [Flatting of ResourceSlices might be needed by all tools using the API](#flatting-of-resourceslices-might-be-needed-by-all-tools-using-the-api)
     - [More attributes, capacities and counters might worsen worst-case scheduling](#more-attributes-capacities-and-counters-might-worsen-worst-case-scheduling)
 - [Design Details](#design-details)
   - [API](#api)
@@ -163,7 +164,8 @@ capacity. This has a few consequences:
   duplication between the published devices.
 * The size of the data required to specify each device reduces the number of
   devices that can be defined in a single ResourceSlice without hitting the
-  Kubernetes size limit.
+  limit on the total size of objects in Kubernetes (1.5MB by default, but can
+  be changed).
 
 The latter can be addressed by splitting the devices across multiple
 `ResourceSlice`s within a single pool, but that isn't always an option.
@@ -192,14 +194,14 @@ The proposal has two parts to it, the definition of mixins and the
 mechanism for referencing mixins from devices and counter sets.
 
 A new `Mixins` field will be added to the `ResourceSliceSpec` as an
-optional field. It will have three properties, one for each of the three
+optional field of type `ResourceSliceMixins`. It will have three properties, one for each of the three
 types of mixins that will be supported:
 
 1. The `CounterSet` field defines a list of named `CounterSetMixins`.
    These define counters that can be used to extend the counters
    explicitly defined in a `CounterSet`. This allows for reduced duplication
    if there are many identical physical devices that must be represented as
-   `CounterSet`s. `CounterSetMixins` can not be referenced directly by devices.
+   `CounterSet`s. `CounterSetMixins` cannot be referenced directly by devices.
 
 1. The `Device` field is a list of named `DeviceMixin`s. These define
    attributes and capacities that can be used to extend what is defined
@@ -207,28 +209,26 @@ types of mixins that will be supported:
    only be referenced by devices.
 
 1. The `DeviceCounterConsumption` field defines a list of named
-   `DeviceCounterConsumptionMixin`s. These define counters that can be
-   used to extend the counter consumption defined explicitly in `DeviceCounterConsumption`
-   in the `ConsumesCounters` list on `Device`. The `CounterSet` from
-   which the counters will be consumed is not specified in the
-   `DeviceCounterConsumptionMixin`, but rather provided when the mixin is
-   referenced from the device.
+   `DeviceCounterConsumptionMixin`s. These define the pattern of consumption of
+   counters, distinct from the specific underlying counter set from which they
+   are being consumed. The `CounterSet` from which the counters will be consumed
+   is not specified in the `DeviceCounterConsumptionMixin`, but rather provided
+   when the mixin is referenced from the device.
 
 The mixins are referenced using the same pattern in all three places. The field
-is named `Includes` and will contain a list of references to the mixins. Rather
-than representing the references as a list of strings, there is a list of type
-`<SomeType>MixinRef` which has a `Name` field. This enables adding additional
-values to the reference in the future.
+is named `Includes` and will contain a list of references to the mixins. The mixins
+are applied in the order listed, meaning that later mixins will overwrite earlier
+ones in case of conflicts. Properties set directly on the `CounterSet`, `Device` or
+`DeviceCounterConsumption` will always override mixins.
 
-1. The `Includes` field on `CounterSet` is a list of `CounterSetMixinRef`s. This
-   can reference mixins defined in the `CounterSet` field on the `ResourceSliceMixins`.
+1. The `Includes` field on `CounterSet` is a list of references
+   to mixins defined in the `CounterSet` field on the `ResourceSliceMixins`.
 
-1. The `Includes` field on `Device` is a list of of `DeviceMixinRef`s. This can
-   reference mixins defined in the `Device` field on the `ResourceSliceMixins`.
+1. The `Includes` field on `Device` is a list of references to mixins defined
+   in the `Device` field on the `ResourceSliceMixins`.
 
-1. The `Includes` field on `DeviceCounterConsumption` is a list of 
-   `DeviceCounterConsumptionMixinRef`s. This can reference mixins defined
-   in the `DeviceCounterConsumption` field on the `ResourceSliceMixins`.
+1. The `Includes` field on `DeviceCounterConsumption` is a list of references
+   to mixins defined in the `DeviceCounterConsumption` field on the `ResourceSliceMixins`.
 
 With these changes, attributes, capacity, and counters that are shared across
 devices or counter sets can be split out into mixins, thereby reducing
@@ -250,17 +250,32 @@ We have discussed adding a kubectl command or a plugin that will allow
 users to see the fully flattened versions of a ResourceSlice. But this
 is not in scope for alpha.
 
+#### Flatting of ResourceSlices might be needed by all tools using the API
+
+Any tool that needs to understand the full device definition will need to
+flatten the ResourceSlice. This can lead to duplicate effort across different
+tools and potential for implementations that differ in meaningful ways. This can
+be addressed by providing reusable libraries that can be leveraged by other
+tools.
+
 #### More attributes, capacities and counters might worsen worst-case scheduling
 
-With mixins, DRA driver authors can choose to create more complex devices,
-which might lead to worse scheduling performance. But it is up to DRA driver
-authors to do this, so it is not something that can be triggered by normal users.
+This will not negatively effect existing scheduling performance of existing
+ResourceSlice definitions, but DRA driver authors taking advantage of mixins should
+be made aware of possible performance effects due to this increased referential complexity.
+
+This also demonstrates that DRA driver authors should consider performancer when they
+write drivers and decide how to structure devices into ResourceSlices and pools. Information
+and best-practices about how to write drivers are available in
+https://github.com/kubernetes-sigs/dra-example-driver and this will also include information
+about performance and scalability.
 
 ## Design Details
 
 ### API
 
-The exact set of proposed API changes can be seen below:
+The exact set of proposed API changes can be seen below (`...` is used in places where new fields
+are added to existing types):
 ```go
 // ResourceSliceSpec contains the information published by the driver in one ResourceSlice.
 type ResourceSliceSpec struct {
@@ -294,16 +309,7 @@ type CounterSet struct {
   // +featureGate=DRAResourceSliceMixins
   // +listType=atomic
   // +optional
-  Includes []CounterSetMixinRef
-}
-
-// CounterSetMixinRef defines a reference to a CounterSetMixin.
-type CounterSetMixinRef struct {
-  // Name refers to a CounterSetMixin defined in the same
-  // ResourceSlice.
-  //
-  // +required
-  Name string
+  Includes []string
 }
 
 // ResourceSliceMixins defines mixins for the ResourceSlice.
@@ -437,16 +443,7 @@ type Device struct {
   // +featureGate=DRAResourceSliceMixins
   // +optional
   // +listType=atomic
-  Includes []DeviceMixinRef
-}
-
-// DeviceMixinRef defines a reference to a DeviceMixin.
-type DeviceMixinRef struct {
-  // Name refers to a DeviceMixin defined in the same
-  // ResourceSlice.
-  //
-  // +required
-  Name string
+  Includes []string
 }
 
 type DeviceCounterConsumption struct {
@@ -469,17 +466,7 @@ type DeviceCounterConsumption struct {
   // +featureGate=DRAResourceSliceMixins
   // +optional
   // +listType=atomic
-  Includes []DeviceCounterConsumptionMixinRef
-}
-
-// DeviceCapacityConsumptionMixinRef defines a reference to a
-// DeviceCapacityConsumptionMixin.
-type DeviceCounterConsumptionMixinRef struct {
-  // Name refers to a DeviceCounterConsumptionMixin defined in the same
-  // ResourceSlice.
-  //
-  // +required
-  Name string
+  Includes []string
 }
 ```
 
@@ -600,6 +587,8 @@ If the APIServer is at 1.34 and the scheduler is at 1.33, the APIServer will sen
 the new fields, but the scheduler will not know what to do about them. It will end
 up ignoring them, which can lead to incorrect scheduling decisions. Note that this
 scenario only applies to the initial 1.34 release and will not apply for 1.35+.
+The recommendation is that the user should not enable this alpha feature unless
+the scheduler is updated to 1.34 and enables the alpha feature as well.
 
 ## Production Readiness Review Questionnaire
 

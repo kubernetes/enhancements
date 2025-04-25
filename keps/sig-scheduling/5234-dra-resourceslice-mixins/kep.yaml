@@ -15,8 +15,8 @@ reviewers:
   - "@thockin"
 approvers:
   - "@mrunalp" # SIG-Node
-  - "@alculquicondor" # SIG-Scheduling
-  - "@MaciekPytel" # SIG-Autoscaling
+  - "@dom4ha" # SIG-Scheduling
+  - "@jackfrancis" # SIG-Autoscaling
   - "@thockin" # API Review
 
 see-also:
