@@ -74,6 +74,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Design Details](#design-details)
   - [API](#api)
   - [Implementation](#implementation)
+  - [Limits](#limits)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -485,7 +486,33 @@ might pick a different device than expected or fails to allocate any device at a
 think this failure mode is preferable than allowing the scheduler to make allocation decisions
 based on incomplete data.
 
-###
+### Limits
+
+For DRA, we have gradually moved away from individual per-slice and per-map limits towards
+aggregating at the higher level. The reason for this is to give users maximum flexibility between
+defining a small number of complex devices or a large number of simple devices in a single
+ResourceSlice without exceeding the limit on the size of Kubernetes objects.
+
+For this KEP, we propose taking this to what is essentially the logical conclusion, where
+we enforce most of the limits across all devices, mixins and counter sets in a ResourceSlice,
+rather than setting separate limits for each of them.
+
+The ResourceSlice-wide limits will be:
+* Total number of devices is 128.
+* Total combined number of attributes and capacity in a ResourceSlice is 4096 (so with the maximum number of devices, there can be 32 per device).
+* Total number of counters is 256.
+* Total number of consumed counters is 2048 (so with the maximum number of devices, there can be 16 per device).
+
+We will still enforce some per-slice limits:
+* The number of mixins that can be referenced from each device, counter set or device counter consumption is 8.
+* The number of taints per device is 4.
+
+The limits on the number of counters across counter sets, mixins and device counter consumption in 1.33 for the
+Partitionable Devices KEP will be removed, as those are still in alpha.
+The limit of 32 on the number of attributes and capacities per device will be removed over the next 2 releases (1.34 and 1.35) to
+preserve safe rollbacks.
+
+With these limits, the worst-case size for a ResourceSlice increases from 1,107,864 bytes to 1,288,825 bytes.
 
 ### Test Plan
 
@@ -807,15 +834,6 @@ Yes and no. It does add additional fields, which increases the worst case
 size of the ResourceSlice object. However, it also provides features that
 allows drivers to represent devices and counter sets in a more compact way,
 thereby potentially reducing the size of the ResourceSlice object.
-
-To manage the worst-case size of the `ResourceSlice` object, the following limits
-are introduced in addition to the ones already described in the
-[Partitionable Devices KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4815-dra-partitionable-devices#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects):
-* The total number of attributes, capacities and counters defined in mixins in a
-  `ResourceSlice` is limited to 256.
-* The total number of mixins allowed in `Device`, `CounterSet` and
-  `DeviceCounterConsumption` is limited to 8.
-
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
