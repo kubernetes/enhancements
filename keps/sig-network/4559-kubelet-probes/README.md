@@ -179,28 +179,32 @@ See further discussion in [kubernetes #102613].
 
 ### Goals
 
-```
-<<[UNRESOLVED goals ]>>
+- Define new probe types and deprecate existing probe types.
 
-The exact details of the goals depend on whether we decide to
-deprecate the existing probe types, or just change their semantics.
+    - The alternative is to change the semantics of existing probes but that is
+      harder to achieve without also changing the user-facing API semantics.
 
-Also, there may be additional goals depending on the resolution of the
-UNRESOLVED section in the Summary.
+    - Continue to backward-compatibly support all existing probe handlers
+      and lifecycle handlers by default (at least for a while). Older probe
+      types can be blocked via Pod Security admission, so that administrators
+      can create NetworkPolicies that don't include the kubelet probe hole.
 
-<<[/UNRESOLVED]>>
-```
+    - Deprecate the [`TCPSocketAction.Host`] and [`HTTPGetAction.Host`]
+      fields in pod probes (since they allow the SSRF attack and have no
+      other compelling use case). Also deprecate the [`HTTPGetAction.Host`]
+      field in pod lifecycle hooks.
 
-- Continue to backward-compatibly support all existing probe handlers
-  and lifecycle handlers by default (at least for a while).
+      - Allow administrators to use [Pod Security admission] to block
+        Pods that have probes and lifecycle hooks using those fields. This
+        work will be done as part of [KEP #4940].
+    
+    - Make it easy for users who aren't doing "weird" things (eg,
+      readiness probe via LoadBalancer) to transition from the old probe
+      system to the new one.
 
-- Deprecate the [`TCPSocketAction.Host`] and [`HTTPGetAction.Host`]
-  fields in pod probes (since they allow the SSRF attack and have no
-  other compelling use case). Also deprecate the [`HTTPGetAction.Host`]
-  field in pod lifecycle hooks.
-
-    - Allow administrators to use [Pod Security admission] to block
-      Pods that have probes and lifecycle hooks using those fields.
+      - This might mean that they don't need to do anything, or it might
+        mean that there's an easy transition, like just changing
+        `tcpSocket:` to `tcp:` in their pod's probe definition.
 
 - Move to a system where TCP, HTTP, GRPC pod probes and HTTP lifecycle
   hooks are run inside the pod network namespace rather than being sent
@@ -213,34 +217,24 @@ UNRESOLVED section in the Summary.
       exec probe that uses `curl` or the like to connect to that IP
       from the pod itself.)
 
-    - If we implement this by creating a new set of probe/lifecycle handler
-      types, rather than by modifying the semantics of the existing probes,
-      then it should be possible to block the old probe types via Pod
-      Security admission, so that administrators can create
-      NetworkPolicies that don't include the kubelet probe hole.
-
 - Allow dual-stack / wrong-single-stack probing, either based on
   information in the probe definition (e.g. `ipFamily: IPv6` or
   `ipFamilyPolicy: RequireDualStack`) or by always doing "[Happy
   Eyeballs]" (probing IPv4 and IPv6 in parallel and only requiring one
   to succeed).
 
-- Make it easy for users who aren't doing "weird" things (eg,
-  readiness probe via LoadBalancer) to transition from the old probe
-  system to the new one.
-
-    - This might mean that they don't need to do anything, or it might
-      mean that there's an easy transition, like just changing
-      `tcpSocket:` to `tcp:` in their pod's probe definition.
-
 [`TCPSocketAction.Host`]: https://github.com/kubernetes/kubernetes/blob/v1.28.0/staging/src/k8s.io/api/core/v1/types.go#L2248
 [`HTTPGetAction.Host`]: https://github.com/kubernetes/kubernetes/blob/v1.28.0/staging/src/k8s.io/api/core/v1/types.go#L2219
 [Pod Security admission]: https://kubernetes.io/docs/concepts/security/pod-security-admission/
 [Happy Eyeballs]: https://tools.ietf.org/html/rfc8305
+[KEP #4940]: https://github.com/kubernetes/enhancements/pull/4942
 
 ### Non-Goals
 
 - Adding entirely-new probe types.
+
+  - A potential future goal could be to have a new probe that explicitly
+    answers the "Is the pod network connected and up?"
 
 - Changing the definition of NetworkPolicy v1 to remove the "kubelet
   can access all local pods" hole, even in the case where the cluster
@@ -265,13 +259,14 @@ nitty-gritty.
 
 ### API Changes to Fix the SSRF
 
-Regardless of what else we do, we will deprecate the
-`TCPSocketAction.Host` and `HTTPGetAction.Host` fields, and allow them
-to be blocked by Pod Security admission. Deprecation here will include
-documenting the field in the API as deprecated and added a warning to
-users when they attempt to use these fields.
+In the first phase, we will deprecate the `TCPSocketAction.Host` and
+`HTTPGetAction.Host` fields, and allow them to be blocked by Pod Security
+admission. Deprecation here will include documenting the field in the API
+as deprecated and added a warning to users when they attempt to use these
+fields. This work will be done as part of [KEP #4940].
 
-Beyond that, there are two (and a half) possible plans:
+Beyond that, the current plan is to go with choice deprecate-and-replace (2½)
+below out of the these options:
 
 1. Change the semantics of the existing `TCPSocketAction`,
    `HTTPGetAction`, and `GRPCAction` probe types and say that
@@ -296,62 +291,31 @@ Beyond that, there are two (and a half) possible plans:
 
 ### Kubelet/Runtime Changes to Fix the NetworkPolicy Hole
 
-Again, a few possible plans. Some of these ideas are pretty bad, but
-may have good ideas within them that could be remixed into other
-plans...
+Some potential ideas have been covered here. They were discussed at
+depth during the Maintainer Summit Talk ["Redesigning Kublet Probes"]
+at KubeCON London and based on those discussions some of the ideas
+have been moved to the alternatives section.
 
-1. Rather than performing pod probes from the node IP, each kubelet
-   could launch a "probing pod", and perform probes from there. A
-   created-by-default AdminNetworkPolicy could force all pods to
-   accept connections from the kubelet probe pods. This is perhaps
-   _slightly_ better than the current situation since allowing
-   connections from the probe pods would not allow any unintended
-   additional traffic from anyone else the way that allowing
-   connections from the node IP does.
+1. `CRI PortForward()`: Leverage CRI's `PortForward()` utility using
+   which we can request a connection to a specific port on the pod.
+   CRI will create a streaming connection to the pod's network namespace
+   to its localhost and the intended container port (uses gRPC as the
+   underlying communication protocol).
 
-     - The simplest / most portable way to do this would be to have
-       the "probing pod" be an ordinary pod-network pod, though (given
-       current AdminNetworkPolicy rules) this would means that all
-       pods on all nodes would have to accept connections from all
-       probing pods, meaning an attacker who was able to compromise
-       any probing pod would then be able to connect to any pod in the
-       cluster.
+   - Pros:
+      - Solves network policies hole prolem
+      - No changes needed to the runtime
+      - Solves the overlapping podIPs probing problem
+      - Solves the dualstack probing problem
 
-     - Alternatively, the "probing pod" could be a static pod with a
-       special node-local IP, allocated independently of the normal
-       pod network. (Handwave handwave handwave...)
+   - Cons:
+      - This option will end up changing existing probe semantics
+      - Might have performance issues (packet copies)
 
-2. Kubelet could perform probes inside pods without needing any
-   changes to the runtime, by attaching an ephemeral container to each
-   pod, containing some `kubelet-probe` binary that would run the
-   probes and report the results back to kubelet (by some means). Most
-   plausibly, this would be a single container that would persist
-   through the life of the pod, periodically running probes, rather
-   than being a new ephemeral container attached each time kubelet
-   needed to perform a probe. Kubelet could perhaps attach such a
-   container to the pod at construction time, via CRI calls, without
-   exposing the container to the kubernetes API, like it does with the
-   pause / sandbox / infrastructure container. (In fact, the probes
-   could even be done as part of the existing pause / sandbox /
-   infrastructure container.)
-
-3. If we can improve the performance of exec probes, then kubelet
-   could simply implement the network probes as exec probes, though
-   this would again require behind-the-scenes modifications to the pod
-   via CRI, to mount a volume containing the `kubelet-probe` binary so
-   that it's available to the exec probe.
-
-4. We could add a new method to CRI to allow kubelet to do the
-   equivalent of `nsenter -n` / `ip netns exec` without any of the
-   other overhead of an exec probe. It is not clear that this concept
-   would map well to Windows containers or even to
-   virtualization-based container runtimes on Linux. In the worst
-   case, it could fall back to something like (3).
-
-5. We could add a new method to CRI to allow kubelet to request that
-   the runtime perform a probe inside the container via some means
-   appropriate to the runtime. If this is not simply a wrapper around
-   exec probes, then this implies that CRI will need to understand
+2. `Probe() CRI API`: We could add a new method to CRI to allow kubelet
+   to request that the runtime perform a probe inside the container via
+   some means appropriate to the runtime. If this is not simply a wrapper 
+   round exec probes, then this implies that CRI will need to understand
    each type of probe supported by Kubernetes (i.e., it will need to
    support every feature of `HTTPGetAction`, `TCPSocketAction` and
    `GRPCAction`.) In the future, adding new probe types (for example,
@@ -364,6 +328,86 @@ plans...
        report back as part of the pod status whether the pod is live,
        ready, etc, according to its probes. This might allow for
        better optimization of probes on the CRI side.
+    
+     - Cons:
+      - Changes existing semantics of probes. Today, probes answer the
+        question of can the kubelet reach the pod v/s this solution would
+        answer the question of can the runtime reach the pod
+      - Requires new CRI API
+
+["Redesigning Kublet Probes"]: https://www.youtube.com/watch?v=-pefxR_SwaY
+
+#### Alternatives
+
+1. `Probing Pod`: Rather than performing pod probes from the node IP,
+   each kubelet could launch a "probing pod", and perform probes from
+   there. Results would be sent back to Kubelet. A created-by-default
+   AdminNetworkPolicy could force all pods to accept connections from
+   the kubelet probe pods. This is perhaps _slightly_ better than the
+   current situation since allowing connections from the probe pods
+   would not allow any unintended additional traffic from anyone else
+   the way that allowing connections from the node IP does.
+
+     - The simplest / most portable way to do this would be to have
+       the "probing pod" be an ordinary pod-network pod, though (given
+       current AdminNetworkPolicy rules) this would means that all
+       pods on all nodes would have to accept connections from all
+       probing pods, meaning an attacker who was able to compromise
+       any probing pod would then be able to connect to any pod in the
+       cluster.
+
+     - Alternatively, the "probing pod" could be a static pod with a
+       special node-local IP, allocated independently of the normal
+       pod network.
+
+    - Alternatively, the "probing pod" could also be a host-networked pod
+      although this will not solve the network policy hole problem.
+
+    - Pros:
+      - Preserves existing probe semantics
+      - No changes needed to the runtime
+      - Moving probes to the overlay infrastructure out of the kubelet
+        process is better for cost accounting in managed platforms
+
+2. `Probing Sidecar`: Kubelet could perform probes inside pods without
+   needing any changes to the runtime, by attaching an ephemeral container
+   to each pod, containing some `kubelet-probe` binary that would run the
+   probes and report the results back to kubelet (by some means). Most
+   plausibly, this would be a single container that would persist
+   through the life of the pod, periodically running probes, rather
+   than being a new ephemeral container attached each time kubelet
+   needed to perform a probe. Kubelet could perhaps attach such a
+   container to the pod at construction time, via CRI calls, without
+   exposing the container to the kubernetes API, like it does with the
+   pause / sandbox / infrastructure container. (In fact, the probes
+   could even be done as part of the existing pause / sandbox /
+   infrastructure container.). This option will not preserve the existing
+   probe semantics.
+
+   - Pros:
+      - Solves network policies hole prolem
+      - No changes needed to the runtime
+      - Solves the overlapping podIPs probing problem
+
+3. `Using exec probes`: If we can improve the performance of exec probes,
+   then kubelet could simply implement the network probes as exec probes,
+   though this would again require behind-the-scenes modifications to the pod
+   via CRI, to mount a volume containing the `kubelet-probe` binary so
+   that it's available to the exec probe. This option will not preserve the
+   existing probe semantics.
+
+   - Pros:
+      - Solves network policies hole problem
+      - No changes needed to the runtime
+      - Solves the overlapping podIPs probing problem
+
+4. We could add a new method to CRI to allow kubelet to do the
+   equivalent of `nsenter -n` / `ip netns exec` without any of the
+   other overhead of an exec probe. It is not clear that this concept
+   would map well to Windows containers or even to
+   virtualization-based container runtimes on Linux. In the worst
+   case, it could fall back to something like (3).
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -394,7 +438,8 @@ from] so it is unlikely that a golang-based CRI implementation would
 be able to run probes directly from its main process.
 
 [since go 1.10]: https://github.com/golang/go/commit/2595fe7fb6
-[`net.Dial` does not guarantee that it will establish the connection from the same goroutine it was called from]: https://github.com/golang/go/issues/44922
+[`net.Dial` does not guarantee that it will establish the connection
+from the same goroutine it was called from]: https://github.com/golang/go/issues/44922
 
 ### Risks and Mitigations
 
