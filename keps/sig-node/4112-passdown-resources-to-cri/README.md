@@ -310,9 +310,9 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-The proposal only adds new informational data to the CRI API between kubelet
-and the container runtime with no user-visible changes which mitigates possible
-risks considerably.
+The proposal adds new informational data to the CRI API between kubelet and the
+container runtime but there are no user-visible changes. This mitigates
+possible risks considerably.
 
 Data duplication/inconsistency with native resources could be considered a risk
 as those are passed down to CRI both as "raw" requests and limits and as
@@ -326,22 +326,26 @@ PodSpec to the container runtime. This is accomplished by extending the
 ContainerConfig, UpdateContainerResourcesRequest and PodSandboxConfig messages
 of the CRI API.
 
-With this information, the runtime can for example do detailed resource
-allocation so that CPU, memory and other resources for each container are
-optimally aligned. This applies to scenarios where the kubelet CPU manager is
-disabled (by using the `none` CPU manager policy).
+However, the proposal does not suggest any changes to the division of
+responsibilities between the kubelet and the runtime or in the pod and
+container lifecycle management. The additional information can be thought seen
+as a "forward lookup" of things that are going to happen in the future.
+Information that can be used in scenarios that depend on it.
 
-The resource information is included in PodSandboxConfig so that the runtime
-can see the full picture of Pod's resource usage at Pod creation time, for
-example enabling more holistic resource allocation and thus better
-interoperability between containers inside the Pod.
+With the extended PodSandboxConfig, the runtime can see the full picture of
+Pod's resource usage at Pod creation time, for example enabling more holistic
+resource allocation and thus better interoperability between containers inside
+the Pod. The runtime may use the information to make preparations for all
+upcoming containers of the pod. E.g.  setup all needed resources for a VM-based
+pod or prepare for optimal allocation of resources of all the containers of the
+Pod.
 
 Also the CreateContainer request is extended to include the unmodified resource
 requirements. This make it possible for the CRI runtime to detect any changes
 in the pod resources that happen between the Pod creation and container
 creation in e.g.  scenarios where in-place pod updates are involved.
 
-[KEP-1287][kep-1287] ([Issue][kep-1287-issue]) Beta in Kubernetes v1.32
+[KEP-1287][kep-1287] ([Issue][kep-1287-issue]) Beta in Kubernetes v1.33
 introduced UpdatePodSandboxResources rpc to the CRI API. The
 UpdatePodSandboxResources CRI message is updated to include the resource
 information of all containers (aligning with UpdateContainerResourcesRequest).
@@ -357,16 +361,12 @@ resource requirements.
 
 The PodSandboxConfig message (part of the RunPodSandbox request) will be
 extended to contain information about resources of all its containers known at
-the pod creation time. The container runtime may use this information to make
-preparations for all upcoming containers of the pod. E.g. setup all needed
-resources for a VM-based pod or prepare for optimal allocation of resources of
-all the containers of the Pod. However, the container runtime may continue to
-operate as they did (before this enhancement). That is, it can ignore
+the pod creation time. The container runtime MAY use this information to make
+preparations for all upcoming containers of the pod, but, it can ignore
 the resource information presented here and allocate resources for each
 container separately at container creation time with the `CreateContainer`
 request.
 
-The Pod-level resources enhancement [KEP-2837][kep-2837]
 ([Issue][kep-2837-issue]) Alpha in Kubernetes v1.32 added new Pod-level
 resource requirements field to the PodSpec. This information will is included
 in the PodResourceConfig message, similar to the container-level resource
@@ -421,9 +421,10 @@ information.
 +}
 
 +enum ContainerType {
++    // True, sequential init container
 +    INIT_CONTAINER    = 0;
-+    SIDECAR_CONTAINER = 1;
-+    CONTAINER = 2;
++    // Sidecar or regular container
++    CONTAINER = 1;
 +}
 ```
 
@@ -508,7 +509,7 @@ adding them.
 #### UpdatePodSandboxResources
 
 The In-Place Update of Pod Resources ([KEP-1287][kep-1287]) Beta in Kubernetes
-v1.32 introduced new UpdatePodSandboxResources rpc to inform the CRI runtime
+v1.33 introduced new UpdatePodSandboxResources rpc to inform the CRI runtime
 about the changes in the pod resources.
 
 The UpdatePodSandboxResourcesRequest message is extended similarly to the
@@ -526,13 +527,9 @@ reflect the updated resource requirements of the containers.
      // Optional resources represents the sum of container resources for this sandbox
      LinuxContainerResources resources = 3;
  
-     // Unstructured key-value map holding arbitrary additional information for
-     // sandbox resources updating. This can be used for specifying experimental
-     // resources to update or other options to use when updating the sandbox.
-     map<string, string> annotations = 4;
 +
 +    // Kubernetes resource spec of the containers in the pod.
-+    PodResourceConfig pod_resources = 5;
++    PodResourceConfig pod_resources = 4;
  }
 ```
 
