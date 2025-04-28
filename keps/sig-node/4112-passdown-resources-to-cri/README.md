@@ -280,6 +280,13 @@ disabled (CPU manager policy set to `none`). Instead I use my NRI plugin to do
 customized resource allocation (e.g. cpu and memory pinning). To do that
 properly I need the actual resource requests and limits requested by the user.
 
+#### Story 4
+
+As a cluster administrator, I want to install an NRI plugin that does limits
+enforcement for extended resources that the kubelet does not know about (e.g.,
+`misc` cgroup settings). These extended resources are consumed either via the
+pod spec or indirectly via Pod overhead.
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
