@@ -70,7 +70,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
     - [ResourceSlice resources will be harder to understand](#resourceslice-resources-will-be-harder-to-understand)
     - [Flatting of ResourceSlices might be needed by all tools using the API](#flatting-of-resourceslices-might-be-needed-by-all-tools-using-the-api)
-    - [More attributes, capacities and counters might worsen worst-case scheduling](#more-attributes-capacities-and-counters-might-worsen-worst-case-scheduling)
+    - [Mixins and more counters might worsen worst-case scheduling](#mixins-and-more-counters-might-worsen-worst-case-scheduling)
 - [Design Details](#design-details)
   - [API](#api)
   - [Implementation](#implementation)
@@ -179,8 +179,8 @@ also limits the number of partitionable devices for a single physical device.
 - Enable a more compact way to define devices in ResourceSlices so duplication can
   be reduced and a larger number of devices can be published within a single
   ResourceSlice.
-- Enable defining devices with more attributes, capacities, and consumed counters.
-- Enable defining counter sets with more counters.
+- Enable defining counter sets with more counters and devices with more counsumed
+  counters.
 
 ### Non-Goals
 
@@ -188,6 +188,9 @@ also limits the number of partitionable devices for a single physical device.
   users see the flattened device definitions. Mixins does make it harder to find
   the full definition for a specific device, so this might be added to the scope
   for Beta or GA.
+- Enable devices to have more than 32 attributes and capacities. Increasing this
+  have implications for the CEL cost functions, so we are not looking to increase
+  the limits as part of this KEP.
 
 ## Proposal
 
@@ -259,7 +262,7 @@ tools and potential for implementations that differ in meaningful ways. This can
 be addressed by providing reusable libraries that can be leveraged by other
 tools.
 
-#### More attributes, capacities and counters might worsen worst-case scheduling
+#### Mixins and more counters might worsen worst-case scheduling
 
 This will not negatively effect existing scheduling performance of existing
 ResourceSlice definitions, but DRA driver authors taking advantage of mixins should
@@ -323,9 +326,6 @@ type ResourceSliceMixins struct {
   // shared attributes and capacities that an actual device can "include"
   // to extend the set of attributes and capacities it already defines.
   //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
-  //
   // +optional
   // +listType=atomic
   Device []DeviceMixin
@@ -334,9 +334,6 @@ type ResourceSliceMixins struct {
   // consumption mixins, each of which contains a set of counters
   // that a device will consume from a counter set.
   //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
-  //
   // +optional
   // +listType=atomic
   DeviceCounterConsumption []DeviceCounterConsumptionMixin
@@ -344,9 +341,6 @@ type ResourceSliceMixins struct {
   // CounterSet represents a list of counter set mixins, i.e.
   // a collection of counters that a CounterSet can "include"
   // to extend the set of counters it already defines.
-  //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
   //
   // +optional
   // +listType=atomic
@@ -368,8 +362,10 @@ type DeviceMixin struct {
   // must be listed without the driver name as domain prefix in
   // their name. All others must be listed with their domain prefix.
   //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
+	// The maximum number of attributes and capacities across all devices
+  // and device mixins in a ResourceSlice is 4096. When flattened, the
+  // total number of attributes and capacities for each device can not
+  // exceed 32.
   //
   // +optional
   Attributes map[QualifiedName]DeviceAttribute
@@ -381,8 +377,10 @@ type DeviceMixin struct {
   // must be listed without the driver name as domain prefix in
   // their name. All others must be listed with their domain prefix.
   //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
+	// The maximum number of attributes and capacities across all devices
+  // and device mixins in a ResourceSlice is 4096. When flattened, the
+  // total number of attributes and capacities for each device can not
+  // exceed 32.
   //
   // +optional
   Capacity map[QualifiedName]DeviceCapacity
@@ -401,8 +399,8 @@ type DeviceCounterConsumptionMixin struct {
   // Counters defines a set of counters
   // that a device will consume from a counter set.
   //
-  // The maximum number of attributes, capacity, and counters across all
-  // mixins is 256.
+  // The maximum number device counter consumption all device counter consumptions
+  // and device counter consumption mixins in a ResourceSlice is 2048.
   //
   // +required
   Counters map[string]Counter
@@ -419,7 +417,8 @@ type CounterSetMixin struct {
   // Counters defines the set of counters for this mixin.
   // The name of each counter must be unique in that set and must be a DNS label.
   //
-  // The maximum number of counters is 32.
+	// The maximum number of counters across all counter sets and counter set
+  // mixins in a ResourceSlice is 256.
   //
   // +required
   Counters map[string]Counter
@@ -473,12 +472,13 @@ type DeviceCounterConsumption struct {
 
 ### Implementation
 
-The DRA scheduler plugin will flatten the counter sets and devices before
-going through the allocation process. This will happen as part of conversion
-from the `v1beta1` API to the types defined in 
-[`k8s.io/dynamic-resource-allocation/api`](https://github.com/kubernetes/dynamic-resource-allocation/tree/master/api).
+The DRA scheduler will keep the mixin structure throughout the scheduling process
+as much as possible and avoid completely flattening the ResourceSlices. This is
+to avoid additional memory usage that might come as a result. For example, we
+plan to walk the mixins as part of the CEL variable lookup to avoid having to
+flatten the device representation.
 
-If the mixins feature is disabled during this process, any devices or counter sets that
+If the mixins feature is disabled, any devices or counter sets that
 references mixins will be droppped. This also means that all devices that references
 a dropped counter set will also be dropped. The result is that the scheduler will not
 see those devices. From the users point of view, the consequence is that the scheduler
@@ -506,6 +506,10 @@ The ResourceSlice-wide limits will be:
 We will still enforce some per-slice limits:
 * The number of mixins that can be referenced from each device, counter set or device counter consumption is 8.
 * The number of taints per device is 4.
+
+We will also enforce one limit on the flattened device:
+* The combined number of attributes and capacities for a single device can not exceed 32. We do this
+  to avoid increasing the cost of evaluation the CEL expressions for a device.
 
 The limits on the number of counters across counter sets, mixins and device counter consumption in 1.33 for the
 Partitionable Devices KEP will be removed, as those are still in alpha.
@@ -841,9 +845,8 @@ Flattening the devices and counter sets will require slightly more work, but
 this is unlikely to have any meaningful impact on the time used for allocation.
 
 It does allow DRA driver authors to create more complex devices, with a larger
-number of attributes, capacities and counters. It also allows for larger number
-of counters in the counter sets. This can worsen the worst-case scheduling
-performance.
+number of counters. It also allows for larger number of counters in the counter
+sets. This can worsen the worst-case scheduling performance.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
