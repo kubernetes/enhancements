@@ -956,6 +956,7 @@ These subresources have the following characteristics:
 
 * They operate on the same underlying storage object as the primary resource (i.e., same `kind`, same object in etcd).
 * Updates via these subresources are typically scoped to specific fields within the object. Changes to field values not in scope are typically reset, or "wiped", before validation.
+* They cannot be created directly. They exist once the primary resource is created and only support PUT and PATCH operations.
 * In some cases, they permit updates to fields that cannot be changed via the primary resource.
 
 **Examples:**
@@ -970,17 +971,17 @@ These subresources have the following characteristics:
 
 1.  **Field Wiping (Pre-Validation):** Declarative Validation *does not* scope which fields a subresource operation can write. Instead, this responsibility lies with the resource's strategy implementation. The strategy modifies the incoming object *before* validation, "wiping" or resetting any fields the specific subresource operation is not allowed to change. Once wiped, the ratcheting mechanism (below) will skip validation of these fields, since wiping ensures that they are unchanged.
 2.  **Full Resource Validation:** The *entire*, modified resource object is validated against the primary resource's versioned type. That is, *same* set of declarative validation rules applied to the primary resource and to status-type subresources.
-3.  **Conditional Validation:** Validation rules can use a special `subresource` parameter (e.g., `subresource == '/status'`) to apply conditional logic. This allows rules to behave differently depending on whether the update comes via the primary resource or a specific subresource.
+3.  **Conditional Validation:** Provided by dedicated `+k8s:ifSubresource('/status')` and `+k8s:ifNotSubresource('status')` tags.
 4.  **Ratcheting:** Declarative Validation uses ratcheting, meaning validation does not fail for fields that have not changed from the existing stored object. Combined with field wiping, this scopes validation to only the subset of fields that the subresource operation is intended and permitted to modify.
 
 **Validation Examples:**
 
 * An update via `pods/status` first has its `spec` field changes wiped by the Pod strategy. Then, the entire Pod object is validated using the standard Pod validation rules. Ratcheting skips checks on unchanged `metadata` or `status` fields.
-* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:exceptSubresource("/resize"')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
+* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:ifNotSubresource("/resize"')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
 
 **Support required:**
 
-* Conditional validation, provided by dedicated `+k8s:subresource` and `+k8s:exceptSubresource` tags and a `subresources` parameter within validation rule expressions (e.g. `+k8s:if('subresource != "/resize"')=+k8s:immutable`).
+* Conditional validation, provided by dedicated `+k8s:ifSubresource` and `+k8s:ifNotSubresource` tags.
 
 #### Scale-Type Subresources
 
@@ -988,6 +989,7 @@ These subresources have the following characteristics:
 
 * They often represent a different API `kind` (e.g., `autoscaling/v1.Scale`) than the resource they modify (e.g., `apps/v1.Deployment`).
 * Despite being a different `kind`, updates to the subresource modify fields within the underlying storage object (same object in etcd) as the *primary* resource.
+* They cannot be created directly. They exist once the primary resource is created and only support PUT and PATCH operations.
 
 **Examples:**
 
@@ -998,8 +1000,8 @@ These subresources have the following characteristics:
 
 1.  **Subresource Validation:** The incoming subresource object itself (e.g., the `autoscaling/v1.Scale` object) is validated using *its own* declarative rules.
 2.  **Storage Layer Application:** The resource's storage layer logic translates the validated subresource update into changes on the primary resource's fields (e.g., mapping the `Scale` object's `spec.replicas` to the `Deployment` object's `spec.replicas`).
-3.  **Primary Resource Validation:** The *modified primary resource* (e.g., `Deployment`) is then validated using *its* standard declarative validation rules.
-4.  **Ratcheting:** Ratcheting is applied during the primary resource validation, skipping checks on fields that were not affected by the subresource update.
+3.  **Primary Resource Validation:** The *modified primary resource* (e.g., `Deployment`) is then validated using *its* standard declarative validation rules. The subresources paramater is available for use in conditional validation (e.g. `+k8s:ifSubresource('/scale')`)
+4.  **Ratcheting:** Ratcheting is applied during the both subresource and primary resource validation, skipping checks on fields that were not affected by the subresource update.
 
 **Support required:**
 
@@ -1008,7 +1010,9 @@ These subresources have the following characteristics:
   the context, but for these validations, the storage layer typically [manages a mapping](https://github.com/kubernetes/kubernetes/blob/30469e180361d7da07b0fee6d47c776fa2cf3e86/pkg/registry/core/replicationcontroller/storage/storage.go#L170-L177) which will need to
   be used. https://github.com/jpbetz/kubernetes/pull/141 provides an example of migrating a `/scale` subresource and 
   introduces utilities for managing the subresource mapping.
-* Conditional validation, provided by dedicated `+k8s:subresource` and `+k8s:exceptSubresource` tags and a `subresources` parameter within validation rule expressions (e.g. `+k8s:if('subresource != "/scale"')=...`).
+* Conditional validation, provided by dedicated `+k8s:ifSubresource` and `+k8s:ifNotSubresource` tags. This will be available both
+  for the subresource validation (useful, for example, with a subresource that has both a spec and a status) and for primary
+  resource validation.
 
 #### Streaming Subresources
 
