@@ -432,6 +432,23 @@ Changes are always propogated through these 4 resource states in order:
 Desired --> Allocated --> Actuated --> Actual
 ```
 
+### Priority of Resize Requests
+
+Resize requests that come in will be added to a queue of pending resizes. Resize
+requests will be attempted according to the following priority:
+
+1. *Resource requests are not increasing*: Resizes that don't increase requests will be
+prioritized first. These resizes are expected to always succeed and would not be marked as
+pending.
+2. *PriorityClass*: Pods with a higher PriorityClass.
+3. *QoS Class*: Pods with a higher QoS class, where Guaranteed > Burstable > Best Effort.
+4. *Time since resize request*: If all else is the same, resizes that have been pending
+longer will be retried first (leveraging LastTransitionTime on the PodResizePending condition).
+
+A higher priority resize being marked as pending should not block the remaining pending resizes
+from being attempted, i.e. we will try all remaining resizes in the queue even if one is unsuccessful.
+Resizes that are deferred will be added back to the queue to be re-attempted later. Resizes that are
+infeasible may never be retried.
 
 ### Kubelet and API Server Interaction
 
