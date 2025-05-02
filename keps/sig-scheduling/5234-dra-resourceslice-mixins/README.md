@@ -362,7 +362,7 @@ type DeviceMixin struct {
   // must be listed without the driver name as domain prefix in
   // their name. All others must be listed with their domain prefix.
   //
-	// The maximum number of attributes and capacities across all devices
+  // The maximum number of attributes and capacities across all devices
   // and device mixins in a ResourceSlice is 4096. When flattened, the
   // total number of attributes and capacities for each device can not
   // exceed 32.
@@ -377,7 +377,7 @@ type DeviceMixin struct {
   // must be listed without the driver name as domain prefix in
   // their name. All others must be listed with their domain prefix.
   //
-	// The maximum number of attributes and capacities across all devices
+  // The maximum number of attributes and capacities across all devices
   // and device mixins in a ResourceSlice is 4096. When flattened, the
   // total number of attributes and capacities for each device can not
   // exceed 32.
@@ -417,7 +417,7 @@ type CounterSetMixin struct {
   // Counters defines the set of counters for this mixin.
   // The name of each counter must be unique in that set and must be a DNS label.
   //
-	// The maximum number of counters across all counter sets and counter set
+  // The maximum number of counters across all counter sets and counter set
   // mixins in a ResourceSlice is 256.
   //
   // +required
@@ -662,7 +662,7 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Applications that we already running will continue to run and the allocated
+Yes. Applications that were already running will continue to run and the allocated
 devices will remain so.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
