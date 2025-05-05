@@ -385,6 +385,8 @@ resource requests. For example, if the first container in the pod has an
 extended resource backed by DRA which is the 3rd such request in the container,
 then the name of the `DeviceRequest` is "container-0-request-2".
 
+Documenting this naming is merely informational, it is not part of the API. The kubelet must not rely on it. Instead, the `ContainerExtendedResourceRequest` field below specifies the mapping.
+
 ### Pod API
 
 A new field `extendedResourceClaimStatus` is added to Pod's status to track
