@@ -7,8 +7,14 @@ status: implementable
 creation-date: 2022-03-17
 reviewers:
   - "@ahg-g"
+  - "@sanposhiho"
+  - "@macsko"
+  - "@dom4ha"
 approvers:
   - "@ahg-g"
+  - "@sanposhiho"
+  - "@macsko"
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-scheduling/895-pod-topology-spread"
