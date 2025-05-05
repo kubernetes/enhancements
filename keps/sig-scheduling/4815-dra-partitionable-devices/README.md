@@ -549,7 +549,7 @@ type DeviceCounterConsumption struct {
   Counters map[string]Counter
 }
 
-// Counter describes a quantity associated with a device.
+// Counter describes a quantity that multiple devices consume when in use.
 type Counter struct {
   // Value defines how much of a certain device counter is available.
   //
@@ -1442,6 +1442,8 @@ Across all `Device` objects in a `ResourceSlice`, the following limits are enfor
 
 The `ResourceSlice`-wide limits on fields within the `Device` object is used to allow users
 to decide whether to have few devices with many properties or many devices with few properties.
+
+With these changes, the worst-case ResourceSlice increases from 922,195 bytes to 1,107,864 bytes.
 
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?

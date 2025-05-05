@@ -149,9 +149,8 @@ scheduler when selecting devices for user requests in ResourceClaims.
 
 With this KEP, DRA drivers can define metadata in mixins separately from specific
 devices and include them in a device by reference. This reduces the duplication
-in ResourceSlices and allows for more compact device definitions. It also enables
-defining devices with more attributes, capacities and consumed counters than without
-mixins. Mixins can also be used in counter sets.
+in ResourceSlices and allows for more compact device definitions. Mixins can
+also be used in counter sets.
 
 ## Motivation
 
@@ -188,7 +187,7 @@ also limits the number of partitionable devices for a single physical device.
   users see the flattened device definitions. Mixins does make it harder to find
   the full definition for a specific device, so this might be added to the scope
   for Beta or GA.
-- Enable devices to have more than 32 attributes and capacities. Increasing this
+- Enable devices to have more than 32 attributes and capacities. Increasing this would
   have implications for the CEL cost functions, so we are not looking to increase
   the limits as part of this KEP.
 
@@ -268,7 +267,7 @@ This will not negatively effect existing scheduling performance of existing
 ResourceSlice definitions, but DRA driver authors taking advantage of mixins should
 be made aware of possible performance effects due to this increased referential complexity.
 
-This also demonstrates that DRA driver authors should consider performancer when they
+This also demonstrates that DRA driver authors should consider performance when they
 write drivers and decide how to structure devices into ResourceSlices and pools. Information
 and best-practices about how to write drivers are available in
 https://github.com/kubernetes-sigs/dra-example-driver and this will also include information
@@ -364,7 +363,7 @@ type DeviceMixin struct {
   //
   // The maximum number of attributes and capacities across all devices
   // and device mixins in a ResourceSlice is 4096. When flattened, the
-  // total number of attributes and capacities for each device can not
+  // total number of attributes and capacities for each device must not
   // exceed 32.
   //
   // +optional
@@ -379,7 +378,7 @@ type DeviceMixin struct {
   //
   // The maximum number of attributes and capacities across all devices
   // and device mixins in a ResourceSlice is 4096. When flattened, the
-  // total number of attributes and capacities for each device can not
+  // total number of attributes and capacities for each device must not
   // exceed 32.
   //
   // +optional
@@ -503,7 +502,7 @@ The ResourceSlice-wide limits will be:
 * Total number of counters is 256.
 * Total number of consumed counters is 2048 (so with the maximum number of devices, there can be 16 per device).
 
-We will still enforce some per-slice limits:
+We will still enforce some per-field limits:
 * The number of mixins that can be referenced from each device, counter set or device counter consumption is 8.
 * The number of taints per device is 4.
 
@@ -513,8 +512,10 @@ We will also enforce one limit on the flattened device:
 
 The limits on the number of counters across counter sets, mixins and device counter consumption in 1.33 for the
 Partitionable Devices KEP will be removed, as those are still in alpha.
-The limit of 32 on the number of attributes and capacities per device will be removed over the next 2 releases (1.34 and 1.35) to
-preserve safe rollbacks.
+The current limit on the total number of attributes and capacities per device will be adjusted a bit to
+be enforced on the device with mixins applied, rather than just based on what is defined directly on a device. This
+doesn't change the current behavior since a device with more than 32 attributes/capacities defined directly
+on the device will always fail the updated validation rule.
 
 With these limits, the worst-case size for a ResourceSlice increases from 1,107,864 bytes to 1,288,825 bytes.
 
@@ -576,7 +577,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-E2e tests will be added to verify that the mixins are properly flattened and
+E2e tests will be added to verify that the mixins are properly applied and
 used by the scheduler.
 
 ### Graduation Criteria
@@ -891,7 +892,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 1.33: first KEP revision as part of the Partitionable Devices KEP
-- 1.34: split out into a separate KEP and initial implementation.
+- 1.34: split out into a separate KEP
 
 ## Drawbacks
 
