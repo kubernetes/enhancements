@@ -226,13 +226,12 @@ non-goals of this KEP.
 * DRA driver API must not change. Core Kubernetes (kube-scheduler, kubelet) is
   preferred over DRA driver for any change needed to support the feature.
 
+* Keep advertising only extended resources backed by device plugin in `node.status.Capacity`.
+
 ### Non-Goals
 
 * Minimize kubelet or kube-scheduler changes. The feature requires necessary
   changes in both scheduling and actuation.
-
-* Keep advertising `node.status.Capacity` for extended resources backed by DRA.
-  It is used for extended resources backed by device plugin only.
 
 ## Proposal
 
