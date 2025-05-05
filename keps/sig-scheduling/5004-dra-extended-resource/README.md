@@ -254,10 +254,9 @@ The basic idea is the following:
    which devices were picked. More details on this special `ResourceClaim`
    follow below.  When using extended resources advertised for a node by device
    plugin, the existing resource tracking reserves them.
-1. Introduce a field `ExtendedResourceClaimStatus` to pod's `Status`, such that
-   kubelet cloud use it to find the special `ResourceClaim`, then kubelet asks
-   DRA driver to prepare devices in the special `ResourceClaim`, after which
-   kubelet passes the devices to containers in the pod with the extended
+1. Introduce a field `ExtendedResourceClaimStatus` to pod's `Status`, such that:
+    - the kubelet can find the special `ResourceClaim` while looking for claims to prepare
+    -  the kubelet can pass the devices to containers in the pod with the extended
    resource requests, based on the container/extended resource to device
    request mapping in the `ExtendedResourceClaimStatus`.
 
