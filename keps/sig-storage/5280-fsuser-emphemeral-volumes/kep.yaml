@@ -1,0 +1,28 @@
+title: Allow fsUser field to be set in PodSecurityContext on ephemeral volumes
+kep-number: 5280
+authors:
+  - "@lamabro23"
+owning-sig: sig-storage
+participating-sigs:
+status: provisional
+creation-date: 2024-05-06
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+see-also:
+replaces:
+stage: alpha
+latest-milestone: "xxx"
+milestone:
+  alpha: "xxx"
+  beta: "xxx"
+  stable: "xxx"
+feature-gates:
+  - name: AllowFsUserEphemeralVolumes
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+metrics:
