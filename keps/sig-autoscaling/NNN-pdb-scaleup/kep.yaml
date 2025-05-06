@@ -1,5 +1,5 @@
-title:
-kep-number:
+title: Scale-up Policy for PodDisruptionBudget
+kep-number: NNNN
 authors:
   - "@chansuke"
 owning-sig: sig-autoscaling
