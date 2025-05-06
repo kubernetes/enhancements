@@ -745,7 +745,7 @@ DRA driver change in this KEP.
 
 The scheduler may lose track of what devices it has allocated to what pods. Any
 pods that had previously allocated devices with the feature enabled will need
-to be deleted to ensure they are freed back to their corresponding driver  and
+to be deleted to ensure they are freed back to their corresponding driver and
 the accounting for them is updated in the scheduler.
 
 ###### Are there any tests for feature enablement/disablement?
