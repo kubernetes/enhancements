@@ -255,7 +255,7 @@ The basic idea is the following:
    plugin, the existing resource tracking reserves them.
 1. Introduce a field `ExtendedResourceClaimStatus` to pod's `Status`, such that:
     - the kubelet can find the special `ResourceClaim` while looking for claims to prepare
-    -  the kubelet can pass the devices to containers in the pod with the extended
+    - the kubelet can pass the devices to containers in the pod with the extended
    resource requests, based on the container/extended resource to device
    request mapping in the `ExtendedResourceClaimStatus`.
 
