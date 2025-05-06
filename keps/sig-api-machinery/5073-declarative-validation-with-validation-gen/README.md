@@ -55,6 +55,10 @@
     - [Difficulties with <code>+k8s:required</code> and <code>+k8s:default</code>](#difficulties-with-k8srequired-and-k8sdefault)
     - [Proposed Solutions](#proposed-solutions)
     - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
+  - [Subresources](#subresources)
+    - [Status-Type Subresources](#status-type-subresources)
+    - [Scale-Type Subresources](#scale-type-subresources)
+    - [Streaming Subresources](#streaming-subresources)
   - [Ratcheting](#ratcheting)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -944,23 +948,86 @@ The linter, as previously described, will enforce rules to address valid zero-va
 
 The linter will flag any violations of these rules, ensuring consistent zero-value handling and preventing related errors. This automated enforcement is crucial for catching issues early in the development process.
 
+### Subresources
+
+#### Status-Type Subresources
+
+These subresources have the following characteristics:
+
+* They operate on the same underlying storage object as the primary resource (i.e., same `kind`, same object in etcd).
+* Updates via these subresources are typically scoped to specific fields within the object. Changes to field values not in scope are typically reset, or "wiped", before validation.
+* They cannot be created directly. They exist once the primary resource is created and only support PUT and PATCH operations.
+* In some cases, they permit updates to fields that cannot be changed via the primary resource.
+
+**Examples:**
+
+* `pods/status`: Allows updates only to the `metadata` and `status` stanzas, prohibiting changes to the `spec`.
+* `resourceclaims/status`: Allows updates only to the `status` stanza, prohibiting changes to `metadata` or `spec`.
+* `pods/resize`: Allows updates to `spec.container[*].resources` fields, which are normally immutable after Pod creation via the primary `pods` resource.
+* `certificatesigningrequests/approval`: Allows adding, removing, or modifying Approve/Deny conditions within the `status`, which is not allowed via the
+   primary `certificatesigningrequests` resource nor by the `certificatesigningrequests/status` resource.
+
+**Validation Process:**
+
+1.  **Field Wiping (Pre-Validation):** Declarative Validation *does not* scope which fields a subresource operation can write. Instead, this responsibility lies with the resource's strategy implementation. The strategy modifies the incoming object *before* validation, "wiping" or resetting any fields the specific subresource operation is not allowed to change. Once wiped, the ratcheting mechanism (below) will skip validation of these fields, since wiping ensures that they are unchanged.
+2.  **Full Resource Validation:** The *entire*, modified resource object is validated against the primary resource's versioned type. That is, *same* set of declarative validation rules applied to the primary resource and to status-type subresources.
+3.  **Conditional Validation:** Provided by dedicated `+k8s:ifSubresource('/status')` and `+k8s:ifNotSubresource('status')` tags.
+4.  **Ratcheting:** Declarative Validation uses ratcheting, meaning validation does not fail for fields that have not changed from the existing stored object. Combined with field wiping, this scopes validation to only the subset of fields that the subresource operation is intended and permitted to modify.
+
+**Validation Examples:**
+
+* An update via `pods/status` first has its `spec` field changes wiped by the Pod strategy. Then, the entire Pod object is validated using the standard Pod validation rules. Ratcheting skips checks on unchanged `metadata` or `status` fields.
+* An update via `pods/resize` is validated using the standard Pod rules. However, a rule on `spec.container[*].resources` might look like `+k8s:ifNotSubresource("/resize"')=+k8s:immutable`, effectively enforcing immutability *unless* the update comes via the `resize` subresource.
+
+**Support required:**
+
+* Conditional validation, provided by dedicated `+k8s:ifSubresource` and `+k8s:ifNotSubresource` tags.
+
+#### Scale-Type Subresources
+
+These subresources have the following characteristics:
+
+* They often represent a different API `kind` (e.g., `autoscaling/v1.Scale`) than the resource they modify (e.g., `apps/v1.Deployment`).
+* Despite being a different `kind`, updates to the subresource modify fields within the underlying storage object (same object in etcd) as the *primary* resource.
+* They cannot be created directly. They exist once the primary resource is created and only support PUT and PATCH operations.
+
+**Examples:**
+
+* An update to `deployments/scale` modifies the `spec.replicas` field within the primary `deployments` resource.
+* Creating a `Binding` object via `pods/binding` sets the `spec.nodeName` field on the primary `pods` resource.
+
+**Validation Process:**
+
+1.  **Subresource Validation:** The incoming subresource object itself (e.g., the `autoscaling/v1.Scale` object) is validated using *its own* declarative rules.
+2.  **Storage Layer Application:** The resource's storage layer logic translates the validated subresource update into changes on the primary resource's fields (e.g., mapping the `Scale` object's `spec.replicas` to the `Deployment` object's `spec.replicas`).
+3.  **Primary Resource Validation:** The *modified primary resource* (e.g., `Deployment`) is then validated using *its* standard declarative validation rules. The subresources paramater is available for use in conditional validation (e.g. `+k8s:ifSubresource('/scale')`)
+4.  **Ratcheting:** Ratcheting is applied during the both subresource and primary resource validation, skipping checks on fields that were not affected by the subresource update.
+
+**Support required:**
+
+* Declarative validation will need to provide a easy way for a storage layer to map the internal type of a subresource to the
+  requested versioned type of that resource.  For primary resource validation, the information is present in the requestInfo of
+  the context, but for these validations, the storage layer typically [manages a mapping](https://github.com/kubernetes/kubernetes/blob/30469e180361d7da07b0fee6d47c776fa2cf3e86/pkg/registry/core/replicationcontroller/storage/storage.go#L170-L177) which will need to
+  be used. https://github.com/jpbetz/kubernetes/pull/141 provides an example of migrating a `/scale` subresource and 
+  introduces utilities for managing the subresource mapping.
+* Conditional validation, provided by dedicated `+k8s:ifSubresource` and `+k8s:ifNotSubresource` tags. This will be available both
+  for the subresource validation (useful, for example, with a subresource that has both a spec and a status) and for primary
+  resource validation.
+
+#### Streaming Subresources
+
+Subresources such as `pods/exec`, `pods/attach`, and `pods/portforward` often have "options" as structured resource data. Declarative
+validation will support validation of such resources using the same mechanisms as scale-type subresources, only since the resource
+is not stored, the use case is much simpler and only requires the "Subresource Validation" step.
+
+The streamed data does not require declarative validation, as it is not structured resource data.
+
 ### Ratcheting
 
-As `validation-gen`‘s go validation code has old object access we can write any transition rule we want for validation ratcheting. `validation-gen` has access to the old and new state of obj for any field.  This gives us a building block to make any flavor of ratcheting we would need in theory.  We can think the basic form of ratcheting as - “allow old value to be written in updates even if now not valid as long as it doesn’t change -> easy to test”.  If old = new -> short circuit validation (don’t care if it failed).  If certain ratcheting needs syntactic sugar, we can add that as well based ont the current `validation-gen` design. An example of what ratcheting validation logic might look like for `validation-gen` is below:
+TODO: Document and explain how:
 
-```go
-// Tightened validation (also known as ratcheting validation) would be supported by
-// defining a new validation function. For example:
-//
-        func TightenedMaxLength(opCtx operation.Context, fldPath *field.Path, value, oldValue *string) field.ErrorList {
-          if oldValue != nil && len(MaxLength(opCtx, fldPath, oldValue, nil)) > 0 {
-            // old value is not valid, so this value skips the tightened validation
-            return nil
-          }
-          return MaxLength(opCtx, fldPath, value, nil)
-        }
-
-```
+- Add general purpose ratcheting to automatically skip validation of unchanged fields
+- Catalog and handle complex cases where strict equality checks are not sufficient (lots of non-trivial cases exist today)
 
 ### Test Plan
 
