@@ -319,6 +319,13 @@ type DeviceClassSpec struct {
 	ExtendedResourceName *string
 }
 ```
+#### Implicit Extended Resource Name
+
+In addition to this optional extended resource name that is explicitly defined, every device class can be accessed
+as an extended resource using the name `deviceclass.kubernetes.io/<device-class-name>`. This implicit extended
+resource name allows the simpler API to be used for DRA resource when no special DRA features beyond those
+available via `DeviceClass` are needed.
+
 
 ### Resource Claim API
 
