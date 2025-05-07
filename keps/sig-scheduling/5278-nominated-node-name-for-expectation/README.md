@@ -80,15 +80,21 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [External components need to know the pod is going to be bound](#external-components-need-to-know-the-pod-is-going-to-be-bound)
+  - [External components want to specify a preferred pod placement](#external-components-want-to-specify-a-preferred-pod-placement)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Story 1: Prevent inappropriate scale downs by Cluster Autoscaler](#story-1-prevent-inappropriate-scale-downs-by-cluster-autoscaler)
+    - [Story 2: Cluster Autoscaler specifies <code>NominatedNodeName</code> to indicate where pods can go after new nodes are created/registered](#story-2-cluster-autoscaler-specifies-nominatednodename-to-indicate-where-pods-can-go-after-new-nodes-are-createdregistered)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Race condition](#race-condition)
+    - [Confusion if <code>NominatedNodeName</code> is different from <code>NodeName</code> after all](#confusion-if-nominatednodename-is-different-from-nodename-after-all)
+    - [What if there are multiple components that could set <code>NominatedNodeName</code> on the same pod](#what-if-there-are-multiple-components-that-could-set-nominatednodename-on-the-same-pod)
 - [Design Details](#design-details)
+  - [The scheduler puts <code>NominatedNodeName</code>](#the-scheduler-puts-nominatednodename)
+  - [External components put <code>NominatedNodeName</code>](#external-components-put-nominatednodename)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -263,7 +269,7 @@ the pod could end up having different `NominatedNodeName` and `NodeName`.
 
 Probably we should clear `NominatedNodeName` when the pod is bound. (at binding api)
 
-#### What if there are multiple components that set `NominatedNodeName`
+#### What if there are multiple components that could set `NominatedNodeName` on the same pod
 
 First of all, probably we should not recommend such situation.
 
