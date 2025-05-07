@@ -83,31 +83,13 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [What if I need to add capability to my feature?](#what-if-i-need-to-add-capability-to-my-feature)
+    - [Who will make sure that new KEPs follow the promotion rules?](#who-will-make-sure-that-new-keps-follow-the-promotion-rules)
   - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
-  - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+  - [This may slow the rate that new features are promoted.](#this-may-slow-the-rate-that-new-features-are-promoted)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -154,7 +136,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Features gates must include all functional, security, and testing requirements along with
+Features gates must include all functional, security, monitoring, and testing requirements along with
 resolving all issues and gaps identified prior to being enabled by default.
 The only valid GA criteria are “all issues and gaps identified as feedback during beta are resolved”.
 
@@ -169,7 +151,7 @@ and "my production cluster accepts this as valid by default".
 
 ### Goals
 
-* Features gates must include all functional, security, and testing requirements along with
+* Features gates must include all functional, security, monitoring, and testing requirements along with
   resolving all issues and gaps identified prior to being enabled by default.
 * The only valid GA criteria are “all issues and gaps identified as feedback during beta are resolved”.
 
@@ -180,13 +162,16 @@ and "my production cluster accepts this as valid by default".
 
 ## Proposal
 
-Kubernetes feature gates have three levels: GA, Beta, and Alpha.
-1. GA means that a feature gate is unconditionally enabled in all production kubernetes clusters and
+Kubernetes feature gates have three levels: GA (locked on), GA (disable-able), Beta, and Alpha.
+1. GA (locked-on) means that a feature gate is unconditionally enabled in all production kubernetes clusters and
    that feature cannot be disabled.
-2. Beta means that a feature gate is usually enabled in all production Kubernetes clusters by default
+2. GA (disable-able) is only for features gates that include a new API serialization that cannot be enabled by default 
+   until the API reaches stable.  This means that the first time the API is enabled in production, the feature will
+   be GA, but also can be disabled.  This is a less common state and does not apply to most features.
+3. Beta means that a feature gate is usually enabled in all production Kubernetes clusters by default
    and that feature can be disabled.
    Exceptions exist for entirely new APIs and some node features, but this broadly the case.
-3. Alpha means that a feature gate is disabled in all production Kubernetes clusters by default and
+4. Alpha means that a feature gate is disabled in all production Kubernetes clusters by default and
    can be optionally enabled by setting a `--feature-gate` command line argument.
 
 Making the jump to GA (cannot be disabled), without actual field experience is irresponsible.
@@ -206,12 +191,12 @@ This posture makes upgrades higher risk than necessary.
 To balance these concerns, we are changing how we evaluate Beta and GA stability criteria.
 The only valid GA criteria are “all issues and gaps identified as feedback during beta are resolved”.
 Promotion from Beta to GA must be zero-diff for the release.
-This means that Beta criteria must include all functional, security, and testing requirements along
+This means that Beta criteria must include all functional, security, monitoring, and testing requirements along
 with resolving all issues and gaps identified prior to beta.
 
 Phasing in larger features over time can be done by bringing separate feature gates through alpha, beta, and GA.
-Each feature gate needs to meet the beta and GA criteria for completeness, functional, security, and testing.
-After meeting hte criteria for enabled by default, and at the sig's discretion, the new feature gate could be 
+Each feature gate needs to meet the beta and GA criteria for completeness, functional, security, monitoring, and testing.
+After meeting the criteria for enabled by default, and at the SIG's discretion, the new feature gate could be 
 set to enabled by default in the release it is introduced.
 Importantly, the features need to behave in a way that allows old and new clients to interoperate and new additions
 to larger features able to be independently disablable with their own path for GA.
@@ -237,7 +222,7 @@ This document is our new position once merged until it is superceded by another 
 
 ### This may slow the rate that new features are promoted.
 For this to be true, that would mean that we previously enabled feature gates in production that were knowingly
-incomplete for functional, security, testing, or known bugs.
+incomplete for functional, security, monitoring, testing, or known bugs.
 We hope this was not the common case, but if it was the common enough to have an impact, we're pleased that
 the result is preventing incomplete feature gates from being enabled in production clusters.
 
