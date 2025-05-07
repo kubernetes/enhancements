@@ -396,7 +396,7 @@ Documenting this naming is merely informational, it is not part of the API. The 
 ### Pod API
 
 A new field `extendedResourceClaimStatus` is added to Pod's status to track
-the special resouceclaim object created for the extended resource requests
+the special `ResouceClaim` object created for the extended resource requests
 in the pod. This is needed for kublet to pass the devices allocated by driver
 to the containers in the pod.
 
