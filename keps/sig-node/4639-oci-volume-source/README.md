@@ -298,7 +298,10 @@ the OS or version of the scanning software.
     - Allowing direct mounting of OCI objects introduces potential attack
       vectors. Mitigation includes thorough security reviews and limiting access
       to trusted registries. Limiting to non-runnable content
-      and read-only mode will lessen the security risk.
+      and read-only mode will lessen the security risk. If the image content is
+      writable in a strictly pod isolated way, then runtimes have to
+      ensure that proper isolation, as well as the necessary cleanup on
+      pod removal.
     - Path traversal attacks are a high risk for introducing security
       vulnerabilities. Container Runtimes should re-use their existing
       implementations to merge layers as well as secure join symbolic links in
@@ -586,8 +589,14 @@ feature cannot be used. Pods using the new `VolumeSource` combined with a not
 supported container runtime version will fail to run on the node, because the
 `Mount.host_path` field is not set for those mounts.
 
-For security reasons, volume mounts should set the [`noexec`] and `ro`
-(read-only) options by default.
+For the most conservative security approach, image volumes _should_ be mounted
+by runtimes with enabled `ro` (read-only), `rro` (recursive read-only) and/or the
+`noexec` flag. Runtimes _may_ support writable or executable volumes in the same
+way as the running container image contents are writable (for example by
+utilizing overlayfs). This enables users to modify the image volume contents in
+a non-persistent and pod isolated environment. **In the end it's ultimately up
+to the runtime to define the mounting behavior depending on the underlying
+technologies being used.**
 
 Note: in the process of mounting images into the container's rootfs, there may need to be intermediate mounts created. This is especially relevant if
 the CRI implementation wishes to support one image being mounted with multiple different SELinux labels. If that's done, the CRI implementation is responsible
