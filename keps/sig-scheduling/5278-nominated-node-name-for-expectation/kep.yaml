@@ -1,0 +1,36 @@
+title: Nominated node name for an expected pod placement
+kep-number: 5278
+authors:
+  - "@sanposhiho" 
+  - "@wojtek-t" 
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-autoscaling
+status: provisional
+creation-date: 2025-05-07
+reviewers:
+  - "@macsko"
+  - "@dom4ha"
+approvers:
+  - "@macsko"
+  - "@dom4ha"
+
+stage: alpha
+
+latest-milestone: "v1.34"
+
+milestone:
+  alpha: "v1.34"
+  beta: "v1.35"
+  stable: "v1.36"
+
+feature-gates:
+  - name: NominatedNodeNameForExpectation
+    components:
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - tbd
