@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Device Class API](#device-class-api)
+    - [Implicit Extended Resource Name](#implicit-extended-resource-name)
   - [Resource Claim API](#resource-claim-api)
   - [Pod API](#pod-api)
   - [Scheduling for Extended Resource backed by DRA](#scheduling-for-extended-resource-backed-by-dra)
@@ -214,7 +215,7 @@ non-goals of this KEP.
   extended resource requests.
 
 * Enable application operators to use the existing extended resource request in
-  pod spec to request for DRA resources.
+  pod spec to request DRA resources.
 
 * Extended resource support is not added just for easing the transition to DRA
   for the short term. Its ease of use is one big advantage to keep it remaining
@@ -265,7 +266,7 @@ device plugin, extended resource backed by DRA, and dynamic resource.
 * extended resource backed by device plugin uses pod's
   spec.containers[].resources.requests to request for resources, it consumes the capacity
   from node's status.capacity. It is of type (string, int64)
-* dynamic resource uses `ResourceClaim` to request for resources, and
+* dynamic resource uses `ResourceClaim` to request resources, and
   `ResourceSlice` to provide resource capacity. A pod asks for resources through
   resource claim requests in pod's spec.resources.claims. Dynamic resource type
   is described in resource slice, simply speaking, it is a list of devices, with
@@ -365,7 +366,7 @@ garbage collector.
   * It is *deleted*
     * either together with the owning pod's deletion.
     * or by the scheduler dynamic resource plugin during unReserve phase.
-    * or by the scheduler dynamic resource plugin during PostFilter phase.
+    * or by the scheduler dynamic resource plugin during postFilter phase.
   * It is *discovered* by the kubelet via `pod.Status.ExtendedResourceClaimStatus`
   * It is *read* by the kubelet DRA device driver to prepare the devices listed
     therein when preparing to run the pod.
@@ -391,13 +392,15 @@ resource requests. For example, if the first container in the pod has an
 extended resource backed by DRA which is the 3rd such request in the container,
 then the name of the `DeviceRequest` is "container-0-request-2".
 
-Documenting this naming is merely informational, it is not part of the API. The kubelet must not rely on it. Instead, the `ContainerExtendedResourceRequest` field below specifies the mapping.
+Documenting this naming is merely informational, it is not part of the API.
+The kubelet must not rely on it. Instead, the
+`ContainerExtendedResourceRequest` field below specifies the mapping.
 
 ### Pod API
 
 A new field `extendedResourceClaimStatus` is added to Pod's status to track
-the special `ResouceClaim` object created for the extended resource requests
-in the pod. This is needed for kublet to pass the devices allocated by driver
+the special `RresouceClaim` object created for the extended resource requests
+in the pod. This is needed for kubelet to pass the devices allocated by driver
 to the containers in the pod.
 
 ```go
@@ -454,12 +457,12 @@ then the pod's status is like below:
 
 ```yaml
 status:
-   extendedResourceClaimStatus:
-   - names:
-     - container-name
-     - foo.domain/bar
-     - container-0-request-2
-   resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
+  extendedResourceClaimStatus:
+    names:
+    - containerName: container-name
+      extendedResourceName: foo.domain/bar
+      requestName: container-0-request-2
+    resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
 ```
 where `deviceRequest` name is "container-0-request-2", and container-name is the first container
 in the pod, foo.domain/bar is the 3rd extended resource in the container's requests.
@@ -494,10 +497,10 @@ type Resource struct {
 	ScalarResources map[v1.ResourceName]int64
 
 	// NEW!
-	// DynamicResources: keep track of extended resources backed by DRA to device classes
-	// The map's key is the extended resource name that has at least one device
+	// DynamicResources: keep track of extended resources backed by DRA to device class
+	// The map's key is the extended resource name that has exactly one device
 	// class advertises it.
-	DynamicResources map[v1.ResourceName][]string
+	DynamicResources map[v1.ResourceName]string
 }
 ```
 
@@ -509,7 +512,7 @@ a snapshot of all the nodes in the cluster, and updates their corresponding
 
 For the scheduler with DRA enabled, right after taking the node snapshot, the
 scheduler also takes a snapshot of `DeviceClass`, and updates
-`NodeInfo.DynamicResources` if there is extended resource backed by DRA.
+`NodeInfo.DynamicResources` if there is an extended resource backed by DRA.
 
 For a node with extended resources from device plugin, its NodeInfo's
 Allocatable.ScalarResources is updated with the k8s `Node`'s object.
@@ -692,14 +695,19 @@ ensure `ExtendedResourceName`s are handled by the scheduler as described in this
 
 #### Beta
 
-- Gather feedback
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
+- Gather feedback from developers and surveys
 - 3 examples of vendors making use of the extensions proposed in this KEP
 - Scalability tests that mirror real-world usage as determined by user feedback
+- Additional tests are in Testgrid and linked in KEP
+- All functionality completed
+- All security enforcement completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+
+
+#### GA
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
 
 ### Upgrade / Downgrade Strategy
 
@@ -902,7 +910,9 @@ No.
 
 ### Scalability
 
-No. The API extensions in this KEP are limited to at most one claim for extended resource backed by DRA per pod.
+###### Will enabling / using this feature result in any new API calls?
+
+Yes. scheduler make new API calls to create, update, and delete the special resource claim for extended resource backed by DRA.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
