@@ -10,15 +10,19 @@ creation-date: 2023-09-30
 reviewers:
   - "@alculquicondor"
   - "@pohly"
+  - "@macsko"
+  - "@dom4ha"
 approvers:
   - "@alculquicondor"
+  - "@macsko"
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-node/3063-dynamic-resource-allocation"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.32"
+latest-milestone: "v1.34"
 
 milestone:
   alpha: "v1.26" # This KEP stems from /keps/sig-node/3063-dynamic-resource-allocation.
@@ -29,4 +33,4 @@ feature-gates:
   - name: SchedulerQueueingHints
     components:
       - kube-scheduler
-disable-supported: true
+disable-supported: false
