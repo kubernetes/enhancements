@@ -546,7 +546,7 @@ If found, scheduler would reuse it. If not found, scheduler would create a
 special resource claim that has empty spec. The exact spec needs to be decided
 during Filter phase, as some node may have device plugin provide the capacity
 for the extended resource, some other node may have DRA provide the capacity.
-The requsts in the special resource claim need to vary for each node.
+The requests in the special resource claim need to vary for each node.
 
 #### Filter
 If a pod has extended resource backed by DRA, and the node does *not* have
