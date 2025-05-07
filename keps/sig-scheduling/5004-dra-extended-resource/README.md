@@ -549,7 +549,7 @@ for the extended resource, some other node may have DRA provide the capacity.
 The requests in the special resource claim need to vary for each node.
 
 #### Filter
-If a pod has extended resource backed by DRA, and the node does *not* have
+If a pod has an extended resource backed by DRA, and the node does *not* have
 device plugin to provide the capacity for the resource, then the
 dynamicresource plugin needs to try allocate the resource by filling in the
 special claim's `Spec.Devices.Requests` field.
