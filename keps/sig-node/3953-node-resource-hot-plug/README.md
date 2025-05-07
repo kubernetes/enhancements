@@ -99,8 +99,7 @@ aims to optimize resource management, improve scalability, and minimize disrupti
 
 ## Motivation
 Currently, the node's resource configurations are recorded solely during the kubelet bootstrap phase and subsequently cached, assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
-In a conventional Kubernetes environment, the cluster resources might necessitate modification because of inaccurate resource allocation during cluster initialization or escalating workload over time, 
-necessitating supplementary resources within the cluster.
+In a conventional Kubernetes environment, cluster resources might need modification because of inaccurate resource allocation or due to escalating workloads over time, requiring supplementary resources within the cluster.
 
 Contemporarily, kernel capabilities enable the dynamic addition of CPUs and memory to a node (for example: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html).
 This can be across different architecture and compute environments like Cloud, Bare metal or VM. During this exercise it can lead to Kubernetes being unaware of the node's altered compute capacities during a live-resize,
@@ -119,7 +118,7 @@ However, this approach does carry a few drawbacks such as
    - https://github.com/kubernetes/kubernetes/issues/125579
    - https://github.com/kubernetes/kubernetes/issues/127793
 
-Hence, it is necessary to handle the updates in the compute capacity in a graceful fashion across the cluster, than adopting to reset the cluster components to achieve the same.
+Hence, it is necessary to handle capacity updates gracefully across the cluster, rather than resetting the cluster components to achieve the same outcome.
 
 Also, given that the capability to live-resize a node exists in the Linux and Windows kernels, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
 by the Kubernetes administrator.
@@ -152,7 +151,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 This KEP strives to enable node resource hot plugging by making the kubelet to watch and retrieve machine resource information from cAdvisor's cache as and when it changes, cAdvisor's cache is already updated periodically.
 The kubelet will fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
 Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
-With this proposal its also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize. But this carries small overhead due to recalculation of swap and OOMScoreAdj.
+With this proposal it's also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize. But this carries a small overhead due to recalculation of swap and OOMScoreAdj.
 
 ### User Stories
 
@@ -202,8 +201,8 @@ detect the change in compute capacity, which can bring in additional complicatio
 - Post up-scale any failure in resync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
   - To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
 
-- Lack of coordination about change in resource availability across kubelet/runtime/plugins.
-  - The plugins/runtime should be updated to react to change in resource information on the node.
+- Lack of coordination about change in resource availability across kubelet/runtime/NRI plugins.
+  - The runtime/NRI plugins should be updated to react to change in resource information on the node.
 
 - Kubelet missing on processing hotplug instance(s)
   - Kubelet observes the underlying node for any hotplug of resources as and when generated, 
@@ -221,7 +220,7 @@ detect the change in compute capacity, which can bring in additional complicatio
 
 ## Design Details
 
-Below diagram is shows the interaction between kubelet, node and cAdvisor.
+The diagram below shows the interaction between kubelet, node and cAdvisor.
 
 ```mermaid
 sequenceDiagram
@@ -263,9 +262,9 @@ With increase in cluster resources the following components will be updated:
  `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
    * Increase in nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
 
-3. Resource managers will re-initialised.
+3. Resource managers are re-initialised.
 
-4. Update in Node allocatable capacity.
+4. Update in Node capacity.
 
 5. Scheduler:
     * Scheduler will automatically schedule any pending pods.
@@ -439,7 +438,7 @@ Following scenarios need to be covered:
 * Node resource information before and after resource hot plug for the following scenarios.
   * upsize -> downsize
   * upsize -> downsize -> upsize
-  * downsize- > upsize
+  * downsize -> upsize
 * State of Pending pods due to lack of resources after resource hot plug.
 * Resource manager states after the resync of components.
 
@@ -593,8 +592,7 @@ will rollout across nodes.
 -->
 
 Rollout may fail if the resource managers are not re-synced properly due to programmatic errors.
-In case of rollout failures, running workloads are not affected, If the pods are on pending state they remain
-in the pending state only.
+In case of rollout failures, running workloads are not affected, If the pods are on pending state they remain pending.
 Rollback failure should not affect running workloads.
 
 ###### What specific metrics should inform a rollback?
@@ -915,7 +913,7 @@ VMs of cluster should support hot plug of compute resources for e2e tests.
       or if it has to be terminated due to resource crunch.
   * Recalculate OOM adjust score and Swap limits:
     * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
-  * Handling unplug of reserved CPUs.
+  * Handling unplug of reserved and exclusively allocated cpus CPUs.
   
 * Fetching machine info via CRI
     * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
