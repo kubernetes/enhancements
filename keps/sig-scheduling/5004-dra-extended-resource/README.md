@@ -472,7 +472,7 @@ validations for resourceClaimStatuses.
    be a DNS label, while the `extendedResourceName` is not a DNS label.
 1. resourceClaimStatuses requires `name` must be one of the claim's name in the
    pod spec. extendedResourceClaimStatus requires `containerName` must be one
-   of the container name in the pod spec, and `extendedReourceName` must be one
+   of the container name in the pod spec, and `extendedResourceName` must be one
    of the extended resource name in that container.
 
 ### Scheduling for Extended Resource backed by DRA
