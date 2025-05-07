@@ -82,6 +82,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Motivation](#motivation)
   - [External components need to know the pod is going to be bound](#external-components-need-to-know-the-pod-is-going-to-be-bound)
   - [External components want to specify a preferred pod placement](#external-components-want-to-specify-a-preferred-pod-placement)
+  - [Retain the scheduling decision](#retain-the-scheduling-decision)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -208,6 +209,14 @@ So, they know where those pods are likely going to be scheduled.
 
 By specifing their expectation on `NominatedNodeName`, the scheduler can first check whether the pod can go to the nominated node,
 speeding up the filter phase.
+
+### Retain the scheduling decision
+
+At the binding cycle (e.g., PreBind), some plugins could handle something (e.g., volumes, devices) based on the pod's scheduling result.
+
+If the scheduler restarts while it's handling some pods at binding cycles,
+kube-scheduler could decide to schedule a pod to a different node. 
+If we can keep where the pod was going to go at `NominatedNodeName`, the scheduler likely picks up the same node, and the PreBind plugins can restart their work from where they were before the restart.
 
 ### Goals
 
