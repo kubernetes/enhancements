@@ -399,7 +399,7 @@ The kubelet must not rely on it. Instead, the
 ### Pod API
 
 A new field `extendedResourceClaimStatus` is added to Pod's status to track
-the special `RresouceClaim` object created for the extended resource requests
+the special `ResourceClaim` object created for the extended resource requests
 in the pod. This is needed for kubelet to pass the devices allocated by driver
 to the containers in the pod.
 
