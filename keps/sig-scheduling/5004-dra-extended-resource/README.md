@@ -432,22 +432,13 @@ type ContainerExtendedResourceRequest struct {
         RequestName string `json:"requestName" protobuf:"bytes,3,name=requestName"`
 }
 
-// PodStatus represents information about the status of a pod. Status may trail the actual
-// state of a system, especially if the node that hosts the pod cannot contact the control
-// plane.
 type PodStatus struct {
-        // Status of resource claims.
-        // +patchMergeKey=name
-        // +patchStrategy=merge,retainKeys
-        // +listType=map 
-        // +listMapKey=name
-        // +featureGate=DynamicResourceAllocation
-        // +optional
-        ResourceClaimStatuses []PodResourceClaimStatus `json:"resourceClaimStatuses,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name" protobuf:"bytes,15,rep,name=resourceClaimStatuses"`
-        // Status of extended resource claim backed by DRA.
-        // +featureGate=DynamicResourceAllocation
-        // +optional
-        ExtendedResourceClaimStatus *PodExtendedResourceClaimStatus `json:"extendedResourceClaimStatus,omitempty" protobuf:"bytes,17,opt,name=extendedResourceClaimStatus"`
+    ...
+
+    // Status of extended resource claim backed by DRA.
+    // +featureGate=DynamicResourceAllocation
+    // +optional
+    ExtendedResourceClaimStatus *PodExtendedResourceClaimStatus
 }
 ```
 
