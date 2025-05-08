@@ -7,6 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Feature Gate handling](#feature-gate-handling)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1 - Pod VS NetworkPolicy](#story-1---pod-vs-networkpolicy)
     - [Story 2 - having finalizer conflicts with deletion order](#story-2---having-finalizer-conflicts-with-deletion-order)
@@ -139,6 +140,12 @@ the resources associated with this namespace should be deleted in order:
 - Delete all pods in the namespace (in an undefined order).
 - Wait for all the pods to be stopped or deleted.
 - Delete all the other resources in the namespace (in an undefined order).
+
+### Feature Gate handling
+
+Due to this KEP is addressing the security concern and we do wanna give options to close security gaps in the past,
+the feature gate will be introduced as beta and on by default in 1.33 release. We will backport the feature gate with off-by-default
+configuration to all supported releases. See [the detailed discussion on slack](https://kubernetes.slack.com/archives/CJH2GBF7Y/p1741258168683299)
 
 ### User Stories (Optional)
 
@@ -444,6 +451,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+This feature should not impact rollout.
 
 ###### What specific metrics should inform a rollback?
 
@@ -451,6 +459,7 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -459,12 +468,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+N/A
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -482,6 +493,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Check if the feature gate is enabled. The feature is a security fix which should not be user detectable.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -494,13 +506,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -518,19 +524,14 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+The feature only affect namespace deletion and should not affect existing SLOs.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+The error or blocker will be updated to namespace status subresource as what it's done before.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -538,6 +539,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Namespace status will be used to capture the possible error or blockers while deletion.
 
 ### Dependencies
 
@@ -561,7 +563,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-
+No.
 ### Scalability
 
 <!--
@@ -588,6 +590,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -597,7 +600,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-
+No.
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -605,7 +608,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
-
+No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 <!--
@@ -614,7 +617,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-
+No.
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 <!--
@@ -625,7 +628,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-
+No.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -637,7 +640,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-
+No.
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -649,7 +652,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
-
+No.
 ### Troubleshooting
 
 <!--
@@ -664,7 +667,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
-
+The namespace controller will act exactly the same with/without this feature.
 ###### What are other known failure modes?
 
 <!--
@@ -679,9 +682,9 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
-
+Namespace deletion might hang if pod resources deletion running into issues with the feature gate enabled.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-
+Delete the blocking resources manually.
 ## Implementation History
 
 <!--
