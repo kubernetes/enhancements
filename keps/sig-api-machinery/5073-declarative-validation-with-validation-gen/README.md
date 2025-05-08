@@ -8,7 +8,7 @@
 - [Proposal](#proposal)
   - [Overview](#overview)
   - [Introduce <code>validation-gen</code>](#introduce-validation-gen)
-    - [<code>validation-gen</code> Has No Plans To Use CEL Validation Directly](#validation-gen-has-no-plans-to-use-cel-validation-directly)
+    - [<code>validation-gen</code>'s Approach to Dedicated Tags and Escape Hatch Tags](#validation-gens-approach-to-dedicated-tags-and-escape-hatch-tags)
     - [IDL Tag Authoring DevEx and User Error Messaging](#idl-tag-authoring-devex-and-user-error-messaging)
   - [Introduce new validation tests and test framework](#introduce-new-validation-tests-and-test-framework)
     - [New Validations Vs Migrating Validations](#new-validations-vs-migrating-validations)
@@ -73,6 +73,8 @@
     - [Status-Type Subresources](#status-type-subresources)
     - [Scale-Type Subresources](#scale-type-subresources)
     - [Streaming Subresources](#streaming-subresources)
+  - [Cross-Field Validation](#cross-field-validation)
+    - [Cross-Field Validation and Ratcheting](#cross-field-validation-and-ratcheting)
   - [Ratcheting](#ratcheting)
     - [Core Principles](#core-principles)
     - [Default Ratcheting Behavior](#default-ratcheting-behavior)
@@ -276,9 +278,8 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 
 `validation-gen` will parse structured comments (IDL tags) within Kubernetes API type definitions (types.go files) and generate corresponding Go validation functions. `validation-gen` will be built as an extensible framework allowing new "Validators" to be added by describing what IDL tags they parse, the constraints on the IDL tags (for UX error messaging), the format of the IDL tag + how it is used (for documentation), and what actual validation logic will be for the generated code given the tagged field and associated args. The generators validators will be registered with the scheme in a similar way to generated conversion and defaulting.
 
-#### `validation-gen` Has No Plans To Use CEL Validation Directly
-
-The previous Declarative Validation proposal ([KEP-4153](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/4153-declarative-validation)) proposed using CEL for a number of the complex validations present in the current Kubernetes validation logic for native types (cross-field, transition, etc.).  The `validation-gen` solution presented here uses go code directly for the validations which means we do not plan on evaluating CEL server side as we can write arbitrary go code to perform server side validations.  This allows the `validation-gen` solution to be highly flexible and performant.  If we reach a point where CEL makes sense, we can evaluate it at that time.
+#### `validation-gen`'s Approach to Dedicated Tags and Escape Hatch Tags 
+The development and use of an "escape hatch" tag (CEL expression based tag, etc.) is to only be attempted after a rigorous attempt to use, enhance, or propose a dedicated tag. The goal is to use dedicated IDL tags for the vast majority of validations, ensuring that CEL is reserved for exceptional cases if used at all. Over time, if CEL appears necessary for a validation, additional discussion will occur to prioritize creating a dedicated CEL expression tag.  Currently the aim is to get as far as possible with no CEL for declarative validation tags. This principal mitigates concerns about the potential for overuse of a CEL escape hatch tag and the associated review complexity for common validation rules.
 
 #### IDL Tag Authoring DevEx and User Error Messaging
 
@@ -606,13 +607,13 @@ The below rules are currently implemented or are very similar to an existing val
   </tr>
   <tr>
    <td>
-    numeric limits
+     numeric limits (constant or field refs capable)
    </td>
    <td>
     `+k8s:minimum`, `+k8s:maximum`, `+k8s:exclusiveMinimum`, `+k8s:exclusiveMaximum`
    </td>
    <td>
-    `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`
+    minimum, maximum, exclusiveMinimum, exclusiveMaximum (for constants); x-kubernetes-validations (for field refs)
    </td>
   </tr>
   <tr>
@@ -727,108 +728,37 @@ The below rules are currently implemented or are very similar to an existing val
     N/A
    </td>
   </tr>
-<tr>
-   <td style="background-color: null">
-    immutable after set
-   </td>
-   <td style="background-color: null">
-    `+k8s:immutable`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    required once set
-   </td>
-   <td style="background-color: null">
-    `+k8s:requiredOnceSet`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    immutable(frozen) at creation
-   </td>
-   <td style="background-color: null">
-    `+k8s:frozen`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    group membership (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:memberOf(group: &lt;groupname>)`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    list map item reference (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:listMapItem(list-map-key-field-name: value,...])`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-</table>
-
-The below rules are not currently implemented in the [validation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen) so the exact syntax is still WIP
-
-<table>
   <tr>
    <td>
-    <strong>Type of validation</strong>
+    union member (Discriminated/Non-Discriminated)
    </td>
    <td>
-    <strong>IDL tag</strong>
+    +k8s:unionMember={"union": ""}
    </td>
    <td>
-    <strong>Relative OpenAPI validation field</strong>
+    x-kubernetes-unions
    </td>
   </tr>
   <tr>
    <td>
-    regex matches
+    union discriminator
    </td>
    <td>
-    `+k8s:pattern`
+    +k8s:unionDiscriminator={"union": ""}
    </td>
    <td>
-    `pattern`
-   </td>
-  </tr>
-  <tr>
-   <td>
-    cross field validation
-   </td>
-   <td>
-    `TBD
-   </td>
-   <td>
-    `x-kubernetes-validations`
+    x-kubernetes-unions
    </td>
   </tr>
   <tr>
    <td>
-    <a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#transition-rules">transition rules</a>
+    immutable value
    </td>
    <td>
-    `TBD
+    +k8s:immutable
    </td>
    <td>
-    `x-kubernetes-validations`
+    x-kubernetes-validations (CEL: !has(oldSelf...) || self... == oldSelf...)
    </td>
   </tr>
 </table>
@@ -1423,6 +1353,56 @@ validation will support validation of such resources using the same mechanisms a
 is not stored, the use case is much simpler and only requires the "Subresource Validation" step.
 
 The streamed data does not require declarative validation, as it is not structured resource data.
+
+### Cross-Field Validation
+
+A cross-field validation refers to any validation rule whose outcome depends on the value of more than one field within a given Kubernetes API object, potentially including fields from the previous version of the object (`oldSelf`) or external options (namely feature gates). This differs from single-field validation which only considers the value of the field where the validation tag is placed.
+
+These types of validations often have more complex logic and can be more difficult UX-wise to create a dedicated tag for as there are more options for representing them (tag directly on N fields, tag on one of the fields with args for the other fields, on the parent struct with args for all fields, etc.). From an analysis of current validation logic in `kubernetes/kubernetes` across native types in `pkg/apis`, a number of validation categories were identified:
+
+*   Conditional Requirement/Validation
+*   Non-Discriminated Unions
+*   Discriminated Unions
+*   List/Map Integrity
+*   Comparison
+*   Status Condition Validation
+*   Format/Value Dependencies
+    *   Rules where the validity or format of one field depends directly on the value of another field (or a value calculated from other fields). Includes: Checking if a generated string (like hostname + index) forms a valid DNS label, validating a field based on a prefix derived from another (like metadata name), or validating a field against a calculated aggregate value (like commonEncodingVersion).
+*   Transition Rules (Immutability, Ratcheting, etc.)
+*   At least "oneOf" Required
+*   Co-occurrence Requirements
+    *   Rules defining relationships where fields must appear together, be consistent if both present, or satisfy a bi-directional implication (A if and only if B).
+*   Complex/Custom Logic
+
+From this list of categories, the goal for Declarative Validation is to create dedicated tags capable of handling these categories similarly/identically to the current validation logic. The table in "Catalog of Supported Validation Rules & Associated IDL Tags" includes a number of these cross-field validation tags targeting the above categories including:
+
+*   Non-Discriminated & Discriminated Unions: `+k8s:union[Member|Discriminator]`
+*   Comparison: `+k8s:[minimum|maximum]` w/ field ref support
+*   Transition Rules - Immutability: `+k8s:immutable`.
+
+Some categories can be covered by extending and or/chaining a combination of tags. For example “Status Condition Validation” can, for identified cases (example below for CertificateSigningRequest), be handled using a combination of `+k8s:subfield` (enhanced to support targeting list entries) and `+k8s:unionMember`:
+
+```go
+type CertificateSigningRequestStatus struct {
+       // +k8s:subfield({"type":"Approved"})=+k8s:optional
+       // +k8s:subfield({"type":"Approved", "status": "true"})=+k8s:unionMember
+
+       // +k8s:subfield({"type":"Denied"})=+k8s:optional
+       // +k8s:subfield({"type":"Denied", "status": "true"})=+k8s:unionMember
+
+       // +k8s:subfield({"type":"Failed"})=+k8s:optional
+       // +k8s:subfield({"type":"Failed"})=+k8s:immutable
+	Conditions []CertificateSigningRequestCondition
+}
+```
+
+#### Cross-Field Validation and Ratcheting
+For cross-field validations, the validation logic is evaluated at the common ancestor of the fields involved. This approach is necessary for supporting ratcheting. While validation tags (eg: +k8s:maximum=siblingField, +k8s:unionMember , etc.) may be placed on an individual field for clarity, the tag and its associated validation logic will be "hoisted" to the parent struct during code generation. This "hoisting" means the validation is treated as if it were defined on the common ancestor.  By anchoring the cross-field alidation logic at the common ancestor, regardless of tag placement, the ratcheting design can more reliably determine how to perform equality checks across the relevant type nodes and decide if re-validation is necessary.
+
+As noted in the Ratcheting section there is an additional challenge that arises if a cross-field validation rule (e.g. X < Y) is defined on a common ancestor struct/field, and an unrelated field (e.g. Z) within that same ancestor is modified. This change to Z makes the common ancestor “changed” overall, triggering re-validation of the X < Y rule. If this rule was recently evolved, it might now fail even if X and Y themselves are not modified by the user’s update. This could violate the principle “Unchanged fields do not cause update rejections”. In practice this means that the validation rules (or validation-gen generally) might have to be more explicit where each validation rule explains “I only care about these fields for ratcheting”.
+
+For the initial implementation, this behavior will be documented, and cross-field validation rules must handle ratcheting themselves.  This means that in the initial implementation of the cross-field dedicated tags referenced in the document (+k8s:unionMember, etc.), they will handle ratcheting of the fields they operate on directly.  See the Ratcheting section for more information on this issue as well as longer term plans on addressing this challenge.
+
 
 ### Ratcheting
 
