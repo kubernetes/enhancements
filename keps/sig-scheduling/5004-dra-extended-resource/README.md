@@ -310,7 +310,7 @@ The mapping of DRA devices and extended resources is stored in k8s data store
 application that uses the devices.
 
 ```go
-// DeviceClassSpec is used in a [DeviceClass] to define what can be allocated
+// DeviceClassSpec is used in a DeviceClass to define what can be allocated
 // and how to configure it.
 type DeviceClassSpec struct {
 	// ExtendedResourceName defines a mapping to the extended resource API.
@@ -379,7 +379,7 @@ type DeviceRequest struct {
 	// Must be a DNS label.
 	//
 	// +required
-	Name string `json:"name" protobuf:"bytes,1,name=name"`
+	Name string
 }
 ```
 
@@ -408,28 +408,28 @@ to the containers in the pod.
 // resource requests backed by DRA. It stores the generated name for 
 // the corresponding special ResourceClaim created by scheduler.
 type PodExtendedResourceClaimStatus struct {
-        // Names identifies the mapping of <container, extended resource backed by DRA> to  device request.
+        // ResourceClaimName is the name of the ResourceClaim that was
+        // generated for the Pod in the namespace of the Pod.
+        ResourceClaimName string
+
+        // RequestMapping identifies the mapping of <container, extended resource backed by DRA> to  device request.
         // +patchMergeKey=requestName
         // +patchStrategy=merge,retainKeys
         // +listType=atomic
         // +listMapKey=requestName
         // +featureGate=DynamicResourceAllocation
-        Names []ContainerExtendedResourceRequest `json:"names" patchStrategy:"merge,retainKeys" patchMergeKey:"requestName" protobuf:"bytes,1,rep,name=names"`
-           
-        // ResourceClaimName is the name of the ResourceClaim that was
-        // generated for the Pod in the namespace of the Pod.
-        ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,2,name=resourceClaimName"`
+        RequestMapping []ContainerExtendedResourceRequest
 }
 
 type ContainerExtendedResourceRequest struct {
         // ContainerName is the unique container name within the pod.
-        ContainerName string `json:"containerName" protobuf:"bytes,1,name=containerName"`
+        ContainerName string
         // ExtendedResourceName is the extended resource name backed by DRA inside
         // the container's requests.
-        ExtendedResourceName string `json:"extendedResourceName" protobuf:"bytes,2,name=extendedResourceName"`
+        ExtendedResourceName string
         // RequestName is the device request name in the special resource claim
         // created for extended resource requests backed by DRA.
-        RequestName string `json:"requestName" protobuf:"bytes,3,name=requestName"`
+        RequestName string
 }
 
 type PodStatus struct {
@@ -449,11 +449,11 @@ then the pod's status is like below:
 ```yaml
 status:
   extendedResourceClaimStatus:
-    names:
+    resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
+    requestMapping:
     - containerName: container-name
       extendedResourceName: foo.domain/bar
       requestName: container-0-request-2
-    resourceClaimName: ccc-gpu-57999b9c4c-vpq68-gpu-8s27z
 ```
 where `deviceRequest` name is "container-0-request-2", and container-name is the first container
 in the pod, foo.domain/bar is the 3rd extended resource in the container's requests.
@@ -462,7 +462,7 @@ Note the validations for extendedResourceClaimStatus are different from the
 validations for resourceClaimStatuses.
 
 1. resourceClaimStatuses requires `name` must be DNS label,
-   extendedResourceClaimStatus's names' `containerName` and `RequestName` must
+   extendedResourceClaimStatus's requestMapping's `containerName` and `RequestName` must
    be a DNS label, while the `extendedResourceName` is not a DNS label.
 1. resourceClaimStatuses requires `name` must be one of the claim's name in the
    pod spec. extendedResourceClaimStatus requires `containerName` must be one
@@ -963,7 +963,11 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
-Will be considered for beta.
+  - [Pod pending due to extended resource backed by DRA requests no less than 128 devices]
+    - Detection: inspect pod status 'Pending'
+    - Mitigations: reduce the number of devices requested in one extended resource backed by DRA requests
+    - Diagnostics: scheduler logs at level 5 show the reason for the scheduling failure.
+    - Testing: Will be considered for beta.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
