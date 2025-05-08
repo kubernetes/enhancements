@@ -74,7 +74,7 @@
     - [Scale-Type Subresources](#scale-type-subresources)
     - [Streaming Subresources](#streaming-subresources)
   - [Cross-Field Validation](#cross-field-validation)
-    - [Cross-Field Validation and Ratcheting](#cross-field-validation-and-ratcheting)
+    - [Handling Ratcheting In Cross-Field Validation Tags](#handling-ratcheting-in-cross-field-validation-tags)
   - [Ratcheting](#ratcheting)
     - [Core Principles](#core-principles)
     - [Default Ratcheting Behavior](#default-ratcheting-behavior)
@@ -1396,12 +1396,10 @@ type CertificateSigningRequestStatus struct {
 }
 ```
 
-#### Cross-Field Validation and Ratcheting
+#### Handling Ratcheting In Cross-Field Validation Tags
 For cross-field validations, the validation logic is evaluated at the common ancestor of the fields involved. This approach is necessary for supporting ratcheting. While validation tags (eg: +k8s:maximum=siblingField, +k8s:unionMember , etc.) may be placed on an individual field for clarity, the tag and its associated validation logic will be "hoisted" to the parent struct during code generation. This "hoisting" means the validation is treated as if it were defined on the common ancestor.  By anchoring the cross-field validation logic at the common ancestor, regardless of tag placement, the ratcheting design can more reliably determine how to perform equality checks across the relevant type nodes and decide if re-validation is necessary.
 
-As noted in the Ratcheting section there is an additional challenge that arises if a cross-field validation rule (e.g. X < Y) is defined on a common ancestor struct/field, and an unrelated field (e.g. Z) within that same ancestor is modified. This change to Z makes the common ancestor “changed” overall, triggering re-validation of the X < Y rule. If this rule was recently evolved, it might now fail even if X and Y themselves are not modified by the user’s update. This could violate the principle “Unchanged fields do not cause update rejections”. In practice this means that the validation rules (or validation-gen generally) might have to be more explicit where each validation rule explains “I only use these fields as inputs" for ratcheting.
-
-For the initial implementation, this behavior will be documented, and cross-field validation rules must handle ratcheting themselves.  This means that in the initial implementation of the cross-field dedicated tags referenced in the document (+k8s:unionMember, etc.), they will handle ratcheting of the fields they operate on directly.  See the Ratcheting section for more information on this issue as well as longer term plans on addressing this challenge.
+As noted in the "Ratcheting and Cross-Field Validation" section there is an additional challenge that arises if a cross-field validation rule (e.g. X < Y) is defined on a common ancestor struct/field, and an unrelated field (e.g. Z) within that same ancestor is modified (see section for more information). In practice this means that the validation rules (or validation-gen generally) need to be more explicit where each validation rule explains “I only use these fields as inputs" for ratcheting.  This means that in the initial implementation of the cross-field dedicated tags referenced in the document (+k8s:unionMember, etc.), they will handle ratcheting of the fields they operate on directly.
 
 
 ### Ratcheting
