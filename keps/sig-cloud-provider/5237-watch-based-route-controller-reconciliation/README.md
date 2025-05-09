@@ -143,10 +143,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -168,13 +168,13 @@ Switch the route controller (`k8s.io/cloud-provider`) from a fixed interval reco
 
 ## Motivation
 
-The route controller in the cloud-controller-manager is currently reconciling in a fixed interval (default: 10s). This leads to unnecessary API requests towards the cloud providers. Related controllers, such as the service or node controller are already using a watch-based mechanism. We propose to switch the route controller to a similar solution.
+The route controller in the cloud-controller-manager is currently reconciling in a fixed interval (default: 10s). This leads to unnecessary API requests towards the infrastructure providers. Related controllers, such as the service or node controller are already using a watch-based mechanism. We propose to switch the route controller to a similar solution.
 
 This will also reduce the average time spent waiting for the route reconciliation when a new Node is added, as the event immediately starts a reconciliation instead of having to wait for up to ten seconds.
 
 ### Goals
 
-First, reduce the overall amount of API requests towards the cloud providers. Second, reduce average time for route reconciliation of new nodes added to the cluster.
+First, reduce the overall amount of API requests towards the infrastructure providers. Second, reduce average time for route reconciliation of new nodes added to the cluster.
 
 ### Non-Goals
 
@@ -188,15 +188,15 @@ The current route controller runs a full reconciliation every ten seconds. We pr
 
 #### Story 1
 
-As a cloud provider I would like to reduce the amount of avoidable API requests. (For the environment and operational costs)
+As an infrastructure provider I would like to reduce the amount of avoidable API requests. (For the environment and operational costs)
 
 #### Story 2
 
-As a cluster operator I would like to use my cloud provider's routes instead of an overlay network. The routes should be added as soon as possible for new nodes.
+As a cluster operator I would like to use my infrastructure providers routes instead of an overlay network. The routes should be added as soon as possible for new nodes.
 
 #### Story 3
 
-As a cluster operator I need to use the API rate limits from my Cloud Provider effectively. Sending frequent API requests even though nothing changed causes me to deplete the API rate limits faster.
+As a cluster operator I need to use the API rate limits from my infrastructure provider effectively. Sending frequent API requests even though nothing changed causes me to deplete the API rate limits faster.
 
 ### Risks and Mitigations
 
@@ -204,17 +204,17 @@ As a cluster operator I need to use the API rate limits from my Cloud Provider e
 
 We currently use the `Node.Status.Addresses` and `PodCIDRs` fields to trigger updates in the route reconciliation mechanism. However, relying solely on these fields may be insufficient, potentially causing missed route reconciliations when updates are necessary. This depends on the specific cloud-controller-manager implementations. Using these fields works for the CCM maintained by the authors, but we do not know the details of other providers.
 
-This is mitigated by a feature gate, which allows other cloud providers to test it and provide feedback on the fields.
+This is mitigated by a feature gate, which allows infrastructure providers to test it and provide feedback on the fields.
 
 #### Relying only on Events
 
 Other controllers rely on “Owner” references to make sure that the resource is only deleted when the controller had the chance to run any cleanup. This is currently not implemented for any controller in [`k8s.io/cloud-provider`](http://k8s.io/cloud-provider). Because of this, Nodes may get deleted without the possibility to process the event in the route controller.
 
-This can cause issues with limits on the number of routes in from the cloud provider, as well as invalid routes being advertised as valid, causing possible networking reliability or confidentiality issues.
+This can cause issues with limits on the number of routes in the infrastructure provider, as well as invalid routes being advertised as valid, causing possible networking reliability or confidentiality issues. s
 
 This is mitigated by:
 
-- not-filtered node event causing a full reconcile of *all* routes  
+- not-filtered node event causing a full reconcile of *all* routes
 - The controller doing a periodic reconcile to clean up outdated routes, just at a lower frequency than before, even if no events came in.
 
 ## Design Details
@@ -229,13 +229,13 @@ This will be kept, as there is no way to know which routes to delete without thi
 
 #### Periodic reconcile
 
-As already established, the cloud-controller-manager does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the cloud provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented.
+As already established, the cloud-controller-manager does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the infrastructure provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented.
 
-TODO: decision  
+TODO: decision
 We have three available options to determine the time interval:
 
-1. Change default of `--route-reconcile-period` to an appropriate value based on this KEPs feature flag  
-2. Use global flag `--min-resync-period` with an interval of 12h  
+1. Change default of `--route-reconcile-period` to an appropriate value based on this KEPs feature flag
+2. Use global flag `--min-resync-period` with an interval of 12h
 3. Introduce a new flag with an appropriate value
 
 #### Workqueue singleton
@@ -244,12 +244,12 @@ To ensure only a single reconciliation loop is run concurrently we use the [`k8s
 
 #### Node update filters
 
-Node updates are quite frequent. To reduce the number of requests sent to cloud providers, it’s important to filter these events and only trigger reconciliations when necessary.
+Node updates are quite frequent. To reduce the number of requests sent to infrastructure providers, it’s important to filter these events and only trigger reconciliations when necessary.
 
 TODO: more fields?
 Two fields are relevant for determining whether a reconcile should occur:
 
-1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a give IP range should be sent. Changes to this field must trigger a reconcile.  
+1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a give IP range should be sent. Changes to this field must trigger a reconcile.
 2. `Node.Spec.PodCIDRs` contains the IP ranges assigned to the node. These CIDRs are used as the destination in the created routes.. Changes to this field must trigger a reconcile.
 
 ### Test Plan
@@ -268,7 +268,7 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 ##### e2e tests
 
-- None, this feature is consumed by cloud provider repositories for the final binary so it will not be used in e2e tests in K/K.
+- None, this feature is consumed by repositories of CCM maintainers for the final binary so it will not be used in e2e tests in K/K.
 
 ### Graduation Criteria
 
@@ -279,7 +279,7 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 #### Beta
 
-- Multiple cloud-providers have enabled the feature flag, and we are confident that the field selectors are correct.
+- Multiple infrastructure provider have enabled the feature flag, and we are confident that the field selectors are correct.
 
 #### GA
 
@@ -287,7 +287,7 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 ### Upgrade / Downgrade Strategy
 
-- This is not an issue, as we do not touch the reconciliation logic itself  
+- This is not an issue, as we do not touch the reconciliation logic itself
 - This feature can be disabled/enabled at any time without implications
 
 ### Version Skew Strategy
@@ -300,12 +300,12 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)  
-      - Feature gate name: `CloudControllerManagerWatchBasedRoutesReconciliation`  
-      - Components depending on the feature gate: [`k8s.io/cloud-provider`](http://k8s.io/cloud-provider) / cloud-controller-managers  
-- [ ] Other  
-      - Describe the mechanism:  
-      - Will enabling / disabling the feature require downtime of the control plane?  
+- [x] Feature gate (also fill in values in `kep.yaml`)
+      - Feature gate name: `CloudControllerManagerWatchBasedRoutesReconciliation`
+      - Components depending on the feature gate: [`k8s.io/cloud-provider`](http://k8s.io/cloud-provider) / cloud-controller-managers
+- [ ] Other
+      - Describe the mechanism:
+      - Will enabling / disabling the feature require downtime of the control plane?
       - Will enabling / disabling the feature require downtime or reprovisioning of a node?
 
 ###### Does enabling the feature change any default behavior?
@@ -328,15 +328,15 @@ No
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-In the worst case the route controller no longer runs. This means that any new Nodes will not have their routes setup and the Pod-to-Pod communicationis broken for talking to pods running on that new node.  
+In the worst case the route controller no longer runs. This means that any new Nodes will not have their routes setup and the Pod-to-Pod communicationis broken for talking to pods running on that new node.
 This will not impact already running nodes/workloads, but they might be affected transitively because they rely on workloads scheduled to broken nodes.
 
 ###### What specific metrics should inform a rollback?
 
 The metrics for the new workqueue can be used to determine whether the route controller still runs. If the following query is constant after adding a new node, it means that the new implementation does not reconcile the node routes.
 
-```promql  
-workqueue_work_duration_seconds_count{name="Routes"}  
+```promql
+workqueue_work_duration_seconds_count{name="Routes"}
 ```
 
 Note that these metrics are only available from the CCM.
@@ -359,11 +359,11 @@ After upgrading, they can look at `workqueue_work_duration_seconds_count{name="R
 
 ###### How can someone using this feature know that it is working for their instance?
 
-- [ ] Events  
-      - There are no events for this.  
-- [x] API Node.status  
-      - Condition name: `NodeNetworkUnavailable=false` will be added to the Node if the controller works, same as before.  
-- [ ] Other (treat as last resort)  
+- [ ] Events
+      - There are no events for this.
+- [x] API Node.status
+      - Condition name: `NodeNetworkUnavailable=false` will be added to the Node if the controller works, same as before.
+- [ ] Other (treat as last resort)
       - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -372,11 +372,11 @@ None
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [x] Metrics  
-      - Metric name: `workqueue_work_duration_seconds_count{name="Routes"}`  
-      - [Optional] Aggregation method: `rate`  
-      - Components exposing the metric: CCMs  
-- [ ] Other (treat as last resort)  
+- [x] Metrics
+      - Metric name: `workqueue_work_duration_seconds_count{name="Routes"}`
+      - [Optional] Aggregation method: `rate`
+      - Components exposing the metric: CCMs
+- [ ] Other (treat as last resort)
       - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -423,7 +423,7 @@ No
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Previously a reconcile would still happen every 10s based on cached node list. Now we only react to new events, so if the API server is unavailable nothing will happen.  
+Previously a reconcile would still happen every 10s based on cached node list. Now we only react to new events, so if the API server is unavailable nothing will happen.
 The controller is only meant to do something when new nodes are added, and that can not happen anyway when the API server is unavailable.
 
 ###### What are other known failure modes?
@@ -448,7 +448,7 @@ If the controller was changed to reconcile individual nodes, this filter could b
 
 We do not think this is a reasonable alternative because:
 
-1) The cloud provider interface only allows a `ListRoutes`, so If we were to reconcile every node by itself we would need to call this many more times, countering the purpose of this enhancement.  
+1) The cloud provider interface only allows a `ListRoutes`, so If we were to reconcile every node by itself we would need to call this many more times, countering the purpose of this enhancement.
 2) The controller also does a regular “clean up” of routes that are no longer valid. If we only reconciled individual nodes we can not do this, as the node that this route belongs to may already be deleted.
 
 ## Infrastructure Needed (Optional)
