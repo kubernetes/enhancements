@@ -174,7 +174,7 @@ This will also reduce the average time spent waiting for the route reconciliatio
 
 ### Goals
 
-Reduce API requests towards the cloud providers.
+First, reduce the overall amount of API requests towards the cloud providers. Second, reduce average time for route reconciliation of new nodes added to the cluster.
 
 ### Non-Goals
 
