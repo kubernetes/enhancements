@@ -112,7 +112,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The enhancement allows a single device to be allocated to multiple requests.
-If certain resources on the device are limited for sharing, the device can be shared until all available limited resources are consumed by requests.
+By default, the device resources are shared freely without any guarantees.
+The resource is not dedicated to any single request.
+A specific resource is considered to have limited or guaranteed sharing only if a sharing policy is specified.
+The device can be allocated until all available limited resources are consumed by requests.
 
 To achieve this, this KEP introduces
 - a new device field to distinguish between “shareable” and “unshareable” devices,
@@ -227,7 +230,8 @@ type Device struct {
 ...
    // Shareable marks whether the device is shareable.
    //
-   // A device with shareable="true" can be allocated more than once.
+   // A device with shareable="true" can be allocated more than once,
+   // and its capacity is shared, regardless of whether the CapacitySharingPolicy is defined or not.
    //
    // +optional
    // +featureGate=DRAConsumableCapacity
