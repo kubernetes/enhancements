@@ -182,7 +182,7 @@ Change the logic of the reconciliation process itself.
 
 ## Proposal
 
-The current route controller runs a full reconciliation every ten seconds. We propose to instead reconcile whenever there is a new node added, removed, or certain fields are updated. These fields include the `node.status.addresses` field and the configured `PodCIDRs`. Additionally, we will run a full reconciliation at a less frequent interval.
+The current route controller runs a full reconciliation every ten seconds. We propose to instead reconcile whenever there is a new node added, removed, or certain fields are updated. These fields include the `node.status.addresses` field and the configured `PodCIDRs`. Additionally, the route controller will run a full reconciliation at a less frequent interval.
 
 ### User Stories (Optional)
 
@@ -192,7 +192,7 @@ As a cloud provider I would like to reduce the amount of avoidable API requests.
 
 #### Story 2
 
-As a cluster operator I would like to use my cloud providers routes instead of an overlay network. The routes should be added as soon as possible for new nodes.
+As a cluster operator I would like to use my cloud provider's routes instead of an overlay network. The routes should be added as soon as possible for new nodes.
 
 #### Story 3
 
@@ -202,7 +202,7 @@ As a cluster operator I need to use the API rate limits from my Cloud Provider e
 
 #### Changed Field Filters
 
-We currently use the `Node.Status.Addresses` and `PodCIDRs` fields to trigger updates in the route reconciliation mechanism. However, relying solely on these fields may be insufficient, potentially causing missed route reconciliations when updates are necessary. This depends on the specific cloud-provider implementations. Using these fields works for the CCM maintained by the authors, but we do not know the details of other providers.
+We currently use the `Node.Status.Addresses` and `PodCIDRs` fields to trigger updates in the route reconciliation mechanism. However, relying solely on these fields may be insufficient, potentially causing missed route reconciliations when updates are necessary. This depends on the specific cloud-controller-manager implementations. Using these fields works for the CCM maintained by the authors, but we do not know the details of other providers.
 
 This is mitigated by a feature gate, which allows other cloud providers to test it and provide feedback on the fields.
 
@@ -229,7 +229,7 @@ This will be kept, as there is no way to know which routes to delete without thi
 
 #### Periodic reconcile
 
-As already established, the CCM does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the cloud provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented.
+As already established, the cloud-controller-manager does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the cloud provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented.
 
 TODO: decision  
 We have three available options to determine the time interval:
