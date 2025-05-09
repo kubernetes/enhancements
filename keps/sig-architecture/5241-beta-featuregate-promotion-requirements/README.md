@@ -190,7 +190,7 @@ This posture makes upgrades higher risk than necessary.
 
 To balance these concerns, we are changing how we evaluate Beta and GA stability criteria.
 The only valid GA criteria are “all issues and gaps identified as feedback during beta are resolved”.
-Promotion from Beta to GA must be zero-diff for the release.
+Promotion from Beta to GA must have no significant change for the release.
 This means that Beta criteria must include all functional, security, monitoring, and testing requirements along
 with resolving all issues and gaps identified prior to beta.
 

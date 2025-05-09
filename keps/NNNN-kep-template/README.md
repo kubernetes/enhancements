@@ -376,10 +376,11 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - All functionality completed
 - All security enforcement completed
+- All monitoring requirements completed
 - All testing requirements completed
 - All known pre-release issues and gaps resolved 
 
-**Note:** Beta criteria must include all functional, security, and testing requirements along with resolving all issues and gaps identified
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
 #### GA
 
@@ -388,7 +389,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
 
-**Note:** GA criteria must not include any functional, security, or testing requirements.  Those must be beta requirements.
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
