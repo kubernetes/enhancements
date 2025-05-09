@@ -343,7 +343,7 @@ Note that these metrics are only available from the CCM.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-To be done (manually) @Lukas Metzner
+Yes, this did not cause any issues.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
