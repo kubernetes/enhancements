@@ -234,6 +234,9 @@ non-goals of this KEP.
 * Minimize kubelet or kube-scheduler changes. The feature requires necessary
   changes in both scheduling and actuation.
 
+* One node has both extended resource backed by DRA, and the same named
+  extended resource backed by device plugin at the same time.
+
 ## Proposal
 
 The basic idea is the following:
