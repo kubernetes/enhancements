@@ -385,13 +385,23 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Gather feedback from developers and surveys
 - Complete features A, B, C
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
 #### GA
 
 - N examples of real-world usage
 - N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
