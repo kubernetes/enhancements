@@ -435,8 +435,9 @@ Desired --> Allocated --> Actuated --> Actual
 
 ### Priority of Resize Requests
 
-Resize requests that come in will be added to a queue of pending resizes. Resize
-requests will be attempted according to the following priority:
+Resize requests detected by the kubelet (in `HandlePodUpdates` and `HandlePodAdditions`)
+will be added to a queue of pending resizes. Resize requests will be attempted according to
+the following priority:
 
 1. *Resource requests are not increasing*: Resizes that don't increase requests will be
 prioritized first. These resizes are expected to always succeed and would not be marked as
