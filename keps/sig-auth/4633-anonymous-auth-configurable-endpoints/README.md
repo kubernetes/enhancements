@@ -605,6 +605,8 @@ in back-to-back releases.
 #### GA
 
 - Examples of real-world usage
+  - GKE and AWS are using this feature to limit anonymous access to /healthz,
+  /readyz and /livez endpoints.
 
 ### Upgrade / Downgrade Strategy
 
