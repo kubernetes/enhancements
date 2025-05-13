@@ -524,11 +524,201 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Properties
 
-Name/value pairs to represent properties of the clusters. It could be a
-collection of ClusterProperty resources, but could also be info based on
-other implementations. The name of the cluster property can be predefined
-name from ClusterProperty resources and is allowed to be customized by
-different cluster managers.
+Properties defines cluster characteristics through a list of Property objects.
+Each Property can be one of:
+ 1. A ClusterProperty resource (as defined in KEP-2149)
+ 2. Custom information from cluster manager implementations
+
+The field contains a name/value pair and the last observed time of the property on the cluster the ClusterProfile object represents.
+
+For a ClusterProperty resource to be propagated to a ClusterProfile object, it MUST have a label with key "multicluster.x-k8s.io/clusterProfile" and value of "true".
+
+The following are standard ClusterProperty resources that the ClusterProfile API supports:
+
+##### cluster-entrypoints.k8s.io
+This property contains a list of hostname:port or IP:port pairs that can be used to reach the API server of the Kubernetes cluster.
+  
+Here is an example of a cluster-entrypoints.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: cluster-entrypoints.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+spec:
+  value: ["100.3.3.4:5683","qs-oar7gr9p.azmk8s.io:443"]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: cluster-entrypoints.k8s.io
+     value:  ["100.3.3.4:5683","qs-oar7gr9p.azmk8s.io:443"]
+```
+
+##### location.topology.k8s.io
+This property contains the location of the k8s cluster
+* It could contain the country, region, zone, rack or any other location information with a 
+  hierarchical structure separated by a slash (/).
+* The exact format of the location is up to the cluster manager to define. Each implementation should add a prefix 
+  to the location string to avoid collision with other vendors.
+* It is immutable
+
+Here is an example of a location.topology.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: location.topology.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: cloud.google/NA/us-east1
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: location.topology.k8s.io
+     value: cloud.google/NA/us-east1
+     lastObservedTime: 2025-03-12T23:21:39Z
+```
+
+##### count.node.k8s.io
+This property  contains the total number of nodes in the k8s clusters
+* The value is dynamic but should not change fast.
+
+Here is an example of a count.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: count.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: 120
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: count.node.k8s.io
+     value: 120
+     lastObservedTime: 2025-03-12T23:21:39Z
+```
+
+##### type.node.k8s.io
+This property  contains the list of type of node in the k8s clusters
+* The content of the list is up to the cluster manager to define. 
+  * Each element in the array could be the sku of the node from a cloud provider, or the type of the node on premise.
+* The list is dynamic but does not change much unless there is a node auto provisioner.
+
+Here is an example of a type.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: type.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: type.node.k8s.io
+     value: ["g6.xlarge","Standard_NC48ads_H100","m3-ultramem-32","largeCPU","smallMem"]
+```
+
+##### distribution.node.k8s.io
+This property  contains the node count for each node type in the k8s clusters
+* Each element in the list is a key-value pair representing the type of the node and its count.
+* The value is dynamic but should not change fast.
+
+Here is an example of a distribution.node.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: distribution.node.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: [{"largeCPU":5}, {"smallMem":5}]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: distribution.node.k8s.io
+     value: [{"largeCPU":5}, {"smallMem":5}]
+```
+
+##### metrics-endpoints.k8s.io
+This property contains an array of the type, hostname:port or IP:port pair that one can query the metrics (for example, a Prometheus or Grafana endpoint for PromQL) of the cluster
+* Each element in the listing is a key-value pair representing the type of the metrics endpoint and its url.
+    * It could contain IP addresses too
+* The list is dynamic but should not change much.
+
+Here is an example of a metrics-endpoints.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: metrics-endpoints.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: [{"Prometheus":"100.3.3.4:9990"}, {"Grafana":"example.grafana.io:9990"}]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: metrics-endpoints.k8s.io
+     value: [{"Prometheus":"100.3.3.4:9990"}, {"Grafana":"example.grafana.io:9990"}]
+     lastObservedTime: 2025-03-12T23:21:39Z
+```
+
+##### group.customResource.k8s.io
+This property contains an array of custom resources definitions (CRDs) group that this cluster supports.
+* Each element in the list is a name:version pair representing the latest installed version of the CRD group.
+* The list is dynamic but should not change much.
+
+Here is an example of a group.customResource.k8s.io ClusterProperty
+```yaml
+apiVersion: about.k8s.io/v1
+kind: ClusterProperty
+metadata:
+  name: group.customResource.k8s.io
+  labels:
+    multicluster.x-k8s.io/clusterProfile: true
+Spec:
+  value: [{"argoproj.io": "v1alpha1"},{"kubeflow.org": "v1"},{"istio.io": "v1beta1"},{"volcano.sh": "v1"}]
+```
+Here is the corresponding ClusterProfile API
+```yaml
+properties:
+   - name: group.customResource.k8s.io
+     value: [{"argoproj.io": "v1alpha1"},{"kubeflow.org": "v1"},{"istio.io": "v1beta1"},{"volcano.sh": "v1"}]
+     lastObservedTime: 2025-03-12T23:21:39Z
+```
+
+###### Property Ladder
+
+This KEP does not aim to provide an exhaustive list of all cluster properties that the community will support. Instead, we define a structured process for adding new properties to the standard in the future:
+
+1. **Extension Property Stage**: A property is initially implemented as an extension property. At this stage, there is no guarantee that the property will be supported by any cluster managers.
+
+2. **Standard Property Stage**: To elevate an extension property to a **standard** property:
+   * The property sponsor must present a discussion agenda with clear use cases and motivation at a Multi-cluster SIG meeting.
+   * The community will vote on the proposal, and if it receives approval from at least 66% of voters, the property becomes a standard property and is incorporated into the ClusterProfile API KEP.
+
+3. **Core Property Stage**: After a property has maintained standard status for at least 3 months:
+   * SIG leads may initiate another vote to determine if there is consensus to elevate the property to the **core** group.
+   * Core properties must be implemented by every cluster manager that implements the ClusterProfile API.
+
+This three tierd approach ensures that properties are thoroughly vetted before becoming required components of the API. 
+
+To kick start this process, we add the above properties as **Standard Property** in the KEP.
 
 #### Conditions
 
@@ -1135,7 +1325,7 @@ This is creeping pretty far towards excessive cluster proliferation (and cross-r
 
 ![illustration of self-assembling clusterset topology](./self-assembling-clustersets.svg)
 
-This is the model most suited to a cluster-scoped ClusterProfile resource. In contrast to the prior models discussed, in this approach the ClusterProfile CRD would be written directly to each "member" cluster. ClusterSet membership would either be established through peer-to-peer relationships, or managed by an external control plane. For ClusterSet security and integrity, a two-way handshake of some sort would be needed between the local cluster and each peer or the external control plane to ensure it is properly authorized to serve endpoints for exported services or import services from other clusters. While these approaches could be implemented with a namespace-scoped ClusterProfile CRD in the `default` or a designated namespace, misuse is most likely in this model, because the resource would be more likely to be authored by a human if using the peer-to-peer model. Due to the complexity and fragility concerns of managing clusterset membership in a peer-to-peer topology, an external control plane would likely be preferable. Assuming the external control plane does not support Kubernetes APIs (if it did, any of the "hub" models could be applied instead), it could still be possible to implement this model with a namespace-scoped ClusterProfile resource, but it is _not_ recommended.
+This is the model most suited to a cluster-scoped ClusterProfile resource. In contrast to the prior models discussed, in this approach the ClusterProfile CRD would be written directly to each "member" cluster. ClusterSet membership would either be established through peer-to-peer relationships, or managed by an external control plane. For ClusterSet security and integrity, a two-way handshake of some sort would be needed between the local cluster and each peer or the external control plane to ensure it is properly authorized to serve entrypoints for exported services or import services from other clusters. While these approaches could be implemented with a namespace-scoped ClusterProfile CRD in the `default` or a designated namespace, misuse is most likely in this model, because the resource would be more likely to be authored by a human if using the peer-to-peer model. Due to the complexity and fragility concerns of managing clusterset membership in a peer-to-peer topology, an external control plane would likely be preferable. Assuming the external control plane does not support Kubernetes APIs (if it did, any of the "hub" models could be applied instead), it could still be possible to implement this model with a namespace-scoped ClusterProfile resource, but it is _not_ recommended.
 
 #### Workload placement across multiple clusters _without_ cross-cluster service networking
 
