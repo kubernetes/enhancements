@@ -19,6 +19,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Resource States](#resource-states)
+  - [Priority of Resize Requests](#priority-of-resize-requests)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -432,6 +433,36 @@ Changes are always propogated through these 4 resource states in order:
 Desired --> Allocated --> Actuated --> Actual
 ```
 
+### Priority of Resize Requests
+
+Resize requests detected by the kubelet (in `HandlePodUpdates` and `HandlePodAdditions`)
+will be added to a queue of pending resizes. Resize requests will be attempted according to
+the following priority:
+
+1. *Resource requests are not increasing*: Resizes that don't increase requests will be
+prioritized first. These resizes are expected to always succeed and would not be marked as
+pending.
+2. *PriorityClass*: Pods with a higher PriorityClass.
+3. *QoS Class*: Pods with a higher QoS class, where Guaranteed > Burstable. Best effort pods 
+do not have CPU or memory resources, so are excluded from the discussion here.
+4. *Time since resize request*: If all else is the same, resizes that have been pending
+longer will be retried first (leveraging LastTransitionTime on the PodResizePending condition).
+
+These priorities are *only* used to indicate which resize requests will be attempted first. 
+Scheduler preemption/eviction to make room for pending resizes is not in scope. 
+
+A higher priority resize being marked as pending should not block the remaining pending resizes
+from being attempted, i.e. we will try all remaining resizes in the queue even if one is unsuccessful.
+Resizes that are deferred will be added back to the queue to be re-attempted later. Resizes that are
+infeasible may never be retried.
+
+Allocation will be attempted on the pods in the queue:
+- At the end of `HandlePodUpdates`, `HandlePodRemoves`, and `HandlePodCleanups` when a change to the queue is detected.
+- Upon completion of another resize request.
+- Periodically, to catch any cases that we may have missed.
+
+A successful allocation will trigger a pod sync, which will actuate the allocated resize and update the
+pod status accordingly.
 
 ### Kubelet and API Server Interaction
 
@@ -907,7 +938,6 @@ This will be reconsidered post-beta as a future enhancement.
 1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
    runtime even if the allocated resources haven't changed.
 1. Allow resizing containers with swap allocated.
-1. Prioritize resizes when resources are freed, or at least make ordering deterministic.
 
 #### Mutable QOS Class "Shape"
 
