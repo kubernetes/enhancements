@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Contents](#contents-1)
       - [Consumers](#consumers-1)
   - [Additional Properties](#additional-properties)
+    - [Property Ladder](#property-ladder)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [Note: On ClusterProperty.value max length validation](#note-on-clusterpropertyvalue-max-length-validation)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -487,6 +488,24 @@ free to use non-namespaced properties (e.g. `fingerprint`) as they see fit, but
 any shared tooling should use appropriately namespaced names.
 
 
+#### Property Ladder
+
+We foresee that there will be more properties that the community wants to adopt as "well known" properties. Thus, we want to define a process for adopting a property to be a well known property in the future:
+
+1. **Extension Property Stage**: A property is implemented as an extension property if the implementer has no intent to elevate it to a standard property. This property cannot use the reserved suffixes and is not required to be implemented by all implementers.
+
+2. **Standard Property Stage**: The implementor can propose to add a property to be a **standard** property which means if anyone implements the property with the same name, it must follow the same definition and rules described in the KEP. Not all implementers are required to implement the property.
+   The process for proposing a standard property is as follows:
+    * The property sponsor must present a discussion agenda with clear use cases and motivation at a Multi-cluster SIG meeting.
+    * The community will vote on the proposal, and if it receives approval from at least 2/3 of voters, the property becomes a standard property and is incorporated into the About API KEP.
+
+3. **Core Property Stage**: After a property has maintained standard status for at least 3 months and has 3 or more implementations, one can propose to elevate it to a **core** property which means it must be implemented by every implementer that implements the About API.
+   The process for proposing a core property is as follows:
+    * SIG leads may initiate another vote to determine if there is consensus to elevate the property to the **core** group.
+    * The community will vote on the proposal, and if it receives approval from at least 2/3 of voters, the property becomes a core property and is incorporated into the About API KEP.
+
+This three-tiered approach ensures that properties are thoroughly vetted before becoming required components of the About API.
+
 ### Notes/Constraints/Caveats
 
 #### Note: On ClusterProperty.value max length validation
@@ -640,7 +659,7 @@ this time (see the Non-Goals section).
 # An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a kube-system ns uuid as the id value (recommended above):
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: cluster.clusterset.k8s.io
@@ -652,7 +671,7 @@ spec:
 # An example object of `cluster.clusterset.k8s.io ClusterProperty` 
 # using a human-readable string as the id value:
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: cluster.clusterset.k8s.io
@@ -701,7 +720,7 @@ valid.
 ```
 # An example object of `clusterset.k8s.io ClusterProperty`:
 
-apiVersion: about.k8s.io/v1
+apiVersion: about.k8s.io/v1beta1
 kind: ClusterProperty
 metadata:
   name: clusterset.k8s.io
