@@ -249,7 +249,7 @@ nitty-gritty.
 -->
 
 We will expand the on-disk kubelet credential provider configuration to allow an
-optional `tokenAttribute` field to be configured.  When this field is not set, no KSA
+optional `tokenAttributes` field to be configured.  When this field is not set, no KSA
 token will be sent to the plugin.  When it is set, the Kubelet will provision
 a token with the given audience bound to the current pod and its service
 account. This KSA token along with required annotations on the KSA defined in configuration
@@ -338,11 +338,14 @@ Adding a new field `TokenAttributes` to the `CredentialProvider` struct in the k
    2. The credential provider can be set up multiple times for each audience.
       1. The name in the credential provider config must match the name of the provider executable as seen by the kubelet. To configure multiple instances of the same provider with different audiences, the name of the provider executable must be different and this can be done by creating a symlink to the same executable with a different name.
    3. By setting this field, the credential provider is opting into using service account tokens for image pull.
-2. `ServiceAccountAnnotationKeys` is the list of annotation keys that the plugin is interested in. The keys defined in this list will be extracted from the corresponding service account
-   and passed to the plugin as part of `CredentialProviderRequest`. Plugins can use to extract additional information required to fetch credentials. The plugin is responsible for validating the existence of annotations and their values. There are existing integrations like Azure and GCP that use the extra metadata to link the KSA name to a cloud identity, and this field will allow them to continue to do so. None of the existing integrations use this metadata as any form of security decision, it is simply to aid in doing token exchanges with the KSA token.
-   1. Service account annotations are significantly more stable (and map naturally to the service account being the partioning dimension).
-   2. This field makes the provider opt into getting the annotations it wants, avoids sending arbitrary annotation contents down to the plugin (including stuff like client-side apply annotations) and shrinks the set of annotations that could invalidate the cache.
-   3. This field can't be set without setting the `ServiceAccountTokenAudience` field.
+2. `RequireServiceAccount` indicates whether the plugin requires the pod to have a service account. If set to true, kubelet will only invoke the plugin if the pod has a service account. If set to false, kubelet will invoke the plugin even if the pod does not have a service account and will not include a token in the CredentialProviderRequest in that scenario. This is useful for plugins that are used to pull images for pods without service accounts (e.g., static pods).
+3. `RequiredServiceAccountAnnotationKeys` is the list of annotation keys that the plugin is interested in and that are required to be present in the service account. The keys defined in this list will be extracted from the corresponding service account and passed to the plugin as part of `CredentialProviderRequest`. If any of the keys defined in this list are not present in the service account, kubelet will not invoke the plugin and will return an error. This field is optional and may be empty. Plugins may use this field to extract additional information required to fetch credentials or allow workloads to opt in to using service account tokens for image pull. If non-empty, `RequireServiceAccount` must be set to true.
+4. `OptionalServiceAccountAnnotationKeys` is the list of annotation keys that the plugin is interested in and that are optional to be present in the service account. The keys defined in this list will be extracted from the corresponding service account and passed to the plugin as part of `CredentialProviderRequest`. The plugin is responsible for validating the existence of annotations and their values. This field is optional and may be empty. Plugins may use this field to extract additional information required to fetch credentials.
+
+Regarding required and optional service account annotations keys, there are existing integrations like Azure and GCP that use the extra metadata to link the KSA name to a cloud identity, and this field will allow them to continue to do so. None of the existing integrations use this metadata as any form of security decision, it is simply to aid in doing token exchanges with the KSA token.
+    1. Service account annotations are significantly more stable (and map naturally to the service account being the partitioning dimension).
+    2. These fields makes the provider opt into getting the annotations it wants, avoids sending arbitrary annotation contents down to the plugin (including stuff like client-side apply annotations) and shrinks the set of annotations that could invalidate the cache.
+    3. These fields can't be set without setting the `ServiceAccountTokenAudience` field.
 
 The configuration will not support a plugin to function in 2 modes simultaneously (one with service account tokens and one without). If a plugin needs to function in both modes, it will need to be configured twice with different names. This can be done to facilitate a gradual migration to the new mode for the plugin on a per-image or per-registry basis.
 
@@ -353,7 +356,7 @@ The configuration will not support a plugin to function in 2 modes simultaneousl
         // +optional
         Env []ExecEnvVar
  
-+       // TokenAttributes is the configuration for the service account token that will be passed to the plugin.
++       // tokenAttributes is the configuration for the service account token that will be passed to the plugin.
 +       // The credential provider opts in to using service account tokens for image pull by setting this field.
 +       // When this field is set, kubelet will generate a service account token bound to the pod for which the
 +       // image is being pulled and pass to the plugin as part of CredentialProviderRequest along with other
@@ -361,24 +364,55 @@ The configuration will not support a plugin to function in 2 modes simultaneousl
 +       //
 +       // The service account metadata and token attributes will be used as a dimension to cache
 +       // the credentials in kubelet. The cache key is generated by combining the service account metadata
-+       // (namespace, name, UID, and annotations key+value for the keys defined in ServiceAccountTokenAttribute.serviceAccountAnnotationKeys).
++       // (namespace, name, UID, and annotations key+value for the keys defined in
++       // serviceAccountTokenAttribute.requiredServiceAccountAnnotationKeys and serviceAccountTokenAttribute.optionalServiceAccountAnnotationKeys).
++       // The pod metadata (namespace, name, UID) that are in the service account token are not used as a dimension
++       // to cache the credentials in kubelet. This means workloads that are using the same service account
++       // could end up using the same credentials for image pull. For plugins that don't want this behavior, or
++       // plugins that operate in pass-through mode; i.e., they return the service account token as-is, they
++       // can set the credentialProviderResponse.cacheDuration to 0. This will disable the caching of
++       // credentials in kubelet and the plugin will be invoked for every image pull. This does result in
++       // token generation overhead for every image pull, but it is the only way to ensure that the
++       // credentials are not shared across pods (even if they are using the same service account).
++       // +optional
 +       TokenAttributes *ServiceAccountTokenAttributes
 +}
 +
 +// ServiceAccountTokenAttributes is the configuration for the service account token that will be passed to the plugin.
 +type ServiceAccountTokenAttributes struct {
-+       // ServiceAccountTokenAudience is the intended audience for the projected service account token.
++       // serviceAccountTokenAudience is the intended audience for the projected service account token.
 +       // +required
 +       ServiceAccountTokenAudience string
 +
-+       // ServiceAccountAnnotationKeys is the list of annotation keys that the plugin is interested in.
++       // requireServiceAccount indicates whether the plugin requires the pod to have a service account.
++       // If set to true, kubelet will only invoke the plugin if the pod has a service account.
++       // If set to false, kubelet will invoke the plugin even if the pod does not have a service account
++       // and will not include a token in the CredentialProviderRequest in that scenario. This is useful for plugins that
++       // are used to pull images for pods without service accounts (e.g., static pods).
++       // +required
++       RequireServiceAccount *bool
++
++       // requiredServiceAccountAnnotationKeys is the list of annotation keys that the plugin is interested in
++       // and that are required to be present in the service account.
++       // The keys defined in this list will be extracted from the corresponding service account and passed
++       // to the plugin as part of the CredentialProviderRequest. If any of the keys defined in this list
++       // are not present in the service account, kubelet will not invoke the plugin and will return an error.
++       // This field is optional and may be empty. Plugins may use this field to extract
++       // additional information required to fetch credentials or allow workloads to opt in to
++       // using service account tokens for image pull.
++       // If non-empty, requireServiceAccount must be set to true.
++       // +optional
++       RequiredServiceAccountAnnotationKeys []string
++
++       // optionalServiceAccountAnnotationKeys is the list of annotation keys that the plugin is interested in
++       // and that are optional to be present in the service account.
 +       // The keys defined in this list will be extracted from the corresponding service account and passed
 +       // to the plugin as part of the CredentialProviderRequest. The plugin is responsible for validating
 +       // the existence of annotations and their values.
 +       // This field is optional and may be empty. Plugins may use this field to extract
 +       // additional information required to fetch credentials.
-        // +optional
-+       ServiceAccountAnnotationKeys []string
++       // +optional
++       OptionalServiceAccountAnnotationKeys []string
  }
 
 ```
@@ -396,23 +430,92 @@ providers:
     apiVersion: credentialprovider.kubelet.k8s.io/v1
     tokenAttributes:
       serviceAccountTokenAudience: my-audience
-      # list of annotations that the plugin is interested in
-      # the annotation key and corresponding value in the service account will be passed to the plugin
-      serviceAccountAnnotationKeys:
+      # requireServiceAccount is set to true, so the plugin will only be invoked if the pod has a service account
+      requireServiceAccount: true
+      # requiredServiceAccountAnnotationKeys is the list of annotations that the plugin is interested in
+      # the annotation key and corresponding value in the service account will be passed to the plugin. If
+      # any of the keys defined in this list are not present in the service account, kubelet will not invoke
+      # the plugin and will return an error.
+      requiredServiceAccountAnnotationKeys:
       - domain.io/identity-id
       - domain.io/identity-type
+      # optionalServiceAccountAnnotationKeys is the list of annotations that the plugin is interested in
+      # the annotation key and corresponding value in the service account will be passed to the plugin. The
+      # plugin is responsible for validating the existence of annotations and their values.
+      optionalServiceAccountAnnotationKeys:
+      - domain.io/some-optional-annotation
       - domain.io/annotation-that-does-not-exist
 ```
 
 ##### Kubernetes API Server (KAS) Changes
 
-Add a new flag `--allowed-kubelet-audiences` to KAS to allow configuring the list of audiences for which the Kubelet is allowed to generate service account tokens for image pulls.
+Today we only verify the SA in KAS and allow the kubelet to generate a token for any audience. We want to start verifying the audience as well, so we need to be explicit here about what audiences are allowed.
+The other sources of audiences for the SA token can be observed via the Kubernetes API but this one can't, so we need a dynamic configuration for it.
+
+KAS will be updated to allow for dynamically configuring service accounts and audiences for which the kubelet is allowed to generate a service account token for as part of the node audience restriction feature. This will be done by a synthetic authz check. The resulting subject access review (SAR) in KAS will look like this:
+
+```yaml
+Verb: request-serviceaccounts-token-audience
+Resource: $audience
+APIGroup: $request.apiGroup (which is the service account API group)
+Name: $request.name (which is the service account name)
+Namespace: $request.namespace (which is the service account namespace)
+```
 
 The node audience restriction will be enforced by the [NodeRestriction admission controller](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#noderestriction)
 and kubelet will only be allowed to generate a service account token for the audience configured in the credential provider configuration if it is present in the list of audiences configured in KAS.
 
-Today we only verify the SA in KAS and allow the kubelet to generate a token for any audience. We want to start verifying the audience as well, so we need to be explicit here about what audiences are allowed.
-The other sources of audiences for the SA token can be observed via the Kubernetes API but this one can't, so we're adding the flag.
+- Allow any audience for any service account
+
+```yaml
+rules:
+- verbs: ["request-serviceaccounts-token-audience"]
+  apiGroups: [""]
+  # wildcard for audiences
+  resources: ["*"]
+  # unrestricted resourceNames allows all service account names
+```
+
+- Allow any audience for a specific service account `mysa`
+
+```yaml
+rules:
+- verbs: ["request-serviceaccounts-token-audience"]
+  apiGroups: [""]
+  # wildcard for audiences
+  resources: ["*"]
+  resourceNames: ["mysa"]
+```
+
+- Allow a specific audience `myaudience` for any service account
+
+```yaml
+rules:
+- verbs: ["request-serviceaccounts-token-audience"]
+  apiGroups: [""]
+  resources: ["myaudience"]
+  # unrestricted resourceNames allows all service account names
+```
+
+- Allow a specific audience `myaudience` for a specific service account `mysa`
+
+```yaml
+rules:
+- verbs: ["request-serviceaccounts-token-audience"]
+  apiGroups: [""]
+  resources: ["myaudience"]
+  resourceNames: ["mysa"]
+```
+
+- Allow API server audience for all service accounts
+
+```yaml
+rules:
+- verbs: ["request-serviceaccounts-token-audience"]
+  apiGroups: [""]
+  resources: [""]
+  # unrestricted resourceNames allows all service account names
+```
 
 #### Credential Provider Request API
 
@@ -420,7 +523,7 @@ Add `ServiceAccountToken` and `ServiceAccountAnnotations` fields to `CredentialP
 
 1. `ServiceAccountToken` is the service account token bound to the pod for which the image is being pulled.
     If the `ServiceAccountTokenAudience` field is configured in the kubelet's credential provider configuration, the token will be sent to the plugin.
-2. `ServiceAccountAnnotations` is a map of annotations on the KSA for which the image is being pulled. Only annotations defined in the `ServiceAccountAnnotations` field in the credential provider configuration will be passed to the plugin. If the `ServiceAccountAnnotations` field is not set in the configuration, this field will be empty.
+2. `ServiceAccountAnnotations` is a map of annotations on the KSA for which the image is being pulled. Only annotations defined in the `RequiredServiceAccountAnnotationKeys` and `OptionalServiceAccountAnnotationKeys` field in the credential provider configuration will be passed to the plugin. If the `RequiredServiceAccountAnnotationKeys` and `OptionalServiceAccountAnnotationKeys` fields are not set in the configuration, this field will be empty.
 
 ```diff
 --- a/staging/src/k8s.io/kubelet/pkg/apis/credentialprovider/types.go
@@ -454,8 +557,8 @@ metadata:
   annotations:
     domain.io/identity-id: "12345"
     domain.io/identity-type: "user"
-    # this annotation will not be passed to the plugin because it's not in tokenAttributes.serviceAccountAnnotationKeys
-    # in the credential provider configuration
+    # this annotation will not be passed to the plugin because it's not in tokenAttributes.requiredServiceAccountAnnotationKeys or
+    # tokenAttributes.optionalServiceAccountAnnotationKeys field in the credential provider configuration
     domain.io/annotation-that-will-not-be-passed: "value"
 ```
 
@@ -468,10 +571,10 @@ Example credential provider request:
   "serviceAccountAnnotations": {
     "domain.io/identity-id": "12345",
     "domain.io/identity-type": "user"
-    // In the tokenAttributes.serviceAccountAnnotationKeys field in the credential provider configuration above we have configured
+    // In the tokenAttributes.optionalServiceAccountAnnotationKeys field in the credential provider configuration above we have configured
     // domain.io/annotation-that-does-not-exist which is not present in the service account annotations. Because of this, this annotation
-    // will not be passed to the plugin. The plugin is responsible for validating the existence of annotations and their values that's required
-    // to fetch credentials.
+    // will not be passed to the plugin. The plugin is responsible for validating the existence of annotations and their values that's 
+    // defined in the optionalServiceAccountAnnotationKeys field in the credential provider configuration.
   }
 }
 ```
@@ -489,7 +592,7 @@ If the `serviceAccountTokenAudience` field is not set in the provider configurat
 Based on the `PluginCacheKeyType` definitions (Image, Registry, Global), here’s a breakdown of how cache keys would be generated:
 
 1. `GlobalPluginCacheKeyType` (Global)
-   - Global cache key type will not be allowed to use with the `tokenAttributes.serviceAccountTokenAudience` field configured for the plugin.
+   - The cache key will be generated based on the global cache key, service account metadata (namespace, name, UID), and hash of the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
 2. `RegistryPluginCacheKeyType` (Registry)
    - The cache key will be generated based on the image registry URL, service account metadata (namespace, name, UID), and hash of the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
 3. `ImagePluginCacheKeyType` (Image)
@@ -717,17 +820,17 @@ enhancement:
 
 To migrate to the new approach,
 
-1. KAS will need to be updated to the new version to configure the list of audiences for which the kubelet is allowed to generate service account tokens for image pulls via the `--allowed-kubelet-audiences` flag.
-2. kubelet on the node needs to be updated to enable the feature flag and configure the credential provider to use service account tokens for image pull via the `TokenAttributes` field in the kubelet credential provider configuration.
+1. KAS will need to be updated to the new version to configure the audiences for which the kubelet is allowed to generate service account tokens for image pulls via `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb.
+1. Kubelet on the node needs to be updated to enable the feature flag and configure the credential provider to use service account tokens for image pull via the `TokenAttributes` field in the kubelet credential provider configuration.
    1. The credential provider plugin will need to be updated to use the service account token for the audience configured in the kubelet credential provider configuration.
 
 Migration of the workloads to the new approach can be done per image or per registry basis by configuring the credential provider multiple times with different names for the same plugin (w or w/o service account tokens, different audiences).
 
 When things can fail:
 
-If the kubelet is updated to enable the feature flag and the credential provider is configured with the `TokenAttributes` field set, but the KAS is not updated with `--allowed-kubelet-audiences` to allow the kubelet to generate service account tokens for the audience configured in the kubelet credential provider configuration, the image pull will fail. The old KAS will reject the token request from the kubelet.
+If the kubelet is updated to enable the feature flag and the credential provider is configured with the `TokenAttributes` field set, but the KAS is not updated to the version that detects dynamic configuration of allowed audiences  via `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb, to allow the kubelet to generate service account tokens for the audience configured in the kubelet credential provider configuration, the image pull will fail. The old KAS will reject the token request from the kubelet.
 
-Today we don't do any validation on the audience value that the kubelet requested -> we only check that the SA is in use on some pod scheduled to the kubelet. As part of this KEP, we're introducing a new feature gate `ServiceAccountNodeAudienceRestriction` in KAS to validate the audience value that the kubelet requests is either part of any API spec or is in the list of audiences configured in KAS via the `--allowed-kubelet-audiences` CLI flag. This audience validation will be beta/enabled by default at least one release before this KEP goes to beta.
+Today we don't do any validation on the audience value that the kubelet requested -> we only check that the SA is in use on some pod scheduled to the kubelet. As part of this KEP, we're introducing a new feature gate `ServiceAccountNodeAudienceRestriction` in KAS to validate the audience value that the kubelet requests is either part of any API spec or is part of the audiences configured in the `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb. This feature gate will be beta/enabled by default at least one release before this KEP goes to beta.
 
 ## Production Readiness Review Questionnaire
 
@@ -1085,6 +1188,7 @@ This through this both in small and large cases, again with respect to the
 As part of the `ServiceAccountNodeAudienceRestriction` feature, KAS will need to watch PersistentVolumeClaims, PersistentVolumes and CSIDrivers
 to determine the audiences that the kubelet is allowed to generate service account tokens for. These new informers (which are feature gated) will
 result in additional resource usage in the KAS.
+
 - Node authorizer is already watching persistent volumes via informers today.
 - CSIDriver objects are expected to be ~few and ~slow-moving, so the impact is expected to be minimal.
 - PersistentVolumeClaims are expected to be more numerous and more dynamic, so there could be more impact here.
