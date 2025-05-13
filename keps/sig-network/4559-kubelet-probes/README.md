@@ -73,20 +73,7 @@ and startup probes (listed based on severity):
   trick kubelet into sending an HTTP GET request to an arbitrary URL (or
   portscanning TCP ports on arbitrary hosts). ([kubernetes #99425])
 
-2. **Network Probe Performance (?)**: In the past, there have been problems
-  with probes consuming unexpectedly large amounts of kubelet resources
-  ([kubernetes #89898], "Sometime Liveness/Readiness Probes fail because
-  of net/http: request canceled while waiting for connection
-  (Client.Timeout exceeded while awaiting headers)"). This has been
-  mitigated to some extent ([kubernetes #115143])... it's not clear if
-  this is still considered a problem.
-
-3. **Dual-Stack Pods**: Probes are currently defined to use the pod's
-  primary IP family, but there are cases where you might want to do an
-  IPv6 probe in an IPv4-primary dual-stack cluster. ([kubernetes
-  #101324])
-
-4. **The NetworkPolicy Hole**: TCP, HTTP, and GRPC probes are expected
+2. **The NetworkPolicy Hole**: TCP, HTTP, and GRPC probes are expected
   to travel over the network from kubelet to the pod. This, of course,
   only works if there is nothing in the pod network blocking kubelet's
   access to those pods. When we added NetworkPolicy to Kubernetes, we
@@ -101,7 +88,12 @@ and startup probes (listed based on severity):
   to avoid continuing to have this problem in [AdminNetworkPolicy] and
   any [future successor to NetworkPolicy].
 
-5. **Constraints on Network Architecture Imposed by Pod Probes**: The
+3. **Dual-Stack Pods**: Probes are currently defined to use the pod's
+  primary IP family, but there are cases where you might want to do an
+  IPv6 probe in an IPv4-primary dual-stack cluster. ([kubernetes
+  #101324])
+
+4. **Constraints on Network Architecture Imposed by Pod Probes**: The
   fact that kubelet must be able to reach every pod on its node
   implies that every pod on a given node must have a distinct IP
   address. While that is certainly required anyway if every pod in the
@@ -119,7 +111,7 @@ and startup probes (listed based on severity):
   also potentially involves networks that cannot be reached from the
   host-network namespace.
 
-- **Unclear Semantics for Network Probes**: The intention behind
+5. **Unclear Semantics for Network Probes**: The intention behind
   introducing liveness probe was to answer "is the server process
   in the pod alive"? and readiness probe was to answer "is the server
   ready to accept traffic"? However since this is achieved by checking
@@ -132,34 +124,12 @@ and startup probes (listed based on severity):
   This led to the creation of [readiness gates] to provide better pod
   readiness information.
 
-- **Exec Probe Performance (?)**: [Exec probes are much, much slower than
-  network probes]. Apparently this slowness is a somewhat inevitable
-  side effect of how exec probes work in an OCI runtime context?
-  Possibly because it requires making multiple synchronous calls? No known
-  issues were opened outside of the blogpost but anyway, it's possible
-  this could be improved.
-
-- **Defining localhost probes doesn't work as expected**: When defining
+6. **Defining localhost probes doesn't work as expected**: When defining
   `.Host` to be `127.0.0.1` the user might be expecting this to be confined
   to the pod's own localhost but it is not. The entire node can be exposed
   by doing so which can be surprising to the users.
 
 See further discussion in [kubernetes #102613].
-
-#### RESOLVED Summary discussions (preserving for history)
-- Figure out if there are any concerns with non-namespace-based Linux
-  runtimes (kata, kubevirt, etc): There are no concerns here because both kata containers and [kubevirt] use network namespaces. They expect the CNI to set up the pod networking. Then their agent creates the required networking infrastructure inside this pod network namespace to connect to the VM interface
-
-#### UNRESOLVED Summary discussions
-
-- Figure out details of exec probe performance problem.
-
-- Figure out if network probe performance is still a problem.
-
-- Figure out if there are any Windows-specific concerns (e.g, that our
-  proposal may be more difficult on Windows). Alternatively, it may
-  turn out that removing the constraint that kubelet needs to be able
-  to talk to all pods would simplify things on Windows?
 
 [kubernetes #99425]: https://github.com/kubernetes/kubernetes/issues/99425
 [AdminNetworkPolicy]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/2091-admin-network-policy/README.md
@@ -169,11 +139,7 @@ See further discussion in [kubernetes #102613].
 [kubernetes #101324]: https://github.com/kubernetes/kubernetes/issues/101324
 [the NetworkPolicy has not yet been fully programmed]: https://kubernetes.io/docs/concepts/services-networking/network-policies/#pod-lifecycle
 [readiness gates]: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-readiness-gate
-[Exec probes are much, much slower than network probes]: https://medium.com/netcracker/exec-probes-a-story-about-experiment-and-relevant-problems-12de616c0a76
-[kubernetes #89898]: https://github.com/kubernetes/kubernetes/issues/89898
-[kubernetes #115143]: https://github.com/kubernetes/kubernetes/pull/115143
 [kubernetes #102613]: https://github.com/kubernetes/kubernetes/issues/102613
-[kubevirt]: https://github.com/kubevirt/kubevirt/blob/main/docs/devel/networking.md#vmi-networking
 
 ## Motivation
 
@@ -181,30 +147,26 @@ See further discussion in [kubernetes #102613].
 
 - Define new probe types and deprecate existing probe types.
 
-    - The alternative is to change the semantics of existing probes but that is
-      harder to achieve without also changing the user-facing API semantics.
+    - The proposals below have semantics that are just different enough from
+      the current probes that there would be compatibility problems in some
+      cases if we just changed existing probes to use the new semantics.
 
     - Continue to backward-compatibly support all existing probe handlers
-      and lifecycle handlers by default (at least for a while). Older probe
-      types can be blocked via Pod Security admission, so that administrators
-      can create NetworkPolicies that don't include the kubelet probe hole.
+      and lifecycle handlers. Administrators who want to create
+      AdminNetworkPolicies that would block traditional kubelet probes
+      can use a ValidatingAdmissionPolicy to prevent users from creating
+      pods with the older probe types.
 
-    - Deprecate the [`TCPSocketAction.Host`] and [`HTTPGetAction.Host`]
-      fields in pod probes (since they allow the SSRF attack and have no
-      other compelling use case). Also deprecate the [`HTTPGetAction.Host`]
-      field in pod lifecycle hooks.
+    - Deprecate the [`Host`] field in probes/lifecycle hooks (since
+      they allow the SSRF attack and have no other compelling use
+      case).
 
       - Allow administrators to use [Pod Security admission] to block
         Pods that have probes and lifecycle hooks using those fields. This
         work will be done as part of [KEP #4940].
     
-    - Make it easy for users who aren't doing "weird" things (eg,
-      readiness probe via LoadBalancer) to transition from the old probe
-      system to the new one.
-
-      - This might mean that they don't need to do anything, or it might
-        mean that there's an easy transition, like just changing
-        `tcpSocket:` to `tcp:` in their pod's probe definition.
+    - Make the new probe types similar enough to the old ones that it's
+      very easy for users to switch.
 
 - Move to a system where TCP, HTTP, GRPC pod probes and HTTP lifecycle
   hooks are run inside the pod network namespace rather than being sent
@@ -265,77 +227,90 @@ admission. Deprecation here will include documenting the field in the API
 as deprecated and added a warning to users when they attempt to use these
 fields. This work will be done as part of [KEP #4940].
 
-Beyond that, the current plan is to go with choice deprecate-and-replace (2½)
-below out of the these options:
+### New Probe Types
 
-1. Change the semantics of the existing `TCPSocketAction`,
-   `HTTPGetAction`, and `GRPCAction` probe types and say that
-   henceforth the probes will be done in the pod network namespace
-   rather than being sent over the pod network (unless you use the
-   deprecated `Host` field to request an alternate probe endpoint; we
-   probably shouldn't just move those kinds of probes into the pod
-   network namespace since that might require a "hairpin" connection
-   to work when it wasn't required before).
+Changing the semantics of the existing probe types could break
+existing users. Therefore, we will leave the existing probe types with
+their existing semantics, but deprecate them and add new probe types
+with the from-within-the-network-namespace semantics.
+(`v1.ProbeHandler` currently has `httpGet` and `tcpSocket` fields;
+these could potentially become just `http` and `tcp`. It's less
+obvious what `grpc` could be renamed to.)
 
-2. Leave the existing probe types with their existing semantics, but
-   deprecate them and add new probe types with the
-   inside-the-network-namespace semantics. (`v1.ProbeHandler`
-   currently has `httpGet` and `tcpSocket` fields; these could
-   potentially become just `http` and `tcp`. It's less obvious what
-   `grpc` could be renamed to.)
+There have been several proposals for exactly how the new probes would
+work. They were discussed at depth during the Maintainer Summit Talk
+["Redesigning Kubelet Probes"] at KubeCon London, and we narrowed it
+down to two possibilities:
 
-2½. Deprecate-and-replace `httpGet` and `tcpSocket` as in (2), but
-    change the semantics of `grpc` as in (1), since GRPC probes are
-    already more constrained than the TCP and HTTP probes anyway (and
-    I don't have a good suggestion for renaming them).
-
-### Kubelet/Runtime Changes to Fix the NetworkPolicy Hole
-
-Some potential ideas have been covered here. They were discussed at
-depth during the Maintainer Summit Talk ["Redesigning Kublet Probes"]
-at KubeCON London and based on those discussions some of the ideas
-have been moved to the alternatives section.
-
-1. `CRI PortForward()`: Leverage CRI's `PortForward()` utility using
-   which we can request a connection to a specific port on the pod.
-   CRI will create a streaming connection to the pod's network namespace
-   to its localhost and the intended container port (uses gRPC as the
-   underlying communication protocol).
+1. Continue doing probes from kubelet, but use the CRI `PortForward()`
+   method to get a connection via CRI to a specific port on the pod.
+   CRI will create a streaming connection to the pod's network
+   namespace to its localhost and the intended container port.
 
    - Pros:
-      - Solves network policies hole prolem
-      - No changes needed to the runtime
-      - Solves the overlapping podIPs probing problem
-      - Solves the dualstack probing problem
+
+      - Solves NetworkPolicy hole problem: the probe does not traverse
+        the pod network.
+
+      - Solves the overlapping podIPs / unreachable network probing
+        problem: the probe connects to the pod's `localhost`, not a
+        pod IP.
+
+      - Solves the dualstack probing problem: the probe can connect
+        to either `127.0.0.1` or `::1` as needed.
+
+      - No changes needed to the runtime.
 
    - Cons:
-      - This option will end up changing existing probe semantics
-      - Might have performance issues (packet copies)
 
-2. `Probe() CRI API`: We could add a new method to CRI to allow kubelet
-   to request that the runtime perform a probe inside the container via
-   some means appropriate to the runtime. If this is not simply a wrapper 
-   round exec probes, then this implies that CRI will need to understand
-   each type of probe supported by Kubernetes (i.e., it will need to
-   support every feature of `HTTPGetAction`, `TCPSocketAction` and
-   `GRPCAction`.) In the future, adding new probe types (for example,
-   a UDP probe) would require adding support to both `Pod`/kubelet and
-   to CRI.
+      - Changes probe semantics:
 
-     - If CRI is going to need to understand that much of the
-       semantics of Kubernetes probes, then it might make sense to
-       just _completely_ move probes into CRI, and have CRI simply
-       report back as part of the pod status whether the pod is live,
-       ready, etc, according to its probes. This might allow for
-       better optimization of probes on the CRI side.
-    
-     - Cons:
-      - Changes existing semantics of probes. Today, probes answer the
-        question of can the kubelet reach the pod v/s this solution would
-        answer the question of can the runtime reach the pod
-      - Requires new CRI API
+        - Probe is done from within the pod network namespace, so does
+          not guarantee that the network plugin has connected the pod
+          to the pod network.
 
-["Redesigning Kublet Probes"]: https://www.youtube.com/watch?v=-pefxR_SwaY
+        - It assumes pod servers are listening on `0.0.0.0`/`::`.
+
+      - Might have performance issues (packet copies).
+
+2. Have CRI do the probes itself. Add new fields to `PodSandboxConfig`
+   to allow kubelet to specify what probes are needed when creating
+   the pod sandbox, and add new fields to `PodSandboxStatusResponse`
+   to allow CRI to report back probe results.
+
+   - Pros:
+
+      - Solves NetworkPolicy hole problem: the probe does not traverse
+        the pod network.
+
+      - Solves the overlapping podIPs / unreachable network probing
+        problem: the probe (presumably) connects to the pod's
+        `localhost`, not a pod IP.
+
+      - Solves the dualstack probing problem: the probe can connect
+        to either `127.0.0.1` or `::1` as needed.
+
+   - Cons:
+
+      - Changes probe semantics:
+
+        - Probe is done from within the pod network namespace, so does
+          not guarantee that the network plugin has connected the pod
+          to the pod network.
+
+        - It assumes pod servers are listening on `0.0.0.0`/`::`.
+
+      - Requires large updates to every major CRI implementation. The
+        new probe types would not be usable with non-updated CRI
+        implementations.
+
+      - Requires CRI to learn a lot more about probe types (i.e., it
+        will need to support every feature of `HTTPGetAction`,
+        `TCPSocketAction` and `GRPCAction`.) In the future, adding new
+        probe types (for example, a UDP probe) would require adding
+        support to both `Pod`/kubelet and to CRI.
+
+["Redesigning Kubelet Probes"]: https://www.youtube.com/watch?v=-pefxR_SwaY
 
 #### Alternatives
 
