@@ -104,7 +104,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Post Alpha](#post-alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -141,10 +140,10 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -687,6 +686,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+This feature is fully tested with unit and e2e tests.
+
 ##### e2e tests
 
 <!--
@@ -698,6 +699,18 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+There is an existing e2e test for kubelet credential providers using gcp credential provider.
+
+- test/e2e_node/image_credential_provider.go: https://testgrid.k8s.io/sig-node-kubelet#kubelet-credential-provider
+
+As part of alpha implementation, the [e2e test has been updated](https://github.com/kubernetes/kubernetes/commit/2090a01e0a495301432276216bbf9af102fc431c) to cover the new credential provider configuration and the new behavior of the kubelet when the `TokenAttributes` field is set.
+
+We created a symlink to the existing gcp credential provider executable with a different name to use for testing service account token for credential provider. The credential provider has been updated to validate the following when plugin is run in service account token mode:\
+
+1. Check the required annotations are sent as part of the `CredentialProviderRequest.ServiceAccountAnnotations` field.
+2. Check the service account token is sent as part of the `CredentialProviderRequest.ServiceAccountToken` field.
+3. Extract the claims from the service account token and validate the audience claim matches the `ServiceAccountTokenAudience` field in the kubelet's credential provider configuration.
 
 ### Graduation Criteria
 
@@ -773,15 +786,13 @@ in back-to-back releases.
 - `ServiceAccountNodeAudienceRestriction` feature gate implemented in KAS as a beta feature
   - Audience validation is enabled by default for service account tokens requested by the kubelet
 
-#### Post Alpha
-
-- Make sure the feature is compatible with the [Ensure secret pull images KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2535-ensure-secret-pulled-images).
-
 #### Beta
 
-- The implementation works well with the Ensure secret pull images KEP and supports pod image pull policy set to any value.
+- Make the feature compatible with the [Ensure secret pull images KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2535-ensure-secret-pulled-images).
 - `ServiceAccountNodeAudienceRestriction` feature gate is beta in KAS and enabled by default. This feature needs to be beta/enabled by default at least one release before this KEP goes to beta. This is critical to support downgrade use cases.
-- Add metrics
+- Caching KSA tokens per pod-sa to prevent generating tokens during hot loop/multiple containers with images.
+- Some indication of whether the credentials are SA or SA+pod-scoped
+  - whether that's indicated in the config or in the plugin-returned content, and what the default is if unspecified (defaulting to pod is less performance, defaulting to SA risks incorrect cross-pod caching)
 
 #### GA
 
@@ -886,6 +897,14 @@ FeatureSpec{
 }
 ```
 
+```go
+FeatureSpec{
+  Default: true,
+  LockToDefault: false,
+  PreRelease: featuregate.Beta,
+}
+```
+
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `ServiceAccountNodeAudienceRestriction`
   - Components depending on the feature gate: kube-apiserver
@@ -933,7 +952,7 @@ Steps to disable the feature:
 3. Restart the kubelet.
 
 These steps need to be performed on all nodes in the cluster.
-After restarting the kubelet on all nodes, remove the audiences used by kubelet from the KAS `--allowed-kubelet-audiences` flag.
+After restarting the kubelet on all nodes, remove the allowed audiences for which the kubelet is allowed to generate service account tokens for image pulls in KAS by removing the previous `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -974,12 +993,17 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Feature is enabled but exec plugin does not properly fetch and return credentials to the kubelet.
+Impact is that kubelet cannot authenticate and pull credentials from those registries.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+High error rates from `kubelet_credential_provider_plugin_error` and long durations from `kubelet_credential_provider_plugin_duration`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -989,11 +1013,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+No, upgrade->downgrade->upgrade were not tested. Manual validation will be done prior to promoting this feature to beta in v1.34.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1012,6 +1040,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Operators can check for a kubelet config file passed into the `--image-credential-provider-config`.
+The config has a field called `imageMatches` which indicates the images a plugin will be invoked for.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1023,13 +1054,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Users can observe events for successful image pulls that use the service account token for image pull.
+
+- [x] Events
+  - Event Reason: " Successfully pulled image "xxx" in 11.877s (11.877s including waiting). Image size: xxx bytes."
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1047,6 +1075,11 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+
+On failure to fetch credentials from an exec plugin, the kubelet will retry after some period and invoke the plugin again.
+The kubelet will retry whenever it attempts to pull an image, but until then, kubelet will not be able to authenticate to
+the registry and pull images. The SLO for successfully invoking exec plugins should be based on the SLO for successfully
+pulling images for the container registry in question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1092,6 +1125,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature depends on the existence of a credential provider plugin binary on the host and a configuration file for the plugin to be read by the kubelet.
 
 ### Scalability
 
@@ -1222,6 +1257,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server is unavailable, kubelet will not be able to fetch service account tokens for image pull. The kubelet will retry fetching the token after some period, but until then, kubelet will not be able to authenticate to the registry and pull images that rely on the credential provider plugin using service account tokens for image pull.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1239,6 +1276,9 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+- check logs of kubelet
+- check service availability of container registries used by the cluster
+
 ## Implementation History
 
 <!--
@@ -1251,6 +1291,9 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+1.33: Alpha release
+1.34: Beta release
 
 ## Drawbacks
 
