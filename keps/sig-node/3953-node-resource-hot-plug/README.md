@@ -88,10 +88,11 @@ Hotplug: Dynamically add compute resources (CPU, Memory, Swap Capacity and HugeP
 
 Hotunplug: Dynamically remove compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (make resources go offline) or via hardware (physical removal while the system is running)
 
+Node Compute Resource: CPU, Memory, Swap Capacity and HugePages
 
 ## Summary
 
-The proposal seeks to facilitate hot plugging of node compute resources(CPU, Memory, Swap Capacity and HugePages), thereby streamlining cluster resource capacity updates through node compute resource resizing rather than introducing new nodes to the cluster.
+The proposal seeks to facilitate hot plugging of node compute resources, thereby streamlining cluster resource capacity updates through node compute resource resizing rather than introducing new nodes to the cluster.
 The revised node configurations will be automatically propagated at both the node and cluster levels.
 
 Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager, in response to alterations in a node's CPU and memory configurations and 
@@ -135,7 +136,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 ### Goals
 
 * Achieve seamless node capacity expansion through hot plugging resources.
-* Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager to accommodate alterations in the node's resource allocation.
+* Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager without reset to accommodate alterations in the node's resource allocation.
 * Recalculating and updating the OOMScoreAdj and swap memory limit for existing pods.
 
 ### Non-Goals
@@ -913,7 +914,7 @@ VMs of cluster should support hot plug of compute resources for e2e tests.
       or if it has to be terminated due to resource crunch.
   * Recalculate OOM adjust score and Swap limits:
     * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
-  * Handling unplug of reserved and exclusively allocated cpus CPUs.
+  * Handling unplug of reserved and exclusively allocated CPUs.
   
 * Fetching machine info via CRI
     * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
