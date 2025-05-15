@@ -594,7 +594,7 @@ The below rules are currently implemented or are very similar to an existing val
     `+k8s:minimum`, `+k8s:maximum`, `+k8s:exclusiveMinimum`, `+k8s:exclusiveMaximum`
    </td>
    <td>
-    minimum, maximum, exclusiveMinimum, exclusiveMaximum (for constants); x-kubernetes-validations (for field refs)
+    `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` (for constants); x-kubernetes-validations (for field refs)
    </td>
   </tr>
   <tr>
@@ -1009,9 +1009,11 @@ The streamed data does not require declarative validation, as it is not structur
 
 ### Cross-Field Validation
 
-A cross-field validation refers to any validation rule whose outcome depends on the value of more than one field within a given Kubernetes API object, potentially including fields from the previous version of the object (`oldSelf`) or external options (namely feature gates). This differs from single-field validation which only considers the value of the field where the validation tag is placed.
+A cross-field validation refers to any validation rule whose outcome depends on the value of more than one field within a given Kubernetes API object, potentially including fields from the previous version of the object (`oldSelf`) or external options (namely feature gates).  
+This differs from single-field validation which only considers the value of the field where the validation tag is placed.
 
-These types of validations often have more complex logic and can be more difficult UX-wise to create a dedicated tag for as there are more options for representing them (tag directly on N fields, tag on one of the fields with args for the other fields, on the parent struct with args for all fields, etc.). From an analysis of current validation logic in `kubernetes/kubernetes` across native types in `pkg/apis`, a number of validation categories were identified:
+These types of validations often have more complex logic and can be more difficult UX-wise to create a dedicated tag for as there are more options for representing them (tag directly on N fields, tag on one of the fields with args for the other fields, on the parent struct with args for all fields, etc.).  
+From an analysis of current validation logic in `kubernetes/kubernetes` across native types in `pkg/apis`, a number of validation categories were identified:
 
 *   Conditional Requirement/Validation
 *   Non-Discriminated Unions
@@ -1027,21 +1029,23 @@ These types of validations often have more complex logic and can be more difficu
     *   Rules defining relationships where fields must appear together, be consistent if both present, or satisfy a bi-directional implication (A if and only if B).
 *   Complex/Custom Logic
 
-From this list of categories, the goal for Declarative Validation is to create dedicated tags capable of handling these categories similarly/identically to the current validation logic. The table in "Catalog of Supported Validation Rules & Associated IDL Tags" includes a number of these cross-field validation tags targeting the above categories including:
+From this list of categories, the goal for Declarative Validation is to create dedicated tags capable of handling these categories similarly/identically to the current validation logic. 
+The table in "Catalog of Supported Validation Rules & Associated IDL Tags" includes a number of these cross-field validation tags targeting the above categories including:
 
 *   Non-Discriminated & Discriminated Unions: `+k8s:union[Member|Discriminator]`
 *   Comparison: `+k8s:[minimum|maximum]` w/ field ref support
 *   Transition Rules - Immutability: `+k8s:immutable`.
 
-Some categories can be covered by extending and or/chaining a combination of tags. For example “Status Condition Validation” can, for identified cases (example below for CertificateSigningRequest), be handled using a combination of `+k8s:subfield` (enhanced to support targeting list entries) and `+k8s:unionMember`:
+Some categories can be covered by extending and or/chaining a combination of tags. 
+For example “Status Condition Validation” can, for identified cases (example below for CertificateSigningRequest), be handled using a combination of `+k8s:subfield` (enhanced to support targeting list entries) and `+k8s:unionMember`:
 
 ```go
 type CertificateSigningRequestStatus struct {
        // +k8s:subfield({"type":"Approved"})=+k8s:optional
-       // +k8s:subfield({"type":"Approved", "status": "true"})=+k8s:unionMember
+       // +k8s:subfield({"type":"Approved", "status": "true"})=+k8s:unionMember{"union": "oneOfApprovedOrDenied"}
 
        // +k8s:subfield({"type":"Denied"})=+k8s:optional
-       // +k8s:subfield({"type":"Denied", "status": "true"})=+k8s:unionMember
+       // +k8s:subfield({"type":"Denied", "status": "true"})=+k8s:unionMember{"union": "oneOfApprovedOrDenied"}
 
        // +k8s:subfield({"type":"Failed"})=+k8s:optional
        // +k8s:subfield({"type":"Failed"})=+k8s:immutable
@@ -1050,9 +1054,14 @@ type CertificateSigningRequestStatus struct {
 ```
 
 #### Handling Ratcheting In Cross-Field Validation Tags
-For cross-field validations, the validation logic is evaluated at the common ancestor of the fields involved. This approach is necessary for supporting ratcheting. While validation tags (eg: +k8s:maximum=siblingField, +k8s:unionMember , etc.) may be placed on an individual field for clarity, the tag and its associated validation logic will be "hoisted" to the parent struct during code generation. This "hoisting" means the validation is treated as if it were defined on the common ancestor.  By anchoring the cross-field validation logic at the common ancestor, regardless of tag placement, the ratcheting design can more reliably determine how to perform equality checks across the relevant type nodes and decide if re-validation is necessary.
+For cross-field validations, the validation logic is evaluated at the common ancestor of the fields involved. 
+This approach is necessary for supporting ratcheting. While validation tags (eg: +k8s:maximum=siblingField, +k8s:unionMember , etc.) may be placed on an individual field for clarity, the tag and its associated validation logic will be "hoisted" to the parent struct during code generation. 
+This "hoisting" means the validation is treated as if it were defined on the common ancestor.  
+By anchoring the cross-field validation logic at the common ancestor, regardless of tag placement, the ratcheting design can more reliably determine how to perform equality checks across the relevant type nodes and decide if re-validation is necessary.
 
-As noted in the "Ratcheting and Cross-Field Validation" section there is an additional challenge that arises if a cross-field validation rule (e.g. X < Y) is defined on a common ancestor struct/field, and an unrelated field (e.g. Z) within that same ancestor is modified (see section for more information). In practice this means that the validation rules (or validation-gen generally) need to be more explicit where each validation rule explains “I only use these fields as inputs" for ratcheting.  This means that in the initial implementation of the cross-field dedicated tags referenced in the document (+k8s:unionMember, etc.), they will handle ratcheting of the fields they operate on directly.
+As noted in the "Ratcheting and Cross-Field Validation" section there is an additional challenge that arises if a cross-field validation rule (e.g. X < Y) is defined on a common ancestor struct/field, and an unrelated field (e.g. Z) within that same ancestor is modified (see section for more information). 
+In practice this means that the validation rules (or validation-gen generally) need to be more explicit where each validation rule explains “I only use these fields as inputs" for ratcheting.  
+This means that in the initial implementation of the cross-field dedicated tags referenced in the document (+k8s:unionMember, etc.), they will handle ratcheting of the fields they operate on directly.
 
 
 ### Ratcheting
