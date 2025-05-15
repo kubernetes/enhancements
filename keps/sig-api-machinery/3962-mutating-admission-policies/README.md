@@ -1033,7 +1033,7 @@ We will test the edge cases mostly in integration test and unit test. We may add
 #### Beta
 
 - Add metrics for MAP admission plugin
-- Fix issues/bugs been brought up
+- Fix any blocking issues/bugs surfaced before code freeze
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
