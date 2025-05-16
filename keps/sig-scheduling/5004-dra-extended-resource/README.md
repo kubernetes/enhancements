@@ -537,7 +537,7 @@ is nothing to do.
 If the pod still needs to be considered by the plugin, then it checks if the
 special resource claim for extended resources backed by DRA has been created
 before by scheduler, by checking resource claim name having pod name in the
-annotation `resource.kubernetes.io/extened-resource-claim: pod-name`.
+annotation `resource.kubernetes.io/extended-resource-claim: pod-name`.
 
 If found, scheduler would reuse it. If not found, scheduler would create a
 special resource claim that has empty spec. The exact spec needs to be decided
