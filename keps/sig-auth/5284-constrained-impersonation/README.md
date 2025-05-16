@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Limit Impersonate Permission
+# KEP-5284: Constrained Impersonation
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
 highlighting any additional information provided beyond the standard KEP
@@ -177,7 +177,10 @@ impersonator can impersonate in a more restricted way.
 * Define required permission rules for the impersonator to impersonate 
   on certain resource/verb.
 * Provide clear example on what permission the impersonator and user should have for the
-  impersonator to impersonate user's certain verbs on certain resources
+  impersonator to impersonate user's certain verbs on certain resources.
+* This is an opt-in feature and existing impersonation flows keep working as-is.
+* Client side semantics of impersonation is unchanged, the existing impersonation headers
+are re-used and no new headers are added.
 
 ### Non-Goals
 * Adding impersonator's info to user.Info, so authorization webhooks can know both info
@@ -189,12 +192,14 @@ Introduce a set of verbs with prefix of `impersonate-on:`, e.g. `impersonate-on:
 `impersonate-on:get`. The impersonator needs to have these verbs with certain resources to
 impersonate. 
 
-Introduce verbs `impersonate:user` and `impersonate:scheduled-node`:
-- `impersonate:user` limits the impersonator to impersonate users with 
-certain names/groups/userextras. The resources must be `users`/`groups`/`userextras`.
+Introduce verbs `impersonate:user-info`, `impersonate:serviceaccount` and `impersonate:scheduled-node`:
+- `impersonate:user-info` limits the impersonator to impersonate users with 
+certain names/groups/userextras. The resources must be `users`/`groups`/`userextras`/`uids`.
 The resource names must be user names, group names or values in the user extras accoringly.
-- `impersonate:scheduled-node` that limits the impersonator to impersonate the node the
-impersonator is running on. The resource must be `nodes`.
+- `impersonate:serviceaccount` that limits the impersonator to impersonate the serviceaccount with
+the certain name/namespace. The resources must be `serviceaccounts`.
+- `impersonate:scheduled-node` that limits the impersonator to impersonate the node the 
+impersonator is running on. The resources must be `nodes`.
 
 For the imperonsonator, two permissions will be required:
 
@@ -209,11 +214,24 @@ rules:
 - apiGroups:
   - authentications.k8s.io
   resources:
-  - users
+  - users # allowed resources are users/groups/userextras/uids
   resourceNames:
   - someUser 
   verbs:
-  - impersonate:user
+  - impersonate:user-info
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: impersonate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: impersonate
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
 ```
 2. The permission to impersonate on certain resource with certain verbs. This can be either
 cluster scoped or namespace scoped. 
@@ -231,22 +249,79 @@ rules:
   verbs:
   - impersonate-on:list
   - impersonate-on:watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: impersonate
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: impersonate-action
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
 ```
 
 These permissions define: "The impersonator can impersonate a user with the name of
 someUser to list and watch pods in the default namespace."
 
-The verb behind prefix `impersonate-on:` can be any verb, and also can be "*" representing any verb.
-
-When receiving an impersonation request, the apiserver:
-- Verifies if the impersonator has the legacy `impersonate` permission, allow the impersonation
-if the conddition met.
-- Verifies if the impersonator has the permission to impersonate with the scope of a general user or
-a scheduled node, 
-- Verifies if the impersonator has the permission to impersonate the target action
-- Only allows the impersonation if the above two conditions are met
+When receiving an impersonation request to list pods from the user `impersonator` with the header of
+`Impersonate-User:someUser`, the apiserver:
+- Verifies if the impersonator has the permission to impersonate with the scope of the user.
+A subjectaccessreview is sent to the authorizer:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: users
+    name: someUser
+    verb: impersonate:user-info
+  user: impersonator
+```
+- Verifies if the impersonator has the permission to impersonate the target action with a 
+subjectaccessreview request:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    resource: pods
+    verb: impersonate-on:list
+  user: impersonator
+```
+- Allows the impersonation if the above two conditions are met
+- If the above check fails, verifies if the impersonator has the legacy `impersonate` permission,
+allow the impersonation if the condition met. A subjectaccessreview is sent to the authorizer:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    resource: users
+    name: someUser
+    verb: impersonate
+  user: impersonator
+```
 
 The impersonator does not need the permission for the target action.
+
+#### workflow when the feature is enabled
+
+```mermaid
+flowchart TD
+    A[receive request] -->|feature enabled| B{Verify the requester has the permission to impersonate with the scope of the user}
+    B --> |yes| C{Verify the requester has the permission to impersonate the target action}
+    C -->|yes| D[Allow]
+    A -->|feature disable| E{Verify the requester has the legacy impersonate permission}
+    E -->|yes| D
+    B -->|no| E
+    C -->|no| E
+```
 
 ### User Stories (Optional)
 
@@ -269,6 +344,19 @@ rules:
   - impersonate:scheduled-node
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: impersonate:node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: impersonate:node
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: impersonate:node:list
@@ -280,6 +368,19 @@ rules:
   verbs:
   - impersonate-on:list
   - impersonate-on:get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: impersonate:node:list
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: impersonate:node:list
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: default
 ```
 
 #### Story 2
@@ -297,7 +398,20 @@ rules:
   resources:
   - users
   verbs:
-  - impersonate:user
+  - impersonate:user-info
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: impersonate-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: impersonate-user
+subjects:
+- kind: ServiceAccount
+  name: deputy
+  namespace: deputy-ns
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -311,6 +425,20 @@ rules:
     - virtualmachines/console
     verbs:
     - impersonate-on:get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: impersonate-user
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: impersonate:vm:console
+subjects:
+- kind: ServiceAccount
+  name: deputy
+  namespace: deputy-ns
 ```
 
 ### Risks and Mitigations
@@ -341,6 +469,137 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### Verb `impersonate:user-info`
+
+Same as legacy impersonation, when the request has header of `Impersonate-User`,
+`Impersonate-Group`, `Impersonate-Uid` or `Impersonate-Extra-`, apiserver will check
+verb `impersonate:user-info` with the related resources.
+
+#### Header `Impersonate-User` is set
+
+A subjectaccessreview
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: users
+    name: someUser
+    verb: impersonate:user-info
+  user: impersonator
+```
+will be sent to the authorizer
+
+#### Header `Impersonate-Group` is set
+
+A subjectaccessreview
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: groups
+    name: someGroup
+    verb: impersonate:user-info
+  user: impersonator
+```
+will be sent to the authorizer
+
+#### Header `Impersonate-Uid` is set
+
+A subjectaccessreview
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: uids
+    name: someUID
+    verb: impersonate:user-info
+  user: impersonator
+```
+will be sent to the authorizer
+
+#### Header with prefix `Impersonate-Extra-` is set
+
+A subjectaccessreview
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: userextras
+    subresource: extraKey
+    name: extraValue
+    verb: impersonate:user-info
+  user: impersonator
+```
+will be sent to the authorizer
+
+### Verb `impersonate:serviceaccount`
+
+Same as legacy impersonation, when the request has the header of `Impersonate-User`, and the value of the header
+has a prefix of `system:serviceaccount:`, apiserver will check verb `impersonate:serviceaccount` with the authorizer
+using the subjectaccessreview:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: serviceaccounts
+    name: serviceaccount-name
+    namespace: serviceaccount-namespace
+    verb: impersonate:serviceaccount
+  user: impersonator
+```
+
+### Verb `impersonate:scheduled-node`
+
+This is a special verb to check when two conditions are met:
+1. The impersonator is impersonating a node by setting the header `Impersonate-User` and the value has a prefix
+of `system:node:` on the request.
+2. The user info of the impersonator has an extra with key `authentication.kubernetes.io/node-name`, and the value
+should be the same as the value in the request header of `Impersonate-User` after removing prefix `system:node:`.
+It indicates that the impersonator is running on the same node it is impersonating.
+
+If the two conditions are both met, the following subjectaccessreview will be sent to the authorizer:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: nodes
+    verb: impersonate:scheduled-node
+  user: impersonator
+```
+If one of the conditions is not met, verb `impersonate:scheduled-node` will not be checked and verb
+`impersonate:user-info` will be checked instead. For instance, if condition 2 is not met, the following
+subjectaccessreview will be sent.
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: users
+    name: system:node:node1
+    verb: impersonate:user-info
+  user: impersonator
+```
+
+### Auditing
+
+An audit event is recorded already for any allowed impersonation request. To record the reason why the impersonation
+is allowed, an annotation `allowed-impersonation-verbs` will be added. The value will be the list of impersonation
+related verbs checked. For example, `allowed-impersonation-verbs: impersonate:scheduled-node,impersonate-on:list`
+indicates that the impersonation request is allowed because it impersonates a scheduled node on list action.
 
 ### Test Plan
 
@@ -427,7 +686,7 @@ rules:
   resourceNames:
   - bob
   verbs:
-  - impersonate:user
+  - impersonate:user-info
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -544,7 +803,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### GA
 
-- All bugs resolved and no new bugs requiring code change since the previous shipped release
+- At least one successful adoption of each user story (node agent and deputy).
+- All bugs resolved and no new bugs requiring code change since the previous shipped release.
 
 ### Upgrade / Downgrade Strategy
 
@@ -624,7 +884,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ImpersonateAccessControl
+  - Feature gate name: ConstrainedImpersonation
   - Components depending on the feature gate:
     - kube-apiserver
 
@@ -859,7 +1119,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-I will introduce one additional access review check for request with impersonation.
+It will introduce one additional access review check for request with impersonation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -944,10 +1204,12 @@ Why should this KEP _not_ be implemented?
 
 The controller can sends a SAR request, and then uses its own permission to perform the action.
 The main difference from impersonation is:
-1. controller itself needs to have the permission for a certain action, while with impersonataion
+1. the controller itself needs to have the permission for a certain action, while with impersonataion
 the controller does not need these permissions, but the permissions to `impersonate-on` certain action.
 2. The audit log shows that controller performs the action, while with impersonatation audit log
 shows controller is impersonating and the target user performs the action.
+3. The admission chain is running against the controller, while with impersonation, the admission chain
+is running against the target user.
 
 ### Setting a special APIGroup suffix instead of special verb
 
@@ -963,10 +1225,9 @@ each resource to be impersonated, e.g.
   - list
   - watch
 ```
-Some concerns on using this approch:
-- impersonating on any APIGroup is hard to describe.
-- core APIGroup has to be specially treated.
-- the APIGroup might be too long for a CRD, e.g. cluster.x-k8s.io.imperonsation.k8s.io
+
+It is almost the same as the verb based approach in the proposal. However, since existing impersonation flows are
+verb based, so making the new flow verb based as well feels more consistent.
 
 ### Check permission intersaction of impersonator and target user
 
@@ -975,6 +1236,37 @@ only allow the action if both have the correct permission. Comparing to the prop
 this approach requires the impersonator to have the permission who is not desired to have, while
 in the proposed apporch, the impersonator's permission is clearer that it can only perform
 the action when impersonating.
+
+### Expand RBAC/SAR
+
+Introduce additional API to define more fine grained access control rule, and ref the rule in SAR.
+One example is
+
+```yaml
+{
+  "apiVersion": "authorization.k8s.io/v1beta1",
+  "kind": "SubjectAccessReview",
+  "spec": {
+    "resourceAttributes": {
+      "namespace": "default",
+      "verb": "get",
+      "group": "example.org",
+      "resource": "something"
+    },
+    "accessRule": {
+      "kind": "ClusterAccessRule",
+      "group version": "example.org/v1",
+      "name": "elevation-of-privilege"
+    },
+    "user": "lmktfy",
+    "group": []
+    ]
+  }
+}
+```
+And authorizer checks the accessRule on whether a certain impersonate action is allowed. This is a more
+complicated approach that requires changes on existing RBAC/SAR, while the current proposal does not
+introduce change on RBAC/SAR.
 
 ## Infrastructure Needed (Optional)
 

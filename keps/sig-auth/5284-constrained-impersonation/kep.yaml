@@ -1,12 +1,12 @@
-title: KEP Template
-kep-number: NNNN
+title: Constrained Impersonation
+kep-number: 5284
 authors:
   - "@qiujian16"
-owning-sig: sig-xyz
+owning-sig: sig-auth
 participating-sigs:
   - sig-auth
 status: provisional
-creation-date: yyyy-mm-dd
+creation-date: 2025-05-07
 reviewers:
   - "@deads2k"
   - "@enj"
@@ -35,7 +35,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: ImpersonateAccessControl
+  - name: ConstrainedImpersonation
     components:
       - kube-apiserver
 disable-supported: true
