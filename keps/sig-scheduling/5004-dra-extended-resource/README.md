@@ -340,8 +340,7 @@ extended resource. The resource claim object has the following properties:
   * It is owned by a pod, like other resource claim objects.
   * It has `Spec` of device.requests, with each request name being an encoding
     of the container name and the extended resource backed by DRA name inside
-    the container. It is needed to map allocated devices back to the container
-    which requested them.
+    the container.
   * Its `status.allocation.devices` and `status.allocation.reservedFor` are
     used.
   * It does not have annotation `resource.kubernetes.io/pod-claim-name:` as

@@ -18,6 +18,7 @@ approvers:
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-node/3573-device-plugin"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
