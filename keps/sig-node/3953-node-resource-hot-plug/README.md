@@ -29,6 +29,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Handling hotplug events](#handling-hotplug-events)
     - [Flow Control for updating swap limit for containers](#flow-control-for-updating-swap-limit-for-containers)
+    - [Compatability with Cluster Autoscaler](#compatability-with-cluster-autoscaler)
   - [Handling HotUnplug Events](#handling-hotunplug-events)
     - [Flow Control](#flow-control)
   - [Test Plan](#test-plan)
@@ -135,7 +136,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 ### Goals
 
-* Achieve seamless node capacity expansion through hot plugging resources.
+* Achieve seamless node capacity expansion through resource hotplug.
 * Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager without reset to accommodate alterations in the node's resource allocation.
 * Recalculating and updating the OOMScoreAdj and swap memory limit for existing pods.
 
@@ -143,7 +144,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 * Dynamically adjust system reserved and kube reserved values.
 * Hot unplug of node resources.
-* Update the autoscaler to utilize resource hot plugging.
+* Update the autoscaler to utilize resource hotplug.
 * Re-balance workloads across the nodes.
 * Update runtime/NRI plugins with host resource changes.
 
@@ -278,9 +279,9 @@ With increase in cluster resources the following components will be updated:
 Once the capacity of the node is altered, the following are the sequence of events that occur in the kubelet. If any errors are 
 observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event under the node object.
 1. Resizing existing containers:
-    a.With the increased memory capacity of the nodes, the kubelet proceeds to update fields that are directly related to
+    a. With the increased memory capacity of the nodes, the kubelet proceeds to update fields that are directly related to
       the available memory on the host. This would lead to recalculation of oom_score_adj and swap_limits.
-    b.This is achieved by invoking the CRI API - UpdateContainerResources.
+    b. This is achieved by invoking the CRI API - UpdateContainerResources.
 
 2. Reinitialise Resource Manager:
      a. Resource managers such as CPU,Memory are updated with the latest available capacities on the host. This posts the latest
@@ -317,6 +318,21 @@ T=1: Resize Instance to Hotplug Memory:
 ```
 
 Similar flow is applicable for updating oom_score_adj.
+
+#### Compatability with Cluster Autoscaler
+
+The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing Nodes as templates for 
+newly provisioned Nodes from the same NodeGroup. However, with the introduction of NodeResourceHotplug, this assumption may no longer hold true.
+If not appropriately addressed, this could cause the Cluster Autoscaler to randomly select a Node from the group and assume identical allocatable values for all upcoming Nodes. 
+This could lead to suboptimal decisions, such as repeatedly attempting to provision Nodes for pending Pods that are incompatible, or overlooking potential Nodes that could accommodate such Pods.
+
+To ensure the Cluster Autoscaler acknowledges resource hotplug, the following approaches have been proposed by the Cluster Autoscaler team:
+1. Capture Node's Initial Allocatable Values:
+   * Introduce a new field within the Node object to record initial node allocatable values, which remain unchanged during resource hotplug.
+   * The Cluster Autoscaler can leverage this field to anticipate potential hotplug of resources, using it as a template for configuring new Nodes.
+
+2. Identify Nodes Affected by Hotplug:
+   * By flagging a Node as being impacted by hotplug, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
 
 ### Handling HotUnplug Events
 
