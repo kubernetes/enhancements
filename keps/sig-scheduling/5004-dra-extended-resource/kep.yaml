@@ -14,10 +14,11 @@ reviewers:
 approvers:
   - "@mrunalp" # SIG-Node
   - "@dom4ha" # SIG-Scheduling
-  - "@thockin" # API Review
+  - "@liggitt" # API Review
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-node/3573-device-plugin"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
