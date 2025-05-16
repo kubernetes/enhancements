@@ -526,7 +526,7 @@ extended resource backed by DRA requests.
 This registers all cluster events that might make an unschedulable pod schedulable,
 like finishing the allocation of a claim, or resource slice updates.
 
-The existing dynamicresurce plugin has registered all the events needed or
+The existing dynamicresource plugin has registered all the events needed or
 extended resource backed by DRA, hence no change is needed.
 
 #### PreFilter
