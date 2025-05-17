@@ -386,39 +386,46 @@ proposal will be implemented, this is the place to discuss them.
 -->
 
 The controller offers a number of improvements over Kube State Metrics' Custom
-Resource State API, while maintaining a 3x faster round trip time for metric
+Resource State API, while maintaining a [3x faster] round trip time for metric
 generation.
 
 - At its core, the controller relies on its managed resource,
-`ResourceMetricsMonitor` to fetch the metric generation configuration. Parts of the
-configuration may be defined using different `resolver`s, such as `unstructured`
-or `CEL`.
+  `ResourceMetricsMonitor` to fetch the metric generation configuration. Parts
+  of the configuration may be defined using different `resolver`s, such as
+  `unstructured` or `CEL`.
 - Once fetched, the controller `unmarshal`s the configuration YAML directly into
-`stores` which are a set of metric `families`, which in turn are a set of 
-`metrics`.
-- Metric `stores` are created based on its respective GVKR (a type that embeds 
-`schema.GroupVersionKind`, `schema.GroupVersionResource` to avoid 
-[plural ambiguities]), and reflectors for the specified resource are
-initialized, and populate the stores on its update.
-- `/metrics` pings on `RSM_MAIN_PORT` trigger the server to write the
-raw metrics, combined with its appropriate header(s), in the response. All
-generated metrics are hardcoded to `gauge`s by design, as Prometheus lacks
-support for some OpenMetrics-specified metrics' types, such as `Info` and
-`StateSets`.
+  `stores` which are a set of metric `families`, which in turn are a set of
+  `metrics`.
+- Metric `stores` are created based on its respective GVKR (a type that embeds
+  `schema.GroupVersionKind`, `schema.GroupVersionResource` to avoid [plural
+  ambiguities]), and reflectors for the specified resource are initialized, and
+  populate the stores on its update.
+- All generated metrics are hardcoded to `gauge`s by design, as Prometheus
+  currently does not support some OpenMetrics-specified metrics' types, such as
+  `Info` and `StateSets`, but more importantly, because these metrics can be
+  expressed using `gauge`s.
+- `/metrics` pings on `RSM_MAIN_PORT` trigger the server to write the raw
+  metrics defined in the configuration, combined with its appropriate header(s),
+  in the response. 
+- `/external` pings on `RSM_MAIN_PORT` trigger the server to write the raw
+  metrics defined in the `./extenal` directory, combined with its appropriate
+  header(s), in the response.
+- `/metrics` pings on `RSM_SELF_PORT` trigger the server to write the raw
+  metrics about the process itself, combined with its appropriate header(s), in
+  the response.
 
 At the moment, the `spec` houses a single `configuration` field, which defines
 the metric generation configuration as follows (please note that the schema is
-fast-moving at this point and may be subject to change based on the [feedback 
-obtained](https://github.com/rexagod/resource-state-metrics/issues?q=sort%3Aupdated-desc+is%3Aissue+is%3Aopen)):
+fast-moving at this point and may be subject to change:
 
 ```yaml
 stores: # Set of metrics stores for each CR we want to generate metrics for.
-  - g: "contoso.com" # CR's group.
-    v: "v1alpha1"    # CR's version.
+  - group: "contoso.com" # CR's group.
+    version: "v1alpha1"    # CR's version.
     # Both kind and resource names are required to avoid plural ambiguities, see
     # https://github.com/kubernetes-sigs/kubebuilder/issues/3402.
-    k: "MyPlatform"  # CR's kind.
-    r: "myplatforms" # CR's resource.
+    kind: "MyPlatform"  # CR's kind.
+    resource: "myplatforms" # CR's resource.
     selectors: # Set of filters to narrow down the selected CRs, may be:
       field: "metadata.namespace=default" # field selector(s), and (/or),
       label: "app.kubernetes.io/part-of=sample-controller" # label selector(s).
@@ -476,6 +483,53 @@ stores: # Set of metrics stores for each CR we want to generate metrics for.
                                    # A non-cast-able `float64` will skip the
                                    # current metric generation and log an error.
 ```
+
+It's also worth mentioning that unlike Kube State Metrics' Custom Resource
+State, Resource State Metrics supports recursively generating samples from
+nested data structures, all from a single expression. Assuming we have a query,
+```
+o.spec
+```
+for the object,
+```yaml
+...
+spec:
+  appId: test-sample
+  language: csharp
+  os: linux
+  instanceSize: small
+  environmentType: dev
+  tags:
+    - frontend
+    - middleware
+    - backend
+  features:
+    - monitoring
+    - alerting
+  versions:
+    - "1.0"
+    - "2.0"
+    - "3.0"
+    - "4.0"
+  xProps:
+    nonComposite: "example-value"
+    compositeArray:
+      - "value1"
+      - "value2"
+    compositeMap:
+      key1: "value1"
+      key2: "value2"
+```
+the resulting metric would look like,
+```
+test_metric{os="linux", tags="backend",    key_1="value1", key_2="value2", app_id="test-sample", features="alerting",   language="csharp", versions="1.0", instance_size="small", non_composite="example-value", compositeArray="value1", environment_type="dev"} 2.000000
+test_metric{os="linux", tags="frontend",   key_1="value1", key_2="value2", app_id="test-sample", features="monitoring", language="csharp", versions="2.0", instance_size="small", non_composite="example-value", compositeArray="value2", environment_type="dev"} 2.000000
+test_metric{os="linux", tags="middleware", key_1="value1", key_2="value2", app_id="test-sample", features="",           language="csharp", versions="3.0", instance_size="small", non_composite="example-value", compositeArray="",       environment_type="dev"} 2.000000
+test_metric{os="linux", tags="",           key_1="value1", key_2="value2", app_id="test-sample", features="",           language="csharp", versions="4.0", instance_size="small", non_composite="example-value", compositeArray="",       environment_type="dev"} 2.000000
+```
+Note that the order of samples, as well as their labelsets, guaranteed to be
+stable across runs.
+
 The `status`, on the other hand, is a set of `metav1.Condition`s, like so:
 
 ```yaml
@@ -490,8 +544,7 @@ status:
       type: Processed
 ```
 
-Also, performance benchmarks are available in [tests/bench](https://github.com/rexagod/resource-state-metrics/tree/main/tests/bench).
-
+[3x faster]: https://github.com/rexagod/resource-state-metrics/blob/main/tests/bench/bench.sh
 [plural ambiguities]: https://github.com/kubernetes-sigs/kubebuilder/issues/3402
 
 ### Test Plan
@@ -905,7 +958,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-This is not nota workload feature, but an out-of-tree telemetry solution.
+This is not a workload feature, but an out-of-tree telemetry solution.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -918,7 +971,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [x] Events: Events are emitted in `EMIT_NAMESPACE` (defaults to ``), for e.g., 
+- [x] Events: Events are emitted in the controller's namespace, for e.g.,
   `OwnerRefInvalidNamespace` in case of an owner reference being defined on
   `ResourceMetricsMonitor` to its controller.
 - [x] API .status: The status for a successfully processed `ResourceMetricsMonitor`
@@ -981,8 +1034,6 @@ TBD.
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
-TBD (when targeting beta).
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -1202,7 +1253,11 @@ information to express the idea and why it was not acceptable.
 
 We considered refactoring the Kube State Metrics' Custom Resource State API, but
 that has actually been done multiple times in the past which often amounts to
-us ending up in the same position, owing to its limited scalability.
+us ending up in the same position, owing to its limited scalability. Its also
+worth mentioning [kubernetes/kube-state-metrics#1978] here, an in-house effort
+that had similar goals.
+
+[kubernetes/kube-state-metrics#1978]: https://github.com/kubernetes/kube-state-metrics/issues/1978
 
 ## Infrastructure Needed (Optional)
 
@@ -1212,5 +1267,5 @@ new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
 
-We request a repository (`kubernetes/resource-state-metrics`) to migrate
+We request a repository (`kubernetes-sigs/resource-state-metrics`) to migrate
 `rexagod/resource-state-metrics` to.
