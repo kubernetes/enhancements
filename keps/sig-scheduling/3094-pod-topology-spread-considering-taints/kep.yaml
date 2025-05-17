@@ -3,7 +3,7 @@ kep-number: 3094
 authors:
   - "@kerthcet"
 owning-sig: sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2021-12-30
 reviewers:
   - "@alculquicondor"
