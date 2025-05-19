@@ -1,7 +1,6 @@
 # KEP-1880: Multiple Service CIDRs
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -51,41 +50,6 @@
     - [Alternative 3](#alternative-3)
     - [Alternative 4](#alternative-4)
 <!-- /toc -->
-
-## Release Signoff Checklist
-
-Items marked with (R) are required *prior to targeting to a milestone / release*.
-
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in
-  [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-  (including test refactors)
-  - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance
-    Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [x] (R) Graduation criteria is in place
-  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by
-    [Conformance
-    Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [x] (R) Production readiness review completed
-- [x] (R) Production readiness review approved
-- [x] "Implementation History" section is up-to-date for milestone
-- [x] User-facing documentation has been created in [kubernetes/website], for publication to
-  [kubernetes.io]
-- [x] Supporting documentation—e.g., additional design documents, links to mailing list
-  discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
