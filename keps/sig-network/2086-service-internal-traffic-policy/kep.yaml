@@ -12,8 +12,7 @@ reviewers:
 approvers:
   - "@thockin"
 see-also:
-  - "/keps/sig-network/2004-topology-aware-subsetting"
-  - "/keps/sig-network/20181024-service-topology.md"
+  - "/keps/sig-network/536-topology-aware-routing"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

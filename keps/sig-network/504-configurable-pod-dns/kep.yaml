@@ -3,8 +3,6 @@ kep-number: 504
 authors:
   - "@MrHohn"
 owning-sig: sig-network
-participating-sigs:
-  - sig-network
 reviewers:
   - "@thockin"
   - "@bowei"

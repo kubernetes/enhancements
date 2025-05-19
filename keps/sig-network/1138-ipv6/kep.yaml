@@ -16,6 +16,7 @@ creation-date: 2019-07-14
 last-updated: 2019-07-27
 status: implemented
 see-also:
+  - "/keps/sig-network/563-dual-stack"
 replaces:
 superseded-by:
 

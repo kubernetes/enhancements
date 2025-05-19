@@ -8,13 +8,13 @@ authors:
   - "@mattfenwick"
 owning-sig: sig-network
 reviewers:
-  - "bowei@"
+  - "@bowei"
   - TBD
 approvers:
   - TBD
 editor: TBD
 creation-date: 2020-02-04
-last-updated: 2021-3-05
+last-updated: 2021-03-05
 status: implemented
 
 latest-milestone: "v1.20"

@@ -1,10 +1,14 @@
 title: Kube-proxy improved ingress connectivity reliability
 kep-number: "3836"
-authors: ['@alexanderConstantinescu']
+authors:
+  - "@alexanderConstantinescu"
 owning-sig: sig-network
-participating-sigs: [sig-network]
-reviewers: ['@thockin', '@danwinship', "@aojea"]
-approvers: ['@thockin']
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
 creation-date: "2023-02-03"
 status: implemented
 stage: stable
