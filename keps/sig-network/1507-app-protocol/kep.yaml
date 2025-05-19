@@ -11,7 +11,7 @@ approvers:
   - "@dcbw"
 creation-date: "2019-12-27"
 last-updated: "2021-02-05"
-status: implementable
+status: implemented
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

@@ -7,5 +7,6 @@ approvers:
   - thockin
 owning-sig: sig-network
 status: implemented
+# This change was not part of a k/k release
 latest-milestone: '0.0'
 stage: stable

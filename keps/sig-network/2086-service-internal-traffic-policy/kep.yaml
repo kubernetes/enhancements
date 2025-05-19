@@ -4,7 +4,7 @@ authors:
   - "@andrewsykim"
 owning-sig: sig-network
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2020-10-07
 reviewers:
   - "robscott"

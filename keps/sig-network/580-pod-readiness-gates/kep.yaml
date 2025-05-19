@@ -15,4 +15,10 @@ approvers:
 editor: "freehan@"
 creation-date: 2018-04-01
 last-updated: 2018-04-01
-status: provisional
+status: implemented
+latest-milestone: "v1.14"
+stage: stable
+milestone:
+  alpha: "v1.11"
+  beta: "v1.12"
+  stable: "v1.14"

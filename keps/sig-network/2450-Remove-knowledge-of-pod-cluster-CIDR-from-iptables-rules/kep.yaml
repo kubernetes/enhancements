@@ -23,5 +23,7 @@ status: implemented
 see-also:
 replaces:
 superseded-by:
-latest-milestone: '0.0'
+latest-milestone: "v1.18"
 stage: stable
+milestone:
+  stable: "v1.18"
