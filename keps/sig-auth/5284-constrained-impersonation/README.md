@@ -201,8 +201,7 @@ the certain name/namespace. The resources must be `serviceaccounts`.
 - `impersonate:scheduled-node` that limits the impersonator to impersonate the node the 
 impersonator is running on. The resources must be `nodes`.
 
-For the imperonsonator, two permissions will be required:
-
+For clusters that use RBAC authz mode, two permissions will be required for impersonation. For example:
 1. The permission to impersonate a certain user. This is a cluster scoped
 permission.
 ```yaml
@@ -394,7 +393,7 @@ metadata:
   name: impersonate-user
 rules:
 - apiGroups:
-  - auhtentications.k8s.io
+  - authentications.k8s.io
   resources:
   - users
   verbs:
@@ -672,7 +671,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- SAR check on impersonate user with permission:
+- SubjectAccessReview check on impersonating user. For RBAC authz mode, this might look like:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -680,7 +679,7 @@ metadata:
   name: impersonate-user
 rules:
 - apiGroups:
-  - auhtentications.k8s.io
+  - authentications.k8s.io
   resources:
   - users
   resourceNames:
@@ -715,7 +714,7 @@ metadata:
   name: impersonate-user
 rules:
 - apiGroups:
-  - auhtentications.k8s.io
+  - authentications.k8s.io
   resources:
   - nodes
   verbs:
@@ -744,20 +743,8 @@ rules:
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
+This feature is fully tested with unit and integration tests. An eventual conformance
+test is needed as part of GA
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
@@ -800,11 +787,11 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Determine if additional tests are necessary
 - Ensure reliability of existing tests
 
-
 #### GA
 
 - At least one successful adoption of each user story (node agent and deputy).
 - All bugs resolved and no new bugs requiring code change since the previous shipped release.
+- Conformance tests are added.
 
 ### Upgrade / Downgrade Strategy
 
@@ -821,7 +808,7 @@ enhancement:
 -->
 
 On upgrade to a version that enables the feature
-* the previous inpersonator with impersonate permission will still work, but it is highly
+* the previous impersonator with impersonate permission will still work, but it is highly
 recommanded to use the new permissions with less privilege.
 
 
@@ -894,7 +881,7 @@ No. Impersonator with existing impersonate permission will still be allowed to i
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Set the FeatureGate to false and restart the kube-apiserver.
+Yes. Set the feature gate to false and restart the kube-apiserver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -935,6 +922,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+Authz latency for impersonation is too long.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -960,7 +949,11 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-None
+There are existing metrics to record authz latency and request number:
+- authorization latency
+- authorization success
+- webhook authorizer match condition latency
+- webhook authorizer match condition success
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1026,6 +1019,8 @@ implementation difficulties, etc.).
 There are already metrics for the layers this feature is adding to:
 - authorization latency
 - authorization success
+- webhook authorizer match condition latency
+- webhook authorizer match condition success
 
 ### Dependencies
 
@@ -1119,7 +1114,12 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-It will introduce one additional access review check for request with impersonation.
+The existing impersonation mechanism will introduce 1 access review for request with impersonation. While upon
+feature is enabled:
+- When the check is passed, it will introduce 2-3 access review checks for request with impersonation.
+  - 2 access review check if the new access rule is passed.
+  - 3 access review check if the new access rule is not passed, and the legacy impersonate access rule is passed.
+- When the check is disallowed, it will introduce 3 access review checks for request with impersonation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1194,9 +1194,7 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+- Several additional authorization checks are added introducing some overhead.
 
 ## Alternatives
 
@@ -1204,7 +1202,7 @@ Why should this KEP _not_ be implemented?
 
 The controller can sends a SAR request, and then uses its own permission to perform the action.
 The main difference from impersonation is:
-1. the controller itself needs to have the permission for a certain action, while with impersonataion
+1. the controller itself needs to have the permission for a certain action, while with impersonation
 the controller does not need these permissions, but the permissions to `impersonate-on` certain action.
 2. The audit log shows that controller performs the action, while with impersonatation audit log
 shows controller is impersonating and the target user performs the action.
@@ -1214,11 +1212,11 @@ is running against the target user.
 ### Setting a special APIGroup suffix instead of special verb
 
 Instead of using a verb with prefix `impersonate-on:`, a special apigroup suffix/prefix can be set for
-each resource to be impersonated, e.g.
+each resource to be impersonated, e.g. setting the apigroup with a suffix of `.impersonation.k8s.io`:
 
 ```yaml
 - apiGroups:
-  - apps.imperonsation.k8s.io
+  - apps.impersonation.k8s.io
   resources:
   - deployments
   verbs:
@@ -1229,7 +1227,7 @@ each resource to be impersonated, e.g.
 It is almost the same as the verb based approach in the proposal. However, since existing impersonation flows are
 verb based, so making the new flow verb based as well feels more consistent.
 
-### Check permission intersaction of impersonator and target user
+### Check permission intersection of impersonator and target user
 
 This is an approach to check intersected permission of the impersonator and the target user, and
 only allow the action if both have the correct permission. Comparing to the proposed approach:
@@ -1258,7 +1256,7 @@ One example is
       "group version": "example.org/v1",
       "name": "elevation-of-privilege"
     },
-    "user": "lmktfy",
+    "user": "impersonator",
     "group": []
     ]
   }
