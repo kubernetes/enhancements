@@ -221,24 +221,6 @@ See the original discussion in https://github.com/kubernetes/enhancements/pull/2
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 Unit tests:
 * test API validation logic
 * test API strategy to ensure disabled fields
@@ -287,10 +269,6 @@ N/A
 ### Feature Enablement and Rollback
 
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: NetworkPolicyStatus
@@ -431,19 +409,6 @@ the new subresources.
 
 It won't be possible for Network Policy providers to update the policy status, and for users to get its status
 ###### What are other known failure modes?
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 

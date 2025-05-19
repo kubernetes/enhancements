@@ -511,10 +511,6 @@ with each other.
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in valuesin `kep.yaml`)
@@ -543,10 +539,6 @@ No... there is no real difference between enabling the feature in an
 existing cluster vs creating a cluster where it was always enabled.
 
 ### Rollout, Upgrade and Rollback Planning
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -601,10 +593,6 @@ but not until after the feature is GA.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 The feature is not "used by workloads"; when enabled, it is always in
@@ -634,10 +622,6 @@ this enhancement is that no externally-measurable behavior changes.
 No
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -675,14 +659,6 @@ No
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 This KEP does not change the way that either kubelet or kube-proxy
@@ -700,17 +676,6 @@ we cannot predict.
 N/A
 
 ## Implementation History
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
 
 - Initial proposal: 2022-01-23
 - Updated: 2022-03-27, 2022-04-29

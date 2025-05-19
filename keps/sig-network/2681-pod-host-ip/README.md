@@ -88,18 +88,6 @@ For smooth migration, IP-related attributes should have both IPv4 and IPv6.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
 ## Design Details
 
 ### Versioned API Change: PodStatus v1 core

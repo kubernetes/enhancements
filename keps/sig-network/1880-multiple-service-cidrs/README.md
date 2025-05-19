@@ -832,15 +832,6 @@ kubernetes   10.96.0.0/28   17d
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
 - [x] Events
   - Event Reason: KubernetesDefaultServiceCIDRError, "The default ServiceCIDR can not be created"
   - Event Reason: KubernetesDefaultServiceCIDRError, "The default ServiceCIDR Status can not be set to Ready=True"

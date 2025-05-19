@@ -255,16 +255,7 @@ Yes, there will be unit tests in kube-proxy with the feature gate enabled and di
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout fail? Can it impact already running workloads?
-
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
--->
 
 A rollout can be negatively impacted if workloads are currently dependant on kube-proxy's behavior to never forward traffic to terminating endpoints.
 Ideally workloads are configured such that their readiness probes fail when traffic is not desired, but workloads may exist relying on the current behavior.
@@ -424,10 +415,6 @@ No.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
 This feature only depends on core components and APIs.
@@ -474,19 +461,6 @@ kube-proxy may forward traffic to an endpoint that has terminated already. Howev
 is possible today if apiserver becomes unavailable.
 
 ###### What are other known failure modes?
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
 
 - Traffic is sent to terminating endpoints when the user did not want it.
    - Detection: typically by the workload
