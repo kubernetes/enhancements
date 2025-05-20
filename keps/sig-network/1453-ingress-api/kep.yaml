@@ -7,7 +7,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
 status: implemented
-creation-date: yyyy-mm-dd
+creation-date: "2019-01-25"
 reviewers:
   - "@aledbf"
 approvers:
@@ -16,7 +16,6 @@ approvers:
   - "@thockin"
 see-also:
 replaces:
-  - "/keps/sig-network/20190125-ingress-api-group.md "
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
@@ -30,16 +29,3 @@ latest-milestone: "v1.19"
 milestone:
   beta: "v1.1"
   stable: "v1.19"
-
-# The following PRR answers are required at alpha release
-# List the feature gate name and the components for which it must be enabled
-# feature-gate:
-#   name: MyFeature
-#   components:
-#     - kube-apiserver
-#     - kube-controller-manager
-# disable-supported: true
-
-# The following PRR answers are required at beta release
-# metrics:
-#   - my_feature_metric

@@ -4,7 +4,7 @@ authors:
   - "@gauravkghildiyal"
   - "@robscott"
 owning-sig: sig-network
-status: implementable
+status: implemented
 creation-date: 2024-01-26
 reviewers:
   - "@aojea"

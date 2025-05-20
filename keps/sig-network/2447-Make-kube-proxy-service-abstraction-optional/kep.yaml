@@ -12,8 +12,7 @@ editor: "@bradhoekstra"
 creation-date: 2018-10-17
 last-updated: 2018-11-12
 status: implemented
-see-also:
-replaces:
-superseded-by:
-latest-milestone: '0.0'
+latest-milestone: "v1.14"
 stage: stable
+milestone:
+  stable: "v1.14"

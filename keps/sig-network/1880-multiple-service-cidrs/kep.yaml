@@ -4,9 +4,8 @@ authors:
   - "@aojea"
 owning-sig: sig-network
 participating-sigs:
-  - sig-network
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2022-06-08
 reviewers:
   - "@thockin"

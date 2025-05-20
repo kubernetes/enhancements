@@ -1,7 +1,6 @@
 # KEP-3178: Cleaning up IPTables Chain Ownership
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -46,30 +45,6 @@
   - [Move <code>KUBE-MARK-DROP</code> to Kube-Proxy Rather Than Removing It](#move-kube-mark-drop-to-kube-proxy-rather-than-removing-it)
   - [Remove <code>KUBE-MARK-MASQ</code> from Kube-Proxy and Let Kubelet Own It](#remove-kube-mark-masq-from-kube-proxy-and-let-kubelet-own-it)
 <!-- /toc -->
-
-## Release Signoff Checklist
-
-Items marked with (R) are required *prior to targeting to a milestone / release*.
-
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -511,10 +486,6 @@ with each other.
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in valuesin `kep.yaml`)
@@ -543,10 +514,6 @@ No... there is no real difference between enabling the feature in an
 existing cluster vs creating a cluster where it was always enabled.
 
 ### Rollout, Upgrade and Rollback Planning
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -601,10 +568,6 @@ but not until after the feature is GA.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 The feature is not "used by workloads"; when enabled, it is always in
@@ -634,10 +597,6 @@ this enhancement is that no externally-measurable behavior changes.
 No
 
 ### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -675,14 +634,6 @@ No
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 This KEP does not change the way that either kubelet or kube-proxy
@@ -700,17 +651,6 @@ we cannot predict.
 N/A
 
 ## Implementation History
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
 
 - Initial proposal: 2022-01-23
 - Updated: 2022-03-27, 2022-04-29

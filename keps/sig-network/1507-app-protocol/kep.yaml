@@ -11,7 +11,10 @@ approvers:
   - "@dcbw"
 creation-date: "2019-12-27"
 last-updated: "2021-02-05"
-status: implementable
+status: implemented
+see-also:
+  - "/keps/sig-network/0752-endpointslices"
+  - "https://github.com/kubernetes/kubernetes/issues/40244"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
@@ -33,7 +36,3 @@ feature-gates:
     - kube-apiserver
     - kube-controller-manager
 disable-supported: true
-
-see-also:
-  - "/keps/sig-network/20190603-EndpointSlice-API.md"
-  - "https://github.com/kubernetes/kubernetes/issues/40244"

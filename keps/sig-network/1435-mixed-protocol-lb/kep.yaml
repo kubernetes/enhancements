@@ -1,7 +1,7 @@
 title: Different protocols in the same service definition with type=loadbalancer
 kep-number: 1435
 authors:
-  - "@laszlo.janosi1@gmail.com"
+  - "@janosi"
   - "@bridgetkromhout"
 owning-sig: sig-network
 participating-sigs:
@@ -17,7 +17,6 @@ approvers:
   - "@thockin"
 see-also:
 replaces:
-  - "/keps/sig-network/ 20200103-mixed-protocol-lb"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

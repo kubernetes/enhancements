@@ -1,7 +1,6 @@
 # KEP-2593: Enhanced NodeIPAM to support Discontiguous Cluster CIDR
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -63,40 +62,6 @@
     - [Pros](#pros-1)
     - [Cons](#cons-1)
 <!-- /toc -->
-
-## Release Signoff Checklist
-
-<!--
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
-Items marked with (R) are required *prior to targeting to a milestone /
-release*.
-
--   [X] (R) Enhancement issue in release milestone, which links to KEP dir in
-    [kubernetes/enhancements](not the initial KEP PR)
--   [X] (R) KEP approvers have approved the KEP status as `implementable`
--   [X] (R) Design details are appropriately documented
--   [X] (R) Test plan is in place, giving consideration to SIG Architecture and
-    SIG Testing input (including test refactors)
--   [X] (R) Graduation criteria is in place
--   [X] (R) Production readiness review completed
--   [X] (R) Production readiness review approved
--   [ ] "Implementation History" section is up-to-date for milestone
--   [ ] User-facing documentation has been created in [kubernetes/website], for
-    publication to [kubernetes.io]
--   [ ] Supporting documentation—e.g., additional design documents, links to
-    mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -675,19 +640,6 @@ been created. Users will have to manually remove the finalizer from the
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
-
 As mentioned in the [pre-requisites](#pre-requisites) section, this feature
 depends on certain configurations for the kube-proxy (assuming the kube-proxy is
 being used). Those changes were added in release 1.18, so they should be
@@ -699,39 +651,9 @@ with the new controller.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
--->
 
 -   [X] Feature Gate
     -   Feature gate name: MultiCIDRRangeAllocator
@@ -787,16 +709,8 @@ sufficient to cover the enablement/disablement scenarios.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
--->
 kube-controller-manager needs to be restarted, the CIDR allocator will be switched 
 to the new range allocator based on `--cidr-allocator-type=MultiCIDRRangeAllocator` 
 flag. Rollout can fail if the `--cluster-cidr` field is updated during the 
@@ -809,21 +723,11 @@ Already running workloads will not be impacted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
 multicidrset_allocation_tries_per_request metric must be monitored, if the value
 is high(>25) in the buckets greater than 125 would indicate a large number of
 failures while allocating the cidrs.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
 
 Upgrade->downgrade->upgrade testing was done manually using the following steps:
 
@@ -928,24 +832,11 @@ local-path-storage   local-path-provisioner-c8855d4bb-qxw7g                 1/1 
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
 No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
-
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
 
 `multicidrset_cidrs_allocations_total` metric with value > 0 will indicate enablement. 
 The operator can also check if ClusterCIDR objects are created, this can be done
@@ -972,60 +863,19 @@ Note that this service is optional and would allocate the CIDRs only when
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
-<!--
-At a high level, this usually will be in the form of "high percentile of SLI
-per day <= X". It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
--->
 N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
 TBD
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
 No
 
 ### Scalability
-
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -1035,19 +885,6 @@ existing NodeIPAM controller, will register a watch for `ClusterCIDR`s
 
 On the write side, the current NodeIPAM controllers already make PATCH calls to
 the `Node` objects to add PodCIDR information. That traffic should remain unchanged.
-
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
 
 ###### Will enabling / using this feature result in introducing new API types?
 Yes, the new `ClusterCIDR` type will be a pre-requisite for using this
@@ -1082,15 +919,8 @@ proportional to the number of active PodCIDR allocations in the cluster.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 MultiCIDRRangeAllocator is a part of the kube-controller-manager and if the
 kube-controller-manager is not able to connect to the apiserver, the cluster
 might have greater problems.
@@ -1101,39 +931,11 @@ in line with the current RangeAllocator behavior.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
 ## Drawbacks
-
-<!--
-Why should this KEP _not_ be implemented?
--->
 
 ## Alternatives
 
