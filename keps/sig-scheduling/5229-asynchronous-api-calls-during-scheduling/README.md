@@ -114,22 +114,9 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 Scheduling performance is crucial. One of the bottlenecks is the API calls done during the scheduling cycle. 
 The binding cycle is already asynchronous, but it would still be beneficial to re-evaluate whether the current model of busy-waiting goroutines is good long-term.
-The following operations involve pod-based API calls during scheduling:
-1) Updating a Pod status in `handleSchedulingFailure` when a Pod is unschedulable.
-2) Preemption - `ClearNominatedNodeName` and pod eviction are already asynchronous with KEP-4832.
-3) Pod binding - is in the goroutine, but still could be considered.
-4) [Feature proposal: https://github.com/kubernetes/kubernetes/issues/130668] Updating a status of a Pod that is rejected by the `PreEnqueue` plugins in the scheduling queue.
-5) [Feature proposal] Set `nominatedNodeName` in delayed binding scenarios.
 
-In-tree plugins' operations that involve API calls during scheduling:
-6) Volume binding.
-7) DRA ResourceClaim deallocating in `PostFilter`.
-8) DRA removing `ReservedFor` in `Unreserve`.
-9) DRA ResourceClaims binding.
-These could be consireded to be async, but not necessarily.
-
-Making one universal approach of handling API calls in the kube-scheduler could allow these calls to be consistent, as well as better controlling
-the number of dispatched goroutines. Asynchronous preemption could also be migrated to this approach.
+Making one universal approach for handling API calls in the kube-scheduler could allow these calls to be consistent, as well as better controlling
+the number of dispatched goroutines. Already asynchronous calls could also be migrated to this approach.
 
 ### Goals
 
@@ -138,9 +125,10 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- New asynchronous way of making API calls is introduced to the kube-scheduler.
-- Pod update API call is replaced with an asynchronous version.
-- Make it possible to update a pod to set the `PreEnqueue` status asynchronously.
+- P0: Make the scheduling cycle free of blocking API calls, i.e., make all API calls asynchronous.
+- P0: Make the solution extendable for future use cases.
+- P1: Skip some types of updates if they soon become irrelevant by consecutive updates.
+- Nice to have: Prioritize high-importance updates (like binding) over low-importance ones if updates to the kube-apiserver get throttled.
 
 ### Non-Goals
 
@@ -167,7 +155,52 @@ These questions have to be answered:
 1) Where and how to handle pod status updates during queueing and scheduling.
 2) How to make the API calls asynchronous.
 
-Also, race (collisions) between multiple API calls for a single pod should be mitigated by the design.
+Also, races (collisions) between multiple API calls for a single pod should be mitigated by the design.
+
+### API calls categorization
+
+Before selecting the best approach, the kube-scheduler's API calls have to be analyzed against the goals.
+The following operations involve API calls during the main scheduling cycle and have to be made asynchronous (1st goal):
+
+1) Updating a Pod status in `handleSchedulingFailure` when a Pod is unschedulable.
+2) [Feature proposal: [#130668](https://github.com/kubernetes/kubernetes/issues/130668)] Updating the status of a Pod that is rejected by the `PreEnqueue` plugins in the scheduling queue.
+3) [Feature proposal: [KEP-5278](https://github.com/kubernetes/enhancements/issues/5278)] Set `nominatedNodeName` in delayed binding scenarios.
+
+These API calls are already asynchronous:
+
+4) Preemption - `ClearNominatedNodeName` and Pod eviction (made asynchronous by [KEP-4832](https://github.com/kubernetes/enhancements/issues/4832)).
+5) Pod binding - is in the asynchronous binding phase.
+
+Both of the above API calls could be migrated to the new mechanism.
+
+In-tree plugins' operations that involve non-pod API calls during scheduling and could be made asynchronous,
+but not necessarily in the first place:
+
+6) Volume binding - is in the `PreBind` phase, hence asynchronous.
+7) DRA ResourceClaim deallocating in `PostFilter`.
+8) DRA removing `ReservedFor` in `Unreserve`.
+9) DRA ResourceClaims binding - is in the `PreBind` phase, hence asynchronous.
+10) Other potential DRA features.
+
+API calls relevance order in which they could cancel less relevant calls for the same pod (3rd goal):
+
+- Pod deletion caused by preemption (4) should cancel all Pod-based API calls for such a Pod.
+- Pod binding (5) should cancel Pod status update API calls (1 - 3).
+- Updating Pod status (1, 2) and setting `nominatedNodeName` (3) should cancel previous such updates.
+  Both are calls to the `status` subresource of a Pod, so they should overwrite the previous calls properly
+  if the newest status is stored in-memory.
+- API calls for non-Pod resources (5 - 10) should be further analyzed as they are not likely to consider the Pod-based API calls,
+  hence implementing those shouldn't block making (1 - 3) calls asynchronous.
+
+In terms of API call priority, the order might be different (3rd goal):
+
+- Pod binding (5) should have the highest priority as this is the main purpose of the kube-scheduler.
+- Pod deletion caused by preemption (4) should also be important to free up space for high-priority Pods.
+- Updating Pod status (1, 2) could be less important and called if there is space for it.
+  It's worth considering if setting `nominatedNodeName` (3) should have the same priority or higher,
+  because the higher delay might affect other components like Cluster Autoscaler.
+- API calls for non-Pod resources (5 - 10) could be analyzed case by case, but are likely less important than (5) and (4).
+
 
 ### 1: Where and how to handle API calls in the kube-scheduler
 
@@ -205,11 +238,11 @@ func (p *PriorityQueue) AddUnschedulableAsync(pInfo *framework.QueuedPodInfo, fn
 }
 ```
 
-This way, we could cover pod status updates during the failure handler (1) and pod status updates for `PreEnqueue` plugins (4).
-Asynchronous preemption (2) could be migrated to this approach by adding a possibility to return a function from `PostFilter` plugins in `PostFilterResult`
+This way, we could cover pod status updates during the failure handler (1) and pod status updates for `PreEnqueue` plugins (2).
+Asynchronous preemption (4) could be migrated to this approach by adding a possibility to return a function from `PostFilter` plugins in `PostFilterResult`
 and calling this function probably in the failure handler together with the status update.
 
-However, this method cannot be used for setting the `nominatedNodeName` scenario (5) because this operation occurs in the successful scheduling as well.
+However, this method cannot be used for setting the `nominatedNodeName` scenario (3) because this operation occurs in the successful scheduling as well.
 Therefore, additional effort would have to be made to specifically ensure that the `nominatedNodeName` doesn't collide with a potential status update.
 Probably, before this status update in the failure handler, the code should try to cancel the set `nominatedNodeName` API call or wait until it finishes.
 After that, it should proceed with setting the unschedulable status via the API. The binding call might similarly need to wait.
@@ -237,7 +270,7 @@ but additional effort would be needed to prevent race conditions. This could be 
 (similar to asynchronous preemption) or by implementing advanced queueing logic.
 
 This way, again, we could cover pod status updates during the failure handler (1),
-but pod status updates for `PreEnqueue` plugins (4) will require more refactoring by either:
+but pod status updates for `PreEnqueue` plugins (2) will require more refactoring by either:
 - Running a simplified scheduling cycle for pods that were rejected by the `PreEnqueue` to update the pod condition.
   This might negatively impact scheduling performance because a portion of the scheduling cycles will be spent for pods that are ultimately unschedulable
   Moreover, `PreEnqueue` plugins might also need to be called within this simplified scheduling cycle, 
@@ -249,7 +282,7 @@ but pod status updates for `PreEnqueue` plugins (4) will require more refactorin
 Asynchronous preemption could also be migrated to this approach by exposing a function,
 provided that the blocking behavior in `PreEnqueue` is consistent with the actual preemption blocking mechanism.
 
-Again, for setting the `nominatedNodeName` scenario (5), this method cannot be used because this operation occurs in the successful scheduling as well. 
+Again, for setting the `nominatedNodeName` scenario (3), this method cannot be used because this operation occurs in the successful scheduling as well. 
 Therefore, additional effort would have to be made to specifically ensure that the `nominatedNodeName` doesn't collide with a potential status update.
 
 Pros:
@@ -390,6 +423,7 @@ Cons:
 ### Another things worth considering
 
 - How to handle asynchronous API errors?
+- How to implement rate limiting other than built-in client-go?
 
 
 ### Notes/Constraints/Caveats (Optional)
