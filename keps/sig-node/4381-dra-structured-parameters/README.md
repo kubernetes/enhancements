@@ -502,12 +502,15 @@ In production, a similar PodTemplateSpec in a Deployment will be used.
 #### Co-locating devices based on hardware topology
 
 As a user, I want to easily request multiple devices (like a CPU and a NIC) that
-are physically related in the system's hardware topology,
+are physically connected to the same CPU in the system's hardware.
+
+For instance, in a multi-CPU (also known as multi-socket) system, I'd prefer
+that a requested NIC is attached to the CPU being allocated to improve
+performance by avoiding costly inter-CPU interconnects.
 
 I'll define a `ResourceClaim` for my workload, specifying constraints with
 `MatchAttribute` to ensure the devices share the same underlying hardware
-characteristics. For instance, if I need a CPU and a NIC that minimize
-communication latency, I'd want them on the same NUMA node:
+characteristics
 
 ```
 apiVersion: resource.k8s.io/v1beta1
@@ -523,13 +526,13 @@ spec:
       deviceClassName: nic.vendor2.com # This is a hypothetical NIC device class
     constraints:
     - requests: ["cpu-request", "nic-request"]
-      matchAttribute: k8s.io/numaNode
+      matchAttribute: k8s.io/cpuSocketNumber
 ```
 
 I'll use one of the standard attributes provided by Kubernetes, choosing between
-`k8s.io/numaNode` or `k8s.io/pcieRoot` depending on my specific alignment needs.
-I know that even if my CPU and NIC are managed by different DRA drivers, they
-are likely publishing the information I can use for alignment through these
+`k8s.io/cpuSocketNumber` or `k8s.io/pcieRoot` depending on my specific alignment
+needs. I know that even if my CPU and NIC are managed by different DRA drivers,
+they are likely publishing the information I can use for alignment through these
 standard attributes.
 
 ### Publishing node resources
@@ -616,9 +619,10 @@ We are reserving the `k8s.io/` domain (and subdomains) prefix for attributes and
 capacities for standardization by the Kubernetes project. This reservation
 allows us to define common attributes that can describe hardware characteristics
 across resources from different vendors. Currently, we are defining two such
-standard attributes: `k8s.sio/numaNode` and `k8s.io/pcieRoot`. Details on their
-meaning and how they should be exposed by DRA drivers are available in the [API
-design section under ResourceSlice's](#resourceslice) QualifiedName definition.
+standard attributes: `k8s.io/cpuSocketNumber` and `k8s.io/pcieRoot`. Details on
+their meaning and how they should be exposed by DRA drivers are available in the
+[API design section under ResourceSlice's](#resourceslice) QualifiedName
+definition.
 
 **Note:** If a driver needs to remove a device or change its attributes,
 then there is a risk that a claim gets allocated based on the old
@@ -1270,11 +1274,16 @@ const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 //
 // Currently, the two standard attributes are:
 //
-//  1. `k8s.io/numaNode`: An integer value referring to a Non-Uniform Memory
-//     Access (NUMA) node within the system's NUMA topology. This attribute can
-//     be used to describe which NUMA node a device is physically associated
-//     with. DRA drivers MAY discover this value for PCI devices via
-//     sysfs, for example, by reading `/sys/bus/pci/devices/<PCI_ADDRESS>/numa_node`.
+//  1. `k8s.io/cpuSocketNumber`: An integer value referring to the logical
+//     identifier assigned by the operating system for the physical CPU socket
+//     that a device is associated with. For a PCIe device, DRA drivers can
+//     determine this value by first reading its associated NUMA node from
+//     `/sys/bus/pci/devices/<PCI_ADDRESS>/numa_node`. Then, using that NUMA
+//     node, the value for `cpuSocketNumber` can be found by reading the
+//     `physical_package_id` from any CPU within that node (e.g.,
+//     `/sys/devices/system/node<NUMA_NODE>/cpuX/topology/physical_package_id`).
+//     Similarly, for a logical CPU X, its `cpuSocketNumber` can be identified
+//     from `/sys/devices/system/cpu/cpuX/topology/physical_package_id`.
 //
 //  2. `k8s.io/pcieRoot`: A string value in the format `pci<domain>:<bus>`,
 //     referring to a PCIe (Peripheral Component Interconnect Express) Root
