@@ -22,9 +22,10 @@
     - [Beta](#beta)
     - [Pre-GA follow-up](#pre-ga-follow-up)
     - [GA](#ga)
+    - [Possible future work](#possible-future-work)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
-- [Open Questions](#open-questions)
+- [Questions](#questions)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -163,6 +164,7 @@ jwt:
 ```
 
 The minimum valid JWT payload must contain the following claims:
+
 ```yaml
 {
   "iss": "https://example.com",   // must match the issuer.url
@@ -680,13 +682,24 @@ providers such as Okta, Azure AD, etc:
     - The Kubespray team is integrating Structured Authentication in this [PR](https://github.com/kubernetes-sigs/kubespray/pull/11841).
   - Confirm with [Gardener](https://gardener.cloud/) that the new functionality addresses their use case.
     - The Gardener team has integrated Structured Authentication in this [PR](https://github.com/gardener/gardener/pull/10244).
-  - Confirm with [SPIFFE](https://spiffe.io/) that the new functionality addresses their use case.    
-      - The SPIFFE team recommends Structured Authentication in their [README](https://github.com/spiffe/k8s-spiffe-workload-jwt-exec-auth?tab=readme-ov-file#setup-the-kubernetes-cluster-auth).
-- Add a full documentation with examples for the most popular providers, e.g., Okta, Dex, Auth0
+  - Confirm with [SPIFFE](https://spiffe.io/) that the new functionality addresses their use case.
+    - The SPIFFE team recommends Structured Authentication in their [README](https://github.com/spiffe/k8s-spiffe-workload-jwt-exec-auth?tab=readme-ov-file#setup-the-kubernetes-cluster-auth).
 - Migration guide
-- e2e test with an external provider completed and enabled
-- Get distributed claims working with CEL
-- Decide if we want to support egress selection configuration and how to do so
+  - This is already done in the [beta blog post](https://kubernetes.io/blog/2024/04/25/structured-authentication-moves-to-beta/#migration-from-command-line-arguments-to-configuration-file).
+
+#### Possible future work
+
+- These tasks are not required for GA, but they are important to consider for the future of the feature. They will be added behind feature gates and will be fully backward compatible.
+  - Get distributed claims working with CEL
+    - can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
+    - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
+  - Egress selection configuration
+  - Better caching to support distributed claims in a more performant way
+    - Should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
+- Remove 64 jwt authenticators limit
+  - implementation detail: we should probably parse the `iss` claim out once.
+  - Currently the structure of authenticators is a list of authenticators, but we could change it to a map of authenticators with issuer as the key.
+- Audit annotations set on claim/user validation failure
 
 ### Upgrade / Downgrade Strategy
 
@@ -707,48 +720,57 @@ unset the `--authentication-config` flag and restore the `--oidc-*` flags to con
 This is an API server only change and does not affect other components. If the API server is
 not the minimum required version (v1.29), the feature will not be available.
 
-<<[UNRESOLVED open questions that don't clearly fit elsewhere ]>>
-## Open Questions
-
-The following questions are still open and need to be addressed or rejected or deferred before the KEP is marked as GA.
+## Questions
 
 - should we have any revocation mechanism?
   => use revocation endpoint if it is in the discovery document?
   => related issue https://github.com/kubernetes/kubernetes/issues/71151
-- should audit annotations be set on validation failure?
+
+> We don't have any plans to add revocation at this time. Because of this the docs will be updated to make sure the tokens are short-lived as they are not revocable.
+
 - decide what error should be returned if CEL eval fails at runtime
   `500 Internal Sever Error` seem appropriate but authentication can only do `401`
+
+> We always return `401 Unathorized` and log the error message. This is consistent with the existing OIDC authenticator behavior.
+
 - distributed claims with fancier resolution requirements (such as access tokens as input)
   - This will be considered for getting distributed claims working with CEL
-- implementation detail: we should probably parse the `iss` claim out once
+
+> This is suggesting a scenario where your distributed claims require an access token, but that token isn’t embedded in the ID token. Instead, the cluster admin configuring the system would somehow provide the access token. For example, there could be a client credentials plugin at the API server that fetches or refreshes an access token and makes it available for distributed claim fetching. We are not going to support this approach.
+
 - are `iat` and `nbf` required?
+
+> We have already documented the minimum required JWT payload. The `iat` and `nbf` claims are not required.
+
 - is `sub` required or is the requirement to just have some username field?
+
+> We have already documented the minimum required JWT payload. The `sub` claim is not required, but the username claim must be present.
+
 - confirm cel comprehensions/mapping is powerful enough to transform the input claims into a filtered / transformed `map[string][]string` output for extra
 
-    For distributed claims:
+> We don't need to this because we changed the structure of our configuration of `ExtraMapping` to be a list of key and expression. So we don't need one CEL comprehension to do this anymore.
 
-    ```json
-        claims = {
-          "foo":"bar",
-          "foo.bar": "...",
-          "true": "...",
-          "_claim_names": {
-            "groups": "group_source"
-           },
-           "_claim_sources": {
-            "group_source": {"endpoint": "https://example.com/claim_source"}
-           }
-        }
-    ```
+  For distributed claims:
 
-- can we implement a CEL type resolver so that a cel expression `claims.foo` gets resolved via a distributed claim the first time it is used?
-  - this seems likely and preferable so we only resolve the things we need (in case an early validation rule fails and short-circuits).
-- Decide behavior of the token cache on config reload
-  - Should the token expiration cache know about the `exp` field instead of hard coding `10` seconds?
-    - this requires awareness of key rotation to implement safely
+  ```json
+      claims = {
+        "foo":"bar",
+        "foo.bar": "...",
+        "true": "...",
+        "_claim_names": {
+          "groups": "group_source"
+         },
+         "_claim_sources": {
+          "group_source": {"endpoint": "https://example.com/claim_source"}
+         }
+      }
+  ```
+
 - For CEL expressions, do we want to safe guard access to fields that might not exist or stop existing at any moment?
   - Using `has()` to guard access to fields.
   - Could we do some kind of defaulting for fields that don't exist?
+
+> We are not planning to do this. Users can use `OptionalTypes` in CEL to check if a field exists or not and to provide default values if they don't.
 
 ## Production Readiness Review Questionnaire
 
@@ -778,6 +800,16 @@ FeatureSpec{
   Default: true,
   LockToDefault: false,
   PreRelease: featuregate.Beta,
+}
+```
+
+**Stable**
+
+```go
+FeatureSpec{
+  Default: true,
+  LockToDefault: true,
+  PreRelease: featuregate.GA,
 }
 ```
 
