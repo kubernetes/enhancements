@@ -339,7 +339,7 @@ const (
     ResourceTopologyAttributeCPUIDs = "cpu-ids"
 
     // Attribute names to identify a machine. Used to replace the
-    // MacineID, BootID and SystemUUID fields of the cAdvisor
+    // MachineID, BootID and SystemUUID fields of the cAdvisor
     // MachineInfo.
     ResourceTopologyAttributeMachineID  = "machine-id"
     ResourceTopologyAttributeBootID     = "boot-id"
@@ -438,7 +438,7 @@ attribute to be present for zones containing cpu resources. If the cpu manager
 static policy is active and cpu-ids are not available the node is set into
 NotReady state. If the “none” policy is in use, cpu-ids are not required.
 
-The kubelet reads MacineID, BootID and SystemUUID from the attributes of the
+The kubelet reads MachineID, BootID and SystemUUID from the attributes of the
 resource topology tree. If this information is not present the kubelet uses the
 cAdvisor MachineInfo as a fallback.
 
