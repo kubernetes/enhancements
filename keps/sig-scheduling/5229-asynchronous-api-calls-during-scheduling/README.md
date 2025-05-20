@@ -185,12 +185,15 @@ but not necessarily in the first place:
 API calls relevance order in which they could cancel less relevant calls for the same pod (3rd goal):
 
 - Pod deletion caused by preemption (4) should cancel all Pod-based API calls for such a Pod.
-- Pod binding (5) should cancel Pod status update API calls (1 - 3).
+- Pod binding (5) should cancel Pod status update API calls (1 - 3), because they are no longer relevant.
 - Updating Pod status (1, 2) and setting `nominatedNodeName` (3) should cancel previous such updates.
   Both are calls to the `status` subresource of a Pod, so they should overwrite the previous calls properly
   if the newest status is stored in-memory.
 - API calls for non-Pod resources (5 - 10) should be further analyzed as they are not likely to consider the Pod-based API calls,
   hence implementing those shouldn't block making (1 - 3) calls asynchronous.
+
+There is no need to send two API calls for one Pod, because more relevant calls should override less relevant ones,
+and status updates can be combined into one call.
 
 In terms of API call priority, the order might be different (3rd goal):
 
