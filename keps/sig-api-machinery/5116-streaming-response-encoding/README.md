@@ -197,8 +197,9 @@ The tests will cover the following properties:
 * Different content type JSON (default), Proto, CBOR, YAML.
 * Different API kinds, eg ConfigMap, Pod, custom resources
 
-In first iteration we expect we will overallocate the resources needed for apiserver to ensure passage, 
-however after the improvement is implemented we will tune down the resources to detect regressions.
+The tests turned not only a great way to visualize the impact of the work, but also were able to catch [regression in Audit logs memory usage](https://github.com/kubernetes/kubernetes/issues/131720).
+To ensure long term sustainability we propose to introduce a release blocking test, that will detect memory regression in apiserver handling large resources.
+The test will run a known set of efficient requests and validate that apiserver memory didn't grow above certain threshold.
 
 ### Graduation Criteria
 
@@ -232,7 +233,7 @@ Via feature gates
 
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: StreamingCollectionEncodingToJSON, StreamingCollectionEncodingToProto
+  - Feature gate name: StreamingCollectionEncodingToJSON, StreamingCollectionEncodingToProtobuf
   - Components depending on the feature gate: kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
