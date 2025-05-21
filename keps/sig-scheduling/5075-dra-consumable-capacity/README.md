@@ -1078,6 +1078,26 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
+### Identifying Shareable Property of Device
+
+**Current Approach:**
+
+Use a **boolean** field to indicate whether a device can be shared.
+
+**Alternative:**
+
+Use an **enum**, such as `DeviceClaimMode`, with defined values like:
+
+- `DeviceClaimModeOnce` — device can only be claimed once  
+- `DeviceClaimModeMany` — device can be claimed multiple times
+
+Pros:
+- Provides flexibility for future extension according to [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#primitive-types).
+
+Cons:
+- Increases the program’s memory footprint 
+compared to a boolean when there is only a single binary option to serve the purpose.
+
 ### Selecting/Deselecting Shareable Devices
 
 **Current Approach:**
@@ -1085,6 +1105,7 @@ Why should this KEP _not_ be implemented?
 Extend the CEL selector to recognize device.shareable for filtering shareable devices.
 
 **Alternative:**
+
 Introduce explicit flags in the resource request:
 
 - AllowShared: Opt-in to allow shareable devices.
@@ -1110,6 +1131,7 @@ Cons:
 Introduce a new API-level constraint: DistinctAttribute, ensuring devices in a single claim have unique attribute values.
 
 **Alternative:**
+
 The scheduler enforces this behavior implicitly—never allocate the same shareable device multiple times to the same resource claim.
 
 Pros:
