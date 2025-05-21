@@ -302,8 +302,10 @@ cluster can have the same named extended resource backed by Device Plugin.
 
 ### Device Class API
 The extended resource name to DRA device mapping can be specified at
-`DeviceClassSpec`. The same extended resource name can be given to at most one 
-device class.
+`DeviceClassSpec`. The same extended resource name should be given to at most one 
+device class. If there are more than one device class, the one created later is picked 
+at scheduling time, if two are created at the same time, the name
+lexicographically sorted first is picked.
 
 Cluster administrator is soly responsible for creating device classes, and the
 mapping between the class of devices and the extended resource name.
