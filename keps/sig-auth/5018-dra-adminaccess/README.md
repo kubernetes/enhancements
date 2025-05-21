@@ -466,7 +466,7 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 - Gather feedback
 - Additional tests are in Testgrid and linked in KEP
-- Implementations in the kubernetes-sigs/dra-example-driver: https://github.com/kubernetes-sigs/dra-example-driver/issues/97 and the NVIDIA dra driver: https://github.com/NVIDIA/k8s-dra-driver-gpu/issues/337
+- Implementations in the kubernetes-sigs/dra-example-driver: https://github.com/kubernetes-sigs/dra-example-driver/issues/97
 
 #### GA
 
@@ -542,7 +542,7 @@ will rollout across nodes.
 -->
 
 - kube-controller-manager: If the kube-controller-manager fails to create `ResourceClaim` objects from `ResourceClaimTemplate` due to misconfigurations or permission issues relating to `adminAccess`, then the associated Pods will remain in a pending state and won't be scheduled.
-- kube-scheduler: Bugs in the scheduler might lead to Pods not being scheduled even when resources are available or, scheduling Pods that shouldn't be scheduled due to unmet `adminAccess` requirements. If the `DRAAdminAccess` feature gate isn't enabled or is misconfigured, the scheduler might not recognize ResourceClaim requirements, leading to scheduling failures.
+- kube-scheduler: Bugs in the scheduler might lead to Pods not being scheduled even when resources are available or, scheduling Pods that shouldn't be scheduled due to unmet `adminAccess` requirements, all this should be part of the generic scheduler backoff behavior. It will not affect running workloads.
 - Workloads Without `ResourceClaims` will remain unaffected as the adminAccess feature doesn't interact with them. The new code paths introduced for adminAccess only engage when `ResourceClaims` are present in the Pod specification.
 - New Pods requiring `ResourceClaims` with `adminAccess` might remain unscheduled if the control plane components fail to process the claims correctly.
 - Existing Pods continue to run unaffected since `ResourceClaim` and `ResourceClaimTemplate`'s spec is immutable, including the adminAccess field, cannot be altered.
@@ -603,7 +603,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-".status.allocation.devices.results[*].adminaccess" will be set to true for a claim using adminAccess when needed by a pod.
+".status.allocation.devices.results[*].adminAccess" will be set to true for a claim using adminAccess when needed by a pod.
 
 Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
 
@@ -718,7 +718,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 -->
 
 - The DynamicResourceAllocation feature gate must be enabled to create ResourceClaim, ResourceClaimTemplate. More details at [KEP-4381 - DRA Structured Parameters](https://github.com/kubernetes/enhancements/issues/4381)
-- A third-party DRA driver is required for how the driver should interpret the AdminAcess field to get acess to device specific resources without allocating them.
+- A third-party DRA driver is required for how the driver should interpret the AdminAccess field to get acess to device specific resources without allocating them.
 
 ### Scalability
 
