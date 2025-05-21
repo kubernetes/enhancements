@@ -310,8 +310,9 @@ mapping between the class of devices and the extended resource name.
 `DeviceClass` is cluster scoped, application developers and operators cannot change it.
 
 The mapping of DRA devices and extended resources is stored in k8s data store
-(e.g. etcd). It is created after cluster creation, before deployment of the
-application that uses the devices.
+(e.g. etcd). An application using the extended resources can only request the
+devices from DRA after the device class with the mapping is created. Before
+that, the application can request the devices from device plugin only.
 
 ```go
 // DeviceClassSpec is used in a DeviceClass to define what can be allocated
