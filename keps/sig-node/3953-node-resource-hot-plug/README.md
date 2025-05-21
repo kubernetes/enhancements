@@ -29,7 +29,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Handling hotplug events](#handling-hotplug-events)
     - [Flow Control for updating swap limit for containers](#flow-control-for-updating-swap-limit-for-containers)
-    - [Compatability with Cluster Autoscaler](#compatability-with-cluster-autoscaler)
+    - [Compatibility with Cluster Autoscaler](#compatibility-with-cluster-autoscaler)
   - [Handling HotUnplug Events](#handling-hotunplug-events)
     - [Flow Control](#flow-control)
   - [Test Plan](#test-plan)
@@ -138,7 +138,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 * Achieve seamless node capacity expansion through resource hotplug.
 * Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager without reset to accommodate alterations in the node's resource allocation.
-* Recalculating and updating the OOMScoreAdj and swap memory limit for existing pods.
+* Recalculating and updating swap memory limit for existing pods.
 
 ### Non-Goals
 
@@ -187,18 +187,23 @@ detect the change in compute capacity, which can bring in additional complicatio
 
 ### Risks and Mitigations
 
-- Change in OOMScoreAdjust value:
-    - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
-    - With change in memoryCapacity post up-scale, The existing OOMScoreAdjust may not be inline with the
-      actual OOMScoreAdjust for existing pods.
-        - This can be mitigated by recalculating the OOMScoreAdjust value for the existing pods. However, there can be an associated overhead for
-          recalculating the scores.
 - Change in Swap limit:
     - The formula to calculate the swap limit is `<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
     - With change in nodeTotalMemory and totalPodsSwapAvailable post up-scale, The existing swap limit may not be inline with the
       actual swap limit for existing pods.
         - This can be mitigated by recalculating the swap limit for the existing pods. However, there can be an associated overhead for
           recalculating the scores.
+
+- Change in OOMScoreAdjust value:
+    - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
+    - With change in memoryCapacity post up-scale, The existing OOMScoreAdjust may not be inline with the
+      actual OOMScoreAdjust for existing pods.
+    - Its not recommended to update the OOMScoreAdjust of a running container as OOMScoreAdjust value is set for init process(pid 1) which is 
+      responsible for running all other container's processes.
+    - When we update OOMScoreAdjust for a running container, its set for container init only, and possibly processes which will be started later and
+      running won't get the OOMScoreAdjust new value.
+        - This can be mitigated by updating the OOMScoreAdj formula to not consider current memory value, hence the new OOMScoreAdj formula looks like this
+            `min(0, 1000 - (1000*containerMemoryRequest)/initialMemoryCapacity)`
 
 - Post up-scale any failure in resync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
   - To mitigate the risks adequate tests should be added to avoid the scenarios where failure to resync resource managers can occur.
@@ -235,7 +240,7 @@ sequenceDiagram
     machine-info->>cAdvisor-cache: update
     cAdvisor-cache->>kubelet: update
     alt if increase in resource
-    kubelet->>node: recalculate and update OOMScoreAdj <br> and Swap limit of containers
+    kubelet->>node: recalculate and update Swap limit of containers
     kubelet->>node: re-initialize resource managers
     kubelet->>node: node status update with new capacity
     else if decrease in resource
@@ -246,7 +251,7 @@ sequenceDiagram
 The interaction sequence is as follows:
 1. Kubelet will fetch machine resource information from cAdvisor's cache, Which is configurable a flag in cAdvisor `update_machine_info_interval`.
 2. If the machine resource is increased:
-    * Recalculate, update OOMScoreAdj and Swap limit of all the running containers.
+    * Recalculate, update Swap limit of all the running containers.
     * Re-initialize resource managers.
     * Update node with new resource.
 3. If the machine resource is decreased.
@@ -254,21 +259,16 @@ The interaction sequence is as follows:
       in case there was no history of hotplug.)
 
 With increase in cluster resources the following components will be updated:
-1. Change in OOM score adjust:
-    * Currently, the OOM score adjust is calculated by
-      `1000 - (1000*containerMemReq)/memoryCapacity`
-    * Increase in memoryCapacity will result in updated OOM score adjust for pods deployed post resize and also recalculate the same for existing pods.
+1. Change in Swap Memory limit:
+    * Currently, the swap memory limit is calculated by
+      `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+    * Increase in nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
 
-2. Change in Swap Memory limit:
-   * Currently, the swap memory limit is calculated by 
- `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-   * Increase in nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
+2. Resource managers are re-initialised.
 
-3. Resource managers are re-initialised.
+3. Update in Node capacity.
 
-4. Update in Node capacity.
-
-5. Scheduler:
+4. Scheduler:
     * Scheduler will automatically schedule any pending pods.
     * This is done as an expected behavior and does not require any changes in the existing design of the scheduler, as the scheduler `watches` the
       available capacity of the node and creates pods accordingly.
@@ -287,6 +287,7 @@ observed in any of the steps, operation is retried from step 1 along with a `Fai
      a. Resource managers such as CPU,Memory are updated with the latest available capacities on the host. This posts the latest
         available capacities under the node.
      b. This is achieved by calling ResyncComponents() of ContainerManager interface to re-sync the resource managers.
+
 3. Updating the node allocatable resources:
      a. As the scheduler keeps a tab on the available resources of the node, post updating the available capacities,
         the scheduler proceeds to schedule any pending pods.
@@ -317,9 +318,7 @@ T=1: Resize Instance to Hotplug Memory:
         - <cgroup_path>/memory.swap.max: 1G
 ```
 
-Similar flow is applicable for updating oom_score_adj.
-
-#### Compatability with Cluster Autoscaler
+#### Compatibility with Cluster Autoscaler
 
 The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing Nodes as templates for 
 newly provisioned Nodes from the same NodeGroup. However, with the introduction of NodeResourceHotplug, this assumption may no longer hold true.
