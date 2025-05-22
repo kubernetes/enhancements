@@ -179,8 +179,10 @@ objects as privileged. This feature includes:
    ```yaml
    metadata:
      labels:
-       resource.k8s.io/admin-access: "true"
+       resource.kubernetes.io/admin-access: "true"
    ```
+
+   Note: This label has been updated from `resource.k8s.io/admin-access` while the feature was in alpha in v1.33.
 
    Assumptions:
 
@@ -194,7 +196,7 @@ objects as privileged. This feature includes:
 
    In the REST storage layer, validate requests to create and update
    `ResourceClaim` or `ResourceClaimTemplate` objects with `adminAccess: true`.
-   Only authorize if namespace has the `resource.k8s.io/admin-access: "true"` label.
+   Only authorize if namespace has the `resource.kubernetes.io/admin-access: "true"` label.
 
 1. Grants privileged access to the requested device:
 
@@ -212,7 +214,7 @@ objects as privileged. This feature includes:
 ### Workflow
 
 1. A cluster administrator labels an admin namespace with
-   `resource.k8s.io/admin-access: "true"`.
+   `resource.kubernetes.io/admin-access: "true"`.
 
 1. Users who are authorized to create `ResourceClaim` or `ResourceClaimTemplate`
    objects in this admin namespace can set `adminAccess: true` field if they
@@ -284,7 +286,7 @@ shouldn't have allowed unrestricted access.
 Starting in Kubernetes 1.33 (when this KEP was introduced), a validation has
 been added to the REST storage layer to only authorize `ResourceClaim` or
 `ResourceClaimTemplate` with `adminAccess: true` requests if their namespace has
-the `resource.k8s.io/admin-access: "true"` label to only allow it for users with
+the `resource.kubernetes.io/admin-access: "true"` label to only allow it for users with
 additional privileges.
 
 The below flowchart starts with `ResourceClaim` creation from
@@ -415,7 +417,7 @@ Those tests run in:
 - Additional test cases will be added to `test/integration/scheduler_perf` to
   ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
   requests are only authorized if their namespace has the
-  `resource.k8s.io/admin-access: "true"` label as described in this KEP.
+  `resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
 
 ##### e2e tests
 
@@ -436,7 +438,7 @@ was developed as part of the overall DRA development effort. We have extended
 this test driver to enable `DRAAdminAccess` feature gate and added tests to
 ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
 requests are only authorized if their namespace has the
-`resource.k8s.io/admin-access: "true"` label as described in this KEP.
+`resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
 
 Test links:
 
@@ -798,7 +800,7 @@ For each of them, fill in the following information by copying the below templat
     To troubleshoot, "kubectl describe" can be used on (in this order) Pod
     and ResourceClaim.
 
-  - Mitigations: When ResourceClaims or ResourceClaimTemplates the `AdminAccess`
+  - Mitigations: When ResourceClaims or ResourceClaimTemplates with the `AdminAccess`
 field don't get created, debugging should focus on the namespace labels. The kube-controller-manager logs should have more information.
 
   - Diagnostics: Audit Policy can be created to ensure all create operations on ResourceClaim, ResourceClaimTemplate, and Namespace resources are logged at the metadata level to review successful and denied attempts to set the `AdminAccess`
