@@ -330,10 +330,19 @@ type DeviceClassSpec struct {
 #### Implicit Extended Resource Name
 
 In addition to this optional extended resource name that is explicitly defined, every device class can be accessed
-as an extended resource using the name `deviceclass.kubernetes.io/<device-class-name>`. This implicit extended
+as an extended resource using the name `deviceclass.resource.kubernetes.io/<device-class-name>`. This implicit extended
 resource name allows the simpler API to be used for DRA resource when no special DRA features beyond those
 available via `DeviceClass` are needed.
 
+There is a mismatch between what the API server allows to be a valid device class
+name and extended resource name:
+
+  * DeviceClass metadata.name must match IsDNS1123Subdomain, can be 253 characters long with dots
+  * extended resource name must match IsQualifiedName, name part can be 63 characters, with dots
+
+As a result, cluster admin must pick a DeviceClass name that conforms to the extended resource
+name requirement, to be able to use it as implicit extended resource name. Failing that, cluster
+admin can still set the extened resource name field explicitly in the DeviceClass.
 
 ### Resource Claim API
 
