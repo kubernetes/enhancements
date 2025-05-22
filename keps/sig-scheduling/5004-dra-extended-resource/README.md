@@ -20,6 +20,7 @@
     - [Reserve](#reserve)
     - [Unreserve](#unreserve)
     - [Prebind](#prebind)
+    - [Failure handling](#failure-handling)
   - [Actuation for Extended Resource backed by DRA](#actuation-for-extended-resource-backed-by-dra)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -601,6 +602,47 @@ has not been created in API server yet.
 This is called in a separate goroutine. The plugin makes API call to create the
 `ResourceClaim` and updates the pod's status `ExtendedResourceClaimStatus`. If
 some API request fails now, PreBind fails and the pod must be retried.
+
+#### Failure handling
+The special resourceclaim for extended resources backed by DRA may fail to be
+created, updated in kuberentes API server. Below discusses the possible
+failures in the write API calls added in this KEP.
+
+During Prebind phase, if the special resourceclaim is new, i.e. it is not written
+to API server before, then it is first created in API server. Then followed by
+claim finalizer field update, claim status update if needed. These updates have local
+retries in case there is a conflict. (Note these updates logic is not new, they
+apply to other regular claims too). After that,
+Pod.Status.ExtendedResourceClaimStatus is updated if needed. Both the claim create, and
+claim finalizer update, and claim status, or pod status update could fail,
+which will fail the Prebind phase, [framework.Error](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L198)
+code is returned. The scheduler framework will first call Unreserve phase to
+clean up, then requeue the pod to activeQ/backoffQ soon.
+
+During Unreserve phase, the special resourcelclaim's finalizer is first removed with
+an update API call, then the claim is deleted, then
+Pod.Status.ExtendedResourceClaimStatus is updated. If the update or delete fails, the
+failure is logged, and continued. Unreserve needs to be idempotent, scheduler
+framework will retry later if there is failure.
+
+During Postfilter phase, if the special resourceclaim is picked to be deleted, then the
+the special resourcelclaim's finalizer is first removed with
+an update API call, then the claim is deleted, then
+Pod.Status.ExtendedResourceClaimStatus is updated. If the update or delete fails,
+then [framework.Error](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L198)
+code is returned. The scheduler framework will requeue the pod to activeQ/backoffQ soon.
+
+During Prefilter phase, if the special resource claim has already been created
+before, it is validated, and reused if still valid. If not valid, then return
+[framework.Unschedulable](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L208),
+then the invalid resourceclaim may be picked during PostFilter phase for deletion.
+If not found, then a new in-memory resource claim template is created, which
+will be instantiated at Filter phase, persisted at PreBind phase.
+
+During Filter phase, if the special resource claim allocation's
+node selector does not match, then return
+[framework.Unschedulable](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L208),
+then the resourceclaim may be picked for deletion during PostFilter phase.
 
 ### Actuation for Extended Resource backed by DRA
 When a pod with extended resources requests is picked up by the kubelet on the
