@@ -210,7 +210,9 @@ This field specifies how the capacity can be shareable between different request
 The sharing policy can either specify a range of valid values or a discrete set of them.
 Each policy has a default value, either explicitly or implicitly.
 
-Users can define specific per-device resource requests through the newly added `CapacityRequests` field in the `DeviceRequest`. Each contains a minimum required device capacity.
+Users can define specific per-device resource requests using the newly added `CapacityRequests` field,
+which is available in each supported device request type under `DeviceRequest`.
+Each `CapacityRequests` entry specifies the minimum required capacity for a device.
 If the capacity is consumable, the amount available for allocation is determined
 by subtracting the aggregated allocation results of current claims from the device's capacity as defined in the resource slice.
 The remaining amount will be used solely by the allocator and will not be reflected in the resource slice.
@@ -335,9 +337,23 @@ type CapacitySharingPolicyRange struct {
 
 #### ResourceClaimSpec's DeviceRequest
 
-```go
+The `CapacityRequests` field is defined within each supported device request type, such as `DeviceSubRequest` and `ExactDeviceRequest`.
 
-type DeviceRequest struct {
+```go
+// DeviceSubRequest is similar to ExactDeviceRequest, but doesn't expose the
+// AdminAccess field as that one is only supported when requesting a
+// specific device.
+type DeviceSubRequest struct {
+...
+   // CapacityRequests define resource requirements against each capacity.
+   //
+   // +optional
+   // +featureGate=DRAConsumableCapacity
+   CapacityRequests *CapacityRequirements
+}
+
+// ExactDeviceRequest is a request for one or more identical devices.
+type ExactDeviceRequest struct {
 ...
    // CapacityRequests define resource requirements against each capacity.
    //
@@ -495,10 +511,11 @@ spec:
   devices:
     requests:
     - name: nic
-      deviceClassName: qos-aware-shared.device.x-k8s.io
-      capacityRequests:
-        minimum:
-          bandwidth: 5Gi
+      exactly:
+        deviceClassName: qos-aware-shared.device.x-k8s.io
+        capacityRequests:
+          minimum:
+            bandwidth: 5Gi
 ```
 
 #### ResourceClaim's status
@@ -526,13 +543,15 @@ spec:
   devices:
     requests:
     - name: macvlan-1
-      deviceClassName: simple-shareable.networking.x-k8s.io
-      allocationMode: ExactCount
-      count: 1
+      exactly:
+        deviceClassName: simple-shareable.networking.x-k8s.io
+        allocationMode: ExactCount
+        count: 1
     - name: macvlan-2
-      deviceClassName: simple-shareable.networking.x-k8s.io
-      allocationMode: ExactCount
-      count: 1
+      exactly:
+        deviceClassName: simple-shareable.networking.x-k8s.io
+        allocationMode: ExactCount
+        count: 1
     constraints:
     - requests:
       - macvlan-1
