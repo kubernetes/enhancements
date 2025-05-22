@@ -22,13 +22,14 @@ read from etcd.
   - [Consistent reads from cache](#consistent-reads-from-cache)
     - [The algorithm](#the-algorithm)
   - [Bug in etcd progress notification](#bug-in-etcd-progress-notification)
-  - [Risks and Mitigations](#risks-and-mitigations)
+- [Risks and Mitigations](#risks-and-mitigations)
   - [Performance](#performance)
   - [What if the watch cache is stale?](#what-if-the-watch-cache-is-stale)
+  - [How to debug cache issue?](#how-to-debug-cache-issue)
+  - [Qualification](#qualification)
 - [Design Details](#design-details)
+  - [Monitoring](#monitoring)
   - [Pagination](#pagination)
-    - [Option: Serve 1st page of paginated requests from the watch cache](#option-serve-1st-page-of-paginated-requests-from-the-watch-cache)
-    - [Future work: Enable pagination in the watch cache](#future-work-enable-pagination-in-the-watch-cache)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -218,7 +219,7 @@ an officially supported feature.
 
 [etcd-io/etcd#15220]: https://github.com/etcd-io/etcd/issues/15220
 
-### Risks and Mitigations
+## Risks and Mitigations
 
 ### Performance
 
@@ -246,15 +247,17 @@ For example if watch stream is clogged, or when using etcd version v3.3 and olde
 
 If the watch cache doesn't catch up in within some time limit we either fail the request or have a fallback.
 
-If the fallback is to forward consistent reads to etcd, a cascading failure
-is likely to occur if caches become stale and a large number of read requests
-are forwarded to etcd.
+For Beta we have implemented a fallback mechanism that will revert to normal behavior before we reach timeout.
+To monitor fallback rate we introduced `apiserver_watch_cache_consistent_read_total` with `fallback` and `success` labels.
 
-Since falling back to etcd won't work, we should fail the requests and rely on
-rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
-well-behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
+With qualification results showing that fallback is needed and we can go back to the original design.
+We should fail the requests and rely on rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
+well-behaved clients) and [Apiserver Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
+The main reason for that is the added complexity and incorrect handling in APF that assumes that request cost doesn't change.
 
-In order to mitigate such problems, let's present how the system currently works
+### How to debug cache issue?
+
+Let's present how the system currently works
 in different cases. In addition to that, we add column indicating whether a given
 case will change how watchcache implementation will be handling the request.
 
@@ -329,6 +332,24 @@ the only reasonable procedure is:
 
 The existing API already allows us to achieve it.
 
+### Qualification
+
+As the feature touches a hard distributed caching problem and depends on previously broken etcd behavior, we need to  qualify it in production environment.
+
+After almost a year in Beta, running enabled default, we have collected the following data:
+* More than 80% of LISTs served by apiserver are consistent reads from cache.
+* In 99.9% of cases watch cache became fresh enough within 110ms.
+* Only 0.001% of waits for fresh cache took more than 250ms.
+* Consistent reads reached 5 nine's of availability, meaning cache was able to become fresh before timeout (3s) in 99.999% of cases.
+* Main cause of fallback was rolling update of etcd that forces a watch cache reinitialization.
+* We have identified and addressed one issue https://github.com/kubernetes/kubernetes/issues/129931
+
+The above results show that consistent reads from cache are stable and reliable. We are confident in promoting this feature to Stable.
+
+## Design Details
+
+### Monitoring
+
 To further allow debugging and improve confidence we will provide users with the
 following tools:
 * a dedicated `apiserver_watch_cache_read_wait` metric to detect a problem with
@@ -336,38 +357,16 @@ following tools:
 * a `inconsistency detector` that for requests served from watchcache will be able
   to send a request to etcd (as described above) and compare the results
 
-Metric `apiserver_watch_cache_read_wait` will measure wait time experienced by 
+Metric `apiserver_watch_cache_read_wait` will measure wait time experienced by
 reads for watch cache to become fresh. If user notices a latency request in
 they can use this metric to confirm that the issue is caused by watch cache.
 
 The `inconsistency detector` will get enabled in our CI to detect issues with
 the introduced mechanism.
 
-## Design Details
-
 ### Pagination
 
-Given that the watch cache does not paginate responses, how can clients requesting
-pagination for resourceVersion="" reads be supported?
-
-#### Option: Serve 1st page of paginated requests from the watch cache
-
-Only serve the 1st page of paginated requests from the watch cache. The watch
-cache would need to construct the appropriate continuation token such that the
-subsequent pages can be served from etcd.
-
-An even more conservative approach would be to only serve paginated requests
-that fit within a single page from the watch cache, in which cache the watch
-cache doesn't need to construct continuation tokens at all.
-
-In practice, this options might be sufficient to get the bulk of the scalability
-benefits of serving consistent reads from cache. For example, the kubelet LIST
-pods use case would be handled, as would similar cases. Not all cases would
-be handled.
-
-#### Future work: Enable pagination in the watch cache
-
-Ongoing work to support pagination in watch cache: https://github.com/kubernetes/kubernetes/issues/108003
+Pagination from cache is being implemented as part of [KEP-4988](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/4988-snapshottable-api-server-cache/README.md)
 
 ### Test Plan
 
@@ -443,8 +442,8 @@ Comparing resource usage and latency with and without consistent list from watch
 
 #### GA
 
-- Drop support of etcd v3.3.X, v3.4.24 and v3.5.7
-- Feedback is collected and addressed.
+- Addressed issues reported during Beta.
+- Feature is qualified in production environment.
 
 ### Upgrade / Downgrade Strategy
 
