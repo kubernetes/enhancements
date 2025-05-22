@@ -205,13 +205,13 @@ based on the expected pod placement.
 
 ### External components want to specify a preferred pod placement
 
-The cluster autoscaler or Kueue internally calculates the pod placement,
-and create new nodes or un-gate pods based on the calculation result. 
+The ClusterAutoscaler or Karpenter internally calculate the pod placement,
+and create new nodes or un-gate pods based on the calculation result.
+The shape and count of newly added nodes assumes some particular pod placement
+and the pods may not fit or satisfy scheduling constraints if placed differently.
 
-So, they know where those pods are likely going to be scheduled.
-
-By specifing their expectation on `NominatedNodeName`, the scheduler can first check whether the pod can go to the nominated node,
-speeding up the filter phase.
+By specifing their expectation on `NominatedNodeName`, the scheduler can first check
+whether the pod can go to the nominated node, increasing end-to-end scheduling time.
 
 ### Retain the scheduling decision
 
@@ -219,7 +219,8 @@ At the binding cycle (e.g., PreBind), some plugins could handle something (e.g.,
 
 If the scheduler restarts while it's handling some pods at binding cycles,
 kube-scheduler could decide to schedule a pod to a different node. 
-If we can keep where the pod was going to go at `NominatedNodeName`, the scheduler likely picks up the same node, and the PreBind plugins can restart their work from where they were before the restart.
+If we can keep where the pod was going to go at `NominatedNodeName`, the scheduler likely picks up the same node,
+and the PreBind plugins can restart their work from where they were before the restart.
 
 ### Goals
 
@@ -229,7 +230,7 @@ If we can keep where the pod was going to go at `NominatedNodeName`, the schedul
 
 ### Non-Goals
 
-- Extenral components can enforce the scheduler to pick up a specific node via `NominatedNodeName`.
+- External components can enforce the scheduler to pick up a specific node via `NominatedNodeName`.
   - `NominatedNodeName` is just a hint for scheduler and doesn't represent a hard requirement
 
 ## Proposal
@@ -239,68 +240,129 @@ If we can keep where the pod was going to go at `NominatedNodeName`, the schedul
 Here is the all use cases of NominatedNodeNames that we're taking into consideration:
 - The scheduler puts it after the preemption (already implemented)
 - The scheduler puts it at the beginning of binding cycles (only if the binding cycles invole PreBind phase)
-- The cluster autoscaler puts it after creating a new node for pending pod(s) so that the scheduler can find a place faster when the node is created.
-- Kueue uses it to determine a prefered node for the pod based on their internal calculation (Topology aware scheduling etc)
+- The ClusterAutoscaler or Karpenter puts it after creating a new node for pending pod(s) so that the scheduler
+   can utilize the result of scheduling simulations already made by those components
 
 (Possibly, our future initiative around the workload scheduling (including gang scheduling) can also utilize it,
-but we don't discuss it here because it's not yet concreted at all.)
+but we don't discuss it here because it's not yet concrete.)
 
 #### Story 1: Prevent inappropriate scale downs by Cluster Autoscaler 
 
-The scheduler starts to expose where the pod is going to with `NominatedNodeName` at the beginning of binding cycles.
-And, the cluster autoscaler takes `NominatedNodeName` into consideration when calculating which nodes they delete.
+Pod binding may take significant amount of time (even at the order of minutes, e.g. due to volume binding).
+During that time, components other than the scheduler don't have the information that such a placement decision
+has already been made and is already executed. Without having this information, other components may decide
+to take conflicting actions (e.g. ClusterAutoscaler or Karpenter may decide to delete that particular node).
 
-It helps the scenarios where the binding cycles take time, for example, VolumeBinding plugin takes time at PreBind extension point.
+We need a way to share the information about already made scheduling decisions with those components to prevent that. 
 
-#### Story 2: Cluster Autoscaler specifies `NominatedNodeName` to indicate where pods can go after new nodes are created/registered
+#### Story 2: Scheduler can resume its work after restart
 
-Usually, the scheduler scans all the nodes in the cluster when scheduling pods.
+Pod binding may take significant amount of time (even at the order of minutes, e.g. due to volume binding).
+During that time, scheduler may be restarted, lost its leader lock etc.
+Given the placement decision was only stored in schedulers memory, the new incarnation of the scheduler
+has no visibility into it and can decide to put a pod on a different node. This would result in wasting
+the work that has already been done and increase the end-to-end pod startup latency.
 
-When the cluster autoscaler creates instances for pending pods, it calculate which new node might get which pending pod.
-If they can put `NominatedNodeName` based on those calculation, it could tell the scheduler that the node can probably picked up for the pod's scheduling,
-prevenging the double effort of scanning/calculating all nodes again at the scheduling retries.
+We need a mechanism to be able to resume the already started work in majority of such situations.
 
-#### Story 3: Kueue specifies `NominatedNodeName` to indicate where it prefers pods being scheduled to
+#### Story 3: ClusterAutoscaler or Karpenter can influence scheduling decisions
 
-When Kueue determines where pods are prefered to being scheduled on, based on their internal scheduling soft constraints (Preferred Topology Aware Scheduling, etc)
-currently, they just put the node selector to tell the scheduler about their preference, and then un-gate the pods.
+ClusterAutoscaler or Karpenter perform scheduling simulations to decide what nodes should be
+added to make pending pods schedulable. Their decisions assume a certain placement - if pending
+pods are placed differently, they may not fit on the newly added nodes or may not satisfy their
+scheduling constraints.
 
-After this proposal, they can specify `NominatedNodeName` instead of a prefered node selector, 
-which makes the probability of pods being scheduled onto the node higher.
+In order to improve the end-to-end pod startup latency when cluster scale-up is needed, we need a
+mechanism to communicate the results of scheduling simulations from ClusterAutoscaler or Karpenter
+to scheduler.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### NominatedNodeName can already be set by other components now.
 
-How will security be reviewed, and by whom?
+There aren't any guardrails preventing other components from setting NominatedNodeName now.
+In such cases, the semantic is not well defined now and the outcome of it may not match user
+expectations.
 
-How will UX be reviewed, and by whom?
+This KEP is a step towards clarifying this semantic instead of maintaining status-quo.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+#### Confusing semantics of `NominatedNodeName`
+
+Up until now, `NominatedNodeName` was expressing the decision made by scheduler to put a given
+pod on a given node, while waiting for the preemption. The decision could be changed later so
+it didn't have to be a final decision, but it was describing the "current plan of record".
+
+If we put more components into the picture (e.g. ClusterAutoscaler and Karpenter), we effectively
+get a more complex state machine, with the following states:
+
+1. pending pod
+1. pod proposed to node (by external component) [not approved by scheduler]
+1. pod nominted to node (based on external proposal) and waiting for node (e.g. being created & ready)
+1. pod nominated to node and waiting for preemption
+1. pod allocated to node and waiting for binding
+1. pod bound
+
+The important part is that if we decide to use `NominatedNodeName` to store all that information,
+we're effectively losing the ability to distinguish between those states.
+
+We may argue that as long as the decision was made by the scheduler, the exact reason and state
+probably isn't that important - the content of `NominatedNodeName` can be interpreted as
+"current plan of record for this pod from scheduler perspective".
+
+But the `pod proposed to node` state is visibly different. In particular external components
+may overallocate the pods on the node, those pods may not match scheduling constraints etc.
+We can't claim that it's a current plan of record of the scheduler. It's a hint that we want
+scheduler to take into account.
+
+In other words, from state machine perspective, there is visible difference in who set the
+`NominatedNodeName`. If it was scheduler, it may mean that there is already ongoing preemption.
+If it was an external component, it's just a hint that may even be ignored.
+However, if we look from consumption point of view - these are effectively the same. We want
+to expose the information, that as of now a given node is considered as a potential placement
+for a given pod. It may change, but for now that's what considered. 
+
+Eventually, we may introduce some state machine, where external components could also approve
+schedulers decisions by exposing these states more concretely via the API. But we will be
+able to achieve it in an additive way by exposing the information about the state.
+
+However, we don't need this state machine now, so we just introduce the following rules:
+- Any component can set `NominatedNodeName` if it is currently unset.
+- Scheduler is allowed to overwrite `NominatedNodeName` at any time in case of preemption or
+the beginning of the binding cycle.
+- No external components can't overwrite `NominatedNodeName` set by a different component.
+- If `NominatedNodeName` is set, the component who set it is responsible for updating or
+clearing it if its plans were changed (using PUT or APPLY to ensure it won't conflict with
+potential update from scheduler) to reflect the new hint.
+
+Moreover:
+- Regardless of who set `NominatedNodeName`, its readers should always take that into
+consideration (e.g. ClusterAutoscaler or Karpenter when trying to scale down nodes).
+- In case of faulty components (e.g. overallocation the nodes), these decisions will
+simply be rejected by the scheduler (although the `NominatedNodeName` will remain set
+for the unschedulability period).
 
 #### Increasing the load to kube-apiserver
 
-If we simply implement this, we'd double the API calls during a simple binding cycle (NNN + actual binding),
-which would increase the load to kube-apiserver significantly.
+Setting a NominatedNodeName is an additional API call that then multiple components in the system
+need to process. In the extreme case when this is always set before binding the pod, this would
+double the number of API calls from scheduler, which isn't really acceptable from scalability and
+performance reasons.
 
-To prevent that, we'll skip setting `NominatedNodeName` when all PreBind plugins have nothing to do with the pod.
+To mitigate this problem, we:
+- skip setting `NNN` when all `Permit` and `PreBind` plugins have no work to do fir this pod.
 (We'll discuss how-to in the later section.)
-Then, setting `NominatedNodeName` happens only when, for example, a pod has a volume that VolumeBinding plugin needs to handle at PreBind.
 
-Of course, the API calls would still be increasing especially if most of pods have delayed binding. 
-However, those cases should actually be ok to have those additional calls because these will have other calls related to those operations (e.g., PV creation, etc.) - so the overhead of an additional call is effectively a smaller percentage of the e2e flow.
+For cases with delayed binding, we make an argument that the additional calls are acceptable, as
+there are other calls related to those operations (e.g. PV creation, PVC binding, etc.) - so the
+overhead of setting `NNN` is a smaller percentage of the whole e2e pod startup flow.
 
 #### Race condition
 
 If an external component adds `NominatedNodeName` to the pod that is going through a scheduling cycle,
 `NominatedNodeName` isn't taken into account (of course), and the pod could be scheduled onto a different node.
 
-But, this should be fine because, either way, we're not saying `NominatedNodeName` is something forcing the scheduler to pick up the node,
-rather it's just a preference.
+But, this should be fine because, either way, we're not saying `NominatedNodeName` is something
+forcing the scheduler to pick up the node, rather it's just a preference.
 
 #### Confusion if `NominatedNodeName` is different from `NodeName` after all
 
@@ -310,7 +372,11 @@ If an external component adds `NominatedNodeName`, but the scheduler picks up a 
 But, if an external component updates `NominatedNodeName` that is set by the scheduler, 
 the pod could end up having different `NominatedNodeName` and `NodeName`.
 
-Probably we should clear `NominatedNodeName` when the pod is bound. (at binding api)
+We will update the logic so that:
+- `NominatedNodeName` field is cleared during `binding` call
+
+We believe that ensuring that `NominatedNodeName` can't be set after the pod is already bound
+is niche enough feature that doesn't justify an attempt to strenghtening the validation.
 
 #### What if there are multiple components that could set `NominatedNodeName` on the same pod
 
@@ -324,36 +390,25 @@ and hit this problem.
 So, for now, we'll just document it somewhere as a risk, unrecommended situation, and in the future, we'll consider something
 if we actually observe this problem getting bigger by many people starting using it.
 
-#### [CA scenario] If the cluster autoscaler puts unexisting node's name on `NominatedNodeName`, the scheduler clears it
+#### Invalid `NominatedNodeName` prevents the pod from scheduling
 
-The current scheduler clears the node name from `NominatedNodeName` if the pod goes through the scheduling cycle,
-and the node doesn't exist.
+Currently, `NominatedNodeName` field is cleared at the end of failed scheduling cycle if it found the nominated node
+unschedulable for the pod. However, in order to make it work for ClusterAutoscaler and Karpenter, we will remove this
+logic, and `NominatedNodeName` could stay on the node forever, despite not being a valid suggestions anymore.
+As an example, imagine a scenario, where ClusterAutoscaler created a new node a nominated a pod to it, but
+before that pod was scheduled, a new higher-priority pod appeared and used the space on that newly created node.
+In such a case, it all worked as expected, but we ended up with `NominatedNodeName` set uncorrectly.
 
-In order for the cluster autoscaler to levarage this feature,
-it has to put unexisting node's name, which is supposed to be registered later after its scale up,
-so that the scheduler can schedule pending pods on those new nodes as soon as possible after nodes are registered.
+As a mitigation:
+- an external component that originally set the `NominatedNodeName` is responsible for clearing or updating
+the field to reflect the state
+- if it won't happen, given that `NominatedNodeName` is just a hint for scheduler, it will continue to processing
+the pod just having a minor performance hit (trying to process a node set via `NNN` first, but falling back to
+all nodes anyway). We claim that the additional cost of checking `NominatedNodeName` first is acceptable (even
+for big clusters where the performance is critical) because it's just one iteration of Filter plugins
+(e.g., if you have 1000 nodes and 16 parallelism (default value), the scheduler needs around 62 iterations of
+Filter plugins, approximately. So, adding one iteration on top of that doesn't matter).
 
-So, we need to keep the node's name on `NominatedNodeName` even when the node doesn't exist.
-We'll discuss it at [Only modifying `NominatedNodeName`](#only-modifying-nominatednodename) section.
-
-#### [CA scenario] A new node's taint prevents the pod from going there, and the scheduler ends up clearing `NominatedNodeName`
-
-With the current scheduler, what happens if CA puts `NominatedNodeName` is:
-1. Pods are unschedulable. For the simplicity, let's say all of them are rejected by NodeResourceFit plugin. (i.e., no node has enough CPU/memory for pod's request)
-2. CA finds them, calculates nodes necessary to be created
-3. CA puts `NominatedNodeName` on each pod
-4. The scheduler keeps trying to schedule those pending pods though, here let's say they're unschedulable (no cluster event happens that could make pods schedulable) until the node is created.
-5. The nodes are created, and registered to kube-apiserver. Let's say, at this point, nodes have un-ready taints.
-6. The scheduler observes `Node/Create` event, `NodeResourceFit` plugin QHint returns `Queue`, and those pending pods are requeued to activeQ.
-7. The scheduling cycle starts handling those pending pods.
-8. However, because nodes have un-ready taints, pods are rejected by `TaintToleration` plugin.
-9. The scheduler clears `NominatedNodeName` because it finds the nominated node (= new node) unschedulable.
-
-So, after all, `NominatedNodeName` added by CA in this scaling up scenario doesn't add any value, 
-unless the taints are removed in a short time (between 6 and 7).
-
-So, we need to keep the node's name on `NominatedNodeName` even when the node doesn't fit right now.
-We'll discuss it at [Only modifying `NominatedNodeName`](#only-modifying-nominatednodename) section.
 
 ## Design Details
 
@@ -402,21 +457,34 @@ Higher-priority pods can ignore it, but pods with equal or lower priority don't 
 This allows us to prioritize nominated pods when nomination was done by external components. 
 We just need to ensure that in case when NominatedNodeName was assigned by an external component, this nomination will get reflected in scheduler memory.
 
+TODO: We need to ensure that works for non-existing nodes too and if those nodes won't appear in the future, it won't leak the memory.
+
 We will implement integration tests simulating the above behavior of external components.
 
 #### The scheduler only modifies `NominatedNodeName`, not clears it in any cases
 
-As described at the risk section, there are two problematic scenarios where this use case wouldn't work.
-- [[CA scenario] If the cluster autoscaler puts unexisting node's name on `NominatedNodeName`, the scheduler clears it](#ca-scenario-if-the-cluster-autoscaler-puts-unexisting-nodes-name-on-nominatednodename-the-scheduler-clears-it)
-- [[CA scenario] A new node's taint prevents the pod from going there, and the scheduler ends up clearing `NominatedNodeName`](#ca-scenario-a-new-nodes-taint-prevents-the-pod-from-going-there-and-the-scheduler-ends-up-clearing-nominatednodename)
+As of now, scheduler clears the `NominatedNodeName` field at the end of failed scheduling cycle if it
+found the nominated node unschedulable for the pod. However, this won't work if ClusterAutoscaler or Karpenter
+would set it during scale up.
 
-Currently, the scheduler clears `NominatedNodeName` at the end of failed scheduling cycles if it found the nominated node unschedulable for the pod.
-In order to avoid above two scenarios, we have to remove this clearing logic; change the scheduler not to clear `NominatedNodeName` in any cases.
-It means, even if the node on `NominatedNodeName` isn't valid anymore, the scheduler keeps trying the node first.
-We regard the additional cost of checking `NominatedNodeName` first unnecessarily isn't reletively big (especially for big clusters, where the performance is critical) because it's just one iteration of Filter plugins.
-e.g., if you have 1000 nodes and 16 parallelism (default value), the scheduler needs around 62 iterations of Filter plugins, approximately. So, adding one iteration on top of that doesn't matter.
+In the most basic case, the node may not yet exist, so clearly it would be unschedulable for the pod.
+However, potential mitigation of ignoring non-existing nodes wouldn't work either in the following case:
 
-Also, note that we still allow the scheduler overwrite `NominatedNodeName` when it triggers the preemption for the pod.
+1. Pods are unschedulable. For the simplicity, let's say all of them are rejected by NodeResourceFit plugin. (i.e., no node has enough CPU/memory for pod's request)
+2. CA finds them, calculates nodes necessary to be created
+3. CA puts `NominatedNodeName` on each pod
+4. The scheduler keeps trying to schedule those pending pods though, here let's say they're unschedulable (no cluster event happens that could make pods schedulable) until the node is created.
+5. The nodes are created, and registered to kube-apiserver. Let's say, at this point, nodes have un-ready taints.
+6. The scheduler observes `Node/Create` event, `NodeResourceFit` plugin QHint returns `Queue`, and those pending pods are requeued to activeQ.
+7. The scheduling cycle starts handling those pending pods.
+8. However, because nodes have un-ready taints, pods are rejected by `TaintToleration` plugin.
+9. The scheduler clears `NominatedNodeName` because it finds the nominated node (= new node) unschedulable.
+
+In order to avoid the above scenarios, we simply remove the clearing logic. This means that scheduler
+will never clear the `NominatedNodeName` - it may update it though if based on its scheduling algorithm
+it decides to ignore the current value of `NominatedNodeName` and put it on a different node (either to
+signal the preemption, or record the decision before binding as described in the above sections).
+ 
 
 ### Test Plan
 
