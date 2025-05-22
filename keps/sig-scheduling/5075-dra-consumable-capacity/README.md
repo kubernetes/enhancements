@@ -111,11 +111,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The enhancement allows a single device to be allocated to multiple requests.
-By default, the device resources are shared freely without any guarantees.
-The resource is not dedicated to any single request.
-A specific resource is considered to have limited or guaranteed sharing only if a sharing policy is specified.
-The device can be allocated until all available limited resources are consumed by requests.
+Without this KEP, device sharing is done by having multiple pods (and/or containers) reference the same resource claim,
+and that resource claim has allocated the device.
+With this KEP, independent resource claims (and/or requests within a claim) can allocate shares of the same underlying device.
+This enables resource sharing across pods that are completely unrelated, potentially even across different namespaces.
+
+Additionally, if a device supports sharing, its resource (capacity) can be managed through a defined sharing policy.
+When such a policy is specified, the device may be allocated to multiple independent requests, up to its total capacity,
+with the platform enforcing the policy and managing allocations on each request accordingly.
+In contrast, if no sharing policy is defined, the device is treated as freely shareable and not dedicated to any specific request.
+As a result, the resource without a sharing policy imposes no constraints on how new requests are processed.
+Notably, each of these independent resource claims can still be referenced by one or more pods.
+However, the device resources allocated to each request are shared without any isolation guarantees among the pods that reference the same request.
 
 To achieve this, this KEP introduces
 - a new device field to distinguish between “shareable” and “unshareable” devices,
@@ -125,7 +132,7 @@ To achieve this, this KEP introduces
 - a distinct attribute constraint to prevent allocating the same shareable device in the same claim multiple times.
 
 Relations to other KEPs:
-- [KEP 4815](https://github.com/kubernetes/enhancements/issues/4815): The partitioned devices can be a shareble device or have mutually exclusive partitions where one partition is shareable and the other is not.
+- [KEP 4815](https://github.com/kubernetes/enhancements/issues/4815): The partitioned devices can be a shareable device or have mutually exclusive partitions where one partition is shareable and the other is not.
 - [KEP 5007](https://github.com/kubernetes/enhancements/issues/5007): The allocated share can be provisioned at the pre-bind step.
 - [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share UID.
 
@@ -152,7 +159,7 @@ In other words, the device capacity allocation is determined by the user's claim
 - Support network security policy.
 - Support an aggregated resource consumption request. 
   By default, the shareable device can be allocated once for each pod's allocation.
-  However, a user may want an aggrated amount of resources which can come from a single or multiple shareable device.
+  However, a user may want an aggregated amount of resources which can come from a single or multiple shareable device.
   This is related to [the comment about `distinctAttributes`](https://github.com/kubernetes/enhancements/pull/5104#discussion_r1943835445).
 
 ## Proposal
@@ -215,7 +222,9 @@ There is always such a default because capacities without a policy are not consu
 
 A shareable device can only be allocated once its consumability has been verified
 and its attributes match the request's selectors and constraints.
-The newly added `capacities` field in the `DeviceRequestAllocationResult` will be set when the allocation is successful.
+The newly added `consumedCapacities` field in the `DeviceRequestAllocationResult` will be set to the calculated capacity upon a successful allocation.
+This value may differ from the originally requested amount, as it is rounded up to the nearest valid value based on the device’s sharing policy.
+If no specific amount is requested, a default consumption value is applied.
 
 ### API enhancement
 To enable this enhancement, the following API updates are proposed.
@@ -240,10 +249,14 @@ type Device struct {
 
 // DeviceCapacity describes a quantity associated with a device.
 type DeviceCapacity struct {
-   // Value defines how much of a certain device capacity is available.
-   //
-   // +required
-   Value resource.Quantity
+    // Value defines how much of a certain device capacity is available.
+    //
+    // If the capacity is consumable (i.e., a ClaimPolicy is specified),
+    // the consumed amount is deducted and cached in memory by the scheduler.
+    // Note that the remaining capacity is not reflected in the resource slice.
+    //
+    // +required
+    Value resource.Quantity
 
    // SharingPolicy specifies that this device capacity must be consumed
    // by each resource claim according to the defined sharing policy.
@@ -319,6 +332,7 @@ type CapacitySharingPolicyRange struct {
 
     // ChunkSize defines the step size between valid capacity amounts within the range.
     // If set, requested amounts are rounded up to the nearest multiple of ChunkSize from the Minimum.
+    // Maximum and Minimum must be a multiple of ChunkSize.
     //
     // +optional
     ChunkSize *resource.Quantity
@@ -342,6 +356,7 @@ type DeviceRequest struct {
 // CapacityRequirements defines the capacity requirements for a specific device request.
 type CapacityRequirements struct {
     // Minimum defines the minimum amount of each device capacity required for the request.
+    // Each minimum amount must be a non-negative integer.
     //
     // If the capacity has a sharing policy, this value is rounded up to the nearest valid amount
     // according to that policy. The rounded value is used during scheduling to determine how much capacity to consume.
@@ -349,7 +364,8 @@ type CapacityRequirements struct {
     // If the quantity does not have a sharing policy, this value is used as an additional filtering
     // condition against the available capacity on the device.
     // This is semantically equivalent to a CEL selector with
-    // `device.quantity[<domain>].<name>.compareTo(<minimum quantity>) >= 0`.
+    // `device.capacity[<domain>].<name>.compareTo(quantity(<minimum quantity>)) >= 0`
+    // For example, device.capacity['test-driver.cdi.k8s.io'].counters.compareTo(quantity('2')) >= 0
     //
     // +optional
    Minimum map[QualifiedName]resource.Quantity
@@ -365,6 +381,9 @@ type DeviceConstraint struct {
    //
    // This constraint is used to avoid allocating multiple requests to the same shareable device
    // by ensuring attribute-level differentiation.
+   //
+   // This is useful for scenarios where resource requests must be fulfilled by separate physical devices.
+   // For example, a container requests two network interfaces that must be allocated from two different physical NICs.
    //
    // +optional
    // +oneOf=ConstraintType
@@ -482,7 +501,7 @@ spec:
     requests:
     - name: nic
       deviceClassName: qos-aware-shared.device.x-k8s.io
-      capacities:
+      capacityRequests:
         minimum:
           bandwidth: 5Gi
 ```
@@ -1138,7 +1157,10 @@ Pros:
 - Avoids any API changes—logic handled internally.
 
 Cons:
-- Doesn’t support cases where a pod legitimately needs multiple fractions of capacity from the same shareable device.
+- Doesn’t support cases where a pod legitimately permits multiple fractions of capacity from the same shareable device.
+  For example, when a pod uses two vGPUs for parallel processing,
+  it may not require them to come from different devices.
+  It can accept allocations from either the same or different shareable devices.
 - Not configurable—users can't override this behavior when needed.
 
 ## Infrastructure Needed (Optional)
