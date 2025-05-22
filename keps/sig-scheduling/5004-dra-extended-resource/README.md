@@ -261,7 +261,8 @@ The basic idea is the following:
 1. Introduce a field `ExtendedResourceClaimStatus` to pod's `Status`, such that:
     - the kubelet can find the special `ResourceClaim` while looking for claims to prepare
     - the kubelet can pass the devices to containers in the pod with the extended
-   resource requests, based on the container/extended resource to device
+   resource requests, based on the container/extended resource to device. containers
+   can be initContainers, regular containers, but cannot be ephemeral containers.
    request mapping in the `ExtendedResourceClaimStatus`.
 
 Some quick clarifications around the basic concepts: extended resource backed by
@@ -400,7 +401,8 @@ type DeviceRequest struct {
 
 To enable the kubelet to map devices back to the containers which requested them,
 the kube-scheduler creates one `DeviceRequest` per extended resource backed by DRA
-per container in the pod. The name of the `DeviceRequest` has the form
+per container in the pod. containers can be initContainers, regular containers,
+but cannot be ephemeral containers. The name of the `DeviceRequest` has the form
 "container-%d-request-%d", where the first %d is the index of the container in the pod.
 The second %d is the index of the extended resource inside the container
 resource requests. For example, if the first container in the pod has an
@@ -416,7 +418,8 @@ The kubelet must not rely on it. Instead, the
 A new field `extendedResourceClaimStatus` is added to Pod's status to track
 the special `ResourceClaim` object created for the extended resource requests
 in the pod. This is needed for kubelet to pass the devices allocated by driver
-to the containers in the pod.
+to the containers in the pod. containers can be initContainers, regular containers,
+but cannot be ephemeral containers. 
 
 ```go
 // PodExtendedResourceClaimStatus is stored in the PodStatus for each extended
