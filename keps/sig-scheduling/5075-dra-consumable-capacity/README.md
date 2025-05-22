@@ -268,45 +268,40 @@ type DeviceCapacity struct {
 }
 
 // CapacitySharingPolicy defines how requests consume the available capacity.
-// The sharing policy can either specify a range of valid values or a discrete set of them.
-// Each policy has a default value, either explicitly or implicitly.
-// Exactly one of the consumption policies must be defined.
+// A policy must have a default value to be applied when no value is explicitly provided.
+// ValidSharingValues can either specify a range of valid values or a discrete set of them.
+// Exactly one of them must be defined.
+// The default value must be a valid value.
 type CapacitySharingPolicy struct {
+   // Default specifies the default capacity to be used for a consumption request
+   //
+   // +required
+   Default resource.Quantity
+
    // DiscreteValues defines a set of acceptable quantity values in consuming requests.
    //
    // +optional
-   // +oneOf=SharingPolicy
+   // +oneOf=ValidSharingValues
    DiscreteValues *CapacitySharingPolicyDiscrete
-
 
    // ValueRange defines an acceptable quantity value range in consuming requests.
    //
    // +optional
-   // +oneOf=SharingPolicy
+   // +oneOf=ValidSharingValues
    ValueRange *CapacitySharingPolicyRange
 }
 
 // CapacitySharingPolicyDiscrete defines a set of discrete allowed capacity values.
-// If Options is not provided, only default value is valid.
-//
 // - If the requested amount is not listed in the options, it is rounded up to the next higher valid value.
 // - If the requested amount exceeds the maximum value in the available options, the request does not satisfy the policy,
 //   and the device cannot be allocated.
 type CapacitySharingPolicyDiscrete struct {
-    // Default specifies the default capacity to be used for a consumption request
-    // if no value is explicitly provided.
-    //
-    // +required
-    Default resource.Quantity
-
     // Options defines a list of additional valid capacity values that can be requested.
-    // The Default must not be one of the Options.
     //
     // +optional
     // +listType=atomic
     Options []resource.Quantity
 }
-
 
 // CapacitySharingPolicyRange defines a valid range for consumable capacity values.
 //
@@ -320,7 +315,6 @@ type CapacitySharingPolicyDiscrete struct {
 // - If ChunkSize is not set, the requested amount is used as-is, provided it falls within the range.
 type CapacitySharingPolicyRange struct {
     // Minimum specifies the minimum capacity allowed for a consumption request.
-    // This also acts as the default if no value is specified.
     //
     // +required
     Minimum resource.Quantity
@@ -485,6 +479,7 @@ spec:
       capacity:
         bandwidth:
           sharingPolicy:
+            default: "1Mi"
             range:
               minimum: "1Mi"
               chunkSize: "8"
