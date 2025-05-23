@@ -14,11 +14,8 @@ approvers:
   - TBD
   - "@oscar.doe"
 
-see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
-replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
+see-also: []
+replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
