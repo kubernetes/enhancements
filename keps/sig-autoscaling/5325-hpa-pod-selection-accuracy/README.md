@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5625: Improve Pod Selection Accuracy Across Workload Types for HPA
+# KEP-5625: HPA - Improve pod selection accuracy across workload types
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
