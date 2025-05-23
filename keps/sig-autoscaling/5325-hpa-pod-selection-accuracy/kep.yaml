@@ -20,7 +20,7 @@ replaces: []
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
 # and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
-stage: alpha|beta|stable
+stage: alpha #|beta|stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
