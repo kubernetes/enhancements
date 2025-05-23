@@ -307,10 +307,7 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+None required.
 
 ##### Unit tests
 
@@ -378,7 +375,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+We will add the following e2e tests:
+- Test scaling with a deployment and unrelated job sharing labels (with and without strictPodSelection)
+- Test scaling with multiple workload types that share label selectors
+
+[e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
 ### Graduation Criteria
 
@@ -454,34 +455,23 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature gate (`HPAStrictPodSelection`)
+- Initial e2e tests completed and enabled
+
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+#### Upgrade
+Existing HPAs will continue to work as they do today, using label-based pod selection regardless of pod ownership. Users can use the new feature by enabling the Feature Gate (alpha only) and setting the new strictPodSelection field to true on an HPA.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+#### Downgrade
+On downgrade, all HPAs will revert to using label-based pod selection, regardless of any configured strictPodSelection value on the HPA itself.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+1. `kube-apiserver`: More recent instances will accept the new `strictPodSelection` field, while older instances will ignore it during validation and persist it as part of the HPA object.
+2. `kube-controller-manager`: An older version could receive an HPA containing the new `strictPodSelection` field from a more recent API server, in which case it would ignore it (i.e., continue to use label-based pod selection regardless of the field's value).
 
 ## Production Readiness Review Questionnaire
 
@@ -525,15 +515,10 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: HPAStrictPodSelection
+  - Components depending on the feature gate: `kube-controller-manager` and
+    `kube-apiserver`.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -541,6 +526,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No. By default, HPAs will continue to use label-based pod selection unless the new `strictPodSelection` field is explicitly set to true.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -554,8 +540,13 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes. If the feature gate is disabled, all HPAs will revert to using label-based pod selection regardless of the value of the `strictPodSelection` field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+When the feature is re-enabled, any HPAs with `strictPodSelection: true` will resume using the strict ownership-based pod selection rather than label-based selection. The HPA controller will immediately begin considering only pods directly owned by the target workload for scaling decisions on these HPAs, potentially changing scaling behavior compared to when the feature was disabled.
+
+Existing HPAs that don't have `strictPodSelection` explicitly set will continue using label-based selection and won't be affected by re-enabling the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -571,6 +562,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will add a unit test verifying that HPAs with and without the new `strictPodSelection` field are properly validated, both when the feature gate is enabled or not. This will ensure the HPA controller correctly applies the pod selection strategy based on the feature gate status and presence of the field.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -589,6 +582,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+Rollout failures in this feature are unlikely to impact running workloads significantly, but there are edge cases to consider:
+- If the feature is enabled during a high-traffic period, HPAs with `strictPodSelection: true` might suddenly change their scaling decisions based on the reduced pod set. This could cause unexpected scaling events.
+- If a `kube-controller-manager` restarts mid-rollout, some HPAs might temporarily revert to label-based selection until the controller fully initializes with the new feature enabled.
+These issues would only affect HPAs that have explicitly set `strictPodSelection: true`. Existing HPAs will continue to function with the default label-based pod selection behavior.
 
 ###### What specific metrics should inform a rollback?
 
@@ -596,6 +593,13 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+Operators should monitor these signals that might indicate problems:
+
+- Unexpected scaling events shortly after enabling the feature
+- Significant changes in the number of replicas for workloads using HPAs with `strictPodSelection: true`
+- Increased latency in the `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds` metric
+- Increased error rate in `horizontal_pod_autoscaler_controller_metric_computation_total` with error status
+If these metrics show unusual patterns after enabling the feature, operators should consider rolling back.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -610,6 +614,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No. This feature only adds a new optional field to the HPA API and doesn't deprecate or remove any existing functionality. All current HPA behaviors remain unchanged unless users explicitly opt into the new selection mode.
 
 ### Monitoring Requirements
 
@@ -627,6 +632,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+The presence of the `strictPodSelection: true` field in HPA specifications indicates that the feature is in use. Additionally, the HPA status will include information about the pod selection strategy in use through the `podSelectionInfo` field, which can be examined to determine if strict pod selection is active for a given HPA.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -639,13 +645,14 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] API .status
+  - Other field: The HPA status will be enhanced to include pod selection information
+  ```yaml
+  status:
+  podSelectionInfo:
+    strategy: "Strict"  # or "Label" when strictPodSelection is false
+  ```
+Additionally, verbose controller logs will show which pods were included or excluded from metric calculations due to the strict selection policy when troubleshooting is needed.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -663,19 +670,17 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+N/A.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+This feature doesn't fundamentally change how the HPA controller operates; it refines which pods are included in metric calculations. Therefore, existing metrics for monitoring HPA controller health remain applicable.
+Standard HPA metrics (e.g.
+`horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can
+be used to verify the HPA controller health.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -683,6 +688,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Not sure.
 
 ### Dependencies
 
@@ -733,6 +739,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -742,6 +749,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -750,6 +758,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -759,6 +768,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+Yes.
+- HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
+- The status will include additional pod selection information (approximately 50-100 bytes)
+- No additional API objects will be created
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -770,6 +783,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -782,6 +796,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -794,6 +809,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No.
 
 ### Troubleshooting
 
