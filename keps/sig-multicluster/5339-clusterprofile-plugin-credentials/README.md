@@ -6,7 +6,7 @@ To get started with this template:
 - [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
@@ -15,14 +15,14 @@ To get started with this template:
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -92,20 +92,6 @@ SIG Architecture for cross-cutting KEPs).
 <!-- /toc -->
 
 ## Release Signoff Checklist
-
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
@@ -292,7 +278,7 @@ In order to call the plugin, the library execs the plugin defined in the configu
 was obtained from the ClusterProfile.
 The library then calls the plugin following the protocol defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md). The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api can leverage the original code that is kept in
 
-### Test Plan
+<!-- ### Test Plan
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -864,4 +850,4 @@ information to express the idea and why it was not acceptable.
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
--->
+--> -->
