@@ -286,8 +286,7 @@ We should consider introducing another field to the Status that will be a free f
 ### DRA implementation details
 
 Today DRA does not return the health of the device back to kubelet. The proposal is to extend the
-type `NamedResourcesInstance` (from [pkg/apis/resource/namedresources.go](https://github.com/kubernetes/kubernetes/blob/790dfdbe386e4a115f41d38058c127d2dd0e6f44/pkg/apis/resource/namedresources.go#L29-L37)) to include the Health field the same way it is done in 
-the Device Plugin as well as a device ID.
+type `BasicDevice` (from [staging/src/k8s.io/dynamic-resource-allocation/api/types.go](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/dynamic-resource-allocation/api/types.go#L58)) to include the Health field the same way it is done in the Device Plugin as well as a device ID.
 
 In `1.30` we had a similar `ListAndWatch()` API as in DevicePlugin, from which we could have inferred something very analogous to the above. However, we are removing this in `1.31`, so will need to provide something different.
 
