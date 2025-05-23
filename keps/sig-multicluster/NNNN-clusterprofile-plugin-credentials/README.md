@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Plugin for Credentials in ClusterProfile
+# KEP-5338: Plugin for Credentials in ClusterProfile
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)

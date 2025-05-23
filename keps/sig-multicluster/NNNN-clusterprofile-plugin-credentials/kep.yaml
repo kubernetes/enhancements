@@ -1,5 +1,5 @@
 title: ClusterProfile credentials plugin
-kep-number: NNNN
+kep-number: 5338
 authors:
   - @corentone
 owning-sig: sig-multicluster
