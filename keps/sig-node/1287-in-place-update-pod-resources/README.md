@@ -37,6 +37,12 @@
   - [QOS Class](#qos-class)
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
+  - [Instrumentation](#instrumentation)
+    - [<code>kubelet_pod_resize_requests_total</code>](#kubelet_pod_resize_requests_total)
+    - [<code>kubelet_container_resize_requests_total</code>](#kubelet_container_resize_requests_total)
+    - [<code>kubelet_pod_resize_sli_duration_seconds</code>](#kubelet_pod_resize_sli_duration_seconds)
+    - [<code>kubelet_pod_infeasible_resize_total</code>](#kubelet_pod_infeasible_resize_total)
+    - [<code>kubelet_pod_deferred_resize_accepted_total</code>](#kubelet_pod_deferred_resize_accepted_total)
   - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
@@ -880,6 +886,80 @@ Scheduler:
 Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
+
+### Instrumentation
+
+The kubelet will record the following metrics:
+
+#### `kubelet_pod_resize_requests_total` 
+
+This metric tracks the total number of resize requests observed by the Kubelet, counted at the pod level.
+A single pod update changing multiple containers will be considered a single resize request.
+
+Labels: 
+- `resource_type` - what type of resource is being resized. Possible values: `cpu_limits`, `cpu_requests` `memory_limits`, or `memory_requests`. If more than one of these resource types is changing in the resize request, 
+we increment the counter multiple times, once for each. This means that a single pod update changing multiple
+resource types will be considered multiple requests for this metric. 
+- `operation_type` -  whether the resize is a net increase or a decrease (taken as an aggregate across
+all containers in the pod). Possible values: `increase`, `decrease`, `add`, or `remove`.
+
+This metric is recorded as a counter.
+
+#### `kubelet_container_resize_requests_total` 
+
+This metric tracks the total number of resize requests observed by the Kubelet, counted at the container level.
+A single pod update changing multiple containers will be considered separate resize requests.
+
+Labels: 
+- `resource_type` - what type of resource is being resized. Possible values: `cpu_limits`, `cpu_requests` `memory_limits`, or `memory_requests`. If more than one of these resource types is changing in the resize request, 
+we increment the counter multiple times, once for each. This means that a single pod update changing multiple
+resource types will be considered multiple requests for this metric. 
+- `operation_type` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
+
+This metric is recorded as a counter.
+
+#### `kubelet_pod_resize_sli_duration_seconds` 
+
+This metric tracks the latency between when the kubelet accepts a resize request and when it finshes actuating
+the request. More precisely, this metric tracks the total amount of time that the `PodResizeInProgress` condition
+is present on a pod.
+
+Labels: 
+- `resource_type` - what type of resource is being resized. Possible values: `cpu_limits`, `cpu_requests` `memory_limits`, or `memory_requests`. If more than one of these resource types is changing in the resize request, 
+we increment the counter multiple times, once for each.
+- `operation_type` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
+
+This metric is recorded as a gauge.
+
+#### `kubelet_pod_infeasible_resize_total`
+
+This metric tracks the total count of resize requests that the kubelet marks as infeasible. This will make it
+easier for us to see which of the current limitations users are running into the most.
+
+Labels:
+- `reason` - why the resize is infeasible. Although a more detailed "reason" will be provided in the `PodResizePending`
+condition in the pod, we limit this label to only the following possible values to keep cardinality low:
+  - `guaranteed_pod_cpu_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside CPU Manager static policy.
+  - `guaranteed_pod_memory_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside Memory Manager static policy.
+  - `static_pod` - In-place resize is not supported for static pods.
+  - `swap_limitation` - In-place resize is not supported for containers with swap.
+  - `node_capacity` - The node doesn't have enough capacity for this resize request.
+
+This list of possible reasons may shrink or grow depending on limitations that are added or removed in the future.
+
+This metric is recorded as a counter.
+
+#### `kubelet_pod_deferred_resize_accepted_total`
+
+This metric tracks the total number of resize requests that the Kubelet originally marked as deferred but 
+later accepted. This metric primarily exists because if a deferred resize is accepted through the timed retry as
+opposed to being explicitly signaled, it indicates an issue in the Kubelet's logic for handling deferred
+resizes that we should fix.
+
+Labels:
+  - `retry_reason` - whether the resize was accepted through the timed retry or explicitly signaled. Possible values: `timed`, `signaled`.
+
+This metric is recorded as a counter.
 
 ### Static CPU & Memory Policy
 
