@@ -58,23 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
+# KEP-NNNN: Plugin for Credentials in ClusterProfile
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -83,9 +67,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -133,10 +114,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -154,82 +135,45 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+To manage an Inventory of Clusters, a platform admin can rely on having the cluster manager
+output ClusterProfile CRs that point to the clusters. Those CRs are key for multicluster controllers
+that want to operate on the clusters. However, there isn't a single way to obtain credentials
+to reach those clusters. This KEP provides a standardized way to obtain credentials for Clusters
+when using ClusterProfile and makes it pluggable to allow the diverse ecosystem to support the
+multitude of ways to obtain credentials. It also reuses part of the Kubeconfig external provider
+semantics to make implementation easier.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+ClusterInventory is unfinished without an ability to use the clusters and controller
+writers have been very explicit that credentials are needed. Previous attempts at writing credentials have
+failed and we believe that a plugin model, also reusing known flows, will help solve the "credentials" need
+for ClusterProfiles.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+See [introduction slides](https://docs.google.com/presentation/d/1v5-J-kFJ3TSpKqSraHcYkCz2NG7cNnYpq0ISF85wNMU/edit)
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+* Provide a library for controllers to obtain credentials for a cluster represented by a ClusterProfile
+* Allow cluster managers to provide a method to obtain credentials that doesn't require to be embedded into the controller code
+  and recompiling.
+* Be a secure mechanism for credential obtention and storage.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+* Define the mechanism for shipping plugins to be used by the controllers
+* Design plugin or a library for plugins
+* Mandate Federated workload identity / OIDC frameworks (though they are recommended)
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-
-### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
-#### Story 1
-
-#### Story 2
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+The proposed approach to issuing credentials is to leverage plugins for credentials, where a controller could leverage a library running local code
+which would retrieve the credentials for the current controller and for the clusterprofile of their choice. It is expected that plugins would
+leverage the identity of the controller (for example, the Kubernetes Service Account when running in Kubernetes) to retrieve credentials that are valid on other clusters.
+Plugins would be exec'ed by the controller so that they don't need be built-in the binary, allowing cluster managers to
+write their own credentials and still leveraging multicluster controllers written by the community.
+In addition, we propose to reuse the exec approach and protocol used for external credentials in Kubeconfig. Finally,
+in order to retrieve the endpoint for the cluster, we standardize the property names that are used in ClusterProfile.
 
 ### Risks and Mitigations
 
@@ -247,12 +191,106 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+The proposal's implementation would be done via a Library in https://github.com/kubernetes-sigs/cluster-inventory-api.
+The library would be in golang. The library is provided as the community shared implementation for golang and
+it is possible that other implementations would be created, and would work with the same plugin mechanism defined here,
+allowing for reuse of the external providers that cluster managers write.
+
+The expected prototype for a controller is expected to be the following:
+
+`func (c *ClusterProfileExternalProviders) GetConfig(cp ClusterProfile) (rest.Config, error)`
+
+The library implementation flow is expected to be as follow:
+
+1. Build the endpoint details of the cluster by reading properties of the ClusterProfile
+2. Call the CredentialsExternalProviders, following the same flow defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
+3. Build the rest.Config and return it to the caller
+
+### Converting endpoint properties to cluster object
+
+The Cluster structure for the exec defined in KEP 541 assumes the following:
+```
+type Cluster struct {
+  // Server is the address of the kubernetes cluster (https://hostname:port).
+  Server string `json:"server"`
+  // TLSServerName is passed to the server for SNI and is used in the client to
+  // check server certificates against. If ServerName is empty, the hostname
+  // used to contact the server is used.
+  // +optional
+  TLSServerName string `json:"tls-server-name,omitempty"`
+  // InsecureSkipTLSVerify skips the validity check for the server's certificate.
+  // This will make your HTTPS connections insecure.
+  // +optional
+  InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
+  // CAData contains PEM-encoded certificate authority certificates.
+  // If empty, system roots should be used.
+  // +listType=atomic
+  // +optional
+  CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
+  // ProxyURL is the URL to the proxy to be used for all requests to this
+  // cluster.
+  // +optional
+  ProxyURL string `json:"proxy-url,omitempty"`
+  // Config holds additional config data that is specific to the exec
+  // plugin with regards to the cluster being authenticated to.
+  //
+  // This data is sourced from the clientcmd Cluster object's
+  // extensions[client.authentication.k8s.io/exec] field:
+  //
+  // clusters:
+  // - name: my-cluster
+  //   cluster:
+  //     ...
+  //     extensions:
+  //     - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
+  //       extension:
+  //         audience: 06e3fbd18de8  # arbitrary config
+  //
+  // In some environments, the user config may be exactly the same across many clusters
+  // (i.e. call this exec plugin) minus some details that are specific to each cluster
+  // such as the audience.  This field allows the per cluster config to be directly
+  // specified with the cluster info.  Using this field to store secret data is not
+  // recommended as one of the prime benefits of exec plugins is that no secrets need
+  // to be stored directly in the kubeconfig.
+  // +optional
+  Config runtime.RawExtension `json:"config,omitempty"`
+}
+```
+
+This data must be created from the ClusterProfile, as described in the following section.
+
+### Standardizing the Endpoint Property
+
+In order to populate the Cluster object that the exec provider requires, we standardize the following properties.
+
+Property: `multicluster.sigs.io/execprovider-cluster`
+Value: json containing the Cluster struct (see above).
+Example Value: "{\"Server\":\"https://example.com:443\"}"
+
+### Configuring plugins in the controller
+
+Plugins are designated by a hardcoded string, for example, "gke" for GKE Clusters, which allows the controller
+to attach a different binary name or path for the the binary. It is expected that the library will have a mapping from
+its supported plugin names to the expected binary to call. It is expected that the mapping is provided via a flag on the controller.
+
+```
+./controller ... --clusterprofile-creds-providers "gke=gke-gcloud-auth-plugin"
+```
+
+### Selecting the right plugin
+
+The plugin is designated by the clusterprofile, which designates the type of provider that is expected to be called.
+The clusterprofile has a property to designate the plugin.
+
+Property: `multicluster.sigs.io/execprovider-name`
+Value: string that is expected from the controller to satisfy via plugins.
+Example Value: "gke"
+
+### External credentials Provider plugin mechanism
+
+In order to call the plugin, the library execs the plugin defined in the configuration. It passes the Cluster information that
+was obtained from the ClusterProfile.
+The library then calls the plugin following the protocol defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md). The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api can leverage the original code that is kept in
 
 ### Test Plan
 
@@ -390,7 +428,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - All security enforcement completed
 - All monitoring requirements completed
 - All testing requirements completed
-- All known pre-release issues and gaps resolved 
+- All known pre-release issues and gaps resolved
 
 **Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
@@ -606,10 +644,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
