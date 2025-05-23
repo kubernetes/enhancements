@@ -4,9 +4,7 @@ authors:
   - "@omerap12"
   - "@adrianmoisey"
 owning-sig: sig-autoscaling
-participating-sigs:
-  - sig-aaa
-  - sig-bbb
+participating-sigs: []
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: yyyy-mm-dd
 reviewers:
