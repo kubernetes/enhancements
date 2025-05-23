@@ -3,7 +3,7 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
 - [ ] **Create an issue in kubernetes/enhancements**
@@ -11,7 +11,7 @@ To get started with this template:
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5338: Plugin for Credentials in ClusterProfile
+# KEP-5339: Plugin for Credentials in ClusterProfile
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
