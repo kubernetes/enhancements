@@ -287,10 +287,8 @@ We should consider introducing another field to the Status that will be a free f
 
 ### DRA implementation details
 
-Today DRA does not return the health of the device back to kubelet. In `1.30`
-we had a `ListAndWatch()` API similar to DevicePlugin, from which we could
-have inferred device health. However, this API is being removed in `1.31`,
-necessitating a new approach for health monitoring.
+Today DRA does not return the health of the device back to kubelet. The proposal is to extend the
+type `BasicDevice` (from [staging/src/k8s.io/dynamic-resource-allocation/api/types.go](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/dynamic-resource-allocation/api/types.go#L58)) to include the Health field the same way it is done in the Device Plugin as well as a device ID.
 
 The following design outlines how Kubelet will obtain health information
 from DRA plugins and use it to update the PodStatus. This design focuses on an
