@@ -72,6 +72,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Cluster add-on development](#cluster-add-on-development)
     - [Cluster configuration](#cluster-configuration)
     - [Partial GPU allocation](#partial-gpu-allocation)
+    - [Co-locating devices based on hardware topology](#co-locating-devices-based-on-hardware-topology)
   - [Publishing node resources](#publishing-node-resources)
     - [Devices as a named list](#devices-as-a-named-list)
   - [Using structured parameters](#using-structured-parameters)
@@ -498,6 +499,42 @@ The lifecycle of the allocation is tied to the lifecycle of the Pod.
 
 In production, a similar PodTemplateSpec in a Deployment will be used.
 
+#### Co-locating devices based on hardware topology
+
+As a user, I want to easily request multiple devices (like a CPU and a NIC) that
+are physically connected to the same CPU in the system's hardware.
+
+For instance, in a multi-CPU (also known as multi-socket) system, I'd prefer
+that a requested NIC is attached to the CPU being allocated to improve
+performance by avoiding costly inter-CPU interconnects.
+
+I'll define a `ResourceClaim` for my workload, specifying constraints with
+`MatchAttribute` to ensure the devices share the same underlying hardware
+characteristics
+
+```
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim 
+metadata:
+  name: cpu-with-aligned-nic
+spec:
+  devices:
+    requests:
+    - name: cpu-request
+      deviceClassName: cpu.vendor1.com # This is a hypothetical CPU device class
+    - name: nic-request
+      deviceClassName: nic.vendor2.com # This is a hypothetical NIC device class
+    constraints:
+    - requests: ["cpu-request", "nic-request"]
+      matchAttribute: k8s.io/cpuSocketNumber
+```
+
+I'll use one of the standard attributes provided by Kubernetes, choosing between
+`k8s.io/cpuSocketNumber` or `k8s.io/pcieRoot` depending on my specific alignment
+needs. I know that even if my CPU and NIC are managed by different DRA drivers,
+they are likely publishing the information I can use for alignment through these
+standard attributes.
+
 ### Publishing node resources
 
 The devices available on a node need to be published to the API server. In
@@ -568,7 +605,7 @@ spec:
           version: 11.1.42
         powerSavingSupported:
           bool: true
-        dra.k8s.io/pciRoot: # a fictional standardized attribute, not actually part of this KEP
+        k8s.io/pcieRoot:
           string: pci-root-0
       capacity:
         memory: 16Gi
@@ -578,10 +615,14 @@ Compared to labels, attributes have values of exactly one type. Quantities are d
 in the separate `capacity` map. As described later on, both sets can be used in CEL expressions to select a
 specific resource for allocation on a node.
 
-To avoid any future conflicts, we reserve any attributes with the ".k8s.io/" domain prefix
-for future use and standardization by Kubernetes. This could be used to describe
-topology across resources from different vendors, for example, but this is out-
-of-scope for now.
+We are reserving the `k8s.io/` domain (and subdomains) prefix for attributes and
+capacities for standardization by the Kubernetes project. This reservation
+allows us to define common attributes that can describe hardware characteristics
+across resources from different vendors. Currently, we are defining two such
+standard attributes: `k8s.io/cpuSocketNumber` and `k8s.io/pcieRoot`. Details on
+their meaning and how they should be exposed by DRA drivers are available in the
+[API design section under ResourceSlice's](#resourceslice) QualifiedName
+definition.
 
 **Note:** If a driver needs to remove a device or change its attributes,
 then there is a risk that a claim gets allocated based on the old
@@ -593,6 +634,19 @@ the device comes back. Checking it at admission time and treating this as a fata
 would allow us to delete the pod and trying again with a new one, but is not done
 at the moment because admission checks cannot be retried if a check finds
 a transient problem.
+
+**Note:** The immediate motivation for standardizing attributes largely stems
+from the current behavior of the `MatchAttribute` constraint, which relies on
+exact value matching. While this KEP provides a solution for many cross-driver
+alignment needs, a more flexible long-term solution is envisioned with
+[KEP-5254: DRA support for MatchExpression
+constraints](https://github.com/kubernetes/enhancements/issues/5254) (a
+work-in-progress). That proposal aims to introduce a `MatchExpression`
+constraint, allowing devices to be evaluated against CEL expressions, which will
+enable more complex and dynamic selection criteria. However, solving this
+critical alignment problem today is essential for latency-sensitive workloads.
+Standardizing attributes helps achieve this without introducing any conflicts
+with the future capabilities of KEP-5254.
 
 ### Using structured parameters
 
@@ -1212,6 +1266,33 @@ const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 // domain prefix are assumed to be part of the driver's domain. Attributes
 // or capacities defined by 3rd parties must include the domain prefix.
 //
+// The Kubernetes project reserves the "k8s.io/" domain prefix for standardizing
+// attributes and capacities. DRA drivers **SHOULD** use these standardized
+// names if they define a characteristic of a device that matches the intent of
+// a standard attribute (or capacity) name. This ensures consistency and
+// interoperability across different drivers when conveying the same idea.
+//
+// Currently, the two standard attributes are:
+//
+//  1. `k8s.io/cpuSocketNumber`: An integer value referring to the logical
+//     identifier assigned by the operating system for the physical CPU socket
+//     that a device is associated with. For a PCIe device, DRA drivers can
+//     determine this value by first reading its associated NUMA node from
+//     `/sys/bus/pci/devices/<PCI_ADDRESS>/numa_node`. Then, using that NUMA
+//     node, the value for `cpuSocketNumber` can be found by reading the
+//     `physical_package_id` from any CPU within that node (e.g.,
+//     `/sys/devices/system/node<NUMA_NODE>/cpuX/topology/physical_package_id`).
+//     Similarly, for a logical CPU X, its `cpuSocketNumber` can be identified
+//     from `/sys/devices/system/cpu/cpuX/topology/physical_package_id`.
+//
+//  2. `k8s.io/pcieRoot`: A string value in the format `pci<domain>:<bus>`,
+//     referring to a PCIe (Peripheral Component Interconnect Express) Root
+//     Complex. This attribute can be used to identify devices that share the
+//     same PCIe Root Complex. DRA drivers MAY determine this value by
+//     inspecting the hierarchical path of the device's entry in sysfs (e.g.,
+//     `/sys/devices/pci0000:00/0000:00:01.0/0000:01:00.0`), where the
+//     `pci<domain>:<bus>` segment at the beginning of the real path identifies
+//     the Root Complex (e.g., `pci0000:00`).
 //
 // The maximum length for the DNS subdomain is 63 characters (same as
 // for driver names) and the maximum length of the C identifier
