@@ -301,7 +301,7 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-Add a feature gate `InformMetrics` in client-go. It is disabled when in the Alpha state.
+Add a feature gate `InformerMetrics` in client-go. It is disabled when in the Alpha state.
 
 ### Informer metrics
 Introduce the informer metrics struct `informerMetrics` and `eventHandlerMetrics`. It is similar to the existing `workqueue` metrics.
