@@ -78,12 +78,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Kubernetes API Changes](#kubernetes-api-changes)
-  - [Updated Reconciliation Logic](#updated-reconciliation-logic)
-  - [What PVC is compatible](#what-pvc-is-compatible)
+  - [Kubernetes Controller Changes](#kubernetes-controller-changes)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Batch Expand Volumes](#story-1-batch-expand-volumes)
-    - [Story 2: Shinking the PV by Re-creating PVC](#story-2-shinking-the-pv-by-re-creating-pvc)
-    - [Story 3: Asymmetric Replicas](#story-3-asymmetric-replicas)
+    - [Story 2: Asymmetric Replicas](#story-2-asymmetric-replicas)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -93,6 +91,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -178,12 +179,16 @@ updates.
 -->
 
 Kubernetes does not support the modification of the `volumeClaimTemplates` of a StatefulSet currently.
-This enhancement proposes to support modifications to the `volumeClaimTemplates`,
-automatically patching the associated PersistentVolumeClaim objects if applicable.
-Currently, PVC `spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations`
-can be patched.
-All the updates to PersistentVolumeClaim can be coordinated with `Pod` updates
-to honor any dependencies between them.
+This enhancement proposes relaxing validation of StatefulSet's VolumeClaim template.
+Specifically, we will allow modifying the following fields of `spec.volumeClaimTemplates`:
+* increasing the requested storage size (`spec.volumeClaimTemplates.spec.resources.requests.storage`)
+* modifying Volume AttributesClass used by the claim(`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
+* modifying VolumeClaim template's labels(`spec.volumeClaimTemplates.metadata.labels`)
+* modifying VolumeClaim template's annotations(`spec.volumeClaimTemplates.metadata.annotations`)
+When `volumeClaimTemplates` is updated, the StatefulSet controller will reconcile the
+PersistentVolumeClaims in the StatefulSet's pods.
+The behavior of updating PersistentVolumeClaim is similar to updating Pod.
+The updates to PersistentVolumeClaim will be coordinated with Pod updates to honor any dependencies between them.
 
 ## Motivation
 
@@ -210,11 +215,14 @@ This brings many headaches in a continuously evolving environment.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
-* Allow users to update some fields of `volumeClaimTemplates` of a `StatefulSet`.
-* Automatically patch the associated PersistentVolumeClaim objects, without interrupting the running Pods.
-* Support updating PersistentVolumeClaim objects with `OnDelete` strategy.
-* Coordinate updates to `Pod` and PersistentVolumeClaim objects.
-* Provide accurate status and error messages to users when the update fails.
+* Allow users to update some fields of `volumeClaimTemplates` of a `StatefulSet`, specifically:
+  * increasing the requested storage size (`spec.volumeClaimTemplates.spec.resources.requests.storage`)
+  * modifying Volume AttributesClass used by the claim(`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
+  * modifying VolumeClaim template's labels(`spec.volumeClaimTemplates.metadata.labels`)
+  * modifying VolumeClaim template's annotations(`spec.volumeClaimTemplates.metadata.annotations`)
+* Automatically patch the existing PersistentVolumeClaim objects, without interrupting the running Pods.
+* Add `.spec.volumeClaimUpdatePolicy` allowing users to decide how the volume claim will be updated: in-place or on PVC deletion.
+
 
 ### Non-Goals
 
@@ -226,6 +234,7 @@ and make progress.
 * Validate the updated `volumeClaimTemplates` as how PVC patch does.
 * Update ephemeral volumes.
 * Patch PVCs that are different from the template, e.g. StatefulSet adopts the pre-existing PVCs.
+* Support for volumes that only support offline expansion.
 
 
 ## Proposal
@@ -238,39 +247,24 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
-1. Change API server to allow specific updates to `volumeClaimTemplates` of a StatefulSet:
-   * `labels`
-   * `annotations`
-   * `resources.requests.storage`
-   * `volumeAttributesClassName`
 
-2. Modify StatefulSet controller to add PVC reconciliation logic.
+### Kubernetes API Changes  
 
-3. Collect the status of managed PVCs, and show them in the StatefulSet status.
-
-### Kubernetes API Changes
-
-Changes to StatefulSet `spec`:
+Change API server to allow specific updates to `volumeClaimTemplates` of a StatefulSet:
+   * `spec.volumeClaimTemplates.spec.resources.requests.storage` (increase only)
+   * `spec.volumeClaimTemplates.spec.volumeAttributesClassName`
+   * `spec.volumeClaimTemplates.metadata.labels`
+   * `spec.volumeClaimTemplates.metadata.annotations`
 
 Introduce a new field in StatefulSet `spec`: `volumeClaimUpdatePolicy` to
 specify how to coordinate the update of PVCs and Pods. Possible values are:
-- `OnDelete`: the default value, only update the PVC when the the old PVC is deleted.
-- `InPlace`: patch the PVC in-place if possible. Also includes the `OnDelete` behavior.
+- `OnClaimDelete`: the default value, only update the PVC when the the old PVC is deleted.
+- `InPlace`: patch the PVC in-place if possible. Also includes the `OnClaimDelete` behavior.
 
-Changes to StatefultSet `status`:
 
 Additionally collect the status of managed PVCs, and show them in the StatefulSet status.
-
-For each PVC in the template:
-- compatible: the number of PVCs that are compatible with the template.
-  These replicas will not be blocked on Pod recreation.
-- updating: the number of PVCs that are being updated in-place (e.g. expansion in progress).
-- overSized: the number of PVCs that are larger than the template.
-- totalCapacity: the sum of `status.capacity` of all the PVCs.
-
-Some fields in the `status` are also updated to reflect the staus of the PVCs:
-- readyReplicas: in addition to pods, also consider the PVCs status. A PVC is not ready if:
-  - `volumeClaimUpdatePolicy` is `InPlace` and the PVC is updating;
+Some fields in the `status` are updated to reflect the status of the PVCs:
+- readyReplicas: in addition to pods, also consider the PVCs status.
 - availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
@@ -278,78 +272,44 @@ Some fields in the `status` are also updated to reflect the staus of the PVCs:
 With these changes, user can still use `kubectl rollout status` to monitor the update process,
 both for automated patching and for the PVCs that need manual intervention.
 
-### Updated Reconciliation Logic
+A PVC is considered ready if:
+* PVC's `status.capacity.storage` is greater than or equal to min(template spec, PVC spec).
+  If the template is 10Gi, PVC is 10Gi and is expanding to 100Gi but failed, we still consider it ready.
+* PVC's `status.currentVolumeAttributesClassName` equals to `spec.volumeAttributesClassName`.
 
-How to update PVCs:
-1. If `volumeClaimUpdatePolicy` is `InPlace`,
-   and if `volumeClaimTemplates` and actual PVC only differ in mutable fields
-   (`spec.resources.requests.storage`, `spec.volumeAttributesClassName`, `metadata.labels`, and `metadata.annotations` currently),
-   patch the PVC to the extent possible.
-   - `spec.resources.requests.storage` is patched to max(template spec, PVC status)
-     - Do not decreasing the storage size below its current status.
-       Note that decrease the size in PVC spec can help recover from a failed expansion if 
-       `RecoverVolumeExpansionFailure` feature gate is enabled.
-   - `spec.volumeAttributesClassName` is patched to the template value.
-   - `metadata.labels` and `metadata.annotations` are patched with server side apply.
+A new label `controller-revision-hash` is added to the PVCs,
+to ensure we have the correct version of PVC in cache when determining whether the PVC is ready.
 
-2. If it is not possible to make the PVC [compatible](#what-pvc-is-compatible),
-   do nothing. But when recreating a Pod and the corresponding PVC is deleting,
-   wait for the deletion then create a new PVC together with the new Pod (already implemented).
-<!--
-Tested on Kubernetes v1.28, and I can see this event:
-Warning  FailedCreate         3m58s (x7 over 3m58s)  statefulset-controller  create Pod test-rwop-0 in StatefulSet test-rwop failed error: pvc data-test-rwop-0 is being deleted
--->
+### Kubernetes Controller Changes
 
-3. Use either current or updated revision of the `volumeClaimTemplates` to create/update the PVC,
-   just like Pod template.
+Additionally watch for events from PVCs, in order to kickoff the update process when the PVC becomes ready.
 
-When to update PVCs:
-1. before advancing `status.updatedReplicas` to the next replica,
-  check that the PVCs of the next replica are 
-   [compatible](#what-pvc-is-compatible) with the new `volumeClaimTemplates`.
-   If not, and if we are not going to patch it automatically,
-   wait for the user to delete/update the old PVC manually.
+If `volumeClaimUpdatePolicy` is `OnClaimDelete`, nothing changes. This field acts like a per-StatefulSet feature-gate.
+The changes described below applies only for `InPlace` policy.
 
-2. When doing rolling update, A replica is considered ready if the Pod is ready
-   and all its volumes are not being updated in-place.
-   Wait for a replica to be ready for at least `minReadySeconds` before proceeding to the next replica.
+Include `volumeClaimTemplates` in the `ControllerRevision`.
 
-3. Whenever we check for Pod update, also check for PVCs update.
-   e.g.:
-   - If `spec.updateStrategy.type` is `RollingUpdate`,
-     update the PVCs in the order from the largest ordinal to the smallest.
-   - If `spec.updateStrategy.type` is `OnDelete`,
-     Only update the PVC when the Pod is deleted.
-   
-4. When patching the PVC, if we also re-create the Pod,
-   update the PVC after old Pod deleted, together with creating new pod.
-   Otherwise, if pod is not changed, update the PVC only.
+Since modifying `volumeClaimTemplates` will change the hash,
+Add support for updating `controller-revision-hash` label of the Pod without deleting and recreating the Pod,
+if the pod template is not changed.
 
-Failure cases: don't left too many PVCs being updated in-place. We expect to update the PVCs in order.
+Before creating a new Pod, or, if the Pod template is not changed, updating the label,
+use server-side apply to update the PVCs used by the Pod.
 
-- If the PVC update fails, we should block the update process.
-  If the Pod is also deleted (by controller or manually), don't block the creation of new Pod.
-  We should retry and report events for this.
-  The events and status should look like those when the Pod creation fails.
+The patch used in server-side apply is the volumeClaimTemplates in the StatefulSet, except:
+* `spec.resources.requests.storage` is set to max(template `spec.resources.requests.storage`, PVC `status.capacity.storage`),
+  so that we will not decrease the storage size below its current status.
+  Note that we still may decrease the size in PVC spec,
+  which can help recover from a failed expansion if `RecoverVolumeExpansionFailure` feature gate is enabled.
+* `controller-revision-hash` label is added to the PVCs.
 
-- While waiting for the PVC to reach the compatible state,
-  We should update status, just like what we do when waiting for Pod to be ready.
-  We should block the update process if the PVC is never compatible.
+Naturally, most of the update control logics also apply to PVCs.
+* Wait for PVCs to be ready for at least `minReadySeconds` before proceeding to the next replica.
+* If `updateStrategy` is `RollingUpdate`, update the PVCs in the order from the largest ordinal to the smallest.
+* If `updateStrategy` is `OnDelete`, only update the PVCs if the Pod is deleted manually.
 
-- If the `volumeClaimTemplates` is updated again when the previous rollout is blocked,
-  similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
-  user may need to manually deal with the blocking PVCs (update or delete them).
+When creating new PVCs, use the `volumeClaimTemplates` from the same revision that is used to create the Pod.
 
-
-### What PVC is compatible
-
-A PVC is compatible with the template if:
-- All the immutable fields match exactly; and
-- `metadata.labels` and `metadata.annotations` of PVC is a superset of the template; and
-- `status.capacity.storage` of PVC is greater than or equal to
-  the `spec.resources.requests.storage` of the template; and
-- `status.currentVolumeAttributesClassName` of PVC is equal to
-  the `spec.volumeAttributesClassName` of the template.
 
 ### User Stories (Optional)
 
@@ -367,6 +327,7 @@ To expand the volumes managed by a StatefulSet,
 we can just use the same pipeline that we are already using to update the Pod.
 All the test, review, approval, and rollback process can be reused.
 
+<!--StatefulSet is not allowed to shrink currently.
 #### Story 2: Shinking the PV by Re-creating PVC
 
 After running our app for a while, we optimize the data layout and reduce the required storage size.
@@ -377,9 +338,9 @@ Our app can automatically rebuild the data in the new storage from other replica
 So we update the `volumeClaimTemplates` of the StatefulSet,
 delete the PVC and Pod of one replica, let the controller re-create them,
 then monitor the rebuild process.
-Once the rebuild completes successfully, we proceed to the next replica.
+Once the rebuild completes successfully, we proceed to the next replica. -->
 
-#### Story 3: Asymmetric Replicas
+#### Story 2: Asymmetric Replicas
 
 The storage requirement of different replicas are not identical,
 so we still want to update each PVC manually and separately.
@@ -395,12 +356,19 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-When designing the `InPlace` update strategy, we update the PVC like how we re-create the Pod.
-i.e. we update the PVC whenever we would re-create the Pod;
-we wait for the PVC to be compatible whenever we would wait for the Pod to be available.
+When designing the `InPlace` update strategy, we want to reuse the infrastructures controlling Pod rollout.
+We apply the changes to the PVCs before we set new `controller-revision-hash` label.
+New invariance established about PVCs:
+If the Pod has revision A label, all its PVCs are either not existing yet, or updated to revision A.
 
-The StatefulSet controller should also keeps the current and updated revision of the `volumeClaimTemplates`,
-so that a StatefulSet can still re-create Pods and PVCs that are yet-to-be-updated.
+We introduce `controller-revision-hash` label on PVCs to:
+* Record where have progressed, to ensure each PVC is only updated once per rollout.
+* When waiting for PVCs to become ready, we can check the label to ensure we got the correct version in the informer cache.
+
+The rational of using server-side apply to update PVCs:
+Avoid interference with other controllers or human operators that operate on PVCs.
+* If additional annotations/labels are added to the PVCs by others, do not remove them.
+* If storage class is not set in the template, We should not care the storage class of the PVCs.
 
 ### Risks and Mitigations
 
@@ -415,8 +383,29 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
-TODO: Recover from failed in-place update (insufficient storage, etc.)
-What else is needed in addition to revert the StatefulSet spec?
+
+
+Since we don't allow decreasing the storage size of `volumeClaimTemplates`,
+it is not possible to run `kubectl rollout undo` after increasing it.
+We may loose this restriction in the future.
+But unfortunately, since volume expansion cannot be fully cancelled,
+undoing StatefulSet changes may not be enough to revert the system to the previous state,
+but should be enough to unblock StatefulSet rollout.
+
+The user who can update the StatefulSet gains implicit permission to update the PVCs.
+This can incur extra fee to cloud providers.
+Cluster administrators should setup appropriate quota or validation to mitigate this.
+
+Interfering with other controllers or human operators.
+Over the years, the user may have deployed third-party controllers to e.g., expand the volume automatically.
+We should not interfere with them. Like Pods, we use `controller-revision-hash` label to record whether we have updated the PVCs.
+If the `controller-revision-hash` label on either Pod or PVC is already matched, we will not touch the PVCs again.
+So we will not interfere with them as long as the `controller-revision-hash` label is preserved by them.
+
+New Pod may still see old PVC configuration.
+We already ensure that the PVC is updated before the new Pod is created.
+However, the operation on PVCs can be asynchronous. And expansion may not finish without a running Pod.
+
 
 ## Design Details
 
@@ -427,12 +416,56 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We can use Server Side Apply to patch the PVCs,
-so that we will not interfere with the user's manual changes,
-e.g. to `metadata.labels` and `metadata.annotations`.
+When updating volumeClaimTemplates along with pod template, we will go through the following steps:
+1. Delete the old pod.
+2. Apply the changes to the PVCs used by this replica.
+3. Create the new pod with new `controller-revision-hash` label.
+4. Wait for the new pod and PVCs to be ready.
+5. Advance to the next replica and repeat from step 1.
 
-New invariants established about PVCs:
-If the Pod has revision A label, all its PVCs are either not existing yet, or updated to revision A.
+When only updating the volumeClaimTemplates:
+1. Apply the changes to the PVCs used by this replica.
+2. Update the pod with new `controller-revision-hash` label.
+3. Wait for the PVCs to be ready.
+4. Advance to the next replica and repeat from step 1.
+
+Assuming we are updating a replica from revision A to revision B:
+
+| Pod | PVC | Action |
+| --- | --- | --- |
+| - | not existing | create PVC at revision B |
+| not existing | at revision A | update PVC to revision B |
+| not existing | at revision B | create Pod at revision B |
+| at revision A | at revision A | update PVC to revision B |
+| at revision A | at revision B | delete Pod or update Pod label |
+| at revision B | existing | wait for Pod/PVC to be ready |
+
+Note that when Pod is at revision B but PVC is at revision A, we will not update PVC.
+Such state can only happen when user set `volumeClaimUpdatePolicy` to `InPlace` when the feature-gate of KCM is disabled,
+or disable the previously enabled feature-gate.
+We require user to initiate another rollout to update the PVCs, to avoid any surprise.
+
+Failure cases: don't left too many PVCs being updated in-place. We expect to update the PVCs in order.
+
+- If the PVC update fails, we should block the StatefulSet rollout process.
+  This will also block the creation of new Pod.
+  We should detect common cases (e.g. storage class mismatch) and report events before deleting the old Pod.
+  If this still happens (e.g., because of webhook), We should retry and report events for this.
+  The events and status should look like those when the Pod creation fails.
+
+- While waiting for the PVC to become ready,
+  We should update status, just like what we do when waiting for Pod to be ready.
+  We should block the StatefulSet rollout process if the PVC is never ready.
+
+- When individual PVC failed to become ready, the user can update that PVC manually to bring it back to ready.
+
+- If the `volumeClaimTemplates` is updated again when the previous rollout is blocked,
+  similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
+  user may need to manually deal with the blocking PVCs (update or delete them).
+
+In all cases, if the user determines the failure of updating PVCs is not critical,
+he can change `volumeClaimUpdatePolicy` back to `OnClaimDelete` to unblock normal Pod rollout.
+
 
 ### Test Plan
 
@@ -447,7 +480,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -479,7 +512,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+For alpha, the core package we will be touching:
+- `pkg/controller/statefulset`: `2025-05-25` - `86.5%`
+- `pkg/controller/history`: `2025-05-25` - `84.5`
+- `pkg/apis/apps/validation`: `2025-05-25` - `92.5%`
 
 ##### Integration tests
 
@@ -507,6 +543,12 @@ This can be done with:
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
+- When the feature gate is enabled, existing StatefulSets gains a default `volumeClaimUpdatePolicy` of `OnClaimDelete`, and can be updated to `InPlace`.
+  Then disable the feature gate, `volumeClaimUpdatePolicy` field should remain unchanged, but user can clear it manually.
+
+- When the feature gate is disabled in the mid of the PVC rollout, we should not update or wait for the PVCs anymore.
+  `volumeClaimTemplate` should remains in the controllerRevision. And the current rollout should finish successfully.
+
 ##### e2e tests
 
 <!--
@@ -525,6 +567,9 @@ If e2e tests are not necessary or useful, explain why.
 -->
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+
+- When feature gate is enabled, update the StatefulSet `volumeClaimTemplates` with `volumeClaimUpdatePolicy: InPlace` can successfully expand the PVCs.
+  And running Pods are not restarted.
 
 ### Graduation Criteria
 
@@ -600,6 +645,33 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+
+#### GA
+
+- N examples of real-world usage
+- N installs
+- Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -613,6 +685,11 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+No changes required to maintain previous behavior.
+
+To make use of the enhancement, user can update `volumeClaimTemplates` of existing StatefulSets.
+He can also update `volumeClaimUpdatePolicy` to `InPlace` in order to rollout the changes automatically.
 
 ### Version Skew Strategy
 
@@ -628,6 +705,20 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+No coordinating behavior in the control plane and nodes.
+
+Should enable this feature for APIServer before kube-controller-manager.
+An n-1 kube-controller-manager should ignore the `volumeClaimUpdatePolicy` field and never touch PVCs.
+It should always create PVCs with the latest `volumeClaimTemplates`.
+
+If `volumeClaimUpdatePolicy` is set to `InPlace`,
+when new kube-controller-manager starts, it should pick this up and start rolling out PVCs immediately.
+
+If `volumeClaimUpdatePolicy` is set to `InPlace` when the feature-gate of kube-controller-manager is disabled,
+kube-controller-manager should still update the controllerRevision and label on Pods.
+After that, when the feature-gate of kube-controller-manager is enabled,
+user needs to update the `volumeClaimTemplates` again to trigger another rollout.
 
 ## Production Readiness Review Questionnaire
 
@@ -684,9 +775,10 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 The update to StatefulSet `volumeClaimTemplates` will be accepted by the API server while it is previously rejected.
+StatefulSets gains a new field `volumeClaimUpdatePolicy` with default value `OnClaimDelete`.
 
 Otherwise No.
-If `volumeClaimUpdatePolicy` is `OnDelete` (the default values),
+If `volumeClaimUpdatePolicy` is `OnClaimDelete` (the default values),
 the behavior of StatefulSet controller is almost the same as before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -704,13 +796,14 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes. Since the `volumeClaimTemplates` can already differ from the actual PVCs now,
 disable this feature gate should not leave any inconsistent state.
 
-If the `volumeClaimTemplates` is updated then the feature is disabled and the StatefulSet is rolled back,
-The `volumeClaimTemplates` will be kept as the latest version, and the history of them will be lost.
+The `volumeClaimUpdatePolicy` field will not be cleared automatically.
+When it is set to `InPlace`, `volumeClaimTemplates` also remains in the controllerRevision.
+User can rollback each StatefulSet manually by deleting the `volumeClaimUpdatePolicy` field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the `volumeClaimUpdatePolicy` is already set to `InPlace` reenable the feature
-will kick off the update process immediately.
+If the `volumeClaimUpdatePolicy` is already set to `InPlace`,
+user needs to update the `volumeClaimTemplates` again to trigger a rollout.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -727,7 +820,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 Will add unit tests for the StatefulSet controller with and without the feature gate,
-`volumeClaimUpdatePolicy` set to `InPlace` and `OnDelete` respectively.
+`volumeClaimUpdatePolicy` set to `InPlace` and `OnClaimDelete` respectively.
+
+Will add unit tests for exercising the switch of feature gate when `volumeClaimUpdatePolicy` already set. 
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -863,6 +958,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+CSI drivers with in-place ExpandVolume or ModifyVolume capabilities,
+when `spec.resources.requests.storage` or `spec.volumeAttributesClassName` of `volumeClaimTemplates` is updated respectively.
+
 
 ### Scalability
 
@@ -892,14 +990,14 @@ Focusing mostly on:
 -->
 - PATCH StatefulSet
   - kubectl or other user agents
-- PATCH PersistentVolumeClaim
-  - 1 per updated PVC in the StatefulSet (number of updated claim template * replica)
+- PATCH PersistentVolumeClaim (server-side apply)
+  - 1 per PVC in the StatefulSet (number of updated claim template * replica)
   - StatefulSet controller (in KCM)
   - triggered by the StatefulSet spec update
-- PATCH StatefulSet status
-  - 1-2 per updated PVC in the StatefulSet (number of updated claim template * replica)
-  - StatefulSet controller (in KCM)
-  - triggered by the StatefulSet spec update and PVC status update
+
+StatefulSet controller will watch PVC updates.
+(although statefulset controller does not watch PVCs before, KCM does)
+
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -918,7 +1016,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
-Not directly. The cloud provider may be called when the PVCs are updated.
+Not directly. The cloud provider may be called when the PVCs are updated, by CSI.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -929,8 +1027,9 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 StatefulSet:
-- `spec`: 2 new enum fields, ~10B
-- `status`: 4 new integer fields, ~10B
+- `spec`: 1 new enum fields, ~10B
+PersistentVolumeClaim:
+- new label `controller-revision-hash` of size 32B
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -986,6 +1085,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Not very different from the current StatefulSet controller workflow.
+
+If the API server and/or etcd is unavailable, we either cannot apply the update to PVCs, or cannot gather status of PVCs.
+In both cases, the rollout will be blocked until the API server and/or etcd is available again.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1001,7 +1105,30 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Rollout of the StatefulSet blocked due to failing to update PVCs
+  - Detection: apiserver_request_total{resource="persistentvolumeclaims",verb="patch",code!="200"} increased. Events on StatefulSet.
+  - Mitigations: 
+    - Undo `volumeClaimTemplates` changes
+    - Set `volumeClaimUpdatePolicy` to `OnClaimDelete`
+  - Diagnostics: Events on StatefulSet
+  - Testing: Will test the Event is emitted
+
+- Rollout of the StatefulSet blocked due to PVCs never becomes ready, expansion or modify volume failed
+  - Detection: Events on PVC. controller_{modify,expand}_volume_errors_total metrics on external-resizer
+  - Mitigations:
+    - Undo `volumeClaimTemplates` changes
+    - Set `volumeClaimUpdatePolicy` to `OnClaimDelete`
+    - Edit PVC manually to correct the issue
+  - Diagnostics: Events on PVC, logs of external-resizer
+  - Testing: No. the error is already reported on the PVC, by external-resizer.
+
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+When SLOs are not being met, events of PVC or StatefulSet are emitted.
+If problem is not determined from events, operator should check whether the PVC spec is updated correctly.
+If so, follow the troubleshooting instructions of expanding or modifying volume.
+If not, look into the KCM log to determine why the PVC is not updated, rasing the log level if necessary.
 
 ## Implementation History
 
@@ -1044,13 +1171,13 @@ However, this have saveral drawbacks:
   And even if we do all the validations, there are still race conditions and async failures that we are impossible to catch.
   I see this as a major drawback of KEP-0661 that I want to avoid in this KEP.
 * Validation means we should disable rollback of storage size. If we enable it later, it can surprise users, if it is not called a breaking change.
-* The validation is conflict to RecoverVolumeExpansionFailure feature, although it is still alpha.
+* The validation is conflict to RecoverVolumeExpansionFailure feature.
 * `volumeClaimTemplates` is also used when creating new PVCs, so even if the existing PVCs cannot be updated,
   a user may still want to affect new PVCs.
 * It violates the high-level design.
   The template describes a desired final state, rather than an immediate instruction.
   A lot of things can happen externally after we update the template.
-  For example, I have an IaaS platform, which tries to kubectl apply one updated StatefulSet + one new StorageClass to the cluster to trigger the expansion of PVs.
+  For example, I have an IaaC platform, which tries to `kubectl apply` one updated StatefulSet + one new StorageClass to the cluster to trigger the expansion of PVs.
   We don't want to reject it just because the StorageClass is applied after the StatefulSet.
 
 ### Support for updating arbitrary fields in `volumeClaimTemplates`
@@ -1063,7 +1190,7 @@ This is just an extra validation in APIServer. We may remove it later if we find
 We propose to patch the PVC as a whole, so it can only succeed if the immutable fields matches.
 
 If only expansion is supported, patching regardless of the immutable fields can be a logical choice.
-But this KEP also integrates with VAC. VAC is closely coupled with storage class.
+But this KEP also integrates with volumeAttributesClass (VAC). VAC is closely coupled with storage class.
 Only patching VAC if storage class matches is a very logical choice.
 And we'd better follow the same operation model for all mutable fields.
 
