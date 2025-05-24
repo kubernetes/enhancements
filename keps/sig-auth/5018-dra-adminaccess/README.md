@@ -179,8 +179,10 @@ objects as privileged. This feature includes:
    ```yaml
    metadata:
      labels:
-       resource.k8s.io/admin-access: "true"
+       resource.kubernetes.io/admin-access: "true"
    ```
+
+   Note: This label has been updated from `resource.k8s.io/admin-access` while the feature was in alpha in v1.33.
 
    Assumptions:
 
@@ -194,7 +196,7 @@ objects as privileged. This feature includes:
 
    In the REST storage layer, validate requests to create and update
    `ResourceClaim` or `ResourceClaimTemplate` objects with `adminAccess: true`.
-   Only authorize if namespace has the `resource.k8s.io/admin-access: "true"` label.
+   Only authorize if namespace has the `resource.kubernetes.io/admin-access: "true"` label.
 
 1. Grants privileged access to the requested device:
 
@@ -212,7 +214,7 @@ objects as privileged. This feature includes:
 ### Workflow
 
 1. A cluster administrator labels an admin namespace with
-   `resource.k8s.io/admin-access: "true"`.
+   `resource.kubernetes.io/admin-access: "true"`.
 
 1. Users who are authorized to create `ResourceClaim` or `ResourceClaimTemplate`
    objects in this admin namespace can set `adminAccess: true` field if they
@@ -284,7 +286,7 @@ shouldn't have allowed unrestricted access.
 Starting in Kubernetes 1.33 (when this KEP was introduced), a validation has
 been added to the REST storage layer to only authorize `ResourceClaim` or
 `ResourceClaimTemplate` with `adminAccess: true` requests if their namespace has
-the `resource.k8s.io/admin-access: "true"` label to only allow it for users with
+the `resource.kubernetes.io/admin-access: "true"` label to only allow it for users with
 additional privileges.
 
 The below flowchart starts with `ResourceClaim` creation from
@@ -415,7 +417,7 @@ Those tests run in:
 - Additional test cases will be added to `test/integration/scheduler_perf` to
   ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
   requests are only authorized if their namespace has the
-  `resource.k8s.io/admin-access: "true"` label as described in this KEP.
+  `resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
 
 ##### e2e tests
 
@@ -436,7 +438,7 @@ was developed as part of the overall DRA development effort. We have extended
 this test driver to enable `DRAAdminAccess` feature gate and added tests to
 ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
 requests are only authorized if their namespace has the
-`resource.k8s.io/admin-access: "true"` label as described in this KEP.
+`resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
 
 Test links:
 
@@ -466,7 +468,7 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 - Gather feedback
 - Additional tests are in Testgrid and linked in KEP
-- Implementations in the kubernetes-sigs/dra-example-driver
+- Implementations in the kubernetes-sigs/dra-example-driver: https://github.com/kubernetes-sigs/dra-example-driver/issues/97
 
 #### GA
 
@@ -541,7 +543,12 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Will be considered for beta.
+- kube-controller-manager: If the kube-controller-manager fails to create `ResourceClaim` objects from `ResourceClaimTemplate` due to misconfigurations or permission issues relating to `adminAccess`, then the associated Pods will remain in a pending state and won't be scheduled.
+- kube-scheduler: Bugs in the scheduler might lead to Pods not being scheduled even when resources are available or, scheduling Pods that shouldn't be scheduled due to unmet `adminAccess` requirements, all this should be part of the generic scheduler backoff behavior. It will not affect running workloads.
+- Workloads Without `ResourceClaims` will remain unaffected as the adminAccess feature doesn't interact with them. The new code paths introduced for adminAccess only engage when `ResourceClaims` are present in the Pod specification.
+- New Pods requiring `ResourceClaims` with `adminAccess` might remain unscheduled if the control plane components fail to process the claims correctly.
+- Existing Pods continue to run unaffected since `ResourceClaim` and `ResourceClaimTemplate`'s spec is immutable, including the adminAccess field, cannot be altered.
+
 
 ###### What specific metrics should inform a rollback?
 
@@ -557,8 +564,6 @@ the `scheduler_pending_pods` metric in the kube-scheduler or an increase in the
 Further analysis by reviewing logs and pod events is needed to determine whether
 errors are related to this feature.
 
-Will provide more details for beta.
-
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -567,7 +572,11 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Will be considered for beta.
+This will be done manually before transition to beta by bringing up a cluster with kubeadm and changing the feature gate for individual components.
+
+Manual upgrade of the control plane to a version with the feature enabled will be tested. Existing pods not using the feature remained running. Creation of new pods and ResourceClaims that do not use the feature should be unaffected.
+
+Manual downgrade of the control plane to a version with the feature disabled was tested. Existing pods using the feature remained running. Creation of new pods and ResourceClaims that use the feature should be blocked.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -575,7 +584,7 @@ Will be considered for beta.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-Will be considered for beta.
+No.
 
 ### Monitoring Requirements
 
@@ -586,7 +595,7 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-Will be considered for beta.
+Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -596,7 +605,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Will be considered for beta.
+".status.allocation.devices.results[*].adminAccess" will be set to true for a claim using adminAccess when needed by a pod.
+
+Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -640,7 +651,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-Will be considered for beta.
+SLO: 100% of unauthorized access attempts are denied.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -673,6 +684,9 @@ metric in scheduler will identify pods that are currently unschedulable because
 of the `DynamicResources` plugin or a misconfiguration of the `AdminAccess`
 field.
 
+Audit Policy can be created to ensure all create operations on ResourceClaim, ResourceClaimTemplate, and Namespace resources are logged at the metadata level to review successful and denied attempts to set the `AdminAccess`
+field.
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
@@ -680,7 +694,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Will be considered for beta.
+No
 
 ### Dependencies
 
@@ -705,7 +719,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-Will be considered for beta.
+- The DynamicResourceAllocation feature gate must be enabled to create ResourceClaim, ResourceClaimTemplate. More details at [KEP-4381 - DRA Structured Parameters](https://github.com/kubernetes/enhancements/issues/4381)
+- A third-party DRA driver is required for how the driver should interpret the AdminAccess field to get acess to device specific resources without allocating them.
 
 ### Scalability
 
@@ -755,7 +770,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Will be considered for beta.
+The Kubernetes control plane will be down, so no new ResourceClaim or ResourceClaimTemplate will be created.
 
 ###### What are other known failure modes?
 
@@ -772,15 +787,35 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-Will be considered for beta.
+- kube-scheduler cannot allocate ResourceClaims with AdminAccess.
+
+  - Detection: When pods fail to get scheduled, kube-scheduler reports that
+    through events and pod status. For DRA, messages include "cannot allocate
+    all claims" (insufficient resources) and "ResourceClaim not created yet"
+    (user or kube-controller-manager haven't created the ResourceClaim yet).
+    The
+    ["unschedulable_pods"](https://github.com/kubernetes/kubernetes/blob/9fca4ec44afad4775c877971036b436eef1a1759/pkg/scheduler/metrics/metrics.go#L200-L206)
+    metric will have pods counted under the "dynamicresources" plugin label.
+
+    To troubleshoot, "kubectl describe" can be used on (in this order) Pod
+    and ResourceClaim.
+
+  - Mitigations: When ResourceClaims or ResourceClaimTemplates with the `AdminAccess`
+field don't get created, debugging should focus on the namespace labels. The kube-controller-manager logs should have more information.
+
+  - Diagnostics: Audit Policy can be created to ensure all create operations on ResourceClaim, ResourceClaimTemplate, and Namespace resources are logged at the metadata level to review successful and denied attempts to set the `AdminAccess`
+field.
+
+  - Testing: E2E testing covers scenarios that successfully created ResourceClaims and ResourceClaimTemplates with the `AdminAccess` field in admin namespace and denied attempts in non-admin namespace.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Will be considered for beta.
+If SLOs are not being met, not all 100% of unauthorized access attempts are denied. Debugging to determine the problem should review the namespace labels to verify correctness.
 
 ## Implementation History
 
 - Kubernetes 1.33: Alpha version of the KEP.
+- Kubernetes 1.34: Beta version of the KEP.
 
 ## Drawbacks
 
