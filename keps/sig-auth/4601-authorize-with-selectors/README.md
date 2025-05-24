@@ -929,6 +929,7 @@ Test if eliminating use of the CEL selector functions in the offending CEL expre
 
 - v1.31: Alpha release
 - v1.32: Beta release
+- v1.34: Stable release
 
 ## Drawbacks
 
