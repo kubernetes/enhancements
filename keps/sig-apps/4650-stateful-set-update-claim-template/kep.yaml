@@ -26,6 +26,8 @@ replaces:
   - "https://github.com/kubernetes/enhancements/pull/3412"  # Previous attempt on 0611
 
 # The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
 stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
