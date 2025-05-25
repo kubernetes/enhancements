@@ -223,11 +223,11 @@ updates.
   - Typically deployed with the controller component of the CSI Driver: external-attacher, external-provisioner, external-resizer, external-snapshotter, external-health-monitor (alpha), livenessprobe
   - Typically deployed with the node component of the CSI Driver: node-driver-registrar, livenessprobe
 - Controllers
-  - snapshot-controller, volume-data-source-validator (beta)
+  - snapshot-controller, volume-data-source-validator
 - Webhooks
   - csi-snapshot-validation-webhook
 - CSI libraries and utilities 
-  - csi-lib-utils, csi-release-tools, csi-test, lib-volume-populator (beta)
+  - csi-lib-utils, csi-release-tools, csi-test, lib-volume-populator
 - Host binaries 
   - CSI Proxy
 As part of the maintenance work of these components the SIG Storage community:
@@ -313,9 +313,10 @@ The 5x memory request is additional overhead in the control plane nodes, 2x in t
   - [external-provisioner](https://github.com/kubernetes-csi/external-provisioner)
   - [external-resizer](https://github.com/kubernetes-csi/external-resizer)
   - [external-snapshotter](https://github.com/kubernetes-csi/external-snapshotter)
-  - [livenessprobe](https://github.com/kubernetes/livenessprobe)
+  - [livenessprobe](https://github.com/kubernetes-csi/livenessprobe)
   - [node-driver-registrar](https://github.com/kubernetes-csi/node-driver-registrar)
   - [volume-health-monitor](https://github.com/kubernetes-csi/external-health-monitor)
+  - [volume-data-source-validator](https://github.com/kubernetes-csi/volume-data-source-validator)
 - Retain git history logs of sidecars in new monorepo.
 
 <!--
