@@ -372,8 +372,7 @@ If an external component adds `NominatedNodeName`, but the scheduler picks up a 
 But, if an external component updates `NominatedNodeName` that is set by the scheduler, 
 the pod could end up having different `NominatedNodeName` and `NodeName`.
 
-We will update the logic so that:
-- `NominatedNodeName` field is cleared during `binding` call
+We will update the logic so that `NominatedNodeName` field is cleared during `binding` call
 
 We believe that ensuring that `NominatedNodeName` can't be set after the pod is already bound
 is niche enough feature that doesn't justify an attempt to strenghtening the validation.
@@ -457,9 +456,23 @@ Higher-priority pods can ignore it, but pods with equal or lower priority don't 
 This allows us to prioritize nominated pods when nomination was done by external components. 
 We just need to ensure that in case when NominatedNodeName was assigned by an external component, this nomination will get reflected in scheduler memory.
 
-TODO: We need to ensure that works for non-existing nodes too and if those nodes won't appear in the future, it won't leak the memory.
-
 We will implement integration tests simulating the above behavior of external components.
+
+### The scheduler's cache for `NominatedNodeName`
+
+Here, we'll ensure that works for non-existing nodes too and if those nodes won't appear in the future, it won't leak the memory.
+
+The scheduler stores `NominatedNodeName` data at [`nominator`](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/backend/queue/nominator.go).
+This `nominator` holds `NominatedNodeName` data even if the node doesn't exist.
+So, this caching mechanism should work correctly for non-existing NNN node scenario.
+
+Also, this cached info is cleared 
+[`deletePodFromSchedulingQueue`](https://github.com/kubernetes/kubernetes/blob/b2dfba4151b859c31a27fe31f8703f9b2b758270/pkg/scheduler/eventhandlers.go#L199).
+This `deletePodFromSchedulingQueue` is called when unscheduled pods are removed, 
+or pods are assigned to nodes (EventHandler calls `DeleteFunc` handler when [the condition](https://github.com/kubernetes/kubernetes/blob/b2dfba4151b859c31a27fe31f8703f9b2b758270/pkg/scheduler/eventhandlers.go#L416) is no longer met).
+
+So, as a conclusion, there should be nothing to implement newly around it.
+Again, we'll ensure this scenario works correctly via tests.
 
 #### The scheduler only modifies `NominatedNodeName`, not clears it in any cases
 
