@@ -198,6 +198,27 @@ users specifies their required guaranteed bandwidth. Otherwise, the default valu
   **Mitigation:**
   - Administrators should define clear device classes for shareable and unshareable devices to prevent such misallocations.
 
+- When a driver changes a device property from non-shareable to shareable, existing resource claims that have no specified consumed capacity will adopt a default quantity based on the defined sharing policy. This default may represent a fraction of the device, potentially altering the behavior of existing claims.
+
+  **Mitigation:**
+  - To preserve the original behavior during this transition, the driver should set the default consumed capacity to the maximum value. This ensures consistency with the previous non-shareable configuration.
+  - The existing allocation result, which has no share UID (as it was previously a non-shareable device), will be included in the allocated list
+  and cannot be reallocated to another pod during the scheduling process.
+
+- When a driver changes a capacity from non-consumable to consumable for a device that is already shareable, the behavior of resource claims changes.
+  While the capacity is non-consumable, a resource claim for that specific capacity will always guarantee a value of zero.
+  Once changed to consumable, the same claim will guarantee the requested value, assuming sufficient capacity is available.
+
+  **Mitigation:**
+  - To preserve legacy behavior, the driver may default the capacity value to zero when the resource claim does not explicitly request the now-consumable device capacity.
+  - Drivers should include logic to validate total allocation, ensuring that the sum of all consumable requests does not exceed the device’s actual capacity.
+    This includes careful handling of capacity tracking and allocation logic.
+
+  > [!NOTE] switching a capacity from consumable to non-consumable generally has less impact.
+  > It loosens node-level filtering and results in claims no longer requesting a specific guaranteed amount.
+
+For examples of device driver migration, see the [Examples](#examples) section below.
+
 ## Design Details
 
 This enhancement introduces a `shareable` field within the `Device` of the ResourceSlice
@@ -366,7 +387,7 @@ type ExactDeviceRequest struct {
 // CapacityRequirements defines the capacity requirements for a specific device request.
 type CapacityRequirements struct {
     // Minimum defines the minimum amount of each device capacity required for the request.
-    // Each minimum amount must be a non-negative integer.
+    // Each minimum amount must be a standard Quantity.
     //
     // If the capacity has a sharing policy, this value is rounded up to the nearest valid amount
     // according to that policy. The rounded value is used during scheduling to determine how much capacity to consume.
@@ -420,8 +441,11 @@ type ResourceClaimStatus struct {
 type DeviceRequestAllocationResult struct {
   ...
 
-   // ShareUID uniquely identifies the specific allocation result of the shareable device.
-   // Set only when allocation is on a shareable device.
+   // ShareUID uniquely identifies a specific allocation result for a shareable device.
+   // It is set only when the allocation is made on a shareable device.
+   // This acts as an additional map key to distinguish different allocation shares from the same device.
+   //
+   // This UID is randomly generated for each shared allocation and does not correspond to a Kubernetes metadata.uid.
    //
    // +optional
    // +featureGate=DRAConsumableCapacity
@@ -442,6 +466,18 @@ type DeviceRequestAllocationResult struct {
   // +optional
   // +featureGate=DRAConsumableCapacity
    ConsumedCapacities map[QualifiedName]resource.Quantity
+}
+
+
+// AllocatedDeviceStatus contains the status of an allocated device, if the
+// driver chooses to report it. This may include driver-specific information.
+type AllocatedDeviceStatus struct {
+  ...
+   // ShareUID associates the device status to the corresponding allocation result.
+   //
+   // +optional
+   // +featureGate=DRAConsumableCapacity
+	ShareUID *types.UID
 }
 ```
 
@@ -558,6 +594,179 @@ spec:
       - macvlan-2
       distinctAttribute: interfaceName
 ```
+
+#### Device driver migration
+
+- Change from a non-shareable device to shareable device.
+
+  ```yaml
+  kind: ResourceSlice
+  ...
+  spec:
+    driver: example.dra.x-k8s.io
+    devices:
+    - name: gpu
+      basic:
+        shareable: true
+        attributes:
+          name:
+            string: "gpu0"
+        capacity:
+          power:
+            value: 700 # watts
+          memory:
+            sharingPolicy:
+              default: 80Gi
+              range:
+                minimum: 10Gi
+                chunkSize: 10Gi
+            value: 80Gi
+  ```
+
+    - Requests a whole device for shareable device and non-shareable device are the same as below.
+
+      ```yaml
+      kind: ResourceClaim
+      ...
+      spec:
+        devices:
+          requests:
+          - name: gpu
+            exactly:
+              deviceClassName: example.dra.x-k8s.io
+      ```
+
+      `gpu0` will be allocated with 80Gi memory and 700W and cannot be allocated to the other Pod.
+
+      This will be treated the same as requesting the full amount.
+
+      ```yaml
+        kind: ResourceClaim
+        ...
+        spec:
+          devices:
+            requests:
+            - name: gpu
+              exactly:
+                deviceClassName: example.dra.x-k8s.io
+                capacityRequests:
+                  minimum:
+                    memory: 80Gi
+      ```
+
+  - Request a share of a device with explicit capacity.
+
+    ```yaml
+    kind: ResourceClaim
+    ...
+    spec:
+      devices:
+        requests:
+        - name: gpu
+          exactly:
+            deviceClassName: example.dra.x-k8s.io
+            capacityRequests:
+              minimum:
+                memory: 10Gi
+    ```
+
+    `gpu0` will be allocated with 10Gi memory and 700W. Remaining amount considered for scheduling is 70Gi and 700W.
+
+- Change power from non-consumable to consumable capacity and request only one of consumable capacity.
+
+  ```yaml
+  devices:
+  - name: gpu
+    basic:
+      shareable: true
+      attributes:
+        name:
+          string: "gpu0"
+      capacity:
+        power:
+          sharingPolicy:
+            default: 300
+            range:
+              minimum: 300
+              chunkSize: 100
+          value: 700
+        memory:
+          sharingPolicy:
+            default: 80Gi
+            range:
+              minimum: 10Gi
+              chunkSize: 10Gi
+          value: 80Gi
+  ```
+
+  - Request only memory
+
+    ```yaml
+      kind: ResourceClaim
+      ...
+      spec:
+        devices:
+          requests:
+          - name: gpu
+            exactly:
+              deviceClassName: example.dra.x-k8s.io
+              capacityRequests:
+                minimum:
+                  memory: 10Gi
+    ```
+
+    `gpu0` will be allocated with 10Gi memory and 300W powercap. Remaining amount considered for scheduling is 70Gi and 400W.
+
+  - Request only powercap
+
+    ```yaml
+      kind: ResourceClaim
+      ...
+      spec:
+        devices:
+          requests:
+          - name: gpu
+            exactly:
+              deviceClassName: example.dra.x-k8s.io
+              capacityRequests:
+                minimum:
+                  power: 300
+    ```
+
+    `gpu0` will be allocated with 80Gi memory and 300W powercap and it cannot be allocated to the other Pod due to memory guarantee.
+
+- Change the device property from shareable to non-shareable device and request minimum capacity request.
+
+  ```yaml
+  devices:
+  - name: gpu
+    basic:
+      shareable: false
+      attributes:
+        name:
+          string: "gpu0"
+      capacity:
+        power:
+          value: 700
+        memory:
+          value: 80Gi
+  ```
+
+  ```yaml
+  kind: ResourceClaim
+  ...
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: example.dra.x-k8s.io
+          capacityRequests:
+            minimum:
+              memory: 10Gi
+  ```
+
+  `gpu0` will be allocated and the other Pod cannot be allocated.
 
 ### Test Plan
 
@@ -1115,21 +1324,37 @@ Why should this KEP _not_ be implemented?
 
 **Current Approach:**
 
-Use a **boolean** field to indicate whether a device can be shared.
-
-**Alternative:**
-
-Use an **enum**, such as `DeviceClaimMode`, with defined values like:
-
-- `DeviceClaimModeOnce` — device can only be claimed once  
-- `DeviceClaimModeMany` — device can be claimed multiple times
+Use a **boolean** to indicate whether a device can be shared.
 
 Pros:
-- Provides flexibility for future extension according to [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#primitive-types).
+- Simple
 
 Cons:
-- Increases the program’s memory footprint 
-compared to a boolean when there is only a single binary option to serve the purpose.
+- Implicit infinite sharing if no consuming capacity defined
+
+**Alternatives:**
+
+1. Use an **enum**, such as `Allocatable`, with defined values like:
+
+  - `AllocatableOnce` — device can only be allocated once
+  - `AllocatableMultipleTimes` — device can be allocated multiple times
+
+    Pros:
+    - Provides flexibility for future extension according to [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#primitive-types).
+
+    Cons:
+    - Increases the program’s memory footprint
+    compared to a boolean when there is only a single binary option to serve the purpose.
+
+
+2. Use a **count** field to specify how many times a device can be reallocated to different resource requests.
+
+    Pros:
+    - Simple.
+    - No implicit infinite sharing.
+
+    Cons:
+    - Not equivalent to the legacy CNI, which places no limit on the number of master devices, as long as the Pod can be successfully created.
 
 ### Selecting/Deselecting Shareable Devices
 
