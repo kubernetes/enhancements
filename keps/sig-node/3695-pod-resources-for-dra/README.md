@@ -274,8 +274,9 @@ These cases will be added in the existing e2e tests:
 
 #### Beta
 
-- [ ] Gather feedback from consumers of the DRA feature.
-- [ ] No major bugs reported in the previous cycle.
+- [x] Gather feedback from consumers of the DRA feature.
+  - Integration with DCGM exporter (WIP)
+- [x] No major bugs reported in the previous cycle.
 
 #### GA
 
@@ -437,6 +438,10 @@ N/A.
 - 2023-01-12: KEP created
 
 - 2024-09-10: KEP Updated to reflect the current state of the implementation.
+
+- Kubernetes 1.27: Alpha version of the KEP.
+
+- Kubernetes 1.34: Beta version of the KEP.
 
 ## Drawbacks
 
