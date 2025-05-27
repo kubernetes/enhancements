@@ -309,20 +309,26 @@ Using CEL expressions for `additionalPrinterColumns` allows combining all nested
 ```yaml
 additionalPrinterColumns:
 - name: hosts
+  jsonPath: .spec.servers[*].hosts
+  type: string
+- name: hosts
   type: string
   description: "All hosts from all servers"
-  expression: "flatten(self.spec.servers.map(s, s.hosts))"
+  expression: "self.spec.servers.map(s, s.hosts)"
 ```
 
+Output:
 ```
-output
+NAME   HOSTS                                   HOSTS CEL
+foo0   ["foo.example.com","bar.example.com"]   [[foo.example.com, bar.example.com], [baz.example.com]]
 ```
 
 In the above example:
 
 * `spec.servers` is mapped to extract each `hosts` array.
-* `flatten(...)` merges all those nested arrays into one list.
 * The resulting list of all hosts is displayed in the column output.
+
+Once we support the CEL `flatten()` macro in the Kubernetes CEL environment, we can get the exact output with `(self.spec.servers.map(s, s.hosts)).flatten()`.
 
 **References:**
 
@@ -333,9 +339,9 @@ In the above example:
 
 #### Story 2
 
-As a Kubernetes user, I want to display the status of a specific condition (e.g., the "Ready" condition) from a list of status conditions in a human-readable column when using `kubectl get`. Currently, `jsonPath`-based `additionalPrinterColumns` cannot directly extract and display a single condition's status from an array of conditions, which limits usability and clarity.
+As a Kubernetes user, I want to display the status of a specific condition (e.g., the "Ready" condition) from a list of status conditions in a human-readable column when using `kubectl get`. Currently, `jsonPath` based additionalPrinterColumns cannot directly extract and display a single condition's status from an array of conditions, which limits usability and clarity.
 
-With CEL-based `additionalPrinterColumns`, I can define a column using an expression that filters and selects the relevant condition, making the output more meaningful.
+With CEL based additionalPrinterColumns, I can define a column using an expression that filters and selects the relevant condition, making the output more meaningful.
 
 **Example:**
 
@@ -373,8 +379,11 @@ spec:
       expression: 'self.status.conditions.exists(c, c.type == "Ready") ? self.status.conditions.filter(c, c.type == "Ready")[0].status : "Unknown"'
 ```
 
+Output:
 ```
-output
+NAME                READY
+example-resource    True
+example-resource2   Unknown
 ```
 
 This expression checks if a condition with `type == "Ready"` exists. If so, it returns its status; otherwise, it returns `"Unknown"`. This approach enables clear, user-friendly status reporting for conditions stored as arrays in the CRD.
@@ -386,9 +395,9 @@ This expression checks if a condition with `type == "Ready"` exists. If so, it r
 
 #### Story 3
 
-As a Kubernetes user, I want to define an additional printer column that combines multiple fields from a sub-resource into a single human-readable string. The `additionalPrinterColumns` columns defined using `jsonPath` can’t concatenate fields, so the output is either limited or unclear.
+As a Kubernetes user, I want to define an additional printer column that combines multiple fields from a sub-resource into a single human-readable string. The additionalPrinterColumns defined using `jsonPath` can’t concatenate fields, so the output is either limited or unclear.
 
-With CEL expressions in `additionalPrinterColumns`, it is possible to format and combine multiple fields cleanly for better readability.
+With CEL expressions in additionalPrinterColumns, it is possible to format and combine multiple fields cleanly for better readability.
 
 For example, in a CRD with `.spec.sub.foo` and `.spec.sub.bar`, this column defined using CEL expression combines the two fields with a slash:
 
@@ -400,8 +409,10 @@ additionalPrinterColumns:
   expression: 'format("%s/%s", self.spec.sub.foo, self.spec.sub.bar)'
 ```
 
+Output:
 ```
-output
+NAME          COMBINED     AGE
+myresource    foo/bar      7s
 ```
 
 This shows output like `val1/val2` in `kubectl get` columns, improving clarity.
@@ -424,8 +435,10 @@ additionalPrinterColumns:
     expression: 'timestamp(self.status.completionTimestamp) - timestamp(self.status.startTimestamp)'
 ```
 
+Output:
 ```
-output
+NAME         DURATION
+sample-job   24h7m10s
 ```
 
 This would allow `kubectl get` to display the elapsed time between start and completion timestamps as a formatted duration.
@@ -479,10 +492,10 @@ additionalPrinterColumns:
 
 Error:
 
-(TODO: rerun the above example, update the proper error)
-
 ```
-compilation failed: ERROR:: undefined field 'creationTimestamp'
+The CustomResourceDefinition "jobs.example.com" is invalid: spec.additionalPrinterColumns[1]: Internal error: CEL compilation failed for self.metadata.creationTimestamp rules: compilation failed: ERROR: <input>:1:14: undefined field 'creationTimestamp'
+ | self.metadata.creationTimestamp
+ | .............^
 ```
 
 There's a similar ongoing discussion here – [https://github.com/kubernetes/kubernetes/issues/122163](https://github.com/kubernetes/kubernetes/issues/122163)
@@ -520,9 +533,38 @@ For example, if a CEL expression references fields not present in a given Custom
 
 **Mitigation:**
 
-This behavior is aligned with how `jsonPath`-based `additionalPrinterColumns` currently function. If a `jsonPath` evaluation fails, an empty value is printed in the column.
+This behavior is aligned with how `jsonPath` based `additionalPrinterColumns` currently function. If a `jsonPath` evaluation fails, an empty value is printed in the column.
 
 The same strategy will be applied for CEL: evaluation failures will result in an empty column, and the underlying error will be logged. This ensures user experience remains consistent and resilient to partial data issues.
+
+Example:
+
+```yaml
+openAPIV3Schema:
+  status:
+    type: object
+    properties:
+      startTimestamp:
+      type: string
+      format: date-time # Incorrect format
+    completionTimestamp:
+      type: string
+      format: date-time # Incorrect format
+    duration:
+      type: string
+additionalPrinterColumns:
+- name: Duration
+  type: string
+  description: Duration between start and completion
+  expression: 'timestamp(self.status.completionTimestamp) - timestamp(self.status.startTimestamp)'
+```
+
+In the above example, the format for the fields are incorrect, but the CEL expression is valid. This results in the CEL program returning an error during evaluation at the runtime. This happens because the format we've defined, `date-time` is incorrect. The correct format defined in [supportedFormats](https://github.com/kubernetes/kubernetes/blob/4468565250c940bbf70c2bad07f2aad387454be1/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/validation/formats.go#L26-L51) is `datetime`. The above would example would give us the following error:
+
+```
+NAME         DURATION
+sample-job   no such overload: timestamp(string)
+```
 
 
 ## Design Details
@@ -545,7 +587,7 @@ type CustomResourceColumnDefinition struct {
   ...
   JSONPath   string
 
-+	Expression string
++ Expression string
 }
 ```
 
@@ -582,34 +624,34 @@ We expect the additionalPrinterColumns of a CustomResourceDefinition to either h
 
 ```diff
 func ValidateCustomResourceColumnDefinition(col *apiextensions.CustomResourceColumnDefinition, fldPath *field.Path) field.ErrorList {
-	// ...
-	if len(col.JSONPath) == 0 && len(col.expression) == 0 {
-		allErrs = append(allErrs, field.Required(fldPath.Child("JSONPath or expression"), "either JSONPath or CEL expression must be specified"))
-	}
+  // ...
+  if len(col.JSONPath) == 0 && len(col.expression) == 0 {
+    allErrs = append(allErrs, field.Required(fldPath.Child("JSONPath or expression"), "either JSONPath or CEL expression must be specified"))
+  }
 
-	if len(col.JSONPath) != 0 {
-		if errs := validateSimpleJSONPath(col.JSONPath, fldPath.Child("jsonPath")); len(errs) > 0 {
-			allErrs = append(allErrs, errs...)
-		}
-	}
+  if len(col.JSONPath) != 0 {
+    if errs := validateSimpleJSONPath(col.JSONPath, fldPath.Child("jsonPath")); len(errs) > 0 {
+      allErrs = append(allErrs, errs...)
+    }
+  }
 
-+	if len(col.expression) != 0 {
-+    // Handle CEL context creation and error handling
-+    var celContext *CELSchemaContext
-+    celContext = PrinterColumnCELContext(schema)
-+    ...
++ if len(col.expression) != 0 {
++   // Handle CEL context creation and error handling
++   var celContext *CELSchemaContext
++   celContext = PrinterColumnCELContext(schema)
++   ...
 
     // CEL compilation during the validation stage
     compilationResult = cel.CompileColumn(col.Expression, structuralSchema, model.SchemaDeclType(s, true), celconfig.PerCallLimit, environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true), cel.StoredExpressionsEnvLoader())
     // Based on the CEL compilation result validate the additionalPrinterColumn
     if compilationResult.Error != nil {
-			allErrs = append(allErrs, field.InternalError(fldPath, fmt.Errorf("CEL compilation failed for %s rules: %s", col.Expression, compilationResult.Error)))
+      allErrs = append(allErrs, field.InternalError(fldPath, fmt.Errorf("CEL compilation failed for %s rules: %s", col.Expression, compilationResult.Error)))
     }
 
     ...
-	}
+  }
 
-	return allErrs
+  return allErrs
 }
 ```
 
@@ -640,16 +682,16 @@ We then call this function in `TableConvertor.New()` to allow handling additiona
 ```diff
 + func New(crdColumns []apiextensionsv1.CustomResourceColumnDefinition, s *schema.Structural) (rest.TableConvertor, error) {
   ...
-+	if len(col.JSONPath) > 0 && len(col.Expression) == 0 {
++   if len(col.JSONPath) > 0 && len(col.Expression) == 0 {
       // existing jsonPath logic
-+	} else if len(col.Expression) > 0 && len(col.JSONPath) == 0 {
-+		compResult := CompileColumn(col.Expression, s, model.SchemaDeclType(s, true), celconfig.PerCallLimit, environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true), cel.StoredExpressionsEnvLoader())
++   } else if len(col.Expression) > 0 && len(col.JSONPath) == 0 {
++     compResult := CompileColumn(col.Expression, s, model.SchemaDeclType(s, true), celconfig.PerCallLimit, environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true), cel.StoredExpressionsEnvLoader())
 
-+		if compResult.Error != nil {
-+			return c, fmt.Errorf("CEL compilation error %q", compResult.Error)
-+		}
-+		c.additionalColumns = append(c.additionalColumns, compResult)
-+	}
++     if compResult.Error != nil {
++       return c, fmt.Errorf("CEL compilation error %q", compResult.Error)
++      }
++     c.additionalColumns = append(c.additionalColumns, compResult)
++   }
 }
 ```
 
@@ -659,11 +701,11 @@ To make all this work, we also introduce the following:
 
 ```go
 type ColumnCompilationResult struct {
-	Error          error
-	MaxCost        uint64
-	MaxCardinality uint64
-	FieldPath      *field.Path
-	Program        cel.Program
+  Error          error
+  MaxCost        uint64
+  MaxCardinality uint64
+  FieldPath      *field.Path
+  Program        cel.Program
 }
 ```
 
