@@ -245,15 +245,8 @@ This design requires wait for a watch cache to catch up to the needed revision.
 There might be situation where watch is not providing updates causing watch cache to be permanently stale.
 For example if watch stream is clogged, or when using etcd version v3.3 and older that don't provide progress notifications.
 
-If the watch cache doesn't catch up in within some time limit we either fail the request or have a fallback.
-
-For Beta we have implemented a fallback mechanism that will revert to normal behavior before we reach timeout.
+If the watch cache doesn't catch up in within some time limit we fallback to etcd.
 To monitor fallback rate we introduced `apiserver_watch_cache_consistent_read_total` with `fallback` and `success` labels.
-
-With qualification results showing that fallback is needed and we can go back to the original design.
-We should fail the requests and rely on rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
-well-behaved clients) and [Apiserver Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
-The main reason for that is the added complexity and incorrect handling in APF that assumes that request cost doesn't change.
 
 ### How to debug cache issue?
 
@@ -341,7 +334,6 @@ After almost a year in Beta, running enabled default, we have collected the foll
 * In 99.9% of cases watch cache became fresh enough within 110ms.
 * Only 0.001% of waits for fresh cache took more than 250ms.
 * Consistent reads reached 5 nine's of availability, meaning cache was able to become fresh before timeout (3s) in 99.999% of cases.
-* Main cause of fallback was rolling update of etcd that forces a watch cache reinitialization.
 * We have identified and addressed one issue https://github.com/kubernetes/kubernetes/issues/129931
 
 The above results show that consistent reads from cache are stable and reliable. We are confident in promoting this feature to Stable.
