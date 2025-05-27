@@ -568,7 +568,7 @@ spec:
           version: 11.1.42
         powerSavingSupported:
           bool: true
-        k8s.io/pcieRoot:
+        kubernetes.io/pcieRoot:
           string: pci-root-0
       capacity:
         memory: 16Gi
@@ -578,13 +578,13 @@ Compared to labels, attributes have values of exactly one type. Quantities are d
 in the separate `capacity` map. As described later on, both sets can be used in CEL expressions to select a
 specific resource for allocation on a node.
 
-We are reserving the `k8s.io/` domain (and subdomains) prefix for attributes and
-capacities for standardization by the Kubernetes project. This reservation
-allows us to define common attributes that can describe hardware characteristics
-across resources from different vendors. Currently, we are defining one such
-standard attribute: `k8s.io/pcieRoot`. Details on its meaning and how it should
-be exposed by DRA drivers are available in the [API design section under
-ResourceSlice's](#resourceslice) QualifiedName definition.
+We are reserving the `kubernetes.io/` domain (and subdomains) prefix for
+attributes and capacities for standardization by the Kubernetes project. This
+reservation allows us to define common attributes that can describe hardware
+characteristics across resources from different vendors. Currently, we are
+defining one such standard attribute: `kubernetes.io/pcieRoot`. Details on its
+meaning and how it should be exposed by DRA drivers are available in the [API
+design section under ResourceSlice's](#resourceslice) QualifiedName definition.
 
 **Note:** If a driver needs to remove a device or change its attributes,
 then there is a risk that a claim gets allocated based on the old
@@ -1228,15 +1228,16 @@ const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 // domain prefix are assumed to be part of the driver's domain. Attributes
 // or capacities defined by 3rd parties must include the domain prefix.
 //
-// The Kubernetes project reserves the "k8s.io/" domain prefix for standardizing
-// attributes and capacities. DRA drivers **SHOULD** use these standardized
-// names if they define a characteristic of a device that matches the intent of
-// a standard attribute (or capacity) name. This ensures consistency and
-// interoperability across different drivers when conveying the same idea.
+// The Kubernetes project reserves the "kubernetes.io/" domain prefix for
+// standardizing attributes and capacities. DRA drivers **SHOULD** use these
+// standardized names if they define a characteristic of a device that matches
+// the intent of a standard attribute (or capacity) name. This ensures
+// consistency and interoperability across different drivers when conveying the
+// same idea.
 //
 // Currently, the following standard attributes have been defined:
 //
-//  1. `k8s.io/pcieRoot`: A string value in the format `pci<domain>:<bus>`,
+//  1. `kubernetes.io/pcieRoot`: A string value in the format `pci<domain>:<bus>`,
 //     referring to a PCIe (Peripheral Component Interconnect Express) Root
 //     Complex. This attribute can be used to identify devices that share the
 //     same PCIe Root Complex. DRA drivers MAY determine this value by
