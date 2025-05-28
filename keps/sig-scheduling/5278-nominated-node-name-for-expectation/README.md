@@ -219,7 +219,7 @@ The shape and count of newly added nodes assumes some particular pod placement
 and the pods may not fit or satisfy scheduling constraints if placed differently.
 
 By specifing their expectation on `NominatedNodeName`, the scheduler can first check
-whether the pod can go to the nominated node, increasing end-to-end scheduling time.
+whether the pod can go to the nominated node, reducing end-to-end scheduling time.
 
 ### Retain the scheduling decision
 
@@ -247,7 +247,7 @@ and the PreBind plugins can restart their work from where they were before the r
 
 Here is the all use cases of NominatedNodeNames that we're taking into consideration:
 - The scheduler puts it after the preemption (already implemented)
-- The scheduler puts it at the beginning of binding cycles (only if the binding cycles invole PreBind phase)
+- The scheduler puts it at the beginning of binding cycles (only if the binding cycles involve PreBind or WaitOnPermit phase)
 - The ClusterAutoscaler or Karpenter puts it after creating a new node for pending pod(s) so that the scheduler
    can utilize the result of scheduling simulations already made by those components
 
@@ -311,11 +311,11 @@ If we put more components into the picture (e.g. ClusterAutoscaler and Karpenter
 get a more complex state machine, with the following states:
 
 1. pending pod
-1. pod proposed to node (by external component) [not approved by scheduler]
-1. pod nominted to node (based on external proposal) and waiting for node (e.g. being created & ready)
-1. pod nominated to node and waiting for preemption
-1. pod allocated to node and waiting for binding
-1. pod bound
+2. pod proposed to node (by external component) [not approved by scheduler]
+3. pod nominated to node (based on external proposal) and waiting for node (e.g. being created & ready)
+4. pod nominated to node and waiting for preemption
+5. pod allocated to node and waiting for binding
+6. pod bound
 
 The important part is that if we decide to use `NominatedNodeName` to store all that information,
 we're effectively losing the ability to distinguish between those states.
@@ -344,7 +344,7 @@ However, we don't need this state machine now, so we just introduce the followin
 - Any component can set `NominatedNodeName` if it is currently unset.
 - Scheduler is allowed to overwrite `NominatedNodeName` at any time in case of preemption or
 the beginning of the binding cycle.
-- No external components can't overwrite `NominatedNodeName` set by a different component.
+- No external components can overwrite `NominatedNodeName` set by a different component.
 - If `NominatedNodeName` is set, the component who set it is responsible for updating or
 clearing it if its plans were changed (using PUT or APPLY to ensure it won't conflict with
 potential update from scheduler) to reflect the new hint.
@@ -364,7 +364,7 @@ double the number of API calls from scheduler, which isn't really acceptable fro
 performance reasons.
 
 To mitigate this problem, we:
-- skip setting `NNN` when all `Permit` and `PreBind` plugins have no work to do fir this pod.
+- skip setting `NNN` when all `Permit` and `PreBind` plugins have no work to do for this pod.
 (We'll discuss how-to in the later section.)
 
 For cases with delayed binding, we make an argument that the additional calls are acceptable, as
