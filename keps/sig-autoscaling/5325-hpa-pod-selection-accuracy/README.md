@@ -457,7 +457,7 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature gate (`HPAStrictPodSelection`)
+- Feature implemented behind a feature gate (`HPAPodSelection`)
 - Initial e2e tests completed and enabled
 
 ### Upgrade / Downgrade Strategy
