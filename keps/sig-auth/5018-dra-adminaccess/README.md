@@ -44,13 +44,13 @@
 Items marked with (R) are required _prior to targeting to a milestone /
 release_.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in
       [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and
       SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -59,12 +59,12 @@ release_.
         [all GA Endpoints](https://github.com/kubernetes/community/pull/1806)
         must be hit by
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for
+- [x] User-facing documentation has been created in [kubernetes/website], for
       publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to
+- [x] Supporting documentation—e.g., additional design documents, links to
       mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -182,7 +182,7 @@ objects as privileged. This feature includes:
        resource.kubernetes.io/admin-access: "true"
    ```
 
-   Note: This label has been updated from `resource.k8s.io/admin-access` while the feature was in alpha in v1.33.
+   Note: This label has been updated from `resource.k8s.io/admin-access` while the feature was in alpha.
 
    Assumptions:
 
@@ -405,19 +405,15 @@ The scheduler plugin and resource claim controller are covered by the workloads
 in
 https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler_perf/dra/performance-config.yaml
 
-Those tests run in:
+Additional test cases have been added to `test/integration/scheduler_perf` to
+ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
+requests are only authorized if their namespace has the
+`resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
 
-- [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration)
-  and
-  [periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master)
-  integration testing under
-  `k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf` and
-  `k8s.io/kubernetes/test/integration/scheduler_perf.dra.dra` and the
-  `DRAAdminAccess` feature gate is already enabled.
-- Additional test cases will be added to `test/integration/scheduler_perf` to
-  ensure `ResourceClaim` or `ResourceClaimTemplate` with `adminAccess: true`
-  requests are only authorized if their namespace has the
-  `resource.kubernetes.io/admin-access: "true"` label as described in this KEP.
+These tests run as part of the following with the `DRAAdminAccess` feature gate enabled.
+
+- `k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf`: [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=scheduler_perf.scheduler_perf), [periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=scheduler_perf.scheduler_perf), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=scheduler_perf)
+- `k8s.io/kubernetes/test/integration/scheduler_perf.dra.dra`: [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=scheduler_perf.dra.dra),[periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=scheduler_perf.dra.dra), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=scheduler_perf)
 
 ##### e2e tests
 
@@ -451,11 +447,8 @@ ResourceClaimTemplate and ResourceClaim for admin access
 [Feature:DRAAdminAccess] [FeatureGate:DRAAdminAccess] [Alpha]
 [FeatureGate:DynamicResourceAllocation] [Beta]
 
-- AdminAccess related tests in
-  https://github.com/kubernetes/kubernetes/blob/69ab91a5c59617872c9f48737c64409a9dec2957/test/e2e/dra/dra.go#L976
-  and
-  https://github.com/kubernetes/kubernetes/blob/69ab91a5c59617872c9f48737c64409a9dec2957/test/e2e/dra/dra.go#L1095
-  will be updated.
+- `cluster validate ResourceClaimTemplate and ResourceClaim for admin access`, [SIG Node](https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-kubernetes-kind-dra-all), [triage search](https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=admin%20access)
+- `cluster DaemonSet with admin access`, [SIG Node](https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#pull-kubernetes-kind-dra-all), [triage search](https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=admin%20access)
 
 ### Graduation Criteria
 
@@ -466,13 +459,23 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 #### Beta
 
-- Gather feedback
+- Gather feedback from developers and surveys via implementations in the kubernetes-sigs/dra-example-driver: https://github.com/kubernetes-sigs/dra-example-driver/issues/97 and potentially other drivers
+- Complete feature AdminAccess
 - Additional tests are in Testgrid and linked in KEP
-- Implementations in the kubernetes-sigs/dra-example-driver: https://github.com/kubernetes-sigs/dra-example-driver/issues/97
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+
 
 #### GA
-
+- 1 example of real-world usage
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 ### Upgrade / Downgrade Strategy
 
