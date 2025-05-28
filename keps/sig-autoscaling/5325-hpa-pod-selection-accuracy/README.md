@@ -162,7 +162,7 @@ This often results in unexpected behavior such as:
 * Unnecessary scaling events triggered by temporary workloads
 * Unpredictable scaling behavior that's difficult to diagnose
 
-This proposal adds a parameter to HPAs which that ensures the HPA only considers pods that are actually owned by the target workload (through owner references), rather than all pods matching the label selector.
+This proposal adds a parameter to HPAs which ensures the HPA only considers pods that are actually owned by the target workload, through owner references, rather than all pods matching the label selector.
 
 
 ## Motivation
