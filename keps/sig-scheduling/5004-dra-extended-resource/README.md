@@ -98,7 +98,9 @@ There are three major motivations for the solution in this KEP.
   their own pace.
 
 * Enable cluster administrators to transition to DRA gradually at their own pace,
-  possibly one node a time.
+  possibly one node a time, which means supporting clusters where some nodes use
+  device plugins and some nodes use DRA drivers for the same hardware at the same
+  time.
 
 For example, the following `Deployment` can be installed without modification on a
 cluster with DRA `ResourceSlice`,`DeviceClass` and `Node` below. The 1 GPU out
@@ -746,6 +748,8 @@ ensure `ExtendedResourceName`s are handled by the scheduler as described in this
 
 #### Beta
 
+- Reevaluate where to create the special resource claim, in scheduler or some
+  other controller, based on feedback from Alpha and the nomination concept.
 - Gather feedback from developers and surveys
 - 3 examples of vendors making use of the extensions proposed in this KEP
 - Scalability tests that mirror real-world usage as determined by user feedback
