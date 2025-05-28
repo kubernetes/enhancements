@@ -194,7 +194,7 @@ updates.
 Use `NominatedNodeName` to express an pod placement, expected by the scheduler or expected by other components.
 
 The scheduler puts `NominatedNodeName` at the beginning of binding cycles to show an expected pod placement to other components.
-And, also other components can put `NominatedNodeName` on pending pods to indicate the pod is prefered to be scheduled on a specific node.
+And, also other components can put `NominatedNodeName` on pending pods to indicate the pod is preferred to be scheduled on a specific node.
 
 ## Motivation
 
@@ -218,7 +218,7 @@ and create new nodes or un-gate pods based on the calculation result.
 The shape and count of newly added nodes assumes some particular pod placement
 and the pods may not fit or satisfy scheduling constraints if placed differently.
 
-By specifing their expectation on `NominatedNodeName`, the scheduler can first check
+By specifying their expectation on `NominatedNodeName`, the scheduler can first check
 whether the pod can go to the nominated node, reducing end-to-end scheduling time.
 
 ### Retain the scheduling decision
@@ -390,7 +390,7 @@ the pod could end up having different `NominatedNodeName` and `NodeName`.
 We will update the logic so that `NominatedNodeName` field is cleared during `binding` call
 
 We believe that ensuring that `NominatedNodeName` can't be set after the pod is already bound
-is niche enough feature that doesn't justify an attempt to strenghtening the validation.
+is niche enough feature that doesn't justify an attempt to strengthening the validation.
 
 #### What if there are multiple components that could set `NominatedNodeName` on the same pod
 
