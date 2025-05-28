@@ -229,7 +229,7 @@ spec:
         type: Utilization
         averageUtilization: 50
 ```
-In this case, the HPA will factor in CPU consumption from the Job's pod despite it not being part of the Deployment, potentially causing incorrect scaling decisions.
+In this case, the HPA will factor in CPU consumption from the Job's pod, despite it not being part of the Deployment, potentially causing incorrect scaling decisions.
 
 
 ### Goals
