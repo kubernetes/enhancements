@@ -276,6 +276,13 @@ In order to improve the end-to-end pod startup latency when cluster scale-up is 
 mechanism to communicate the results of scheduling simulations from ClusterAutoscaler or Karpenter
 to scheduler.
 
+#### Story4: Kueue specifies `NominatedNodeName` to indicate where it prefers pods being scheduled to
+
+Kueue supports scheduling features that are not (yet) supported in core scheduling, such as topology-aware scheduling. 
+When it determines the optimal placement, it needs a mechanism to pass that information to the scheduler.
+Currently it is using NodeSelector to enforce placement of pods and only then ungates the pods. Scheduler doesn't take that information into account until pods are ungated and can schedule other pods in those places in the meantime. 
+It would be beneficial to pass that information to scheduler sooner, as well as allow scheduler to change the decision if the topology constraints are just the soft ones.
+
 ### Risks and Mitigations
 
 #### NominatedNodeName can already be set by other components now.
@@ -419,9 +426,14 @@ proposal will be implemented, this is the place to discuss them.
 -->
 ### The scheduler puts `NominatedNodeName`
 
-After the pod is permitted at `WaitOnPermit`, the scheduler needs to update `NominatedNodeName` with the node that it determines the pod is going to.
+The scheduler needs to update `NominatedNodeName` with the node that it determines the pod is going to at the beginning of binding cycles.
 
-Also, in order to set `NominatedNodeName` only when some PreBind plugins work, we need to add a new function (or create a new extension point, if we are concerned about the breaking change to the existing PreBind plugins).
+As discussed at [Increasing the load to kube-apiserver](#increasing-the-load-to-kube-apiserver), we should set `NominatedNodeName` only when some Permit plugins (at WaitOnPermit) or PreBind plugins work. 
+
+We can know when there is Permit plugins that will work at WaitOnPermit or not by the status returned from Permit() functions.
+If one or more Permit() returned `Wait` status, we have to put `NominatedNodeName` at the beginning of binding cycles, before actually starting to wait at WaitOnPermit.
+
+And, for PreBind plugins, we need to add a new function to `PreBindPlugin`.
 
 ```go
 type PreBindPlugin interface {
