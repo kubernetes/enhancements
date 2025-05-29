@@ -17,6 +17,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [API calls categorization](#api-calls-categorization)
   - [1: Where and how to handle API calls in the kube-scheduler](#1-where-and-how-to-handle-api-calls-in-the-kube-scheduler)
     - [1.1: Handle API calls in the scheduling queue](#11-handle-api-calls-in-the-scheduling-queue)
     - [1.2: Handle API calls in the handleSchedulingFailure](#12-handle-api-calls-in-the-handleschedulingfailure)
@@ -164,10 +165,10 @@ The following operations involve API calls during the main scheduling cycle and 
 
 1) Updating a Pod status in `handleSchedulingFailure` when a Pod is unschedulable.
 2) [Feature proposal: [#130668](https://github.com/kubernetes/kubernetes/issues/130668)] Updating the status of a Pod that is rejected by the `PreEnqueue` plugins in the scheduling queue.
-3) [Feature proposal: [KEP-5278](https://github.com/kubernetes/enhancements/issues/5278)] Set `nominatedNodeName` in delayed binding scenarios.
 
 These API calls are already asynchronous:
 
+3) [Feature proposal: [KEP-5278](https://github.com/kubernetes/enhancements/issues/5278)] Set `nominatedNodeName` in delayed binding scenarios.
 4) Preemption - `ClearNominatedNodeName` and Pod eviction (made asynchronous by [KEP-4832](https://github.com/kubernetes/enhancements/issues/4832)).
 5) Pod binding - is in the asynchronous binding phase.
 
@@ -180,29 +181,32 @@ but not necessarily in the first place:
 7) DRA ResourceClaim deallocating in `PostFilter`.
 8) DRA removing `ReservedFor` in `Unreserve`.
 9) DRA ResourceClaims binding - is in the `PreBind` phase, hence asynchronous.
-10) Other potential DRA features.
+10) [Feature proposal: [KEP-5004](https://github.com/kubernetes/enhancements/issues/5278)] Extended resource feature will add `ResourceClaim` creation API call to the `PreBind` phase.
+11) Other potential DRA features.
 
 API calls relevance order in which they could cancel less relevant calls for the same pod (3rd goal):
 
 - Pod deletion caused by preemption (4) should cancel all Pod-based API calls for such a Pod.
 - Pod binding (5) should cancel Pod status update API calls (1 - 3), because they are no longer relevant.
 - Updating Pod status (1, 2) and setting `nominatedNodeName` (3) should cancel previous such updates.
-  Both are calls to the `status` subresource of a Pod, so they should overwrite the previous calls properly
-  if the newest status is stored in-memory.
-- API calls for non-Pod resources (5 - 10) should be further analyzed as they are not likely to consider the Pod-based API calls,
+  Both are calls to the `status` subresource of a Pod, so they should overwrite (merge) the previous calls properly
+  when the newest status is stored in-memory.
+- API calls for non-Pod resources (6 - 11) should be further analyzed as they are not likely to consider the Pod-based API calls,
   hence implementing those shouldn't block making (1 - 3) calls asynchronous.
 
 There is no need to send two API calls for one Pod, because more relevant calls should override less relevant ones,
 and status updates can be combined into one call.
+There is no scenario in which two API calls, but for different pods, or even **any** two API calls that do not involve the same object,
+should be canceled or merged, so the relevance order between them should not be analyzed.
 
-In terms of API call priority, the order might be different (3rd goal):
+In terms of API call priority, the order might be different (4th goal):
 
 - Pod binding (5) should have the highest priority as this is the main purpose of the kube-scheduler.
 - Pod deletion caused by preemption (4) should also be important to free up space for high-priority Pods.
 - Updating Pod status (1, 2) could be less important and called if there is space for it.
   It's worth considering if setting `nominatedNodeName` (3) should have the same priority or higher,
-  because the higher delay might affect other components like Cluster Autoscaler.
-- API calls for non-Pod resources (5 - 10) could be analyzed case by case, but are likely less important than (5) and (4).
+  because the higher delay might affect other components like Cluster Autoscaler or Karpenter.
+- API calls for non-Pod resources (6 - 11) could be analyzed case by case, but are likely equally important to (5) or (4).
 
 
 ### 1: Where and how to handle API calls in the kube-scheduler
@@ -222,7 +226,7 @@ A new method could be added to the `PriorityQueue`, which will take the function
 It should also make sure the pod is stored in `inFlightPods` to register the cluster events that will happen during the asynchronous part.
 Calling `AddUnschedulableIfNotPresent` at the end ensures there won't be any race with the asynchronous pod update.
 Because the pod would need to be in `inFlightPods` during the API call, the size of `inFlightEvents` might increase,
-but as long as the API call executes quickly, there won't be a significant memory issue.
+but as long as the API call executes quickly, there won't be a significant memory pressure.
 
 Example solution could look like:
 
@@ -313,13 +317,13 @@ All pod-based scenarios (1 - 5) could and should be implemented when choosing th
 Still, a single error reporting path for pod condition updates could be considered but wouldn't be required.
 
 Pros:
-- Allows the pod to be scheduled again even before the API call completes.
+- Allows the pod to be scheduled again even before the API call completes, what could reduce end-to-end pod startup latency.
 - Simplifies introducing new API calls to the kube-scheduler if the collision handling logic is configured correctly.
 
 Cons:
 - Requires implementing complex, advanced queueing logic.
-- Necessitates migrating **all** pod-based API calls to this method.
-- Implementing collision resolution (e.g., for same-pod updates) is complex.
+- Necessitates migrating **all** pod-based API calls to this method, but introduces unification what could be desirable.
+- Implementing collision resolution (e.g., for same-pod updates) is complex, but could allow to optimize the number of API calls at all.
 
 
 ### 2: How to make the API calls asynchronous
@@ -342,6 +346,7 @@ Cons:
 - Does not inherently support delaying calls.
 - Higher-level mechanisms (like 1.1 or 1.2) would be needed to prevent pod update races.
 - `nominatedNodeName` scenario support would require more effort in (1.1) or (1.2).
+- Prevents from further optimizations, e.g. can't merge two API calls.
 
 
 #### 2.2: Make the API calls queued
@@ -355,7 +360,7 @@ However, it is questionable what should happen if two update API calls for the s
 This might not happen in (1.1) and (1.2) if we wait for the previous status update call to complete or terminate it.
 Otherwise, as currently the update is done on a copy of a pod, these two might collide. If the update were to be done on the original pod object,
 it might be possible to simply decide what API calls should be applied for a pod:
-- Status update (patch): Apply newest API call
+- Status update (patch): Merge API calls, while preferring the newest
 - Binding: Ignore status update API calls
 - Delete (in preemption): Ignore status update as well as binding API calls
 

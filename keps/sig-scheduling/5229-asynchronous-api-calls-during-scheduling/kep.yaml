@@ -12,13 +12,13 @@ approvers:
   - dom4ha
   - sanposhiho
 
-stage: alpha
+stage: beta
 
 latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.34"
+  beta: "v1.34"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
