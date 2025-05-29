@@ -394,6 +394,9 @@ is niche enough feature that doesn't justify an attempt to strengthening the val
 
 #### What if there are multiple components that could set `NominatedNodeName` on the same pod
 
+It's not something newly introduced by this KEP because anyone can set NominatedNodeName today,
+but discuss here to form our suggestion. 
+
 Multiple controllers might keep overwriting NominatedNodeName that is set by the others. 
 Of course, we can regard that just as user's fault though, that'd be undesired situation.
 
@@ -401,7 +404,8 @@ There could be several ideas to mitigate, or even completely solve by adding a n
 But, we wouldn't like to introduce any complexity right now because we're not sure how many users would start using this,
 and hit this problem.
 
-So, for now, we'll just document it somewhere as a risk, unrecommended situation, and in the future, we'll consider something
+So, for now, we'll just document it somewhere as a risk, unrecommended situation, 
+and in the future, we'll consider something
 if we actually observe this problem getting bigger by many people starting using it.
 
 #### Invalid `NominatedNodeName` prevents the pod from scheduling
@@ -541,6 +545,7 @@ We're going to add these integration tests:
 - The scheduler prefers to picking up nodes based on NominatedNodeName on pods, if the nodes are available.
 - The scheduler ignores NominatedNodeName reservations on pods when it's scheduling higher priority pods.
 - The scheduler doesn't clear NominatedNodeName when the nominated node isn't available and the pod is unschedulable.
+  - And, once the nodes appears, the pod with NNN set is scheduled there (even if there are other equal-priority pending pods).
 - The scheduler overwrites NominatedNodeName when it performs the preemption, or when it finds another spot in another node and proceeding to the binding cycle (assuming there's a PreBind plugin).
 - The scheduler puts NominatedNodeName at the beginning of binding cycles if Permit or PreBind plugin will do some work.
   - And, the scheduler (actually kube-apiserver, when receiving a binding request) clears NominatedNodeName when the pod is actually bound.
@@ -551,7 +556,8 @@ But, as discussed, assuming PreBind already makes some API calls for the pods, t
 
 ##### e2e tests
 
-?
+We won't implement any e2e tests because we can test everything with integration tests described above,
+and an e2e test wouldn't add any additional value.
 
 ### Graduation Criteria
 
@@ -577,6 +583,10 @@ During the beta period, the feature gate `NominatedNodeNameForExpectation` is en
 
 Users need to disable the feature gate, and restart kube-scheduler and kube-apiserver.
 
+On downgrade to the version that doesn't have this feature, there aren't any action that users need to take. For pods that have NominatedNodeName set, scheduler will try to honor it, but:
+- if the pod is still not schedulable, it will clear the field
+- if the pod is schedulable, but to a different node - it will also clear it (and potentially set it to a different value if preemption is needed)
+
 ### Version Skew Strategy
 
 If kube-apiserver's version is older than kube-scheduler,
@@ -590,9 +600,10 @@ as discussed in [Confusion if `NominatedNodeName` is different from `NodeName` a
 
 So, we can say the risk caused by this version difference would be fairly low.
 
-On the other hand, even if kube-apiserver's version is newer than kube-scheduler,
+On the other hand, if kube-scheduler's version is older than kube-apiserver,
 and doesn't have the implementation change from this KEP,
-nothing goes wrong because kube-apiserver just clears `NominatedNodeName` from the pods.
+nothing goes wrong because kube-apiserver just clears `NominatedNodeName` from the pods at the binding API,
+which is fine by the today's scheduler implementation as well.
 
 ## Production Readiness Review Questionnaire
 
@@ -620,6 +631,8 @@ The scheduler just again starts to put NominatedNodeName at the beginning of bin
 ###### Are there any tests for feature enablement/disablement?
 
 No.
+This feature is only changing when a NominatedNodeName field will be set - it doesn't introduce a new API. 
+However reacting to it is purely in-memory, so enablement/disablement tests wouldn't really differ from regular feature tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -721,7 +734,7 @@ No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Yes.
+Yes - but it should be negligible impact.
 The memory usage in kube-scheduler is supposed to increase by external components starting to use this
 because when `NominatedNodeName` is added on the pods, the scheduler's internal component called `nominator` has to record them so that scheduling cycles can refer to them as necessary.
 
