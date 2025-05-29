@@ -154,7 +154,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-The Horizontal Pod Autoscaler (HPA) has a critical limitation in its pod selection mechanism: it collects metrics from all pods that match the target workload's label selector. regardless of whether those pods are actually managed by the target workload. This can lead to incorrect scaling decisions when unrelated pods (such as Jobs, CronJobs, or other Deployments) happen to share the same labels.
+The Horizontal Pod Autoscaler (HPA) has a critical limitation in its pod selection mechanism: it collects metrics from all pods that match the target workload's label selector.
+This can lead to incorrect scaling decisions when unrelated pods (such as Jobs, CronJobs, or other Deployments) happen to share the same labels.
 
 This often results in unexpected behavior such as:
 
@@ -260,7 +261,7 @@ This enumerated type allows for future extension with additional selection strat
 
 ## Design Details
 
-The HPA specification (v2) will be extended with a new field to control how pods are selected for metrics collection:
+The HPA specification (v2) will be extended with a new field to control additional filtering of pods after the initial label selector matching:
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -269,19 +270,21 @@ spec:
   podSelectionStrategy: OwnerReferences  # Default: LabelSelector
 ```
 
-The `podSelectionStrategy` field supports two values:
-- `LabelSelector`(deafult):
-  * Uses the current behavior
-  * Selects all pods that match the target workload's label selector
-  * Provides backward compatibility with existing HPAs
-  * Best for scenarios where pods might be managed by multiple controllers
-  * The default strategy that uses the current behavior, selecting all pods that match the target workload's label selector
-- `OwnerReferences`:
-  * Implements a stricter pod selection mechanism
-  * Only includes pods that are owned by the target workload through owner references
-  * Follows the ownership chain (e.g., Deployment → ReplicaSet → Pods)
-  * Ensures metrics are only collected from pods that are part of the target workload
-  * Useful when multiple workloads share similar labels but need separate scaling decisions
+Pod Selection Process:
+- Initial Label Selection (Always happens):
+  * The HPA first selects pods using the target workload's label selector
+  * This is the fundamental selection mechanism and remains unchanged
+- Additional Filtering (Based on podSelectionStrategy):
+  * `LabelSelector`(deafult):
+    * No additional filtering
+    * All pods that matched the label selector are used for metrics
+    * Maintains current behavior for backward compatibility
+  * `OwnerReferences`:
+    * Further filters the label-selected pods
+    * Only keeps pods that are owned by the target workload through owner references
+    * Follows the ownership chain (e.g., Deployment → ReplicaSet → Pods)
+    * Excludes pods that matched labels but aren't in the ownership chain
+
 
 The `HorizontalPodAutoscaler` API updated to add a new `podSelectionStrategy` field to the `HorizontalPodAutoscalerSpec` object:
 ```go
@@ -320,13 +323,13 @@ type PodFilter interface {
 
 Two implementations are provided:
 `LabelSelectorFilter`:
-  * Default implementation
-  * Passes through all pods that match the label selector
-  * Maintains existing behavior for backward compatibility
+* Default implementation
+* Passes through all pods that match the label selector
+* Maintains existing behavior for backward compatibility
 `OwnerReferencesFilter`:
-  * Validates pod ownership through reference chain
-  * Only includes pods that are owned by the target workload
-  * Handles different workload types (Deployments, StatefulSets, etc.)
+* Validates pod ownership through reference chain
+* Only includes pods that are owned by the target workload
+* Handles different workload types (Deployments, StatefulSets, etc.)
 
 
 The HPA controller is enhanced to:
@@ -340,15 +343,62 @@ type HorizontalController struct {
 ```
 
 Apply the appropriate filtering strategy during pod selection:
+Before, we had this function:
 ```go
-func (a *HorizontalController) validateAndParseSelector(hpa *autoscalingv2.HorizontalPodAutoscaler, 
-    selector string) (labels.Selector, error) {
-    // ... existing selector parsing ...
-    
-    // Apply pod filtering based on strategy
-    podFilter = NewPodFilter(strategy)
-    filteredPods, err := podFilter.Filter(hpa, pods, parsedSelector)    
-    // ... continue with filtered pods ...
+// validateAndParseSelector verifies that:
+// - selector is not empty;
+// - selector format is valid;
+// - all pods by current selector are controlled by only one HPA.
+// Returns an error if the check has failed or the parsed selector if succeeded.
+// In case of an error the ScalingActive is set to false with the corresponding reason.
+func (a *HorizontalController) validateAndParseSelector(hpa *autoscalingv2.HorizontalPodAutoscaler, selector string) (labels.Selector, error) {
+  return parsedSelector, nil
+}
+```
+We modified it to be:
+```go
+// validateAndFilterPods performs the following:
+// 1. Validates the selector:
+//   - Ensures selector is not empty
+//   - Verifies selector format is valid
+//
+// 2. Gets pods matching the selector
+// 3. Applies additional filtering based on HPA's podSelectionStrategy
+// 4. Verifies filtered pods are controlled by only one HPA
+//
+// Returns:
+//   - The parsed selector
+//   - The filtered list of pods
+//   - An error if any validation fails
+//
+// In case of an error, the HPA's ScalingActive condition is set to false with the corresponding reason.
+func (a *HorizontalController) validateAndFilterPods(hpa *autoscalingv2.HorizontalPodAutoscaler, selector string) (labels.Selector, []*v1.Pod, error) {
+  // ... existing selector parsing ...
+  
+  // Apply pod filtering based on strategy
+  podFilter = NewPodFilter(strategy)
+  filteredPods, err := podFilter.Filter(hpa, pods, parsedSelector)    
+  // ... continue with filtered pods ...
+  return parsedSelector, pods, nil
+}
+```
+
+Then we can modify the `computeReplicasForMetric` to use the filter pods instead of the `specReplicas`.
+```go
+// computeReplicasForMetric computes the desired number of replicas for a specific metric,
+// using the number of pods that match both the label selector and pod selection strategy.
+// It returns:
+// - the proposed replica count
+// - the metric name used for the computation
+// - the timestamp of the latest metric value
+// - any condition that should be set on the HPA
+// - any error that occurred during computation
+func (a *HorizontalController) computeReplicasForMetric(ctx context.Context, hpa *autoscalingv2.HorizontalPodAutoscaler, spec autoscalingv2.MetricSpec,
+	currentPodsSize, statusReplicas int32, selector labels.Selector, status *autoscalingv2.MetricStatus) (replicaCountProposal int32, metricNameProposal string,
+	timestampProposal time.Time, condition autoscalingv2.HorizontalPodAutoscalerCondition, err error) {
+    // ... existing code //
+  replicaCountProposal, timestampProposal, metricNameProposal, condition, err = a.computeStatusForObjectMetric(currentPodsSize, statusReplicas, spec, hpa, selector, status, metricSelector)
+  // continue //
 }
 ```
 
@@ -362,6 +412,15 @@ type HorizontalPodAutoscalerStatus struct {
     // +optional
     CurrentPodSelectionStrategy PodSelectionStrategy `json:"currentPodSelectionStrategy,omitempty"`
 }
+```
+
+When a user updates an HPA to change its pod selection strategy:
+- The controller detects strategy changes during HPA updates
+- The pod filter cache is cleared for the modified HPA
+- A new filter is created using the updated strategy
+- An event is recorded to notify users of the strategy change:
+```bash
+Normal  StrategyChanged  Pod selection strategy changed from LabelSelector to OwnerReferences
 ```
 
 ### Test Plan
@@ -539,7 +598,8 @@ in back-to-back releases.
 ### Upgrade / Downgrade Strategy
 
 #### Upgrade
-Existing HPAs will continue to work as they do today, using the default LabelSelector strategy. Users can use the new feature by enabling the Feature Gate (alpha only) and setting the podSelectionStrategy field to OwnerReferences on an HPA.
+Existing HPAs will continue to work as they do today, using the default LabelSelector strategy.
+Users can use the new feature by enabling the Feature Gate (alpha only) and setting the podSelectionStrategy field to OwnerReferences on an HPA.
 
 #### Downgrade
 On downgrade, all HPAs will revert to using the LabelSelector strategy, regardless of any configured podSelectionStrategy value on the HPA itself.
@@ -621,7 +681,8 @@ Yes. If the feature gate is disabled, all HPAs will revert to using the `LabelSe
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-When the feature is re-enabled, any HPAs with `podSelectionStrategy`: `OwnerReferences` will resume using the ownership-based pod selection rather than label-based selection. The HPA controller will immediately begin considering only pods directly owned by the target workload for scaling decisions on these HPAs, potentially changing scaling behavior compared to when the feature was disabled.
+When the feature is re-enabled, any HPAs with `podSelectionStrategy`: `OwnerReferences` will resume using the ownership-based pod selection rather than label-based selection.
+The HPA controller will immediately begin considering only pods directly owned by the target workload for scaling decisions on these HPAs, potentially changing scaling behavior compared to when the feature was disabled.
 
 Existing HPAs that don't have `podSelectionStrategy` explicitly set will continue using the default LabelSelector strategy and won't be affected by re-enabling the feature.
 
@@ -640,7 +701,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-We will add a unit test verifying that HPAs with and without the new `podSelectionStrategy` field are properly validated, both when the feature gate is enabled or not. This will ensure the HPA controller correctly applies the pod selection strategy based on the feature gate status and presence of the field.
+We will add a unit test verifying that HPAs with and without the new `podSelectionStrategy` field are properly validated, both when the feature gate is enabled or not.
+This will ensure the HPA controller correctly applies the pod selection strategy based on the feature gate status and presence of the field.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -661,7 +723,8 @@ will rollout across nodes.
 -->
 Rollout failures in this feature are unlikely to impact running workloads significantly, but there are edge cases to consider:
 - If the feature is enabled during a high-traffic period, HPAs with `podSelectionStrategy: OwnerReferences` might suddenly change their scaling decisions based on the reduced pod set. This could cause unexpected scaling events.
-- If a `kube-controller-manager` restarts mid-rollout, some HPAs might temporarily revert to the `LabelSelector` strategy until the controller fully initializes with the new feature enabled. These issues would only affect HPAs that have explicitly set `podSelectionStrategy: OwnerReferences`. Existing HPAs will continue to function with the default `LabelSelector` strategy.
+- If a `kube-controller-manager` restarts mid-rollout, some HPAs might temporarily revert to the `LabelSelector` strategy until the controller fully initializes with the new feature enabled.
+These issues would only affect HPAs that have explicitly set `podSelectionStrategy: OwnerReferences`. Existing HPAs will continue to function with the default `LabelSelector` strategy.
 
 ###### What specific metrics should inform a rollback?
 
@@ -690,7 +753,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-No. This feature only adds a new optional field to the HPA API and doesn't deprecate or remove any existing functionality. All current HPA behaviors remain unchanged unless users explicitly opt into the new selection mode.
+No. This feature only adds a new optional field to the HPA API and doesn't deprecate or remove any existing functionality.
+All current HPA behaviors remain unchanged unless users explicitly opt into the new selection mode.
 
 ### Monitoring Requirements
 
@@ -708,7 +772,8 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-The presence of the `podSelectionStrategy` field in HPA specifications indicates that the feature is in use. Additionally, the HPA status will include information about the pod selection strategy in use through the `podSelectionInfo` field, which can be examined to determine if strict pod selection is active for a given HPA.
+The presence of the `podSelectionStrategy` field in HPA specifications indicates that the feature is in use.
+Additionally, the HPA status will include information about the pod selection strategy in use through the `podSelectionInfo` field, which can be examined to determine if strict pod selection is active for a given HPA.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -753,10 +818,9 @@ N/A.
 <!--
 Pick one more of these and delete the rest.
 -->
-This feature doesn't fundamentally change how the HPA controller operates; it refines which pods are included in metric calculations. Therefore, existing metrics for monitoring HPA controller health remain applicable.
-Standard HPA metrics (e.g.
-`horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can
-be used to verify the HPA controller health.
+This feature doesn't fundamentally change how the HPA controller operates; it refines which pods are included in metric calculations.
+Therefore, existing metrics for monitoring HPA controller health remain applicable.
+Standard HPA metrics (e.g. `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can be used to verify the HPA controller health.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -764,7 +828,9 @@ be used to verify the HPA controller health.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Not sure.
+The following metrics will be available to monitor the pod selection behavior:
+- Pod Selection Metrics
+These metrics track the number of pods before and after filtering.
 
 ### Dependencies
 
@@ -847,7 +913,7 @@ Describe them, providing:
 Yes.
 - HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
 - The status will include additional pod selection information (approximately 50-100 bytes)
-- No additional API objects will be created
+- caching for every podsFilter stratrgy will be saved
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
