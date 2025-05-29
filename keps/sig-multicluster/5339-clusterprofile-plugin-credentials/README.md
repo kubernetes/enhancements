@@ -122,7 +122,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 To manage an Inventory of Clusters, a platform admin can rely on having the cluster manager
-output ClusterProfile CRs that point to the clusters. Those CRs are key for multicluster controllers
+output [ClusterProfile CRs](https://github.com/kubernetes-sigs/cluster-inventory-api/blob/main/apis/v1alpha1/clusterprofile_types.go) that point to the clusters. Those CRs are key for multicluster controllers
 that want to operate on the clusters. However, there isn't a single way to obtain credentials
 to reach those clusters. This KEP provides a standardized way to obtain credentials for Clusters
 when using ClusterProfile and makes it pluggable to allow the diverse ecosystem to support the
@@ -147,19 +147,18 @@ See [introduction slides](https://docs.google.com/presentation/d/1v5-J-kFJ3TSpKq
 
 ### Non-Goals
 
-* Define the mechanism for shipping plugins to be used by the controllers
+* Define the mechanism for shipping plugins to be used by the controllers and their delivery in the controller image/pod.
 * Design plugin or a library for plugins
 * Mandate Federated workload identity / OIDC frameworks (though they are recommended)
 
 ## Proposal
 
-The proposed approach to issuing credentials is to leverage plugins for credentials, where a controller could leverage a library running local code
-which would retrieve the credentials for the current controller and for the clusterprofile of their choice. It is expected that plugins would
-leverage the identity of the controller (for example, the Kubernetes Service Account when running in Kubernetes) to retrieve credentials that are valid on other clusters.
-Plugins would be exec'ed by the controller so that they don't need be built-in the binary, allowing cluster managers to
-write their own credentials and still leveraging multicluster controllers written by the community.
-In addition, we propose to reuse the exec approach and protocol used for external credentials in Kubeconfig. Finally,
-in order to retrieve the endpoint for the cluster, we standardize the property names that are used in ClusterProfile.
+The proposed approach to obtaining credentials is to leverage plugins for retrieving the credentials from an issuer recognized by the target cluster. The controller using ClusterProfile
+would use a library running a local executable which would retrieve the credentials for the current controller and a given clusterprofile.
+It is expected that plugins would leverage elements local to the controller to help assert the identity of the controller (environment variables, config files, KSA, the local IP, etc...)
+to retrieve credentials that are valid on the target cluster. Plugins would be exec'ed by the controller so that they don't need be built-in the binary, allowing flexibility into writing their
+own credential plugins and still leveraging multicluster controllers written by the community. In addition, we propose to reuse the exec approach and protocol used for external credentials in
+Kubeconfig (but not the configuration part of kubeconfig). Finally, in order to retrieve the endpoint for the cluster, we standardize the property names that are used in ClusterProfile.
 
 ### Risks and Mitigations
 
@@ -175,6 +174,15 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+Because of its interaction with authentication and credentials, particular attention in this design must be paid to security:
+
+* credentials leak: ClusterProfile, Controller configuration and Plugin configuration should never contain sensitive information
+* Plugin poisoning: supporting credentials provider plugins in a controller relies on trusting the plugin code itself. Particular attention must
+be provided by the user deploying a controller to make sure the plugin that they install are from trusted source as they will have access to the controller's identity.
+
+Another risk is around AuthZ. This design doesn't cover the distribution of RBAC to multiple clusters and identifying what principal a controller can be identified as. This
+setup is currently left to the responsibility of the platform admin setting up the different clusters and controllers.
+
 ## Design Details
 
 The proposal's implementation would be done via a Library in https://github.com/kubernetes-sigs/cluster-inventory-api.
@@ -184,99 +192,179 @@ allowing for reuse of the external providers that cluster managers write.
 
 The expected prototype for a controller is expected to be the following:
 
-`func (c *ClusterProfileExternalProviders) GetConfig(cp ClusterProfile) (rest.Config, error)`
+`func (c *ClusterProfileExternalProviders) GetConfig(cp *ClusterProfile) (*rest.Config, error)`
 
-The library implementation flow is expected to be as follow:
+The library implementation flow is expected to be as follows:
 
 1. Build the endpoint details of the cluster by reading properties of the ClusterProfile
 2. Call the CredentialsExternalProviders, following the same flow defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
+  (giving the ability to reuse the code in [client-go's exec package](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159))
 3. Build the rest.Config and return it to the caller
 
-### Converting endpoint properties to cluster object
+#### External credentials Provider plugin mechanism
 
-The Cluster structure for the exec defined in KEP 541 assumes the following:
+In order to call the plugin, the library execs the plugin defined in the configuration. It passes the Cluster information that was obtained from the ClusterProfile.
+The library then calls the plugin following the protocol defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md).
+The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api can leverage the [original code that is kept in client-go](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159).
+
+### Standardizing the Provider definition
+
+In order to populate the Cluster object that the exec provider requires, we standardize a new field in ClusterProfile called `credentials` that is stored in the Spec of the ClusterProfile.
+All the data from this structure is specific to the clusterProfile and does not contain any Controller-specific information. It must be usable by different
+controller, applications or consumers without requiring changes. It also cannot contain any data considered a secret; and we consider that reachability information
+is not sensitive.
+
+The definition is as follows:
 ```
-type Cluster struct {
-  // Server is the address of the kubernetes cluster (https://hostname:port).
-  Server string `json:"server"`
-  // TLSServerName is passed to the server for SNI and is used in the client to
-  // check server certificates against. If ServerName is empty, the hostname
-  // used to contact the server is used.
-  // +optional
-  TLSServerName string `json:"tls-server-name,omitempty"`
-  // InsecureSkipTLSVerify skips the validity check for the server's certificate.
-  // This will make your HTTPS connections insecure.
-  // +optional
-  InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
-  // CAData contains PEM-encoded certificate authority certificates.
-  // If empty, system roots should be used.
-  // +listType=atomic
-  // +optional
-  CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
-  // ProxyURL is the URL to the proxy to be used for all requests to this
-  // cluster.
-  // +optional
-  ProxyURL string `json:"proxy-url,omitempty"`
-  // Config holds additional config data that is specific to the exec
-  // plugin with regards to the cluster being authenticated to.
-  //
-  // This data is sourced from the clientcmd Cluster object's
-  // extensions[client.authentication.k8s.io/exec] field:
-  //
-  // clusters:
-  // - name: my-cluster
-  //   cluster:
-  //     ...
-  //     extensions:
-  //     - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
-  //       extension:
-  //         audience: 06e3fbd18de8  # arbitrary config
-  //
-  // In some environments, the user config may be exactly the same across many clusters
-  // (i.e. call this exec plugin) minus some details that are specific to each cluster
-  // such as the audience.  This field allows the per cluster config to be directly
-  // specified with the cluster info.  Using this field to store secret data is not
-  // recommended as one of the prime benefits of exec plugins is that no secrets need
-  // to be stored directly in the kubeconfig.
-  // +optional
-  Config runtime.RawExtension `json:"config,omitempty"`
+type Credentials struct {
+  credentialProviders map[string]CredentialsConfig // mapping of credentials types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
+}
+
+// CredentialsTypes defines the type of credentials that are accepted by the cluster. For example, GCP credentials (tokens that are understood by GCP's IAM) are designated by the string `google`.
+type CredentialsType string
+
+// CredentialsConfig gives more details on data that is necessary to reach out the cluster for this kind of Credentials
+type CredentialsConfig struct {
+  Cluster *Cluster // Configuration to reach the cluster (endpoints, proxy, etc) // See following section for details.
 }
 ```
 
-This data must be created from the ClusterProfile, as described in the following section.
+#### Cluster Data
 
-### Standardizing the Endpoint Property
+The Cluster structure for the exec defined in KEP 541, [implemented in k/k](https://github.com/kubernetes/kubernetes/blob/a34c07971b610eb33908a743eadb4c61beeecc50/staging/src/k8s.io/client-go/pkg/apis/clientauthentication/types.go#L73-L80) assumes the following:
+```
+type Cluster struct {
+	// Server is the address of the kubernetes cluster (https://hostname:port).
+	Server string
+	// TLSServerName is passed to the server for SNI and is used in the client to
+	// check server certificates against. If ServerName is empty, the hostname
+	// used to contact the server is used.
+	// +optional
+	TLSServerName string
+	// InsecureSkipTLSVerify skips the validity check for the server's certificate.
+	// This will make your HTTPS connections insecure.
+	// +optional
+	InsecureSkipTLSVerify bool
+	// CAData contains PEM-encoded certificate authority certificates.
+	// If empty, system roots should be used.
+	// +listType=atomic
+	// +optional
+	CertificateAuthorityData []byte
+	// ProxyURL is the URL to the proxy to be used for all requests to this
+	// cluster.
+	// +optional
+	ProxyURL string
+	// DisableCompression allows client to opt-out of response compression for all requests to the server. This is useful
+	// to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on
+	// compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
+	// +optional
+	DisableCompression bool
+	// Config holds additional config data that is specific to the exec
+	// plugin with regards to the cluster being authenticated to.
+	//
+	// This data is sourced from the clientcmd Cluster object's
+	// extensions[client.authentication.k8s.io/exec] field:
+	//
+	// clusters:
+	// - name: my-cluster
+	//   cluster:
+	//     ...
+	//     extensions:
+	//     - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
+	//       extension:
+	//         audience: 06e3fbd18de8  # arbitrary config
+	//
+	// In some environments, the user config may be exactly the same across many clusters
+	// (i.e. call this exec plugin) minus some details that are specific to each cluster
+	// such as the audience.  This field allows the per cluster config to be directly
+	// specified with the cluster info.  Using this field to store secret data is not
+	// recommended as one of the prime benefits of exec plugins is that no secrets need
+	// to be stored directly in the kubeconfig.
+	// +optional
+	Config runtime.Object
+}
+```
 
-In order to populate the Cluster object that the exec provider requires, we standardize the following properties.
 
-Property: `multicluster.sigs.io/execprovider-cluster`
-Value: json containing the Cluster struct (see above).
-Example Value: "{\"Server\":\"https://example.com:443\"}"
+#### ClusterProfile Example
+
+Example of a GKE ClusterProfile, which would map to a plugin providing credentials of type `google`:
+```
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: my-cluster-1
+spec:
+  displayName: my-cluster-1
+  clusterManager:
+    name: GKE-Fleet
+  credentials:
+    google:
+      cluster:
+        server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
+status:
+  version:
+    kubernetes: 1.28.0
+  properties:
+   - name: clusterset.k8s.io
+     value: some-clusterset
+   - name: location
+     value: us-central1
+```
+
 
 ### Configuring plugins in the controller
 
-Plugins are designated by a hardcoded string, for example, "gke" for GKE Clusters, which allows the controller
-to attach a different binary name or path for the the binary. It is expected that the library will have a mapping from
-its supported plugin names to the expected binary to call. It is expected that the mapping is provided via a flag on the controller.
+Plugins are selected by a hardcoded string which represents the type of credentials that is expected by the cluster, for example, "google" for GKE Clusters.
+Thish allows the controller to attach a different binary name or path for the the binary.
+
+It is expected that the library will have a mapping from its supported type of credentials to the expected binary to call. The library would be fed via a repeated flag `clusterprofile-creds-provider` for ease of use.
+The flag maps a credentials type to the associated binary and potential flags that should be passed. It cannot contain cluster-specific information (which is not known at that time).
+```
+./controller ... --clusterprofile-creds-provider "google='/usr/bin/gke-gcloud-auth-plugin --flag1 value1 --flag2 value2'"
+```
+
+Despite being a flag, we can express the equivalent structure for each Plugin:
+```
+type Provider struct {
+  CredentialsType string
+  ExecutablePath string
+  args []string
+}
+```
+
+Given the plugin is executed directly by the controller, it may expect to have access to the same environment as the controller itself, inclusive of envvars, filesystem and network.
+It is expected that the identity of the plugin is the same as the controller itself.
+
+### Plugin Examples
+
+As an example, we provide pseudocode for plugins that could easily be implemented with the protocol. They are ultrasimplified
+version of the code and structures to convey the idea and not be an implementation example.
+
+#### Secret Reader plugin
+
+This plugin assumes the controller is aware of the list of clusters ahead of time and has created secrets for them.
+It simply reads the token from the secret mapped to the cluster.
 
 ```
-./controller ... --clusterprofile-creds-providers "gke=gke-gcloud-auth-plugin"
+func GetToken(clusterName string) string {
+  // query secrets local to this controller (same cluster, same namespace)
+  secret := secrets.Get(clusterName)
+  return secret.Data.token
+}
 ```
 
-### Selecting the right plugin
+#### GKE with Workload Identity Federation
 
-The plugin is designated by the clusterprofile, which designates the type of provider that is expected to be called.
-The clusterprofile has a property to designate the plugin.
+This plugin uses Workload Identity Federation to call the other clusters that are GKE clusters and therefore understanding google-issued credentials.
 
-Property: `multicluster.sigs.io/execprovider-name`
-Value: string that is expected from the controller to satisfy via plugins.
-Example Value: "gke"
-
-### External credentials Provider plugin mechanism
-
-In order to call the plugin, the library execs the plugin defined in the configuration. It passes the Cluster information that
-was obtained from the ClusterProfile.
-The library then calls the plugin following the protocol defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md). The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api can leverage the original code that is kept in
+```
+func GetToken() string {
+  // This library calls looks at the standard envvar called GOOGLE_CREDENTIALS and if not found, calls the Metadata Server IP (169.254.169.254)
+  creds := google.GetDefaultCredentials()
+  return creds.Token()
+}
+```
 
 ### Test Plan
 
