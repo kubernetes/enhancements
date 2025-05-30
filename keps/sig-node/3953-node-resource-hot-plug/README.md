@@ -269,9 +269,9 @@ With increase in cluster resources the following components will be updated:
 3. Update in Node capacity.
 
 4. Scheduler:
-    * Scheduler will automatically schedule any pending pods.
-    * This is done as an expected behavior and does not require any changes in the existing design of the scheduler, as the scheduler `watches` the
-      available capacity of the node and creates pods accordingly.
+    * Scheduler keeps trying to schedule any pending pods.
+    * The scheduler `watches` the updates to available capacity of the node and schedule pods accordingly. 
+   The scheduler is already doing this today, and this KEP does not require any changes in the scheduler implementation.
 
 
 ### Handling hotplug events
@@ -332,6 +332,9 @@ To ensure the Cluster Autoscaler acknowledges resource hotplug, the following ap
 
 2. Identify Nodes Affected by Hotplug:
    * By flagging a Node as being impacted by hotplug, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
+
+Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the former route. 
+The same will be targeted around the beta graduation of this KEP
 
 ### Handling HotUnplug Events
 
