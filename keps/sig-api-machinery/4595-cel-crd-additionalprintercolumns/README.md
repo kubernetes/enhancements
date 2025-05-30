@@ -99,7 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [CEL Compilation](#cel-compilation)
   - [Validation](#validation)
   - [Implementation](#implementation)
-  - [Cost Calculation and benchmarking performance with JSONPath](#cost-calculation-and-benchmarking-performance-with-jsonpath)
+  - [CEL vs JSONPath Performance Analysis](#cel-vs-jsonpath-performance-analysis)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
