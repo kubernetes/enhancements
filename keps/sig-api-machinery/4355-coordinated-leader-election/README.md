@@ -76,6 +76,17 @@ SIG Architecture for cross-cutting KEPs).
       - [Creating a new LeaseConfiguration resource](#creating-a-new-leaseconfiguration-resource)
       - [YAML/CLI configuration on the kube-apiserver](#yamlcli-configuration-on-the-kube-apiserver)
       - [Strategy propagated from LeaseCandidate](#strategy-propagated-from-leasecandidate)
+  - [Priority-based Coordinated Leader Election](#priority-based-coordinated-leader-election)
+    - [LeaseCandidateSpec Update](#leasecandidatespec-update)
+    - [Behavior of the Priority Field](#behavior-of-the-priority-field)
+    - [Scenario Breakdown for priority based coordination leader election](#scenario-breakdown-for-priority-based-coordination-leader-election)
+      - [1. Initial State](#1-initial-state)
+      - [2. During Upgrade](#2-during-upgrade)
+      - [3. Priority Setting](#3-priority-setting)
+      - [4.1. Upgrade Completion](#41-upgrade-completion)
+      - [4.2 Update rollback](#42-update-rollback)
+      - [5. Priority Persistence](#5-priority-persistence)
+    - [Consideration for Stale Priorities](#consideration-for-stale-priorities)
   - [Enabling on a component](#enabling-on-a-component)
   - [Migrations](#migrations)
   - [API](#api)
@@ -439,6 +450,90 @@ set of candidates and selected strategy is the same as before.
 
 The obvious drawback is the need for a consensus protocol and extra information
 in the `LeaseCandidate` object that may be unnecessary.
+
+### Priority-based Coordinated Leader Election
+To enhance control over leader assignment beyond existing CLE strategies like OldestEmulatedVersion, we propose adding an optional `Priority` field unset by default, higher value = higher priority) to `LeaseCandidateSpec`.
+
+This field allows operators to explicitly designate a preferred leader.
+The CLE system will select the candidate with the highest non-zero Priority. If multiple candidates share the same highest priority, the existing v1.CoordinatedLeaseStrategy will act as a tie-breaker. If no candidates have a priority set, the system defaults to the existing v1.CoordinatedLeaseStrategy. 
+
+This provides granular, temporary control without replacing the primary CLE mechanism.
+
+#### LeaseCandidateSpec Update
+A new field called `Priority` is included into `LeaseCandidateSpec`:
+```go
+// LeaseCandidateSpec is a specification of a Lease.
+type LeaseCandidateSpec struct {
+	// ...
+  Priority int32 `json:"priority,omitempty" protobuf:"varint,7,opt,name=priority"` // New field: Higher value means higher priority. The value must be > 0.
+}
+```
+
+#### Behavior of the Priority Field
+- Priority Value: The `Priority` field is an int32. A higher numerical value indicates a higher priority. This field must be greater than 0.
+- Selection Logic:
+  - If one or more candidates have a Priority > 0: The candidate with the numerically highest Priority value will be selected as the leader.
+  - Tie-Breaking for Equal Highest Priority: If multiple candidates share the same highest non-zero Priority value, the selection among these equally prioritized candidates will be resolved using their existing `v1.CoordinatedLeaseStrategy` (e.g., OldestEmulatedVersion).
+  - If no candidates have a Priority, the leader selection will proceed based purely on the existing `v1.CoordinatedLeaseStrategy`.
+
+#### Scenario Breakdown for priority based coordination leader election
+Here is a step-by-step breakdown of the scenarios for better understanding the priority-based leader election during upgrades.
+
+##### 1. Initial State
+At the beginning, all components (C1, C2, and C3) are running Binary Version 1 and are emulating Version 1
+
+| Component | Binary Version | Emulation Version | Leader |
+|-----------|----------------|-------------------|--------|
+| C1        | V1             | V1                | Y      |
+| C2        | V1             | V1                |        |
+| C3        | V1             | V1                |        |
+
+##### 2. During Upgrade
+During the upgrade, C1 and C2 are updated to Binary Version 2, but C3 remains on an earlier version. C2 is momentarily elected as the leader.
+
+| Component | Binary Version | Emulation Version | Leader |
+|-----------|----------------|-------------------|--------|
+| C1        | V2             | V2                |        |
+| C2        | V2             | V1                | Y      |
+| C3        | V2             | V1                |        |
+
+##### 3. Priority Setting
+The cluster administrator chooses C1 to be the leader by setting its priority to 100.
+
+| Component | Binary Version | Emulation Version | Priority | Leader |
+|-----------|----------------|-------------------|----------|--------|
+| C1        | V2             | V2                | 100      | Y      |
+| C2        | V2             | V1                |          |        |
+| C3        | V2             | V1                |          |        |
+
+##### 4.1. Upgrade Completion
+After the upgrade is finished, all components are running Binary Version 2 and are emulating Version 2. C1 remains the leader due to its set priority.
+
+| Component | Binary Version | Emulation Version | Priority | Leader |
+|-----------|----------------|-------------------|----------|--------|
+| C1        | V2             | V2                | 100      | Y      |
+| C2        | V2             | V2                |          |        |
+| C3        | V2             | V2                |          |        |
+
+##### 4.2 Update rollback
+Should an issue arise with C1 requiring a rollback, we can unset its priority. This will enable CLE to select C2, which contains the oldest emulated version.
+
+| Component | Binary Version | Emulation Version | Priority | Leader |
+|-----------|----------------|-------------------|----------|--------|
+| C1        | V2 -> V1       | V2 -> V1          |          |        |
+| C2        | V2             | V1                |          | Y      |
+| C3        | V2             | V1                |          |        |
+
+##### 5. Priority Persistence
+Unless the cluster administrator resets the priority, C1 will always remain the leader. When a component gets upgraded or downgraded, it may create a new release candidate, causing the priority to reset.
+
+#### Consideration for Stale Priorities
+A concern with the priority field is the potential for "stale priorities" – a priority set temporarily and not subsequently cleared. This could prevent the Coordinated Leader Election (CLE) system from selecting a more appropriate leader.
+We considered exposing a Time-To-Live (TTL) for priority in the `LeaseCandidateSpec`, where the CLE system would ignore a priority once its TTL expired. While this directly addresses the "temporary" nature of many priority assignments, we've decided not to include it in this initial phase due to several complexities:
+- Implementation and Semantics: Defining the precise data type and behavior for a TTL (e.g., time.Duration vs. time.Time, resetting logic) adds significant complexity.
+- User Rationalization: Adding a third field (ttl) to an already multi-faceted leader election logic (strategy + priority) greatly increases the cognitive load for users to understand and manage leader selection effectively.
+
+Therefore, in this initial iteration, managing priority lifecycles will be an operational responsibility, requiring manual clearance or updates. We may revisit TTL or similar automated mechanisms in future iterations after gaining more experience with the priority field.
 
 ### Enabling on a component
 
@@ -865,6 +960,7 @@ in back-to-back releases.
 
 - Load test Coordinated Leader Election
 - Feature is enabled by default
+- A tested solution for stale priorities is implemented, working through either improved user validation to prevent them, or an automated system to correct them.
 
 ### Upgrade / Downgrade Strategy
 
