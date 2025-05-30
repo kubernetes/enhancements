@@ -17,7 +17,8 @@ limitations under the License.
 package commands
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"k8s.io/enhancements/pkg/proposal"
@@ -65,7 +66,7 @@ func addPromote(topLevel *cobra.Command) {
 func runPromote(opts *proposal.PromoteOpts) error {
 	rc, err := repo.New(rootOpts.RepoPath)
 	if err != nil {
-		return errors.Wrap(err, "creating repo client")
+		return fmt.Errorf("creating repo client: %w", err)
 	}
 
 	opts.Repo = rc
