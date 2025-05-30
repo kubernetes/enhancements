@@ -725,13 +725,68 @@ func (c ColumnCompilationResult) PrintResults(w io.Writer, results []reflect.Val
 
 With all of this we can pass the CEL program to the TableConvertor's `ConvertToTable()` method, which will call `FindResults` and `PrintResults` for all additionalPrinterColumns, regardless of whether they're defined with JSONPath or CEL expressions.
 
-### Cost Calculation and benchmarking performance with JSONPath
+
+### CEL vs JSONPath Performance Analysis
 
 A big part of the discussions for our proposal was the CEL cost limits since this is the first time CEL is added to the read path. As part of this we've done some benchmarking of the time it takes to parse and compile equivalent JSONPath and CEL expressions.
 
+For the performance analysis, we introduced two new benchmark tests to the `tableconvertor_test.go` file – `Benchmark_CEL` and `Benchmark_JSONPath`.
+
+Please find the raw output of the benchmark tests, as well as the code for executing them in the following gist:
+[https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403](https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403)
+
+
+Considering the following 10 iterations of the `Benchmark_CEL` and `Benchmark_JSONPath` tests:
+
 ```
-TODO: Benchmark results
+  CEL Benchmark Results (10 runs):
+  - Run 1: 2,772 iterations, 461,257 ns/op
+  - Run 2: 3,070 iterations, 355,537 ns/op
+  - Run 3: 3,247 iterations, 353,626 ns/op
+  - Run 4: 3,090 iterations, 360,392 ns/op
+  - Run 5: 3,249 iterations, 351,305 ns/op
+  - Run 6: 2,942 iterations, 454,657 ns/op
+  - Run 7: 3,379 iterations, 354,431 ns/op
+  - Run 8: 2,858 iterations, 365,886 ns/op
+  - Run 9: 3,374 iterations, 353,106 ns/op
+  - Run 10: 3,130 iterations, 368,940 ns/op
+
+  JSONPath Benchmark Results (10 runs):
+  - Run 1: 76,616 iterations, 19,376 ns/op
+  - Run 2: 73,274 iterations, 15,761 ns/op
+  - Run 3: 72,625 iterations, 18,572 ns/op
+  - Run 4: 70,324 iterations, 15,896 ns/op
+  - Run 5: 69,409 iterations, 15,892 ns/op
+  - Run 6: 70,672 iterations, 17,888 ns/op
+  - Run 7: 72,145 iterations, 16,176 ns/op
+  - Run 8: 69,602 iterations, 16,203 ns/op
+  - Run 9: 68,079 iterations, 24,558 ns/op
+  - Run 10: 62,689 iterations, 16,214 ns/op
 ```
+
+The following table provides an average performance analysis across CEL and JSONPath based additionalPrinterColumns:
+
+
+|                                      | CEL (Benchmark_CEL)                                                                                                   | JSONPath (Benchmark_JSONPath)                                                                                   |
+|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| **Column Definition**                | `self.spec.servers.map(s, s.hosts.filter(h, h == "prod.example.com"))`                                                  | `.spec.servers[*].hosts[?(@ == "prod.example.com")]`                                                               |
+| **Overall Performance**<br>(Compilation + Evaluation) | • Average iterations: 3,111  <br> •  Average time per operation: **382,914 ns/op** (~383 µs per op)  <br> • Standard deviation: ±42,087 ns (±11%)                              | • Average iterations: 70,542 iterations  <br> •  Average time per operation: **17,654 ns/op** (~17.7 µs per op)  <br> • Standard deviation: ±2,846 ns (±16%)                        |
+| **Compilation Performance**            | • Cold Start: 2.340 ms<br><br>• Warmed: 300–400 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• Env & Cost Estimator: 160–220 µs avg<br>&emsp;&emsp;• CEL Compilation: 60–120 µs avg<br>&emsp;&emsp;• Program Generation: 50–80 µs avg<br><br>• 83% improvement (2.34 ms → ~400 µs)| • Cold Start: ~85 µs<br><br>• Warmed: 5–8 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• JSONPath Parsing: 4–85 µs (occasional spikes)<br><br>• 90% improvement (85 µs → ~8 µs)|
+| **Evaluation Performance**           | **FindResults**  <br>   • Cold: 103.5 µs  <br>   • Warmed: 13.5 µs  <br>   • 81% improvement (103.5 → 13.5 µs)  <br><br> **PrintResults**  <br>   • Cold: 3.9 µs  <br>   • Warmed: 1.5 µs  <br>   • 70% improvement (3.9 → 1.5 µs) | **FindResults**  <br>   • Cold: 1.4 µs  <br>   • Warmed: 0.85 µs  <br>   • 29% improvement (1.4 → 0.85 µs)  <br><br> **PrintResults**  <br>   • Cold: 0.29 µs  <br>   • Warmed: 0.18 µs  <br>   • 58% improvement (0.29 → 0.18 µs) |
+
+
+_**Conclusion**_ — Across the 10 runs of the benchmark tests, on average, CEL is 20x slower than JSONPath (383µs vs 18µs).
+
+When running the benchmark tests individually, we observed that CEL was consistently ~20-50x slower than JSONPath. 
+
+Based on these current findings, the end users should not find a noticeable difference in the performance when working with CEL for additionalPrinterColumns.
+
+<!--
+
+Hence, the end users might start seeing a non-negligible increase in the total time and CPU usage for apiserver when they are working with a large number of Custom Resources. 
+
+-->
+
 
 ### Test Plan
 
