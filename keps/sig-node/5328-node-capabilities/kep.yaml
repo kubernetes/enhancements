@@ -1,0 +1,35 @@
+title: Node Capabilities
+kep-number: 5328
+authors:
+  - "@pravk03"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+
+creation-date: "2025-05-27"
+reviewers: 
+  - '@tallclair'
+  - '@yujuhong'
+approvers:
+
+see-also: []
+replaces: []
+
+status: provisional
+stage: alpha
+latest-milestone: "v1.34"
+milestone:
+  alpha: ""
+  beta: ""
+  stable: ""
+
+feature-gates:
+  - name: NodeCapabilities
+    components:
+      - kubelet
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
