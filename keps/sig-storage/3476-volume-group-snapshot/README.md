@@ -41,6 +41,7 @@
     - [CreateVolumeGroupSnapshot](#createvolumegroupsnapshot)
     - [DeleteVolumeGroupSnapshot](#deletevolumegroupsnapshot)
     - [GetVolumeGroupSnapshot](#getvolumegroupsnapshot)
+    - [GetSnapshot](#getsnapshot)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -82,7 +83,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -134,13 +135,15 @@ Note: In the following, we will use VolumeGroupSnapshot Controller to refer to t
 * Admin creates a VolumeGroupSnapshotClass.
 * User creates a VolumeGroupSnapshot with label selector that matches the label applied to all PVCs to be snapshotted together.
 * This will trigger the VolumeGroupSnapshot controller to create a VolumeGroupSnapshotContent API object. The group snapshot logic in the csi-snapshotter sidecar will call the CreateVolumeGroupSnapshot CSI function.
-* The group snapshot logic in csi-snapshotter will retrieve all volumeSnapshotHandles and their source volumeHandles in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, and populate the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status.
+* The group snapshot logic in csi-snapshotter will retrieve all volumeSnapshotHandles, their source volumeHandles, and other information in the Volume Group Snapshot from the CSI CreateVolumeGroupSnapshotResponse, and update the VolumeGroupSnapshotContent status.
+  * In v1beta1, it populates the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status.
+  * In v1beta2, it populates the VolumeSnapshotInfoList field in the VolumeGroupSnapshotContent status for the new v1beta2 API objects. The existing v1beta1 API objects will be converted to the new v1beta2 API objects. The conversion logic will only populate the VolumeHandle and SnapshotHandle fields and will leave the remaining fields empty. A conversion webhook will be developed to make the conversion.
 * The VolumeGroupSnapshot controller will be watching the VolumeGroupSnapshotContent, and create VolumeSnapshotContents pointing to the volumeSnapshotHandles once they are available in the VolumeGroupSnapshotContent status. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
 * CreateVolumeGroupSnapshot CSI function response
-  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The group snapshot logic in the csi-snapshotter sidecar will update the VolumeSnapshotHandlePairList field in the VolumeGroupSnapshotContent status based on the returned list of snapshots from the CSI call. The VolumeGroupSnapshot controller can use VolumeSnapshotHandles to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound, and update PVCVolumeSnapshotRefList in the VolumeGroupSnapshot Status and PVVolumeSnapshotContentList in the VolumeGroupSnapshotContent Status.
+  * The CreateVolumeGroupSnapshot CSI function should return a list of snapshots (Snapshot message defined in CSI Spec) in its response. The group snapshot logic in the csi-snapshotter sidecar will update the VolumeSnapshotInfoList field in the VolumeGroupSnapshotContent status based on the returned list of snapshots from the CSI call. The VolumeGroupSnapshot controller can use VolumeSnapshotInfoList to construct corresponding individual VolumeSnapshotContents and VolumeSnapshots, wait for VolumeSnapshots and VolumeSnapshotContents to be bound.
  * Individual VolumeSnapshots will be named in this format:
-   * <snap>-<hash of VolumeGroupSnapshot UUID+PVC UUID+timestamp>
-   * A label with VolumeGroupSnapshot name will also be added to the VolumeSnapshot
+   * <snap>-<hash of VolumeGroupSnapshot UUID + volume handle>
+   * VolumeGroupSnapshot will also be added as an OwnerReference for the VolumeSnapshot
 
 ```
 apiVersion: snapshot.storage.k8s.io/v1
@@ -156,7 +159,7 @@ status:
   volumeGroupSnapshotName: groupSnapshot1
 ```
 
-* An admissions controller or finalizer should be added to prevent an individual snapshot from being deleted that belongs to a VolumeGroupSnapshot. Note that there is a [KEP](https://github.com/kubernetes/enhancements/pull/2840/files) that is proposing the Liens feature which could potentially be used for this purpose.
+* A finalizer should be added to prevent an individual snapshot from being deleted that belongs to a VolumeGroupSnapshot. Note that there is a [KEP](https://github.com/kubernetes/enhancements/pull/2840/files) that is proposing the Liens feature which could potentially be used for this purpose.
 * In the CSI spec, it is specified that it is required for individual snapshots to be returned along with the group snapshot.
 
 #### Pre-provisioned VolumeGroupSnapshot
@@ -164,6 +167,8 @@ status:
 Admin can create a VolumeGroupSnapshotContent, specifying an existing VolumeGroupSnapshotHandle in the storage system and specifying a VolumeGroupSnapshot name and namespace. Then the user creates a VolumeGroupSnapshot that points to the VolumeGroupSnapshotContent name.
 
 The controller will call the CSI GetVolumeGroupSnapshot method to retrieve all volumeSnapshotHandles in the Volume Group Snapshot from the storage system, create VolumeSnapshotContents pointing to the volumeSnapshotHandles. Then the controller will create VolumeSnapshots pointing to the VolumeSnapshotContents.
+
+Note: The automatic creation of individual VolumeSnapshots and VolumeSnapshotContents are not done in Beta. For now, the admin will need to manually construct these individual API objects. We plan to work on this before the feature moves to GA. We have information for all the individual snapshots from CSI [GetVolumeGroupSnapshot](https://github.com/kubernetes-csi/external-snapshotter/blob/release-8.2/pkg/sidecar-controller/groupsnapshot_helper.go#L781). We should be able to populate individual VolumeSnapshots and VolumeSnapshotContents based on this information.
 
 ### Delete VolumeGroupSnapshot
 
@@ -373,21 +378,6 @@ Type VolumeGroupSnapshotStatus struct {
 
         // +optional
         Error *VolumeSnapshotError
-
-	// VolumeSnapshotRefList is the list of PVC and VolumeSnapshot pairs that
-	// is part of this group snapshot.
-	// The maximum number of allowed snapshots in the group is 100.
-	// +optional
-	PVCVolumeSnapshotRefList []PVCVolumeSnapshotPair
-}
-
-// PVCVolumeSnapshotPair defines a pair of a PVC reference and a Volume Snapshot Reference
-type PVCVolumeSnapshotPair struct {
-	// PersistentVolumeClaimRef is a reference to the PVC this pair is referring to
-	PersistentVolumeClaimRef core_v1.LocalObjectReference
-
-	// VolumeSnapshotRef is a reference to the VolumeSnapshot this pair is referring to
-	VolumeSnapshotRef core_v1.LocalObjectReference
 }
 ```
 
@@ -464,6 +454,8 @@ type GroupSnapshotHandles struct {
 	VolumeSnapshotHandles []string
 }
 
+// The VolumeSnapshotHandlePair struct is added in v1beta1 but removed in v1beta2
+// It is replaced by the VolumeSnapshotInfo struct
 // VolumeSnapshotHandlePair defines a pair of a source volume handle and a snapshot handle
 type VolumeSnapshotHandlePair struct {
         // VolumeHandle is a unique id returned by the CSI driver to identify a volume
@@ -475,6 +467,31 @@ type VolumeSnapshotHandlePair struct {
         SnapshotHandle string
 }
 
+// The VolumeSnapshotInfo struct is added in v1beta2
+// VolumeSnapshotInfo contains information for a snapshot
+type VolumeSnapshotInfo struct {
+        // VolumeHandle is a unique id returned by the CSI driver to identify a volume
+        // on the storage system
+        VolumeHandle string
+
+        // SnapshotHandle is a unique id returned by the CSI driver to identify a volume
+        // snapshot on the storage system
+        SnapshotHandle string
+
+	// creationTime is the timestamp when the point-in-time snapshot is taken
+	// by the underlying storage system.
+	// +optional
+	CreationTime *int64
+
+	// ReadyToUse indicates if the snapshot is ready to be used to restore a volume.
+	// +optional
+	ReadyToUse *bool
+
+	// RestoreSize represents the complete size of the snapshot in bytes.
+	// +optional
+	RestoreSize *int64
+}
+
 Type VolumeGroupSnapshotContentStatus struct {
         // VolumeGroupSnapshotHandle is a unique id returned by the CSI driver
         // to identify the VolumeGroupSnapshot on the storage system.
@@ -483,28 +500,32 @@ Type VolumeGroupSnapshotContentStatus struct {
         // +optional
         VolumeGroupSnapshotHandle *string
 
+	// This field is introduced in v1beta1 but removed in v1beta2
+	// It is replaced by VolumeSnapshotInfoList
+	// Information in this field from an existing v1beta1 API object
+	// will be copied to VolumeSnapshotInfoList by the conversion logic
         // VolumeSnapshotHandlePairList is a list of CSI "volume_id" and "snapshot_id"
 	// pair returned by the CSI driver to identify snapshots and their source volumes
 	// on the storage system.
         // +optional
-        VolumeSnapshotHandlePairList []VolumeSnapshotHandlePair
+        // VolumeSnapshotHandlePairList []VolumeSnapshotHandlePair
+
+	// This field is introduced in v1beta2
+	// It is replacing VolumeSnapshotHandlePairList
+        // VolumeSnapshotInfoList is a list of snapshot information returned by
+        // by the CSI driver to identify snapshots on the storage system.
+        // +optional
+        VolumeSnapshotInfoList []VolumeSnapshotInfo
 
         // ReadyToUse becomes true when ReadyToUse on all individual snapshots become true
         // +optional
         ReadyToUse *bool
 
         // +optional
-        CreationTime *int64
+        CreationTime *metav1.Time
 
         // +optional
         Error *VolumeSnapshotError
-
-	// NOTE: We will consider removing this field after testing.
-	// PVVolumeSnapshotContentList is the list of pairs of PV and
-	// VolumeSnapshotContent for this group snapshot
-	// The maximum number of allowed snapshots in the group is 100.
-	// +optional
-	PVVolumeSnapshotContentList []PVVolumeSnapshotContentPair
 }
 ```
 
@@ -569,6 +590,8 @@ A new group controller service will be added with a new controller capability CR
   Indicates that the controller plugin supports creating, deleting, and getting details of a snapshot of
   multiple volumes.
 
+A new controller capability GET_SNAPSHOT will also be added. This indicates that the controller plugin supports getting details of a snapshot of multiple volumes.
+
 #### CSI Group Controller RPC
 
 ```
@@ -576,17 +599,14 @@ service Controller {
   …
   rpc CreateVolumeGroupSnapshot(CreateVolumeGroupSnapshotRequest)
     returns (CreateVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
 
   rpc DeleteVolumeGroupSnapshot(DeleteVolumeGroupSnapshotRequest)
     returns (DeleteVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
 
   rpc GetVolumeGroupSnapshot(GetVolumeGroupSnapshotRequest)
     returns (GetVolumeGroupSnapshotResponse) {
-        option (alpha_method) = true;
     }
   …
 }
@@ -598,8 +618,6 @@ The purpose of this call is to request the creation of a multi-volume snapshot. 
 
 ```
 message CreateVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The suggested name for the group snapshot. This field is REQUIRED
   // for idempotency.
   // Any Unicode string that conforms to the length limit is allowed
@@ -627,16 +645,12 @@ message CreateVolumeGroupSnapshotRequest {
 }
 
 message CreateVolumeGroupSnapshotResponse {
-  option (alpha_message) = true;
-
   // Contains all attributes of the newly created group snapshot.
   // This field is REQUIRED.
   VolumeGroupSnapshot group_snapshot = 1;
 }
 
 message VolumeGroupSnapshot {
-  option (alpha_message) = true;
-
   // The identifier for this group snapshot, generated by the plugin.
   // This field MUST contain enough information to uniquely identify
   // this specific snapshot vs all other group snapshots supported by
@@ -673,8 +687,6 @@ message VolumeGroupSnapshot {
 
 ```
 message DeleteVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The ID of the group snapshot to be deleted.
   // This field is REQUIRED.
   string group_snapshot_id = 1;
@@ -706,8 +718,6 @@ message DeleteVolumeGroupSnapshotResponse {
 
 ```
 message GetVolumeGroupSnapshotRequest {
-  option (alpha_message) = true;
-
   // The ID of the group snapshot to fetch current group snapshot
   // information for.
   // This field is REQUIRED.
@@ -725,10 +735,30 @@ message GetVolumeGroupSnapshotRequest {
 }
 
 message GetVolumeGroupSnapshotResponse {
-  option (alpha_message) = true;
-
   // This field is REQUIRED
   VolumeGroupSnapshot group_snapshot = 1;
+}
+```
+
+#### GetSnapshot
+
+GetSnapshot is an optional controller capability that can help retrieve snapshot information. It can be used by Kubernetes to populate fields in individual VolumeSnapshotContents and VolumeSnapshots API objects that belong to a VolumeGroupSnapshot.
+
+```
+message GetSnapshotRequest {
+  // The ID of the snapshot to fetch current snapshot information for.
+  // This field is REQUIRED.
+  string snapshot_id = 1;
+
+  // Secrets required by plugin to complete GetSnapshot request.
+  // This field is OPTIONAL. Refer to the `Secrets Requirements`
+  // section on how to use this field.
+  map<string, string> secrets = 2 [(csi_secret) = true];
+}
+
+message GetSnapshotResponse {
+  // This field is REQUIRED
+  Snapshot snapshot = 1;
 }
 ```
 
