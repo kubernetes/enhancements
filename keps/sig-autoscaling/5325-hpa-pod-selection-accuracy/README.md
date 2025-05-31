@@ -653,7 +653,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: HPAStrictPodSelection
+  - Feature gate name: HPAPodSelectionStrategy
   - Components depending on the feature gate: `kube-controller-manager` and
     `kube-apiserver`.
 
