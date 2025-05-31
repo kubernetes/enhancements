@@ -315,9 +315,10 @@ The implementation introduces a pluggable pod filtering system:
 ```go
 // PodFilter defines an interface for filtering pods based on various strategies
 type PodFilter interface {
-    // Filter returns a subset of pods that match the filtering criteria
-    Filter(hpa *autoscalingv2.HorizontalPodAutoscaler, pods []*v1.Pod, 
-           selector labels.Selector) ([]*v1.Pod, error)
+	// Filter returns the subset of pods that should be considered for metrics calculation
+	Filter(pods []*v1.Pod) ([]*v1.Pod, error)
+	// Name returns the name of the filter strategy for logging purposes
+	Name() string
 }
 ```
 
@@ -342,65 +343,42 @@ type HorizontalController struct {
 }
 ```
 
-Apply the appropriate filtering strategy during pod selection:
-Before, we had this function:
+For every method we have for collecting metrics we will accept the new `podFilter` as an extra argument, then we will filter the pods based on the filter.
+For example, in the `GetResourceReplicas` function:
 ```go
-// validateAndParseSelector verifies that:
-// - selector is not empty;
-// - selector format is valid;
-// - all pods by current selector are controlled by only one HPA.
-// Returns an error if the check has failed or the parsed selector if succeeded.
-// In case of an error the ScalingActive is set to false with the corresponding reason.
-func (a *HorizontalController) validateAndParseSelector(hpa *autoscalingv2.HorizontalPodAutoscaler, selector string) (labels.Selector, error) {
-  return parsedSelector, nil
-}
-```
-We modified it to be:
-```go
-// validateAndFilterPods performs the following:
-// 1. Validates the selector:
-//   - Ensures selector is not empty
-//   - Verifies selector format is valid
-//
-// 2. Gets pods matching the selector
-// 3. Applies additional filtering based on HPA's selectionStrategy
-// 4. Verifies filtered pods are controlled by only one HPA
+// GetResourceReplicas calculates the desired replica count based on a target resource utilization percentage
+// of the given resource for pods matching the given selector in the given namespace, and the current replica count.
+// The calculation follows these steps:
+// 1. Gets resource metrics for pods in the namespace matching the selector
+// 2. Lists all pods matching the selector
+// 3. Applies the podFilter to select pods that should be considered for scaling
+// 4. Groups considered pods into ready, unready, missing, and ignored pods
+// 5. Removes metrics for ignored and unready pods
+// 6. Calculates the desired replica count based on the resource utilization of considered pods
 //
 // Returns:
-//   - The parsed selector
-//   - The filtered list of pods
-//   - An error if any validation fails
-//
-// In case of an error, the HPA's ScalingActive condition is set to false with the corresponding reason.
-func (a *HorizontalController) validateAndFilterPods(hpa *autoscalingv2.HorizontalPodAutoscaler, selector string) (labels.Selector, []*v1.Pod, error) {
-  // ... existing selector parsing ...
-  
-  // Apply pod filtering based on strategy
-  podFilter = NewPodFilter(strategy)
-  filteredPods, err := podFilter.Filter(hpa, pods, parsedSelector)    
-  // ... continue with filtered pods ...
-  return parsedSelector, pods, nil
-}
+// - replicaCount: the recommended number of replicas
+// - utilization: the current utilization percentage
+// - rawUtilization: the raw resource utilization value
+// - timestamp: when the metrics were collected
+// - err: any error encountered during calculation
+func (c *ReplicaCalculator) GetResourceReplicas(ctx context.Context, currentReplicas int32, targetUtilization int32, resource v1.ResourceName, tolerances Tolerances, namespace string, selector labels.Selector, container string, podFilter PodFilter) (replicaCount int32, utilization int32, rawUtilization int64, timestamp time.Time, err error) {
 ```
 
-Then we can modify the `computeReplicasForMetric` to use the filter pods instead of the `specReplicas`.
+Then we will use the new filters pods as the base for calculation:
 ```go
-// computeReplicasForMetric computes the desired number of replicas for a specific metric,
-// using the number of pods that match both the label selector and pod selection strategy.
-// It returns:
-// - the proposed replica count
-// - the metric name used for the computation
-// - the timestamp of the latest metric value
-// - any condition that should be set on the HPA
-// - any error that occurred during computation
-func (a *HorizontalController) computeReplicasForMetric(ctx context.Context, hpa *autoscalingv2.HorizontalPodAutoscaler, spec autoscalingv2.MetricSpec,
-	currentPodsSize, statusReplicas int32, selector labels.Selector, status *autoscalingv2.MetricStatus) (replicaCountProposal int32, metricNameProposal string,
-	timestampProposal time.Time, condition autoscalingv2.HorizontalPodAutoscalerCondition, err error) {
-    // ... existing code //
-  replicaCountProposal, timestampProposal, metricNameProposal, condition, err = a.computeStatusForObjectMetric(currentPodsSize, statusReplicas, spec, hpa, selector, status, metricSelector)
-  // continue //
-}
+if len(podList) == 0 {
+		return 0, 0, 0, time.Time{}, fmt.Errorf("no pods returned by selector while calculating replica count")
+	}
+
+	filteredPods, _ := podFilter.Filter(podList) //TODO: Check what to do about this err
+
+	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(filteredPods, metrics, resource, c.cpuInitializationPeriod, c.delayOfInitialReadinessStatus)
+	removeMetricsForPods(metrics, ignoredPods)
+	removeMetricsForPods(metrics, unreadyPods)
 ```
+
+The same will apply for every resources: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics
 
 The HPA status is enhanced to provide visibility into the pod selection:
 ```go
