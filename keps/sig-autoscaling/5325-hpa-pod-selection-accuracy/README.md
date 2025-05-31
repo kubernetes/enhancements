@@ -248,7 +248,7 @@ In this case, the HPA will factor in CPU consumption from the Job's pod, despite
 
 ## Proposal
 
-We propose adding a new field to the HPA specification called `podSelectionStrategy` that allows users to specify how pods should be selected for metric collection:
+We propose adding a new field to the HPA specification called `selectionStrategy` that allows users to specify how pods should be selected for metric collection:
 * If set to `LabelSelector` (default): Uses the current behavior of selecting all pods that match the target workload's label selector.
 * If set to `OwnerReferences`: Only selects pods that are owned by the target workload through owner references.
 
@@ -267,14 +267,14 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 spec:
   # Existing fields...
-  podSelectionStrategy: OwnerReferences  # Default: LabelSelector
+  selectionStrategy: OwnerReferences  # Default: LabelSelector
 ```
 
 Pod Selection Process:
 - Initial Label Selection (Always happens):
   * The HPA first selects pods using the target workload's label selector
   * This is the fundamental selection mechanism and remains unchanged
-- Additional Filtering (Based on podSelectionStrategy):
+- Additional Filtering (Based on selectionStrategy):
   * `LabelSelector`(default):
     * No additional filtering
     * All pods that matched the label selector are used for metrics
@@ -286,28 +286,28 @@ Pod Selection Process:
     * Excludes pods that matched labels but aren't in the ownership chain
 
 
-The `HorizontalPodAutoscaler` API updated to add a new `podSelectionStrategy` field to the `HorizontalPodAutoscalerSpec` object:
+The `HorizontalPodAutoscaler` API updated to add a new `selectionStrategy` field to the `HorizontalPodAutoscalerSpec` object:
 ```go
-// PodSelectionStrategy defines how pods are selected for metrics collection
-type PodSelectionStrategy string
+// selectionStrategy defines how pods are selected for metrics collection
+type selectionStrategy string
 
 const (
     // LabelSelector selects all pods matching the target's label selector
-    LabelSelector PodSelectionStrategy = "LabelSelector"
+    LabelSelector selectionStrategy = "LabelSelector"
     
     // OwnerReferences only selects pods owned by the target workload
-    OwnerReferences PodSelectionStrategy = "OwnerReferences"
+    OwnerReferences selectionStrategy = "OwnerReferences"
 )
 
 // In HorizontalPodAutoscalerSpec:
 type HorizontalPodAutoscalerSpec struct {
     // existing fields...
 
-    // PodSelectionStrategy determines how pods are selected for metrics collection.
+    // selectionStrategy determines how pods are selected for metrics collection.
     // Valid values are "LabelSelector" and "OwnerReferences".
     // If not set, defaults to "LabelSelector" which is the legacy behavior.
     // +optional
-    PodSelectionStrategy *PodSelectionStrategy `json:"podSelectionStrategy,omitempty"`
+    selectionStrategy *selectionStrategy `json:"selectionStrategy,omitempty"`
 }
 ```
 
@@ -363,7 +363,7 @@ We modified it to be:
 //   - Verifies selector format is valid
 //
 // 2. Gets pods matching the selector
-// 3. Applies additional filtering based on HPA's podSelectionStrategy
+// 3. Applies additional filtering based on HPA's selectionStrategy
 // 4. Verifies filtered pods are controlled by only one HPA
 //
 // Returns:
@@ -407,10 +407,10 @@ The HPA status is enhanced to provide visibility into the pod selection:
 type HorizontalPodAutoscalerStatus struct {
     // ... existing fields ...
     
-    // CurrentPodSelectionStrategy indicates which pod selection strategy
+    // CurrentselectionStrategy indicates which pod selection strategy
     // is currently being used
     // +optional
-    CurrentPodSelectionStrategy PodSelectionStrategy `json:"currentPodSelectionStrategy,omitempty"`
+    CurrentselectionStrategy selectionStrategy `json:"currentselectionStrategy,omitempty"`
 }
 ```
 
@@ -592,22 +592,22 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature gate (HPAPodSelectionStrategy)
+- Feature implemented behind a feature gate (HPAselectionStrategy)
 - Initial e2e tests completed and enabled
 
 ### Upgrade / Downgrade Strategy
 
 #### Upgrade
 Existing HPAs will continue to work as they do today, using the default LabelSelector strategy.
-Users can use the new feature by enabling the Feature Gate (alpha only) and setting the podSelectionStrategy field to OwnerReferences on an HPA.
+Users can use the new feature by enabling the Feature Gate (alpha only) and setting the selectionStrategy field to OwnerReferences on an HPA.
 
 #### Downgrade
-On downgrade, all HPAs will revert to using the LabelSelector strategy, regardless of any configured podSelectionStrategy value on the HPA itself.
+On downgrade, all HPAs will revert to using the LabelSelector strategy, regardless of any configured selectionStrategy value on the HPA itself.
 
 ### Version Skew Strategy
 
-1. `kube-apiserver`: More recent instances will accept the new podSelectionStrategy field, while older instances will ignore it during validation and persist it as part of the HPA object.
-2. `kube-controller-manager`: An older version could receive an HPA containing the new podSelectionStrategy field from a more recent API server, in which case it would ignore it (i.e., continue to use the default LabelSelector strategy regardless of the field's value).
+1. `kube-apiserver`: More recent instances will accept the new selectionStrategy field, while older instances will ignore it during validation and persist it as part of the HPA object.
+2. `kube-controller-manager`: An older version could receive an HPA containing the new selectionStrategy field from a more recent API server, in which case it would ignore it (i.e., continue to use the default LabelSelector strategy regardless of the field's value).
 
 
 ## Production Readiness Review Questionnaire
@@ -653,7 +653,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: HPAPodSelectionStrategy
+  - Feature gate name: HPAselectionStrategy
   - Components depending on the feature gate: `kube-controller-manager` and
     `kube-apiserver`.
 
@@ -663,7 +663,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No. By default, HPAs will continue to use the `LabelSelector` strategy unless the new `podSelectionStrategy` field is explicitly set to `OwnerReferences`.
+No. By default, HPAs will continue to use the `LabelSelector` strategy unless the new `selectionStrategy` field is explicitly set to `OwnerReferences`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -677,14 +677,14 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes. If the feature gate is disabled, all HPAs will revert to using the `LabelSelector` strategy regardless of the value of the `podSelectionStrategy` field.
+Yes. If the feature gate is disabled, all HPAs will revert to using the `LabelSelector` strategy regardless of the value of the `selectionStrategy` field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-When the feature is re-enabled, any HPAs with `podSelectionStrategy`: `OwnerReferences` will resume using the ownership-based pod selection rather than label-based selection.
+When the feature is re-enabled, any HPAs with `selectionStrategy`: `OwnerReferences` will resume using the ownership-based pod selection rather than label-based selection.
 The HPA controller will immediately begin considering only pods directly owned by the target workload for scaling decisions on these HPAs, potentially changing scaling behavior compared to when the feature was disabled.
 
-Existing HPAs that don't have `podSelectionStrategy` explicitly set will continue using the default LabelSelector strategy and won't be affected by re-enabling the feature.
+Existing HPAs that don't have `selectionStrategy` explicitly set will continue using the default LabelSelector strategy and won't be affected by re-enabling the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -701,7 +701,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-We will add a unit test verifying that HPAs with and without the new `podSelectionStrategy` field are properly validated, both when the feature gate is enabled or not.
+We will add a unit test verifying that HPAs with and without the new `selectionStrategy` field are properly validated, both when the feature gate is enabled or not.
 This will ensure the HPA controller correctly applies the pod selection strategy based on the feature gate status and presence of the field.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -722,9 +722,9 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 Rollout failures in this feature are unlikely to impact running workloads significantly, but there are edge cases to consider:
-- If the feature is enabled during a high-traffic period, HPAs with `podSelectionStrategy: OwnerReferences` might suddenly change their scaling decisions based on the reduced pod set. This could cause unexpected scaling events.
+- If the feature is enabled during a high-traffic period, HPAs with `selectionStrategy: OwnerReferences` might suddenly change their scaling decisions based on the reduced pod set. This could cause unexpected scaling events.
 - If a `kube-controller-manager` restarts mid-rollout, some HPAs might temporarily revert to the `LabelSelector` strategy until the controller fully initializes with the new feature enabled.
-These issues would only affect HPAs that have explicitly set `podSelectionStrategy: OwnerReferences`. Existing HPAs will continue to function with the default `LabelSelector` strategy.
+These issues would only affect HPAs that have explicitly set `selectionStrategy: OwnerReferences`. Existing HPAs will continue to function with the default `LabelSelector` strategy.
 
 ###### What specific metrics should inform a rollback?
 
@@ -735,7 +735,7 @@ that might indicate a serious problem?
 Operators should monitor these signals that might indicate problems:
 
 - Unexpected scaling events shortly after enabling the feature
-- Significant changes in the number of replicas for workloads using HPAs with `podSelectionStrategy: OwnerReferences`
+- Significant changes in the number of replicas for workloads using HPAs with `selectionStrategy: OwnerReferences`
 - Increased latency in the `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds` metric
 - Increased error rate in `horizontal_pod_autoscaler_controller_metric_computation_total` with error status
 If these metrics show unusual patterns after enabling the feature, operators should consider rolling back.
@@ -772,7 +772,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-The presence of the `podSelectionStrategy` field in HPA specifications indicates that the feature is in use.
+The presence of the `selectionStrategy` field in HPA specifications indicates that the feature is in use.
 Additionally, the HPA status will include information about the pod selection strategy in use through the `podSelectionInfo` field, which can be examined to determine if strict pod selection is active for a given HPA.
 
 ###### How can someone using this feature know that it is working for their instance?
