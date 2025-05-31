@@ -315,8 +315,9 @@ The implementation introduces a pluggable pod filtering system:
 ```go
 // PodFilter defines an interface for filtering pods based on various strategies
 type PodFilter interface {
-	// Filter returns the subset of pods that should be considered for metrics calculation
-	Filter(pods []*v1.Pod) ([]*v1.Pod, error)
+	// Filter returns the subset of pods that should be considered for metrics calculation,
+	// along with the pods that were filtered out
+	Filter(pods []*v1.Pod) (filtered []*v1.Pod, unfiltered []*v1.Pod, err error)
 	// Name returns the name of the filter strategy for logging purposes
 	Name() string
 }
@@ -367,12 +368,15 @@ func (c *ReplicaCalculator) GetResourceReplicas(ctx context.Context, currentRepl
 
 Then we will use the new filters pods as the base for calculation:
 ```go
-if len(podList) == 0 {
+  if len(podList) == 0 {
 		return 0, 0, 0, time.Time{}, fmt.Errorf("no pods returned by selector while calculating replica count")
 	}
-
-	filteredPods, _ := podFilter.Filter(podList) //TODO: Check what to do about this err
-
+  filteredPods, unfilteredPods, err := podFilter.Filter(podList)
+  unfilteredPodNames := sets.New[string]()
+	for _, pod := range unfilteredPods {
+		unfilteredPodNames.Insert(pod.Name)
+	}
+	removeMetricsForPods(metrics, unfilteredPodNames)
 	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(filteredPods, metrics, resource, c.cpuInitializationPeriod, c.delayOfInitialReadinessStatus)
 	removeMetricsForPods(metrics, ignoredPods)
 	removeMetricsForPods(metrics, unreadyPods)
