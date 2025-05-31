@@ -275,7 +275,7 @@ Pod Selection Process:
   * The HPA first selects pods using the target workload's label selector
   * This is the fundamental selection mechanism and remains unchanged
 - Additional Filtering (Based on podSelectionStrategy):
-  * `LabelSelector`(deafult):
+  * `LabelSelector`(default):
     * No additional filtering
     * All pods that matched the label selector are used for metrics
     * Maintains current behavior for backward compatibility
