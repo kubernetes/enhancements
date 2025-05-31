@@ -67,6 +67,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
     - [Downgrade](#downgrade)
@@ -106,16 +107,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -355,7 +356,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 We will add the follow [e2e autoscaling tests]:
 
 - For both scale up and scale down:
-  - Workload does not scale because the metric ratio is in tolerance.
+  - Workload does not scale because the metric ratio is in tolerance
+    ([PR](https://github.com/kubernetes/kubernetes/pull/130797/commits/4db8e8cc1dc2e5683c878b3ef29cb2e0fbe70f80#diff-832ab9989fa2683f7848ae1607c9a9aaa2bd245e5374efa0c5a87ba8edab464a)).
   - Workload scales successfully because the metric ratio is out of tolerance.
 - Autoscaling uses the default when no tolerances are set.
 
@@ -429,6 +431,12 @@ in back-to-back releases.
 
 - Feature implemented behind a `HPAConfigurableTolerance` feature flag
 - Initial e2e tests completed and enabled
+
+#### Beta
+
+- All tests described in the [`e2e tests` section](#e2e-tests) are implemented
+  and linked in this KEP.
+- We have monitored negative user feedback and addressed relevant concerns.
 
 ### Upgrade / Downgrade Strategy
 
@@ -543,7 +551,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-We will add a unit test verifying that HPAs with and without the new fields are
+[Unit tests have been added](https://github.com/kubernetes/kubernetes/pull/130797/commits/a41284d9fa3a3d5a5e8760db6e9fd4f7e5e6fca6#diff-98f8520444a477d01c5cc2e56f92939d5fb07893a234b8fee5b67c7c147a20e0) to verify that HPAs with and without the new fields are
 properly validated, both when the feature gate is enabled or not.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -564,12 +572,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This feature does not introduce new failure modes: during rollout/rollback, some
+API servers will allow or disallow setting the new 'tolerance' field. The new
+field is possibly ignored until the controller manager is fully updated.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+A high `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`
+metric can indicate a problem related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -579,11 +594,17 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+I have manually tested a cluster upgrade, and this feature is in alpha without
+(to the best of our knowledge) any user reporting an issue. GKE has automated
+upgrade/downgrade tests that did not report any issue.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -625,9 +646,9 @@ values. Users can get both values using
 and use them to verify that scaling events are triggered when their ratio is out
 of tolerance.
 
-We will update the controller-manager logs to help users understand the behavior
-of the autoscaler. The data added to the logs will include the tolerance used
-for each scaling decision.
+The [controller-manager logs have been updated](https://github.com/kubernetes/kubernetes/pull/130797/commits/2dd9eda47ffd5556ff90446e91d22ddbecc05d2c#diff-f1c5a31aa8fb8e3fd64b6aa13d3358b504e6e25030f249f1652e244c105eafc7R846) 
+to help users understand the behavior of the autoscaler. The data added to the
+logs includes the tolerance used for each scaling decision.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -697,6 +718,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No, this feature does not depend on any specific service.
 
 ### Scalability
 
@@ -817,6 +840,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+API server or etcd issues do not impact this feature.
+
 ###### What are other known failure modes?
 
 <!--
@@ -832,7 +857,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+We do not expect any new failure mode. (While setting inappropriate `tolerance`
+values may cause HPAs to react too slowly or too fast, the feature is working as
+intended.)
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A.
 
 ## Implementation History
 
@@ -848,12 +879,16 @@ Major milestones might include:
 -->
 
 2025-01-21: KEP PR merged.
+2025-03-24: [Implementation PR](https://github.com/kubernetes/kubernetes/pull/130797) merged.
+2025-05-15: Kubernetes v1.33 released (includes this feature).
 
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+No major drawbacks have been identified.
 
 ## Alternatives
 
@@ -863,6 +898,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+On non-managed Kubernetes instances, users can update the cluster-wide
+`--horizontal-pod-autoscaler-tolerance` tolerance parameter,
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -870,3 +908,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+N/A.
