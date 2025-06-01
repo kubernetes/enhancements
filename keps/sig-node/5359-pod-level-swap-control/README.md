@@ -58,7 +58,8 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+
+# KEP-5359: Pod-Level Swap Control
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -86,15 +87,24 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API Changes](#api-changes)
+    - [Example](#example)
+    - [Validation Scenarios](#validation-scenarios)
+    - [Kubelet Changes](#kubelet-changes)
+    - [Backward Compatibility](#backward-compatibility)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -128,9 +138,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -173,6 +183,14 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+This KEP proposes introducing a pod-level API field to control swap memory usage for individual pods.
+This enhancement aims to complement the existing node-level swap support by providing a per-workload swap configuration.
+
+The initial focus is to allow pods to explicitly disable swap, even if swap is enabled at the node level
+(via the `LimitedSwap` setting introduced in [KEP-2400](https://github.com/kubernetes/enhancements/issues/2400)).
+In the future, the pod-level swap control API field can be extended to allow more granular control over swap usage,
+or to provide hints to kubelet on how to configure swap for individual pods, depending on the configured "swapBehavior".
+
 ## Motivation
 
 <!--
@@ -184,6 +202,25 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+Kubernetes has introduced node-level swap support (KEP-2400), currently Beta3 in 1.33.
+KEP-2400 allows nodes to utilize swap memory by configuring kubelet to use the `LimitedSwap` swap behavior.
+The `LimitedSwap` mode is currently purely automatic and implicit.
+Swap limits are automatically assigned to
+pods, [based on various factors](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2400-node-swap#steps-to-calculate-swap-limit),
+while users cannot specifically configure swap for individual pods.
+For example, `LimitedSwap` restricts Guaranteed and high-priority pods from swap for performance reasons,
+and users cannot specifically exclude other critical pods from potential swap usage.
+
+While node-level swap can improve node stability and resource utilization in certain scenarios, it presents a challenge
+to some latency-sensitive applications.
+For these applications, performance degradation with any swap activity may be undesirable.
+Currently, if a node has swap enabled, application owners do not have a standard Kubernetes API mechanism to express
+their workload's intolerance to swap.
+
+This KEP addresses this gap by providing a pod-level swap control API.
+In the first phase, we'll focus on the ability to disable swap for all its containers irrespective of underlying node
+swap behavior.
+
 ### Goals
 
 <!--
@@ -191,12 +228,32 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+* Introduce a new `swapPolicy` field in PodSpec to allow users to configure swap for an individual pod.
+* Initially, provide a way to disable swap under the `LimitedSwap` swap behavior.
+* Maintain backward compatibility: existing pods that run on swap-enabled nodes should behave as they do by default.
+* Provide a mechanism to alleviate concerns regarding "all-or-nothing" nature of node-level swap enablement, potentially
+  unblocking KEP-2400’s path to GA.
+* Open the door to future enhancements, both at the kubelet-level swap behaviors and the new pod-level swap control API
+  field.
+  For example, a more sophisticated declarative node-level swap behavior that relies on hints provided by pod owners,
+  or a swap behavior that allows users to explicitly specify swap limits for individual pods.
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+* To introduce fine-grained swap controls at the pod or container level (e.g., setting a specific swap limit other than
+  zero) in this initial KEP.
+* To change the fundamental behavior of LimitedSwap for Guaranteed, Burstable, or BestEffort pods when the pod-level
+  swap setting is not specified.
+* To define how swap contributes to pod eviction or schedulable resource limits beyond disabling its usage.
+* To enhance pod scheduling to allow users to specify swap-capable node preferences. This will be achievable with
+  features such
+  as [node-capabilities](https://docs.google.com/document/d/1vSDlAA3o0riVq0EcmGBOYUJUVF4tN2Ib7VJg3o1LvBw/edit?tab=t.0).
+* To support cgroupv1 for this feature, as Kubernetes swap support (KEP 2400) is focused on cgroup v2.
 
 ## Proposal
 
@@ -220,7 +277,21 @@ bogged down.
 
 #### Story 1
 
+As the owner of a latency-sensitive application,
+I want to ensure my pod’s memory pages never swap out to help avoid performance degradation in a multi-tenant environment.
+
+Since swap is enabled on the node,
+the kernel may still swap other pods' pages in and out to reclaim memory, potentially impacting performance.
+
 #### Story 2
+
+As an application owner managing swap tolerant batch jobs, I do not set pod.spec.swapPolicy, allowing it to use any swap
+as available if the node-policy permits.
+
+#### Story 3
+
+As a cluster administrator, I enable LimitedSwap on nodes for cost optimization. The pod.spec.swapPolicy allows specific
+workloads to opt-out.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -245,6 +316,21 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+1. Ability to disable swap at workload level may hide other concerns of swap such as noisy-neighbor issues, where a
+   heavy swap reliant workload could cause cpu or I/O contention with another workload that doesn’t use swap.
+    1. `PodSwapAwareness` is not a replacement for node level swap isolation for workloads.
+       `PodSwapAwareness` feature should protect workloads that naturally fit in the same nodes as some swap requiring
+       workloads,
+       but cannot afford the performance cost.
+       The alternative for these workloads is to also use swap or be OOM killed due to memory pressure (when no swap is
+       present).
+    2. When node-capability based filtering is available, users can utilize it to select swap-disabled nodes during
+       scheduling for clear-isolation, managing explicit node-swap preferences.
+2. User confusion about interactions between API and node-level configuration.
+    1. A potential mitigation would be to improve pod-level visibility to clearly indicate whether a workload is
+       actively utilizing swap memory.
+    2. Clear documentation on pod-level, node-level and QoS dependencies on swap will be added.
+
 ## Design Details
 
 <!--
@@ -253,6 +339,136 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### API Changes
+
+We propose adding a new field swapPolicy to pod.spec.
+
+```go
+// PodSpec is a description of a pod
+type PodSpec struct {
+
+// .. existing fields..
+
+// SwapPolicy defines the desired swap memory policy for this pod. This field
+// is immutable after the pod has been created.
+//
+// If unspecified, the default value is "NoPreference", which means the pod's swap behavior is determined by the node's swap 
+// configuration (KEP-2400).
+// If mode is set to "Disabled", swap will be disabled for this pod, irrespective of the node's swap configuration.
+// 
+// +featuregate="PodSwapAwareness"
+// +optional
+SwapPolicy *PodSwapPolicy `json:"swapPolicy,omitempty"`
+}
+
+// PodSwapPolicy defines the swap memory policy for a pod.
+type PodSwapPolicy struct {
+// Mode defines the desired swap behavior mode for the pod.
+// This field is immutable after the pod has been created.
+// Two modes are supported:
+// - "Disabled": Swap will be disabled for this pod.
+// - "NoPreference": The pod adheres to the node’s default swap behavior. This is the default if swapPolicy is unset.
+// 
+// +optional
+Mode SwapPolicyMode `json:"mode,omitempty"`
+}
+
+// SwapPolicyMode defines the possible values for mode in pod.swapPolicy.
+type SwapPolicyMode string
+
+const (
+// SwapPolicyModeDisabled explicitly disables swap for the pod. 
+SwapPolicyModeDisabled SwapPolicyMode = "Disabled"
+// SwapPolicyModeNoPreference states the pod should follow node-level swap configuration.
+SwapPolicyModeNoPreference SwapPolicyMode = "NoPreference"
+)
+```
+
+Notes:
+
+1. The swapPolicy field will be optional.
+2. For Alpha, the only accepted modes will be `NoPreference` or `Disabled`.
+3. If the swapPolicy field is not set or empty `swapPolicy.mode`, it will default to `NoPreference` swap mode,
+   meaning the node's configured swap behavior (e.g. `LimitedSwap`) will determine how swap is utilized by the pod and
+   ensures backward compatibility.
+4. The field `pod.spec.swapPolicy` will be immutable after pod creation.
+
+#### Example
+
+A pod that wants to disable swap would be configured like this:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-swap-pod
+spec:
+  swapPolicy:
+    mode: Disabled
+  containers:
+    - name: my-app
+  image: test-image  
+```
+
+A pod that explicitly wants to follow node's default behavior would look like this:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: swap-tolerant-pod
+spec:
+  swapPolicy:
+    mode: NoPreference
+  containers:
+    - name: my-app
+  image: test-image
+```
+
+#### Validation Scenarios
+
+The following pod types are currently excluded from swap usage with `LimitedSwap` (KEP-2400):
+
+* Guaranteed and BestEffort QoS class pods.
+* System-priority pods (system-node-critical, system-cluster-critical).
+
+When any of the above pod has 'Disabled' swap-behavior:
+
+1. Kubelet disables the pod's swap cgroup control explicitly.
+2. This action is consistent with the node swap policy for the excluded pod categories.
+3. Setting the pod swap limit to `0` maintains existing behavior and will not be rejected at the API level.
+
+These node-swap policy exclusions will not have explicit validations because they align with the `Disabled`
+swap-behavior.
+
+#### Kubelet Changes
+
+Kubelet will recognize and act upon the `pod.spec.swapPolicy` field as follows:
+
+1. If the kubelet configuration `memorySwap.swapBehavior` is `NoSwap`, kubelet will disable system-level swap and
+   `pod.spec.swapPolicy` has no effect (existing behavior).
+2. When kubelet is in `LimitedSwap` mode and the `PodSwapAwareness` feature gate is disabled, the `pod.spec.swapPolicy`
+   field is ignored. In this configuration, burstable pod containers will get a swap proportion based on the memory
+   requested for these containers (existing behavior).
+3. Pod Swap Behavior Enforcement:
+
+   With PodSwapAwareness feature-gate enabled,
+    1. If the node has swap configured (e.g. `LimitedSwap`) and `pod.spec.swapPolicy.mode` is set to Disabled, Kubelet
+       will
+       configure the pod’s cgroupv2 swap control memory.swap.max=0 to prevent swap usage.
+       Their containers will not get swap allocation.
+    2. If `pod.spec.swapPolicy` is unset or `pod.spec.swapPolicy.mode` set to `NoPreference`, the pod adheres to
+       existing
+       node-level swap policy and QoS rules.
+
+#### Backward Compatibility
+
+1. The new field is optional. API server will enforce the immutability of this field after it is created.
+2. Pods created without swapPolicy will continue to function as they do today.
+   Existing pods utilizing swap on enabled nodes will continue to benefit from swap without any change.
+3. Older kubelets will ignore the field. Newer kubelets will act on `pod.spec.swapPolicy` when the feature gate is
+   enabled.
 
 ### Test Plan
 
@@ -267,7 +483,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -301,6 +517,11 @@ extending the production code to implement this enhancement.
 
 - `<package>`: `<date>` - `<test coverage>`
 
+- `kubernetes/kubernetes/tree/master/pkg/kubelet`: `<date>` - `<test coverage>`
+  Parsing `PodSwapAwareness`, feature-gate, `memory.swap.max` manipulation.
+- `kubernetes/kubernetes/tree/master/pkg/apis/core/v1/validation`: `<date>` - `<test coverage>`
+  Validation of new API field for immutability.
+
 ##### Integration tests
 
 <!--
@@ -327,6 +548,9 @@ This can be done with:
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
+* Ensure kubelet handles combinations of node swap settings: cgroupv2 x swapPolicy x QoS. Verify correct swap cgroup
+  controls are set.
+
 ##### e2e tests
 
 <!--
@@ -345,6 +569,12 @@ If e2e tests are not necessary or useful, explain why.
 -->
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+
+* Existing Swap tests must pass fine even after introducing the `PodSwapAwareness` api.
+* swapPolicy: "Disabled" on `LimitedSwap` nodes: verify no swap.
+* swapPolicy: "NoPreference" on `LimitedSwap` nodes: verify existing QoS rules.
+* Feature-gate disabled continues existing behavior.
+* Pods with `swapPolicy` configured on a cgroupv1 node: kubelet will report an error event but will ignore the setting.
 
 ### Graduation Criteria
 
@@ -420,6 +650,22 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+* Feature implemented behind feature flag PodSwapAwareness (default false).
+* Existing node e2e tests around swap must pass.
+* New e2e tests to ensure kubelet enforces swapPolicy.mode: "Disabled".
+* Documentation: swapPolicy field, node swap interaction.
+
+#### Beta
+
+* Feature gate PodswapPolicy default to true.
+* Consider other "swapPolicy" values for scheduling preferences based on user feedback. Future expansions for improved
+  scheduling awareness could include options like "Required", "Preferred" and "Avoid" to express varying affinity and
+  anti-affinity rules for workloads.
+
+#### GA
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -433,6 +679,12 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+Upgrade: Feature gate is off by default in Alpha.
+No changes until enabled on nodes and swapPolicy field used on pods.
+
+Downgrade: swapPolicy is ignored by older kubelets.
+Pods set with swapPolicy.mode: "Disabled", will revert to node-level behavior.
 
 ### Version Skew Strategy
 
@@ -448,6 +700,11 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Standard n-2 skew.
+
+Newer API / Older Kubelet: Kubelet ignores field
+Older API / Newer Kubelet: new field is not settable.
 
 ## Production Readiness Review Questionnaire
 
@@ -491,15 +748,15 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: PodSwapAwareness.
+    - Components depending on the feature gate: kubelet.
+- [X] Other
+    - Describe the mechanism: Kubelet needs to be restarted when enabling/disabling this feature.
+    - Will enabling / disabling the feature require downtime of the control
+      plane? No.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? Yes.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -507,6 +764,9 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+This feature introduces a new user facing behavior for swap.
+However, the default behavior of pods is not changed with this feature.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -521,7 +781,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Requires kubelet restart. See Rollout, Upgrade and Rollout planning.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+When the feature-flag is disabled, the new swapPolicy field will be ignored by kubelet.
+Re-enabling the feature-flag will enable this behavior, and any pods that start later on this node will adhere to the
+swapPolicy configured at the pod spec.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -819,6 +1085,29 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+The following alternative was considered and ruled out, because people seem to favor predictability in this area.
+In any case, I'll keep this here for reference.
+
+One potential concern with the `Disabled` mode is that it forces the API to allow pod owners to disable swap, regardless
+of the `swapBehavior` setting configured by the admin at the kubelet level.
+
+This is problematic because swap is fundamentally a system-level resource that impacts node stability and cannot be
+isolated per pod, as is possible with CPU and memory.
+In practice, disabling swap could negatively affect other pods, since the kernel would be unable to swap out memory
+pages
+from the pod with `swapPolicy.mode` set to `Disabled`, even if those pages are never actively used.
+
+Looking ahead, we might want to introduce more sophisticated kubelet-level swap behaviors that can make dynamic
+decisions based on pod hints and real-time memory usage. Locking into the `Disabled` mode now could limit future
+flexibility.
+
+An alternative approach could be renaming `Disabled` to `PreferNoSwap`, signaling a preference rather than an absolute
+restriction. Under the `LimitedSwap` behavior, this would effectively opt the pod out of swap, while leaving room for
+future behaviors that allow selective swap usage for pods that prefer to avoid it.
+
+However, if the goal is to consistently allow pod owners to opt out of swap across all swap behaviors, keeping the
+`Disabled` mode may be the appropriate choice.
 
 ## Infrastructure Needed (Optional)
 
