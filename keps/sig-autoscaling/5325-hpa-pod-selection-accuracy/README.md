@@ -598,7 +598,7 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature gate (HPAselectionStrategy)
+- Feature implemented behind a feature gate (HPASelectionStrategy)
 - Initial e2e tests completed and enabled
 
 ### Upgrade / Downgrade Strategy
@@ -659,7 +659,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: HPAselectionStrategy
+  - Feature gate name: HPASelectionStrategy
   - Components depending on the feature gate: `kube-controller-manager` and
     `kube-apiserver`.
 
