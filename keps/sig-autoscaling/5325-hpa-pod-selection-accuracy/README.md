@@ -477,7 +477,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+N/A, the feature is tested using unit tests and e2e tests.
 
 ##### e2e tests
 
@@ -496,9 +496,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-We will add the following e2e tests:
-- Test scaling with a deployment and unrelated job sharing labels (with and without strictPodSelection)
-- Test scaling with multiple workload types that share label selectors
+We will add the following e2e autoscaling tests:
+- For owner references strategy:
+  - Workload should not scale up when CPU/Memory usage comes from pods not owned by the target
+  - HPA ignores metrics from pods with matching labels but no owner reference to the target
 
 [e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
