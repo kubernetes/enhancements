@@ -311,7 +311,9 @@ type HorizontalPodAutoscalerSpec struct {
 }
 ```
 
-The implementation introduces a pluggable pod filtering system:
+### Pluggable Pod Filtering
+
+The HPA controller introduces a pluggable PodFilter interface to encapsulate different filtering strategies:
 ```go
 // PodFilter defines an interface for filtering pods based on various strategies
 type PodFilter interface {
@@ -334,8 +336,9 @@ Two implementations are provided:
 * Handles different workload types (Deployments, StatefulSets, etc.)
 
 
-The HPA controller is enhanced to:
-Cache pod filters for performance:
+### Controller Enhancements
+
+The HPA controller caches filters for improved performance:
 ```go
 type HorizontalController struct {
     // ... existing fields ...
@@ -344,8 +347,7 @@ type HorizontalController struct {
 }
 ```
 
-For every method we have for collecting metrics we will accept the new `podFilter` as an extra argument, then we will filter the pods based on the filter.
-For example, in the `GetResourceReplicas` function:
+All metrics collection methods (e.g., `GetResourceReplicas`) are updated to accept a `PodFilter`:
 ```go
 // GetResourceReplicas calculates the desired replica count based on a target resource utilization percentage
 // of the given resource for pods matching the given selector in the given namespace, and the current replica count.
@@ -366,12 +368,19 @@ For example, in the `GetResourceReplicas` function:
 func (c *ReplicaCalculator) GetResourceReplicas(ctx context.Context, currentReplicas int32, targetUtilization int32, resource v1.ResourceName, tolerances Tolerances, namespace string, selector labels.Selector, container string, podFilter PodFilter) (replicaCount int32, utilization int32, rawUtilization int64, timestamp time.Time, err error) {
 ```
 
-Then we will use the new filters pods as the base for calculation:
+Filtered pods are then used as the basis for replica calculations:
 ```go
   if len(podList) == 0 {
 		return 0, 0, 0, time.Time{}, fmt.Errorf("no pods returned by selector while calculating replica count")
 	}
   filteredPods, unfilteredPods, err := podFilter.Filter(podList)
+
+  if err != nil {
+    // Fall back to default behavior: use all pods
+    filteredPods = podList
+    unfilteredPods = []*v1.Pod{} // empty slice since we're not filtering out any pods
+  }
+
   unfilteredPodNames := sets.New[string]()
 	for _, pod := range unfilteredPods {
 		unfilteredPodNames.Insert(pod.Name)
@@ -381,8 +390,17 @@ Then we will use the new filters pods as the base for calculation:
 	removeMetricsForPods(metrics, ignoredPods)
 	removeMetricsForPods(metrics, unreadyPods)
 ```
+If filtering fails (e.g., due to RBAC issues), the system defaults to using all pods, ensuring robust behavior.
 
-The same will apply for every resources: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics
+### Scope of Support
+
+This enhancement applies consistently across the following supported metric types in the HorizontalPodAutoscaler:
+- Resource metrics (e.g., CPU, memory)
+- Container resource metrics
+- Object metrics
+- Pods metrics
+
+Reference: [Kubernetes HPA metric types](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics)
 
 The HPA status is enhanced to provide visibility into the pod selection:
 ```go
@@ -531,7 +549,6 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
 - Feature implemented behind a feature flag
