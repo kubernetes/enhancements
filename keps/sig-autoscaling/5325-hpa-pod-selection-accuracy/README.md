@@ -447,7 +447,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/apis/autoscaling/v1`: `2025-06-01` - `28.6%`
+- `pkg/apis/autoscaling/v2`: `2025-06-01` - `75.6%`
+- `pkg/apis/autoscaling/v2beta1`: `2025-06-01` - `69.1%`
+- `pkg/apis/autoscaling/v2beta2`: `2025-06-01` - `82.1%`
+- `pkg/controller/podautoscaler`: `2025-06-01` - `88.3%`
 
 ##### Integration tests
 
