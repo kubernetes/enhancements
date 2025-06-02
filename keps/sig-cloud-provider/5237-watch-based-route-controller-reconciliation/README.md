@@ -239,7 +239,6 @@ To ensure only a single reconciliation loop is run concurrently we use the [`k8s
 
 Node updates are quite frequent. To reduce the number of requests sent to infrastructure providers, it’s important to filter these events and only trigger reconciliations when necessary.
 
-TODO: more fields?
 Two fields are relevant for determining whether a reconcile should occur:
 
 1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a give IP range should be sent. Changes to this field must trigger a reconcile.
