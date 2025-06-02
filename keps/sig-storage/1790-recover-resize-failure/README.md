@@ -330,6 +330,11 @@ There are already e2e tests running that verify correctness of this feature - ht
   -  There are already e2e tests running that verify correctness of this feature -
   https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
   
+### GA  
+
+- The feature has been extensively tested in CI and deployed with drivers in real world. For example - https://github.com/kubernetes-sigs/azuredisk-csi-driver/blob/master/charts/latest/azuredisk-csi-driver/templates/csi-azuredisk-controller.yaml#L166
+- The test grid already has tests for the feature.
+
 ### Upgrade / Downgrade Strategy
 
 Not Applicable
@@ -413,9 +418,15 @@ after expansion is complete even with older kubelet. No recovery from expansion 
 ### Monitoring requirements
 
 ###### How can an operator determine if the feature is in use by workloads?**
-  Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
-  
-  
+
+The Recovery feature as such designed does not require if external operator must be able to observe
+if the feature is in-use by the workloads. The reason is, proposed changes already enhance
+user experience of resizing workflow by providing additional states such as `allocatedResourceStatus`
+and `allocatedResources` in pvc's status and there is nothing special about recovery in itself. 
+
+Operators can already observe if volume's are being resized by using `pvc.Status.Conditions` and other 
+metrics documented below.
+
 ###### How can someone using this feature know that it is working for their instance?  
 
 Since feature requires user interaction, reducing the size of the PVC is only supported
@@ -449,15 +460,10 @@ if this feature-gate is enabled.
   both `expand_volume` and `volume_fs_resize` durations. Also the error rate should not increase for 
   `storage_operation_errors_total` metric.
 
-###### Are there any missing metrics that would be useful to have to improve observability if this feature?
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-  We are planning to add new counter metrics that will record success and failure of recovery operations.
-  In cases where recovery fails, the counter will forever be increasing until an admin action resolves the error.
-
-  Tentative name of metric is - `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`
-
-  The reason of using PV name as a label is - we do not expect this feature to be used in a cluster very often
-  and hence it should be okay to use name of PVs that were recovered this way.
+We think that existing resizing related metrics are sufficient and we do as such think we need to introduce new
+metrics for tracking this feature.
 
 ### Dependencies
 
@@ -474,7 +480,7 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in any new API calls
 
-  Potentially yes. If user expands a PVC and expansion fails on the node, then
+  Yes - if user recovers a volume from failed expansion. When user expands a PVC and expansion fails on the node, then
   expansion controller in control-plane must intervene and verify if it is safe
   to retry expansion on the kubelet.This requires round-trips between kubelet
   and control-plane and hence more API calls.
@@ -484,9 +490,14 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in any new calls to cloud provider
 
-  Potentially yes. Since expansion operation is idempotent and expansion controller
+  Since expansion operation is idempotent and expansion controller
   must verify if it is safe to retry expansion with lower values, there could be 
-  additional calls to CSI drivers (and hence cloudproviders).
+  additional calls to CSI drivers (and hence cloudproviders), when user attempts recovery from 
+  failed expansion.
+  
+  On the other hand - previously we retried expansion of failed volumes infinitiely and hence incurred
+  significant api usage of both k8s and cloudprovider. This enhancement significantly reduces this by 
+  allowing recovery and slower pace of retries for infeasible expansion operations.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
