@@ -229,14 +229,7 @@ This will be kept, as there is no way to know which routes to delete without thi
 
 #### Periodic reconcile
 
-As already established, the cloud-controller-manager does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the infrastructure provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented.
-
-TODO: decision
-We have three available options to determine the time interval:
-
-1. Change default of `--route-reconcile-period` to an appropriate value based on this KEPs feature flag
-2. Use global flag `--min-resync-period` with an interval of 12h
-3. Introduce a new flag with an appropriate value
+As already established, the cloud-controller-manager does not utilize “Owner” references and therefore routes of already deleted nodes could remain in the infrastructure provider. To ensure a consistent state with the cluster an additional periodic reconcile should be implemented. This can be implemented via the already existing `--min-resync-period` flag, which is already used by the service and node controller.
 
 #### Workqueue singleton
 
