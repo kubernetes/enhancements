@@ -256,7 +256,7 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 ##### Integration tests
 
-- TODO
+- TBD
 
 ##### e2e tests
 
