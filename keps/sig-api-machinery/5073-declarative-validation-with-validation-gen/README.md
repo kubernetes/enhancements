@@ -730,21 +730,6 @@ The below rules are currently implemented or are very similar to an existing val
     `+k8s:immutable`
   <tr>
    <td style="background-color: null">
-    cross-field reference (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:reference(name: &lt;name>)`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    required once set
-   </td>
-   <td style="background-color: null">
-    `+k8s:requiredOnceSet`
     group membership (virtual field)
    </td>
    <td style="background-color: null">
@@ -1245,7 +1230,6 @@ Virtual fields provide identifier-based references for cross-field relationships
 
 **Virtual Field Reference Tags:**
 
--  `+k8s:reference(name: <name>)` - Creates a named reference to a field's value
 -  `+k8s:memberOf(group: <groupname>)` - Adds field to a group for union/mutual exclusion validation
 -  `+k8s:listMapItem(pairs: [[key,value],...])` - References specific items by key value in listType=map lists where the key(s) must include all of the list maps's keys
 
