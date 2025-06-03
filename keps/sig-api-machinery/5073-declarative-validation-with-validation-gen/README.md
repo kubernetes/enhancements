@@ -1238,20 +1238,20 @@ type Config struct {
     // +k8s:listType=map
     // +k8s:listMapKey=name
     // +k8s:union(members: primaryMode)
-    Modes []ModeConfig
+    Modes []ModeConfig `json:"modes"`
 }
 
 type ModeConfig struct {
-    Name string
+    Name string `json:"name"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Basic *BasicConfig
+    Basic *BasicConfig `json:"basic,omitempty"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Advanced *AdvancedConfig
+    Advanced *AdvancedConfig `json:"advanced,omitempty"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Custom *CustomConfig
+    Custom *CustomConfig `json:"custom,omitempty"`
 }
 ```
 
@@ -1286,53 +1286,52 @@ All cross-field validations are ultimately hoisted to execute at the common ance
 #### Comprehensive Example:
 
 ```go
-
 type Config struct {
-    MinValue int
-    MaxCpu int
-    MaxThreshold int
+    MinValue int `json:"minValue"`
+    MaxCpu int `json:"maxCpu"`
+    MaxThreshold int `json:"maxThreshold"`
     
     // +k8s:minimum(constraint: minValue)
     // +k8s:maximum(constraint: limitConfig.maxValue)
-    Current int
+    Current int `json:"current"`
     
-    Limits LimitConfig
+    Limits LimitConfig `json:"limits"`
     
     // +k8s:subfield(resources)=+k8s:subfield(cpu)=+k8s:maximum(constraint: maxCpu)
-    Settings SettingsConfig
+    Settings SettingsConfig `json:"settings"`
     
     // +k8s:eachVal=+k8s:maximum(constraint: maxThreshold)
-    Thresholds []int
+    Thresholds []int `json:"thresholds"`
     
     // +k8s:listType=map
     // +k8s:listMapKey=name
     // +k8s:union(members: primaryMode)
-    Modes []ModeConfig
+    Modes []ModeConfig `json:"modes"`
 }
 
 type LimitConfig struct {
-    MaxValue int
+    MaxValue int `json:"maxValue"`
 }
 
 type SettingsConfig struct {
-    Resources ResourceConfig
+    Resources ResourceConfig `json:"resources"`
 }
 
 type ResourceConfig struct {
-    Cpu int
+    Cpu int `json:"cpu"`
 }
 
 type ModeConfig struct {
-    Name string
+    Name string `json:"name"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Basic *BasicConfig
+    Basic *BasicConfig `json:"basic,omitempty"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Advanced *AdvancedConfig
+    Advanced *AdvancedConfig `json:"advanced,omitempty"`
     
     // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Custom *CustomConfig
+    Custom *CustomConfig `json:"custom,omitempty"`
 }
 ```
 
