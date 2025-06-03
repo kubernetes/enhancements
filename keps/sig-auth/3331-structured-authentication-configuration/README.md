@@ -728,6 +728,16 @@ not the minimum required version (v1.29), the feature will not be available.
 
 > We don't have any plans to add revocation at this time. Because of this the docs will be updated to make sure the tokens are short-lived as they are not revocable.
 
+> While full token revocation is not supported, it is possible to approximate revocation by writing user info validation rules (e.g., via CEL) based on a unique identifier in the token, such as the jti claim (if present). Even without a jti, any claim that uniquely identifies the token can be used to simulate revocation by checking it against a denylist or revocation list. However, we still recommend using short-lived tokens as managing revocation this way can become complex and hard to scale.
+
+Example of a revocation rule using the jti claim:
+
+```yaml
+userValidationRules:
+- expression: "!(user.extra[?'authentication.kubernetes.io/credential-id'][0].orValue('') in ["JTI=e28ed49-2e11-4280-9ec5-bc3d1d84661a"])",
+  message:    "credential id is revoked",
+```
+
 - decide what error should be returned if CEL eval fails at runtime
   `500 Internal Sever Error` seem appropriate but authentication can only do `401`
 
