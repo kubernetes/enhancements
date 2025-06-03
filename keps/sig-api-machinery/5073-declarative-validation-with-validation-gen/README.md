@@ -1251,19 +1251,6 @@ Virtual fields provide identifier-based references for cross-field relationships
 
 ```go
 type Config struct {
-    // +k8s:reference(name: minValue)
-    MinValue int
-    
-    // +k8s:reference(name: maxCpu)
-    MaxCpu int
-    
-    // +k8s:reference(name: maxThreshold)
-    MaxThreshold int
-    
-    // +k8s:minimum(reference: minValue)
-    // +k8s:maximum(reference: maxValue)
-    Current int
-    
     // +k8s:listType=map
     // +k8s:listMapKey=name
     // +k8s:union(members: primaryMode)
@@ -1288,7 +1275,7 @@ type ModeConfig struct {
 
 -  Virtual fields are scoped to the given GVK. The logical namespace for virtual fields is their GVK. For example, the virtual field names in apps/v1/Deployment are internally namespaced as apps/v1/Deployment:minReplicas, apps/v1/Deployment:maxReplicas, etc. However, within the same GVK, these can be referenced using just their simple names (minReplicas, maxReplicas) without the namespace prefix.
 -  **Cross-GVK references are NOT supported**
-    -  This mainly impacts any ObjectMeta name and generateName validation, which MUST be done using subfield and/or field-path references, not with references.
+    -  This mainly impacts any ObjectMeta name and generateName validation, which MUST be done using subfield and/or field-paths, not with virtual field references.
 
 #### Choosing Between Field Paths and Virtual Fields
 
