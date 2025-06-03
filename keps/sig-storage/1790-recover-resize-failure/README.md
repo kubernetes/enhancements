@@ -449,13 +449,17 @@ if this feature-gate is enabled.
 
   - [X] Metrics
     - controller expansion operation duration:
-        - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
+        - Metric name: csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume}
         - [Optional] Aggregation method: percentile
-        - Components exposing the metric: kube-controller-manager
+        - Components exposing the metric: external-resizer
     - controller expansion operation errors:
-        - Metric name: storage_operation_errors_total{operation_name=expand_volume}
+        - Metric name: csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume, grpc_status_code!="OK"}
         - [Optional] Aggregation method: cumulative counter
-        - Components exposing the metric: kube-controller-manager
+        - Components exposing the metric: external-resizer
+    - CSI node expansion operation durations:
+        - Metric name: csi_operations_seconds{method_name="/csi.v1.Controller/NodeExpandVolume}
+        - [Optional] Aggregation method: cumulative counter
+        - Components exposing the metric: kubelet
     - node expansion operation duration:
         - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize}
         - [Optional] Aggregation method: percentile
@@ -470,8 +474,9 @@ if this feature-gate is enabled.
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
   After this feature is rolled out, there should not be any increase in 95-99 percentile of
-  both `expand_volume` and `volume_fs_resize` durations. Also the error rate should not increase for 
-  `storage_operation_errors_total` metric.
+  both `csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume"}` and `storage_operation_duration_seconds{operation_name=volume_fs_resize}` durations. 
+  
+  Also the error rate should not increase for `csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume"}` metric.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
