@@ -62,6 +62,13 @@
     - [List Operations](#list-operations)
     - [Conditional Immutability](#conditional-immutability)
     - [Subresource-Specific Immutability](#subresource-specific-immutability)
+  - [Referencing Fields in Validation-Gen For Cross-Field Validation Rules](#referencing-fields-in-validation-gen-for-cross-field-validation-rules)
+    - [Field Reference Strategies](#field-reference-strategies)
+      - [Field Path Strategy](#field-path-strategy)
+      - [Virtual Field Strategy](#virtual-field-strategy)
+    - [Choosing Between Field Paths and Virtual Fields](#choosing-between-field-paths-and-virtual-fields)
+    - [Tag Placement and Hoisting](#tag-placement-and-hoisting)
+    - [Comprehensive Example:](#comprehensive-example)
   - [Subresources](#subresources)
     - [Status-Type Subresources](#status-type-subresources)
     - [Scale-Type Subresources](#scale-type-subresources)
@@ -721,6 +728,12 @@ The below rules are currently implemented or are very similar to an existing val
    </td>
    <td style="background-color: null">
     `+k8s:immutable`
+  <tr>
+   <td style="background-color: null">
+    cross-field reference (virtual field)
+   </td>
+   <td style="background-color: null">
+    `+k8s:reference(name: &lt;name>)`
    </td>
    <td style="background-color: null">
     N/A
@@ -732,6 +745,10 @@ The below rules are currently implemented or are very similar to an existing val
    </td>
    <td style="background-color: null">
     `+k8s:requiredOnceSet`
+    group membership (virtual field)
+   </td>
+   <td style="background-color: null">
+    `+k8s:memberOf(group: &lt;groupname>)`
    </td>
    <td style="background-color: null">
     N/A
@@ -743,6 +760,10 @@ The below rules are currently implemented or are very similar to an existing val
    </td>
    <td style="background-color: null">
     `+k8s:frozen`
+    list map item reference (virtual field)
+   </td>
+   <td style="background-color: null">
+    `+k8s:listMapItem(pairs: [[key,value],...])`
    </td>
    <td style="background-color: null">
     N/A
@@ -1171,6 +1192,179 @@ type PodSpec struct {
     NodeName string `json:"nodeName,omitempty"`
 }
 ```
+### Referencing Fields in Validation-Gen For Cross-Field Validation Rules
+
+Cross-field validation refers to validation rules that depend on the values of multiple fields within a struct or across nested structs. Cross-field validations require a method for referencing additional fields from validation-gen IDL tags.
+
+#### Field Reference Strategies
+
+`validation-gen` supports two strategies for referencing fields in cross-field validations:
+
+1. **Field Paths** - Direct references using dot notation
+1. **Virtual Fields** - Identifier-based references for relationships
+
+##### Field Path Strategy
+
+Field paths use JSON field names with dot notation to reference other fields. 
+
+**When tags are placed on fields:**
+
+-  Field paths are relative to the parent typedef (allowing sibling access)
+-  No special `self` or `parent` keywords allowed
+-  Example: `siblingField` or `siblingStruct.childField`
+
+```go
+type Config struct {
+    MinValue int32 `json:"minValue"`
+    MaxValue int32 `json:"maxValue"`
+    
+    // +k8s:minimum(constraint: minValue)
+    // +k8s:maximum(constraint: maxValue)
+    Current int32 `json:"current"`
+}
+```
+
+**When tags are placed on the common ancestor typedef:**
+
+-  All references are to child fields
+
+```go
+// NOTE: this is illustrative - minimum/maximum tags do not support "target"
+// +k8s:minimum(target: current, constraint: minValue)
+// +k8s:maximum(target: current, constraint: maxValue)
+type Config struct {
+    MinValue int32 `json:"minValue"`
+    MaxValue int32 `json:"maxValue"`
+    Current int32 `json:"current"`
+}
+```
+
+##### Virtual Field Strategy
+
+Virtual fields provide identifier-based references for cross-field relationships. They are scoped to a GVK (GroupVersionKind) namespace.
+
+**Virtual Field Reference Tags:**
+
+-  `+k8s:reference(name: <name>)` - Creates a named reference to a field's value
+-  `+k8s:memberOf(group: <groupname>)` - Adds field to a group for union/mutual exclusion validation
+-  `+k8s:listMapItem(pairs: [[key,value],...])` - References specific items by key value in listType=map lists where the key(s) must include all of the list maps's keys
+
+```go
+type Config struct {
+    // +k8s:reference(name: minValue)
+    MinValue int
+    
+    // +k8s:reference(name: maxCpu)
+    MaxCpu int
+    
+    // +k8s:reference(name: maxThreshold)
+    MaxThreshold int
+    
+    // +k8s:minimum(reference: minValue)
+    // +k8s:maximum(reference: maxValue)
+    Current int
+    
+    // +k8s:listType=map
+    // +k8s:listMapKey=name
+    // +k8s:union(members: primaryMode)
+    Modes []ModeConfig
+}
+
+type ModeConfig struct {
+    Name string
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Basic *BasicConfig
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Advanced *AdvancedConfig
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Custom *CustomConfig
+}
+```
+
+**Virtual Field Scope:**
+
+-  Virtual fields are scoped to the given GVK. The logical namespace for virtual fields is their GVK. For example, the virtual field names in apps/v1/Deployment are internally namespaced as apps/v1/Deployment:minReplicas, apps/v1/Deployment:maxReplicas, etc. However, within the same GVK, these can be referenced using just their simple names (minReplicas, maxReplicas) without the namespace prefix.
+-  **Cross-GVK references are NOT supported**
+    -  This mainly impacts any ObjectMeta name and generateName validation, which MUST be done using subfield and/or field-path references, not with references.
+
+#### Choosing Between Field Paths and Virtual Fields
+
+**Use Field Paths when:**
+
+-  Making simple references to sibling or child fields
+-  All referenced fields are accessible via dot notation
+
+**Use Virtual Fields when:**
+
+-  Implementing group-based rules (union validations, etc.)
+-  Working with conditional validations
+-  Referencing specific items in listType=map
+
+#### Tag Placement and Hoisting
+
+Cross-field validation tags can be placed either tag locations depending on what the tag supports:
+
+1. **On fields directly** - More intuitive but requires implicit hoisting to common ancestor
+1. **On common ancestor typedef** - Explicit placement where validation actually occurs
+
+All cross-field validations are ultimately hoisted to execute at the common ancestor level to ensure proper access to all referenced fields during validation.
+
+#### Comprehensive Example:
+
+```go
+
+type Config struct {
+    MinValue int
+    MaxCpu int
+    MaxThreshold int
+    
+    // +k8s:minimum(constraint: minValue)
+    // +k8s:maximum(constraint: limitConfig.maxValue)
+    Current int
+    
+    Limits LimitConfig
+    
+    // +k8s:subfield(resources)=+k8s:subfield(cpu)=+k8s:maximum(constraint: maxCpu)
+    Settings SettingsConfig
+    
+    // +k8s:eachVal=+k8s:maximum(constraint: maxThreshold)
+    Thresholds []int
+    
+    // +k8s:listType=map
+    // +k8s:listMapKey=name
+    // +k8s:union(members: primaryMode)
+    Modes []ModeConfig
+}
+
+type LimitConfig struct {
+    MaxValue int
+}
+
+type SettingsConfig struct {
+    Resources ResourceConfig
+}
+
+type ResourceConfig struct {
+    Cpu int
+}
+
+type ModeConfig struct {
+    Name string
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Basic *BasicConfig
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Advanced *AdvancedConfig
+    
+    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
+    Custom *CustomConfig
+}
+```
+
 
 ### Subresources
 
