@@ -10,6 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Making allocatedResourceStatus not change unnecessarily for every error in 1.31](#making-allocatedresourcestatus-not-change-unnecessarily-for-every-error-in-131)
+  - [Handling of RWX volumes that don't require node expansion](#handling-of-rwx-volumes-that-dont-require-node-expansion)
   - [Making resizeStatus more general in v1.28](#making-resizestatus-more-general-in-v128)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
@@ -27,6 +28,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+  - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Monitoring](#monitoring)
@@ -139,6 +141,17 @@ On the node side - `allocatedResourceStatus` will only be updated with failed ex
 This will allow external-resizer to recover safely from node expansion failures too.
 
 ![New flow kubelet](./Expanding volume - Kubelet Loop.png)
+
+### Handling of RWX volumes that don't require node expansion
+
+There are CSI drivers which return `NodeExpansionRequired: false` after `ControllerExpandVolume` is finished, but in kubelet to handle the case of node-expansion of RWX volumes, we usually MUST call `NodeExpandVolume` on each node where volume is attached, even if `ControllerExpandVolume` is finished and no node-expansion is required. This special case *only* applies to RWX volumes.
+
+To avoid calling `NodeExpandVolume` for such volumes, we are proposing that we add an annotation to PVC called - `volume.kubernetes.io/node-expansion-not-required` when `ControllerExpandVolume` is finished and `NodeExpansionRequired` is set to `false` - https://github.com/kubernetes-csi/external-resizer/pull/496/files .
+
+In kubelet if a RWX volume has this annotation, no `NodeExpandVolume` will be called and and updated size of the volume will simply be recorded in actual state of the world.This is implemented in - https://github.com/kubernetes/kubernetes/pull/131907 . 
+
+The proposed mechanism is fully backward compatible and only applies to RWX volumes.
+
 
 ### Making resizeStatus more general in v1.28
 
