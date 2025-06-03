@@ -1236,22 +1236,16 @@ Virtual fields provide identifier-based references for cross-field relationships
 ```go
 type Config struct {
     // +k8s:listType=map
-    // +k8s:listMapKey=name
-    // +k8s:union(members: primaryMode)
-    Modes []ModeConfig `json:"modes"`
+    // +k8s:listMapKey=type
+    // +k8s:union(union: terminalStatus)
+    // +k8s:listMapItem([["type","Succeeded"]])=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem([["type","Failed"]])=+k8s:memberOf(group: terminalStatus)
+    Conditions []Condition `json:"conditions"`
 }
 
-type ModeConfig struct {
-    Name string `json:"name"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Basic *BasicConfig `json:"basic,omitempty"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Advanced *AdvancedConfig `json:"advanced,omitempty"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Custom *CustomConfig `json:"custom,omitempty"`
+type Condition struct {
+    Type               string `json:"type"`
+    Status             string `json:"status"`
 }
 ```
 
@@ -1276,7 +1270,7 @@ type ModeConfig struct {
 
 #### Tag Placement and Hoisting
 
-Cross-field validation tags can be placed either tag locations depending on what the tag supports:
+Cross-field validation tags can be placed on either tag location depending on what the tag supports:
 
 1. **On fields directly** - More intuitive but requires implicit hoisting to common ancestor
 1. **On common ancestor typedef** - Explicit placement where validation actually occurs
@@ -1292,7 +1286,7 @@ type Config struct {
     MaxThreshold int `json:"maxThreshold"`
     
     // +k8s:minimum(constraint: minValue)
-    // +k8s:maximum(constraint: limitConfig.maxValue)
+    // +k8s:maximum(constraint: limits.maxValue)
     Current int `json:"current"`
     
     Limits LimitConfig `json:"limits"`
@@ -1304,9 +1298,11 @@ type Config struct {
     Thresholds []int `json:"thresholds"`
     
     // +k8s:listType=map
-    // +k8s:listMapKey=name
-    // +k8s:union(members: primaryMode)
-    Modes []ModeConfig `json:"modes"`
+    // +k8s:listMapKey=type
+    // +k8s:union(union: terminalStatus)
+    // +k8s:listMapItem([["type","Succeeded"]])=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem([["type","Failed"]])=+k8s:memberOf(group: terminalStatus)
+    Conditions []Condition `json:"conditions"`
 }
 
 type LimitConfig struct {
@@ -1321,17 +1317,9 @@ type ResourceConfig struct {
     Cpu int `json:"cpu"`
 }
 
-type ModeConfig struct {
-    Name string `json:"name"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Basic *BasicConfig `json:"basic,omitempty"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Advanced *AdvancedConfig `json:"advanced,omitempty"`
-    
-    // +k8s:listMapItem([["name","primary"]])=+k8s:memberOf(group: primaryMode)
-    Custom *CustomConfig `json:"custom,omitempty"`
+type Condition struct {
+    Type               string `json:"type"`
+    Status             string `json:"status"`
 }
 ```
 
