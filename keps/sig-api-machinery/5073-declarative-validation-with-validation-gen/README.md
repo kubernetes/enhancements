@@ -1291,7 +1291,6 @@ type Config struct {
     
     Limits LimitConfig `json:"limits"`
     
-    // +k8s:subfield(resources)=+k8s:subfield(cpu)=+k8s:maximum(constraint: maxCpu)
     Settings SettingsConfig `json:"settings"`
     
     // +k8s:eachVal=+k8s:maximum(constraint: maxThreshold)
