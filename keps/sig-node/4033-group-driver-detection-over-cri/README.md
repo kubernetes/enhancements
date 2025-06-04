@@ -133,18 +133,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -278,19 +278,22 @@ will take precedence over cgroupDriver setting from the kubelet config (or
 `--cgroup-driver` command line flag). If the runtime does not provide
 information about the cgroup driver, then kubelet will fall back to using its
 own configuration (`cgroupDriver` from kubeletConfig or the `--cgroup-driver`
-flag). Further, the kubeletConfig field and `--cgroup-driver` flag will be
-marked as deprecated, to be dropped when support for the feature is adopted by
-CRI-O and containerd. Usage of the deprecated setting will produce a log
+flag). For beta, the kubeletConfig field and `--cgroup-driver` flag will be
+marked as deprecated. Usage of the deprecated setting will produce a log
 message, e.g.:
 
 ```
 cgroupDriver option has been deprecated and will be dropped in a future release. Please upgrade to a CRI implementation that supports cgroup-driver detection.
 ```
 
+The `--cgroup-driver` flag will be completely removed when support for the
+feature is graduated to GA and the kubelet refuses to start if the CRI runtime
+does not support the feature.
+
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeConfig is queried before initializing the
 kubelet internal container-manager which is responsible for kubelet-side cgroup
-management. If supported by the runtime, RuntimeConfig query is expected to
+management. RuntimeConfig query is expected to
 succeed, an error (error response or timeout) is regarded as a failed
 initialization of the runtime service and kubelet will exit with an error
 message and an error code.
@@ -347,11 +350,7 @@ extending the production code to implement this enhancement.
 Kubelet unit tests that use the
 [fake_runtime](https://github.com/kubernetes/cri-api/blob/master/pkg/apis/testing/fake_runtime_service.go)
 will be updated to verify the Kubelet is correctly inheriting the cgroup
-driver:
-
-- If CRI returns "Not Implemented", Kubelet falls back to its own internal cgroup driver
-- If CRI returns an error, Kubelet fails to run
-- If CRI returns the cgroup driver, Kubelet overrides its cgroup driver to use the one returned by CRI.
+driver.
 
 ##### Integration tests
 
@@ -452,21 +451,21 @@ in back-to-back releases.
 
 #### Alpha
 
-- [ ] Feature implemented behind a feature flag, fallback to old behavior if flag is enabled but runtime support not present.
-- [ ] Initial unit tests completed and enabled
+- Feature implemented behind a feature flag, fallback to old behavior if flag is enabled but runtime support not present.
+- Initial unit tests completed and enabled
 
 
 #### Beta
 
-- [ ] Feature implemented, with the feature gate enabled by default.
-- [ ] Released versions of CRI-O and containerd runtime implementations support the feature
-- [ ] Drop fallback to old behavior. CRI implementations expected to have support.
+- Feature implemented, with the feature gate enabled by default.
+- Released versions of CRI-O and containerd runtime implementations support the feature
 
 #### GA
 
-- [ ] No bugs reported in the previous cycle.
-- [ ] Remove fallback behavior
-- [ ] Remove feature gate
+- No bugs reported in the previous cycle.
+- Drop fallback to old behavior. CRI implementations expected to have support.
+- Remove feature gate
+- All issues and gaps identified as feedback during beta are resolved
 
 ### Upgrade / Downgrade Strategy
 
@@ -482,9 +481,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-The fallback behavior specified in alpha will prevent the majority of regressions, as Kubelet will choose a cgroup driver,
+In alpha and beta, the fallback behavior specified in alpha will prevent the majority of regressions, as Kubelet will choose a cgroup driver,
 same as it used to before this KEP, even when the feature gate is on.
-
 The feature gate is another layer of protection, requiring admins to specifically opt-into this behavior.
 
 ### Version Skew Strategy
@@ -502,7 +500,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-If either kubelet or the container runtime running on the node does not support
+In alpha and beta, if either kubelet or the container runtime running on the node does not support
 the new field in the CRI API, they just resort to the existing behavior of
 respecting their individual cgroup-driver setting. That is, if the node has a
 container runtime that does not support this field the kubelet will use its
@@ -512,6 +510,11 @@ the information about cgroup driver advertised by the runtime will be just
 ignored by kubelet and it will resort to its own configuration settings. Note:
 this does present a configuration skew risk, but that risk is the same as
 currently exists today.
+
+In GA, the fallback behavior will be removed, and the kubelet will rely on the
+container runtime to implement the feature. In practice, this means the cluster
+must use at least containerd v2.0 or cri-o v1.28 as a prerequisite for
+upgrading.
 
 ## Production Readiness Review Questionnaire
 
@@ -566,12 +569,18 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Yes. If/when the runtime is updated to a version that supports this, kubelet
+Yes.
+
+In alpha and beta, when the runtime is updated to a version that supports this, kubelet
 will ignore the cgroupDriver config option/flag. However, this change in
 behavior should not cause any breakages (on the contrary, it should fix
 scenarios where the kubelet `--cgroup-driver` setting is incorrectly
 configured). With old versions of the container runtimes (that don't support
 the new field in the CRI API) the default behavior is not changed.
+
+In GA, the fallback behavior (and the kubelet `--cgroup-driver` flag) is
+removed and the kubelet requires the CRI runtime to implement the feature (see
+[Version Skew Strategy](#version-skew-strategy)).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -586,7 +595,9 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, through the feature gate.
+In alpha and beta, yes, through the feature gate.
+
+In GA, no.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -662,9 +673,13 @@ testing of the feature gate (in addition to the unit tests) is performed.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-Yes, the CgroupDriver field of the Kubelet configuration (and the corresponding
-`--cgroup-driver` flag) will be marked as deprecated, but won’t be dropped
-until wide adoption of the field on CRI has been done.
+Yes.
+
+In alpha and beta, the CgroupDriver field of the Kubelet configuration (and the
+corresponding `--cgroup-driver` flag) will be marked as deprecated.
+
+In GA, the CgroupDriver configuration option and the `--cgroup-driver` flag are
+removed.
 
 ### Monitoring Requirements
 
@@ -699,8 +714,14 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-No metrics likely will expose this. Examining kubelet logs whould inform the
+No metrics will expose this.
+
+In alpha and beta, examining kubelet logs whould inform the
 that the cgroup driver setting instructed by the runtime is being used.
+
+In GA, the kubelet refuses to start if the feature is not working. The can be
+observed in the system logs and the node being in NotReady state or node not
+being registered in cluster bootstrap.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -761,8 +782,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-A CRI (server) implementation of the correct version. However, the feature will
-fallback if the CRI implementation doesn’t support the feature.
+A CRI (server) implementation of the correct version.
+
+In alpha and beta, the feature will fallback if the CRI implementation doesn’t
+support the feature.
+
+In GA, a sufficiently recent version of the CRI runtime is a hard requirement.
 
 ### Scalability
 
@@ -904,7 +929,7 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-Same that exists today: Kubelet and the CRI server (container runtime) not
+In alpha and beta, same that exists today: Kubelet and the CRI server (container runtime) not
 agreeing on the CgroupDriver while one of them doesn’t support the feature.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -923,6 +948,9 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- v1.28: alpha
+- v1.31: beta
 
 ## Drawbacks
 
