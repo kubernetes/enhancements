@@ -17,10 +17,11 @@ reviewers:
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
-stage: alpha
-latest-milestone: "v1.33"
+stage: beta
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.33"
+  beta: "v1.34"
 feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:
