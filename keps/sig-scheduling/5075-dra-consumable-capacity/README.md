@@ -56,6 +56,7 @@ SIG Architecture for cross-cutting KEPs).
     - [ResourceClaimSpec's DeviceRequest](#resourceclaimspecs-devicerequest)
     - [ResourceClaimStatus's DeviceRequestAllocationResult](#resourceclaimstatuss-devicerequestallocationresult)
   - [Scheduling enhancement](#scheduling-enhancement)
+  - [Handles Device Updates for <code>allowMultipleAllocations</code> and <code>sharingPolicy</code>](#handles-device-updates-for-allowmultipleallocations-and-sharingpolicy)
   - [Examples](#examples)
     - [DeviceClass's selector](#deviceclasss-selector)
     - [ResourceClaim with capacity requirement](#resourceclaim-with-capacity-requirement)
@@ -137,7 +138,7 @@ To achieve this, this KEP introduces
 Relations to other KEPs:
 - [KEP 4815](https://github.com/kubernetes/enhancements/issues/4815): The partitioned devices can be a shareable device or have mutually exclusive partitions where one partition is shareable and the other is not.
 - [KEP 5007](https://github.com/kubernetes/enhancements/issues/5007): The allocated share can be provisioned at the pre-bind step.
-- [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share UID.
+- [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share ID.
 
 A motivating use case is to allocate a shareable network device in the [CNI DRA driver](https://github.com/kubernetes-sigs/cni-dra-driver)
 which can be selected by more than one pod on demand during scheduling.
@@ -207,7 +208,7 @@ users specifies their required guaranteed bandwidth. Otherwise, the default valu
 
   **Mitigation:**
   - To preserve the original behavior during this transition, the driver should set the default consumed capacity to the maximum value. This ensures consistency with the previous non-shareable configuration.
-  - The existing allocation result, which has no share UID (as it was previously a non-shareable device), will be included in the allocated list
+  - The existing allocation result, which has no share ID (as it was previously a non-shareable device), will be included in the allocated list
   and cannot be reallocated to another pod during the scheduling process.
 
 - When a driver changes a capacity from non-consumable to consumable for a device that is already shareable, the behavior of resource claims changes.
@@ -517,6 +518,12 @@ type AllocatedDeviceStatus struct {
 - Finally, the share identifiers and consumed capacities from all internal results
   are propagated to the DeviceRequestAllocationResult.
 
+### Handles Device Updates for `allowMultipleAllocations` and `sharingPolicy`
+
+- If a device is updated from **dedicated** (`allowMultipleAllocations: false`) to **multi-allocatable** (`allowMultipleAllocations: true`), it must continue to behave as a dedicated device and not allow sharing **until all existing resource claims for that device are released**.
+- If a device is updated from multi-allocatable to dedicated, it should no longer be available for new allocations. However, already allocated devices should not be deallocated.
+- If the **sharing policy** is later set, update, or unset, the change will apply only to **future allocations**. No rollback or changes will be applied to shared devices that have already been allocated.
+
 ### Examples
 
 #### DeviceClass's selector
@@ -806,6 +813,51 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
+###### API Validations
+
+**Sharing Policy (Device Capacity Test)**
+
+- If a default is defined, require exactly one of `discreteValues` or `valueRange`.
+- The default must be included in the options for `discreteValues`, or fall within the specified `valueRange`.
+- Options must be a list of unique values.
+- The minimum must be less than or equal to the maximum in the `valueRange`.
+- If a chunk size is defined, both the default and the maximum must be multiples of the chunk size.
+- The minimum, maximum, and (minimum + chunk size) must each be less than the capacity value.
+
+**Distinct Attribute**
+
+- Similar to the `matchAttribute`, check for a missing domain and required name (invalid request).
+- If the feature gate is enabled, exactly one of `matchAttribute` or `distinctAttribute` must be provided.
+- If the feature gate is disabled, `matchAttribute` is required.
+
+**Device Name and Share ID**
+
+- If the feature gate is enabled and multi-allocation is allowed, ensure the device domain name length is sufficient: it must be at least (share ID size + 1).
+- The share ID must have a designated size and must be decodable as hex.
+- When this feature gate and `deviceStatusFeatureGate` ([KEP 4817](https://github.com/kubernetes/enhancements/issues/4817)) are enabled, the `device` field in the allocated device status may contain a `/`. In that case, the first part must be validated as a device name, and the second part as a share ID. This extended device name should enable a one-to-one mapping with the allocation result which contains a share ID.
+- If the feature gate is disabled, share ID and allow multi-allocation should be ignored. The device name with `/` should be failed.
+
+###### Allocator
+
+**Allow Multiple Allocations**
+
+- can allocate a device which allow multiple allocations for multiple times
+- must not allocate a device which do not allow multiple allocations more than once
+- can exclude dedicated device from allocation with CEL
+- can limit allocation to multi-allocatable device with CEL
+- can work with partitionable devices
+
+**Consumable Capacity**
+
+- can gather consumed capacity from allocated resource claims
+- can add/remove consumed capacity of allocating devices
+- can round up and compute user-requesting minimum capacity according to sharing policy range and chunk size
+- can check sharing policy violation
+
+**Distinct Attribute**
+- can prevent allocating the same device in the same request with a distinct constraint
+- can allocate different device in the same request with a distinct contraint
+
 ##### Prerequisite testing updates
 
 <!--
@@ -815,67 +867,10 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-The unit tests should include
-- Unit test for consumable capacity related computations
-  
-  | Function | Test case |
-  |---|---|
-  |TestAllocatedCapacity|New/Add/Sub|
-  |TestAllocatedCapacityCollection|New/Insert/Remove|
-  |TestViolateConstraints|no constraint|
-  ||less than maximum|
-  ||more than maximum|
-  ||in set|
-  ||not in set|
-  |TestCalculateConsumedCapacity|empty|
-  ||min in range|
-  ||default in set|
-  ||more than min in range|
-  ||less than min in range|
-  ||with step (round up)|
-  ||with step (no remaining)|
-  |TestGetConsumedCapacityFromRequest|no request|
-
-  [Test Implementation](https://github.com/sunya-ch/kubernetes/blob/kep-5075/staging/src/k8s.io/dynamic-resource-allocation/structured/consumable_capacity_test.go)
-
-- Extension of TestAllocator in `structured` module. 
-
-  The allocator should be able to handle the above user stories.
-
-  `AllocatedCapacityCollection` will be added to the test case structure.
-
-  ```go
-    testcases := map[string]struct {
-      ...
-      allocatedCapacityDevices AllocatedCapacityCollection
-      ...
-    }
-  ```
-
-  |Test case|allowMultipleAllocations|Device(s) Capacity|Allocated Capacity|Device Class with allowMultipleAllocations=`true`|Claim request(s)|Expected success
-  |---|---|---|---|---|---|---|
-  |multialloc-device-with-consumable-capacity|yes|2 consumable|0|yes|1+1|yes
-  |multialloc-device-with-exceeded-consumable-capacity-request|yes|2 consumable|0|yes|1+2|no
-  |multialloc-device-with-some-remaining-consumable-capacity|yes|2 consumable|1|yes|1|yes
-  |multialloc-device-with-no-available-consumable-capacity|yes|1 consumable|1|yes|1|no
-  |multialloc-device-with-unconsumable-capacity|yes|1 unconsumable|0|yes|1+1|yes
-  |non-multialloc-device-with-single-consumable-capacity-request|no|1 consumable|0|yes|1|yes
-  |non-multialloc-device-with-multiple-consumable-capacity-request|no|1 consumable|0|yes|1+1|no
-  |exclude-non-multialloc-device-from-class-selector|yes|0|0|no|0|no
-  |one-multialloc-device-with-distinct-constraint|yes|2 consumable|0|yes|1+1, distinct|no
-  |two-multialloc-devices-with-distinct-constraint|yes|2x1 consumable|0|yes|1+1, distinct|yes
-
-  [Test Implementation](https://github.com/sunya-ch/kubernetes/blob/kep-5075/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go)
-
-- Combintation with partitionable devices
-
 - <package>: <date> - <current test coverage>
 
 ##### Integration tests
 
-- Add test user story 1 to 6 in in `scheduler_perf/dra.go` when defining a multi-allocatable device with and without consumable capacity.
-
-- Ensure integration with [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817) that server-side-apply works with the additional map key (test/integration/dra)
 
 - <test>: <link to test coverage>
 
