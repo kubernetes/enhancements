@@ -796,8 +796,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field: The HPA status will be enhanced to include pod selection information
   ```yaml
   status:
-  podSelectionInfo:
-    strategy: "OwnerReferences"  # or "LabelSelector"
+    podSelectionInfo:
+      strategy: "OwnerReferences"  # or "LabelSelector"
   ```
 Additionally, verbose controller logs will show which pods were included or excluded from metric calculations due to the strict selection policy when troubleshooting is needed.
 
