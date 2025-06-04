@@ -27,3 +27,17 @@ feature-gates:
       - kubelet
 disable-supported: true
 metrics:
+    - kubelet_imagemanager_ondisk_pullintents_kept
+    - kubelet_imagemanager_ondisk_pullintents_get_requests_total
+    - kubelet_imagemanager_ondisk_pullintents_get_requests_miss
+    - kubelet_imagemanager_ondisk_pulledrecords_kept
+    - kubelet_imagemanager_ondisk_pulledrecords_get_requests_total
+    - kubelet_imagemanager_ondisk_pulledrecords_get_requests_miss
+    - kubelet_imagemanager_inmemory_pullintents_kept
+    - kubelet_imagemanager_inmemory_pullintents_get_requests_total
+    - kubelet_imagemanager_inmemory_pullintents_get_requests_miss
+    - kubelet_imagemanager_inmemory_pulledrecords_kept
+    - kubelet_imagemanager_inmemory_pulledrecords_get_requests_total
+    - kubelet_imagemanager_inmemory_pulledrecords_get_requests_miss
+    - kubelet_imagemanager_present_image_access_requests_total
+    - kubelet_imagemanager_present_image_access_requests_reverify
