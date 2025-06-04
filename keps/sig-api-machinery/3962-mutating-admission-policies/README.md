@@ -1032,9 +1032,11 @@ We will test the edge cases mostly in integration test and unit test. We may add
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
+- Have proper monitoring for MAP admission plugin
+- Fix any blocking issues/bugs surfaced before code freeze
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Including all function needed with performance and security in consideration
 
 #### GA
 
