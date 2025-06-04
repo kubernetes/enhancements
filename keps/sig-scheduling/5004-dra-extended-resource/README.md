@@ -12,6 +12,7 @@
     - [Implicit Extended Resource Name](#implicit-extended-resource-name)
   - [Resource Claim API](#resource-claim-api)
   - [Pod API](#pod-api)
+  - [Resource Quota](#resource-quota)
   - [Scheduling for Extended Resource backed by DRA](#scheduling-for-extended-resource-backed-by-dra)
     - [EventsToRegister](#eventstoregister)
     - [PreFilter](#prefilter)
@@ -489,6 +490,57 @@ validations for resourceClaimStatuses.
    pod spec. extendedResourceClaimStatus requires `containerName` must be one
    of the container name in the pod spec, and `extendedResourceName` must be one
    of the extended resource name in that container.
+
+### Resource Quota
+
+Currently, there are two different applicable quotas, one is
+device-class-name.deviceclass.resource.k8s.io/devices that limits the
+resource claims in a namespace as described in [KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#resourcequota).
+The other is the [extended resource quota](https://kubernetes.io/docs/concepts/policy/resource-quotas/#resource-quota-for-extended-resources).
+
+As there is a one to one mapping between device class, and extended resource,
+the two quota mechanisms above should keep track of the usages of the same
+class of devices the same way.
+
+But currently, the extended resource quota keeps track of the devices provided
+from device plugin, and DRA resource slice. The resource claim quota currently
+only keeps track of the devices provided from DRA resource slice. This must be
+enhanced to have it keep track of the devices from device plugin too.
+
+As a device can be requested by resource claim, or by extended resource, the
+cluster admin MUST create two quotas with the same limit on one class of devices
+to effectively quota the usage of that device class.
+
+For example, a cluster admin plans to allow 10 example.com/gpu devices in a
+given namespace, they MUST create the following:
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu
+spec:
+  hard:
+    requests.example.com/gpu: 10
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 10
+```
+
+Provided that the device class gpu.example.com is mapped to the extended
+resource example.com/gpu.
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: DeviceClass
+metadata:
+  name: gpu.example.com
+spec:
+  extendedResourceName: example.com/gpu
+```
+
+Resource Quota controller reconciles away the differences if any between the
+usage of the two quota, and ensures their usage are always kept the same. For
+that, the controller needs to have the permission to list the device classes
+in the cluster to establish the mapping between device class and extended
+resource.
 
 ### Scheduling for Extended Resource backed by DRA
 
