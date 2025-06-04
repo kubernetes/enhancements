@@ -55,6 +55,13 @@
     - [Difficulties with <code>+k8s:required</code> and <code>+k8s:default</code>](#difficulties-with-k8srequired-and-k8sdefault)
     - [Proposed Solutions](#proposed-solutions)
     - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
+  - [Immutability Validation](#immutability-validation)
+    - [Core Concepts](#core-concepts)
+    - [Immutability Patterns and Tags](#immutability-patterns-and-tags)
+    - [Immutability and Lifecycle Patterns Demonstrated](#immutability-and-lifecycle-patterns-demonstrated)
+    - [List Operations](#list-operations)
+    - [Conditional Immutability](#conditional-immutability)
+    - [Subresource-Specific Immutability](#subresource-specific-immutability)
   - [Subresources](#subresources)
     - [Status-Type Subresources](#status-type-subresources)
     - [Scale-Type Subresources](#scale-type-subresources)
@@ -708,6 +715,39 @@ The below rules are currently implemented or are very similar to an existing val
     N/A
    </td>
   </tr>
+<tr>
+   <td style="background-color: null">
+    immutable after set
+   </td>
+   <td style="background-color: null">
+    `+k8s:immutable`
+   </td>
+   <td style="background-color: null">
+    N/A
+   </td>
+  </tr>
+  <tr>
+   <td style="background-color: null">
+    required once set
+   </td>
+   <td style="background-color: null">
+    `+k8s:requiredOnceSet`
+   </td>
+   <td style="background-color: null">
+    N/A
+   </td>
+  </tr>
+  <tr>
+   <td style="background-color: null">
+    immutable(frozen) at creation
+   </td>
+   <td style="background-color: null">
+    `+k8s:frozen`
+   </td>
+   <td style="background-color: null">
+    N/A
+   </td>
+  </tr>
 </table>
 
 The below rules are not currently implemented in the [validation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen) so the exact syntax is still WIP
@@ -947,6 +987,190 @@ The linter, as previously described, will enforce rules to address valid zero-va
     *   Perform checks on other tag values based on any `+k8s:default` tag value (where applicable).
 
 The linter will flag any violations of these rules, ensuring consistent zero-value handling and preventing related errors. This automated enforcement is crucial for catching issues early in the development process.
+
+### Immutability Validation
+
+Kubernetes API fields have various immutability requirements based on their lifecycle patterns. This section defines the immutability validation tags and their semantics within the declarative validation framework.
+
+#### Core Concepts
+
+**Field States:**
+- **Unset**: Field has no value (nil, zero value, or absent)
+- **Set**: Field has a value
+
+**State Transitions:**
+- **Set**: Transition from unset->set
+- **Clear**: Transition from set->unset
+- **Modify**: Transition from one value to another value
+
+**Lifecycle Scope:**
+All immutability constraints are scoped to the parent object's lifecycle. When a parent object is replaced (e.g., a struct field set to a new instance), the immutability constraints apply to the new instance.
+
+#### Immutability Patterns and Tags
+
+The following tags implement different immutability patterns based on creation requirements and allowed transitions:
+
+<table>
+ <tr>
+   <td><strong>Pattern</strong></td>
+   <td><strong>Creation Requirement</strong></td>
+   <td><strong>Allowed Transitions</strong></td>
+   <td><strong>Forbidden Transitions</strong></td>
+   <td><strong>Description</strong></td>
+   <td><strong>Use Case</strong></td>
+ </tr>
+ <tr>
+   <td>required</td>
+   <td>Must be present</td>
+   <td>modify</td>
+   <td>set, clear</td>
+   <td>Must be set at parent creation, can change, never removed</td>
+   <td>Field must always exist but can change</td>
+ </tr>
+ <tr>
+   <td>requiredOnceSet</td>
+   <td>Can be unset</td>
+   <td>set, modify</td>
+   <td>clear</td>
+   <td>Can be set later, can change, but once set cannot be removed</td>
+   <td>Optional field that once set must remain</td>
+ </tr>
+ <tr>
+   <td>immutable</td>
+   <td>Can be unset</td>
+   <td>set</td>
+   <td>modify, clear</td>
+   <td>Can be set once (now or later), then frozen</td>
+   <td>Field can be set once by user/controller</td>
+ </tr>
+ <tr>
+   <td>required+immutable</td>
+   <td>Must be present</td>
+   <td>none</td>
+   <td>set, modify, clear</td>
+   <td>Must be set at parent creation, value frozen forever</td>
+   <td>Identity field set at creation</td>
+ </tr>
+ <tr>
+   <td>frozen</td>
+   <td>Can be unset</td>
+   <td>none</td>
+   <td>set, modify, clear</td>
+   <td>Field state (set/unset) and value frozen at parent creation</td>
+   <td>Architectural decision at creation</td>
+ </tr>
+</table>
+
+#### Immutability and Lifecycle Patterns Demonstrated
+
+```go
+type DeploymentSpec struct {
+    // +k8s:required // Must exist, can be modified
+    // ✅ Create: replicas = 3
+    // ✅ Update: replicas = 5
+    // ❌ Update: replicas = nil
+    Replicas *int32
+}
+
+type PersistentVolumeStatus struct {
+    // +k8s:requiredOnceSet
+    // ✅ Create: phase = ""              (volume created)
+    // ✅ Update: phase = "Available"     (set once)
+    // ✅ Update: phase = "Bound"         (modify)
+    // ❌ Update: phase = ""              (cannot clear)
+    Phase PersistentVolumePhase
+}
+
+type PersistentVolumeClaimSpec struct {
+    // +k8s:immutable
+    // ✅ Create: volumeName = ""
+    // ✅ Update: volumeName = "pv-123" (set once by PV controller)
+    // ❌ Update: volumeName = "pv-456" (cannot change binding)
+    // ❌ Update: volumeName = "" (cannot unbind)
+    VolumeName string
+}
+
+type PersistentVolumeSpec struct {
+    // required+immutable: Must specify capacity at creation
+    // +k8s:required
+    // +k8s:immutable
+    // ✅ Create: capacity = {"storage": "10Gi"}
+    // ❌ Update: capacity = {"storage": "20Gi"}
+    Capacity ResourceList
+}
+
+type PodSpec struct {
+    // +k8s:frozen // State decided at creation (can be set or unset)
+    // Create with: hostNetwork = true   -> Frozen true
+    // Create with: hostNetwork = false  -> Frozen false
+    // Create without setting            -> Frozen false (zero value)
+    HostNetwork bool
+}
+```
+
+#### List Operations
+
+Lists have two levels of constraints:
+
+**List-Level Constraints:**
+```go
+type ExampleStatus struct {
+    // Array must exist (can be empty)
+    // +k8s:required
+    Conditions []Condition `json:"conditions"`
+}
+```
+
+**Item-Level Constraints:**
+For list items, clearing (nil-ing) a list is represented as unsetting all items. Item-level constraints can prevent list becoming nil:
+
+```go
+type CertificateSigningRequestStatus struct {
+    // List is optional, but certain items are permanent once added
+    // +k8s:optional
+    // +k8s:listType=map
+    // +k8s:listMapKey=type
+    // +k8s:listMapItem([["type","Approved"]])=+k8s:immutable
+    // +k8s:listMapItem([["type","Denied"]])=+k8s:immutable
+    Conditions []CertificateSigningRequestCondition `json:"conditions,omitempty"`
+}
+```
+
+#### Conditional Immutability
+
+Fields can have different immutability based on other field values:
+
+```go
+type Secret struct {
+    // Data becomes immutable(frozen) when immutable flag is true
+    // +k8s:EQ(field: "immutable", value: "true")=+k8s:frozen
+    Data map[string][]byte `json:"data,omitempty"`
+
+    // The immutable flag itself is immutable(frozen) once set to true
+    // +k8s:EQ(field: "immutable", value: "true")=+k8s:frozen
+    Immutable *bool `json:"immutable,omitempty"`
+}
+```
+
+#### Subresource-Specific Immutability
+
+Fields can have different immutability rules depending on the subresource:
+
+```go
+type Container struct {
+    // Immutable via main resource, mutable via /resize
+    // +k8s:required
+    // +k8s:ifNotSubresource("/resize")=+k8s:frozen
+    Resources ResourceRequirements `json:"resources,omitempty"`
+}
+
+type PodSpec struct {
+    // Can only be set via /binding subresource
+    // +k8s:ifNotSubresource("/binding")=+k8s:frozen
+    // +k8s:ifSubresource("/binding")=+k8s:immutable
+    NodeName string `json:"nodeName,omitempty"`
+}
+```
 
 ### Subresources
 
