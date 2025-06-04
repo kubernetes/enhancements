@@ -728,12 +728,17 @@ The below rules are currently implemented or are very similar to an existing val
    </td>
    <td style="background-color: null">
     `+k8s:immutable`
-  <tr>
-   <td style="background-color: null">
-    group membership (virtual field)
    </td>
    <td style="background-color: null">
-    `+k8s:memberOf(group: &lt;groupname>)`
+    N/A
+   </td>
+  </tr>
+  <tr>
+   <td style="background-color: null">
+    required once set
+   </td>
+   <td style="background-color: null">
+    `+k8s:requiredOnceSet`
    </td>
    <td style="background-color: null">
     N/A
@@ -745,10 +750,6 @@ The below rules are currently implemented or are very similar to an existing val
    </td>
    <td style="background-color: null">
     `+k8s:frozen`
-    list map item reference (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:listMapItem(pairs: [[key,value],...])`
    </td>
    <td style="background-color: null">
     N/A
@@ -1265,7 +1266,6 @@ type Condition struct {
 **Use Virtual Fields when:**
 
 -  Implementing group-based rules (union validations, etc.)
--  Working with conditional validations
 -  Referencing specific items in listType=map
 
 #### Tag Placement and Hoisting
