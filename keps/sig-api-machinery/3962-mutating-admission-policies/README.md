@@ -1032,15 +1032,16 @@ We will test the edge cases mostly in integration test and unit test. We may add
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
+- Have proper monitoring for MAP admission plugin
+- Fix any blocking issues/bugs surfaced before code freeze
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Including all function needed with performance and security in consideration
 
 #### GA
 
 - N examples of real-world usage
 - N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
 
 **Note:** Generally we also wait at least two releases between beta and
@@ -1296,7 +1297,16 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Upgrade and rollback will be tested before the feature goes to Beta.
+Upgrade and rollback will be tested manually in a kind:
+
+- Enabled feature gate, created a MutatingAdmissionPolicy and MutatingAdmissionPolicyBinding with mutation to add a label to a pod.
+
+- Disabled feature gate, restarted apiserver, confirmed that the
+  MutatingAdmissionPolicy and MutatingAdmissionPolicyBinding still exist. Added another Pod
+  to verify that the mutation would not happen.
+
+- Re-enabled the feature gate, restarted apiserver, confirmed that
+  the mutation will occur for new incoming pod creation request.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1376,7 +1386,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-No. We are open to input.
+No. 
 
 ### Dependencies
 
@@ -1511,6 +1521,7 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+No change from existing behavior. The feature will serve same as if it's disabled.
 
 ###### What are other known failure modes?
 
