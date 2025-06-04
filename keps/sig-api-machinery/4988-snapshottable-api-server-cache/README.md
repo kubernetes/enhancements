@@ -7,11 +7,15 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Risks and Mitigations](#risks-and-mitigations)
-    - [Memory overhead](#memory-overhead)
-- [Design Details](#design-details)
-  - [Snapshotting](#snapshotting)
+  - [Serving list from snapshots](#serving-list-from-snapshots)
+  - [Watch cache compaction](#watch-cache-compaction)
   - [Cache Inconsistency Detection Mechanism](#cache-inconsistency-detection-mechanism)
+- [Risks and Mitigations](#risks-and-mitigations)
+    - [Snapshot memory overhead](#snapshot-memory-overhead)
+    - [Consistency checking overhead](#consistency-checking-overhead)
+- [Design Details](#design-details)
+  - [Snapshotting algorithm](#snapshotting-algorithm)
+    - [Hasing algorithm](#hasing-algorithm)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -63,14 +67,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The kube-apiserver's caching mechanism (watchcache) efficiently serves requests
-for the latest observed state. However, `LIST` requests for previous states,
-either via pagination or by specifying a `resourceVersion`, bypass the cache and
-are served directly from etcd. This significantly increases the performance cost,
-and in aggregate, can cause stability issues. This is especially pronounced when
-dealing with large resources, as transferring large data blobs through multiple
-systems can create significant memory pressure. This document proposes an
-enhancement to the kube-apiserver's caching layer to enable efficient serving all
-`LIST` requests from the cache.
+for the latest observed state. However, `LIST` requests for previous states
+(e.g., via pagination or by specifying a `resourceVersion`) often bypass this
+cache and are served directly from etcd. This direct etcd access significantly
+increases performance costs and can lead to stability issues, particularly
+with large resources, due to memory pressure from transferring large data blobs.
+
+This KEP proposes an enhancement to the kube-apiserver's watch cache to
+generate B-tree snapshots, allowing it to serve `LIST` requests for previous
+states directly from the cache. This change aims to improve API server
+performance and stability. To support this snapshotting mechanism,
+this proposal also details changes to the watch cache's compaction behavior to maintain Kubernetes Conformance
+and introduces an automatic cache inconsistency detection mechanism.
 
 ## Motivation
 
@@ -100,33 +108,84 @@ leading to a more stable and reliable API server.
 
 ### Goals
 
-- Reduce memory allocations by supporting all types of LIST requests from cache
-- Ensure responses returned by cache are consistent with etcd
+- Reduce memory allocations by serving historical LIST requests from cache
+- Maintain Kubernetes conformance with regards to compaction
+- Prevent inconsistent responses returned by cache due to bugs in caching logic
 
 ### Non-Goals
 
 - Change semantics of the `LIST` request
 - Support indexing when serving for all types of requests.
 - Enforce that no client requests are served from etcd
+- Support etcd server side compaction for watch cache
+- Detection of watch cache memory corruption
 
 ## Proposal
 
-This proposal leverages the recent rewrite of the watchcache storage layer to
-use a B-tree ([kubernetes/kubernetes#126754](https://github.com/kubernetes/kubernetes/pull/126754)) to enable
-efficient serving of remaining types of LIST requests from the watchcache.
-This aims to improve API server performance and stability by minimizing direct etcd access for historical data retrieval.
-This aligns with the future extensions outlined in KEP-365 (Paginated Lists): [link to KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/365-paginated-lists#potential-future-extensions).
+We propose that the watch cache generate B-tree snapshots, allowing it to serve `LIST` requests for previous states.
+These snapshots will be stored for the same duration as watch history and compacted using the same mechanisms.
+This improves API server performance and stability by minimizing direct etcd access for historical data retrieval.
+It also aligns with the future extensions outlined in [KEP-365: Paginated Lists].
 
-However, this increased reliance on the watchcache significantly elevates the impact of any bugs in the caching logic.
-Incorrect behavior would be locally within API server memory, making debugging exceptionally difficult.
-Given that the proposed changes will ultimately route *all* API server LIST calls through the cache,
-a robust mechanism for detecting inconsistencies is crucial.
-Therefore, we propose an automatic mechanism to validate cache consistency with etcd,
-providing users with confidence in the cache's accuracy without requiring manual debugging efforts.
+Compaction is an important behavior, covered by Kubernetes Conformance tests.
+Supporting compaction is required to ensure consistent behavior regardless of whether the watch cache is enabled or disabled.
+Storing historical data in the watch cache, as this KEP proposes, breaks conformance.
+Currently, watch cache is only compacted when it becomes full.
+For resources with infrequent changes, this means data could be retained indefinitely,
+far beyond etcd's compaction point, as highlighted in [#131011].
+Therefore, to maintain conformance and ensure predictable behavior,
+we propose that the existing etcd compaction mechanism also be responsible for compacting the snapshots in cache.
 
-### Risks and Mitigations
+This proposal increases reliance on the watchcache, significantly elevating the impact of bugs in watch or caching logic.
+Triggering a bug would no longer impact a single client but affect the cache read by all clients connecting to a particular API server.
+As the proposed changes will result in all requests being served from the cache,
+it would be exceptionally difficult to debug errors, as comparing responses to etcd would no longer be an option.
+Consequently, we propose an automatic cache inconsistency detection mechanism that can run in production and replace manual debugging.
+It will automate checking consistency against etcd, protecting against bugs in the watch cache or etcd watch implementation.
+It is important to note that we do not plan to implement protection from memory corruption like bitflips.
 
-#### Memory overhead
+[KEP-365: Paginated Lists]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/365-paginated-lists#potential-future-extensions
+[#131011]: https://github.com/kubernetes/kubernetes/issues/131011#issuecomment-2747497808
+
+### Serving list from snapshots
+
+The snapshotting mechanism utilizes ability of B-tree to create
+lazy copies of itself. This allows us to create snapshot on each watch event.
+Those snapshots capture the state of cache at historical resourceVersion,
+and can be used to serve `LIST` requests, by finding aprioripate snapshot and just reading from it.
+
+### Watch cache compaction
+
+We will expand the existing mechanism for compacting etcd to also compact the watch cache.
+Kubernetes supports periodic configuring compaction by default executed every 5 minutes.
+In the current algorithm each API Server executes a optimistic write on `compact_rev_key` key to store revision to be compacted.
+The one that is first to write successfully, executes the compaction request against etcd.
+We will expand it by opening a watch on `compact_rev_key` key, and informing watch cache about succesfull compactions done by any API server.
+When watch cache is informed about compaction, it will truncate snapshot history up to that revision.
+To avoid changes of existing behavior, we will not compact watch history; this should be considered in the future.
+
+### Cache Inconsistency Detection Mechanism
+
+The mechanism periodically calculates and compares a hash of the data for each resource in both the etcd and the watch cache.
+
+It will be developed across multiple phases:
+*  **Alpha:** In this phase, the detection will enabled only in the test environment.
+  Enabled via `KUBE_WATCHCACHE_CONSISTANCY_CHECKER` environment variable,
+  we will run in Kubernetes e2e tests to ensure that the mechanism works as expected.
+  On mismatch the apiserver will panic making it easy to detect in tests.
+*  **Beta:** The detection will be enabled by default. If an inconsistency is detected,
+  snapshots stored in cache will be purged and the system will automatically fall
+  back to serving LIST requests from etcd for the affected resource.
+  This mechanism will only impact LIST requests that would be served from watch cache snapshots,
+  effectively reverting to the behavior prior to this proposal,
+  while other requests will continue to be served from the cache.
+  Fallback will not be permanent, but will last until the next successful consistency check.
+
+To monitor consistency failures we will expose `storage_consistency_checks_total` metric.
+
+## Risks and Mitigations
+
+#### Snapshot memory overhead
 
 B-tree snapshots are designed to minimize memory overhead by storing pointers to
 the actual objects, rather than the objects themselves. Since the objects are
@@ -141,12 +200,23 @@ The results are promising:
 * **Memory Usage:** Memory in use profile collected during the test has shown
   Btree memory usage of 300MB, representing a 1.3% of total memory used.
 
+#### Consistency checking overhead
+
+Periodic execution of consistency checking will introduce additional overhead.
+This load is not negligible, as it requires downloading and decoding data from etcd.
+For saftly we still think it's important that feature is enabled by default,
+however we want to leave an option to disable it.
+For that we will introduce `DetectCacheInconsistency` feature gate in Beta.
+
+For future we plan to improve etcd API to support cheap consistency checks.
+At that point disabling inconsistency checks will no longer be needed.
+
 ## Design Details
 
-### Snapshotting
+### Snapshotting algorithm
 
 1. **Snapshot Creation:** When a watch event is received, the cacher creates
-   a snapshot of the B-tree based cache using the efficient [Clone()[] method.
+   a snapshot of the B-tree based cache using the efficient [Clone()] method.
    This method creates a lazy copy of the tree structure, minimizing overhead.
    Since the watch cache already stores the history of watch events,
    the B-tree maintains just pointers to the in-use memory, storing only minimal necessary data.
@@ -167,45 +237,20 @@ The results are promising:
       cache is lagging behind. The API server performs a consistent read from
       etcd to confirm the existence of the future resourceVersion or waits for
       the watch cache to catch up.
-4. **Snapshot Cleanup:** Snapshots are subject to a Time-To-Live (TTL) mechanism
-   similar to watch events. The proposed approach leverages the existing process
-   that limits the number of events to 10,000 within a 75-second window
-   (configurable via request timeout). Additionally, snapshots are purged during
-   cache re-initialization.
 
 [Clone()]: https://pkg.go.dev/github.com/google/btree#BTree.Clone
 
-### Cache Inconsistency Detection Mechanism
+#### Hasing algorithm
 
-We will periodically calculate a hash of the data in both the etcd datastore
-and the watch cache and compare them. For the Alpha phase, detection will be passive.
-A metric will be exposed, allowing users to configure alerts that trigger on hash mismatch,
-thus indicatory of potential inconsistency and enabling us to validate the mechanism.
-For the Beta phase, detection will become active, with automatic fallback to etcd if
-inconsistency is detected. This way we automaticaly restore the previous behavior.
-
-The implementation works as follows. Every 5 minutes, for each resource,
-a hash calculation is performed. To avoid concurrent calculations,
-the start time for each resource's calculation is randomly offset by 1 to 5 minutes.
+Every 5 minutes, for each resource, we calculate hash for each resource.
 A non-consistent `LIST` request (`RV=0`) is sent to the watch cache to retrieve its latest available RV.
 This revision is then used to make a consistent `LIST` request (`RV=X`, where X is the revision from the cache) to etcd.
 This ensures comparison of the cache's latest state with the corresponding state in etcd,
 without explicit handling of potential cache staleness.
 
 The 64-bit FNV algorithm (as implemented in [`hash/fnv`]([https://pkg.go.dev/hash/fnv](https://pkg.go.dev/hash/fnv)))
-is used to calculate the hash over the entire structure of the `LIST` response,
-using a technique similar to [gohugoio/hashstructure](https://github.com/gohugoio/hashstructure).
-While calculating the hash of the entire structure is computationally more expensive,
-the infrequency of this operation (every 5 minutes) makes the cost acceptable compared
-to frequent `LIST` operations directly against etcd.
-Hashing the entire structure helps prevent issues arising from object versioning differences.
-
-The metric includes labels for `resource` (e.g., "pods"), `storage` (either "etcd" or "cache"), and `hash` (the calculated hash value). Example:
-```
-apiserver_storage_hash{resource="pods", storage="etcd", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
-apiserver_storage_hash{resource="pods", storage="cache", hash="f364dcd6b58ebf020cec3fe415e726ab16425b4d0344ac6b551d2769dd01b251"} 1
-```
-Metric values for each resource should be updated atomically to prevent false positives.
+is used to calculate the hash of object's namespace, name, and resourceVersion joined by a '/' byte.
+This should allow us to detect inconsistencies caused by bugs in applying watch events or bugs in etcd watch stream.
 
 ### Test Plan
 
@@ -235,12 +280,15 @@ Test should cover couple of resources including resources with conversion.
 #### Alpha
 
 - Snapshotting implemented behind a feature gate disabled by default.
-- Inconsistency detection is implemented behind a feature gate enabled by default.
+- Inconsistency detection is behind environment variable
+- Inconsistency detection run in e2e tests
 
 #### Beta
 
 - Inconsistency detection mechanism is qualified and no mismatch detected.
-- Fallback to etcd mechanism is implemented
+- Inconsistency detection moved behind a feature gate `DetectCacheInconsistency` enabled by default.
+- Automatic fallback to etcd is implemented
+- Pass Kubernetes conformance tests for compaction
 
 #### GA
 
@@ -296,15 +344,12 @@ additional value on top of feature tests themselves.
 
 ###### What specific metrics should inform a rollback?
 
-Mismatch in hash label for different storage exposed by `apiserver_storage_hash` metric by the same apiserver.
+Snapshotting should automatically fallback to serving from etcd if inconsistency is detected.
+Rollback should be consider if there is a high number of inconsistencies detected by `storage_consistency_checks_total` metric.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+No need for tests, this feature doesn't cause any persistent side effects.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -330,7 +375,7 @@ This is control-plane feature, not a workload feature.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, we are adding `apiserver_storage_hash` to check cache consistency.
+Yes, we are adding `storage_consistency_checks_total` to count the number of consistency checks performed and their outcomes.
 
 ### Dependencies
 
@@ -380,7 +425,7 @@ The feature is kube-apiserver feature - it just doesn't work if kube-apiserver i
 ###### What are other known failure modes?
 
 Inconsistency of watch cache, should be addressed by the consistency checking mechanism.
-For the first iteration we will enable users to define an alert on a metric and detect if cache became inconsistent with etcd.
+For the first iteration we will enable users to define an alert on a metric and detect if cache becomes inconsistent with etcd.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -388,7 +433,8 @@ Disabling the feature-gate.
 
 ## Implementation History
 
-- 1.33: KEP proposed and approved for implementation
+- 1.33: Alpha
+- 1.34: Beta
 
 ## Drawbacks
 
