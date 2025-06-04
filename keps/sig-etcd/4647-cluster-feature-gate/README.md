@@ -142,7 +142,7 @@ This story applies similarly to the upgrade/downgrade scenarios as well.
 
 ### Notes/Constraints/Caveats (Optional)
 
-#### Should we allow users to change feature gate value from etcd endpoints?
+#### Should we allow users to dynamically change feature gate values at runtime via etcd endpoints?
 In our proposal, the feature gates of a cluster can only be configured through the feature gate flags/config files when the cluster/members starts. Users cannot dynamically change feature gate values through some etcd endpoints.
 
 The main downside of this restriction is that it requires member restart to change a feature value which might be to slow for some critical bugs. But the alternative would open a security pandora box by allowing clients to change etcd configuration from etcd endpoints.
