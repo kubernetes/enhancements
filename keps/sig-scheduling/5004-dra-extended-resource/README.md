@@ -595,10 +595,8 @@ Reserve the in-memory `ResourceClaim` and its allocation results in the assume
 cache, a map of in-flight claims.
 
 #### Unreserve
-The plugin  removes the allocation for the special `ResourceClaim` for extended
-resource backed by DRA. Because it cannot be scheduled after all. It does not need
-to remove the Pod from the claim.status.reservedFor field, as the special claim
-has not been created in API server yet.
+The plugin deletes the special `ResourceClaim` for extended resource backed by DRA,
+because it cannot be scheduled after all.
 
 #### Prebind
 This is called in a separate goroutine. The plugin makes API call to create the
