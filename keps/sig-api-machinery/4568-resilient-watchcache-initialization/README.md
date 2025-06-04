@@ -223,22 +223,16 @@ requests will be rejected with 429 http code similarly to watch requests.
 Given we're changing the existing behavior, there is a risk of breaking some
 clients. To mitigate it, we will introduce all the logic behind two separate
 feature gates [to allow for disablement if needed]:
-- WatchCacheInitializationPostStartHook - handling the logic of the new
-   post-start hook
-- ResilientWatchCacheInitialization - handling the changes to returning
-   429 errors instead of keeping the requests hanging
-
-Given the proposed changes are not changing the API and we will already
-implement them with desired quality and coverage, we propose to go directly
-to Beta.
-However, we admit that the risk in both cases is different:
-- for the new post-start hook, there is a risk of kube-apiserver not initializing,
-   thus we will start with Beta disabled by-default
-- for the changes to handing requests when watchcache is uninitialized, we
-   believe the risk is visibly lower (and 429 errors were already returned
-   before, even in small clusters where priority-levels are small enough
-   to often admit only 1-2 inflight requests at once anyway) and we will
-   enable it by-default from the very beginning
+- WatchCacheInitializationPostStartHook (Beta, disabled by default):
+  handling the logic of the new post-start hook. There is a risk of
+  kube-apiserver not initializing if this hook has issues, hence it started
+  as Beta disabled by default. Plan is to enable it by default after getting some production data.
+- ResilientWatchCacheInitialization (Beta, enabled by default since 1.31):
+  Handles the changes to returning 429 errors instead of keeping the requests hanging.
+  The risk is visibly lower (and 429 errors were already returned
+  before, even in small clusters where priority-levels are small enough
+  to often admit only 1-2 inflight requests at once anyway) so the feature was enabled by default.
+  This feature has proven stable and is targeting GA in 1.34.
 
 ## Design Details
 
@@ -293,7 +287,9 @@ Given we're only modifying kube-apiserver, integration tests are sufficient.
 
 #### GA
 
-TODO
+- Feature was enabled by default allowing us to collect production data.
+- No critical issues reported during the period that would block graduation.
+- Any further tuning of the specific request delegation logic is considered an incremental improvement and can be addressed post-GA.
 
 ### Upgrade / Downgrade Strategy
 
@@ -362,7 +358,7 @@ In case of bugs:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO: The test will be run before promoting the feature to Beta.
+No need for tests, this feature doesn't have any persistent side effects.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -388,10 +384,7 @@ The feature is not workload-specific, it only affects if certain API calls will 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No
 
 ### Dependencies
 
