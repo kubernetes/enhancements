@@ -55,20 +55,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -207,9 +207,20 @@ type EndpointHints struct {
 
 	// forNodes indicates the node(s) this endpoint should be targeted by.
 	// +listType=atomic
-	ForNodes []string `json:"forNodes,omitempty" protobuf:"bytes,2,name=forNodes"`
+	ForNodes []ForNode `json:"forNodes,omitempty" protobuf:"bytes,2,name=forNodes"`
+}
+
+// ForNode provides information about which nodes should consume this endpoint.
+type ForNode struct {
+	// name represents the name of the node.
+	Name string `json:"name" protobuf:"bytes,1,name=name"`
 }
 ```
+
+(The KEP originally proposed `ForNodes []string` since there are no
+use cases for additional information beyond node name. While
+implementing it, we decided it was better to have the API be
+consistent with `ForZones`.)
 
 When updating EndpointSlices, if the EndpointSlice controller sees a
 Service with `PreferSameNode` traffic distribution, then for each
@@ -253,19 +264,9 @@ N/A
 Tests of validation, endpointslice-controller, and kube-proxy will be
 updated.
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+- validation: [`TestValidateServiceCreate`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/pkg/apis/core/validation/validation_test.go#L15472), [`TestValidateEndpointSlice`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/pkg/apis/discovery/validation/validation_test.go#L34), [`Test_dropDisabledFieldsOnCreate`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/pkg/registry/discovery/endpointslice/strategy_test.go#L37), [`Test_dropDisabledFieldsOnUpdate`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/pkg/registry/discovery/endpointslice/strategy_test.go#L130)
+- endpointslice-controller: [`TestReconcile_TrafficDistribution`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/staging/src/k8s.io/endpointslice/reconciler_test.go#L1976), [`TestReconcileHints`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/staging/src/k8s.io/endpointslice/trafficdist/trafficdist_test.go#L29)
+- kube-proxy: [`TestCategorizeEndpoints`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/pkg/proxy/topology_test.go#L48)
 
 ##### Integration tests
 
@@ -273,14 +274,14 @@ We will add a test that disabling the feature results in the hints
 being removed from the EndpointSlice for Services using the new
 `TrafficDistribution` values.
 
-- <test>: <link to test coverage>
+- [`Test_TransitionsForPreferSameTrafficDistribution`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/test/integration/service/service_test.go#L556)
 
 ##### e2e tests
 
 E2E tests will be added similar to existing traffic distribution
 tests, to cover the new options.
 
-- <test>: <link to test coverage>
+- [`test/e2e/network/traffic_distribution.go`](https://github.com/kubernetes/kubernetes/blob/v1.33.0/test/e2e/network/traffic_distribution.go)
 
 ### Graduation Criteria
 
@@ -343,7 +344,7 @@ are sure their cluster is non-skewed.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ImprovedTrafficDistribution
+  - Feature gate name: PreferSameTrafficDistribution
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
@@ -363,7 +364,10 @@ It starts working again.
 
 ###### Are there any tests for feature enablement/disablement?
 
-TBD
+The unit tests in
+`pkg/registry/discovery/endpointslice/strategy_test.go` confirm that
+the EndpointSlice `forNodes` hint gets dropped from existing objects
+on update when the feature gate is disabled. We will add a test
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -385,7 +389,21 @@ stop using the feature if it is not working for them.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD
+Tested manually in a kind:
+
+- Enabled feature gate, created a Service with `trafficDistribution:
+  PreferSameNode`, added a Pod, confirmed that the EndpointSlice
+  contained `forNodes` hints.
+
+- Disabled feature gate, restarted apiserver/kcm, confirmed that the
+  EndpointSlice still contained the `forNodes` hint. Added another Pod
+  to the service and confirmed that the EndpointSlice was rewritten
+  with no `forNodes` hint (for either endpoint).
+
+- Re-enabled the feature gate, restarted apiserver/kcm, confirmed that
+  the EndpointSlice still contained no `forNodes` hint. Deleted one of
+  the Pods and confirmed that the EndpointSlice was rewritten
+  with a `forNodes` hint for the remaining endpoint.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -464,8 +482,9 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No (other than that it means people may set `TrafficDistribution` on
-Services where they were not previously setting it).
+Using `trafficDistribution: PreferSameNode` will result in each
+endpoint in each EndpointSlice for the service gaining a `forNodes`
+hint containing the endpoint's node name.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -495,6 +514,7 @@ N/A
 - Initial proposal as "Node-level topology": 2022-01-15
 - Initial proposal as `TrafficDistribution: PreferSameNode`: 2025-02-06
 - Added `TrafficDistribution: PreferSameZone`: 2025-02-08
+- Implemented as Alpha in k8s 1.33: 2025-05-30
 
 ## Drawbacks
 
