@@ -85,6 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -93,6 +94,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -179,9 +181,6 @@ cloud-controller-manager). The goal is to enable these components to gracefully
 release the leader lock and transition back to a follower state without a full
 process restart. This change will be introduced behind a new feature gate.
 
-Because this feature is a small change with relatively low risk, it will start at
-beta and on by default.
-
 ## Motivation
 
 <!--
@@ -207,6 +206,11 @@ significant drawbacks:
   overhead and increases latency during a leadership transition
 - No Graceful Shutdown: The immediate call to `os.Exit()` prevents any graaceful
   shutdown or cleanup operations.
+- Limited Scalability and Design Flexibility: The current "all-or-nothing"
+  lease management, where a process holds a single lease for all its
+  controllers, prevents a single process from managing multiple leases
+  independently. This forces a scale-up model rather than a scale-out model
+  and severely restricts dynamic controller management.
 
 
 ### Goals
@@ -240,7 +244,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The main control loops for `kube-controller-manager`, `kube-sceduler`, and
+The main control loops for `kube-controller-manager`, `kube-scheduler`, and
 `cloud-controller-manager` will be updated to support graceful leader
 transitions. When a leader fails to renew its lease, instead of exiting, the
 component will rely on client-go's leader election mechanism to cancel the
@@ -260,9 +264,13 @@ bogged down.
 
 #### Story 1
 
-Cloud provider A wants to balance controllers over multiple control planes. With
+In an HA configuration, cloud provider A wants to balance controllers over multiple control plane instances. With
 graceful transitions, multiple locks can be used by a single KCM instance such
 that a subset of components run under each lock.
+
+#### Story 2
+
+A extension developer has controller manager that should dynamically start and shutdown controllers based on cluster state (such as the registration of resources that declare how a CRD should be reconciled). The extension developer requires that controllers shutdown gracefully so that only the controller loops that SHOULD be running continue to run, and that no resources are leaked over time as controllers are started and stopped.
 
 ### Risks and Mitigations
 
@@ -279,11 +287,36 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 Kubernetes leader elected controllers and the scheduler have been running
-without graceful shutdown for years. There is a risk that controllers and the
-sceduler are not properly respecting context shutdowns. Furthermore, memory
-leaks may exist in the processes that were previously masked by doing a full
-shutdown and restart loop. We will audit each controller carefully but as a
-failstop, the feature will be guarded behind a feature gate. 
+without graceful shutdown for years. 
+
+Risk 1: Resource exhaustion: Memory leaks may exist in the processes that were
+previously masked by doing a full shutdown and restart loop. 
+
+- Severity: Medium high
+- Controllers will continue to function (potentially in degraded state due to lack of resources), and may be restarted frequently. However, cluster should continue to function.
+
+Risk 2: Wedged KCM: There is a risk that controllers and the
+scheduler are not properly respecting context shutdowns. This can either result in multiple instances of controllers running or no instances running despite the lock being held.
+
+- Severity: Extreme
+- Breaking mutual exclusion guarantees can put the cluster into a non-desirable state. A manual user intervention is possible but if the problem is triggered due to a problematic component, the issue will resurface and the best path for mitigation is to turn off the feature.
+
+Risk 3: Futureproofing: An additional risk is that even if all the current code
+is safe and respects shutting down gracefully, new controllers/modifications to
+kcm or scheduler could create subtle problems in shutdown and transition.
+
+- Severity: Medium
+- Leads to either risk 1 or 2.
+
+
+Mitigations:
+
+- Audit and add tests for the existing controllers and the scheduler to ensure
+  proper handling of context shutdowns. See test plan section for more details.
+- Graceful shutdown modifications will not be guarded by a feature gate, but the
+  code change to remove the `os.Exit()` line will be guarded by a feature gate.
+- Document the new development best practices for graceful shutdown requirements
+  for modified components that are leader elected.
 
 ## Design Details
 
@@ -328,6 +361,17 @@ when drafting this test plan.
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
+
+To properly test that components can respect context cancellation shutdowns and not leak memory, we will run both manual tests with profiling, and automated testing that transitions the leader lock multiple times. 
+
+Scenarios:
+
+- Component acquires leader lock should start its control loop
+- Component releasing leader lock should shut down its control loop
+- Component acquiring and releasing the leader lock multiple times should not leak memory
+- Component acquiring and releasing the leader lock multiple times should have ONLY ONE control loop running
+- Components in follower mode should not start control loop or otherwise allocate unnecessary memory
+- Only one control loop should be running at all times
 
 ##### Prerequisite testing updates
 
@@ -395,11 +439,14 @@ Will test that feature enablement will still result in a functional cluster.
 
 ### Graduation Criteria
 
-#### Beta
+#### Alpha
 
 - Feature implemented behind a feature flag
-- Integration/e2e tests are in place
 - Test that controller-manager and scheduler do not leak memory on leadership transitions
+
+#### Beta
+
+- e2e tests
 
 #### GA
 
