@@ -142,20 +142,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-* [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-* [ ] (R) KEP approvers have approved the KEP status as `implementable`
-* [ ] (R) Design details are appropriately documented
-* [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  + [ ] e2e Tests for all Beta API Operations (endpoints)
+* [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+* [x] (R) KEP approvers have approved the KEP status as `implementable`
+* [x] (R) Design details are appropriately documented
+* [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  + [x] e2e Tests for all Beta API Operations (endpoints)
   + [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   + [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-* [ ] (R) Graduation criteria is in place
+* [x] (R) Graduation criteria is in place
   + [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 * [ ] (R) Production readiness review completed
 * [ ] (R) Production readiness review approved
-* [ ] "Implementation History" section is up-to-date for milestone
-* [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-* [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+* [x] "Implementation History" section is up-to-date for milestone
+* [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+* [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -552,8 +552,16 @@ E2E tests will be implemented to cover the following cases:
 * Verify that newly created pods have a `metadata.generation` set to 1.
 * Verify that PodSpec updates (such as tolerations or container images), resize requests, adding ephemeral containers, and binding requests cause the `metadata.generation` to be incremented by 1 for each update.
 * Verify that deletion of a pod causes the `metadata.generation` to be incremented by 1.
-* Issue ~1000 pod updates (1 every 100ms) and verify that `metadata.generation` and `status.observedGeneration` converge to the final expected value.
+* Issue ~500 pod updates (1 every 100ms) and verify that `metadata.generation` and `status.observedGeneration` converge to the final expected value.
 * Verify that various conditions each have `observedGeneration` populated. 
+
+Added tests:
+- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pods.go#L422-L719
+- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/common/node/ephemeral_containers.go#L66-L85
+- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pod_resize.go#L276-L289
+
+k8s triage link:
+- https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
 
 ### Graduation Criteria
 
@@ -634,7 +642,7 @@ in back-to-back releases.
 #### GA
 
 * No major bugs reported for three months. 
-* User feedback (ideally from at least two distinct users) is green.
+* User feedback is green.
 
 ### Upgrade / Downgrade Strategy
 
@@ -833,12 +841,21 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+A rollout or rollback won't have significant impact on any components, even
+if they restart mid-rollout. Already running workloads likewise won't be
+significantly impacted.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+This feature is very minimal so we do not anticipate serious problems, but
+if the users see the `metadata.generation` and `status.observedGeneration` fields
+are not being updated or are significantly misaligned, that indicates that
+the feature is not working as expected.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -848,11 +865,26 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Testing steps:
+
+1. Create test pod with old version of API server and node; expected outcome: `generation` and `observedGeneration` fields are not populated
+1. Upgrade API server
+1. Send an update request to the running pod; expected outcome: `generation` is set to 1 and `observedGeneration` fields are not populated
+1. Create a new pod; expected outcome: `generation` is set to 1 and `observedGeneration` fields are not populated
+1. Create upgraded node
+1. Create second test pod on the upgraded node; expected outcome: `generation` and `observedGeneration` fields are set to 1
+1. Restart the upgraded node with the feature disabled
+1. Send an update request to the second pod; expected outcome: `generation` and `observedGeneration` continue to be updated so are set to 2
+1. Restart the upgraded node with the feature enabled
+1. Send an update request to the second pod; expected outcome: `generation` and `observedGeneration` are set to 3
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -871,6 +903,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+They can check if `metadata.generation` is set on the pod. 
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -882,13 +916,16 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-* [ ] Events
-  + Event Reason: 
-* [ ] API .status
-  + Condition name: 
-  + Other field: 
-* [ ] Other (treat as last resort)
-  + Details:
+* [x] API .status
+  + Other field: `metadata.generation`, `status.observedGeneration`, `status.conditions[].observedGeneration`
+
+Each pod should have its `metadata.generation` set, starting at 1 and incremented by 1 for each update.
+
+Each pod's `status.observedGeneration` should be populated to reflect the `metadata.generation` that was last
+observed by the kubelet.
+
+Each pod's `status.conditions[].observedGeneration` should be populated to reflect the `metadata.generation`
+that was last observed by the component owning the corresponding condition.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -908,18 +945,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+N/A
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-* [ ] Metrics
-  + Metric name:
-  + [Optional] Aggregation method:
-  + Components exposing the metric:
-* [ ] Other (treat as last resort)
-  + Details:
+N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -927,6 +961,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost, 
 implementation difficulties, etc.).
 -->
+
+N/A
 
 ### Dependencies
 
@@ -950,6 +986,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -1076,6 +1114,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The feature depends on the API server. If the API server is unavailable, the 
+new fields will not be updated. 
+
 ###### What are other known failure modes?
 
 <!--
@@ -1094,7 +1135,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Other failure modes are described under Risks and Mitigations.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Investigate apiserver and/or kubelet logs.
 
 ## Implementation History
 
@@ -1108,6 +1153,10 @@ Major milestones might include:
 * the version of Kubernetes where the KEP graduated to general availability
 * when the KEP was retired or superseded
 -->
+
+2025-01-21: initial KEP draft created
+2025-02-12: PR feedback addressed, KEP moved to "implementable" and merged
+2025-06-05: proposed promotion to beta
 
 ## Drawbacks
 
