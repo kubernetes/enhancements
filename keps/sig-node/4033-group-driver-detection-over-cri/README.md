@@ -185,9 +185,11 @@ message, e.g.:
 cgroupDriver option has been deprecated and will be dropped in a future release. Please upgrade to a CRI implementation that supports cgroup-driver detection.
 ```
 
-The `--cgroup-driver` flag will be completely removed when support for the
-feature is graduated to GA and the kubelet refuses to start if the CRI runtime
-does not support the feature.
+The `--cgroup-driver` flag and the cgroupDriver configuration option will be
+deprecated and have no effect when support for the feature is graduated to GA.
+The kubelet refuses to start if the CRI runtime does not support the feature.
+The configurations flags will ultimately be removed as per the
+[Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli).
 
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeConfig is queried before initializing the
@@ -241,6 +243,7 @@ No new e2e tests for kubelet are planned.
 
 - No bugs reported in the previous cycle.
 - Drop fallback to old behavior. CRI implementations expected to have support.
+- Deprecate kubelet cgroupDriver configuration option and `--cgroup-driver` flag.
 - Remove feature gate
 - All issues and gaps identified as feedback during beta are resolved
 
@@ -289,8 +292,8 @@ scenarios where the kubelet `--cgroup-driver` setting is incorrectly
 configured). With old versions of the container runtimes (that don't support
 the new field in the CRI API) the default behavior is not changed.
 
-In GA, the fallback behavior (and the kubelet `--cgroup-driver` flag) is
-removed and the kubelet requires the CRI runtime to implement the feature (see
+In GA, the fallback behavior is removed and the kubelet requires the CRI
+runtime to implement the feature (see
 [Version Skew Strategy](#version-skew-strategy)).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -337,7 +340,8 @@ In alpha and beta, the CgroupDriver field of the Kubelet configuration (and the
 corresponding `--cgroup-driver` flag) will be marked as deprecated.
 
 In GA, the CgroupDriver configuration option and the `--cgroup-driver` flag are
-removed.
+deprecated, will have no effect, and will be removed in a future release as per
+the Kubernetes deprecation policy.
 
 ### Monitoring Requirements
 
@@ -428,6 +432,10 @@ container runtime, only.
 
 In alpha and beta, same that exists today: Kubelet and the CRI server (container runtime) not
 agreeing on the CgroupDriver while one of them doesn’t support the feature.
+
+In GA, the kubelet requires the CRI runtime to implement the feature and will
+refuse to start if it is not supported. As a result, the minimum required
+versions for containerd is v2.0 and for cri-o is v1.28.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
