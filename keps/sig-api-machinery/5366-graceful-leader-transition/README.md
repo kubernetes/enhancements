@@ -293,19 +293,26 @@ Risk 1: Resource exhaustion: Memory leaks may exist in the processes that were
 previously masked by doing a full shutdown and restart loop. 
 
 - Severity: Medium high
-- Controllers will continue to function (potentially in degraded state due to lack of resources), and may be restarted frequently. However, cluster should continue to function.
+- Controllers will continue to function (potentially in degraded state due to
+  lack of resources), and may be restarted frequently. However, cluster should
+  continue to function.
 
-Risk 2: Wedged KCM: There is a risk that controllers and the
-scheduler are not properly respecting context shutdowns. This can either result in multiple instances of controllers running or no instances running despite the lock being held.
+Risk 2: Wedged KCM: There is a risk that controllers and the scheduler are not
+properly respecting context shutdowns. This can either result in multiple
+instances of controllers running or no instances running despite the lock being
+held.
 
-- Severity: Extreme
-- Breaking mutual exclusion guarantees can put the cluster into a non-desirable state. A manual user intervention is possible but if the problem is triggered due to a problematic component, the issue will resurface and the best path for mitigation is to turn off the feature.
+- Severity: High
+- Breaking mutual exclusion guarantees can put the cluster into a non-desirable
+  state. A manual user intervention is possible but if the problem is triggered
+  due to a problematic component, the issue will resurface and the best path for
+  mitigation is to turn off the feature.
 
 Risk 3: Futureproofing: An additional risk is that even if all the current code
 is safe and respects shutting down gracefully, new controllers/modifications to
 kcm or scheduler could create subtle problems in shutdown and transition.
 
-- Severity: Medium
+- Severity: High
 - Leads to either risk 1 or 2.
 
 
@@ -447,6 +454,7 @@ Will test that feature enablement will still result in a functional cluster.
 #### Beta
 
 - e2e tests
+- Address how to minimize risks of putting KCM or scheduler in a "wedged" state
 
 #### GA
 
