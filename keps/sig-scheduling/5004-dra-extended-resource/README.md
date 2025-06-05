@@ -23,6 +23,7 @@
     - [Prebind](#prebind)
     - [Failure handling](#failure-handling)
   - [Actuation for Extended Resource backed by DRA](#actuation-for-extended-resource-backed-by-dra)
+  - [Cluster Autoscaler integration](#cluster-autoscaler-integration)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -717,6 +718,19 @@ node it is scheduled to run, the following are particularly important:
    container name and extended resource name to request in
    `claim.spec.devices.requests`, DRA manager uses this status information to
    pass the proper allocated device IDs to the proper container.
+
+### Cluster Autoscaler integration
+
+The new NodeInfo.Allocatable.DynamicResources field inside NodeInfo may need to
+be correctly set in cluster autoscaler, based on its own internal cluster state,
+which means there may be a need to expose a public method to set it.
+
+The special resource claim created in PreFilter has to go through the
+ResourceClaimTracker from SharedDRAManager so that cluster autoscaler can
+reflect the claim in-memory. The special claim is currently reserved by calling
+ SignalClaimPendingAllocation() in Reserve phase and persisted to API server in
+ PreBind phase. There might be a need to expand ResourceClaimTracker to
+ integrate with cluster autoscaler.
 
 ### Test Plan
 
