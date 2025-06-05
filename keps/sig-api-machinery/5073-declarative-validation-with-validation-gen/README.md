@@ -755,6 +755,28 @@ The below rules are currently implemented or are very similar to an existing val
     N/A
    </td>
   </tr>
+  <tr>
+   <td style="background-color: null">
+    group membership (virtual field)
+   </td>
+   <td style="background-color: null">
+    `+k8s:memberOf(group: &lt;groupname>)`
+   </td>
+   <td style="background-color: null">
+    N/A
+   </td>
+  </tr>
+  <tr>
+   <td style="background-color: null">
+    list map item reference (virtual field)
+   </td>
+   <td style="background-color: null">
+    `+k8s:listMapItem(pairs: [[key,value],...])`
+   </td>
+   <td style="background-color: null">
+    N/A
+   </td>
+  </tr>
 </table>
 
 The below rules are not currently implemented in the [validation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen) so the exact syntax is still WIP
