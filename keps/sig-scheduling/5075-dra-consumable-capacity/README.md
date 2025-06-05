@@ -37,7 +37,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5075: DRA: Consumable Capacity
+# KEP-5075: DRA Consumable Capacity
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -70,6 +70,9 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+  - [Beta](#beta)
+  - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -266,7 +269,7 @@ To enable this enhancement, the following API updates are proposed.
 // on its attributes. Besides the name, exactly one field must be set.
 type Device struct {
 ...
-   // AllowMultipleAllocations marks whether the device is allowed to be allocated for mutliple times.
+   // AllowMultipleAllocations marks whether the device is allowed to be allocated for multiple times.
    //
    // A device with allowMultipleAllocations="true" can be allocated more than once,
    // and its capacity is shared, regardless of whether the CapacitySharingPolicy is defined or not.
@@ -813,6 +816,15 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
+##### Prerequisite testing updates
+
+<!--
+Based on reviewers feedback describe what additional tests need to be added prior
+implementing this enhancement to ensure the enhancements have also solid foundations.
+-->
+
+##### Unit tests
+
 ###### API Validations
 
 **Sharing Policy (Device Capacity Test)**
@@ -858,21 +870,16 @@ to implement this enhancement.
 - can prevent allocating the same device in the same request with a distinct constraint
 - can allocate different device in the same request with a distinct contraint
 
-##### Prerequisite testing updates
+###### Coverage
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-##### Unit tests
-
-- <package>: <date> - <current test coverage>
+- `k8s.io/dynamic-resource-allocation/structured:`:	`6/4/2025` - `87.5`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `6/4/2025` - `97.8`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `6/5/2025` - `85.5` 
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `6/5/2025` - `69.1`
 
 ##### Integration tests
 
-
-- <test>: <link to test coverage>
+The existing [integration tests for kube-scheduler which measure performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme) will be extended to cover the overheaad of running the additional logic to support the features in this KEP. 
 
 ##### e2e tests
 
@@ -886,9 +893,30 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+We will extend [the DRA test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver) to enable support for this feature and add tests to ensure they are handled by the scheduler as described in this KEP.
 
 ### Graduation Criteria
+
+#### Alpha
+
+- Feature implemented behind feature gates (`DRAConsumableCapacity`). Feature Gates are disabled by default.
+- Documentation provided
+- Initial unit, integration and e2e tests completed and enabled.
+
+### Beta
+
+- Feature Gates are enabled by default.
+- No major outstanding bugs.
+- 1 example of real-world use case.
+  - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+- Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
+
+### GA
+
+- 2 examples of real-world use cases.
+  - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+  - Acelerator DRA driver can use this feature for on-demand virtual memory allocation.
+- Allowing time for feedback from developers and users.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -1006,8 +1034,11 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+  - Feature gate name: DRAConsumableCapacity
   - Components depending on the feature gate:
+    - kube-scheduler
+    - kubelet
+    - kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -1022,6 +1053,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
+No
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 <!--
@@ -1035,7 +1068,14 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, this feature can be disabled once it has been enabled.
+The `allowMultipleAllocations` flag, `sharingPolicy`, `capacityRequests`, and `consumedCapacities` fields will be dropped.
+However, the `shareID` and renamed device (`<device id>/<share id>`) in device status needs to be remained to keep the existing allocation result reference valid.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The fields will be available again for read and write. 
+However, the previously dropped `sharingPolicy`, `capacityRequests`, and `consumedCapacities` will be missing. 
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1054,7 +1094,7 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 
 The enablement and disablement of this feature are tested as part of the integration tests. 
 Additionally, the feature enablement/disablement tests cover the scenario where the feature gate is switched 
-from enabled to disabled after a shared allocation has already been made. 
+from enabled to disabled after an allocation has already been made. 
 In this case, the existing resource claim should remain valid, 
 but the remaining device capacity must no longer be multi-allocatable.
 
@@ -1076,12 +1116,18 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+- Enabling the feature gate will enable the field to be written and therefore invoke validation of the field.
+- Disabling the feature gate will drop the ability to consume the capacity in scheduling so that the `consumedCapacities` in the allocation result should be also dropped. If the external party uses the reference to this field to manage the QoS-aware devices, it may fail if there is no handler.
+- Disabling the feature gate is equivalent to unset `allowMultipleAllocations` and `sharingPolicy`, the scheduler will handle as described in [this previous section](#handles-device-updates-for-allowmultipleallocations-and-sharingpolicy).
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+N/A
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1091,11 +1137,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+N/A
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No
 
 ### Monitoring Requirements
 
@@ -1114,6 +1164,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Check the `allowMultiAllocation` flag in the resource slice.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1127,9 +1179,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
+- [x] API .status
   - Condition name: 
-  - Other field: 
+  - Other field: `ResourceClaim.Status.Allocation.Devices.Results[].ShareID`
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1150,7 +1202,11 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Existing DRA and related SLOs continue to apply.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+Will consider in the beta timeframe.
 
 <!--
 Pick one more of these and delete the rest.
@@ -1169,6 +1225,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Will consider in the beta timeframe.
 
 ### Dependencies
 
@@ -1192,6 +1250,9 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers being deployed.
+This feature also works with DRA device status feature if it is enabled.
 
 ### Scalability
 
@@ -1220,6 +1281,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1229,6 +1292,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+There will be `CapacitySharingPolicy` and `CapacityRequirements` struct added to `DeviceCapacity` in `ResourceSlice` and `DeviceSubRequest/ExactDeviceRequest` in `ResourceClaim`.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1236,6 +1301,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1245,6 +1312,9 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Yes, when using this field, the user will add additional data in their `ResourceSlice`, `ResourceClaim` and `ResourceClaimTemplate` objects.
+This is an incremental increase on top of the existing structures.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1256,6 +1326,9 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Scheduling a claim that uses this feature may take a bit longer, if it is necessary to calculate aggregation of consumed capacity before finding a suitable device.
+We will measure in beta timeframe.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1269,6 +1342,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1280,6 +1355,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
@@ -1331,6 +1408,8 @@ Major milestones might include:
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+This adds complexity to the scheduler.
 
 ## Alternatives
 

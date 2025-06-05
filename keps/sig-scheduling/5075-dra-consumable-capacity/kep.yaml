@@ -1,4 +1,4 @@
-title: DRA: Consumable Capacity
+title: "DRA Consumable Capacity"
 kep-number: 5075
 authors:
   - "@sunya-ch"
@@ -48,5 +48,5 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics:
+metrics: []
 #  - my_feature_metric
