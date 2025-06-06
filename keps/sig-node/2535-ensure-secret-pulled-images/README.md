@@ -738,13 +738,19 @@ the behavior of the pull policies will revert to the previous behavior.
 
 ###### What specific metrics should inform a rollback?
 
-If the feature gate is enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
-`image_pull_secret_recheck_hit` which are both histograms counting the number of images that had a cache miss/hit.
+Enabling the feature will make the kubelet expose several metrics:
+- each caching layers should provide the following:
+    - `<cache_name>_<pullintents/pulledrecords>_kept` gauge for the number of records (e.g. files, keys of a map)
+      that are kept in the cache
+    - `<cache_name>_<pullintents/pulledrecords>_get_requests_total` counter for the number of `Get()` requests
+    - `<cache_name>_<pullintents/pulledrecords>_get_requests_miss` counter for the number of cache misses for the `Get()` operation
+- the `present_image_access_requests_total` counter tracks access requests for images that were already
+  present on the kubelet's node
+- the `present_image_access_requests_reverify` counter tracks the number of requests for images that are present on
+  the kubelet's node but were required to go through the credential reverification process
 
-This will allow an admin to see how many images have authorization checks done.
-
-A histogram was chosen to allow an admin to compare registry uptime with cache misses, as the main failure scenerio is registry unavailability
-could cause pods not to come up, because the kubelet doesn't have credentials cached.
+This will allow an admin to see how many reverification checks are being requested for existing images and how
+many requests make it all the way to the persistent cache.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -758,25 +764,24 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-When the feature is enabled, the kubelet will emit a metric `image_pull_secret_recheck_miss` and `image_pull_secret_recheck_hit` that will happen when a cache miss happens.
-This will happen regardless of whether the feature is enabled in the kubelet via its configuration flag.
+When the feature is enabled, the kubelet will emit metrics `present_image_access_requests_total` and `present_image_access_requests_reverify`.
 
-To determine if the feature is actually working, they will have to check manually.
+Admins can also check the node's filesystem, where a directory `image_manager` with subdirectories
+`pulling` and `pulled` should be present in the kubelet's main directory.
 
-A user could check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
-using the pull if not present image pull policy.
-
-It also will show up as network events. Though only the manifests will be revalidated against the container image repository,
-large contents will not be pulled. Thus one could monitor traffic to the registry.
+If the feature was used by at least one workload that successfully started and is running a container with
+a non-preloaded image (based on the policy), they should be able to find a file with a matching record of a
+pulled image in the `<kubelet dir>/image_manager/pulled` directory at the node that
+is running the workload's pod. The filename structure for these directories is described
+in [Cache Directory Structure](#cache-directory-structure).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Can test for an image pull failure event coming from a second pod that does not have credentials to pull the image
-where the image is present and the image pull policy is if not present.
+Users are able to observe events in case workloads in their namespaces
+were successfully able to retrieve an image that was previously pulled to a node.
 
 - [x] Events
-  - Event Reason: "kubelet  Failed to pull image" ... "unexpected status code [manifests ...]: 401 Unauthorized"
-
+  - Event message: "Container image ... already present on machine **and can be accessed by the pod**"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -788,7 +793,11 @@ TBD
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-TBD needed for Beta
+Exposing the size of memory that is allocated for the in-memory cache and all its
+items would be a non-trivial task but it would help us with considerations about
+how to structure the in-memory cache for a common production cluster.
+
+This missing metric should be replaced by using memory profiling during development.
 
 ### Dependencies
 
@@ -845,7 +854,8 @@ Reduce the number of cache misses (as seen through the metrics) by ensuring simi
 
 ## Implementation History
 
-TBD
+- [x] 2024-10-08 - Reworked version of the KEP merged, accepted as implementable
+- [x] 2025-03-17 - Alpha implementation merged - https://github.com/kubernetes/kubernetes/pull/128152
 
 ## Drawbacks [optional]
 
@@ -863,4 +873,4 @@ ensure the image instead of kubelet.
 
 ## Infrastructure Needed [optional]
 
-TBD
+--
