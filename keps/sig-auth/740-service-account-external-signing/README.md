@@ -24,7 +24,6 @@
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -50,20 +49,20 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] ~~e2e Tests for all Beta API Operations (endpoints)~~ no API endpoints
+  - [ ] ~~(R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)~~ no API endpoints
+  - [ ] ~~(R) Minimum Two Week Window for GA e2e tests to prove flake free~~ no API endpoints
+- [x] (R) Graduation criteria is in place
+  - [ ] ~~(R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)~~ no API endpoints
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -142,9 +141,9 @@ A new versioned grpc API (ExternalJWTSigner) will be created under `k8s.io/kuber
 #### Support for Legacy Tokens
 
 Implementers will have following options for legacy token support:
-1. Let the Controller loop run as it is with static signing keys. Stitch the public keys in external signer's JWKs.
-2. Turn off the loop (don't support legacy tokens) if external signing is enabled.
-3. Create a custom external signer for legacy tokens using Controller loop from staging repo (This option will only be available if demanded by Community as part of feedback for Beta graduation).
+1. Turn off the loop (don't support legacy tokens) if external signing is enabled. (recommended to avoid non-expiring tokens)
+2. Let the Controller loop run as it is with static signing keys. Stitch the public keys in external signer's JWKs.
+3. Turn off the loop in kube-controller-manager and create a custom external signer for legacy tokens that obtains them via the external signer.
 
 ### Risks and Mitigations
 
@@ -280,12 +279,11 @@ to implement this enhancement.
 ##### Integration tests
 
 - Create a cluster with ExternalJWTSigner to configure an external signer and verify TokenRequest and TokenReview APIs work properly.
-
-##### e2e tests
-
-- Create a cluster with ExternalJWTSigner configured.
 - Request a token for a service account principal.
 - Use a token as bearer for making requests to kube-apiserver and ensure it succeeds.
+
+- [TestExternalJWTSigningAndAuth](https://github.com/kubernetes/kubernetes/blob/8aae5398b3885dc271d407c4d661e19653daaf88/test/integration/serviceaccount/external_jwt_signer_test.go#L46C6-L46C35): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=serviceaccount), [triage search](https://storage.googleapis.com/k8s-triage/index.html?job=integration&test=serviceaccount)
+- [TestDelayedStartForSigner](https://github.com/kubernetes/kubernetes/blob/8aae5398b3885dc271d407c4d661e19653daaf88/test/integration/serviceaccount/external_jwt_signer_test.go#L282): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=serviceaccount), [triage search](https://storage.googleapis.com/k8s-triage/index.html?job=integration&test=serviceaccount)
 
 ### Graduation Criteria
 
@@ -296,13 +294,15 @@ to implement this enhancement.
 
 #### Beta
 
-- E2E tests are completed.
-- We have at least one ExternalSigner implementation working with this change.
+- All tests are completed.
+- We have at least one ExternalSigner integration working with this change.
+  - GKE integration is complete
 - Decide whether to externalize legacy token controller code in a staging repo. Check [Support for Legacy Tokens](#support-for-legacy-tokens) for details.
+  - Decided not to externalize legacy token controller code
 
 #### GA
 
-- More than one ExternalSigner implementations are completed.
+- More than one ExternalSigner integration are completed.
 - Feature is tuned with feedback from distributions.
 
 ### Upgrade/Downgrade Strategy
@@ -425,10 +425,13 @@ No.
 
 The Feature would not be used by workload directly but will be used by kube-apiserver.
 
-The usage should be visible to the operator using Audit logs.
-<!-- TODO 
-  Add details on increasing audit log surface area for External signers
--->
+The usage should be visible to the operator via these metrics:
+
+- apiserver_externaljwt_fetch_keys_data_timestamp
+- apiserver_externaljwt_fetch_keys_request_total
+- apiserver_externaljwt_fetch_keys_success_timestamp
+- apiserver_externaljwt_request_duration_seconds
+- apiserver_externaljwt_sign_request_total
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -440,16 +443,25 @@ The usage should be visible to the operator using Audit logs.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!-- TODO
-Needs Benchmarking on SLIs.
--->
+It is expected that external `Sign` request durations will be dominated by the external signer implementation.
+Instrumenting processing time of your external signer implementation is recommended.
+
+Experimentally, the gRPC overhead adds about 1ms to a TokenRequest, comparing the in-tree kube-apiserver
+service account token signer with a stub external signer still doing local signing.
+
+The `apiserver_externaljwt_request_duration_seconds{method=Sign,code=OK}` metrics
+are expected to be within 1-10ms of the external signer processing time.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: `apiserver_request_total` and `apiserver_request_duration_seconds`
-  - Aggregation method:  aggregate over `job="kubernetes-apiservers",group="", version="v1",resource="serviceaccounts",subresource="token"`
-  - Components exposing the metric: kube-apiserver
+    - Aggregation method:  aggregate over `job="kubernetes-apiservers",group="", version="v1",resource="serviceaccounts",subresource="token"`
+    - Components exposing the metric: kube-apiserver
+  - Metric name: `apiserver_externaljwt_sign_request_total`
+    - Components exposing the metric: kube-apiserver
+  - Metric name: `apiserver_externaljwt_request_duration_seconds`
+    - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -467,7 +479,6 @@ Needs Benchmarking on SLIs.
   - if `--service-account-extend-token-expiration` is set, then the token lifetimes in the cluster will be min(max token lifetime supported by ExternalJWTSigner, 1 year).
   - It is the integrator's responsibility to ensure that their ExternalJWTSigner implementation support signing tokens with 1 year validity i.e. if their clusters are relying on extended token lifetimes.
   - integrators can observe the `serviceaccount_stale_tokens_total` metric to confirm their cluster's reliance on `--service-account-extend-token-expiration`.
-
 
 ### Dependencies
 
@@ -550,16 +561,38 @@ not likely.
 
 ### Troubleshooting
 
-<!-- TODO
-This section must be completed when targeting beta to a release.
+Symptom: kube-apiserver will not start with `--service-account-signing-endpoint` set
 
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
+- check the kube-apiserver log for details about why startup failed
+- ensure the socket `--service-account-signing-endpoint` points to is valid,
+  the kube-apiserver user has permissions to access it, and the external signer is running
+- ensure `--service-account-signing-key-file` and `--service-account-key-file` are not also set
+- ensure the external signer supports the version of the externaljwt gRPC API kube-apiserver is using
+- ensure the maximum supported token lifetime returned by the external signer does not conflict with any
+  `--service-account-max-token-expiration` flag (the flag may not be longer than the max expiration supported by the external signer)
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+Symptom: token creation fails with `500` errors
+
+- check `apiserver_externaljwt_sign_request_total` metrics for codes other than `OK` to determine if signing failures are the cause
+- if signing requests are failing with `CANCELLED` or `DEADLINE_EXCEEDED` codes,
+  check `apiserver_externaljwt_request_duration_seconds` metrics for timing distribution
+  of external signing requests with `method=Sign`. If external signing is causing request timeouts,
+  investigate improving the performance of your external signer integration.
+- check the kube-apiserver log for details about other signing failures
+
+Symptom: token use fails with authentication errors
+
+- check the `apiserver_externaljwt_fetch_keys_request_total` metrics for codes other than `OK`
+  to determine if verifying keys are failing to be fetched
+- check the `apiserver_externaljwt_fetch_keys_success_timestamp` metric to determine the 
+  last time public keys were successfully refreshed. If this exceeds the expected `refresh_hint_seconds`
+  value for your particular external signer integration, check `kube-apiserver` logs for details on why
+  the public key fetch is failing.
+- check the `apiserver_externaljwt_fetch_keys_data_timestamp` metric to determine the `data_timestamp`
+  reported by the external signer in the last successful fetch of public keys. Compare to the expected
+  value for your particular external signer integration to determine if `kube-apiserver` is using current
+  public keys. If this does not match, check your external signer for details on why it is not returning
+  the expected public keys to the `FetchKeys` method.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
@@ -567,18 +600,7 @@ feature is only accessible via kube-apiserver. JWT signing and authentication wi
 
 ###### What are other known failure modes?
 
-<!-- TODO
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      How can an operator troubleshoot without logging into a control plane or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until the feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+Covered above in the troubleshooting section.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -589,6 +611,10 @@ The improvement will likely need to happen on respective cloud-providers API. Co
 Initial PRs: 
 - kubernetes/kubernetes#73110
 - kubernetes/kubernetes#125177
+
+1.32: Alpha release
+
+1.34: Beta release
 
 ## Drawbacks
 
