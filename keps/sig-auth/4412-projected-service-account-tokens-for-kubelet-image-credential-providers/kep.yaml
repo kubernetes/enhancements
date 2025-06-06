@@ -29,5 +29,4 @@ feature-gates:
   components:
   - kube-apiserver
 disable-supported: true
-metrics:
-- "TODO"
+metrics: []
