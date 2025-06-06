@@ -706,7 +706,7 @@ There is an existing e2e test for kubelet credential providers using gcp credent
 
 As part of alpha implementation, the [e2e test has been updated](https://github.com/kubernetes/kubernetes/commit/2090a01e0a495301432276216bbf9af102fc431c) to cover the new credential provider configuration and the new behavior of the kubelet when the `TokenAttributes` field is set.
 
-We created a symlink to the existing gcp credential provider executable with a different name to use for testing service account token for credential provider. The credential provider has been updated to validate the following when plugin is run in service account token mode:\
+We created a symlink to the existing gcp credential provider executable with a different name to use for testing service account token for credential provider. The credential provider has been updated to validate the following when plugin is run in service account token mode:
 
 1. Check the required annotations are sent as part of the `CredentialProviderRequest.ServiceAccountAnnotations` field.
 2. Check the service account token is sent as part of the `CredentialProviderRequest.ServiceAccountToken` field.
@@ -886,36 +886,12 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ServiceAccountTokenForKubeletCredentialProviders`
+  - Feature gate name: `KubeletServiceAccountTokenForCredentialProviders`
   - Components depending on the feature gate: kubelet
-
-```go
-FeatureSpec{
-  Default: false,
-  LockToDefault: false,
-  PreRelease: featuregate.Alpha,
-}
-```
-
-```go
-FeatureSpec{
-  Default: true,
-  LockToDefault: false,
-  PreRelease: featuregate.Beta,
-}
-```
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `ServiceAccountNodeAudienceRestriction`
   - Components depending on the feature gate: kube-apiserver
-
-```go
-FeatureSpec{
-  Default: true,
-  LockToDefault: false,
-  PreRelease: featuregate.Beta,
-}
-```
 
 ###### Does enabling the feature change any default behavior?
 

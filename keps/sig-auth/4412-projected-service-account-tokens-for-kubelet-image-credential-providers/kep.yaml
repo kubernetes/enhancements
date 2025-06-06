@@ -22,7 +22,7 @@ milestone:
   alpha: "v1.33"
   beta: "v1.34"
 feature-gates:
-- name: ServiceAccountTokenForKubeletCredentialProviders
+- name: KubeletServiceAccountTokenForCredentialProviders
   components:
   - kubelet
 - name: ServiceAccountNodeAudienceRestriction
