@@ -173,7 +173,6 @@ Job names:
 
 - Solicit feedback from the Alpha.
 - Ensure tests are stable and passing.
-- Add monitor for pods that fail due to using enhancements.
 
 #### GA
 
@@ -320,6 +319,9 @@ No
 \- 2024-08-26: Promote to beta
 
 \- 2024-08-27: Fixed some errors in the beta phase
+
+\- 2025-06-03: Promote to GA
+
 
 ## Drawbacks
 
