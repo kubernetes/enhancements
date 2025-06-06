@@ -686,7 +686,12 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-This feature is fully tested with unit and e2e tests.
+This kubelet feature is fully tested with unit and e2e tests.
+
+For the node audience restriction changes in KAS, integration tests were added as part of the [implementation in v1.32 release](https://github.com/kubernetes/kubernetes/pull/128077).
+
+- [test/integration/auth/node_test.go](https://github.com/kubernetes/kubernetes/blob/master/test/integration/auth/node_test.go)
+- [triage history](https://storage.googleapis.com/k8s-triage/index.html?text=TestNodeRestrictionServiceAccountAudience&test=test%2Fintegration%2Fauth)
 
 ##### e2e tests
 
