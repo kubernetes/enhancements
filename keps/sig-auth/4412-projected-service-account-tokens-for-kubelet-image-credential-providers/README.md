@@ -1074,6 +1074,10 @@ The kubelet will retry whenever it attempts to pull an image, but until then, ku
 the registry and pull images. The SLO for successfully invoking exec plugins should be based on the SLO for successfully
 pulling images for the container registry in question.
 
+The SLOs defined in [Pod startup latency SLI/SLO details](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md) 
+don't apply to this feature because image pull SLI is explicitly excluded from the pod startup latency SLI/SLO. However, if the kubelet is unable to
+pull images due to misconfiguration of the credential provider plugin, it will result in pod startup failures.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
