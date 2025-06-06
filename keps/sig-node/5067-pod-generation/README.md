@@ -457,12 +457,13 @@ regressions back to decreasing values.
 
 #### Mirror pods
 
-The kubelet currently computes the internal pod UID of a mirror pod using a hash of the podspec, 
-meaning that any update to the podspec results in the kubelet seeing it as a pod deletion followed 
-by creation of a new pod. To fully support generation for mirror pods more changes to the kubelet's logic 
-will be expected. For now, we will not treat mirror pods in any special way. This means that due
-to the way that mirror pods are implemented, the generation (and observedGeneration) of a mirror pod 
-will always be 1.
+For this KEP, we will not treat mirror pods in any special way. Due to the way they are currently implemented in the
+kubelet and apiserver, this means two things:
+
+1. If a mirror pod's spec is modified manually, its `metadata.generation` will be bumped accordingly.
+2. The kubelet does not currently propagate the mirror pod's `metadata.generation` to the place where
+the pod status is updated today, so the `observedGeneration` fields of mirror pods will remain
+unpopulated.
 
 #### Future enhancements
 
