@@ -10,12 +10,11 @@ participating-sigs:
 status: implementable 
 creation-date: 2024-08-23
 reviewers:
-  - "@ffromani"
   - "@kannon92"
   - "@kad"
 approvers:
+  - "@ffromani"
   - "@klueska" 
-  - "@sig-node-leads"
 
 see-also: 
   - keps/sig-node/2625-cpumanager-policies-thread-placement"
