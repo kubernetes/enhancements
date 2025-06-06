@@ -338,6 +338,7 @@ Two implementations are provided:
 * Passes through all pods that match the label selector
 * Maintains existing behavior for backward compatibility
 `OwnerReferencesFilter`:
+
 * Validates pod ownership through reference chain
 * Only includes pods that are owned by the target workload
 * Handles different workload types (Deployments, StatefulSets, etc.)
@@ -407,8 +408,9 @@ This enhancement applies consistently across the following supported metric type
 
 - Resource metrics (e.g., CPU, memory)
 - Container resource metrics
-- Object metrics
+- Object metrics (only when Value type is selected with `spec.metrics.object.target.value`)
 - Pods metrics
+- External metrics (only when Value type is selected with `spec.metrics.external.target.value`)
 
 Reference: [Kubernetes HPA metric types](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics)
 
