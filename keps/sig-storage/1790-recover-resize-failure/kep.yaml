@@ -21,12 +21,13 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "v1.32"
-stage: "alpha"
+latest-milestone: "v1.34"
+stage: "stable"
 
 milestone:
   alpha: "v1.23"
   beta: "v1.32"
+  stable: "v1.34"
 
 feature-gates:
   - name: RecoverVolumeExpansionFailure
