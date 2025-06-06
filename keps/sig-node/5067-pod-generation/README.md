@@ -554,6 +554,8 @@ E2E tests will be implemented to cover the following cases:
 * Verify that deletion of a pod causes the `metadata.generation` to be incremented by 1.
 * Issue ~500 pod updates (1 every 100ms) and verify that `metadata.generation` and `status.observedGeneration` converge to the final expected value.
 * Verify that various conditions each have `observedGeneration` populated. 
+* Verify that static pods have `metadata.generation` and `observedGeneration` fields set to 1, and that
+they never change.
 
 Added tests:
 - https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pods.go#L422-L719
@@ -633,11 +635,11 @@ in back-to-back releases.
 * `metadata.generation` functionality implemented
 * `status.observedGeneration` functionality implemented behind feature flag
 * `status.conditions[i].observedGeneration` field added to the API
+* `status.conditions[i].observedGeneration` functionality implemented behind feature flag
 
 #### Beta
 
 * `metadata.generation`,  `status.observedGeneration`,  `status.conditions[i].observedGeneration` functionality have been implemented and running as alpha for at least one release
-* `status.conditions[i].observedGeneration` functionality implemented behind feature flag
 
 #### GA
 
@@ -903,7 +905,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-They can check if `metadata.generation` is set on the pod. 
+They can check if `metadata.generation` is set on the pod and that `observedGeneration`
+is being updated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1136,6 +1139,9 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 Other failure modes are described under Risks and Mitigations.
+
+Detection and mitigation of the infinite status-update loop by a badly-behaving
+admission webhook is covered in these docs: https://kubernetes.io/docs/concepts/cluster-administration/admission-webhooks-good-practices/#why-good-webhook-design-matters.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
