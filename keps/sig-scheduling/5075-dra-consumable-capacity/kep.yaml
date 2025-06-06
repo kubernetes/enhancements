@@ -1,0 +1,52 @@
+title: "DRA Consumable Capacity"
+kep-number: 5075
+authors:
+  - "@sunya-ch"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-network
+status: implementable
+creation-date: 2025-30-01
+reviewers:
+  - "@johnbelamaric"
+  - "@catblade"
+  - "@pohly"
+  - "@dom4ha"
+  - "@LionelJouin"
+  - "@liggitt"
+approvers:
+  - "@dom4ha"
+
+see-also:
+  - "/keps/sig-scheduling/4815-dra-partitionable-devices"
+  - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-scheduling/5007-device-attach-before-pod-scheduled"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.34"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.34"
+  beta: "v1.35"
+  stable: "v1.36"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DRAConsumableCapacity
+    components:
+      - kube-scheduler
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
+#  - my_feature_metric
