@@ -771,7 +771,7 @@ The below rules are currently implemented or are very similar to an existing val
     list map item reference (virtual field)
    </td>
    <td style="background-color: null">
-    `+k8s:listMapItem(pairs: [[key,value],...])`
+    `+k8s:listMapItem(list-map-key-field-name: value,...])`
    </td>
    <td style="background-color: null">
     N/A
@@ -1159,8 +1159,8 @@ type CertificateSigningRequestStatus struct {
     // +k8s:optional
     // +k8s:listType=map
     // +k8s:listMapKey=type
-    // +k8s:listMapItem([["type","Approved"]])=+k8s:immutable
-    // +k8s:listMapItem([["type","Denied"]])=+k8s:immutable
+    // +k8s:listMapItem(type: "Approved")=+k8s:immutable
+    // +k8s:listMapItem(type: "Denied")=+k8s:immutable
     Conditions []CertificateSigningRequestCondition `json:"conditions,omitempty"`
 }
 ```
@@ -1261,8 +1261,8 @@ type Config struct {
     // +k8s:listType=map
     // +k8s:listMapKey=type
     // +k8s:union(union: terminalStatus)
-    // +k8s:listMapItem([["type","Succeeded"]])=+k8s:memberOf(group: terminalStatus)
-    // +k8s:listMapItem([["type","Failed"]])=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem(type: "Succeeded")=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem(type: "Failed")=+k8s:memberOf(group: terminalStatus)
     Conditions []Condition `json:"conditions"`
 }
 
@@ -1321,8 +1321,8 @@ type Config struct {
     // +k8s:listType=map
     // +k8s:listMapKey=type
     // +k8s:union(union: terminalStatus)
-    // +k8s:listMapItem([["type","Succeeded"]])=+k8s:memberOf(group: terminalStatus)
-    // +k8s:listMapItem([["type","Failed"]])=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem(type: "Succeeded")=+k8s:memberOf(group: terminalStatus)
+    // +k8s:listMapItem(type: "Failed")=+k8s:memberOf(group: terminalStatus)
     Conditions []Condition `json:"conditions"`
 }
 
