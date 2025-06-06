@@ -898,6 +898,16 @@ well as the [existing list] of feature gates.
   - Feature gate name: `ServiceAccountNodeAudienceRestriction`
   - Components depending on the feature gate: kube-apiserver
 
+The purpose of the two feature gates is different, which is why they weren't named similarly.
+
+The `KubeletServiceAccountTokenForCredentialProviders` feature gate is used to enable the kubelet to use service account tokens for image pull in the kubelet credential provider.
+
+The `ServiceAccountNodeAudienceRestriction` feature gate is used to enable the kube-apiserver to validate the audience of the service account token requested by the kubelet. The feature gate in the Kubernetes API Server (KAS) was introduced to strictly enforce which audiences the kubelet can request tokens for. Before this change, the kubelet could request a token with any audience. With the feature gate enabled, the API server starts validating the requested audience.
+
+The KAS feature gate doesn't need to be enabled for the kubelet feature to work. It graduated to beta in v1.32 and is enabled by default. The two are unrelated in functionality, but the KAS gate was necessary to ensure strict enforcement of the allowed audiences the kubelet can request tokens for.
+
+If the KAS feature gate is not enabled, there will be no validation of the audience requested by the kubelet, and the kubelet will be able to request tokens for any audience. This is not recommended.
+
 ###### Does enabling the feature change any default behavior?
 
 <!--
@@ -1039,6 +1049,8 @@ Users can observe events for successful image pulls that use the service account
 
 - [x] Events
   - Event Reason: " Successfully pulled image "xxx" in 11.877s (11.877s including waiting). Image size: xxx bytes."
+
+For registries or images configured to be pulled using a credential provider with a service account, a successful image pull seems to be the only way to confirm that it's working. If the credential provider is misbehaving, the kubelet will not be able to authenticate to the registry and pull images, which will result in image pull errors.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
