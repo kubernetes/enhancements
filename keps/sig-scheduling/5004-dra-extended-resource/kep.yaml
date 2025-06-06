@@ -12,7 +12,7 @@ reviewers:
   - "@johnbelamaric"
   - "@pohly"
 approvers:
-  - "@mrunalp" # SIG-Node
+  - "@sergeykanzhelev" # SIG-Node
   - "@dom4ha" # SIG-Scheduling
   - "@liggitt" # API Review
 
