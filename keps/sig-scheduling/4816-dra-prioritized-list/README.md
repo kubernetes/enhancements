@@ -1033,7 +1033,7 @@ they are all local to the control plane.
 
 ### Version Skew Strategy
 
-The `ResourceClaim` API in the `DeviceRequest` object has two fields, `Exacty` which
+The `ResourceClaim` API in the `DeviceRequest` object has two fields, `Exactly` which
 is used to specify a single device request, and `FirstAvailable` that lets users
 specify the prioritized list of device requests. These are a one-off, so every
 valid `DeviceRequest` must specify one and only one of these two fields.
