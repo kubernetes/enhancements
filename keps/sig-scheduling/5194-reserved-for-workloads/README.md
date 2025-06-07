@@ -177,7 +177,7 @@ KEP, the hard limit on the number of pods will be removed.
 Training workloads that uses TPUs can be very large, requiring over 9,000
 TPUs for a single training job. The number of TPUs for each node is usually 4, meaning
 that the job will run across more than 2,000 nodes. Due to topology constraints, TPU slices
-are usually modelled in DRA as multi-host devices, meaning that a single DRA device
+are usually modeled in DRA as multi-host devices, meaning that a single DRA device
 can represent thousands of TPUs. As a result, all pods running the workload will
 therefore share a single ResourceClaim. The current limit of 256 pods sharing a
 ResourceClaim is therefore too low.
@@ -237,7 +237,7 @@ provide guidance as to what is a safe number.
 The `ReservedFor` field on the `ResourceClaimStatus` is currently used for two purposes:
 
 #### Deallocation
-Devices are allocated to `ResourceClaim`s when the first pod referencing the claim is
+Devices are allocated to a `ResourceClaim` when the first pod referencing the claim is
 scheduled. Other pods can also share the `ResourceClaim` in which case they share the
 devices. Once no pods are consuming the claim, the devices should be deallocated to they
 can be allocted to other claims. The `ReservedFor` list is used to keep track of pods
@@ -256,7 +256,7 @@ controller to find pods that are using the ResourceClaim:
 1. The DRA scheduler plugin uses the list to find claims that have zero or only
    a single pod using it, and is therefore a candidate for deallocation in the `PostFilter` function.
 
-1. The device_taint_eviction controller uses the `ReservedFor` list to find the pods that needs to be evicted
+1. The device_taint_eviction controller uses the `ReservedFor` list to find the pods that need to be evicted
    when one or more of the devices allocated to a ResourceClaim is tainted (and the ResourceClaim
    does not have a toleration).
 
@@ -284,6 +284,9 @@ type ResourceClaimSpec struct {
   // ResourceClaim to remove the reference from the status.ReservedFor list when there
   // are no longer any pods consuming the claim.
   //
+  // Most user-created ResourceClaims should not set this field. It is more typically
+  // used by ResourceClaims created and managed by controllers.
+  //
   // +featureGate=DRAReservedForWorkloads
   // +optional
   ReservedFor *ResourceClaimConsumerReference
@@ -303,7 +306,7 @@ type AllocationResult struct {
 }
 ```
 
-The `ResourceClaimConsumerReference type already exists:
+The `ResourceClaimConsumerReference` type already exists:
 
 ```go
 // ResourceClaimConsumerReference contains enough information to let you
@@ -345,21 +348,24 @@ list, it will not add a reference to the pod.
 
 ##### Deallocation
 The resourceclaim controller will remove Pod references from the `ReservedFor` list just
-like it does now, but it will never remove references to non-Pod resources. Instead, it
-will be the responsibility of the controller/user that created the `ResourceClaim` to
-remove the reference to the non-Pod resource from the `ReservedFor` list when no pods
+like it does now using the same logic. For non-Pod references, the controller will recognize
+a small number of built-in types, starting with `Deployment`, `StatefulSet` and `Job`, and will
+remove the reference from the list when those resources are removed. For other types,
+it will be the responsibility of the workload controller/user that created the `ResourceClaim`
+to remove the reference to the non-Pod resource from the `ReservedFor` list when no pods
 are consuming the `ResourceClaim` and no new pods will be created that references
 the `ResourceClaim`.
 
 The resourceclaim controller will then discover that the `ReservedFor` list is empty
 and therefore know that it is safe to deallocate the `ResourceClaim`.
 
-This requires that the controller/user has permissions to update the status
-subresource of the `ResourceClaim`. The resourceclaim controller will also try to detect if
-the resource referenced in the `ReservedFor` list has been deleted from the cluster, but
-that requires that the controller has permissions to get or list resources of the type. If the
-resourceclaim controller is not able to check, it will just wait until the reference in
-the `ReservedFor` list is removed.
+This requires that the resourceclaim controller watches the workload types that will
+be supported. For other types of workloads, there will be a requirement that the workload
+controller has permissions to update the status subresource of the `ResourceClaim`. The
+resourceclaim controller will also try to detect if an unknown resource referenced in the
+`ReservedFor` list has been deleted from the cluster, but that requires that the controller
+has permissions to get or list resources of the type. If the resourceclaim controller is
+not able to check, it will just wait until the reference in the `ReservedFor` list is removed.
 
 ##### Finding pods using a ResourceClaim
 If the reference in the `ReservedFor` list is to a non-Pod resource, controllers can no longer
@@ -444,11 +450,17 @@ Additional e2e tests will be added to verify the behavior added in this KEP.
 - Gather feedback from developers and surveys
 - Additional tests are in Testgrid and linked in KEP
 - Performance impact of the feature has been measured and found to be acceptable
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
 
 #### GA
 
-- 3 examples of real-world usage
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
 - [conformance tests]
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
@@ -531,8 +543,13 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Applications that were already running will continue to run and the allocated
+Applications that were already running will continue to run and the allocated
 devices will remain so.
+For the resource types supported directly, the resource claim controller will not remove the
+reference in the `ReservedFor` list, meaning the devices will not be deallocated. If the workload
+controller is responsible for removing the reference, deallocation will work as long as the
+feature isn't also disabled in the controllers. If they are, deallocation will not happen in this
+situation either.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -715,7 +732,8 @@ No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 It might require some additional memory usage in the resourceclaim controller since it will need to keep an index
-of ResourceClaim to Pods.
+of ResourceClaim to Pods. The resourceclaim controller will also have watches for Deployments, StatefulSets, and
+Jobs which might also cause a slight increase in memory usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
