@@ -419,7 +419,7 @@ the metric generation configuration as follows (please note that the schema is
 fast-moving at this point and may be subject to change:
 
 ```yaml
-stores: # Set of metrics stores for each CR we want to generate metrics for.
+generators: # Set of metrics stores for each CR we want to generate metrics for.
   - group: "contoso.com" # CR's group.
     version: "v1alpha1"    # CR's version.
     # Both kind and resource names are required to avoid plural ambiguities, see
