@@ -508,19 +508,19 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-Tests are present in several subproject repos and third party repos:
-- https://github.com/kubernetes-sigs/kind/blob/v0.17.0/.github/workflows/cgroup2.yaml#L24
-- https://github.com/kubernetes/minikube/blob/v1.29.0/.github/workflows/pr.yml#L293-L410
-- https://github.com/k3s-io/k3s/blob/v1.26.1+k3s1/.github/workflows/cgroup.yaml#L92-L99
-- https://github.com/rootless-containers/usernetes/blob/v20221007.0/.cirrus.yml
+See [e2e tests](#e2e-tests) below.
 
-Tests will be added to `kubernetes/test-infra` as well when the [`k8s-infra-prow-build`](https://github.com/kubernetes/k8s.io/blob/a071c4ed0823f193ee29e2f14e191be42dc1a1f0/infra/gcp/terraform/k8s-infra-prow-build/main.tf#L78) cluster
-is upgraded to use cgroup v2.
-This will probably automatically happen when [GKE bumps up their "regular" channel to Kubernetes v1.26 or later](https://cloud.google.com/kubernetes-engine/docs/how-to/node-system-config).
+Additional tests are present in several subproject repos and third party repos:
+- https://github.com/kubernetes-sigs/kind/blob/v0.29.0/.github/workflows/vm.yaml#L24
+- https://github.com/kubernetes/minikube/blob/v1.36.0/.github/workflows/pr.yml#L299-L415
+- https://github.com/k3s-io/k3s/blob/v1.33.1%2Bk3s1/.github/workflows/e2e.yaml#L56
+- https://github.com/rootless-containers/usernetes/blob/gen2-v20250501.0/.github/workflows/main.yaml
+  - Covers multi-node clusters with Flannel (VXLAN)
+  - Covers several host distributions (Ubuntu, CentOS Stream, and Fedora)
 
 ##### Prerequisite testing updates
 
@@ -550,7 +550,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+N/A, as unit tests do not make sense here.
 
 ##### Integration tests
 
@@ -576,7 +576,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+N/A, as integration tests do not make sense here.
 
 ##### e2e tests
 
@@ -595,7 +595,31 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+`NodeConformance` tests are executed using [kubetest2-kindinv](https://github.com/rootless-containers/kubetest2-kindinv).
+
+"kindinv" stands for "Kubernetes in (Rootless) Docker in (GCE) VM".
+GCE VM is used for enabling systemd that is required by Rootless Docker to set up cgroup v2.
+
+```bash
+exec kubetest2 kindinv \
+  --boskos-location=http://boskos.test-pods.svc.cluster.local \
+  --gcp-zone=us-central1-b \
+  --instance-image=ubuntu-os-cloud/ubuntu-2204-lts \
+  --instance-type=n2-standard-4 \
+  --kind-rootless \
+  --user=rootless \
+  --build \
+  --up \
+  --down \
+  --test=ginkgo \
+  -- \
+  --focus-regex='\[NodeConformance\]' \
+  --skip-regex='\[Environment:NotInUserNS\]|\[Slow\]' \
+  --parallel=8
+```
+
+- Prow manifest: https://github.com/kubernetes/test-infra/blob/4b7824ff1cfe00c36062035ab6aea3bb6c2e6ba2/config/jobs/kubernetes/sig-testing/kubernetes-kind.yaml#L615-L678
+- Logs: https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/ci-kubernetes-e2e-kind-rootless
 
 ### Graduation Criteria
 
@@ -676,9 +700,7 @@ in back-to-back releases.
 
 - Beta: e2e tests coverage.
   Requires [the cgroup v2 KEP](../20191118-cgroups-v2.md ) to reach Beta or GA.
-  To move to beta, we need clarity if we intend to define two separate types of conformance suites:
-  - kubernetes clusters that can run privileged workloads
-  - kubernetes cluster that are restricted to run unprivileged workloads only
+  The tests are covered by `NodeConformance` tests (see above).
 
 - GA: Assuming no negative user feedback based on production experience, promote after >= 2 releases in beta.
   Requires [the cgroup v2 KEP](../20191118-cgroups-v2.md ) to reach GA.
@@ -783,7 +805,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-During Alpha, we will document what workloads will work and what will not work.
+The limitation is same as Rootless Docker, Podman, etc.
+See <https://rootlesscontaine.rs/caveats/>.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -819,8 +842,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-CI will run `kind` (Kubernetes in Docker) tests with Rootless Docker/Podman.
-Tests with a real cluster will be added later as well.
+Yes. See [Test Plan](#test-plan).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -893,8 +915,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
+- [X] Events
+  - Event Reason:  No CrashLoopBackOff
 - [ ] API .status
   - Condition name: 
   - Other field: 
@@ -1139,6 +1161,7 @@ Major milestones might include:
 - 2019-11-19: @giuseppe submitted [cgroup v2 KEP](https://github.com/kubernetes/enhancements/pull/1370)
 - 2019-11-19: present KEP to SIG-node (cgroup v2 version)
 - 2020-07-07: the cgroup v2 support is in `implementable` status
+- 2021-08-04: Kubernetes v1.22 (Alpha)
 
 ## Drawbacks
 
