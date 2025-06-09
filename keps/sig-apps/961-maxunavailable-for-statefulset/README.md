@@ -169,7 +169,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-Consider the following scenarios:-
+Consider the following scenarios:
 
 1. My containers publish metrics to a time series system. If I am using a Deployment, each rolling
    update creates a new pod name and hence the metrics published by this new pod starts a new time series
