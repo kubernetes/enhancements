@@ -77,6 +77,7 @@
     - [Core Principles](#core-principles)
     - [Default Ratcheting Behavior](#default-ratcheting-behavior)
       - [Definition of Semantic Equivalence](#definition-of-semantic-equivalence)
+    - [Policy on Order-Sensitive List Validation](#policy-on-order-sensitive-list-validation)
     - [Ratcheting and Cross-Field Validation](#ratcheting-and-cross-field-validation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -1462,6 +1463,14 @@ The default mechanism handles common cases by skipping re-validation if a field 
 | Map values<br/>`mapType=atomic`      | -                                                              | (re)validate items which are not found (by key) in the old map                 | [Issue #131566](https://github.com/kubernetes/kubernetes/issues/131566) (Alignment needed)                     |
 
 **Note on Atomic Types:** The behavior for `structType=atomic` and `mapType=atomic` intentionally deviates from strict atomic re-validation. Only the specific sub-fields or key-value pairs *that were actually modified* are re-validated. This prioritizes user experience but requires alignment with CRD behavior (tracked in Issue #131566).
+
+#### Policy on Order-Sensitive List Validation
+
+The handling of `listtype=map` requires specific clarification. While its name implies order is irrelevant, the validation mechanism for native types re-validates a list if its elements are reordered.
+
+To ensure predictable behavior, the following rule applies: **all new declarative validation rules for list-type=map must be order-insensitive**.
+
+This requirement is enforced through vigilant code review  to reject any proposed rule that violates this principle.
 
 #### Ratcheting and Cross-Field Validation
 
