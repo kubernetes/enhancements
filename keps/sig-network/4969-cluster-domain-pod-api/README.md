@@ -108,10 +108,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [ConfigMap á la k3s](#configmap--la-k3s)
+  - [ConfigMap a la k3s](#configmap-a-la-k3s)
   - [Dedicated API Resource](#dedicated-api-resource)
   - [kubelet <code>/configz</code>](#kubelet-configz)
   - [Parsing <code>resolv.conf</code>](#parsing-resolvconf)
+  - [Exposing it directly over the Downward API](#exposing-it-directly-over-the-downward-api)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -910,7 +911,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### ConfigMap á la k3s {#alternative-configmap}
+### ConfigMap a la k3s
 
 The ConfigMap written by k3s[^prior-art-k3s] could be blessed, requiring that 
 all other distributions also provide it. However, this would require additional
@@ -920,12 +921,12 @@ Additionally, this would be problematic to query for: users would have to query
 it manually using the Kubernetes API (since ConfigMaps cannot be mounted across
 Namespaces), and users would require RBAC permission to query wherever it is stored.
 
-### Dedicated API Resource {#alternative-api}
+### Dedicated API Resource
 
-This roughly shares the arguments for/against as [the ConfigMap alternative](#alternative-configmap),
+This roughly shares the arguments for/against as [the ConfigMap alternative](#configmap-a-la-k3s),
 although it would allow more precise RBAC policy targeting.
 
-### kubelet `/configz` {#alternative-configz}
+### kubelet `/configz`
 
 The kubelet exposes a `/configz` endpoint which can be used to query its internal configuration.
 This currently contains the cluster domain name.
@@ -934,7 +935,7 @@ However, this is a diagnostic utility, not a stable, documented, and versioned
 API. Encouraging users to rely on it also ossifies the idea that it is a part 
 of the kubelet's static configuration.
 
-### Parsing `resolv.conf` {#alternative-resolvconf}
+### Parsing `resolv.conf`
 
 The kubelet adds the cluster domain to the containers' `/etc/resolv.conf` file.
 This could be parsed by users in order to guess the domain name.
@@ -945,7 +946,7 @@ mechanisms in the future, or disabled entirely.
 It also requires clients to guess which domain is the correct one, which could
 have false positives.
 
-### Exposing it directly over the Downward API {#alternative-downwardapi}
+### Exposing it directly over the Downward API
 
 A new type of Downward API could be added (alongside `fieldRef` and
 `resourceFieldRef`), which allows "direct" access to properties provided by the
