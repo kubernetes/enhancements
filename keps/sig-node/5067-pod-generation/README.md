@@ -646,6 +646,7 @@ in back-to-back releases.
 
 * No major bugs reported for three months. 
 * User feedback is green.
+* Promote the [primary e2e tests](https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pods.go#L422-L719) to Conformance.
 
 ### Upgrade / Downgrade Strategy
 
