@@ -177,8 +177,10 @@ Consider including folks who also work outside the SIG or subproject.
 Because of its interaction with authentication and credentials, particular attention in this design must be paid to security:
 
 * credentials leak: ClusterProfile, Controller configuration and Plugin configuration should never contain sensitive information
-* Plugin poisoning: supporting credentials provider plugins in a controller relies on trusting the plugin code itself. Particular attention must
-be provided by the user deploying a controller to make sure the plugin that they install are from trusted source as they will have access to the controller's identity.
+* Plugin poisoning: supporting credentials provider plugins in a controller relies on trusting the plugin itself and its path in the filesystem. Particular attention must
+be provided by the user deploying a controller to make sure the plugin that they install are from trusted source as they will have access to the controller's identity. In addition,
+the path of the plugin may be edited or hijacked by an attacker which would then sit in lieu of the normal plugin, allowing process execution by the controller's process.
+This risk is mitigated by the assumption that the pod's filesystem is private to it and that no lower-privileged (or separate) processes are able  to access it.
 
 Another risk is around AuthZ. This design doesn't cover the distribution of RBAC to multiple clusters and identifying what principal a controller can be identified as. This
 setup is currently left to the responsibility of the platform admin setting up the different clusters and controllers.
@@ -217,7 +219,9 @@ is not sensitive.
 The definition is as follows:
 ```
 type Credentials struct {
-  credentialProviders map[string]CredentialsConfig // mapping of credentials types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
+  // +listType=map
+  // +listMapKey=name
+  credentialProviders []CredentialsConfig // mapping of credentials types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
 }
 
 // CredentialsTypes defines the type of credentials that are accepted by the cluster. For example, GCP credentials (tokens that are understood by GCP's IAM) are designated by the string `google`.
@@ -225,6 +229,7 @@ type CredentialsType string
 
 // CredentialsConfig gives more details on data that is necessary to reach out the cluster for this kind of Credentials
 type CredentialsConfig struct {
+  Name string // name of the provider type
   Cluster *Cluster // Configuration to reach the cluster (endpoints, proxy, etc) // See following section for details.
 }
 ```
@@ -232,33 +237,34 @@ type CredentialsConfig struct {
 #### Cluster Data
 
 The Cluster structure for the exec defined in KEP 541, [implemented in k/k](https://github.com/kubernetes/kubernetes/blob/a34c07971b610eb33908a743eadb4c61beeecc50/staging/src/k8s.io/client-go/pkg/apis/clientauthentication/types.go#L73-L80) assumes the following:
+
 ```
 type Cluster struct {
 	// Server is the address of the kubernetes cluster (https://hostname:port).
-	Server string
+	Server string `json:"server"`
 	// TLSServerName is passed to the server for SNI and is used in the client to
 	// check server certificates against. If ServerName is empty, the hostname
 	// used to contact the server is used.
 	// +optional
-	TLSServerName string
+	TLSServerName string `json:"tls-server-name,omitempty"`
 	// InsecureSkipTLSVerify skips the validity check for the server's certificate.
 	// This will make your HTTPS connections insecure.
 	// +optional
-	InsecureSkipTLSVerify bool
+	InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
 	// CAData contains PEM-encoded certificate authority certificates.
 	// If empty, system roots should be used.
 	// +listType=atomic
 	// +optional
-	CertificateAuthorityData []byte
+	CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
 	// ProxyURL is the URL to the proxy to be used for all requests to this
 	// cluster.
 	// +optional
-	ProxyURL string
+	ProxyURL string `json:"proxy-url,omitempty"`
 	// DisableCompression allows client to opt-out of response compression for all requests to the server. This is useful
 	// to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on
 	// compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
 	// +optional
-	DisableCompression bool
+	DisableCompression bool `json:"disable-compression,omitempty"`
 	// Config holds additional config data that is specific to the exec
 	// plugin with regards to the cluster being authenticated to.
 	//
@@ -281,9 +287,8 @@ type Cluster struct {
 	// recommended as one of the prime benefits of exec plugins is that no secrets need
 	// to be stored directly in the kubeconfig.
 	// +optional
-	Config runtime.Object
-}
-```
+	Config runtime.RawExtension `json:"config,omitempty"`
+}```
 
 
 #### ClusterProfile Example
@@ -315,8 +320,8 @@ status:
 
 ### Configuring plugins in the controller
 
-Plugins are selected by a hardcoded string which represents the type of credentials that is expected by the cluster, for example, "google" for GKE Clusters.
-Thish allows the controller to attach a different binary name or path for the the binary.
+Plugins are selected by a string which represents the type of credentials that is expected by the cluster, for example, "google" for GKE Clusters.
+This allows the controller to attach a different binary name or path for the binary.
 
 It is expected that the library will have a mapping from its supported type of credentials to the expected binary to call. The library would be fed via a repeated flag `clusterprofile-creds-provider` for ease of use.
 The flag maps a credentials type to the associated binary and potential flags that should be passed. It cannot contain cluster-specific information (which is not known at that time).
@@ -605,33 +610,20 @@ previous answers based on experience in the field.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+The following metrics would be added into the library using plugins to help observability:
+
+* Number of Credential Obtention, categorized per plugin type, reply state
+* Latency to obtain credentials, categorized per plugin type
+*
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
+No risk.
 
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+It depends on ClusterProfile resources being available in the cluster for it to be useful.
+The dependency is indirect and without ClusterProfile this library is simply not needed.
 
 ### Scalability
 
@@ -652,7 +644,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A no use of etcd
+N/A; no use of etcd
 
 ###### What are other known failure modes?
 
@@ -692,16 +684,8 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+There are a couple alternatives to this plugin-based approach.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+N/A
