@@ -654,7 +654,7 @@ enhancement:
 - If we try to set this field, it will be silently dropped.
 - If the object with this field already exists, we maintain is as it is, but the controller
   will just ignore this field.
-- downgrade of kube-apiserver to a version with the feature flag was disabled, when the field was previously set - the field gets ignored by controller, and controller behaves as if the field is not set
+- downgrade of kube-apiserver to a version with the feature flag was disabled, when the field was previously set - the field gets ignored by apiserver, and controller behaves as if the field is not set
 - downgrade of kube-controller-manager to version with the feature flag disabled, when the field was previously set - the field gets ignored by controller, and controller behaves as if the field is not set
 - downgrade of either kube-apiserver or kube-controller-manager to a version with the feature flag was disabled, when the field was not set the behavior doesn't change
 
