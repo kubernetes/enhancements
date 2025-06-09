@@ -74,6 +74,11 @@
     - [Scale-Type Subresources](#scale-type-subresources)
     - [Streaming Subresources](#streaming-subresources)
   - [Ratcheting](#ratcheting)
+    - [Core Principles](#core-principles)
+    - [Default Ratcheting Behavior](#default-ratcheting-behavior)
+      - [Definition of Semantic Equivalence](#definition-of-semantic-equivalence)
+    - [Policy on Order-Sensitive List Validation](#policy-on-order-sensitive-list-validation)
+    - [Ratcheting and Cross-Field Validation](#ratcheting-and-cross-field-validation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -1421,10 +1426,57 @@ The streamed data does not require declarative validation, as it is not structur
 
 ### Ratcheting
 
-TODO: Document and explain how:
+As Kubernetes APIs evolve, validation rules change. To minimize disruption for users with existing objects created under older rules, declarative validation will incorporate **Validation Ratcheting**. This mechanism aims to selectively bypass new or changed validation rules during object updates (`UPDATE`, `PATCH`, `APPLY`) for fields that have not been modified from their previously persisted state.
 
-- Add general purpose ratcheting to automatically skip validation of unchanged fields
-- Catalog and handle complex cases where strict equality checks are not sufficient (lots of non-trivial cases exist today)
+#### Core Principles
+
+The design adheres to the following core principles:
+
+1.  **Stored data is considered valid:** Any object successfully persisted was once considered valid. Subsequent apiservers must not retroactively invalidate stored objects. (Implication: fixing validation bugs post-release is challenging).
+2.  **Unchanged fields do not cause update rejections:** An `UPDATE` operation must not fail validation due to fields that were not modified in that operation. (Rationale: HTTP 4xx errors imply a client request problem).
+3.  **Semantic deep-equal is always sufficient to elide re-validation:** Kubernetes API objects adhere to canonical semantic equivalence rules (`equality.Semantic.DeepEqual`). If a deserialized object satisfies that equivalence with its prior state, re-validation can be bypassed.
+    * **Subtle:** List elements might individually bypass re-validation, but the list itself might still be re-validated (e.g., if reordered).
+
+Ratcheting is the **default behavior** during `UPDATE` operations.
+
+#### Default Ratcheting Behavior
+
+The default mechanism handles common cases by skipping re-validation if a field hasn't changed based on semantic equivalence.
+
+##### Definition of Semantic Equivalence
+
+"Semantic equivalence" builds on `k8s.io/apimachinery/pkg/api/equality.Semantic.DeepEqual` (similar to `reflect.DeepEqual` but `nil` and empty slices/maps are equivalent). The table below outlines the behavior:
+
+| Value type                          | Semantic Equivalence                                           | Ratcheting                                                                     | CRD Comparison (KEP-4008)                                                                                           |
+| :---------------------------------- | :------------------------------------------------------------- | :----------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ |
+| Scalars (int, string, etc.)         | direct equality of the value                                   | revalidate the value if changed                                                | same                                                                                                                |
+| Pointers                            | equivalence of the pointee                                     | revalidate the value if changed                                                | same                                                                                                                |
+| Struct                              | all fields are equivalent                                      | revalidate the struct if any field changed                                     | same                                                                                                                |
+| Struct fields<br/>`structType=granular` | -                                                              | revalidate changed fields                                                      | same                                                                                                                |
+| Struct fields<br/>`structType=atomic`  | -                                                              | revalidate changed fields                                                      | [Issue #131566](https://github.com/kubernetes/kubernetes/issues/131566) (Alignment needed)                     |
+| Slices                              | all elements are equivalent and the is order unchanged         | revalidate the slice if any element changed or order changed                   | `listType=map`: no validate when re-order<br/>`listType=set`: re-validate when re-order<br/>`listType=atomic`: re-validate when re-order |
+| Slice values<br/>`listType=atomic`   | -                                                              | validate items which are not found (by value) in the old slice                 | Validate all elements (CRDs ratcheting may be expanded to match in-tree ratcheting)                                  |
+| Slice values<br/>`listType=map`      | -                                                              | (re)validate items which are not found (by key) in the old slice or are changed | same                                                                                                                |
+| Slice values<br/>`listType=set`      | -                                                              | validate items which are not found (by value) in the old slice                 | Validate all elements (CRDs ratcheting may be expanded to match in-tree ratcheting)                                  |
+| Maps                                | all elements are equivalent                                    | revalidate the map if any element changed                                      | same                                                                                                                |
+| Map values<br/>`mapType=granular`    | -                                                              | (re)validate items which are not found (by key) in the old map or are changed                | same                                                                                                                |
+| Map values<br/>`mapType=atomic`      | -                                                              | (re)validate items which are not found (by key) in the old map or are changed                | [Issue #131566](https://github.com/kubernetes/kubernetes/issues/131566) (Alignment needed)                     |
+
+**Note on Atomic Types:** The behavior for `structType=atomic` and `mapType=atomic` intentionally deviates from strict atomic re-validation. Only the specific sub-fields or key-value pairs *that were actually modified* are re-validated. This prioritizes user experience but requires alignment with CRD behavior (tracked in Issue #131566).
+
+#### Policy on Order-Sensitive List Validation
+
+The handling of `listtype=map` requires specific clarification. While its name implies order is irrelevant, the validation mechanism for native types re-validates a list if its elements are reordered.
+
+To ensure predictable behavior, the following rule applies: **all new declarative validation rules for list-type=map must be order-insensitive**.
+
+This requirement is enforced through vigilant code review  to reject any proposed rule that violates this principle.
+
+#### Ratcheting and Cross-Field Validation
+
+A challenge arises if a cross-field validation rule (e.g. `X < Y`) is defined on a common ancestor struct, and an unrelated field (e.g. `Z`) within that same ancestor is modified. This change to `Z` makes the common ancestor “changed” overall, triggering re-validation of the `X < Y` rule. If this rule was recently evolved (e.g., made stricter), it might now fail even if `X` and `Y` themselves are not modified by the user’s update. This could violate the principle “Unchanged fields do not cause update rejections.”
+
+For the initial implementation, this behavior will be documented. Furthermore, cross-field validation rules themselves must incorporate internal ratcheting logic. For instance, generated code for dedicated cross-field tags (like `+k8s:unionMember`) will be designed to only act upon changes to the specific fields they govern and were designed to validate.
 
 ### Test Plan
 
