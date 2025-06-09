@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4969: Cluster Domain Downward API
+# KEP-4969: Cluster Domain Pod API
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -166,7 +166,7 @@ by the cluster administrator.
 Currently, there is no way for cluster workloads to query for this domain name,
 leaving them to either use relative domain names or configure it manually.
 
-This KEP proposes adding a new field mapping into the Downward API mechanism, that workloads can use to request the cluster domain name.
+This KEP proposes adding a new field into the Pod's status with their cluster domain suffix.
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
@@ -222,7 +222,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-- Making it easier to use and generate FQDNs for internally-visible Services
+- Making it easier to use and generate FQDNs for internally-visible Services.
 - Reducing the difference between Kubernetes distributions.
 
 <!--
@@ -244,7 +244,8 @@ and make progress.
 
 ## Proposal
 
-Add a new field mapping into the Downward API mechanism, that lets containers retrieve the cluster domain name.
+Add a new field to the Pod status, containing the cluster domain suffix.
+It should also be accessible via the downward API and `EnvVarSource.fieldRef`.
 
 <!--
 This is where we get down to the specifics of what the proposal actually is.
@@ -283,7 +284,7 @@ spec:
             fieldRef: metadata.namespace
         - name: CLUSTER_DOMAIN
           valueFrom:
-            clusterPropertyRef: clusterDomain
+            fieldRef: status.dns.clusterDomain
 ```
 
 `foo` can now perform the query by running `curl http://bar.$NAMESPACE.svc.$CLUSTER_DOMAIN/`.
@@ -320,23 +321,37 @@ Consider including folks who also work outside the SIG or subproject.
 Kubernetes currently does not prohibit different kubelets from specifying 
 different cluster domains (`node-a` could set `cluster.local` while `node-b` 
 specifies `cluster.remote`).
-Exposing FQDNs generated using this API could cause issues in these mixed
+Advertising FQDNs generated using this API could cause issues in these mixed
 environments, since `node-b` might not be able to resolve `cluster.local`
 FQDNs correctly.
 
-For this KEP to make sense, this would have to be explicitly prohibited.
-
 ## Design Details
 
-A new Downward API `clusterPropertyRef: clusterDomain` would be introduced, which can be projected into an environment variable or a volume file.
+A new field `dns.clusterDomain` would be added to `PodStatus`:
 
-<<[UNRESOLVED @nightkr @aojea @thockin]>>
-The name is undecided. Other candidates:
+```go
+type PodStatus struct {
+    // ..existing fields elided
+    Dns PodDNSStatus
+}
 
-- `nodePropertyRef` (@aojea)
-- `runtimeConfigs` (@thockin)
+type PodDNSStatus struct {
+    ClusterDomain string
+}
+```
 
-This also implies a decision about who "owns" the setting, the cluster as a whole or the individual kubelet.
+The field would be populated by the Kubelet during pod initialization.
+
+The field would also be accessible from the Downward API via `fieldRef`.
+
+<<[UNRESOLVED @nightkr @thockin]>>
+The name of `clusterDomain` is undecided. Other candidates:
+
+- `zone` (@thockin)
+
+I'm going with `clusterDomain` for now because it matches Kubelet's
+`clusterDomain` configuration field, and because `zone` is somewhat
+ambiguous (are we talking about the cluster zone? the namespace's zone?).
 <<[/UNRESOLVED]>>
 
 <!--
@@ -359,7 +374,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -878,8 +893,10 @@ Major milestones might include:
 
 ## Drawbacks
 
-This KEP requires that the cluster domain assumes that all kubelets in the 
-cluster share the same cluster domain.
+Trying to resolve the cluster domain from a different Pod could have confusing 
+results, if running on a different kubelet that is configured to use a different
+cluster domain (and its configured DNS server doesn't resolve the target pod's
+cluster domain).
 
 <!--
 Why should this KEP _not_ be implemented?
@@ -903,12 +920,12 @@ Additionally, this would be problematic to query for: users would have to query
 it manually using the Kubernetes API (since ConfigMaps cannot be mounted across
 Namespaces), and users would require RBAC permission to query wherever it is stored.
 
-### Dedicated API Resource
+### Dedicated API Resource {#alternative-api}
 
 This roughly shares the arguments for/against as [the ConfigMap alternative](#alternative-configmap),
 although it would allow more precise RBAC policy targeting.
 
-### kubelet `/configz`
+### kubelet `/configz` {#alternative-configz}
 
 The kubelet exposes a `/configz` endpoint which can be used to query its internal configuration.
 This currently contains the cluster domain name.
@@ -917,7 +934,7 @@ However, this is a diagnostic utility, not a stable, documented, and versioned
 API. Encouraging users to rely on it also ossifies the idea that it is a part 
 of the kubelet's static configuration.
 
-### Parsing `resolv.conf`
+### Parsing `resolv.conf` {#alternative-resolvconf}
 
 The kubelet adds the cluster domain to the containers' `/etc/resolv.conf` file.
 This could be parsed by users in order to guess the domain name.
@@ -928,3 +945,12 @@ mechanisms in the future, or disabled entirely.
 It also requires clients to guess which domain is the correct one, which could
 have false positives.
 
+### Exposing it directly over the Downward API {#alternative-downwardapi}
+
+A new type of Downward API could be added (alongside `fieldRef` and
+`resourceFieldRef`), which allows "direct" access to properties provided by the
+kubelet.
+
+This would avoid increasing the size of Pods that don't use the feature.
+However, it would also be less discoverable, and be inconsistent with the rest
+of the platform.
