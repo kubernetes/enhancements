@@ -774,7 +774,7 @@ that might indicate a serious problem?
 Administrators should monitor the following metrics to assess the need for a rollback:
 
 - `statefulset_unavailability_violation`: Ths metric reflects the number of times the maxUnavailable condition is violated (i.e. spec.replicas - availableReplicas > maxUnavailable).
-Mutiple violations of maxUnavailable might indicate issues with feature behavior.
+Multiple violations of maxUnavailable might indicate issues with feature behavior.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
