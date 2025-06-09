@@ -205,14 +205,41 @@ If both `setHostnameAsFQDN` and hostnameOverride fields are set simultaneously, 
 
 Based on the above design, after the KEP is implemented, we can achieve the following results.
 
-| Behavior                                                     | result for `hostname`                                | result for `hostname -f`                             | DNS Record                                           |
-| ------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
-| hostname: busybox1                                           | busybox1                                             | busybox1                                             | None                                                 |
-| hostname: busybox1<br />subdomain: busybox-subdomain         | busybox1                                             | busybox1.busybox-subdomain.default.svc.cluster.local | busybox1.busybox-subdomain.default.svc.cluster.local |
-| hostname: busybox1<br />subdomain: busybox-subdomain<br />setHostnameAsFQDN: true | busybox1.busybox-subdomain.default.svc.cluster.local | busybox1.busybox-subdomain.default.svc.cluster.local | busybox1.busybox-subdomain.default.svc.cluster.local |
-| hostnameOverride: www.example.com                           | www.example.com                                      | www.example.com                                      | None                                                 |
-| hostname: busybox1<br />hostnameOverride: www.example.com   | www.example.com                                      | www.example.com                                      | None                                                 |
-| hostname: busybox1<br />hostnameOverride: www.example.com<br />subdomain: busybox-subdomain | www.example.com                                      | www.example.com                                      | busybox1.busybox-subdomain.default.svc.cluster.local |
+|  # | `.hostname` | `.subdomain` | `.setHostnameAsFQDN` | `.hostnameOverride` | `.hostNetwork` | `$(hostname)`                   | `$(hostname -f)`                | DNS (assuming service exists)   |
+| -- | ----------- | ------------ | -------------------- | ------------------- | -------------- | ------------------------------- | ------------------------------- | ------------------------------- |
+|  0 |             |              |                      |                     |                | `<pod-name>`                    | `<pod-name>`                    |                                 |
+|  1 | `aa`        |              |                      |                     |                | `aa`                            | `aa`                            |                                 |
+|  2 |             | `bb`         |                      |                     |                | `<pod-name>`                    | `<pod-name>.bb.<ns>.svc.<zone>` | `<pod-name>.bb.<ns>.svc.<zone>` |
+|  3 | `aa`        | `bb`         |                      |                     |                | `aa`                            | `aa.bb.<ns>.svc.<zone>`         | `aa.bb.<ns>.svc.<zone>`         |
+|  4 |             |              | true                 |                     |                | `<pod-name>`                    | `<pod-name>`                    |                                 |
+|  5 | `aa`        |              | true                 |                     |                | `aa`                            | `aa`                            |                                 |
+|  6 |             | `bb`         | true                 |                     |                | `<pod-name>.bb.<ns>.svc.<zone>` | `<pod-name>.bb.<ns>.svc.<zone>` | `<pod-name>.bb.<ns>.svc.<zone>` |
+|  7 | `aa`        | `bb`         | true                 |                     |                | `aa.bb.<ns>.svc.<zone>`         | `aa.bb.<ns>.svc.<zone>`         | `aa.bb.<ns>.svc.<zone>`         |
+|  8 |             |              |                      | `xx.yy.zz`          |                | `xx.yy.zz`                      | `xx.yy.zz`                      |                                 |
+|  9 | `aa`        |              |                      | `xx.yy.zz`          |                | `xx.yy.zz`                      | `xx.yy.zz`                      |                                 |
+| 10 |             | `bb`         |                      | `xx.yy.zz`          |                | `xx.yy.zz`                      | `xx.yy.zz`                      | `<pod-name>.bb.<ns>.svc.<zone>` |
+| 11 | `aa`        | `bb`         |                      | `xx.yy.zz`          |                | `xx.yy.zz`                      | `xx.yy.zz`                      | `aa.bb.<ns>.svc.<zone>`         |
+| 12 |             |              | true                 | `xx.yy.zz`          |                | INVALID                         | INVALID                         | INVALID                         |
+| 13 | `aa`        |              | true                 | `xx.yy.zz`          |                | INVALID                         | INVALID                         | INVALID                         |
+| 14 |             | `bb`         | true                 | `xx.yy.zz`          |                | INVALID                         | INVALID                         | INVALID                         |
+| 15 | `aa`        | `bb`         | true                 | `xx.yy.zz`          |                | INVALID                         | INVALID                         | INVALID                         |
+| 16 |             |              |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
+| 17 | `aa`        |              |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
+| 18 |             | `bb`         |                      |                     | true           | `<same-as-node>`                | `<same-as-node>                 | `<pod-name>.bb.<ns>.svc.<zone>` |
+| 19 | `aa`        | `bb`         |                      |                     | true           | `>same-as-node>`                | `>same-as-node>`                | `aa.bb.<ns>.svc.<zone>`         |
+| 20 |             |              | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
+| 21 | `aa`        |              | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
+| 22 |             | `bb`         | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                | `<pod-name>.bb.<ns>.svc.<zone>` |
+| 23 | `aa`        | `bb`         | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                | `aa.bb.<ns>.svc.<zone>`         |
+| 24 |             |              |                      | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 25 | `aa`        |              |                      | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 26 |             | `bb`         |                      | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 27 | `aa`        | `bb`         |                      | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 28 |             |              | true                 | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 29 | `aa`        |              | true                 | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 30 |             | `bb`         | true                 | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |
+| 31 | `aa`        | `bb`         | true                 | `xx.yy.zz`          | true           | INVALID                         | INVALID                         | INVALID                         |                    |
+
 
 
 As shown in the table, setting `hostnameOverride` will only change the hostname inside the pod and will not modify the DNS records in Kubernetes.
@@ -232,7 +259,7 @@ As shown in the table, setting `hostnameOverride` will only change the hostname 
 
 ##### e2e tests
 
-- Add test in `test/e2e_node/` to verify if the `hostnameOverride` field is effective.
+- Add a conformance test to `test/e2e` that verifies our implementation conforms to the expectation defined in the table within the #Design Details section.
 
 ### Graduation Criteria
 
