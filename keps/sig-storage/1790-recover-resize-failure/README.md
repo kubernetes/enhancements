@@ -28,7 +28,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-  - [GA](#ga)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Monitoring](#monitoring)
@@ -343,14 +343,15 @@ There are already e2e tests running that verify correctness of this feature - ht
   -  There are already e2e tests running that verify correctness of this feature -
   https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
   
-### GA  
+#### GA  
 
 - The feature has been extensively tested in CI and deployed with drivers in real world. For example - https://github.com/kubernetes-sigs/azuredisk-csi-driver/blob/master/charts/latest/azuredisk-csi-driver/templates/csi-azuredisk-controller.yaml#L166
 - The test grid already has tests for the feature.
 
 ### Upgrade / Downgrade Strategy
 
-Not Applicable
+- For the case of older kubelet running with newer resizer, the kubelet must handle the newer fields introduced by this feature even if feature-gate is not enabled. Having said that, if kubelet is older and has no notion of this feature at all and `api-server` and `external-resizer` is newer, it is possible that kubelet will not properly update `allocatedResourceStatus` after expansion is finished on the node. This is a known limitation and if user wants to keep running older version of kubelet (older than v1.31 as of this writing and hence unsupported), then they MUST not update external-resizer.
+- In general `external-resizer` should only be upgraded(and `RecoverVolumeExpansionFailure` enabled), after `kubelet`, `api-server` and `kube-controller-manager` already has this feature enabled.
 
 ### Version Skew Strategy
 
