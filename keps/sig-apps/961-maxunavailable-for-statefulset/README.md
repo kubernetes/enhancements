@@ -252,7 +252,7 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-With `maxUnavailable` feature enabled, we'll bring down more than one pod at a time, if your application can't tolerate
+With `maxUnavailable` field set, we'll bring down more than one pod at a time, if your application can't tolerate
 this behavior, you should absolutely leave the field unset or use 1, which will match default behavior.
 
 ### Risks and Mitigations
