@@ -272,7 +272,7 @@ Consider including folks who also work outside the SIG or subproject.
 We are proposing a new field called `maxUnavailable` whose default value will be 1. In this mode, StatefulSet will behave exactly like its current behavior.
 It's possible we introduce a bug in the implementation. The mitigation currently is that this feature is disabled by default in Alpha phase for people to try out and give
 feedback.
-In Beta phase when its enabled by default, people will only see issues or bugs when `maxUnavailable` is set to something greater than 1. Since people have
+In Beta phase when its enabled by default, users will only see issues or bugs when `maxUnavailable` is set to something greater than 1. Since people have
 tried this feature in Alpha, we would have time to fix issues.
 
 ## Design Details
