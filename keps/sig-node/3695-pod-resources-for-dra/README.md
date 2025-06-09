@@ -274,8 +274,8 @@ These cases will be added in the existing e2e tests:
 
 #### Beta
 
-- [x] Gather feedback from consumers of the DRA feature.
-  - Integration with the NVIDIA DCGM exporter (WIP)
+- [] Gather feedback from consumers of the DRA feature.
+  - Integration with the NVIDIA DCGM exporter.
 - [x] No major bugs reported in the previous cycle.
 
 #### GA
