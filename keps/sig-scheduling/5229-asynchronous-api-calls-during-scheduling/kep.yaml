@@ -27,3 +27,8 @@ feature-gates:
     components:
       - kube-scheduler
 disable-supported: true
+
+metrics:
+  - async_api_call_execution_total
+  - async_api_call_duration_seconds
+  - pending_async_api_calls

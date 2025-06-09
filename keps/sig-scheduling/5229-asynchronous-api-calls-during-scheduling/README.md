@@ -91,37 +91,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
 This KEP proposes making all API calls during scheduling asynchronous, by introducing a new kube-scheduler-wide way of handling such calls.
 
 ## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 Scheduling performance is crucial. One of the bottlenecks is the API calls done during the scheduling cycle. 
 The binding cycle is already asynchronous, but it would still be beneficial to re-evaluate whether the current model of busy-waiting goroutines is good long-term.
@@ -130,11 +102,6 @@ Making one universal approach for handling API calls in the kube-scheduler could
 Already asynchronous calls could also be migrated to this approach.
 
 ### Goals
-
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
 
 - P0: Make the scheduling cycle free of blocking API calls, i.e., make all API calls asynchronous.
 - P0: Make the solution extendable for future use cases.
@@ -149,15 +116,6 @@ and make progress.
 -->
 
 ## Proposal
-
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
 
 There are a few ways to make API calls asynchronous.
 They are introduced below to facilitate discussion and identify the most suitable solution.
@@ -326,13 +284,6 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 This section describes the most important design details and three proposals based on the above ideas, that combine queueing, caching,
 and having a separate component managing the API calls.
@@ -534,27 +485,11 @@ Such logic could be explored, but having an `OnFinish` channel and handling erro
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
 
 ##### Unit tests
 
@@ -577,7 +512,8 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/scheduler`: `2025-06-09` - `69.6%`
+- `pkg/scheduler/backend/cache`: `2025-06-09` - `85.7%`
 
 ##### Integration tests
 
@@ -596,114 +532,48 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- [`k8s.io/kubernetes/test/integration/schedule`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler)
+  - Modify and add test cases covering the feature (with feature flag enabled and disabled), including handling unschedulable pods, preemption and binding.
+- [scheduler_perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf) 
+  - Add test cases measuring performance of scenarios that use asynchronous API calls (with feature flag enabled and disabled).
+  - Performance improvement should be visible for `Unschedulable` test case.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+The feature is scoped within the kube-scheduler internally, so there is no interaction between other components.
+The whole feature should be already covered by integration tests.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+N/A
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Implement a feature behind a feature flag and enable it by default.
+- Migrate all Pod-based API calls done during scheduling and binding to the asynchronous version.
+- Implement all tests from [Test Plan](#test-plan).
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Migrate all API calls done during scheduling to the asynchronous version.
+- Gather feedback from users and fix reported bugs.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+**Upgrade**
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+During the beta period, the feature gate `SchedulerAsyncAPICalls` is enabled by default, so users don't need to opt in.
+This is a purely in-memory feature for the kube-scheduler, so no special actions are required outside the scheduler.
+
+**Downgrade**
+
+Users need to disable the feature gate.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+This is a purely in-memory feature for the kube-scheduler, and hence there is no version skew strategy.
 
 ## Production Readiness Review Questionnaire
 
@@ -717,10 +587,11 @@ enhancement:
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+Pod scheduling might be retried even if the API call hasn't yet been executed.
+For instance, it might happen before the `PodScheduled` condition is set to `false`.
+
+Moreover, some API calls might be canceled. In such cases, if the Pod is bound shortly after,
+the `PodScheduled` condition might not be set to `false` at all, as the binding takes precedence.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -746,10 +617,11 @@ while Pods, which are already scheduled, won't be affected in any case.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- `pending_async_api_calls` metric is large or growing abnormally
+- `async_api_call_execution_total` value with `result` indicating error is large even if there are no issues with kube-apiserver
+- `async_api_call_duration_seconds` visibly increased even if there are no issues with kube-apiserver
+- `event_handling_duration_seconds` visibly increased
+- `scheduling_attempt_duration_seconds` visibly increased
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -765,67 +637,38 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Check `async_api_call_execution_total`, `async_api_call_duration_seconds` and `pending_async_api_calls`  metrics, and if their values are changing with each processed pod.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+N/A
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)),
+and this feature shouldn't bring any regression there.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+Based on that `schedule_attempts_total` shouldn't grow less than 100 per second
+and `scheduling_algorithm_duration_seconds` in average shouldn't be higher than 10 ms,
+if there is a sufficient number of pending pods in the cluster.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `async_api_call_execution_total`
+    - `async_api_call_duration_seconds` 
+    - `pending_async_api_calls` 
+    - `scheduling_attempt_duration_seconds`
+    - `event_handling_duration_seconds`
+    - `pod_scheduling_sli_duration_seconds`
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+- `async_api_call_execution_total` with `call_type` and `result` labels to indicate how many async API calls with specific `call_type` completed with that `result`.
+- `async_api_call_duration_seconds` with `call_type` and `result` labels to indicate how long it took for many API calls with specific `call_type` to complete with that `result`.
+- `pending_async_api_calls` with `call_type` label to indicate how many many API calls are enqueued for specific `call_type`.
 
 ### Dependencies
 
@@ -853,38 +696,18 @@ No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Not visibly end-to-end - binding API call could be slightly delayed by routing through the API queue.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+Memory usage within the kube-scheduler might increase due to the queue storing pending API calls.
+Memory increase is expected to be linear with the number of pending API calls.
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+The number of goroutines will also increase to dispatch API calls, which could affect the CPU usage of the kube-scheduler.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No
 
 ### Troubleshooting
 
@@ -910,7 +733,7 @@ For each of them, fill in the following information by copying the below templat
       how can an operator troubleshoot without logging into a master or worker node?
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
+    - Diagnostics: What are the useful log messages and their required logging`
       levels that could help debug the issue?
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
@@ -930,6 +753,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 8th Apr 2025: The initial KEP is submitted.
 
 ## Drawbacks
 
