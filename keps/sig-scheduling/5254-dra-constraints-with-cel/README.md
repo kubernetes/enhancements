@@ -74,6 +74,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Runaway expressions](#runaway-expressions)
     - [Performance at scale](#performance-at-scale)
+      - [Mitigation](#mitigation)
 - [Design Details](#design-details)
   - [Components diagram](#components-diagram)
   - [kube-apiserver Updates](#kube-apiserver-updates)
@@ -394,7 +395,7 @@ The pod will be allocated on the 4 connected devices - mla0, mla1, mla4, and mla
 
 #### Runaway expressions
 
-A malicious or buggy workload can specify CEL expressions that degrade the performance of constraint evaluation and scheduling. We will specify a limit on evaluation cost for the expression. There is already a mechanism to cap this today with CEL selectors that we can reuse. [Reference](https://github.com/kubernetes/kubernetes/blob/6188e5cb7b2f106b047493b7b498c1882723cab4/pkg/apis/resource/types.go#L910-L933)
+A malicious or buggy workload can specify CEL expressions that degrade the performance of constraint evaluation and scheduling. We will specify a limit on evaluation cost for the expression. There is already a mechanism to cap this today with CEL selectors that we can reuse [Reference](https://github.com/kubernetes/kubernetes/blob/6188e5cb7b2f106b047493b7b498c1882723cab4/pkg/apis/resource/types.go#L910-L933). Additionally, the scheduler supports a configurable timeout during filtering that can limit this evaluation [Reference](https://github.com/kubernetes/kubernetes/pull/132033).
 
 #### Performance at scale
 
@@ -402,9 +403,17 @@ The feature depends on exhaustive search for devices. The worst-case performance
 
 Additionally, with the introduction of [workload-aware scheduling](https://github.com/kubernetes/kubernetes/issues/132192), the performance might take a hit as filtering can be executed multiple times. 
 
-As a partial mitigation for the performance impact, the scheduler plugin supports a configurable timeout that can be applied for a node. [Reference](https://github.com/kubernetes/enhancements/blob/5b1270421f5bc3315fe191c29e0356bc91cbfe6b/keps/sig-node/4381-dra-structured-parameters/README.md?plain=1#L2025-L2032)
+##### Mitigation
 
-We will need to revisit this solution before beta release.
+To minimize the performance impact, users are recommended to trim down the solution space using existing filtering mechanisms before utilizing this constraint type, i.e. define it in the spec template after mechanisms such as CEL selectors and MatchAttribute. This will limit how many device combinations need to be evaluated. The feature is not expected to reach the scheduler timeout as the combination space has been reduced by previous filtering. 
+
+Note: Users are discouraged from specifying a CEL expression which takes into account the order of devices since this will result in permutational complexity instead of combinational complexity. If users specify expensive queries, it should be noted that the evaluation cost limit and scheduler timeout described earlier will limit the exhaustive search.  
+
+For example, if there are 12 devices to choose from and a user specifies needing 6 of those devices, the maximum number of calculations taken should be: 
+
+12C6 = 12! / (6!)(6!) = 924
+
+If the user specifies an order in which these devices should be evaluated, i.e. set should contain device0 first, then device1, device2, etc., this will result in permutational complexity, and is strongly discouraged. Feature will not work and return an error in this case since it crosses the preset threshold for evaluation cost.
 
 ## Design Details
 
@@ -732,7 +741,7 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, through feature gates. If the feature gate is disabled in kube-apiserver, kube-scheduler, or kube-controller-manager, the feature will not work. Existing running Pods continue  unaffected. New workloads cannot use the feature, and pod creation will fail if attempting to use the feature. Existing pods that need rescheduling will remain in pending state. Pod description will notify users to enable the feature gate. The reason for not allowing existing pods to re-schedule is because users expect optimal placement for these pods, which cannot happen when the feature is disabled
+Yes, through feature gates. If the feature gate is disabled in kube-apiserver, kube-scheduler, or kube-controller-manager, the feature will not work. Existing running Pods continue unaffected. New workloads cannot use the feature, and pod creation will fail if attempting to use the feature. Existing pods that need rescheduling will remain in pending state. Pod description will notify users to enable the feature gate. The reason for not allowing existing pods to re-schedule is because users expect optimal placement for these pods, which cannot happen when the feature is disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
