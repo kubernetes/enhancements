@@ -209,15 +209,10 @@ The field would be populated by the Kubelet during pod initialization.
 
 The field would also be accessible from the Downward API via `fieldRef`.
 
-<<[UNRESOLVED @nightkr @thockin]>>
-The name of `clusterDomain` is undecided. Other candidates:
-
-- `zone` (@thockin)
-
-I'm going with `clusterDomain` for now because it matches Kubelet's
-`clusterDomain` configuration field, and because `zone` is somewhat
-ambiguous (are we talking about the cluster zone? the namespace's zone?).
-<<[/UNRESOLVED]>>
+@thockin originally suggested that `clusterDomain` be called `zone`. This
+proposal uses `clusterDomain` because it matches Kubelet's configuration field,
+and because `zone` is somewhat ambiguous (are we talking about the cluster zone?
+the namespace's zone?).
 
 ### Test Plan
 
