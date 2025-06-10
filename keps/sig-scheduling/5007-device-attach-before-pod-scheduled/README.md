@@ -84,7 +84,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [PreBind Process](#prebind-process)
-  - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
+  - [Handling attachment failures](#handling-attachment-failures)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Asynchronous Device Initialization](#story-1-asynchronous-device-initialization)
     - [Story 2: Fabric-Attached GPU Allocation](#story-2-fabric-attached-gpu-allocation)
@@ -97,7 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [DeviceRequestAllocationResult Enhancements](#devicerequestallocationresult-enhancements)
     - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
-    - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment-1)
+    - [Timeout Behavior for BindingConditions](#timeout-behavior-for-bindingconditions)
   - [Alternative approach](#alternative-approach)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -230,9 +230,10 @@ This is achieved by extending the `ResourceSlice` and `DeviceRequestAllocationRe
 - `BindingConditions`: a list of condition keys that must be satisfied (i.e., set to `True`) before binding can proceed.
 - `BindingFailureConditions`: a list of condition keys that, if any are `True`, indicate that binding should be aborted and the Pod rescheduled.
 - `BindingTimeoutSeconds`: a timeout value (in seconds) that defines how long the scheduler should wait for all `BindingConditions` to be satisfied. If the timeout is exceeded, the allocation is cleared and the Pod is rescheduled.
-- `UsageRestrictedToNode`: a boolean field (optional) that indicates whether the scheduler should set the nodename to the ResourceClaim's nodeSelector during the scheduling process. When set to true, the scheduler records the selected node name in the claim, effectively reserving the resource for that specific node. This is particularly useful for external controllers during the PreBind phase, as they can retrieve the node name from the claim and perform node-specific operations such as device attachment or preparation.
+- `UsageRestrictedToNode`: a boolean field (optional) that indicates whether the scheduler should set the nodename to the ResourceClaim's nodeSelector during the scheduling process. When set to true, the scheduler records the selected node name in the claim (in the `PreBind` phase), effectively reserving the resource for that specific node. This is particularly useful for external controllers during the PreBind phase, as they can retrieve the node name from the claim and perform node-specific operations such as device attachment or preparation.
 
-Each entry in `BindingConditions` and `BindingFailureConditions` must be a valid Kubernetes condition type string (e.g., `dra.example.com/is-prepared`). These are interpreted as keys in the `.status.conditions` field of the corresponding `ResourceClaim`.
+Each entry in `BindingConditions` and `BindingFailureConditions` must be a valid Kubernetes condition type string (e.g., `dra.example.com/is-prepared`).
+These are interpreted as keys in the `.status.conditions` field of the corresponding `ResourceClaim`.
 External controllers are responsible for updating these condition keys with standard Kubernetes condition semantics (`type`, `status`, `reason`, `message`, `lastTransitionTime`).
 
 The scheduler evaluates only the `status` field of these conditions:
@@ -245,9 +246,6 @@ whether these binding conditions can be set in the ResourceClaim status.
 
 This mechanism enables readiness-aware scheduling for resources that require asynchronous preparation, such as fabric-attached devices or remote accelerators.
 It allows the scheduler to make binding decisions based on up-to-date readiness information, improving reliability and avoiding premature binding.
-
-While this proposal supports fabric-attached devices, it is not limited to them.
-The mechanism is designed to be general and can support other use cases where resource readiness is asynchronous or failure-prone.
 
 ### PreBind Process
 
@@ -349,13 +347,16 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-- **Maximum Number of Conditions**: The maximum number of `BindingConditions` and `BindingFailureConditions` per device is limited to 4. This constraint ensures that the scheduler can efficiently evaluate conditions without excessive overhead
+- **Maximum Number of Conditions**: The maximum number of `BindingConditions` and `BindingFailureConditions` per device is limited to 4.
+This constraint ensures that the scheduler can efficiently evaluate conditions without excessive overhead
 and that the worst-case size of a ResourceSlice does not grow
 too much.
 
-- **External Controller Dependency**: The effectiveness of `BindingConditions` relies on accurate and timely updates from external controllers (e.g., composable DRA controllers). Any delays or inaccuracies in these updates can impact scheduling reliability.
+- **External Controller Dependency**: The effectiveness of `BindingConditions` relies on accurate and timely updates from external controllers (e.g., composable DRA controllers).
+Any delays or inaccuracies in these updates can impact scheduling reliability.
 
-- **Error Handling**: If `BindingConditions` are not satisfied within the specified timeout, or if any `BindingFailureConditions` are set to `True`, the scheduler will clear the allocation and reschedule the Pod. This fallback behavior is intended as an error recovery mechanism, not the primary scheduling model.
+- **Error Handling**: If `BindingConditions` are not satisfied within the specified timeout, or if any `BindingFailureConditions` are set to `True`, the scheduler will clear the allocation and reschedule the Pod.
+This fallback behavior is intended as an error recovery mechanism, not the primary scheduling model.
 
 ### Risks and Mitigations
 
@@ -582,21 +583,51 @@ if it's not present in the ResourceSlice, the scheduler has 10 minutes as the de
 
 Even if the conditions indicating that the device is attached or that the attachment failed are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
-#### Handling ResourceSlices Upon Failure of Attachment
+#### Timeout Behavior for BindingConditions
+  To ensure Pods are not indefinitely blocked during the PreBind phase, a timeout mechanism is introduced for evaluating BindingConditions in ResourceClaim.
 
-If device preparation fails — for example, due to fabric contention, hardware error, or controller-side timeout — the external controller (e.g., a composable DRA controller) should update the condition status in the `ResourceClaim`'s `allocationResult` to reflect the failure.
-This is typically done by setting one or more `BindingFailureConditions` to `True`.
+```go
+// AllocationResult contains attributes of an allocated resource.
+type AllocationResult struct {
+  ...
+	// AllocationTimestamp stores the time when the resources were allocated.
+	// This field is not guaranteed to be set, in which case that time is unknown.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gate.
+	//
+	// +optional
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	AllocationTimestamp *metav1.Time
+}
+```
 
-The scheduler will detect this during the `PreBind` phase and respond by:
+- **Triggering Timeout**:
+A timeout is triggered if all BindingConditions in the ResourceClaim.status.conditions do not reach status: "True" within the duration specified by BindingTimeoutSeconds.
 
-1. **Aborting the binding cycle**: The Pod will not be bound to the node.
-2. **Clearing the allocation**: The `ResourceClaim` is unbound from the `ResourceSlice`, making the resource available for other Pods.
-3. **Requeuing the Pod**: The Pod is returned to the scheduling queue for reconsideration.
+- **Timeout Behavior**:
+When a timeout occurs:
 
-This failure-handling path is intended as an exception, not the primary scheduling model.
-The preferred approach is for the scheduler to wait until all `BindingConditions` are satisfied, and only proceed with binding when the device is confirmed to be ready.
+  - The scheduler aborts the binding process.
+  - The Pod remains in the Unscheduled state.
+  - The allocation in the ResourceClaim is cleared.
+  - A condition indicating timeout may be recorded in the ResourceClaim.
 
-By modeling readiness explicitly and handling failures gracefully, this mechanism improves scheduling reliability and avoids leaving Pods in unrecoverable states.
+- **Timeout Duration**:
+The timeout duration is defined by the BindingTimeoutSeconds field in the ResourceSlice.
+If unspecified, a default value (e.g., 600 seconds) is used.
+The scheduler enforces a maximum wait time (e.g., 20 minutes) to prevent indefinite blocking.
+
+- **AllocationTimestamp**:
+The `AllocationTimestamp` field in the `AllocationResult` records the exact time when the resource allocation occurred—specifically, when the scheduler began waiting for the binding conditions to be satisfied.
+This timestamp is essential for implementing the timeout mechanism defined by `BindingTimeoutSeconds`, as it provides a consistent reference point for evaluating whether the timeout has expired.
+This field is particularly important in the following scenarios:
+  - Multiple Pods sharing a single ResourceClaim: Since each Pod may be scheduled at a different time, it becomes ambiguous which scheduling event should serve as the basis for timeout evaluation.
+  By recording the initial allocation time, `AllocationTimestamp` ensures consistent timeout behavior across all Pods referencing the same claim.
+  - A single Pod with multiple ResourceClaims: Each claim may have distinct readiness conditions and timeout requirements.
+  `AllocationTimestamp` allows the scheduler to manage timeouts independently for each claim, based on when its allocation began.
+
+By anchoring timeout evaluation to a well-defined point in time, `AllocationTimestamp` helps prevent Pods from being indefinitely blocked in the PreBind phase and ensures reliable scheduling behavior in complex resource configurations.
 
 ### Alternative approach
 This alternative approach is specific to Composable Disaggregated Infrastructure (CDI) environments.
@@ -699,7 +730,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 - Simulate a controller updating ResourceClaim conditions
 - Verify scheduler behavior on success, failure, and timeout
-
+- Simulate multiple Pods referencing the same ResourceClaim with BindingConditions to verify the scheduler's behavior during the PreBind phase.
 
 ##### e2e tests
 
