@@ -332,7 +332,7 @@ type RollingUpdateStatefulSetStrategy struct {
       running and available before 4, 2 wont start Terminating to preserve ordering semantics. So at this time,
       only 1 is unavailable although we requested 2.
   4.  (Implemented approach) Introduce a field in Rolling Update, which decides whether we want maxUnavailable with ordering or without ordering guarantees. Depending on what the user wants, this Choice can either choose behavior 1 or 3 if ordering guarantees are needed or choose behavior 2 if they dont care. To simplify this further
-      PodManagementPolicy today supports `OrderedReady` or `Parallel`. The `Parallel` mode only supports scale up and tear down of StatefulSets and currently doesnt apply to Rolling Updates. So instead of coming up
+      PodManagementPolicy today supports `OrderedReady` or `Parallel`. The `Parallel` mode only supports scale up and tear down of StatefulSets and currently doesn't apply to Rolling Updates. So instead of coming up
       with a new field, we could use the PodManagementPolicy to choose the behavior the User wants.
 
               1. PMP=Parallel will now apply to RollingUpdate. This will choose behavior described in 2 above.
