@@ -321,7 +321,7 @@ type RollingUpdateStatefulSetStrategy struct {
   updated when the StatefulSet’s .spec.template is updated. Lets say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
   are the possible behavior choices we have:
 
-  1.  Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). Once they are both running and available, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
+  1.  Pods with ordinal 4 and 3 will start Terminating at the same time (because of maxUnavailable). Once they are both running and available, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
       will remain untouched due the partition. In this choice, the number of pods terminating is not always
       maxUnavailable, but sometimes less than that. For e.g. if pod with ordinal 3 is running and available but 4 is not, we still wait for 4 to be running and available before moving on to 2. This implementation avoids
       out of order Terminations of pods.
