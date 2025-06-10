@@ -325,7 +325,7 @@ type RollingUpdateStatefulSetStrategy struct {
       will remain untouched due the partition. In this choice, the number of pods terminating is not always
       maxUnavailable, but sometimes less than that. For e.g. if pod with ordinal 3 is running and available but 4 is not, we still wait for 4 to be running and available before moving on to 2. This implementation avoids
       out of order Terminations of pods.
-  2.  Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When any of 4 or 3 are running and available, pods with ordinal 2 will start Terminating. This could violate
+  2.  Pods with ordinal 4 and 3 will start Terminating at the same time (because of maxUnavailable). When any of 4 or 3 are running and available, pods with ordinal 2 will start Terminating. This could violate
       ordering guarantees, since if 3 is running and available, then both 4 and 2 are terminating at the same
       time out of order. If 4 is running and available, then both 3 and 2 are Terminating at the same time and no ordering guarantees are violated. This implementation, guarantees, that always there are maxUnavailable number of Pods Terminating except the last batch.
   3.  Pod with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). When 4 is running and available, 2 will start Terminating. At this time both 2 and 3 are terminating. If 3 is
