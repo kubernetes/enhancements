@@ -319,7 +319,7 @@ type RollingUpdateStatefulSetStrategy struct {
 - If a partition is specified, maxUnavailable will only apply to all the pods which are staged by the
   partition. Which means all Pods with an ordinal that is greater than or equal to the partition will be
   updated when the StatefulSet’s .spec.template is updated. Lets say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
-  are the possible behavior choices we have:-
+  are the possible behavior choices we have:
 
   1.  Pods with ordinal 4 and 3 will start Terminating at the same time(because of maxUnavailable). Once they are both running and available, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
       will remain untouched due the partition. In this choice, the number of pods terminating is not always
