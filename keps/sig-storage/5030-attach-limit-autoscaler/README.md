@@ -1,64 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5030: Integrate Volume Attach limit into cluster autoscaler
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -89,12 +29,17 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+- [Cluster Autoscaler changes](#cluster-autoscaler-changes)
+  - [Scaling a node-group that already has one or more nodes.](#scaling-a-node-group-that-already-has-one-or-more-nodes)
+  - [Scaling from zero](#scaling-from-zero)
+- [Kubernetes Scheduler change](#kubernetes-scheduler-change)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -154,82 +99,52 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+As part of this KEP we are proposing that, tools like cluster-autoscaler are aware of number of volumes that can be attached to a node.
 
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+Currently cluster-autoscaler doesn’t take into account, volume-attach limit that a node may have when scaling nodes to support unschedulable pods.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+This leads to bunch of problems:
+- If there are unschedulable pods that require more volume than one supported by newly created nodes, there will still be unschedulable pods left.
+
+- Since a node does not come up with a CSI driver typically, usually too many pods get scheduled on a node, which may not be supportable by the node in the first place. This leads to bunch of pods, just stuck.
+
+Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+- Modify cluster-autoscaler so as it is aware of CSI volume limits.
+- Fix scheduler, so as it doesn't schedule pods to a node that doesn't have CSI driver installed.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Deschedule pods that can't fit a node because of race conditions.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+As part of this proposal we are proposing changes into both cluster-autoscaler and kubernetes's built-in scheduler.
+
+1. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodes from 0 in a nodegroup.
+2. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodegroups with existing nodes.
+3. Fix kubernetes built-in scheduler so as we do not schedule pods to nodes that doesn't have CSI driver installed.
+
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
+- User has more than one pod that is pending because no existing node has any attach limit left.
+- Cluster autoscaler evaluates existing nodegroups.
+- It picks a nodegroup based on existing critireas and it accurately determines number of nodes it needs to spin up based on volumes that pending pods require.
 
 #### Story 2
+- A Kubernetes admin has one or more node where CSI driver is not installed. 
+- Without explicitly tainting the node or using node affinity in worklods, nodes which don't have CSI driver installed aren't used for scheduling pods that require volume.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+Scheduler changes can only be merged after cluster-autoscaler changes has been GAed and there are no concerns about scheduler changes.
 
 ### Risks and Mitigations
 
@@ -247,12 +162,70 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+## Cluster Autoscaler changes
+
+We can split the implementation in cluster-autoscaler in two parts:
+- Scaling a node-group that already has one or more nodes.
+- Scaling a node-group that doesn’t have one or more nodes (Scaling from zero).
+
+### Scaling a node-group that already has one or more nodes.
+
+1. We propose a similar label as GPULabel added to the node that is supposed to come up with a CSI driver. This would ensure that, nodes which are supposed to have a certain CSI driver installed aren’t considered ready - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/core/static_autoscaler.go#L979 until CSI driver is installed there.
+
+However, we also propose that a node will be considered ready as soon as corresponding CSI driver is being reported as installed via corresponding CSINode object.
+
+A node which is ready  but does not have CSI driver installed within certain time limit will be considered as NotReady and removed from the cluster.
+
+
+2. We propose that, we add volume limits and installed CSI driver information to framework.NodeInfo objects. So -
+
+```
+type NodeInfo struct {
+....
+....
+csiDrivers map[string]*DriverAllocatable
+..
+}
+
+type DriverAllocatable struct {
+    Allocatable int32
+}
+```
+
+3. We propose that, when saving `ClusterState` , we capture and add `csiDrivers` information to all existing nodes.
+
+4. We propose that, when getting nodeInfosForGroups , the return nodeInfo map also contains csidriver information, which can be used later on for scheduling decisions.
+
+```
+nodeInfosForGroups, autoscalerError := a.processors.TemplateNodeInfoProvider.Process(autoscalingContext, readyNodes, daemonsets, a.taintConfig, currentTime)
+```
+
+Please note that, we will have to handle the case of scaling from 0, separately from
+scaling from 1, because in former case - no CSI volume limit information will be available
+If no node exists in a NodeGroup.
+
+5. We propose that, when deciding pods that should be considered for scaling nodes in podListProcessor.Process function, we update the hinting_simulator to consider CSI volume limits of existing nodes. This will allow cluster-autoscaler to exactly know, if all unschedulable pods will fit in the recently spun or currently running nodes.
+
+Making aforementioned changes should allow us to handle scaling of nodes from 1.
+
+### Scaling from zero
+
+Scaling from zero should work similar to scaling from 1, but the main problem is - we do not have NodeInfo which can tell us what would be the CSI attach limit on the node which is being spun up in a NodeGroup.
+
+We propose that we introduce similar annotation as CPU, Memory resources in cluster-api to process attach limits available on a node.
+
+We have to introduce similar mechanism in various cloudproviders which return Template objects to incorporate volume limits. This will allow us to handle the case of scaling from zero.
+
+
+## Kubernetes Scheduler change
+
+We also propose that, if given node is not reporting any installed CSI drivers, we do not schedule pods that need CSI volumes to that node.
+
+The proposed change is small and a draft PR is available here - https://github.com/kubernetes/kubernetes/pull/130702
+
+This will stop too many pods crowding a node, when a new node is spun up and node is not yet reporting volume limits.
+
+But this alone is not enough to fix the underlying problem. Cluster-autoscaler must be fixed so as it is aware of attach limits of a node via CSINode object.
 
 ### Test Plan
 
@@ -299,75 +272,26 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- k8s.io/autoscaler/cluster-autoscaler/core: 06/10/2025 - 77.3%
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- <test>: <link to test coverage>
+None
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+We are planning to add e2e tests that verify behaviour of cluster autoscaler when it scales nodes for pods that require volumes.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
+We will add tests that validate both scaling from 0 and scaling from 1 use cases.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
+- All of the planned code changes for alpha will be done in cluster-autoscaler and not in k/k repository.
 - Initial e2e tests completed and enabled
 
+<!---
 #### Beta
 
 - Gather feedback from developers and surveys
@@ -469,9 +393,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `VolumeLimitScaling`
+  - Components depending on the feature gate: `autoscaler`, `scheduler`
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -481,12 +405,11 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+Yes, it will cause cluster-autoscaler to consider volume limits when scaling nodes. It will also cause scheduler to not schedule pods to nodes that don't have CSI driver.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes. This will simply cause old behaviour to be restored.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -500,6 +423,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+It should work fine.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -636,20 +561,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+Depends on cluster-autoscaler running in the cluster.
 
 ### Scalability
 
@@ -792,11 +704,9 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+
+Certain Kubernetes vendors taint the node when a new node is created and CSI driver has logic to remove the taint when CSI driver starts on the node.
+- https://github.com/kubernetes-sigs/azuredisk-csi-driver/pull/2309
 
 ## Infrastructure Needed (Optional)
 
