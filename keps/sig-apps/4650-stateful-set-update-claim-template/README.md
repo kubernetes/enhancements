@@ -112,6 +112,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Support for automatically skip not managed PVCs](#support-for-automatically-skip-not-managed-pvcs)
   - [Reconcile all PVCs regardless of Pod revision labels](#reconcile-all-pvcs-regardless-of-pod-revision-labels)
   - [Treat all incompatible PVCs as unavailable replicas](#treat-all-incompatible-pvcs-as-unavailable-replicas)
+  - [Integrate with RecoverVolumeExpansionFailure feature](#integrate-with-recovervolumeexpansionfailure-feature)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -295,10 +296,8 @@ Before creating a new Pod, or, if the Pod template is not changed, updating the 
 use server-side apply to update the PVCs used by the Pod.
 
 The patch used in server-side apply is the volumeClaimTemplates in the StatefulSet, except:
-* `spec.resources.requests.storage` is set to max(template `spec.resources.requests.storage`, PVC `status.capacity.storage`),
-  so that we will not decrease the storage size below its current status.
-  Note that we still may decrease the size in PVC spec,
-  which can help recover from a failed expansion if `RecoverVolumeExpansionFailure` feature gate is enabled.
+* `spec.resources.requests.storage` is set to max(template `spec.resources.requests.storage`, PVC `spec.resources.requests.storage`),
+  so that we will never decrease the storage size.
 * `controller-revision-hash` label is added to the PVCs.
 
 Naturally, most of the update control logic also applies to PVCs.
@@ -1231,6 +1230,16 @@ If we just use the latest version, then all replicas may suddenly become unavail
 and all operations are blocked.
 
 [KEP-0661]: https://github.com/kubernetes/enhancements/pull/3412
+
+### Integrate with RecoverVolumeExpansionFailure feature
+
+We may decrease the size in PVC spec automatically to help recover from a failed expansion
+if `RecoverVolumeExpansionFailure` feature gate is enabled.
+However, when reducing the spec size of PVC, it must still be greater than its status (not equal to).
+So we don't know what to set if `volumeClaimTemplates` is smaller than PVC status.
+
+User can still update PVC manually.
+
 
 ## Infrastructure Needed (Optional)
 
