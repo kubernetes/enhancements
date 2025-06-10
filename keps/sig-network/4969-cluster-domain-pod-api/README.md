@@ -197,7 +197,7 @@ A new field `dns.clusterDomain` would be added to `PodStatus`:
 ```go
 type PodStatus struct {
     // ..existing fields elided
-    Dns PodDNSStatus
+    DNS PodDNSStatus
 }
 
 type PodDNSStatus struct {
