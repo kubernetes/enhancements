@@ -137,14 +137,15 @@ It should also be accessible via the downward API and `EnvVarSource.fieldRef`.
 
 #### Story 1
 
-The Pod `foo` needs to access its sibling Service `bar` in the same namespace.
-It adds two `env` bindings:
+The Pod `foo` needs to access its sibling Service `bar` in the same namespace
+(`baz`). It adds two `env` bindings:
 
 ``` yaml
 apiVersion: v1
 kind: Pod
 metadata:
   name: foo
+  namespace: baz
 spec:
   containers:
     - name: foo
@@ -157,9 +158,24 @@ spec:
             fieldRef: status.dns.clusterDomain
 ```
 
-`foo` can now perform the query by running `curl http://bar.$NAMESPACE.svc.$CLUSTER_DOMAIN/`.
+`foo` can now perform the query by running `curl https://bar.$NAMESPACE.svc.$CLUSTER_DOMAIN/`.
 
-(Of course, in practice this would likely be integrated into the app itself, not by shelling into bash, but the principle still applies.)
+(Of course, in practice this would likely be integrated into the app itself, not
+by shelling into bash, but the principle still applies.)
+
+Kubernetes also configures the search domain and ndots, so that `bar` can be
+accessed from within its namespace as simply `https://bar`, or from without as 
+`https://bar.baz`. However, these shortnames are ambiguous with domain names
+used on the public internet. This causes a few knock-on issues:
+
+1. This ambiguity could cause clients to connect to the wrong target. Normally,
+   this would be detected by TLS certificate failures, however:
+2. This requires internal certificates to be issued for the shortname aliases
+   which could potentially be valid internet hostnames, which could make it
+   harder to detect such confusion (as well as enabling malicious impersonation).
+3. The long search chain provided by Kubernetes to enable this increases DNS
+   lookup times (and DNS server load), because it requires clients to try each
+   option separately.
 
 ### Notes/Constraints/Caveats (Optional)
 
