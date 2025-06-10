@@ -1,80 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4969: Cluster Domain Pod API
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -85,7 +9,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Split Domains](#split-domains)
@@ -169,25 +92,6 @@ leaving them to either use relative domain names or configure it manually.
 
 This KEP proposes adding a new field into the Pod's status with their cluster domain suffix.
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
-
 ## Motivation
 
 Relative domain names are a source of ambiguity: does `get.app` refer to
@@ -212,24 +116,10 @@ provide special cases for each.
 It can also be retrieved from the kubelet's `/configz` endpoint, however this is
 [considered unstable](https://github.com/kubernetes/kubernetes/blob/9d967ff97332a024b8ae5ba89c83c239474f42fd/staging/src/k8s.io/component-base/configz/OWNERS#L3-L5).
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
 ### Goals
 
 - Making it easier to use and generate FQDNs for internally-visible Services.
 - Reducing the difference between Kubernetes distributions.
-
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
 
 ### Non-Goals
 
@@ -238,33 +128,12 @@ know that this has succeeded?
 - Providing a central way to configure the cluster domain name setting across kubelets.
 - Exposing all kubelet configuration.
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
-
 ## Proposal
 
 Add a new field to the Pod status, containing the cluster domain suffix.
 It should also be accessible via the downward API and `EnvVarSource.fieldRef`.
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
-
 ### User Stories
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
 
 #### Story 1
 
@@ -292,30 +161,9 @@ spec:
 
 (Of course, in practice this would likely be integrated into the app itself, not by shelling into bash, but the principle still applies.)
 
-#### Story 2
-
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
 ### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 #### Split Domains
 
@@ -354,13 +202,6 @@ I'm going with `clusterDomain` for now because it matches Kubelet's
 `clusterDomain` configuration field, and because `zone` is somewhat
 ambiguous (are we talking about the cluster zone? the namespace's zone?).
 <<[/UNRESOLVED]>>
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 ### Test Plan
 
@@ -899,17 +740,7 @@ results, if running on a different kubelet that is configured to use a different
 cluster domain (and its configured DNS server doesn't resolve the target pod's
 cluster domain).
 
-<!--
-Why should this KEP _not_ be implemented?
--->
-
 ## Alternatives
-
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 
 ### ConfigMap a la k3s
 
