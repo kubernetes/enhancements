@@ -458,10 +458,12 @@ regressions back to decreasing values.
 #### Mirror pods
 
 For this KEP, we will not treat mirror pods in any special way. Due to the way they are currently implemented in the
-kubelet and apiserver, this means two things:
+kubelet and apiserver, this means:
 
-1. If a mirror pod's spec is modified manually, its `metadata.generation` will be bumped accordingly.
-2. The kubelet does not currently propagate the mirror pod's `metadata.generation` to the place where
+1. If a mirror pod's spec is modified manually by a client via the apiserver, its `metadata.generation` will be bumped accordingly.
+1. If a static pod's manifest is updated, the kubelet treats this as a pod deletion followed by a pod creation,
+which will reset the `metadata.generation` of the corresponding mirror pod to 1.
+1. The kubelet does not currently propagate the mirror pod's `metadata.generation` to the place where
 the pod status is updated today, so the `observedGeneration` fields of mirror pods will remain
 unpopulated.
 
