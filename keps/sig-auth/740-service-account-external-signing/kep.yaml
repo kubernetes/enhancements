@@ -17,10 +17,11 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 milestone:
   alpha: "v1.32"
+  beta: "v1.34"
 
 feature-gates:
   - name: ExternalServiceAccountTokenSigner
@@ -34,4 +35,21 @@ metrics:
   - serviceaccount_valid_tokens_total
   - apiserver_request_duration_seconds
   - serviceaccount_stale_tokens_total
-  
+  # Unix Timestamp in seconds of the last successful FetchKeys data_timestamp value returned by the external signer
+  # Type: Gauge
+  - apiserver_externaljwt_fetch_keys_data_timestamp
+  # Total attempts at syncing supported JWKs
+  # Type: Counter
+  # Labels:code
+  - apiserver_externaljwt_fetch_keys_request_total
+  # Unix Timestamp in seconds of the last successful FetchKeys request
+  # Type: Gauge
+  - apiserver_externaljwt_fetch_keys_success_timestamp
+  # Request duration and time for calls to external-jwt-signer
+  # Type: Histogram
+  # Labels:code,method
+  - apiserver_externaljwt_request_duration_seconds
+  # Total attempts at signing JWT
+  # Type: Counter
+  # Labels:code
+  - apiserver_externaljwt_sign_request_total
