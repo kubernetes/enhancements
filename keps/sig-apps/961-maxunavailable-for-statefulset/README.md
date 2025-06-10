@@ -329,7 +329,7 @@ type RollingUpdateStatefulSetStrategy struct {
       ordering guarantees, since if 3 is running and available, then both 4 and 2 are terminating at the same
       time out of order. If 4 is running and available, then both 3 and 2 are Terminating at the same time and no ordering guarantees are violated. This implementation guarantees, that always there are maxUnavailable number of Pods Terminating except the last batch.
   3.  Pod with ordinal 4 and 3 will start Terminating at the same time (because of maxUnavailable). When 4 is running and available, 2 will start Terminating. At this time both 2 and 3 are terminating. If 3 is
-      running and available before 4, 2 wont start Terminating to preserve ordering semantics. So at this time,
+      running and available before 4, 2 won't start Terminating to preserve ordering semantics. So at this time,
       only 1 is unavailable although we requested 2.
   4.  (Implemented approach) Introduce a field in Rolling Update, which decides whether we want maxUnavailable with ordering or without ordering guarantees. Depending on what the user wants, this Choice can either choose behavior 1 or 3 if ordering guarantees are needed or choose behavior 2 if they don't care. To simplify this further
       PodManagementPolicy today supports `OrderedReady` or `Parallel`. The `Parallel` mode only supports scale up and tear down of StatefulSets and currently doesn't apply to Rolling Updates. So instead of coming up
