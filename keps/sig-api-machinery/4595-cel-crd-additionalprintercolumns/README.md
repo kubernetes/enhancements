@@ -1144,6 +1144,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+If enabling this feature introduces an increase in the latency of the `kubectl get <resources>` (or similar) request durations, in turn creating load on the apiserver, the same can be indicated by apiserver metrics like `apiserver_request_duration_seconds`. If there are significant spikes in these metrics during these GET operations you can try disabling the feature/rolling back the cluster version to see if the performance improves.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
