@@ -228,6 +228,13 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+This document proposes to add new field to StatefulSet's RollingUpdate configuration 
+settings (`.spec.updateStrategy.rollingUpdate`) called `maxUnavailable`, which will 
+allow setting the maximum number of pods that can be unavailable during the update.
+This new field can be an absolute, positive number (eg. `5`) or a percentage of desired 
+pods (ex: `10%`). When the field is not specified, it will default to 1 to maintain 
+previous behavior of rolling one pod at a time.
+
 ### User Stories
 
 <!--
@@ -298,7 +305,7 @@ type RollingUpdateStatefulSetStrategy struct {
         // partitioned.
         // Default value is 0.
         // +optional
-        Partition *int32 `json:"partition,omitempty" protobuf:"varint,1,opt,name=partition"`
+        Partition *int32
 
 	// NOTE THIS IS THE NEW FIELD BEING PROPOSED
 	// The maximum number of pods that can be unavailable during the update.
@@ -306,7 +313,7 @@ type RollingUpdateStatefulSetStrategy struct {
         // Absolute number is calculated from percentage by rounding down.
         // Defaults to 1.
         // +optional
-        MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty" protobuf:"bytes,2,opt,name=maxUnavailable"`
+        MaxUnavailable *intstr.IntOrString
 
 	...
 }
@@ -825,7 +832,13 @@ kubectl get statefulsets -o yaml | grep maxUnavailable
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Users can verify the maxUnavailable feature is working for their StatefulSets by observing the behavior of their application during rolling updates. Specifically, they should monitor the update progress of StatefulSets against the maxUnavailable value they have configured. This can be done by tracking the number of pods that are unavailable at any given time during the update process and ensuring it does not exceed the specified maxUnavailable limit. Users can also view the `statefulset_unavailability_violation` metric to see if there have been instances
+- [ ] Events
+  - Event Reason: 
+- [x] API .spec
+  - Condition name: 
+  - Other field: .spec.updateStrategy.rollingUpdate.maxUnavailable
+- [X] Other (treat as last resort)
+  - Details: Users can view the `statefulset_unavailability_violation` metric to see if there have been instances
 where the feature is not working as intended.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -846,6 +859,8 @@ question.
 -->
 
 Startup latency of schedulable stateful pods should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos).
+
+The total number of `statefulset_unavailability_violation` increments across all StatefulSets must not exceed 5 over a 28-day rolling window.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
