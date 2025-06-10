@@ -302,9 +302,11 @@ The patch used in server-side apply is the volumeClaimTemplates in the StatefulS
 * `controller-revision-hash` label is added to the PVCs.
 
 Naturally, most of the update control logic also applies to PVCs.
-* Wait for PVCs to be ready for at least `minReadySeconds` before proceeding to the next replica.
 * If `updateStrategy` is `RollingUpdate`, update the PVCs in the order from the largest ordinal to the smallest.
 * If `updateStrategy` is `OnDelete`, only update the PVCs if the Pod is deleted manually.
+However, `minReadySeconds` is not considered when only PVCs are updated.
+because it is hard to determine when the PVC become ready.
+And updating PVCs is unlikely to disrupt workloads, so it should be unnecessary to inject delay into the update process.
 
 When creating new PVCs, use the `volumeClaimTemplates` from the same revision that is used to create the Pod.
 
