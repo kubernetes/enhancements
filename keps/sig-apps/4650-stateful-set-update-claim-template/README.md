@@ -3,26 +3,26 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
 - [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -133,18 +133,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -182,9 +182,9 @@ Kubernetes does not support the modification of the `volumeClaimTemplates` of a 
 This enhancement proposes relaxing validation of StatefulSet's VolumeClaim template.
 Specifically, we will allow modifying the following fields of `spec.volumeClaimTemplates`:
 * increasing the requested storage size (`spec.volumeClaimTemplates.spec.resources.requests.storage`)
-* modifying Volume AttributesClass used by the claim(`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
-* modifying VolumeClaim template's labels(`spec.volumeClaimTemplates.metadata.labels`)
-* modifying VolumeClaim template's annotations(`spec.volumeClaimTemplates.metadata.annotations`)
+* modifying Volume AttributesClass used by the claim (`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
+* modifying VolumeClaim template's labels (`spec.volumeClaimTemplates.metadata.labels`)
+* modifying VolumeClaim template's annotations (`spec.volumeClaimTemplates.metadata.annotations`)
 When `volumeClaimTemplates` is updated, the StatefulSet controller will reconcile the
 PersistentVolumeClaims in the StatefulSet's pods.
 The behavior of updating PersistentVolumeClaim is similar to updating Pod.
@@ -217,10 +217,9 @@ know that this has succeeded?
 -->
 * Allow users to update some fields of `volumeClaimTemplates` of a `StatefulSet`, specifically:
   * increasing the requested storage size (`spec.volumeClaimTemplates.spec.resources.requests.storage`)
-  * modifying Volume AttributesClass used by the claim(`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
-  * modifying VolumeClaim template's labels(`spec.volumeClaimTemplates.metadata.labels`)
-  * modifying VolumeClaim template's annotations(`spec.volumeClaimTemplates.metadata.annotations`)
-* Automatically patch the existing PersistentVolumeClaim objects, without interrupting the running Pods.
+  * modifying Volume AttributesClass used by the claim( `spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
+  * modifying VolumeClaim template's labels (`spec.volumeClaimTemplates.metadata.labels`)
+  * modifying VolumeClaim template's annotations (`spec.volumeClaimTemplates.metadata.annotations`)
 * Add `.spec.volumeClaimUpdatePolicy` allowing users to decide how the volume claim will be updated: in-place or on PVC deletion.
 
 
@@ -264,8 +263,7 @@ specify how to coordinate the update of PVCs and Pods. Possible values are:
 
 Additionally collect the status of managed PVCs, and show them in the StatefulSet status.
 Some fields in the `status` are updated to reflect the status of the PVCs:
-- readyReplicas: in addition to pods, also consider the PVCs status.
-- availableReplicas: total number of replicas of which both Pod and PVCs are ready for at least `minReadySeconds`
+- claimsReadyReplicas: the number of replicas with all PersistentVolumeClaims ready to use.
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
 
@@ -303,7 +301,7 @@ The patch used in server-side apply is the volumeClaimTemplates in the StatefulS
   which can help recover from a failed expansion if `RecoverVolumeExpansionFailure` feature gate is enabled.
 * `controller-revision-hash` label is added to the PVCs.
 
-Naturally, most of the update control logics also apply to PVCs.
+Naturally, most of the update control logic also applies to PVCs.
 * Wait for PVCs to be ready for at least `minReadySeconds` before proceeding to the next replica.
 * If `updateStrategy` is `RollingUpdate`, update the PVCs in the order from the largest ordinal to the smallest.
 * If `updateStrategy` is `OnDelete`, only update the PVCs if the Pod is deleted manually.
@@ -415,6 +413,10 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+When `volumeClaimUpdatePolicy` is `OnClaimDelete`, APIServer should accept the changes to `volumeClaimTemplates`,
+but StatefulSet controller should not touch the PVCs and preserve the current behaviour.
+Following describes the workflow when `volumeClaimUpdatePolicy` is `InPlace`.
 
 When updating volumeClaimTemplates along with pod template, we will go through the following steps:
 1. Delete the old pod.
@@ -648,14 +650,14 @@ in back-to-back releases.
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Initial unit, integration and e2e tests completed
 
 #### Beta
 
 - Gather feedback from developers and surveys
-- Complete features A, B, C
+- Complete features: StatefulSet status reporting and `kubectl rollout status` support.
 - Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Downgrade tests and scalability tests
 - All functionality completed
 - All security enforcement completed
 - All monitoring requirements completed
@@ -666,8 +668,7 @@ in back-to-back releases.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
+- 3 examples of real-world usage
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
 
@@ -689,7 +690,7 @@ enhancement:
 No changes required to maintain previous behavior.
 
 To make use of the enhancement, user can update `volumeClaimTemplates` of existing StatefulSets.
-He can also update `volumeClaimUpdatePolicy` to `InPlace` in order to rollout the changes automatically.
+One can also update `volumeClaimUpdatePolicy` to `InPlace` in order to rollout the changes automatically.
 
 ### Version Skew Strategy
 
@@ -706,13 +707,13 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-No coordinating behavior in the control plane and nodes.
+No coordinating between the control plane and nodes are required, since this KEP does not involve nodes.
 
 Should enable this feature for APIServer before kube-controller-manager.
 An n-1 kube-controller-manager should ignore the `volumeClaimUpdatePolicy` field and never touch PVCs.
 It should always create PVCs with the latest `volumeClaimTemplates`.
 
-If `volumeClaimUpdatePolicy` is set to `InPlace`,
+If `volumeClaimUpdatePolicy` is set to `InPlace` while the kube-controller-manager is down,
 when new kube-controller-manager starts, it should pick this up and start rolling out PVCs immediately.
 
 If `volumeClaimUpdatePolicy` is set to `InPlace` when the feature-gate of kube-controller-manager is disabled,
@@ -1142,6 +1143,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 2024-05-17: initial version
+- 2025-06-09: targeting v1.34 for alpha
 
 ## Drawbacks
 
