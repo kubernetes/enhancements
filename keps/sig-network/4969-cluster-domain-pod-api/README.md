@@ -140,7 +140,7 @@ It should also be accessible via the downward API and `EnvVarSource.fieldRef`.
 The Pod `foo` needs to access its sibling Service `bar` in the same namespace
 (`baz`). It adds two `env` bindings:
 
-``` yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -296,6 +296,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Graduation Criteria
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -360,32 +365,28 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+No changes are required to clients, this is a purely additive change.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+When upgrading a cluster from a version that did not enable the feature, the
+new status field will be set for new Pods launched from then on.
+
+When downgrading a cluster, the status field will not be set anymore for new
+Pods.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+Older kubelets (or kubelets with the feature disabled) will not set the attribute,
+and fail to create Pods that request the attribute via the downward API.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Older apiservers will ignore attempts (by the kubelet) to set the attribute, and
+reject attempts to create Pods that request the attribute via the downward API.
+
+Applications that want to be compatible with both environments should have a
+provision for the field being unset (such as a hard-coded default value, and/or
+a manual override flag).
+
+Additionally, such applications should retrieve the value from the Kubernetes
+REST API, rather than using the downward API.
 
 ## Production Readiness Review Questionnaire
 
@@ -413,55 +414,34 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: PodClusterDomain
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kubelet
+    - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. Workloads that don't read the status field or request it via the downward
+API would be unaffected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
+Yes.
 
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Workloads that expect the feature to be available (and don't have a fallback in
+place) would fail, but that has nothing to do with the rollout itself.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+It should become available again. Existing Pods should be unaffected.
+
 ###### Are there any tests for feature enablement/disablement?
+
+Not yet. The logic should be pretty trivial, but it probably makes sense to at
+least test gate mismatches between apiserver and kubelet.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -484,22 +464,13 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Pods that specify the downward API would fail to launch if it is no longer
+available. This would also impact APIs that create Pods on behalf of users
+(such as Deployments, StatefulSets, and third-party operators).
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Not applicable.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -511,9 +482,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -526,67 +495,31 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Kubernetes doesn't (and can't) know who reads what status fields from the API.
+
+Cluster administrators can query the cluster for Pods that request the field
+via the downward API by running the following command:
+
+```shell
+kubectl get pods --all-namespaces --output=json | jq '.items[] | select(.spec.volumes[]? | [[{downwardAPI}], .projected.sources][][]?.downwardAPI.items[]?.fieldRef.fieldPath == "status.dns.clusterDomain") | .metadata | {name, namespace}'
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] API .status
+  - Other field: dns.clusterDomain is set
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+Not applicable, as far as I can tell.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+Not applicable, as far as I can tell.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Not applicable, as far as I can tell.
 
 ### Dependencies
 
@@ -596,20 +529,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No.
 
 ### Scalability
 
@@ -625,79 +545,44 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Enabling the feature should not result in any new API calls (it should be able
+to piggyback on the kubelet's existing status and DNS machinery).
+
+Consuming the feature over the REST API may require some clients to request
+their own Pod object during Pod startup.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+The new field `.status.dns.clusterDomain` would be added to all Pod objects.
+
+For the default value of `cluster.local`, this would add 42 bytes to the 
+minified JSON serialization of each Pod.
+
+(`echo -n ',{"dns":{"clusterDomain":"cluster.local"}}' | wc -c`, assuming that
+`.status` is already set, but `.status.dns` is not.)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+Beyond the size increase noted above, no.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+The information is already stored locally, and required to generate the
+`resolv.conf` file.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+No, beyond the Pod size increase already noted.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No.
 
 ### Troubleshooting
 
@@ -732,6 +617,11 @@ For each of them, fill in the following information by copying the below templat
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
+
+- 2024-10-21: Discussion started in #sig-network: https://kubernetes.slack.com/archives/C09QYUH5W/p1729521715336479
+- 2024-10-23: Summary of the current state of the art written by @lfrancke:  https://docs.google.com/document/d/11KO8UkLB8mg-fmUjzOYJNez_3NAsZ83gyC2hArYUCEU/edit?tab=t.gldt32oscsiw
+- 2024-11-21: Initial KEP draft introduced
+- 2025-06-09: KEP retargeted at introducing a status API, rather than focusing on the downward API
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
