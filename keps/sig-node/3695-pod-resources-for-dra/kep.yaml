@@ -4,8 +4,8 @@ authors:
   - "@moshe010"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
-creation-date: implementable
+status: implementable
+creation-date: 2023-02-07
 reviewers:
   - "@ffromani"
   - "@swatisehgal"
