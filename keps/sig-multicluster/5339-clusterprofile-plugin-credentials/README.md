@@ -154,7 +154,7 @@ See [introduction slides](https://docs.google.com/presentation/d/1v5-J-kFJ3TSpKq
 ## Proposal
 
 The proposed approach to obtaining credentials is to leverage plugins for retrieving the credentials from an issuer recognized by the target cluster. The controller using ClusterProfile
-would use a library running a local executable which would retrieve the credentials for the current controller and a given clusterprofile.
+would use a library to run a local executable which would retrieve the credentials for the current controller and a given clusterprofile.
 It is expected that plugins would leverage elements local to the controller to help assert the identity of the controller (environment variables, config files, KSA, the local IP, etc...)
 to retrieve credentials that are valid on the target cluster. Plugins would be exec'ed by the controller so that they don't need be built-in the binary, allowing flexibility into writing their
 own credential plugins and still leveraging multicluster controllers written by the community. In addition, we propose to reuse the exec approach and protocol used for external credentials in
@@ -211,14 +211,14 @@ The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api
 
 ### Standardizing the Provider definition
 
-In order to populate the Cluster object that the exec provider requires, we standardize a new field in ClusterProfile called `credentials` that is stored in the Spec of the ClusterProfile.
+In order to populate the Cluster object that the exec provider requires, we standardize a new field in ClusterProfile called `credentialProviders` that is stored in the Status of the ClusterProfile.
 All the data from this structure is specific to the clusterProfile and does not contain any Controller-specific information. It must be usable by different
 controller, applications or consumers without requiring changes. It also cannot contain any data considered a secret; and we consider that reachability information
 is not sensitive.
 
 The definition is as follows:
 ```
-type Credentials struct {
+type CredentialProviders struct {
   // +listType=map
   // +listMapKey=name
   credentialProviders []CredentialsConfig // mapping of credentials types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
@@ -303,10 +303,6 @@ spec:
   displayName: my-cluster-1
   clusterManager:
     name: GKE-Fleet
-  credentials:
-    google:
-      cluster:
-        server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
 status:
   version:
     kubernetes: 1.28.0
@@ -315,6 +311,10 @@ status:
      value: some-clusterset
    - name: location
      value: us-central1
+  credentialProviders:
+    google:
+      cluster:
+        server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
 ```
 
 
@@ -348,13 +348,14 @@ version of the code and structures to convey the idea and not be an implementati
 
 #### Secret Reader plugin
 
-This plugin assumes the controller is aware of the list of clusters ahead of time and has created secrets for them.
-It simply reads the token from the secret mapped to the cluster.
+This plugin assumes the controller is aware of the list of clusters ahead of time and has created secrets for them in its namespace.
+It simply reads the token from the secret mapped to the cluster specifically for this controller. Note that namespace comes from the
+controller config while clusterName comes from the clusterProfile.
 
 ```
-func GetToken(clusterName string) string {
+func GetToken(namespace, clusterName string) string {
   // query secrets local to this controller (same cluster, same namespace)
-  secret := secrets.Get(clusterName)
+  secret := secrets.Namespace(namespace).Get(clusterName)
   return secret.Data.token
 }
 ```
