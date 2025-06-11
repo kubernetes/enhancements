@@ -428,9 +428,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- Test that updates to `CSINode.Spec.Drivers[*].Allocatable.Count` are properly reflected when the `MutableCSINodeAllocatableCount` feature gate is enabled.
-- Test that periodic updates occur at the specified `NodeAllocatableUpdatePeriodSeconds`.
-- Test that `ResourceExhausted` errors during volume attachment trigger an immediate update of the CSINode object.
+N/A, this enhancement does not introduce configuration parameters or CLI options that are used to start binaries. See e2e and graduation criteria for a comprehensive list of code coverage.
 
 ##### e2e tests
 
@@ -444,29 +442,40 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- Test the impact on pod scheduling when `CSINode.Spec.Drivers[*].Allocatable.Count` is updated, ensuring that pods are not scheduled to nodes with insufficient capacity.
 - Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag.
-- Initial unit tests/integration tests completed and enabled.
+- [✅] [Feature implemented behind a feature flag.](https://github.com/kubernetes/kubernetes/pull/130007)
+- [✅] [Initial unit tests/integration tests completed and enabled.](https://github.com/kubernetes/kubernetes/pull/130007)
 
 #### Beta
 
-- All unit tests/integration/e2e tests completed and enabled.
-  - Validate kubelet behavior when API server rejects `CSINode` updates (older API server version).
-  - Validate CSI driver behavior with and without the `NodeAllocatableUpdatePeriodSeconds` field set.
-  - Validate scheduler behavior remains consistent regardless of whether `CSINode.Spec.Drivers[*].Allocatable.Count` is being dynamically updated or not.
-  - Validate cluster autoscalar behavior is not changed as a result of changes introduced in this KEP.
-  - Validate pod construction failure handling in kubelet, ensuring it correctly updates the `CSINode` object when the feature is enabled and the API server supports it.
+All unit tests/integration/e2e tests completed and enabled:
+  - [ ] [Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.](https://github.com/kubernetes/kubernetes/pull/130942)
+  - [✅] **CSINode Updater**
+    - [Test when `NodeAllocatableUpdatePeriodSeconds` is modified that the updater is re-configured.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L168)
+    - [Test driver with nil `NodeAllocatableUpdatePeriodSeconds` that updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L146)
+    - [Test when driver is not installed the updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L103)
+    - [Test when driver is not found in informer the updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L124)
+  - [✅] **VolumeAttachment Error Code**
+    - [Test error code detection.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_plugin_test.go#L1475)
+    - [Verify error codes are dropped when feature is disabled and not previously set.](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/storage/volumeattachment/strategy_test.go#L184)
+    - [Verify error codes are not dropped when set in old object.](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/storage/volumeattachment/strategy_test.go#L209)
+  - [✅] **Scheduler QueueingHintFn**
+    - [Test when Allocatable value is increased that Stateful pod is queued.](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/nodevolumelimits/csi_test.go#L993)
+    - [Test when Allocatable value is decreased that Stateful pod is not queued.](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/nodevolumelimits/csi_test.go#L1011)
+  - [✅] **Feature Gate / API Validation**
+    - [Test Allocatable value is updated when feature gate is enabled.](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/storage/validation/validation_test.go#L1456)
+    - [Test Allocatable value is unchanged when feature gate is disabled.](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/storage/validation/validation_test.go#L1268)
 
 #### GA
 
 - Feature stability: at least 2 releases between Beta and GA.
-- No bug reports / feedback / improvements to address.
+- No bug reports / feedback / improvements to address in k/k.
+- No bug reports in Cluster Autoscalar as a result of this enhancement (*this KEP does not affect CA, but we have added this requirement out of an abundance of caution, as requested by CA.*)
 
 ### Upgrade / Downgrade Strategy
 
