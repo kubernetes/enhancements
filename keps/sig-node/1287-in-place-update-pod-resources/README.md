@@ -38,10 +38,10 @@
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
   - [Instrumentation](#instrumentation)
-    - [<code>kubelet_container_resize_requests_total</code>](#kubelet_container_resize_requests_total)
-    - [<code>kubelet_pod_resize_sli_duration_seconds</code>](#kubelet_pod_resize_sli_duration_seconds)
-    - [<code>kubelet_pod_pending_resize_total</code>](#kubelet_pod_pending_resize_total)
-    - [<code>kubelet_pod_in_progress_resize_total</code>](#kubelet_pod_in_progress_resize_total)
+    - [<code>kubelet_container_resize_attempts_total</code>](#kubelet_container_resize_attempts_total)
+    - [<code>kubelet_pod_resize_duration_seconds</code>](#kubelet_pod_resize_duration_seconds)
+    - [<code>kubelet_pod_pending_resizes</code>](#kubelet_pod_pending_resizes)
+    - [<code>kubelet_pod_in_progress_resizes</code>](#kubelet_pod_in_progress_resizes)
     - [<code>kubelet_pod_deferred_resize_accepted_total</code>](#kubelet_pod_deferred_resize_accepted_total)
   - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
@@ -891,51 +891,52 @@ Other components:
 
 The kubelet will record the following metrics:
 
-#### `kubelet_container_resize_requests_total` 
+#### `kubelet_container_resize_attempts_total`
 
-This metric tracks the total number of resize requests observed by the Kubelet, counted at the container level.
-A single pod update changing multiple containers will be considered separate resize requests.
+This metric tracks the total number of resize attempts observed by the Kubelet, counted at the container level.
+A single pod update changing multiple containers will be considered separate resize attempts.
 
 Labels: 
-- `resource_type` - what type of resource is being resized. Possible values: `cpu_limits`, `cpu_requests` `memory_limits`, or `memory_requests`. If more than one of these resource types is changing in the resize request, 
-we increment the counter multiple times, once for each. This means that a single container update changing multiple
-resource types will be considered multiple requests for this metric. 
-- `operation_type` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
+- `resource` - what resource. Possible values: `cpu`, or `memory`. If more than one of these resource types is changing in the resize request, we increment the counter multiple times, once for each.
+- `type` - what type of resource is being resized. Possible values: `limits`, or `requests`. If more than one of these resource types is changing in the resize request, we increment the counter multiple times, once for each.
+- `operation` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
 - `namespace` - the namespace of the pod.
 
 This metric is recorded as a counter.
 
-#### `kubelet_pod_resize_sli_duration_seconds`
-This metric tracks the latency between when the kubelet accepts a resize request and when it finshes actuating the request. More precisely, this metric tracks the total amount of time that the PodResizeInProgress condition is present on a pod.
+#### `kubelet_pod_resize_duration_seconds`
+This metric tracks the duration of [doPodResizeAction](https://github.com/kubernetes/kubernetes/blob/92de70895830ea1a9c2c6554bdab4cbee7ce867d/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L699), which 
+is responsible for actuating the resize.
 
 Labels: 
 - `namespace` - the namespace of the pod.
 
-This metric is recorded as a gauge.
+This metric is recorded as a histogram.
 
-#### `kubelet_pod_pending_resize_total`
+#### `kubelet_pod_pending_resizes`
 
-This metric tracks the total count of pods that the kubelet marks as pending. This will make it
+This metric tracks the current count of pods that the kubelet marks as pending. This will make it
 easier for us to see which of the current limitations users are running into the most.
 
 Labels:
 - `reason` - why the resize is pending. Possible values: `infeasible` or `deferred`.
-- `message` - more details about why the resize is pending. Although a more detailed "message" will be provided in the `PodResizePending`
+- `reason_detail` - more details about why the resize is pending. Although a more detailed "message" will be provided in the `PodResizePending`
 condition in the pod, we limit this label to only the following possible values to keep cardinality low:
   - `guaranteed_pod_cpu_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside CPU Manager static policy.
   - `guaranteed_pod_memory_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside Memory Manager static policy.
   - `static_pod` - In-place resize is not supported for static pods.
   - `swap_limitation` - In-place resize is not supported for containers with swap.
-  - `node_capacity` - The node doesn't have enough capacity for this resize request.
+  - `insufficient_node_allocatable` - The node doesn't have enough capacity for this resize request.
 - `namespace` - the namespace of the pod.
 
 This list of possible reasons may shrink or grow depending on limitations that are added or removed in the future.
 
 This metric is recorded as a gauge.
 
-#### `kubelet_pod_in_progress_resize_total`
+#### `kubelet_pod_in_progress_resizes`
 
-This metric tracks the total count of resize requests that the kubelet marks as in progress.
+This metric tracks the total count of resize requests that the kubelet marks as in progress, meaning that
+the resources have been allocated but not yet actuated.
 
 Labels: 
 - `namespace` - the namespace of the pod.
