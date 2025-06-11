@@ -21,7 +21,7 @@ see-also:
 replaces:
 superseded-by:
 stage: stable
-latest-milestone: "v1.31"
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.28"
   beta: "v1.31"
