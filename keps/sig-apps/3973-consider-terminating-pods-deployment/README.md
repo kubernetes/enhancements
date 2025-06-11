@@ -278,7 +278,9 @@ are only expecting non-terminating pods to be present in this field.
 
 To satisfy the requirement for tracking terminating pods, and for implementation purposes,
 we propose a new field `.status.terminatingReplicas` to the ReplicaSet's and Deployment's
-status.
+status. This should be gated by a separate feature gate called
+DeploymentReplicaSetTerminatingReplicas to handle graduation from the main
+DeploymentPodReplacementPolicy separately.
 
 ### Deployment Completion and Progress Changes
 
@@ -435,8 +437,8 @@ type DeploymentSpec struct {
 	// - RollingUpdate strategy uses TerminationStarted behavior for both rolling out and
 	//   scaling the deployments.
 	//
-	// This is an alpha field. Enable DeploymentPodReplacementPolicy to be able to
-	// use this field.
+	// This is an alpha field. Enable DeploymentPodReplacementPolicy and 
+	// DeploymentReplicaSetTerminatingReplicas to be able to use this field.
     // +optional
     PodReplacementPolicy *DeploymentPodReplacementPolicy `json:"podReplacementPolicy,omitempty" protobuf:"bytes,10,opt,name=podReplacementPolicy,casttype=podReplacementPolicy"`
     ...
@@ -464,7 +466,7 @@ type ReplicaSetStatus struct {
 
     // The number of terminating pods (have a non-null .metadata.deletionTimestamp) for this replica set. 
     //
-    // This is an alpha field. Enable DeploymentPodReplacementPolicy to be able to use this field.
+    // This is an alpha field. Enable DeploymentReplicaSetTerminatingReplicas to be able to use this field.
     // +optional
     TerminatingReplicas *int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,7,opt,name=terminatingReplicas"`
     ...
@@ -498,7 +500,7 @@ type DeploymentStatus struct {
 
     // Total number of terminating pods (have a non-null .metadata.deletionTimestamp) targeted by this deployment.
     //
-    // This is an alpha field. Enable DeploymentPodReplacementPolicy to be able to use this field.
+    // This is an alpha field. Enable DeploymentReplicaSetTerminatingReplicas to be able to use this field.
     // +optional
     TerminatingReplicas *int32 `json:"terminatingReplicas,omitempty" protobuf:"varint,9,opt,name=terminatingReplicas"`
     ...
@@ -550,14 +552,14 @@ extending the production code to implement this enhancement.
 Unit tests covering:
 
 ReplicaSet
-- The current behavior remains unchanged when the DeploymentPodReplacementPolicy feature gate is disabled. 
+- The current behavior remains unchanged when the DeploymentReplicaSetTerminatingReplicas feature gate is disabled. 
   The `.status.terminatingReplicas` field should be 0 in that case.
-- Add a new test that correctly counts .status.TerminatingReplicas when the DeploymentPodReplacementPolicy feature gate is enabled.
+- Add a new test that correctly counts .status.TerminatingReplicas when the DeploymentReplicaSetTerminatingReplicas feature gate is enabled.
 
 
 Deployment
-- The current behavior remains unchanged when the DeploymentPodReplacementPolicy feature gate is disabled or PodReplacementPolicy is nil.
-  The `.status.terminatingReplicas` field should be 0 in that case.
+- The current behavior remains unchanged when the DeploymentReplicaSetTerminatingReplicas and DeploymentPodReplacementPolicy feature gate is
+  disabled or PodReplacementPolicy is nil. The `.status.terminatingReplicas` field should be 0 in that case.
 - Add a test wrapper for any relevant tests, to ensure that they are run with all possible PodReplacementPolicy values correctly.
   The relevant tests are those that expect some behavior on Pod deletion, and are affected by this change.
 - New unit tests should be added for any new helper functions.
@@ -587,8 +589,8 @@ Integration tests covering:
 
 <!-- test/integration/replicaset/replicaset_test.go -->
 ReplicaSet
-- The current behavior remains unchanged when the DeploymentPodReplacementPolicy feature gate is disabled.
-- Add a new test that correctly counts `.status.terminatingReplicas` when the DeploymentPodReplacementPolicy feature gate is enabled.
+- The current behavior remains unchanged when the DeploymentReplicaSetTerminatingReplicas feature gate is disabled.
+- Add a new test that correctly counts `.status.terminatingReplicas` when the DeploymentReplicaSetTerminatingReplicas feature gate is enabled.
 
 <!--
 - <test>: <link to test coverage>
@@ -596,11 +598,13 @@ ReplicaSet
 
 <!-- test/integration/deployment/deployment_test.go -->
 Deployment
-- The current behavior remains unchanged when the DeploymentPodReplacementPolicy feature gate is disabled or PodReplacementPolicy is nil.
+- The current behavior remains unchanged when the DeploymentReplicaSetTerminatingReplicas and DeploymentPodReplacementPolicy feature gate is
+  disabled or PodReplacementPolicy is nil.
 - Add a test wrapper for any relevant tests, to ensure that they are run with all possible PodReplacementPolicy values correctly.
   The relevant tests are those that expect some behavior on Pod deletion, and are affected by this change.
 - Add new tests that observe rollout and scaling transitions for all possible PodReplacementPolicy values and
-  ensure that `.status.terminatingReplicas` is correctly counted when the DeploymentPodReplacementPolicy feature gate is enabled.
+  ensure that `.status.terminatingReplicas` is correctly counted when the DeploymentReplicaSetTerminatingReplicas and
+  DeploymentPodReplacementPolicy feature gate is enabled.
 
 <!--
 - <test>: <link to test coverage>
@@ -644,15 +648,18 @@ test/e2e/storage/utils/deployment.go
 
 #### Alpha
 
-- Feature gate disabled by default.
+- Feature gates disabled by default.
 - Unit, enablement/disablement, e2e, and integration tests implemented and passing.
 - Document [kubectl Skew](#kubectl-skew) for alpha.
 
 
 #### Beta
-- Feature gate enabled by default.
+- DeploymentPodReplacementPolicy and DeploymentReplicaSetTerminatingReplicas feature gates enabled by default.
+  DeploymentReplicaSetTerminatingReplicas feature should be enabled and graduated to beta first at least one release
+  before the DeploymentPodReplacementPolicy feature is.
 - Any test that checks Deployment and Replicaset status is updated to count updates to `.status.TerminatingReplicas`.
 - `.spec.podReplacementPolicy` is nil by default and preserves the original behavior.
+- Explore and try to resolve [Protional scaling in Deployments in not fully re-entrant](https://github.com/kubernetes/kubernetes/issues/44734) issue.
 - E2e and integration tests are in Testgrid and linked in the KEP.
 - add new metrics to `kube-state-metrics`
 - Remove documentation for [kubectl Skew](#kubectl-skew) that was introduced in alpha.
@@ -948,8 +955,10 @@ deployment and replicaset controllers.
 
 - 2023-05-01: First version of the KEP opened (https://github.com/kubernetes/enhancements/pull/3974).
 - 2023-12-12: Second version of the KEP opened (https://github.com/kubernetes/enhancements/pull/4357).
-- 2024-29-05: Added a Deployment Scaling Changes and a New Annotation for ReplicaSets section (https://github.com/kubernetes/enhancements/pull/4670).
-- 2024-22-11: Added a Deployment Completion and Progress Changes section (https://github.com/kubernetes/enhancements/pull/4976).
+- 2024-05-29: Added a Deployment Scaling Changes and a New Annotation for ReplicaSets section (https://github.com/kubernetes/enhancements/pull/4670).
+- 2024-11-22: Added a Deployment Completion and Progress Changes section (https://github.com/kubernetes/enhancements/pull/4976).
+- 2025-04-01: Introduced DeploymentReplicaSetTerminatingReplicas FG to split .status.terminatingReplicas feature from DeploymentPodReplacementPolicy (https://github.com/kubernetes/kubernetes/pull/131088)
+- 2025-06-11: Fixed ReplicationController reconciliation when the DeploymentReplicaSetTerminatingReplicas feature gate is enabled (https://github.com/kubernetes/kubernetes/issues/131821)
 
 ## Drawbacks
 
