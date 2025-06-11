@@ -395,7 +395,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `VolumeLimitScaling`
-  - Components depending on the feature gate: `autoscaler`, `scheduler`
+  - Components depending on the feature gate: `autoscaler`, `kube-scheduler`
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
