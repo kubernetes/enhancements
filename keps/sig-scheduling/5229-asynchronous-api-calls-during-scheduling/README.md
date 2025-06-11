@@ -68,17 +68,17 @@ tags, and then generate with `hack/update-toc.sh`.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -109,14 +109,10 @@ Already asynchronous calls could also be migrated to this approach.
 - P0: Make the scheduling cycle free of blocking API calls, i.e., make all API calls asynchronous.
 - P0: Make the solution extendable for future use cases.
 - P1: Skip some types of updates if they soon become irrelevant by consecutive updates.
-- Nice to have: Prioritize high-importance updates (like binding) over low-importance ones if updates to the kube-apiserver get throttled.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Prioritize high-importance updates (like binding) over low-importance ones if updates to the kube-apiserver get throttled.
 
 ## Proposal
 
@@ -163,14 +159,14 @@ API calls relevance order in which they could cancel less relevant calls for the
   Both are calls to the `status` subresource of a Pod, so they should overwrite (merge) the previous calls properly
   when the newest status is stored in-memory.
 - API calls for non-Pod resources (6 - 11) should be further analyzed as they are not likely to consider the Pod-based API calls,
-  hence implementing those shouldn't block making (1 - 3) calls asynchronous.
+  hence implementing those shouldn't block making (1 - 2) calls asynchronous.
 
 There is no need to send two API calls for one Pod, because more relevant calls should override less relevant ones,
 and status updates can be combined into one call.
 There is no scenario in which two API calls, but for different Pods, or even **any** two API calls that do not involve the same object,
 should be canceled or merged, so the relevance order between them should not be analyzed.
 
-In terms of API call priority, the order might be different (4th goal):
+In terms of API call priority, the order might be different (non-goal, but considered):
 
 - Pod binding (5) should have the highest priority as this is the main purpose of the kube-scheduler.
 - Pod deletion caused by preemption (4) should also be important to free up space for high-priority Pods.
@@ -179,13 +175,11 @@ In terms of API call priority, the order might be different (4th goal):
   because the higher delay might affect other components like Cluster Autoscaler or Karpenter.
 - API calls for non-Pod resources (6 - 11) could be analyzed case by case, but are likely equally important to (5) or (4).
 
-
 ### 1: Handling Pod rescheduling while waiting for the API call to complete
 
 There are multiple possible ways to handle such API calls, especially for Pod status updates.
 Other (potential) use cases should also be considered when choosing the solution.
 Three ways were analyzed, but the non-blocking approach, presented below, was selected.
-
 
 #### Use advanced queue and don't block the Pod from being scheduled in the meantime
 
@@ -207,11 +201,9 @@ Cons:
 - Necessitates migrating **all** Pod-based API calls to this method, but introduces unification, which could be desirable.
 - Implementing collision resolution (e.g., for same-Pod updates) is complex, but could allow optimizing the number of API calls overall.
 
-
 ### 2: What component should handle the API calls
 
 Another thing worth considering is how to indeed make the API calls asynchronous and what component should be responsible for this.
-
 
 #### 2.1: Make the API calls queued in a separate component
 
@@ -234,7 +226,6 @@ Cons:
 - Requires complex logic to handle potential conflicts between different update types for the same Pod.
 - Needs a clear strategy for how to update the in-memory Pod object during scheduling.
 - Requires extra steps to cache the updated objects.
-
 
 #### 2.2: Send API calls through a kube-scheduler's cache
 
@@ -262,7 +253,6 @@ Cons:
 - The cache currently only stores bound Pods, requiring integration with the scheduling queue for pending Pods.
 - Complex logic is needed to handle external updates arriving while an internal update is pending or in progress.
 
-
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -274,17 +264,42 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### Asynchronous API call failure
 
-How will security be reviewed, and by whom?
+When an asynchronous API call fails, the caller should be able to handle this.
+This can be done by using an `OnFailure` channel that passes the error, allowing callers to react accordingly.
+For current API calls, this will be enough - updating Pod status failures are already unhandled (only logged), so this KEP won't make that situation worse.
+However, more graceful handling, such as retries, could be added in the future.
 
-How will UX be reviewed, and by whom?
+It could be riskier when previous calls were skipped or overwritten and a subsequent call fails.
+This results in losing previous decisions (outside the kube-scheduler) as well as the last change not being applied externally.
+This should still be handled correctly, as a failed binding will result in applying a failed Pod status anyway,
+and a Pod with binding canceled because of deletion (preemption) could still be retried.
+Nevertheless, this risk should be taken into consideration when extending feature usage in the future and should be properly documented in the code.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+Another aspect is caching: applying a change to a cache should be reversible.
+This could be done by storing two versions of an object (like in AssumeCache) and restoring the older version in case of a failure.
+However, for basic usage, this won't be required for Pod-based API calls.
+
+#### Object updated by an external component causing a race with the scheduler
+
+If a single field can be updated by both the scheduler and another component, making the update API call asynchronous might extend the race window.
+One such case is the `NominatedNodeName` use case, extended by [KEP-5278](https://github.com/kubernetes/enhancements/issues/5278).
+
+However, in this KEP, we assume that the default kube-scheduler should have precedence when applying updates to objects (Pods),
+and any custom logic could be implemented by changing the default if needed.
+
+#### API calls added at a higher rate than execution rate leading to memory explosion
+
+As pending API calls will be stored in the scheduler, slower processing of these calls, while maintaining a high frequency of additions, might result in significant memory usage.
+This can already occur, for example, when many Pods are waiting to be bound simultaneously.
+However, if it turns out to be a real problem, a timeout could be added to the API call that will limit the time the call might spend in the queue, discarding it afterward.
+
+#### Pod is retried based on an old object
+
+Since a Pod won't be blocked from retrying scheduling when an status update API call for that Pod is being executed, it might enter the next scheduling cycle before the call completes.
+However, the `PodScheduled` condition is not used during scheduling, and `NominatedNodeName` is reflected in the `nominator`, so having an outdated Pod object won't cause any harm.
+Still, any future use cases might introduce issues here, so caching the updates could be considered to fully mitigate this risk.
 
 ## Design Details
 
@@ -365,7 +380,6 @@ APIQueue would provide an `Add()` method would would be used to enqueue an API c
 Supporting a cache would need adding `Update()` method that would take the object and update it with API call details (e.g., set NominatedNodeName in a Pod that will be soon updated by the call).
 This updated object could be then stored in the cache, and having the call details would allow to know what fields would need to be changed if any future update occurs before the API call is executed.
 
-
 ### Proposal B: Make a scheduler's cache managing API calls
 
 ![proposal B](proposal-B-cache.png)
@@ -381,7 +395,6 @@ It would also require adding specialized methods to the cache to consume details
 because it would be too generic for our use cases. Supporting out-of-tree plugins might also be harder, as it would require making the cache extensible to store some custom objects
 and somehow add new methods.
 
-
 ### Proposal C: Create a separate component managing API calls, but treat the cache as a middleware
 
 ![proposal C](proposal-C-cache-and-separate-component.png)
@@ -396,11 +409,9 @@ but for example, a `ResourceClaimUpdate` could go through the DRA manager, simpl
 
 This proposal could be implemented as a second step extension of proposal A.
 
-
 ### Summary of API call management
 
 Below is a summary of the steps in API call management that would be introduced by the proposals above.
-
 
 #### Enqueueing a new API call
 
@@ -415,7 +426,6 @@ Some `Update()` method could then apply these changes to an object, and the resu
 
 In all proposals, if there isn't any API call already enqueued for a given object, its UID will be added to the queue that will later be consumed by the API calls runner.
 In other scenarios, more advanced logic will be required. See the section below for more details.
-
 
 #### Enqueueing another API call for the same object
 
@@ -435,7 +445,6 @@ Merging, overwriting, or skipping a call could get more complicated if the previ
 See the [enqueueing an API call while a previous one is in-flight](#enqueueing-an-api-call-while-a-previous-one-is-in-flight) section for more details.
 In proposal B, setting the merging strategy might be more complicated and could require providing custom logic through some interfaces.
 
-
 #### Receiving object update through event handlers
 
 An object might get updated or deleted externally in the meantime, while some API call is enqueued for the same object.
@@ -454,13 +463,11 @@ The `ResourceVersion` of the object could be used to distinguish it, i.e., apply
 as long as the `ResourceVersion` of the received object is older than the version received by the update API call.
 Doing so would require storing the `ResourceVersion` of the updated object received from the API call somewhere in the cache or the queue.
 
-
 #### Executing the API call
 
 In all three proposals, executing the API call could be done by having a goroutine (API calls runner) that will check if there is any goroutine available in the pool
 (could be a configurable number) and it will try to fetch the first resource ID from a queue. Then, in the new goroutine, the API call for this resource will be executed, and after it completes,
 it will be freed for the next call.
-
 
 #### Enqueueing an API call while a previous one is in-flight
 
@@ -468,7 +475,6 @@ One other possible scenario is when an API call is executing (is in-flight) and 
 If both have the same call type, standard merging logic could be used, i.e., merge the new API call with the API call in flight.
 If the new call is less relevant, it should be skipped, but if it's more relevant, it should be stored, and after the previous call ends,
 the object UID should be re-added to the queue.
-
 
 #### Waiting for the API call to finish
 
@@ -478,13 +484,11 @@ This way, already asynchronous calls like binding can be easily migrated to the 
 as binding is already asynchronous. This channel could be easily used with proposal A,
 but proposals B and C would require passing it through cache methods, which could be less readable.
 
-
 #### Retrying API calls
 
 As API calls are getting overwritten or skipped, failure of one call might end up in losing multiple operations.
 That's why, for retryable errors, it should be possible to re-enqueue the API call and try it again soon
 Such logic could be explored, but having an `OnFinish` channel and handling errors by the caller should be enough for the actual use cases.
-
 
 ### Test Plan
 
@@ -670,8 +674,8 @@ if there is a sufficient number of pending pods in the cluster.
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 - `async_api_call_execution_total` with `call_type` and `result` labels to indicate how many async API calls with specific `call_type` completed with that `result`.
-- `async_api_call_duration_seconds` with `call_type` and `result` labels to indicate how long it took for many API calls with specific `call_type` to complete with that `result`.
-- `pending_async_api_calls` with `call_type` label to indicate how many many API calls are enqueued for specific `call_type`.
+- `async_api_call_duration_seconds` with `call_type` and `result` labels to indicate how long it took for async API calls with specific `call_type` to complete with that `result`.
+- `pending_async_api_calls` with `call_type` label to indicate how many async API calls are enqueued for specific `call_type`.
 
 ### Dependencies
 
@@ -727,20 +731,13 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If API server is unavailable, the API calls will result in a failure.
+Scheduler already handle such cases (retry scheduling in most of them) and this feature should not make a change here.
+See [retrying API calls](#retrying-api-calls) section for more details.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging`
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+Unknown
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -766,12 +763,6 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
-
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 
 There were other alternatives considered in two topics:
 1) Where and how to handle API calls during queueing and scheduling.
