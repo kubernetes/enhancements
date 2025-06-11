@@ -287,7 +287,7 @@ Pod Selection Process:
   * `OwnerReference`:
     * Further filters the label-selected pods
     * Only keeps pods that are owned by the target workload through owner references
-    * Follows the ownership chain (e.g., Deployment → ReplicaSet → Pods)
+    * Follows the ownership chain (e.g., Pods -> ReplicaSet -> Deployment)
     * Excludes pods that matched labels but aren't in the ownership chain
 
 The `HorizontalPodAutoscaler` API updated to add a new `selectionStrategy` field to the `HorizontalPodAutoscalerSpec` object:
@@ -969,7 +969,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-No.
+Yes.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
