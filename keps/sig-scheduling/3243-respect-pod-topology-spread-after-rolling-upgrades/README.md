@@ -897,7 +897,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-No.
+Yes, [there were](https://github.com/kubernetes/kubernetes/issues/110643), and it's been implemented in 
+[#115082](https://github.com/kubernetes/kubernetes/pull/115082) and [#118025](https://github.com/kubernetes/kubernetes/pull/118025).
 
 ### Dependencies
 
