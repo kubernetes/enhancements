@@ -318,7 +318,7 @@ type HorizontalPodAutoscalerSpec struct {
     // Valid values are "LabelSelector" and "OwnerReference".
     // If not set, defaults to "LabelSelector" which is the legacy behavior.
     // +optional
-    selectionStrategy *selectionStrategy `json:"selectionStrategy,omitempty"`
+    SelectionStrategy *selectionStrategy `json:"selectionStrategy,omitempty"`
 }
 ```
 
@@ -415,10 +415,12 @@ If filtering fails (e.g., due to RBAC issues), the system defaults to using all 
 This enhancement applies consistently across the following supported metric types in the HorizontalPodAutoscaler:
 
 - Resource metrics (e.g., CPU, memory)
-- Container resource metrics
-- Object metrics (only when Value type is selected with `spec.metrics.object.target.value`)
 - Pods metrics
-- External metrics (only when Value type is selected with `spec.metrics.external.target.value`)
+- Container resource metrics
+- Object metrics (only when AverageValue[^1] type is selected with `spec.metrics.object.target.type`)
+- External metrics (only when AverageValue[^1] type is selected with `spec.metrics.external.target.type`)
+
+[^1]: With AverageValue, the value returned from the custom metrics API is divided by the number of Pods before being compared to the target, thus requiring improved pod selection. However, Value, the target is compared directly to the returned metric from the API.
 
 Reference: [Kubernetes HPA metric types](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics)
 
