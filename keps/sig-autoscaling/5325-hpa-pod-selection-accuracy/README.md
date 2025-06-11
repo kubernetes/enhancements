@@ -414,19 +414,6 @@ This enhancement applies consistently across the following supported metric type
 
 Reference: [Kubernetes HPA metric types](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-resource-metrics)
 
-The HPA status is enhanced to provide visibility into the pod selection:
-
-```go
-type HorizontalPodAutoscalerStatus struct {
-    // ... existing fields ...
-    
-    // CurrentselectionStrategy indicates which pod selection strategy
-    // is currently being used
-    // +optional
-    CurrentselectionStrategy selectionStrategy `json:"currentselectionStrategy,omitempty"`
-}
-```
-
 When a user updates an HPA to change its pod selection strategy:
 
 - The controller detects strategy changes during HPA updates
@@ -794,7 +781,6 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 The presence of the `selectionStrategy` field in HPA specifications indicates that the feature is in use.
-Additionally, the HPA status will include information about the pod selection strategy in use through the `podSelectionInfo` field, which can be examined to determine if strict pod selection is active for a given HPA.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -807,16 +793,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [x] API .status
-  - Other field: The HPA status will be enhanced to include pod selection information
-
-```yaml
-status:
-  podSelectionInfo:
-    strategy: "OwnerReference"  # or "LabelSelector"
-```
-
-Additionally, verbose controller logs will show which pods were included or excluded from metric calculations due to the strict selection policy when troubleshooting is needed.
+Users can confirm that the feature is active and functioning by inspecting the conditions exposed by the controller. Specifically, they can verify the value of `.spec.selectionStrategy` to ensure the expected behavior is enabled.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -943,7 +920,6 @@ Describe them, providing:
 Yes.
 
 - HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
-- The status will include additional pod selection information (approximately 50-100 bytes)
 - caching for every podsFilter stratrgy will be saved
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
