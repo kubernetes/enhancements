@@ -543,7 +543,7 @@ Not applicable.
 
 ## Implementation History
 
-- `v1.31`: KEP is in alpha
+- `v1.31`: KEP is in alpha and imlpemented for Device Plugin
 
 ## Drawbacks
 
