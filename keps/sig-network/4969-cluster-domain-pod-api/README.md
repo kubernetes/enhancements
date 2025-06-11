@@ -600,22 +600,32 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Not applicable, it should not require any new API or etcd calls.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Different kubelets could be configured to use different cluster domains, which
+  may confuse some workloads.
+  - Detection: `kubectl get pods --all-namespaces --output=json | jq '.items[0] as $first | .items[] | select(.status.dns.clusterDomain != $first.status.dns.clusterDomain)'` 
+    returns a non-empty result
+  - Mitigations: Not much, beyond resolving the configuration issue and
+    restarting the workloads. This KEP does not concern how cluster domains
+    are managed (see the [non-goals](#non-goals)), nor does it declare this
+    to be an *invalid* state, just one that may be surprising.
+  - Diagnostics: Out of scope.
+  - Testing: Out of scope.
+- An existing kubelet may be reconfigured with a new cluster domain, leaving
+  preexisting Pods with the old cluster domain configuration.
+  - Detection: `kubectl get pods --all-namespaces --output=json | jq '(.items | map({key: .spec.nodeName, value: .status.dns.clusterDomain} | select(.key != null)) | from_entries) as $nodes | .items[] | select(.status.dns.clusterDomain != $nodes[.spec.nodeName]?)'` 
+    returns a non-empty result
+  - Mitigations: Restart the old workloads by deleting their Pods. Again, this
+    state is not declared *invalid* by this KEP.
+  - Diagnostics: Out of scope.
+  - Testing: Out of scope.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Not applicable, as far as I can tell.
 
 ## Implementation History
 
