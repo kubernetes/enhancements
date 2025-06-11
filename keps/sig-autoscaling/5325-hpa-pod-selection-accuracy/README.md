@@ -274,6 +274,12 @@ spec:
   selectionStrategy: OwnerReference  # Default: LabelSelector
 ```
 
+Since the added field is optional and its omission does not change the existing
+autoscaling behavior, this feature will only be added to the latest stable API
+version `pkg/apis/autoscaling/v2`. Older versions (i.e. `v1`, `v2beta1`,
+`v2beta2`) will not include the new field, but converters will be updated where
+needed to comply with [round-trip requirements][].
+
 Pod Selection Process:
 
 - Initial Label Selection (Always happens):
@@ -315,6 +321,8 @@ type HorizontalPodAutoscalerSpec struct {
     selectionStrategy *selectionStrategy `json:"selectionStrategy,omitempty"`
 }
 ```
+
+[round-trip requirements]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-parts-of-the-api
 
 ### Pluggable Pod Filtering
 
