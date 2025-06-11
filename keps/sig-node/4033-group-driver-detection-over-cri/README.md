@@ -177,19 +177,18 @@ will take precedence over cgroupDriver setting from the kubelet config (or
 `--cgroup-driver` command line flag). If the runtime does not provide
 information about the cgroup driver, then kubelet will fall back to using its
 own configuration (`cgroupDriver` from kubeletConfig or the `--cgroup-driver`
-flag). For beta, the kubeletConfig field and `--cgroup-driver` flag will be
-marked as deprecated. Usage of the deprecated setting will produce a log
-message, e.g.:
+flag). In beta, resorting to the fallback behavior will produce a log message like:
 
 ```
 cgroupDriver option has been deprecated and will be dropped in a future release. Please upgrade to a CRI implementation that supports cgroup-driver detection.
 ```
 
 The `--cgroup-driver` flag and the cgroupDriver configuration option will be
-deprecated and have no effect when support for the feature is graduated to GA.
-The kubelet refuses to start if the CRI runtime does not support the feature.
-The configurations flags will ultimately be removed as per the
-[Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli).
+deprecated when support for the feature is graduated to GA.
+The configurations flags (and the related fallback behavior) will be removed in
+a later release as per the [Kubernetes deprecation policy][deprecation-policy].
+At the point the kubelet refuses to start if the CRI runtime does not support
+the feature.
 
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeConfig is queried before initializing the
@@ -198,6 +197,8 @@ management. RuntimeConfig query is expected to
 succeed, an error (error response or timeout) is regarded as a failed
 initialization of the runtime service and kubelet will exit with an error
 message and an error code.
+
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli
 
 ### Test Plan
 
@@ -242,20 +243,21 @@ No new e2e tests for kubelet are planned.
 #### GA
 
 - No bugs reported in the previous cycle.
-- Drop fallback to old behavior. CRI implementations expected to have support.
 - Deprecate kubelet cgroupDriver configuration option and `--cgroup-driver` flag.
 - Remove feature gate
 - All issues and gaps identified as feedback during beta are resolved
 
 ### Upgrade / Downgrade Strategy
 
-In alpha and beta, the fallback behavior specified in alpha will prevent the majority of regressions, as Kubelet will choose a cgroup driver,
-same as it used to before this KEP, even when the feature gate is on.
+The fallback behavior will prevent the majority of regressions, as Kubelet will
+choose a cgroup driver, same as it used to before this KEP, even when the
+feature gate is on.
+
 The feature gate is another layer of protection, requiring admins to specifically opt-into this behavior.
 
 ### Version Skew Strategy
 
-In alpha and beta, if either kubelet or the container runtime running on the node does not support
+If either kubelet or the container runtime running on the node does not support
 the new field in the CRI API, they just resort to the existing behavior of
 respecting their individual cgroup-driver setting. That is, if the node has a
 container runtime that does not support this field the kubelet will use its
@@ -266,7 +268,10 @@ ignored by kubelet and it will resort to its own configuration settings. Note:
 this does present a configuration skew risk, but that risk is the same as
 currently exists today.
 
-In GA, the fallback behavior will be removed, and the kubelet will rely on the
+The fallback behavior will be removed along with the `--cgroup-driver` flag and
+cgroupDriver option in a few releases after GA, as per the
+[Kubernetes deprecation policy][deprecation-policy].
+At this point the kubelet relies on the
 container runtime to implement the feature. In practice, this means the cluster
 must use at least containerd v2.0 or cri-o v1.28 as a prerequisite for
 upgrading.
@@ -285,15 +290,15 @@ upgrading.
 
 Yes.
 
-In alpha and beta, when the runtime is updated to a version that supports this, kubelet
+When the runtime is updated to a version that supports this, kubelet
 will ignore the cgroupDriver config option/flag. However, this change in
 behavior should not cause any breakages (on the contrary, it should fix
 scenarios where the kubelet `--cgroup-driver` setting is incorrectly
 configured). With old versions of the container runtimes (that don't support
 the new field in the CRI API) the default behavior is not changed.
 
-In GA, the fallback behavior is removed and the kubelet requires the CRI
-runtime to implement the feature (see
+When the `--cgroup-driver` setting is removed, the fallback behavior is dropped
+and the kubelet requires the CRI runtime to implement the feature (see
 [Version Skew Strategy](#version-skew-strategy)).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -334,14 +339,12 @@ testing of the feature gate (in addition to the unit tests) is performed.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-Yes.
-
-In alpha and beta, the CgroupDriver field of the Kubelet configuration (and the
+Yes, the CgroupDriver field of the Kubelet configuration (and the
 corresponding `--cgroup-driver` flag) will be marked as deprecated.
 
-In GA, the CgroupDriver configuration option and the `--cgroup-driver` flag are
-deprecated, will have no effect, and will be removed in a future release as per
-the Kubernetes deprecation policy.
+After GA, the CgroupDriver configuration option and the `--cgroup-driver` flag
+will be removed in a future release as per the
+[Kubernetes deprecation policy][deprecation-policy]
 
 ### Monitoring Requirements
 
@@ -354,14 +357,16 @@ info`).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-No metrics will expose this.
-
-In alpha and beta, examining kubelet logs whould inform the
+No metrics will expose this. Examining kubelet logs whould inform
 that the cgroup driver setting instructed by the runtime is being used.
 
-In GA, the kubelet refuses to start if the feature is not working. The can be
-observed in the system logs and the node being in NotReady state or node not
-being registered in cluster bootstrap.
+After GA, the CgroupDriver configuration option and the `--cgroup-driver` flag
+will be removed in a future release, in accordance with the
+[Kubernetes deprecation policy][deprecation-policy]. At that point, the kubelet
+will refuse to start if the required feature is not functioning correctly. This
+failure can be observed in system logs, with the node either entering a
+NotReady state or failing to register during cluster bootstrap. The behavior
+will be similar to other critical CRI server errors.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -379,12 +384,12 @@ N/A.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-A CRI (server) implementation of the correct version.
+A CRI (server) implementation of the correct version. However, the feature will
+fallback if the CRI implementation doesn’t support the feature.
 
-In alpha and beta, the feature will fallback if the CRI implementation doesn’t
-support the feature.
-
-In GA, a sufficiently recent version of the CRI runtime is a hard requirement.
+After GA, the fallback behavior will be removed in a future release, as per the
+[Kubernetes deprecation policy][deprecation-policy]. At this point, a
+sufficiently recent version of the CRI runtime is a hard requirement.
 
 ### Scalability
 
@@ -430,10 +435,12 @@ container runtime, only.
 
 ###### What are other known failure modes?
 
-In alpha and beta, same that exists today: Kubelet and the CRI server (container runtime) not
+Same that exists today: Kubelet and the CRI server (container runtime) not
 agreeing on the CgroupDriver while one of them doesn’t support the feature.
 
-In GA, the kubelet requires the CRI runtime to implement the feature and will
+After GA, the fallback behavior will be removed in a future release, as per the
+[Kubernetes deprecation policy][deprecation-policy]. At this point,
+the kubelet requires the CRI runtime to implement the feature and will
 refuse to start if it is not supported. As a result, the minimum required
 versions for containerd is v2.0 and for cri-o is v1.28.
 
