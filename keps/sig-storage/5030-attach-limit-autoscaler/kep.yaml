@@ -7,7 +7,7 @@ participating-sigs:
   - sig-storage
   - sig-scheduling
   - sig-autoscaling
-status: provisional
+status: implementable
 creation-date: 2025-01-09
 reviewers:
   - TBD
