@@ -83,8 +83,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-All Kubernetes Services (and many Pods) have Fully Qualified Domain Names (FQDNs)
-that are constructed using the format `{service}.{namespace}.svc.{clusterDomain}`,
+Almost all Kubernetes installations use DNS to access Services (and some Pods).
+These Services (and Pods) have Fully Qualified Domain Names (FQDNs) that are
+constructed using the format `{service}.{namespace}.svc.{clusterDomain}`,
 where `{clusterDomain}` is _typically_ `cluster.local`, but can be reconfigured
 by the cluster administrator.
 
