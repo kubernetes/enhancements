@@ -10,11 +10,16 @@ participating-sigs:
 status: implementable
 creation-date: 2025-01-09
 reviewers:
-  - TBD
+  - "@gjtempleton"
   - "@jsafrane"
   - "@msau42"
+  - "@elmiko"
+  - "@towca"
 approvers:
-  - TBD
+  - "@gjtempleton"
+  - "@jsafrane"
+  - "@msau42"
+  - "@towca"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
