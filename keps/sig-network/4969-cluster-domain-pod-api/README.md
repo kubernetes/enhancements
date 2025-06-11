@@ -90,6 +90,8 @@ by the cluster administrator.
 
 Currently, there is no way for cluster workloads to query for this domain name,
 leaving them to either use relative domain names or configure it manually.
+Even the apiserver doesn't know the correct value, only each individual kubelet
+(and the DNS server).
 
 This KEP proposes adding a new field into the Pod's status with their cluster domain suffix.
 
