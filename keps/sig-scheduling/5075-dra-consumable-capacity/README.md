@@ -832,6 +832,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - If a default is defined, require exactly one of `discreteValues` or `valueRange`.
 - The default must be included in the options for `discreteValues`, or fall within the specified `valueRange`.
 - Options must be a list of unique values.
+- The option size should be kept within limits to avoid excessive growth.
 - The minimum must be less than or equal to the maximum in the `valueRange`.
 - If a chunk size is defined, both the default and the maximum must be multiples of the chunk size.
 - The minimum, maximum, and (minimum + chunk size) must each be less than the capacity value.
@@ -880,6 +881,8 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 ##### Integration tests
 
 The existing [integration tests for kube-scheduler which measure performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme) will be extended to cover the overheaad of running the additional logic to support the features in this KEP. 
+
+We will extend the test for creating large ResourceSlices to ensure that a ResourceSlice using the new fields satisfies the etcd limits.
 
 ##### e2e tests
 
@@ -1070,7 +1073,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 Yes, this feature can be disabled once it has been enabled.
 The `allowMultipleAllocations` flag, `sharingPolicy`, `capacityRequests`, and `consumedCapacities` fields will be dropped.
-However, the `shareID` and renamed device (`<device id>/<share id>`) in device status needs to be remained to keep the existing allocation result reference valid.
+However, the `shareID` and renamed device (`<device id>/<share id>`) in device status needs to remain to keep the existing allocation result reference valid.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1251,7 +1254,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers being deployed.
+This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers that support the feature being deployed.
 This feature also works with DRA device status feature if it is enabled.
 
 ### Scalability
@@ -1315,6 +1318,14 @@ Describe them, providing:
 
 Yes, when using this field, the user will add additional data in their `ResourceSlice`, `ResourceClaim` and `ResourceClaimTemplate` objects.
 This is an incremental increase on top of the existing structures.
+
+Estimated increase in size:
+- ~ 10 bytes of boolean pointer per device
+- ~ 200-1100 bytes per sharing policy (max 10 options)
+- ~ 100 bytes per capacitiy per request and allocation result
+  (`ResourceSliceMaxAttributesAndCapacitiesPerDevice`=32)
+- ~ 40 bytes of share ID per resource allocation
+- 7 bytes extended name in device name if the device status feature is enabled
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
