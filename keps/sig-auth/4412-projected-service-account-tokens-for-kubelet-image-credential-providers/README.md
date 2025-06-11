@@ -1023,6 +1023,10 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+New metrics:
+
+- `kubelet_credential_provider_config_hash` indicates the hash of the kubelet credential provider configuration file. This metric can be used by operators to determine if the kubelet credential provider configuration has changed.
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -1031,8 +1035,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Operators can check for a kubelet config file passed into the `--image-credential-provider-config`.
-The config has a field called `imageMatches` which indicates the images a plugin will be invoked for.
+Operators can use `kubelet_credential_provider_config_hash` metric to determine if the kubelet credential provider configuration has changed. If the hash of the configuration file changes, it indicates that the kubelet credential provider configuration has been updated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
