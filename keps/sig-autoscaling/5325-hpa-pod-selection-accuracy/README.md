@@ -913,10 +913,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-Yes.
-
-- HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
-- caching for every podsFilter stratrgy will be saved
+Yes, HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -928,7 +925,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-No.
+Yes, enabling this feature may introduce a slight increase in latency due to additional resource checks. For example, in the case of a Deployment, the system may need to perform two extra ownership checks (e.g., Pod → ReplicaSet → Deployment). While this added processing could have some impact, it is expected to be negligible in most scenarios.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -941,7 +938,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-Yes.
+Yes, caching for every podsFilter stratrgy will be saved and 
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
