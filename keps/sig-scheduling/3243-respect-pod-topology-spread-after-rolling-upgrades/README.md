@@ -897,8 +897,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Yes. It's helpful if we have the metrics to see which plugins affect to scheduler's decisions in Filter/Score phase. 
-There is the related issue: https://github.com/kubernetes/kubernetes/issues/110643 . It's very big and still on the way.
+No.
 
 ### Dependencies
 
