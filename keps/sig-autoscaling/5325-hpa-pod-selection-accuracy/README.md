@@ -294,7 +294,7 @@ The `HorizontalPodAutoscaler` API updated to add a new `selectionStrategy` field
 
 ```go
 // selectionStrategy defines how pods are selected for metrics collection
-type selectionStrategy string
+type SelectionStrategy string
 
 const (
     // LabelSelector selects all pods matching the target's label selector
