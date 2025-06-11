@@ -828,11 +828,7 @@ Standard HPA metrics (e.g. `horizontal_pod_autoscaler_controller_metric_computat
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-The following metrics will be available to monitor the pod selection behavior:
-
-- Pod Selection Metrics
-
-These metrics track the number of pods before and after filtering.
+No.
 
 ### Dependencies
 
