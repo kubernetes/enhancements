@@ -40,6 +40,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+      - [Phase-1](#phase-1)
+      - [Phase-2](#phase-2)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -147,6 +149,9 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 Scheduler changes can only be merged after cluster-autoscaler changes has been GAed and there are no concerns about scheduler changes.
 
 ### Risks and Mitigations
+
+As mentioned above, there is a risk associated with scheduler changes being merged before cluster-autoscaler changes can be merged, but we want to mitigate
+this by making sure cluster-autoscaler changes are merged first and has N+2 window before scheduler changes can be made GA. 
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -288,8 +293,16 @@ We will add tests that validate both scaling from 0 and scaling from 1 use cases
 
 #### Alpha
 
-- All of the planned code changes for alpha will be done in cluster-autoscaler and not in k/k repository.
-- Initial e2e tests completed and enabled
+##### Phase-1
+
+- This is MVP of cnhanges in cluster-autoscaler.
+- All of the planned code changes for Phase1- alpha will be done in cluster-autoscaler and not in k/k repository.
+  We plan to impelemnt changes in cluster-autoscaler so as it can consider volume limits when scaling cluster.
+
+##### Phase-2
+- Make changes in `kube-scheduler` so as it can stop scheduling of pods that require CSI volume if underlying CSI volume is not installed on the node.
+- Initial e2e tests completed and enabled.
+
 
 <!---
 #### Beta
@@ -323,6 +336,12 @@ in back-to-back releases.
 -->
 
 ### Upgrade / Downgrade Strategy
+
+For the case of newer scheduler running with older autoscaler, we propose that `VolumeLimitScaling` feature
+should be disabled in the scheduler. 
+
+Upgrade and downgrade of `cluster-autoscaler` should be straightforward since there are no API changes 
+involved and it just means the feature will stop working once downgraded.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
