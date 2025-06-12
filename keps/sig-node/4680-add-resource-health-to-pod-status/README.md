@@ -285,113 +285,91 @@ We should consider introducing another field to the Status that will be a free f
 
 ### DRA implementation details
 
-Today DRA does not return the health of the device back to kubelet. In `1.30` we had a `ListAndWatch()` API similar to DevicePlugin, from which we could have inferred device health. However, this API is being removed in `1.31`, necessitating a new approach for health monitoring.
+Today DRA does not return the health of the device back to kubelet. In `1.30`
+we had a `ListAndWatch()` API similar to DevicePlugin, from which we could
+have inferred device health. However, this API is being removed in `1.31`,
+necessitating a new approach for health monitoring.
 
-The following design outlines how Kubelet will obtain health information from DRA plugins and use it to update the PodStatus. This design focuses on an optional, proactive health reporting mechanism from DRA plugins.
+The following design outlines how Kubelet will obtain health information
+from DRA plugins and use it to update the PodStatus. This design focuses on an
+optional, proactive health reporting mechanism from DRA plugins.
 
-**High-Level Architectural Approach for DRA Health**
+#### High-Level Architectural Approach for DRA Health
 
-1.  **Optional gRPC Stream:** A new, optional gRPC service (`NodeHealth`) is defined within a dedicated API group (`dra-health/v1alpha1`). DRA plugins can implement this service. It exposes a server-streaming RPC (`WatchResources`) allowing the plugin to proactively send health updates for its managed devices to Kubelet.
-2.  **Health Information Cache:** Kubelet's DRA Manager will maintain a persistent cache (`healthInfoCache`) storing the latest known health status (Healthy, Unhealthy, Unknown) and a `LastUpdated` timestamp for each device, keyed by driver name and device identifiers. This cache handles state reconciliation, timeouts for stale data, and persists across Kubelet restarts.
-3.  **Kubelet Integration:** Kubelet's DRA Manager (`pkg/kubelet/cm/dra/manager.go`) acts as the gRPC client. Upon plugin registration, it attempts to initiate the `WatchResources` stream. If successful, it consumes the health stream, updates the `healthInfoCache`, identifies which Pods are affected by reported health changes (using its existing `claimInfoCache`), and signals the Kubelet status manager via a dedicated update channel.
-4.  **Update Channel Aggregation:** The Container Manager (`pkg/kubelet/container_manager_linux.go`) merges update signals from the DRA Manager's update channel (if the DRA health feature is enabled) and the Device Manager's existing update channel into a single channel (`Updates()`) monitored by the Kubelet status manager.
-5.  **PodStatus Update:** Kubelet's pod synchronization logic, upon receiving an update signal or during other Pod updates, calls the Container Manager's `UpdateAllocatedResourcesStatus` method. This, in turn, calls the DRA Manager's `UpdateAllocatedResourcesStatus` method, which reads the current health status for the Pod's allocated DRA devices from `healthInfoCache` and populates the `pod.Status.ContainerStatuses[].AllocatedResourcesStatus` field (and `pod.Status.AllocatedResourcesStatus` for pod-level resources in alpha2) with the correct health information.
+1.  **Optional gRPC Stream:** A new, optional gRPC service for health monitoring
+    will be defined. DRA plugins can implement this service to proactively send
+    health updates for their managed devices to Kubelet. It will expose a
+    server-streaming RPC that allows the plugin to send a complete list of
+    device health states whenever a change occurs. If a plugin does not
+    implement this service, the health of its devices will be reported as "Unknown".
 
-*Note: Kubelet will ONLY currently use this health information to update the Pod Status. The DRA plugin remains responsible for updating ResourceSlices to taint resources or mark them unhealthy through other mechanisms if needed.*
+2.  **Health Information Cache:** Kubelet's DRA Manager will maintain a
+    persistent cache of device health information. This cache will store the
+    latest known health status (e.g., Healthy, Unhealthy, Unknown) and a
+    timestamp for each device, keyed by driver and device identifiers. The cache
+    will be responsible for reconciling the state reported by the plugin, handling
+    timeouts for stale data (marking devices as "Unknown" if not updated
+    within a certain period), and persisting this information across Kubelet restarts.
 
-**Core Components and Logic for DRA Health**
+3.  **Kubelet Integration:** The DRA Manager in Kubelet will act as the gRPC client.
+    Upon plugin registration, it will attempt to initiate the health monitoring
+    stream. If successful, it will consume the health updates, update its
+    internal health cache, and identify which Pods are affected by any
+    reported health changes. For seamless plugin upgrades, where multiple
+    instances of a plugin might run concurrently, the Kubelet will always
+    watch the most recently registered plugin for health updates.
 
-1.  **DRA Health Information Cache (`pkg/kubelet/cm/dra/healthinfo.go`)**
-    *   **Purpose:** To maintain the source of truth for device health within Kubelet, reconciling reported data and handling missing/stale information.
-    *   **Data Structure:**
-        *   `healthInfoCache`: Holds `HealthInfo` (e.g., `*state.DevicesHealthMap`) and state file persistence information.
-        *   `state.DevicesHealthMap`: `map[string]DriverHealthState` (keyed by driver name).
-        *   `state.DriverHealthState`: Contains `Devices []DeviceHealth`.
-        *   `state.DeviceHealth`: Contains `PoolName string`, `DeviceName string`, `Health state.DeviceHealthString`, `LastUpdated time.Time`.
-        *   `state.DeviceHealthString`: A string type with values "Healthy", "Unhealthy", "Unknown".
-    *   **Key Features & Functions:**
-        *   `newHealthInfoCache(stateFile)`: Initializes cache, loads from checkpoint file if it exists.
-        *   `updateHealthInfo(driverName, devices)`: Performs full-state reconciliation for a driver based on a `WatchResourcesResponse`. Updates `LastUpdated` timestamps. Marks devices not present in the update as "Unknown" if `time.Since(LastUpdated) > healthTimeout`. Preserves existing health status if within timeout. Returns information about changed devices.
-        *   `getHealthInfo(driverName, poolName, deviceName)`: Returns current health, considering `healthTimeout`. If `time.Since(device.LastUpdated) > healthTimeout`, it returns "Unknown".
-        *   `clearDriver(driverName)`: Removes all data for a driver (e.g., on deregistration or stream end).
-        *   `saveToCheckpoint()` / `loadFromCheckpoint()`: Handles persistence via JSON marshalling.
-        *   `healthTimeout`: A constant (e.g., 30s) for marking stale devices "Unknown".
-    *   **Handling Timeouts and 'Unknown' State:**
-        *   "Unknown" status due to timeout is determined on-demand by `getHealthInfo`.
-        *   `updateHealthInfo` also actively sets "Unknown" for devices previously known but not in the latest update from the plugin, if their `LastUpdated` timestamp exceeds `healthTimeout`.
-        *   No separate background expiration worker is required; Kubelet's existing status manager update triggers will naturally reflect timeouts when `getHealthInfo` is called.
-        *   If a plugin stops sending updates for all its devices (e.g., plugin crashes, stream ends), `HandleWatchResourcesStream` calls `clearDriver`, and subsequent calls to `getHealthInfo` for these devices will return "Unknown".
+4.  **PodStatus Update:** When health changes for a device are detected, the DRA manager
+    will trigger an update for the affected Pods. Kubelet's main pod synchronization
+    logic will then read the current health status for the Pod's allocated DRA devices
+    from the health cache and populate the `AllocatedResourcesStatus` field in the
+    PodStatus with the correct health information.
 
-2.  **gRPC API for DRA Device Health (`staging/src/k8s.io/kubelet/pkg/apis/dra-health/v1alpha1/api.proto`)**
-    *   A new API group `dra-health/v1alpha1` is introduced.
-    *   Defines a `NodeHealth` service:
-        ```proto
-        service NodeHealth {
-          // WatchResources allows a DRA plugin to stream health updates for its devices to Kubelet.
-          // Kubelet calls this method, and the plugin streams responses.
-          // This method is optional; if not implemented by a plugin, Kubelet will assume
-          // devices managed by that plugin have an "Unknown" health status.
-          rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse) {}
-        }
+  *Note: Kubelet will only use this health information to update the Pod
+  Status. The DRA plugin remains responsible for other actions, such as tainting
+  ResourceSlices to prevent scheduling on unhealthy resources.*
 
-        message WatchResourcesRequest {
-          // Reserved for future use, e.g., filtering or options.
-        }
+#### gRPC API for DRA Device Health
 
-        message WatchResourcesResponse {
-          // A list of all devices managed by the plugin for which health is being reported.
-          // This should be a complete list for the driver; Kubelet will reconcile this state.
-          repeated DeviceHealth devices = 1;
-        }
+A new gRPC service, `NodeHealth`, will be introduced in a new API group (e.g., `dra-health/v1alpha1`) to keep it separate from the core DRA API and signify its optionality.
 
-        message DeviceHealth {
-          // The name of the resource pool this device belongs to.
-          // Required.
-          string pool_name = 1;
-          // The unique name of the device within the pool.
-          // Required.
-          string device_name = 2;
-          // Health status of the device.
-          // Expected values: "Healthy", "Unhealthy", "Unknown".
-          // Required.
-          string health_status = 3;
-          // Timestamp of when this health status was last determined by the plugin, as a Unix timestamp (seconds).
-          // Required.
-          int64 last_updated_timestamp = 4;
-          // Optional: A globally unique resource name, e.g., <driver>/<pool>/<device>.
-          // Useful for correlating with other systems.
-          string resource_name = 5;
-        }
-        ```
-    *   This gRPC service is kept separate from the core DRA API (`Node` service in `k8s.io/kubelet/pkg/apis/dra/v1alphaX`) to signify its optionality.
-    *   If a plugin does not implement this service, plugin registration will continue. If device health is queried for such a plugin (e.g., during a call to `UpdateAllocatedResourcesStatus`), its devices will report an "Unknown" health state.
+The service will define a `WatchResources` RPC:
 
-3.  **Kubelet DRA Plugin Client and Registration for Health Monitoring (`pkg/kubelet/cm/dra/plugin/plugin.go`, `pkg/kubelet/cm/dra/plugin/registration.go`)**
-    *   **Plugin Client Logic:**
-        *   The `Plugin` struct will hold a `healthClient` (e.g., `drahealthv1alpha1.NodeHealthClient`), `healthStreamCtx (context.Context)`, and `healthStreamCancel (context.CancelFunc)`.
-        *   `getOrCreateGRPCConn()`: Initializes the `healthClient` after gRPC connection establishment.
-        *   `WatchResources(ctx)`: A method on the plugin client, called by the registration handler, to initiate the gRPC stream via `healthClient.WatchResources()`.
-        *   `SetHealthStream`, `HealthStreamCancel`: Manage the context and cancellation for the health stream goroutine.
-    *   **Registration:**
-        *   The `RegistrationHandler` will be extended to handle the health stream.
-        *   `RegisterPlugin`: After successful registration with the core DRA API, it will attempt to call `pluginInstance.WatchResources()`.
-            *   If an `Unimplemented` error is received, Kubelet logs this and continues registration without health monitoring for that plugin. PodStatus will not be populated with health for this driver's resources (will default to "Unknown").
-            *   On Success: It stores the stream context/cancel func using `pluginInstance.SetHealthStream()` and starts a background goroutine (e.g., `go h.streamHandler.HandleWatchResourcesStream(streamCtx, stream, pluginName)` via an interface).
-            *   On Replacement of a plugin: The `HealthStreamCancel()` function for the old plugin instance is called to stop its health stream.
-    *   **Deregistration:**
-        *   `DeRegisterPlugin`: Calls `p.HealthStreamCancel()` to stop the health stream goroutine and cleans up related plugin resources.
+```proto
+service NodeHealth {
+  // WatchResources allows a DRA plugin to stream health updates for its devices to Kubelet.
+  // Kubelet calls this method, and the plugin streams responses.
+  // This method is optional; if not implemented by a plugin, Kubelet will assume
+  // devices managed by that plugin have an "Unknown" health status.
+  rpc WatchResources(WatchResourcesRequest) returns (stream WatchResourcesResponse) {}
+}
 
-4.  **Kubelet DRA Manager and Container Manager Integration (`pkg/kubelet/cm/dra/manager.go`, `pkg/kubelet/cm/container_manager_linux.go`)**
-    *   **DRA Manager (`pkg/kubelet/cm/dra/manager.go`):**
-        *   `ManagerImpl` will implement a `plugin.StreamHandler` interface (or similar). It holds the `healthInfoCache`, a `healthInfoMutex`, and an `update chan resourceupdates.Update`.
-        *   `HandleWatchResourcesStream(ctx context.Context, stream drahealthv1alpha1.NodeHealth_WatchResourcesClient, pluginName string)`: This function runs in a goroutine for each plugin that supports health monitoring. It receives health updates from the stream, calls `healthInfoCache.updateHealthInfo()`. If `updateHealthInfo` indicates devices changed state, it finds affected Pod UIDs from its `claimInfoCache` and sends these UIDs to its `update` channel (non-blocking). It logs errors/cancellation and exits. A `defer` function will be added to clean the cache for the specific driver if the stream ends or an error occurs (e.g., call `healthInfoCache.clearDriver(pluginName)`).
-        *   `Updates() <-chan resourceupdates.Update`: Implemented method that returns the DRA manager's `m.update` channel.
-        *   `UpdateAllocatedResourcesStatus(pod, status)`: Reads health for the pod's allocated DRA devices from `healthInfoCache` (using `getHealthInfo`), formats it into `v1.ResourceStatus` (with Name = claim name, Resources = slice of `v1.ResourceHealth`), and updates the input `PodStatus`.
-        *   `GetWatcherHandler()`: Instantiates `plugin.NewRegistrationHandler`, passing the `ManagerImpl` instance (which implements the stream handling logic) as the `plugin.StreamHandler`.
-    *   **Container Manager (`pkg/kubelet/cm/container_manager_linux.go`):**
-        *   `Updates()`: Merges the channel returned by `m.draManager.Updates()` (if DRA health is enabled) with the `deviceManager`'s update channel into a single output channel consumed by the main Kubelet sync loop.
-        *   `UpdateAllocatedResourcesStatus()`: Calls the device manager's update method, then calls the DRA manager's `UpdateAllocatedResourcesStatus` method (guarded by the feature gate).
+message WatchResourcesRequest {
+  // Reserved for future use, e.g., filtering or options.
+}
 
+message WatchResourcesResponse {
+  // A list of all devices managed by the plugin for which health is being reported.
+  // This should be a complete list for the driver; Kubelet will reconcile this state.
+  repeated DeviceHealth devices = 1;
+}
+
+message DeviceHealth {
+  // The name of the resource pool this device belongs to.
+  // Required.
+  string pool_name = 1;
+  // The unique name of the device within the pool.
+  // Required.
+  string device_name = 2;
+  // Health status of the device.
+  // Expected values: "Healthy", "Unhealthy", "Unknown".
+  // Required.
+  string health_status = 3;
+  // Timestamp of when this health status was last determined by the plugin, as a Unix timestamp (seconds).
+  // Required.
+  int64 last_updated_timestamp = 4;
+}
+```
 
 ### Test Plan
 
@@ -401,48 +379,37 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-Device Plugin and DRA are relatively new features and have a reasonable test coverage.
+The existing test coverage for Device Manager and DRA will be used as a baseline. New code introduced by this KEP will include thorough unit tests to maintain or improve coverage.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/kubelet/cm/devicemanager`: `5/31/2024` - `84.1`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `5/31/2024` - `59.2`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `5/31/2024` - `34`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `5/31/2024` - `98`
+Current coverage for the relevant packages (as of June 2025):
+- `k8s.io/kubernetes/pkg/kubelet/cm/devicemanager`: `84.8%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `79.8%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `84.0%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `46.2%`
 
-  The following areas will have thorough unit test coverage:
--   `pkg/kubelet/cm/dra/healthinfo.go`:
-    -   Cache initialization (new, load from checkpoint, file not found).
-    -   `updateHealthInfo`:
-        -   Correct reconciliation of device lists.
-        -   `LastUpdated` timestamp updates.
-        -   Marking devices not in update as "Unknown" after `healthTimeout`.
-        -   Preserving health status within `healthTimeout`.
-        -   Correct identification of `changedDevices`.
-    -   `getHealthInfo`:
-        -   Returning correct status for existing devices.
-        -   Returning "Unknown" for timed-out devices.
-        -   Returning "Unknown" for non-existent devices/drivers.
-    -   `clearDriver`: Correct removal of driver data.
-    -   Persistence: `saveToCheckpoint` and `loadFromCheckpoint` logic.
--   `pkg/kubelet/cm/dra/plugin/registration.go` (and related client logic in `plugin.go`):
-    -   Successful health stream start and goroutine launch.
-    -   Handling of `Unimplemented` error from plugin for `WatchResources`.
-    -   Correct cancellation of health stream on plugin replacement or deregistration.
-    -   Error handling during stream initiation.
--   `pkg/kubelet/cm/dra/manager.go`:
-    -   `HandleWatchResourcesStream`:
-        -   Correctly processing messages from the stream.
-        -   Calling `healthInfoCache.updateHealthInfo`.
-        -   Finding affected Pod UIDs from `claimInfoCache` when health changes.
-        -   Sending Pod UIDs to the update channel.
-        -   Error handling, stream termination, and cache cleanup (`clearDriver`).
-    -   `UpdateAllocatedResourcesStatus`:
-        -   Correctly reading from `healthInfoCache`.
-        -   Formatting `v1.ResourceStatus` accurately.
-        -   Populating `PodStatus` for both container-level and pod-level DRA resources.
-    -   `GetWatcherHandler` and `Updates` channel logic.
+The new DRA health monitoring logic will have thorough unit test coverage, including:
 
+-   **Health Information Cache Logic:**
+    -   Cache initialization from scratch and from a checkpoint file.
+    -   State reconciliation of device health based on plugin reports.
+    -   Correct handling of `LastUpdated` timestamps.
+    -   Marking devices as "Unknown" after a timeout period.
+    -   Correctly identifying which devices have changed health status.
+    -   Accurate retrieval of health status for existing, timed-out, and non-existent devices.
+    -   Proper cleanup of a driver's health data upon its deregistration.
+    -   Persistence logic for saving to and loading from the checkpoint file.
+-   **Plugin Registration and gRPC Stream Handling:**
+    -   Verification of successful health stream startup and background processing.
+    -   Graceful handling of plugins that do not implement the health monitoring service (`Unimplemented` error).
+    -   Correct cancellation of the health stream when a plugin is replaced or deregistered.
+    -   Error handling during stream initiation and message reception.
+-   **DRA Manager Logic:**
+    -   Correct processing of health update messages from the gRPC stream.
+    -   Accurate identification of Pods affected by a health change.
+    -   Properly sending update notifications for affected Pods.
+    -   Correct population of the `AllocatedResourcesStatus` field in the Pod's status object.
 
 ##### Integration tests
 
@@ -450,23 +417,20 @@ N/A
 
 ##### e2e tests
 
-Planned tests:
+Planned tests will cover the user-visible behavior of the feature:
 
-- Device marked unhealthy - the state is reflected in pod status
-- Device marked unhealthy and back to healthy after some time - pod status was changed to unhealthy temporarily
-- Device marked as unhealthy and back to healthy in quick succession - pod status reflects the latest health status
-- Pod failed due to unhealthy device, earlier than device plugin detected it. Pod status is still updated.
-- Pod is in crash loop backoff due to unhealthy device - pod status is updated to unhealthy
-
-For alpha rollout and rollback:
-
-- Fields dropped on update when feature gate is disabled
-- Field is not populated after the feature gate is disabled
-- Field is populated again when the feature gate is enabled
-
-Test coverage will be listed once tests are implemented.
-
-- <test>: <link to test coverage>
+-   **Basic Health Reporting:**
+    -   Verify that when a DRA plugin reports a device as unhealthy, the PodStatus is updated to reflect this.
+    -   Verify that when the device becomes healthy again, the PodStatus is correctly updated.
+-   **State Transitions:**
+    -   Test rapid health state changes (e.g., unhealthy to healthy and back) to ensure the final PodStatus reflects the latest state.
+-   **Failure Scenarios:**
+    -   Ensure that if a Pod fails *before* the plugin detects the unhealthy device, the PodStatus is still updated with the health information afterward.
+    -   Verify that a Pod in a `CrashLoopBackOff` state due to an unhealthy device correctly shows the device's unhealthy status.
+-   **Feature Gate Behavior (for Alpha):**
+    -   When the feature gate is disabled, verify that the `AllocatedResourcesStatus` field is not populated by the DRA manager.
+    -   When the feature gate is disabled on an existing cluster, verify that existing health information is gracefully ignored or removed on the next Pod update.
+    -   When the feature gate is re-enabled, verify that health reporting resumes correctly.
 
 ### Graduation Criteria
 
