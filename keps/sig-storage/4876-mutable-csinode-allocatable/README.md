@@ -444,6 +444,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.
 
+testgrid.k8s.io: https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-kind-alpha-beta-features
+
 ### Graduation Criteria
 
 #### Alpha
@@ -454,7 +456,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 
 All unit tests/integration/e2e tests completed and enabled:
-  - [ ] [Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.](https://github.com/kubernetes/kubernetes/pull/130942)
+  - [✅] [Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.](https://github.com/kubernetes/kubernetes/pull/130942)
   - [✅] **CSINode Updater**
     - [Test when `NodeAllocatableUpdatePeriodSeconds` is modified that the updater is re-configured.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L168)
     - [Test driver with nil `NodeAllocatableUpdatePeriodSeconds` that updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L146)
