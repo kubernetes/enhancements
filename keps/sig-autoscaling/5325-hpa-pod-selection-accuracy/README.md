@@ -948,7 +948,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-Yes, caching for every podsFilter stratrgy will be saved and 
+Yes, cahing will be implemented for each `podsFilter` strategy, as well as for other resources to reduce the number of API calls to the API server (as described above).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
