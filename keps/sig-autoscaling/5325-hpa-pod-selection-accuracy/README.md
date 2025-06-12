@@ -740,9 +740,17 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 Rollout failures in this feature are unlikely to impact running workloads significantly, but there are edge cases to consider:
-- If the feature is enabled during a high-traffic period, HPAs with `selectionStrategy: OwnerReference` might suddenly change their scaling decisions based on the reduced pod set. This could cause unexpected scaling events.
-- If a `kube-controller-manager` restarts mid-rollout, some HPAs might temporarily revert to the `LabelSelector` strategy until the controller fully initializes with the new feature enabled.
-These issues would only affect HPAs that have explicitly set `selectionStrategy: OwnerReference`. Existing HPAs will continue to function with the default `LabelSelector` strategy.
+
+If the feature is enabled during a high-traffic period, HPAs with `selectionStrategy: OwnerReference` might suddenly change their scaling decisions based on the reduced pod set. However, this is mitigated by:
+
+- The HPA's existing behavior specs (minReplicas/maxReplicas) which prevent extreme scaling events
+- The gradual nature of HPA scaling decisions
+If a kube-controller-manager restarts mid-rollout, some HPAs might temporarily revert to the `LabelSelector` strategy until the controller fully initializes with the new feature enabled. This is mitigated by:
+
+- The HPA's behavior specs which limit the scale of any potential changes
+- Normal operation resumes after controller initialization
+
+These issues would only affect HPAs that have explicitly set selectionStrategy: OwnerReference. Existing HPAs will continue to function with the default LabelSelector strategy.
 
 ###### What specific metrics should inform a rollback?
 
