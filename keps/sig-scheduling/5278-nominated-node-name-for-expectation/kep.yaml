@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-autoscaling
-status: provisional
+status: implementable
 creation-date: 2025-05-07
 reviewers:
   - "@macsko"
@@ -32,4 +32,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - tbd
+  - schedule_attempts_total
+  - scheduler_pod_scheduling_sli_duration_seconds

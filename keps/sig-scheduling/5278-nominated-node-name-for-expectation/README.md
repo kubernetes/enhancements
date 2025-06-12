@@ -191,14 +191,14 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-Use `NominatedNodeName` to express an pod placement, expected by the scheduler or expected by other components.
+Use `NominatedNodeName` to express pod placement, expected by the scheduler or expected by other components.
 
-The scheduler puts `NominatedNodeName` at the beginning of binding cycles to show an expected pod placement to other components.
+Besides of using `NominatedNodeName` to indicate ongoing preemption, the scheduler can specify it at the beginning of a binding cycle to show an expected pod placement to other components.
 And, also other components can put `NominatedNodeName` on pending pods to indicate the pod is preferred to be scheduled on a specific node.
 
 ## Motivation
 
-### External components need to know the pod is going to be bound 
+### External components need to know where the pod is going to be bound 
 
 The scheduler reserves the place for the pod when the pod is entering the binding cycle.
 This reservation is internally implemented in the scheduler's cache, and is not visible to other components.
@@ -232,7 +232,7 @@ and the PreBind plugins can restart their work from where they were before the r
 
 ### Goals
 
-- The scheduler use `NominatedNodeName` to express where the pod is going to go before actually bound them.
+- The scheduler will use `NominatedNodeName` to express where the pod is going to go before actually binding them.
 - Make sure external components can use `NominatedNodeName` to express where they prefer the pod is going to.
   - Probably, you can do this with a today's scheduler as well. This proposal wants to discuss/make sure if it actually works, and then add tests etc.
 
@@ -284,7 +284,7 @@ In order to improve the end-to-end pod startup latency when cluster scale-up is 
 mechanism to communicate the results of scheduling simulations from ClusterAutoscaler or Karpenter
 to scheduler.
 
-#### Story4: Kueue specifies `NominatedNodeName` to indicate where it prefers pods being scheduled to
+#### Story 4: Kueue specifies `NominatedNodeName` to indicate where it prefers pods being scheduled to
 
 Kueue supports scheduling features that are not (yet) supported in core scheduling, such as topology-aware scheduling. 
 When it determines the optimal placement, it needs a mechanism to pass that information to the scheduler.
@@ -329,7 +329,7 @@ may overallocate the pods on the node, those pods may not match scheduling const
 We can't claim that it's a current plan of record of the scheduler. It's a hint that we want
 scheduler to take into account.
 
-In other words, from state machine perspective, there is visible difference in who set the
+In other words, from state machine perspective, there is visible difference in who sets the
 `NominatedNodeName`. If it was scheduler, it may mean that there is already ongoing preemption.
 If it was an external component, it's just a hint that may even be ignored.
 However, if we look from consumption point of view - these are effectively the same. We want
@@ -498,7 +498,7 @@ or pods are assigned to nodes (EventHandler calls `DeleteFunc` handler when [the
 So, as a conclusion, there should be nothing to implement newly around it.
 Again, we'll ensure this scenario works correctly via tests.
 
-#### The scheduler only modifies `NominatedNodeName`, not clears it in any cases
+#### The scheduler only modifies `NominatedNodeName`, does not clear it in any case
 
 As of now, scheduler clears the `NominatedNodeName` field at the end of failed scheduling cycle if it
 found the nominated node unschedulable for the pod. However, this won't work if ClusterAutoscaler or Karpenter
@@ -592,10 +592,10 @@ On downgrade to the version that doesn't have this feature, there aren't any act
 If kube-apiserver's version is older than kube-scheduler,
 and doesn't have the implementation change from this KEP,
 `NominatedNodeName` won't be cleared at the binding api call. 
-So, ideally, users should use the same version of kube-scheduler and kube-apiserver.
+But, ideally, users should use the same version of kube-scheduler and kube-apiserver.
 
 However, it's not that not clearing `NominatedNodeName` will actually cause something wrong in the scheduling flow, 
-but, it's just that that might lead to a user's confusion, 
+but, it's just that it might lead to a user's confusion, 
 as discussed in [Confusion if `NominatedNodeName` is different from `NodeName` after all](#confusion-if-nominatednodename-is-different-from-nodename-after-all).
 
 So, we can say the risk caused by this version difference would be fairly low.
@@ -655,7 +655,16 @@ there'll be nothing behaving wrong in the scheduling flow, see [Version Skew Str
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No.
+We will do the following manual test:
+
+1. upgrade
+2. set NNN to non-existing node
+3. ensure it won't get cleared
+4. downgrade
+5. ensure that it gets cleared
+6. upgrade
+7. set NNN to non-existing node
+8. ensure it gets cleared again
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
