@@ -73,9 +73,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -111,12 +111,12 @@ This leads to bunch of problems:
 
 - Since a node does not come up with a CSI driver typically, usually too many pods get scheduled on a node, which may not be supportable by the node in the first place. This leads to bunch of pods, just stuck.
 
-Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed.
+Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed and if pods require given CSI volumes.
 
 ### Goals
 
 - Modify cluster-autoscaler so as it is aware of CSI volume limits.
-- Fix scheduler, so as it doesn't schedule pods to a node that doesn't have CSI driver installed.
+- Fix scheduler, so as it doesn't schedule pods that require given CSI volume to a node that doesn't have CSI driver installed.
 
 ### Non-Goals
 
