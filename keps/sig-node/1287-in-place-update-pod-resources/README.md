@@ -897,8 +897,8 @@ This metric tracks the total number of resize attempts observed by the Kubelet, 
 A single pod update changing multiple containers will be considered separate resize attempts.
 
 Labels: 
-- `resource` - what resource. Possible values: `cpu`, or `memory`. If more than one of these resource types is changing in the resize request, we increment the counter multiple times, once for each.
-- `type` - what type of resource is being resized. Possible values: `limits`, or `requests`. If more than one of these resource types is changing in the resize request, we increment the counter multiple times, once for each.
+- `resource` - what resource. Possible values: `cpu`, or `memory`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
+- `requirement` - Possible values: `limits`, or `requests`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
 - `operation` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
 - `namespace` - the namespace of the pod.
 
