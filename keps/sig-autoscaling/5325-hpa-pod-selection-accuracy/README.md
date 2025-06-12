@@ -805,8 +805,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 Users can confirm that the feature is active and functioning by inspecting the conditions exposed by the controller. Specifically, they can verify the value of `.spec.selectionStrategy` to ensure the expected behavior is enabled.
 Moreover, users can verify the feature is working properly through events on the HPA object:
-- When creating or updating an HPA with selectionStrategy: OwnerReference, an event will be emitted, similiar to this: `Normal  SelectionStrategyActive  "Pod selection strategy 'OwnerReference' is active"`
-- When switching strategies, an event will indicate the change, similiar to this: `Normal  StrategyChanged  "Pod selection strategy changed from 'LabelSelector' to 'OwnerReference'"`
+- When creating or updating an HPA with selectionStrategy: OwnerReference, an event will be emitted, similar to this: `Normal  SelectionStrategyActive  "Pod selection strategy 'OwnerReference' is active"`
+- When switching strategies, an event will indicate the change, similar to this: `Normal  StrategyChanged  "Pod selection strategy changed from 'LabelSelector' to 'OwnerReference'"`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
