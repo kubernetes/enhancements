@@ -204,7 +204,7 @@ As a cluster operator I need to use the API rate limits from my infrastructure p
 
 We currently use the `Node.Status.Addresses` and `PodCIDRs` fields to trigger updates in the route reconciliation mechanism. However, relying solely on these fields may be insufficient, potentially causing missed route reconciliations when updates are necessary. This depends on the specific cloud-controller-manager implementations. Using these fields works for the CCM maintained by the authors, but we do not know the details of other providers.
 
-This is mitigated by a feature gate, which allows infrastructure providers to test it and provide feedback on the fields.
+This is mitigated by the feature gate `CloudControllerManagerWatchBasedRoutesReconciliation`, which allows infrastructure providers to test it and provide feedback on the fields.
 
 #### Relying only on Events
 
@@ -219,7 +219,7 @@ This is mitigated by:
 
 ## Design Details
 
-We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature flag called `CloudControllerManagerWatchBasedRoutesReconciliation`.
+We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature gate called `CloudControllerManagerWatchBasedRoutesReconciliation`.
 
 #### Full reconcile
 
@@ -241,8 +241,8 @@ Node updates are quite frequent. To reduce the number of requests sent to infras
 
 Two fields are relevant for determining whether a reconcile should occur:
 
-1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a give IP range should be sent. Changes to this field must trigger a reconcile.
-2. `Node.Spec.PodCIDRs` contains the IP ranges assigned to the node. These CIDRs are used as the destination in the created routes.. Changes to this field must trigger a reconcile.
+1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a given IP range should be sent. Changes to this field must trigger a reconcile.
+2. `Node.Spec.PodCIDRs` contains the IP ranges assigned to the node. These CIDRs are used as the destination in the created routes. Changes to this field must trigger a reconcile.
 
 ### Test Plan
 
