@@ -546,9 +546,9 @@ type DeviceRequestAllocationResult struct {
 
 When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform the following steps:
 
-1. **Set NodeSelector in api-server**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
+1. **Set NodeSelector in api-server**: During the `PreBind` phase, propagate the `NodeName` to the `ResourceClaim`'s `NodeSelector` to the api-server.
 
-If Conditions are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
+If Conditions are present, the scheduler DRA plugin will additionally perform the following steps:
 
 2. **Copy Conditions**: Copy `UsageRestrictedToNode`, `BindingTimeout`, `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `DeviceRequestAllocationResult`.
 3. **Wait for Conditions**: Wait for the following conditions:
@@ -703,7 +703,6 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2025-05-26` - `79.3`
 - `k8s.io/dynamic-resource-allocation/resourceclaim`: `2025-05-26` : `90.9`
 - `k8s.io/dynamic-resource-allocation/resourceslice`: `2025-05-26` : `75.3` 
@@ -725,8 +724,6 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
-
-- <test>: <link to test coverage>
 
 - Simulate a controller updating ResourceClaim conditions
 - Verify scheduler behavior on success, failure, and timeout
@@ -1177,7 +1174,7 @@ Major milestones might include:
 - 2024-12: Initial proposal drafted and discussed in SIG scheduling, WG device management.
 - 2025-03: KEP revised to introduce BindingConditions as a general mechanism.
 - 2025-05: Updated KEP submitted for review.
-
+- 2025-06: Improve some API descriptions, and clarify that "fail and reschedule" is an anti-pattern.
 
 ## Drawbacks
 
