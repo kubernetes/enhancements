@@ -1235,6 +1235,7 @@ These are the same as for the main DRA feature:
   - Metric name: resourceclaim_controller_resource_claims
   - Metric name: resourceclaim_controller_allocated_resource_claims
   - Metric name: workqueue with name="resource_claim"
+  - Metric name: scheduler_pending_pods
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
