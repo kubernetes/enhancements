@@ -336,7 +336,7 @@ references a `ResourceClaim` with an empty `status.ReservedFor` list, it knows t
 is the first pod that will be consuming the claim.
 
 If the `spec.ReservedFor` field in the ResourceClaim is not set, the scheduler will handle
-the `ResourceClaim` in the same was as now, and will add the `Pod` to the `ReservedFor` list
+the `ResourceClaim` in the same way as now, and will add the `Pod` to the `ReservedFor` list
 if devices could be allocated for the claim. Any additional pods that reference the `ResourceClaim`
 will also be added to the list.
 
@@ -348,24 +348,24 @@ list, it will not add a reference to the pod.
 
 ##### Deallocation
 The resourceclaim controller will remove Pod references from the `ReservedFor` list just
-like it does now using the same logic. For non-Pod references, the controller will recognize
-a small number of built-in types, starting with `Deployment`, `StatefulSet` and `Job`, and will
-remove the reference from the list when those resources are removed. For other types,
-it will be the responsibility of the workload controller/user that created the `ResourceClaim`
-to remove the reference to the non-Pod resource from the `ReservedFor` list when no pods
+like it does now using the same logic. But for non-Pod references, it
+will be the responsibility of the controller/user that created the `ResourceClaim` to
+remove the reference to the non-Pod resource from the `ReservedFor` list when no pods
 are consuming the `ResourceClaim` and no new pods will be created that references
 the `ResourceClaim`.
 
 The resourceclaim controller will then discover that the `ReservedFor` list is empty
 and therefore know that it is safe to deallocate the `ResourceClaim`.
 
-This requires that the resourceclaim controller watches the workload types that will
-be supported. For other types of workloads, there will be a requirement that the workload
-controller has permissions to update the status subresource of the `ResourceClaim`. The
-resourceclaim controller will also try to detect if an unknown resource referenced in the
-`ReservedFor` list has been deleted from the cluster, but that requires that the controller
-has permissions to get or list resources of the type. If the resourceclaim controller is
-not able to check, it will just wait until the reference in the `ReservedFor` list is removed.
+This requires that the controller/user has permissions to update the status
+subresource of the `ResourceClaim`. The resourceclaim controller will also try to detect if
+the resource referenced in the `ReservedFor` list has been deleted from the cluster, but
+that requires that the controller has permissions to get or list resources of the type. If the
+resourceclaim controller is not able to check, it will just wait until the reference in
+the `ReservedFor` list is removed. The resourceclaim controller will not have a watch
+on the workload resource, so there is no guarantee that the controller will realize that
+the resource has been deleted. This is an extra check since it is the responsibility of
+the workload controller to update the claim.
 
 ##### Finding pods using a ResourceClaim
 If the reference in the `ReservedFor` list is to a non-Pod resource, controllers can no longer
@@ -386,7 +386,7 @@ but haven't yet been scheduled. This distinction is important for some of the us
 1. If the DRA scheduler plugin is trying to find candidates for deallocation in
    the `PostFilter` function and sees a `ResourceClaim` with a non-Pod reference, it will not
    attempt to deallocate. The plugin has no way to know how many pods are actually consuming
-   the `ResourceClaim` without the explit list in the `ReservedFor` list and therefore it will
+   the `ResourceClaim` without the explicit list in the `ReservedFor` list and therefore it will
    not be safe to deallocate.
 
 1. The device_taint_eviction controller will use the list of pods referencing the `ResourceClaim`
@@ -455,7 +455,10 @@ Additional e2e tests will be added to verify the behavior added in this KEP.
 - All security enforcement completed
 - All monitoring requirements completed
 - All testing requirements completed
-- All known pre-release issues and gaps resolved 
+- All known pre-release issues and gaps resolved
+- Revisit whether the responsibility of removing the workload resource reference from
+  the `ReservedFor` list should be with the workload controller (as proposed in this design)
+  or be handled by the resourceclaim controller.
 
 #### GA
 
@@ -473,6 +476,19 @@ The API server will no longer accept the new fields and the other components wil
 not know what to do with them. So the result is that the `ReservedFor` list will only
 have references to pod resources like today.
 
+Any ResourceClaims that have already been allocated when the feature was active will
+have non-pod references in the `ReservedFor` list after a downgrade, but the controllers
+will not know how to handle it. There are two problems that will arise as a result of
+this:
+- The workload controller will also have been downgraded if it is in-tree, meaning that
+  it will not remove the reference to workload resource from the `ReservedFor` list, thus
+  leading to a situation where the claim will never be deallocated.
+- For new pods that gets scheduled, the scheduler will add pod references in the
+  `ReservedFor` list, despite there being a non-pod reference here. So it ends up with
+  both pod and non-pod references in the list. We need to make sure the system can
+  handle this, as it might also happen as a result of disablement and the enablement
+  of the feature.
+
 ### Version Skew Strategy
 
 If the kubelet is on a version that doesn't support the feature but the rest of the
@@ -482,10 +498,9 @@ since it will still check whether the `Pod` is references in the `ReservedFor` l
 If the API server is on a version that supports the feature, but the scheduler
 is not, the scheduler will not know about the new fields added, so it will
 put the reference to the `Pod` in the `ReservedFor` list rather than the reference
-in the `spec.ReservedFor` list. As a result, the workload will get scheduled, but
-it will be subject to the 256 limit on the size of the `ReservedFor` list and the
-controller creating the `ResourceClaim` will not find the reference it expects
-in the `ReservedFor` list when it tries to remove it.
+in the `spec.ReservedFor` list. It will do this even if there is already a non-pod
+reference in the `spec.ReservedFor` list. This leads to the challenge described
+in the previous section.
 
 ## Production Readiness Review Questionnaire
 
@@ -543,18 +558,21 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Applications that were already running will continue to run and the allocated
-devices will remain so.
-For the resource types supported directly, the resource claim controller will not remove the
-reference in the `ReservedFor` list, meaning the devices will not be deallocated. If the workload
-controller is responsible for removing the reference, deallocation will work as long as the
-feature isn't also disabled in the controllers. If they are, deallocation will not happen in this
-situation either.
+Applications that were already running will continue to run. But if a pod have to be
+re-admitted by a kubelet where the feature has been disabled, it will not be able to, since
+the kubelet will not find a reference to the pod in the `ReservedFor` list.
+
+The feature will also be disabled for in-tree workload controllers, meaning that they will
+not remove the reference to the pod from the `ReservedFor` list. This means the list will never
+be empty and the resourceclaim controller will never deallocate the claim.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 It will take affect again and will impact how the `ReservedFor` field is used during allocation
-and deallocation.
+and deallocation. Since this scenario allows a ResourceClaim with the `spec.ReservedFor` field
+to be set and then have the scheduler populate the `ReservedFor` list with pods when the feature
+is disabled, we will end up in a situation where the `ReservedFor` list can contain both non-pod
+and pod references. We need to make sure all components can handle that.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -723,7 +741,10 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No
+Yes and no. We are adding two new fields to the ResourceClaim type, but neither are of a collection type
+so they should have limited impact on the total size of the objects. However, this feature means that
+we no longer need to keep a complete list of all pods using a ResourceClaim, which can significantly
+reduce the size of ResourceClaim objects shared by many pods.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -732,8 +753,7 @@ No
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 It might require some additional memory usage in the resourceclaim controller since it will need to keep an index
-of ResourceClaim to Pods. The resourceclaim controller will also have watches for Deployments, StatefulSets, and
-Jobs which might also cause a slight increase in memory usage.
+of ResourceClaim to Pods.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
