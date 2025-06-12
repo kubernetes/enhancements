@@ -146,20 +146,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -593,6 +593,8 @@ If kube-apiserver's version is older than kube-scheduler,
 and doesn't have the implementation change from this KEP,
 `NominatedNodeName` won't be cleared at the binding api call. 
 But, ideally, users should use the same version of kube-scheduler and kube-apiserver.
+For old kube-apiserver, the `NominateNodeName` will not be cleared on binding - this is fine,
+because unsetting it is not critical for correctness, it's only done to reduce potential user confusion.
 
 However, it's not that not clearing `NominatedNodeName` will actually cause something wrong in the scheduling flow, 
 but, it's just that it might lead to a user's confusion, 
@@ -655,7 +657,7 @@ there'll be nothing behaving wrong in the scheduling flow, see [Version Skew Str
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-We will do the following manual test:
+We will do the following manual test after implementing the feature:
 
 1. upgrade
 2. set NNN to non-existing node
@@ -664,7 +666,7 @@ We will do the following manual test:
 5. ensure that it gets cleared
 6. upgrade
 7. set NNN to non-existing node
-8. ensure it gets cleared again
+8. ensure it isn't cleared again
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -780,6 +782,15 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+#### Introduce a new field
+
+Instead of using `NominatedNodeName` to let external components to hint scheduler, we considered
+introducing a dedicated field for that purpose. However, as discussed above, we don't have any
+clear usecases where distinguishing the source of the setting really matters and with multiple
+external components it doesn't eliminate the potential races either. If in the future we realize
+that distinsuighing that is needed, we believe that we can model such state muchine with an
+additional field in a purely additive way.
 
 ## Infrastructure Needed (Optional)
 
