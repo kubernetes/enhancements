@@ -546,7 +546,7 @@ type DeviceRequestAllocationResult struct {
 
 When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform the following steps:
 
-1. **Set NodeSelector**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
+1. **Set NodeSelector in api-server**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
 
 If Conditions are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
 
