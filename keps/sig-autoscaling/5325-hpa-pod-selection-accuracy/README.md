@@ -923,7 +923,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-Yes, HorizontalPodAutoscaler objects will increase in size by approximately 1 byte for the boolean field when specified
+Yes, HorizontalPodAutoscaler objects will increase in size by approximately ~39 bytes for the string field when specified
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
