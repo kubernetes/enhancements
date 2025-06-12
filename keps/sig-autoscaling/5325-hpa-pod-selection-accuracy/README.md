@@ -977,6 +977,15 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+If the API server and/or etcd becomes unavailable, the entire HPA controller functionality will be impacted, not just this feature. The HPA controller will not be able to:
+
+- Retrieve HPA objects
+- Get pod metrics
+- Access workload information
+- Update HPA status
+
+Therefore, no autoscaling decisions can be made during this period, regardless of the configured selection strategy. The feature itself doesn't introduce any new failure modes with respect to API server or etcd availability - it's dependent on these components being available just like the rest of the HPA controller's functionality.
+Once API server and etcd access is restored, the HPA controller will resume normal operation, including the pod selection strategy specified in the HPA.
 
 ###### What are other known failure modes?
 
@@ -994,6 +1003,13 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+Check `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds` to identify if the increased latency correlates with HPAs using the OwnerReference selection strategy.
+If latency issues are observed:
+  - Check if the problem only affects HPAs with `selectionStrategy: OwnerReference`
+  - Verify if the latency increases with deeper ownership chains (e.g., Pod → ReplicaSet → Deployment)
+For problematic HPAs, you can:
+  - Temporarily revert to the default label-based selection by removing the `selectionStrategy` field
+  - Or explicitly set `selectionStrategy: LabelSelector` to maintain backward compatibility
 
 ## Implementation History
 
