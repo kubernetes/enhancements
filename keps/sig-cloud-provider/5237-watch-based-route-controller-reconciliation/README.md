@@ -256,11 +256,11 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 ##### Integration tests
 
-- TBD
+- None, integration tests will be performed in the cloud providers implementing the controller.
 
 ##### e2e tests
 
-- None, this feature is consumed by repositories of CCM maintainers for the final binary so it will not be used in e2e tests in K/K.
+- None, the current e2e tests should continue to work.
 
 ### Graduation Criteria
 
@@ -275,7 +275,7 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 #### GA
 
-- TBD
+- The feature is enabled by default.
 
 ### Upgrade / Downgrade Strategy
 
@@ -295,10 +295,12 @@ Two fields are relevant for determining whether a reconcile should occur:
 - [x] Feature gate (also fill in values in `kep.yaml`)
       - Feature gate name: `CloudControllerManagerWatchBasedRoutesReconciliation`
       - Components depending on the feature gate: [`k8s.io/cloud-provider`](http://k8s.io/cloud-provider) / cloud-controller-managers
-- [ ] Other
+- [x] Other
       - Describe the mechanism:
       - Will enabling / disabling the feature require downtime of the control plane?
+        - no, the feature gate can be toggled at any time.
       - Will enabling / disabling the feature require downtime or reprovisioning of a node?
+        - no, the feature gate can be toggled at any time.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -339,7 +341,7 @@ Yes, this did not cause any issues.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-TBD, still discussing what should happen to the `--route-reconcile-period` flag in CCMs.
+The `--route-reconcile-period` flag can be deprecated, as it's no longer needed once we reach General Availability (GA).
 
 ### Monitoring Requirements
 
