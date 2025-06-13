@@ -563,7 +563,7 @@ re-admitted by a kubelet where the feature has been disabled, it will not be abl
 the kubelet will not find a reference to the pod in the `ReservedFor` list.
 
 The feature will also be disabled for in-tree workload controllers, meaning that they will
-not remove the reference to the pod from the `ReservedFor` list. This means the list will never
+not remove the reference to the workload resource from the `ReservedFor` list. This means the list will never
 be empty and the resourceclaim controller will never deallocate the claim.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
