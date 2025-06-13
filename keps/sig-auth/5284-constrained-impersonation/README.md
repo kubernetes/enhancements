@@ -645,7 +645,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/apiserver/pkg/endpoints/filters`: `2025/06/13` - `75.5%`
+
+Unit tests should cover authorization request with and without the feature enabled.
+
 
 ##### Integration tests
 
@@ -786,6 +789,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Determine if additional tests are necessary
 - Ensure reliability of existing tests
+- Determine if some caching mechanism should be introduced to reduce the extra
+permission check call
 
 #### GA
 
@@ -902,6 +907,8 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
+Yes, this will be covered in the unit tests and integration tests.
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -963,6 +970,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+It should be user to set the permissions for the controllers. The operator should
+not set these permissions for the workload.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -980,7 +990,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name: 
   - Other field: 
 - [ ] Other (treat as last resort)
-  - Details:
+  - Details: User creates the permission and check if the impersonate on certain action
+  works.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
