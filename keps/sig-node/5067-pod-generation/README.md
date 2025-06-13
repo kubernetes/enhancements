@@ -1149,7 +1149,13 @@ admission webhook is covered in these docs: https://kubernetes.io/docs/concepts/
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Investigate apiserver and/or kubelet logs.
+One could disable the feature gate and restart the API server. Additionally,
+one could investigate the apiserver and/or kubelet logs errors.
+
+Detection and mitigation of the infinite status-update loop by a badly-behaving
+admission webhook is covered in [these docs](https://kubernetes.io/docs/concepts/cluster-administration/admission-webhooks-good-practices/#why-good-webhook-design-matters). Specifically,
+the section about [detecting loops caused by competing controllers](https://kubernetes.io/docs/concepts/cluster-administration/admission-webhooks-good-practices/#prevent-loops-competing-controllers)
+can be helpful.
 
 ## Implementation History
 
