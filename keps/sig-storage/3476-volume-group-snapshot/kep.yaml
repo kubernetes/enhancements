@@ -18,7 +18,7 @@ approvers:
 see-also:
 replaces:
 
-latest-milestone: "v1.32"
+latest-milestone: "v1.34"
 stage: "beta"
 milestone:
   alpha: "v1.27"
