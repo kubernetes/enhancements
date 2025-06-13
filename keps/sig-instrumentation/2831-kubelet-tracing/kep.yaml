@@ -24,11 +24,11 @@ see-also:
   - "https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/647-apiserver-tracing"
 replaces:
 stage: stable
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.25"
   beta: "v1.27"
-  stable: "v1.33"
+  stable: "v1.34"
 feature-gates:
   - name: KubeletTracing
     components:
