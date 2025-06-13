@@ -1310,8 +1310,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-1.32 Enhancements Freeze - KEP merged, alpha implementation initiated
-1.33 Prioritized List is included as an alpha feature.
+- 1.32 Enhancements Freeze - KEP merged, alpha implementation initiated
+- 1.33 Prioritized List is included as an alpha feature.
 
 ## Drawbacks
 
