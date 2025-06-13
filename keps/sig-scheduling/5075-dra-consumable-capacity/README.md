@@ -1072,8 +1072,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 Yes, this feature can be disabled once it has been enabled.
-The `allowMultipleAllocations` flag, `sharingPolicy`, `capacityRequests`, and `consumedCapacities` fields will be dropped.
-However, the `shareID` and renamed device (`<device id>/<share id>`) in device status needs to remain to keep the existing allocation result reference valid.
+The `allowMultipleAllocations` flag, `sharingPolicy` and `capacityRequests` fields will be dropped.
+However, the `shareID`, `consumedCapacities`, and renamed device (`<device id>/<share id>`) in device status needs to remain to keep the existing allocation result reference valid.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1209,16 +1209,19 @@ Existing DRA and related SLOs continue to apply.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Will consider in the beta timeframe.
-
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric names:
+    - `apiserver_request` with `resource="resourceclaims", subresource="status"`
+    - `scheduler_plugin_execution_duration_seconds` with `plugin="DynamicResources"`
+        - For state gathering, `extension_point="PreFilter"`
+        - For allocation, `extension_point="Filter"`
+        - For status update, `extension_point="PostFilter"`
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: kube-apiserver, kube-scheduler
 - [ ] Other (treat as last resort)
   - Details:
 
