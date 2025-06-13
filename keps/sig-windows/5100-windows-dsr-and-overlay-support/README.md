@@ -137,16 +137,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -459,6 +459,9 @@ N/A - This feature is already implemented.
 
 - 2 or more CNI solutions support overlay networking mode for Windows nodes.
 
+    1. [Calico networking](https://github.com/projectcalico/calico/blob/cf9455706a1fc6e9d5b11e4556f3d087007124e7/node/windows-packaging/CalicoWindows/kubernetes/kube-proxy-service.ps1#L65-L79) on Windows enables WinOverlay feature if the underlying HNS network is of type overlay.
+    2. [Flannel](https://github.com/microsoft/SDN/blob/master/Kubernetes/flannel/start-kubeproxy.ps1#L19-L28) networking does the same.
+
 <!--
 
 **Note:** Generally we also wait at least two releases between beta and
@@ -615,6 +618,11 @@ For Overlay, no, overlay networking mode cannot be disabled on a per-node basis.
 For DSR, kube-proxy should resync HNS rules and start using DSR again.
 
 ###### Are there any tests for feature enablement/disablement?
+
+We have periodic test passes running in prow that use both of these configurations
+
+- [capz-windows-master-containerd2](https://testgrid.k8s.io/sig-windows-signal#capz-windows-master-containerd2) all of the Windows CAPZ tests use calico by default.
+- [ltsc2025-containerd-flannel-sdnoverlay-master](https://testgrid.k8s.io/sig-windows-networking#ltsc2025-containerd-flannel-sdnoverlay-master) for flannel with overlay networking mode.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -966,6 +974,8 @@ For each of them, fill in the following information by copying the below templat
 We have not observed any additional failure modes with DSR or overlay networking mode support on Windows nodes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+See [Troubleshooting](#troubleshooting)
 
 ## Implementation History
 
