@@ -10,6 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Making allocatedResourceStatus not change unnecessarily for every error in 1.31](#making-allocatedresourcestatus-not-change-unnecessarily-for-every-error-in-131)
+  - [Handling of RWX volumes that don't require node expansion](#handling-of-rwx-volumes-that-dont-require-node-expansion)
   - [Making resizeStatus more general in v1.28](#making-resizestatus-more-general-in-v128)
     - [User flow stories](#user-flow-stories)
       - [Case 0 (default PVC creation):](#case-0-default-pvc-creation)
@@ -27,6 +28,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Monitoring](#monitoring)
@@ -139,6 +141,17 @@ On the node side - `allocatedResourceStatus` will only be updated with failed ex
 This will allow external-resizer to recover safely from node expansion failures too.
 
 ![New flow kubelet](./Expanding volume - Kubelet Loop.png)
+
+### Handling of RWX volumes that don't require node expansion
+
+There are CSI drivers which return `NodeExpansionRequired: false` after `ControllerExpandVolume` is finished, but in kubelet to handle the case of node-expansion of RWX volumes, we usually MUST call `NodeExpandVolume` on each node where volume is attached, even if `ControllerExpandVolume` is finished and no node-expansion is required. This special case *only* applies to RWX volumes.
+
+To avoid calling `NodeExpandVolume` for such volumes, we are proposing that we add an annotation to PVC called - `volume.kubernetes.io/node-expansion-not-required` when `ControllerExpandVolume` is finished and `NodeExpansionRequired` is set to `false` - https://github.com/kubernetes-csi/external-resizer/pull/496/files .
+
+In kubelet if a RWX volume has this annotation, no `NodeExpandVolume` will be called and and updated size of the volume will simply be recorded in actual state of the world.This is implemented in - https://github.com/kubernetes/kubernetes/pull/131907 . 
+
+The proposed mechanism is fully backward compatible and only applies to RWX volumes.
+
 
 ### Making resizeStatus more general in v1.28
 
@@ -330,9 +343,15 @@ There are already e2e tests running that verify correctness of this feature - ht
   -  There are already e2e tests running that verify correctness of this feature -
   https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-gce-cos-alpha-features
   
+#### GA  
+
+- The feature has been extensively tested in CI and deployed with drivers in real world. For example - https://github.com/kubernetes-sigs/azuredisk-csi-driver/blob/master/charts/latest/azuredisk-csi-driver/templates/csi-azuredisk-controller.yaml#L166
+- The test grid already has tests for the feature.
+
 ### Upgrade / Downgrade Strategy
 
-Not Applicable
+- For the case of older kubelet running with newer resizer, the kubelet must handle the newer fields introduced by this feature even if feature-gate is not enabled. Having said that, if kubelet is older and has no notion of this feature at all and `api-server` and `external-resizer` is newer, it is possible that kubelet will not properly update `allocatedResourceStatus` after expansion is finished on the node. This is a known limitation and if user wants to keep running older version of kubelet (older than v1.31 as of this writing and hence unsupported), then they MUST not update external-resizer.
+- In general `external-resizer` should only be upgraded(and `RecoverVolumeExpansionFailure` enabled), after `kubelet`, `api-server` and `kube-controller-manager` already has this feature enabled.
 
 ### Version Skew Strategy
 
@@ -413,9 +432,15 @@ after expansion is complete even with older kubelet. No recovery from expansion 
 ### Monitoring requirements
 
 ###### How can an operator determine if the feature is in use by workloads?**
-  Any volume that has been recovered will emit a metric: `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`.
-  
-  
+
+The Recovery feature as such designed does not require if external operator must be able to observe
+if the feature is in-use by the workloads. The reason is, proposed changes already enhance
+user experience of resizing workflow by providing additional states such as `allocatedResourceStatus`
+and `allocatedResources` in pvc's status and there is nothing special about recovery in itself. 
+
+Operators can already observe if volume's are being resized by using `pvc.Status.Conditions` and other 
+metrics documented below.
+
 ###### How can someone using this feature know that it is working for their instance?  
 
 Since feature requires user interaction, reducing the size of the PVC is only supported
@@ -425,13 +450,17 @@ if this feature-gate is enabled.
 
   - [X] Metrics
     - controller expansion operation duration:
-        - Metric name: storage_operation_duration_seconds{operation_name=expand_volume}
+        - Metric name: csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume}
         - [Optional] Aggregation method: percentile
-        - Components exposing the metric: kube-controller-manager
+        - Components exposing the metric: external-resizer
     - controller expansion operation errors:
-        - Metric name: storage_operation_errors_total{operation_name=expand_volume}
+        - Metric name: csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume, grpc_status_code!="OK"}
         - [Optional] Aggregation method: cumulative counter
-        - Components exposing the metric: kube-controller-manager
+        - Components exposing the metric: external-resizer
+    - CSI node expansion operation durations:
+        - Metric name: csi_operations_seconds{method_name="/csi.v1.Controller/NodeExpandVolume}
+        - [Optional] Aggregation method: cumulative counter
+        - Components exposing the metric: kubelet
     - node expansion operation duration:
         - Metric name: storage_operation_duration_seconds{operation_name=volume_fs_resize}
         - [Optional] Aggregation method: percentile
@@ -446,18 +475,14 @@ if this feature-gate is enabled.
 ###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
 
   After this feature is rolled out, there should not be any increase in 95-99 percentile of
-  both `expand_volume` and `volume_fs_resize` durations. Also the error rate should not increase for 
-  `storage_operation_errors_total` metric.
+  both `csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume"}` and `storage_operation_duration_seconds{operation_name=volume_fs_resize}` durations. 
+  
+  Also the error rate should not increase for `csi_sidecar_operations_seconds{method_name="/csi.v1.Controller/ControllerExpandVolume"}` metric.
 
-###### Are there any missing metrics that would be useful to have to improve observability if this feature?
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-  We are planning to add new counter metrics that will record success and failure of recovery operations.
-  In cases where recovery fails, the counter will forever be increasing until an admin action resolves the error.
-
-  Tentative name of metric is - `operation_operation_volume_recovery_total{state='success', volume_name='pvc-abce'}`
-
-  The reason of using PV name as a label is - we do not expect this feature to be used in a cluster very often
-  and hence it should be okay to use name of PVs that were recovered this way.
+We think that existing resizing related metrics are sufficient and we do as such think we need to introduce new
+metrics for tracking this feature.
 
 ### Dependencies
 
@@ -474,7 +499,7 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in any new API calls
 
-  Potentially yes. If user expands a PVC and expansion fails on the node, then
+  Yes - if user recovers a volume from failed expansion. When user expands a PVC and expansion fails on the node, then
   expansion controller in control-plane must intervene and verify if it is safe
   to retry expansion on the kubelet.This requires round-trips between kubelet
   and control-plane and hence more API calls.
@@ -484,9 +509,14 @@ previous answers based on experience in the field._
 
 ###### Will enabling / using this feature result in any new calls to cloud provider
 
-  Potentially yes. Since expansion operation is idempotent and expansion controller
+  Since expansion operation is idempotent and expansion controller
   must verify if it is safe to retry expansion with lower values, there could be 
-  additional calls to CSI drivers (and hence cloudproviders).
+  additional calls to CSI drivers (and hence cloudproviders), when user attempts recovery from 
+  failed expansion.
+  
+  On the other hand - previously we retried expansion of failed volumes infinitiely and hence incurred
+  significant api usage of both k8s and cloudprovider. This enhancement significantly reduces this by 
+  allowing recovery and slower pace of retries for infeasible expansion operations.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
