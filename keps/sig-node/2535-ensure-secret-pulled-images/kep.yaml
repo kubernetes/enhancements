@@ -18,12 +18,27 @@ approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: alpha
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.33"
+  beta: "v1.34"
 feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:
       - kubelet
 disable-supported: true
 metrics:
+    - kubelet_imagemanager_ondisk_pullintents_kept
+    - kubelet_imagemanager_ondisk_pullintents_get_requests_total
+    - kubelet_imagemanager_ondisk_pullintents_get_requests_miss
+    - kubelet_imagemanager_ondisk_pulledrecords_kept
+    - kubelet_imagemanager_ondisk_pulledrecords_get_requests_total
+    - kubelet_imagemanager_ondisk_pulledrecords_get_requests_miss
+    - kubelet_imagemanager_inmemory_pullintents_kept
+    - kubelet_imagemanager_inmemory_pullintents_get_requests_total
+    - kubelet_imagemanager_inmemory_pullintents_get_requests_miss
+    - kubelet_imagemanager_inmemory_pulledrecords_kept
+    - kubelet_imagemanager_inmemory_pulledrecords_get_requests_total
+    - kubelet_imagemanager_inmemory_pulledrecords_get_requests_miss
+    - kubelet_imagemanager_present_image_access_requests_total
+    - kubelet_imagemanager_present_image_access_requests_reverify
