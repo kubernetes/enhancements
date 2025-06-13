@@ -41,7 +41,3 @@ feature-gates:
       - kube-apiserver
       - kubelet
 disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric
