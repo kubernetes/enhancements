@@ -15,7 +15,7 @@ approvers:
   - "@liggitt"
   - "@enj"
 
-stage: alpha
+stage: beta
 
 latest-milestone: "v1.34"
 
