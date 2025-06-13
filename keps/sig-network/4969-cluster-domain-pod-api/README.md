@@ -567,7 +567,7 @@ No.
 
 The new field `.status.dns.clusterDomain` would be added to all Pod objects.
 
-For the default value of `cluster.local`, this would add 42 bytes to the 
+For the default value of `cluster.local`, this would add 42 characters to the
 minified JSON serialization of each Pod.
 
 (`echo -n ',{"dns":{"clusterDomain":"cluster.local"}}' | wc -c`, assuming that
