@@ -265,8 +265,9 @@ Until then, we will cover all the scenerios with e2e tests
 
 #### Alpha -> Beta Graduation
 
-* Addresses feedback from alpha testers
 * Sufficient E2E and unit testing
+    *   Adding [Windows node level test](https://github.com/kubernetes/kubernetes/pull/129938) , which will include the gracefulshutdown case.
+    *   [Enabling the test in CAPZ cluster](https://github.com/kubernetes-sigs/windows-testing/pull/506)
 
 #### Beta -> GA Graduation
 
