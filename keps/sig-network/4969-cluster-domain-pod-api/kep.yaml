@@ -6,13 +6,15 @@ owning-sig: sig-network
 participating-sigs:
   - sig-network
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2024-11-19
 reviewers:
   - "@thockin"
   - "@aojea"
+  - "@SergeyKanzhelev"
 approvers:
-  - TBD
+  - "@thockin"
+  - TBD (sig-node)
 
 see-also: []
 replaces: []
