@@ -510,11 +510,11 @@ New testcases being added:
 
 Coverage:
 
-- `pkg/apis/apps/v1`: `2023-05-26` - `71.7%`
-- `pkg/apis/apps/v1beta2`: `2023-05-26` - `76.7%`
-- `pkg/apis/apps/validation`: `2023-05-26` - `92.3%`
-- `pkg/controller/statefulset`: `2023-05-26` - `85.7%`
-- `pkg/registry/apps/statefulset`: `2023-05-26` - `63.9%`
+- `pkg/apis/apps/v1`: `2025-06-12` - `31.1%`
+- `pkg/apis/apps/v1beta2`: `2025-06-12` - `31.1%`
+- `pkg/apis/apps/validation`: `2025-06-12` - `92.5%`
+- `pkg/controller/statefulset`: `2025-06-12` - `86.5%`
+- `pkg/registry/apps/statefulset`: `2025-06-12` - `81.4%`
 
 ##### Integration tests
 
