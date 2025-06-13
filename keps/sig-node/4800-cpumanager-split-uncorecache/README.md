@@ -20,6 +20,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -292,6 +293,13 @@ N/A. This feature requires a e2e test for testing.
 - E2E Tests will be skipped until nodes with uncore cache can be provisioned within CI hardware. Work is ongoing to add required systems (https://github.com/kubernetes/k8s.io/issues/7339). E2E testing will be required to graduate to beta.
 - Providing a metric to verify uncore cache alignment will be required to graduate to beta.
 
+#### Beta
+
+- Address bug fixes and missing features: ability to schedule odd-integer CPUs for uncore cache alignment
+- Add tests to ensure functional compatibility with existing CPUManager options
+- Add tests to ensure and report incompatibility with existing CPUManager options that are not supported with prefer-align-cpus-by-uncore-cache
+- Additional benchmarks to show performance benefit of prefer-align-cpus-by-uncore-cache feature
+
 ### Upgrade / Downgrade Strategy
 
 N/A
@@ -336,7 +344,7 @@ To enable this feature requires enabling the feature gates for static policy in 
 For `CPUManager` it is a requirement going from `none` to `static` policy cannot be done dynamically because of the `cpu_manager_state file`. The node needs to be drained and the policy checkpoint file (`cpu_manager_state`) need to be removed before restarting Kubelet. This feature specifically relies on the `static` policy being enabled.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `CPUManagerAlphaPolicyOptions`
+  - Feature gate name: `CPUManagerBetaPolicyOptions`
   - Components depending on the feature gate: `kubelet`
 - [x] Other
   - Describe the mechanism: Change the `kubelet` configuration to set a `CPUManager` policy of static then setting the policy option of `prefer-align-cpus-by-uncorecache`
@@ -525,6 +533,8 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - The outlined sections were filled out was created 2024-08-27.
+
+- 2025-06-09: Submitted PR to promote feature to beta
 
 ## Drawbacks
 
