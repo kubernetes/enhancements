@@ -459,6 +459,9 @@ N/A - This feature is already implemented.
 
 - 2 or more CNI solutions support overlay networking mode for Windows nodes.
 
+    1. [Calico networking](https://github.com/projectcalico/calico/blob/cf9455706a1fc6e9d5b11e4556f3d087007124e7/node/windows-packaging/CalicoWindows/kubernetes/kube-proxy-service.ps1#L65-L79) on Windows enables WinOverlay feature if the underlying HNS network is of type overlay.
+    2. [Flannel](https://github.com/microsoft/SDN/blob/master/Kubernetes/flannel/start-kubeproxy.ps1#L19-L28) networking does the same.
+
 <!--
 
 **Note:** Generally we also wait at least two releases between beta and
@@ -615,6 +618,11 @@ For Overlay, no, overlay networking mode cannot be disabled on a per-node basis.
 For DSR, kube-proxy should resync HNS rules and start using DSR again.
 
 ###### Are there any tests for feature enablement/disablement?
+
+We have periodic test passes running in prow that use both of these configurations
+
+- [capz-windows-master-containerd2](https://testgrid.k8s.io/sig-windows-signal#capz-windows-master-containerd2) all of the Windows CAPZ tests use calico by default.
+- [ltsc2025-containerd-flannel-sdnoverlay-master](https://testgrid.k8s.io/sig-windows-networking#ltsc2025-containerd-flannel-sdnoverlay-master) for flannel with overlay networking mode.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -967,7 +975,7 @@ We have not observed any additional failure modes with DSR or overlay networking
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A
+See [Troubleshooting](#troubleshooting)
 
 ## Implementation History
 
