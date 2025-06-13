@@ -212,12 +212,77 @@ to improve the availability of my application.
 I need a way to tell scheduler that the volume is now accessible in every zone,
 so that the pod can be scheduled to another zone when the current zone is down.
 
+In this case, the old affinity would be:
+```yaml
+required:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/zone
+      operator: In
+      values:
+      - cn-beijing-g
+```
+The updated affinity would be:
+```yaml
+required:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: topology.kubernetes.io/region
+      operator: In
+      values:
+      - cn-beijing
+```
+
+Or in the view of CSI accessibility requirement, from:
+```json
+[{"topology.kubernetes.io/zone": "cn-beijing-g"}]
+```
+to:
+```json
+[{"topology.kubernetes.io/region": "cn-beijing"}]
+```
+
 #### Story 2
 
 As a cluster operator, I'm conducting an upgrade to new storage category provided by our storage provider.
 However, once upgraded, the volume cannot be attached to some legacy nodes in the cluster.
 I need a way to convey this new requirement to the scheduler,
 so that my pod will not getting stuck in a `ContainerCreating` state.
+
+In this case, the old affinity would be:
+```yaml
+required:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: provider.com/disktype.cloud_ssd
+      operator: In
+      values:
+      - available
+```
+The updated affinity would be:
+```yaml
+required:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: provider.com/disktype.cloud_essd
+      operator: In
+      values:
+      - available
+```
+
+Or in the view of CSI accessibility requirement, from:
+```json
+[{"provider.com/disktype.cloud_ssd": "available"}]
+```
+to:
+```json
+[{"provider.com/disktype.cloud_essd": "available"}]
+```
+
+Type A node only supports cloud_ssd, while Type B node supports both cloud_ssd and cloud_essd.
+We will only allow the modification if the volume is attached to type B nodes.
+And I want to make sure the Pods using new cloud_essd volume not to be scheduled to type A nodes.
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -233,10 +298,25 @@ This might be a good place to talk about core concepts and how they relate.
 It is never re-evaluated when the pod is already running.
 It is storage provider's responsibility to ensure that the running workload is not interrupted.
 
-Because of the limitation of protobuf (used by CSI spec), we cannot differentiate between
-unset or empty repeated fields. So we cannot clear the nodeAffinity field.
-If the storage provider want to indicate the volume is accessible everywhere,
-it may return a very generic nodeAffinity, such as: topology.kubernetes.io/region.
+**Possible race condition**
+
+There is a race condition between volume modification and pod scheduling:
+1. User updates PVC VolumeAttributeClassName.
+2. external-resizer initiate ControllerModifyVolume.
+3. User creates a new Pod and scheduler schedules it with the old affinity.
+4. external-resizer sets a new affinity to the PV.
+5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
+
+If this happens, the pod will be stuck in a `ContainerCreating` state.
+User will have to manually delete the pod, or using Kubernetes [descheduler](https://github.com/kubernetes-sigs/descheduler) or similar.
+
+We propose to added an `in_progress` field in `ControllerModifyVolumeResponse` to allow more timely affinity update,
+in order to reduce the time window of the race condition.
+If the volume is not attachable during the modification, SPs can also return `in_progress`
+with an impossible topology requirement, so that new pods will stay pending.
+```json
+[{"provider.com/volume-status": "modifying"}]
+```
 
 ### Risks and Mitigations
 
@@ -263,12 +343,38 @@ proposal will be implemented, this is the place to discuss them.
 
 We will extend CSI specification to add:
 ```protobuf
+// Specifies a capability of the controller service.
+message ControllerServiceCapability {
+  message RPC {
+    enum Type {
+      ...
+      // TODO
+      MODIFY_VOLUME_TOPOLOGY = 16 [(alpha_enum_value) = true];
+    }
+
+    Type type = 1;
+  }
+
+  oneof type {
+    // RPC that the controller supports.
+    RPC rpc = 1;
+  }
+}
+
+message ControllerModifyVolumeRequest {
+  option (alpha_message) = true;
+  ...
+
+  // Indicates whether the CO allows the SP to update the topology
+  // as a part of the modification.
+  bool allow_topology_updates = 4;
+}
+
 message ControllerModifyVolumeResponse {
   option (alpha_message) = true;
 
   // Specifies where (regions, zones, racks, etc.) the modified
-  // volume is accessible from. Replaces the accessible_topology
-  // returned by CreateVolume.
+  // volume is accessible from.
   // A plugin that returns this field MUST also set the
   // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability.
   // An SP MAY specify multiple topologies to indicate the volume is
@@ -276,13 +382,32 @@ message ControllerModifyVolumeResponse {
   // COs MAY use this information along with the topology information
   // returned by NodeGetInfo to ensure that a given volume is accessible
   // from a given node when scheduling workloads.
-  // This field is OPTIONAL. If it is not specified, the CO SHOULD assume
-  // the topology is not changed by this modify volume request.
-  repeated Topology accessible_topology = 5;
+  // This field is OPTIONAL. It is effective and replaces the
+  // accessible_topology returned by CreateVolume if the plugin has
+  // MODIFY_VOLUME_TOPOLOGY controller capability.
+  // If it is not specified, the CO MAY assume
+  // the volume is equally accessible from all nodes in the cluster and
+  // MAY schedule workloads referencing the volume on any available
+  // node. 
+  //
+  // SP MUST only set this field if allow_topology_updates is set
+  // in the request. SP SHOULD fail the request if it needs to update
+  // topology but is not allowed by CO.
+  repeated Topology accessible_topology = 1;
+
+  // Indicates whether the modification is still in progress.
+  // SPs MAY set in_progress to update the accessible_topology
+  // before the modification finishes to reduce possible race conditions.
+  // COs SHOULD retry the request if in_progress is set to true,
+  // until in_progress is set to false.
+  bool in_progress = 2;
 }
 ```
 
 When this new field is set, external-resizer will set `PersistentVolume.spec.nodeAffinity` accordingly, before it updates the PV status.
+
+When anything unexpected happens (race between multiple resizer instances, crashes) and we lost track of the latest topology.
+external-resizer will invoke `ControllerGetVolume` again with the desired `mutable_parameters` to fetch the latest topology.
 
 A new error condition of `ControllerModifyVolume` is added to CSI spec:
 
