@@ -320,12 +320,12 @@ type RollingUpdateStatefulSetStrategy struct {
 ```
 
 - By Default, if maxUnavailable is not specified, its value will be assumed to be 1 and StatefulSets
-  will follow their old behavior. This will also help while upgrading from a release which doesnt support maxUnavailable to a release which supports this field.
+  will follow their old behavior. This will also help while upgrading from a release which doesn't support maxUnavailable to a release which supports this field.
 - If maxUnavailable is specified, it cannot be greater than total number of replicas.
 - If maxUnavailable is specified and partition is also specified, MaxUnavailable cannot be greater than `replicas-partition`
 - If a partition is specified, maxUnavailable will only apply to all the pods which are staged by the
   partition. Which means all Pods with an ordinal that is greater than or equal to the partition will be
-  updated when the StatefulSet’s .spec.template is updated. Lets say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
+  updated when the StatefulSet’s .spec.template is updated. Let's say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
   are the possible behavior choices we have:
 
   1.  Pods with ordinal 4 and 3 will start Terminating at the same time (because of maxUnavailable). Once they are both running and available, pods with ordinal 2 will start Terminating. Pods with ordinal 0 and 1
