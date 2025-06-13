@@ -30,7 +30,14 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: SetAnyFQDNAsPodHostname
+  - name: HostnameOverride
     components:
       - kubelet
+      - kube-apiserver  
 disable-supported: true
+
+metrics:
+  - run_podsandbox_errors_total
+  - kubelet_started_pods_total
+  - kubelet_started_pods_errors_total
+  - kubelet_restarted_pods_total

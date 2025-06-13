@@ -191,6 +191,8 @@ The Linux kernel limits the hostname field to 64 bytes (see [sethostname(2)](htt
 
 To mitigate this issue, we will implement a validation during resource creation to check whether the value of hostnameOverride exceeds 64 bytes. Creation requests exceeding this limit will be denied.
 
+After enabling this feature, if users utilize it to create a group of Pods via Deployment or StatefulSet, multiple Pods with identical names may concentrate on a single node. This could lead to unintended consequences, though we haven't identified specific potential issues at this time.
+
 ## Design Details
 
 We are introducing a new feature gate called `HostnameOverride`. When this feature gate is enabled, users can add the `hostnameOverride` field in the podSpec.
@@ -330,7 +332,13 @@ API server should be upgraded before Kubelets. Kubelets should be downgraded bef
 
 ### Version Skew Strategy
 
-No need to consider version skew, as older versions of kubelet will not be concerned with the `hostnameOverride` field in the podSpec.
+The core implementation resides in kubelet.
+
+Older kubelet versions will ignore the pod's hostnameOverride field:
+• Newly created Pods will retain previous behavior
+
+Older apiserver versions will similarly ignore the hostnameOverride field:
+• The apiserver doesn't populate the hostnameOverride value, so newer kubelet versions will maintain legacy behavior
 
 ## Production Readiness Review Questionnaire
 
@@ -380,11 +388,12 @@ Yes. Using the feature gate is the only way to enable/disable this feature.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature should continue to work just fine.
+There will be no impact on running Pods in the cluster. This change solely affects newly created Pods. Once enabled, you can set pod hostnames by configuring the `podSpec.hostnameOverride` field.
+
 
 ###### Are there any tests for feature enablement/disablement?
 
-We will manually test enabling and disabling the feature gate.
+We will verify proper functionality through unit tests and e2e tests, covering both enabled and disabled states of the feature gate.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -394,7 +403,13 @@ No known failure modes.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+The `kubelet_started_pods_total` metrics helps determine whether enabling/disabling this feature causes abnormal pod restarts in the cluster.
+
+`kubelet_started_pods_errors_total` metrics tracks if feature toggling results in pod startup failures.
+
+`kubelet_restarted_pods_total` metrics monitors whether enabling/disabling triggers restarts of Static Pods.
+
+`run_podsandbox_errors_total` metric helps detect if enabling the feature gate and using this functionality would cause sandbox container creation failures.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -432,13 +447,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Validate alignment of `podSpec.hostnameOverride` with the pod's actual hostname using:
+kubectl exec <pod-name> -- hostname
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -464,8 +474,8 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: `run_podsandbox_errors_total`
-  - [Optional] Aggregation method: When the value of `hostnameOverride` exceeds 63 characters, the Pod Sandbox creation will fail, and this will be reflected in the metrics.
+  - Metric name: `run_podsandbox_errors_total`, `kubelet_started_pods_total`, `kubelet_started_pods_errors_total`, `kubelet_restarted_pods_total`
+  - [Optional] Aggregation method: A sharp increase in these metric values would indicate abnormal pod restarts or creation errors in the cluster caused by toggling the feature gate.
   - Components exposing the metric: Kubelet
 - [ ] Other (treat as last resort)
   - Details:
@@ -513,7 +523,7 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Using this feature requires adding a new field to the pod object, which will inevitably increase its size.
+Implementing this feature requires adding a new field to the Pod object, which will increase its size. However, we'll limit the new field's length to 64 bytes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
