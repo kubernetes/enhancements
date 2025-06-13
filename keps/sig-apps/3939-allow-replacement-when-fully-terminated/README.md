@@ -621,7 +621,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Deprecation
 
-- Remove `JobPodReplacementPolicy` feature-gate in GA+2.
+- Remove `JobPodReplacementPolicy` feature-gate in GA+3.
 
 ### Upgrade / Downgrade Strategy
 
