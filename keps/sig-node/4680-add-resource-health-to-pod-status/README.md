@@ -15,6 +15,8 @@
 - [Design Details](#design-details)
   - [Device Plugin implementation details](#device-plugin-implementation-details)
   - [DRA implementation details](#dra-implementation-details)
+    - [High-Level Architectural Approach for DRA Health](#high-level-architectural-approach-for-dra-health)
+    - [gRPC API for DRA Device Health](#grpc-api-for-dra-device-health)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
