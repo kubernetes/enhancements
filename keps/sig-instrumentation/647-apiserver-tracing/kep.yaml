@@ -20,12 +20,12 @@ approvers:
 see-also:
 replaces:
 stage: stable
-last-updated: 2023-11-10
-latest-milestone: "v1.33"
+last-updated: 2025-06-10
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.22"
   beta: "v1.27"
-  stable: "v1.33"
+  stable: "v1.34"
 feature-gates:
   - name: APIServerTracing
 disable-supported: true
