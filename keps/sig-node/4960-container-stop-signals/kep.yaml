@@ -17,7 +17,7 @@ approvers:
 
 status: implementable
 stage: alpha
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 milestone:
     alpha: "v1.33"
     beta: ""
@@ -30,4 +30,6 @@ feature-gates:
       - kubelet
 disable-supported: true
 
-metrics: []
+metrics:
+- kubelet_pod_stop_signals_count
+- kubelet_pod_termination_grace_period_exceeded_total

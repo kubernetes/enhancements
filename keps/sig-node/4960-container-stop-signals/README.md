@@ -9,6 +9,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API](#api)
+  - [Cross validation with Pod spec.os.name](#cross-validation-with-pod-specosname)
   - [CRI API](#cri-api)
   - [Container runtime changes](#container-runtime-changes)
   - [Windows support](#windows-support)
@@ -46,20 +47,20 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -140,6 +141,42 @@ status:
         startedAt: "2025-01-16T09:13:15Z"
 ```
 
+### Cross validation with Pod spec.os.name
+
+In order to make sure that users are setting valid stop signals for the nodes the pods are being scheduled to, we cross validate the `ContainerSpec.Lifecycle.StopSignal` with `spec.os.name`. Here are the details of this validation:
+- We require `spec.os.name` to be set to a valid value (`linux` or `windows`) to use `ContainerSpec.Lifecycle.StopSignal`.
+- We have a list of valid stop signals for both linux and windows nodes (as shown below). If the Pod OS is set to `linux`, only the signals supported for `linux` would be allowed. 
+- Similarly for Pods with OS set to `windows`, we only allow SIGTERM and SIGKILL as valid stop signals.
+
+The full list of valid signals for the two platforms are as follows:
+
+```go
+var supportedStopSignalsLinux = sets.New(
+	core.SIGABRT, core.SIGALRM, core.SIGBUS, core.SIGCHLD,
+	core.SIGCLD, core.SIGCONT, core.SIGFPE, core.SIGHUP,
+	core.SIGILL, core.SIGINT, core.SIGIO, core.SIGIOT,
+	core.SIGKILL, core.SIGPIPE, core.SIGPOLL, core.SIGPROF,
+	core.SIGPWR, core.SIGQUIT, core.SIGSEGV, core.SIGSTKFLT,
+	core.SIGSTOP, core.SIGSYS, core.SIGTERM, core.SIGTRAP,
+	core.SIGTSTP, core.SIGTTIN, core.SIGTTOU, core.SIGURG,
+	core.SIGUSR1, core.SIGUSR2, core.SIGVTALRM, core.SIGWINCH,
+	core.SIGXCPU, core.SIGXFSZ, core.SIGRTMIN, core.SIGRTMINPLUS1,
+	core.SIGRTMINPLUS2, core.SIGRTMINPLUS3, core.SIGRTMINPLUS4,
+	core.SIGRTMINPLUS5, core.SIGRTMINPLUS6, core.SIGRTMINPLUS7,
+	core.SIGRTMINPLUS8, core.SIGRTMINPLUS9, core.SIGRTMINPLUS10,
+	core.SIGRTMINPLUS11, core.SIGRTMINPLUS12, core.SIGRTMINPLUS13,
+	core.SIGRTMINPLUS14, core.SIGRTMINPLUS15, core.SIGRTMAXMINUS14,
+	core.SIGRTMAXMINUS13, core.SIGRTMAXMINUS12, core.SIGRTMAXMINUS11,
+	core.SIGRTMAXMINUS10, core.SIGRTMAXMINUS9, core.SIGRTMAXMINUS8,
+	core.SIGRTMAXMINUS7, core.SIGRTMAXMINUS6, core.SIGRTMAXMINUS5,
+	core.SIGRTMAXMINUS4, core.SIGRTMAXMINUS3, core.SIGRTMAXMINUS2,
+	core.SIGRTMAXMINUS1, core.SIGRTMAX)
+
+var supportedStopSignalsWindows = sets.New(core.SIGKILL, core.SIGTERM)
+```
+
+You can find the validation logic implemented in [this commit](https://github.com/kubernetes/kubernetes/pull/130556/commits/0380f2c41cdc4df992294603f7844709072628b1#diff-c713e8919642d873fdf48fe8fb6d43e5cb2f53fd601066ff53580ea655948f0d).
+
 ### CRI API
 
 The CRI API would be updated so the stop signal in the container spec (if it is not nil or unset) is sent to the container runtime via ContainerConfig. This would be passed down to the container runtime's StopContainer method ultimately:
@@ -149,12 +186,16 @@ The CRI API would be updated so the stop signal in the container spec (if it is 
 // container.
 message ContainerConfig {
   // ...
-+ Lifecycle lifecycle = 18;
++ Signal stop_signal = 18;
 }
 
-+message Lifecycle {
-+  string stop_signal = 1;
-+}
++ enum Signal {
++   RUNTIME_DEFAULT   = 0;
++   SIGABRT           = 1;
++   SIGALRM           = 2;
++   ...
++   SIGRTMAX          = 65;
++ }
 ```
 
 We can pass the container's stop signal to the container runtime with this new field to ContainerConfig.
@@ -183,17 +224,20 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(...) (*runtimeapi.Co
     Stdin:       container.Stdin,
     StdinOnce:   container.StdinOnce,
     Tty:         container.TTY,
-+   Lifecycle:  &runtimeapi.Lifecycle{
-+     StopSignal: container.Lifecycle.StopSignal 
-+   },
 	}
+
++ stopsignal := getContainerConfigStopSignal(container)
+
++ if stopsignal != nil {
++   config.StopSignal = *stopsignal
++ }
   // ...
 }
 ```
 
 Since the new stop lifecycle is optional, the default stop signal for a container can be unset or nil. In this case, the container runtime will fallback to the existing behaviour. 
 
-Additionally, the stop signal would also be added to `ContainerStatus` (as `containerStatus[].Lifecycle.StopSignal`) so that we can pass the stop signal extracted from the image/container runtime back to the container status at the Kubernetes API level.
+Additionally, the stop signal would also be added to `ContainerStatus` (as `containerStatus[].StopSignal`) so that we can pass the stop signal extracted from the image/container runtime back to the container status at the Kubernetes API level.
 
 ### Container runtime changes
 
@@ -205,7 +249,7 @@ Once the stop signal from `containerSpec.Lifecycle.StopSignal` is passed down to
 func (c *criService) StopContainer(ctx context.Context, r *runtime.StopContainerRequest) (*runtime.StopContainerResponse, error) {
 // ...
 -	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second); err != nil {
-+ 	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second, container.Config.Lifecycle.StopSignal); err != nil {
++ 	if err := c.stopContainer(ctx, container, time.Duration(r.GetTimeout())*time.Second, container.Config.GetStopSignal().String()); err != nil {
 		return nil, err
 	}
 // ...
@@ -233,7 +277,7 @@ Find the entire diff for containerd which was done for the POC [here](https://gi
 
 Currently using the hcsshim is the only way to run containers on Windows nodes. hcsshim [supports SIGTERM and SIGKILL and a few Windows specific CTRL events](https://github.com/microsoft/hcsshim/blob/e5c83a121b980b1b85f4df0813cfba2d83572bac/internal/signals/signal.go#L74-L126). After discussing with SIG Windows, we came to the decision that for Windows Pods we'll only support SIGTERM and SIGKILL as the valid stop signals. The behaviour of how kubelet handles stop signals is not different for Linux and Windows environments and the CRI API works in both cases.
 
-We will have additional validation for Windows Pods to restrict the set of valid stop signals to SIGTERM and SIGKILL. There will be an admission check that validates that the stop signal is only set to either SIGTERM or SIGKILL if spec.Os.Name == windows.
+We will have additional validation for Windows Pods to restrict the set of valid stop signals to SIGTERM and SIGKILL. There will be an admission check that validates that the stop signal is only set to either SIGTERM or SIGKILL if `spec.os.name` == windows. This OS specific cross validation is further described in [Cross validation with Pod spec.os.name](#cross-validation-with-pod-specosname).
 
 ### User Stories (Optional)
 
@@ -491,6 +535,10 @@ Disable the ContainerStopSignal feature gate, and restart the kube-apiserver and
 
 ## Implementation History
 
+- 2025-02-13: Alpha [KEP PR](https://github.com/kubernetes/enhancements/pull/5122) approved and merged for v1.33
+- 2025-03-25: Alpha [code changes to k/k](https://github.com/kubernetes/kubernetes/pull/130556) merged with API changes, validation and CRI API implementation
+- 2025-04-04: [CRI-O implementation PR](https://github.com/cri-o/cri-o/pull/9086) merged
+
 ## Drawbacks
 
 One of the drawbacks of introducing stop signal to the container spec is that this introduces the scope of users misconfiguring the stop signal leading to unexpected behaviour such as the hanging pods as mentioned in the [Risks and Mitigations](#risks-and-mitigations) section.
@@ -507,7 +555,6 @@ lifecycle:
     exec:
       command: ["/bin/sh", "-c", "kill -SIGUSR1 $(pidof my-app)"]
 ```
-
 
 ## Infrastructure Needed (Optional)
 
