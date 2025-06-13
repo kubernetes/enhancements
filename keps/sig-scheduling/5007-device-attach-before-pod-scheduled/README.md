@@ -83,19 +83,21 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [PreBind Process](#prebind-process)
+  - [Handling attachment failures](#handling-attachment-failures)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Story 1: Asynchronous Device Initialization](#story-1-asynchronous-device-initialization)
+    - [Story 2: Fabric-Attached GPU Allocation](#story-2-fabric-attached-gpu-allocation)
+    - [Story 3: Gang Scheduling with Deferred Binding](#story-3-gang-scheduling-with-deferred-binding)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
     - [BasicDevice Enhancements](#basicdevice-enhancements)
-    - [AllocatedDeviceStatus Enhancements](#allocateddevicestatus-enhancements)
+    - [DeviceRequestAllocationResult Enhancements](#devicerequestallocationresult-enhancements)
     - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
-    - [Handling ResourceSlices Upon Failure of Attachment](#handling-resourceslices-upon-failure-of-attachment)
-  - [Composable Controller Design Overview](#composable-controller-design-overview)
+    - [Timeout Behavior for BindingConditions](#timeout-behavior-for-bindingconditions)
   - [Alternative approach](#alternative-approach)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -166,95 +168,134 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-To achieve efficient management of fabric devices, we propose adding the following features to the Kubernetes scheduler's DRA plugin.
-A fabric device is a device that is placed outside the server via a PCIe or CXL switch.
-In order to use this device from K8s, we need to control the switch to connect a specific device to a specific physical server.
+This KEP introduces a general-purpose mechanism — BindingConditions — to improve scheduling reliability in Kubernetes environments where resource readiness is asynchronous or failure-prone.
 
-In the current DRA implementation, fabric devices are attached after the scheduling decision, which leads to the following issue:
+While the original motivation for this KEP was to support fabric-attached devices in composable disaggregated infrastructure, the proposed mechanism is designed to be broadly applicable.
+BindingConditions enable the scheduler to defer Pod binding until external resources (such as attachable devices, remote accelerators, or programmable hardware) are confirmed to be ready.
+This allows for more deterministic scheduling and avoids premature binding that could lead to Pod failures or manual intervention.
 
-Fabric devices may be contested by other clusters.
-In scenarios where attachment occurs after scheduling, there is a risk that the resource cannot be attached at the time of attachment, causing the container to remain in the "Container Creating" state.
+The mechanism is not tied to any specific hardware model or infrastructure.
+It can support a wide range of use cases, including:
+- Fabric-attached GPUs that require dynamic attachment via PCIe or CXL switches
+- FPGAs that need time-consuming reprogramming before use
 
-To address this issue, we propose a feature that allows the DRA scheduler plugin to wait for the device to be attached.
-If attaching fails, the scheduler will retry and attempt to schedule the pod elsewhere.
+If device preparation fails (e.g., due to contention or hardware error), the scheduler may clear the allocation and allow the Pod to be reconsidered for scheduling.
+This fallback behavior is part of error handling, but the primary goal is to enable more robust and predictable scheduling by explicitly modeling readiness before binding.
 
 ## Motivation
 
-As AI and ML become popular in container (K8s) environment, enormous computational resources are required more and more.
-On the other hand, efforts toward energy efficiency are also required for the realization of a sustainable society.
-It is expected to achieve the conflicting requirements that providing higher performance and reducing power consumption simultaneously.
-Recently, a new server architecture called Composable Disaggregated Infrastructure is emerged.
+As AI and ML workloads become increasingly common in Kubernetes environments, the demand for high-performance computing resources continues to grow.
+At the same time, energy efficiency and flexible infrastructure utilization are becoming critical for sustainable operations.
 
-In a traditional server, hardware resources such as CPUs, memory, and GPUs reside within the server.
-Composable Disaggregated Infrastructure decomposes these hardware resources and makes them available as resource pools.
-We can combine these resources by software definition so that we can create custom-made servers.
+Composable Disaggregated Infrastructure (CDI) has emerged as a promising approach to address these needs.
+In CDI, hardware resources such as CPUs, memory, and GPUs are disaggregated and pooled, allowing them to be dynamically composed into custom server configurations.
+Fabric-attached devices — such as GPUs connected via PCIe or CXL switches — are a key component of this model.
 
-Composable system is composed of resource pool and Composable Manager software.
-In Resource pool all components are connected to PCIe or CXL switches.
-Composable Manager controls the switches so as to create composed baremetals by software definition.
-It has Composable API and Operator or Kubernetes may call the API.
-Once composed baremetals are created user can install any operating system or container infrastructure.
+In Kubernetes, these fabric devices may be shared across clusters and exposed via `ResourceSlice`.
+However, when device attachment occurs only after a Pod is scheduled, there is a risk that the device may not be available at the time of attachment, leading to Pod failures or manual intervention.
 
-This flexibility extends further with the use of fabric devices.
-Fabric devices can be used by multiple Kubernetes clusters, not just a single one.
-Each cluster expose the device as a ResourceSlice, allowing for efficient utilization of the device.
+To address this, we propose a mechanism — `BindingConditions` — that allows the scheduler to defer Pod binding until the required device is confirmed to be ready.
+This improves reliability by avoiding premature binding and enables better coordination with external device controllers.
 
-In this scenario, the ResourceSlice representing a same fabric device might be selected in multiple Kubernetes clusters simultaneously.
-If the attachment fails in one cluster, the pod will remain in a failed state in kubelet.
-
-By having the scheduler wait for the fabric device to be attached, we can reschedule the pod if the attachment fails.
-This approach is superior because it avoids unnecessary waiting and allows for immediate rescheduling.
+While the original motivation came from fabric-attached devices, the mechanism is designed to be broadly applicable.
+It can support other scenarios where resource readiness is asynchronous or failure-prone, such as remote accelerators or gang scheduling.
+This proposal focuses on enabling readiness-aware binding as a general scheduling enhancement.
 
 ### Goals
 
-1. **Enhance the DRA Scheduling Process**: 
-Implement a feature that allows the scheduling process to wait for the completion of fabric device attachment.
-This ensures that pods are only scheduled once the necessary fabric devices are successfully attached, improving reliability and efficiency.
+1. **Enable Readiness-Aware Binding**:  
+   Introduce a mechanism (`BindingConditions`) that allows the scheduler to defer Pod binding until external resources are confirmed to be ready.
+   This improves scheduling reliability and avoids premature binding in environments where resource preparation is asynchronous or failure-prone.
 
-2. **Attribute Information for Fabric Devices**: 
-Add attribute information that clearly distinguishes fabric devices requiring attachment.
-This will help in accurately identifying and managing these devices within the Kubernetes environment.
+2. **Define Binding and Failure Conditions Explicitly**:  
+   Allow device providers to specify `BindingConditions` and `BindingFailureConditions` that the scheduler can evaluate during the PreBind phase.
 
-3. **Prioritize Device Allocation**:
-Implement a prioritization mechanism for device allocation, favoring devices directly connected to the node over attached fabric devices.
-This hierarchy ensures optimal performance and resource utilization.
-For example, the order of preference would be: Node-local devices > Attached fabric devices > Pre-attached fabric devices.
+3. **Prioritize Devices Based on Readiness**:  
+   When multiple candidate devices are available, the scheduler should prefer devices in the following order:
+   1. Devices without any `BindingConditions` (i.e., immediately usable)
+   2. Devices with `BindingConditions` (i.e., require preparation)
+
+   This prioritization naturally favors node-local devices over fabric-attached ones, assuming the latter require preparation.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Defining a complete model for fabric-attached device coordination.
+- While this KEP introduces a mechanism that supports such use cases, broader architectural questions — such as how to model attachment workflows or coordinate between node-local and fabric-aware components — will be addressed in follow-up discussions.
 
 ## Proposal
 
-The basic idea is the following:
+This proposal introduces a mechanism that allows the scheduler to defer Pod binding until external resources are confirmed to be ready.
+This is achieved by extending the `ResourceSlice` and `DeviceRequestAllocationResult` APIs with the following fields:
 
-1. **Adding BindingConditions and BindingFailureConditions to ResourceSlice**:
-   - Add conditions to `ResourceSlice` to indicate the device needs some preparation before the scheduler proceeds `Bind` Phase.
-   - For example, in a composable system, it is necessary to attach devices to nodes.
-   - DRA driver can set any condition to BindingConditions or BindingFailureConditions depending on the characteristics of the device it manages.
+- `BindingConditions`: a list of condition keys that must be satisfied (i.e., set to `True`) before binding can proceed.
+- `BindingFailureConditions`: a list of condition keys that, if any are `True`, indicate that binding should be aborted and the Pod rescheduled.
+- `BindingTimeoutSeconds`: a timeout value (in seconds) that defines how long the scheduler should wait for all `BindingConditions` to be satisfied. If the timeout is exceeded, the allocation is cleared and the Pod is rescheduled.
+- `UsageRestrictedToNode`: a boolean field (optional) that indicates whether the scheduler should set the nodename to the ResourceClaim's nodeSelector during the scheduling process. When set to true, the scheduler records the selected node name in the claim (in the `PreBind` phase), effectively reserving the resource for that specific node. This is particularly useful for external controllers during the PreBind phase, as they can retrieve the node name from the claim and perform node-specific operations such as device attachment or preparation.
 
-2. **Waiting for Device Attachment in PreBind**:
-   - The scheduler waits until all Conditions in BindingConditions are True.
-   - For fabric devices, this means that the scheduler waits for the device attachment to complete during the `PreBind` phase.
+Each entry in `BindingConditions` and `BindingFailureConditions` must be a valid Kubernetes condition type string (e.g., `dra.example.com/is-prepared`).
+These are interpreted as keys in the `.status.conditions` field of the corresponding `ResourceClaim`.
+External controllers are responsible for updating these condition keys with standard Kubernetes condition semantics (`type`, `status`, `reason`, `message`, `lastTransitionTime`).
 
-3. **PreBind Process**:
-   The overall flow of the `PreBind` process is as follows:
+The scheduler evaluates only the `status` field of these conditions:
+- All `BindingConditions` must have `status: "True"` to proceed with binding.
+- If any `BindingFailureConditions` has `status: "True"`, the binding is aborted.
 
-   - **Updating ResourceClaim**:
-     - The scheduler DRA plugin copies `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
+These fields are introduced as alpha features and require enabling the `DRADeviceBindingConditions` and `DRAResourceClaimDeviceStatus` feature gates.
+`DRAResourceClaimDeviceStatus` is required because it controls
+whether these binding conditions can be set in the ResourceClaim status.
 
-   - **Monitoring and Preparation by Composable DRA Controllers**:
-     - Composable DRA Controllers monitor the `ResourceClaim`. If a device that requires preparation is associated with the `ResourceClaim`, they perform the necessary preparations.
-     - Once the preparation is complete, they set the conditions to `true`.
-     - Please note that the scheduler need to abandon binding after the attach is complete in the case of a composable system.
-       Therefore, Composable DRA Controller sets the condition in BindingFailureConditions to true after the attach is complete.
+This mechanism enables readiness-aware scheduling for resources that require asynchronous preparation, such as fabric-attached devices or remote accelerators.
+It allows the scheduler to make binding decisions based on up-to-date readiness information, improving reliability and avoiding premature binding.
 
-   - **Completion of the PreBind Phase**:
-     - Once all conditions are met, the `PreBind` phase is completed, and the scheduler proceeds to the next step.
-     - This is for the general case. Note that in a Composable system, the scheduler abandons binding as described above.
+### PreBind Process
+
+During the scheduling cycle, the DRA scheduler plugin selects a suitable `ResourceSlice` for each `ResourceClaim` and copies relevant metadata into the `AllocationResult` of the claim.
+This includes:
+
+- `BindingConditions`
+- `BindingFailureConditions`
+- `BindingTimeoutSeconds`
+
+In the `PreBind` phase, the scheduler evaluates the readiness of the selected device by checking the following:
+
+1. **All `BindingConditions` must be `True`**  
+   These conditions represent readiness signals (e.g., "device attached", "controller acknowledged") that must be satisfied before binding can proceed.
+
+2. **No `BindingFailureConditions` may be `True`**  
+   If any failure condition is set, the scheduler aborts the binding attempt and clears the allocation.
+
+3. **Timeout Handling**  
+   If `BindingConditions` are not all satisfied within the specified `BindingTimeoutSeconds`, the scheduler treats this as a timeout failure.
+   The allocation is cleared, and the Pod is returned to the scheduling queue for reconsideration.
+
+This mechanism ensures that Pods are only bound to nodes when the associated devices are confirmed to be ready, avoiding premature binding and improving scheduling reliability.
+
+External controllers (e.g., composable DRA controllers) are responsible for monitoring the `ResourceClaim` and updating the condition statuses as device preparation progresses.
+This coordination allows the scheduler to make informed binding decisions without requiring tight coupling between the scheduler and device-specific logic.
+
+### Handling attachment failures
+
+If device preparation fails — for example, due to fabric contention, hardware error, or controller-side timeout — the external controller (e.g., a composable DRA controller) should update the condition status in the `ResourceClaim`'s `allocationResult` to reflect the failure.
+This is typically done by setting one or more `BindingFailureConditions` to `True`.
+It should also ensure that the device is not picked again.
+It can do that by removing the device from the ResourceSlice,
+adding a [device taint](https://github.com/kubernetes/enhancements/issues/5055),
+or by changing the node selector, either at the ResourceSlice
+level or using per-device node selectors from the [partitionable devices](https://github.com/kubernetes/enhancements/issues/4815).
+There is no guarantee that the scheduler will receive those
+updates in time for the next pod scheduling cycle, but
+eventually it will.
+
+The scheduler will detect this during the `PreBind` phase and respond by:
+
+1. **Aborting the binding cycle**: The Pod will not be bound to the node.
+2. **Clearing the allocation**: The `ResourceClaim` is unbound from the `ResourceSlice`, making the resource available for other Pods.
+3. **Requeuing the Pod**: The Pod is returned to the scheduling queue for reconsideration.
+
+This failure-handling path is intended as an exception, not the primary scheduling model.
+The preferred approach is for the scheduler to wait until all `BindingConditions` are satisfied, and only proceed with binding when the device is confirmed to be ready.
+
+By modeling readiness explicitly and handling failures gracefully, this mechanism improves scheduling reliability and avoids leaving Pods in unrecoverable states.
 
 ### User Stories (Optional)
 
@@ -265,9 +306,37 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Story 1: Asynchronous Device Initialization
 
-#### Story 2
+A user deploys a Pod that requires a specialized FPGA device.
+The device must be reprogrammed before use, which takes several minutes.
+The device controller exposes a `BindingCondition` indicating that initialization is in progress.
+
+The scheduler waits in the `PreBind` phase until the FPGA is ready.
+If initialization completes successfully, the Pod is bound and started.
+If the process fails, a `BindingFailureCondition` is set, and the Pod is rescheduled.
+This avoids binding the Pod to a node where the device is not yet usable.
+
+#### Story 2: Fabric-Attached GPU Allocation
+
+The composable controller exposes the GPU as a `ResourceSlice` with a `BindingCondition` indicating that attachment is required.
+A user submits a Pod that requests a GPU managed by a composable infrastructure system.
+The GPU is not yet attached to any node and must be dynamically connected via a PCIe fabric.
+
+The scheduler selects a node and defers binding until the controller completes the attachment and updates the condition to `True`.
+Once the device is ready, the scheduler proceeds with binding.
+If the attachment fails or times out, the Pod is rescheduled.
+This ensures that the Pod is only bound when the device is truly usable.
+
+#### Story 3: Gang Scheduling with Deferred Binding
+
+A user runs a distributed training job that requires multiple Pods to be scheduled together, each with a GPU.
+The job controller coordinates the scheduling and uses `BindingConditions` to delay binding until all Pods are ready to proceed.
+
+Once all Pods have satisfied their readiness conditions, the scheduler binds them simultaneously.
+This ensures that the job starts in a coordinated fashion, avoiding partial execution or resource waste.
+
+note: This is a speculative use case and not currently supported.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -277,6 +346,17 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+- **Maximum Number of Conditions**: The maximum number of `BindingConditions` and `BindingFailureConditions` per device is limited to 4.
+This constraint ensures that the scheduler can efficiently evaluate conditions without excessive overhead
+and that the worst-case size of a ResourceSlice does not grow
+too much.
+
+- **External Controller Dependency**: The effectiveness of `BindingConditions` relies on accurate and timely updates from external controllers (e.g., composable DRA controllers).
+Any delays or inaccuracies in these updates can impact scheduling reliability.
+
+- **Error Handling**: If `BindingConditions` are not satisfied within the specified timeout, or if any `BindingFailureConditions` are set to `True`, the scheduler will clear the allocation and reschedule the Pod.
+This fallback behavior is intended as an error recovery mechanism, not the primary scheduling model.
 
 ### Risks and Mitigations
 
@@ -295,6 +375,10 @@ Consider including folks who also work outside the SIG or subproject.
 **What if the scheduler restarts while the DRA plugin is waiting for the device(s) to be bound?**
 
 The scheduler's restart should not pose an issue, as the decision to wait is based on the Conditions of the ResourceClaim.
+However, care must be taken to ensure that condition updates are persisted correctly.
+If the scheduler restarts while a Pod is waiting in PreBind, it will re-evaluate the ResourceClaim's condition status.
+Since readiness is tracked via API server state, the scheduler can resume waiting or proceed based on the current values.
+Controllers should avoid transient or inconsistent condition states that could lead to incorrect scheduling decisions.
 After a scheduler restart, if the device attachment is not yet complete, the scheduler will wait again at PreBind.
 If the attachment is complete, it will pass through PreBind.
 
@@ -305,7 +389,7 @@ Basically scheduler should select the same node, however we need to consider the
  - During rescheduling, if another pod is deployed on that node and uses the resources, the rescheduled pod might not be able to be deployed.
    Therefore, we need logic to prioritize the rescheduled pod on that node.
 
-Node nomination would solve this.
+[Node nomination](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#user-exposed-information) would solve this.
 If node nomination is not available, processing flow is as follows.
 If the pod is assigned to another node after the scheduler restarts, additional device will be attached to that node.
 If the device attached to the original node is not used, user can manually detach the device.
@@ -329,10 +413,12 @@ This issue needs to be resolved before the beta is released.
 
 ### DRA Scheduler Plugin Design Overview
 
-This document outlines the design of the DRA Scheduler Plugin, focusing on the handling of fabric devices.
-Key additions include `BindingConditions` and `BindingFailureConditions` for device identification and preparation, enhancements to `AllocatedDeviceStatus`, and the process for handling `ResourceSlices` upon attachment failure.
-The composable controller design is also discussed, emphasizing efficient utilization of fabric devices.
+This document outlines the design of the DRA Scheduler Plugin.
+Key additions include `BindingConditions` and `BindingFailureConditions` for device identification and preparation, enhancements to `DeviceRequestAllocationResult`, and the process for handling `ResourceSlice` upon attachment failure.
 
+The diagram below illustrates the interaction between the scheduler, ResourceClaim, and external controller during the PreBind phase.
+It shows how the scheduler waits for readiness conditions to be met before proceeding with binding, and how failure conditions or timeouts trigger rescheduling.
+This flow ensures that Pods are only bound when the associated device is confirmed to be usable.
 ![proposal](proposal.jpg)
 
 #### BasicDevice Enhancements
@@ -344,39 +430,65 @@ These fields will be used by the controller that exposes the `ResourceSlice` to 
 // BasicDevice represents a basic device instance.
 type BasicDevice struct {
   ...
-    // UsageRestrictedToNode indicates if the usage of an allocation involving this device
-    // has to be limited to exactly the node that was chosen when allocating the claim.
-    //
-    // +optional
-    UsageRestrictedToNode bool
+	// UsageRestrictedToNode indicates if the usage of an allocation involving this device
+	// has to be limited to exactly the node that was chosen when allocating the claim.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	UsageRestrictedToNode *bool
 
-    // BindingConditions defines the conditions for proceeding with binding.
-    // All of these conditions must be set in the per-device status
-    // conditions with a value of True to proceed with binding the pod to the node
-    // while scheduling the pod.
-    // The maximum number of binding conditions is 4.
-    //
-    // +optional
-    // +listType=atomic
-    BindingConditions []string
+	// BindingConditions defines the conditions for proceeding with binding.
+	// All of these conditions must be set in the per-device status
+	// conditions with a value of True to proceed with binding the pod to the node
+	// while scheduling the pod.
+	//
+	// The maximum number of binding conditions is 4.
+	// All entries are condition types, which means
+	// they must be labels.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +listType=atomic
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingConditions []string
 
-    // BindingFailureConditions defines the conditions for binding failure.
-    // They may be set in the per-device status conditions.
-    // If any is true, a binding failure occurred.
-    // The maximum number of binding failure conditions is 4.
-    //
-    // +optional
-    // +listType=atomic
-    BindingFailureConditions []string
+	// BindingFailureConditions defines the conditions for binding failure.
+	// They may be set in the per-device status conditions.
+	// If any is true, a binding failure occurred.
+	//
+	// The maximum number of binding conditions is 4.
+	// All entries are condition types, which means
+	// they must be labels.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +listType=atomic
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingFailureConditions []string
 
-    // BindingTimeout indicates the prepare timeout period.
-    // If the timeout period is exceeded before all BindingConditions reach a True state,
-    // the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
-    //
-    // The default timeout if not set is 10 minutes.
-    //
-    // +optional
-    BindingTimeout *metav1.Duration
+	// BindingTimeoutSeconds indicates the prepare timeout period.
+	// If the timeout period is exceeded before all BindingConditions reach a True state,
+	// the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
+	//
+	// The default timeout if not set is 600 seconds.
+	//
+	// No matter what timeouts were specified by the driver, the scheduler will not wait
+	// longer than 20 minutes. This may change.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +listType=atomic
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingTimeoutSeconds *int64
 }
 
 const (
@@ -385,50 +497,48 @@ const (
 )
 ```
 
-#### AllocatedDeviceStatus Enhancements
+#### DeviceRequestAllocationResult Enhancements
 
-The `BindingConditions` and `BindingFailureConditions` fields within `AllocatedDeviceStatus` are used to indicate the status of the device attachment.
+The `BindingConditions` and `BindingFailureConditions` fields within `DeviceRequestAllocationResult` are used to indicate the status of the device attachment.
 These fields will contain a list of conditions, each representing a specific state or event related to the device.
 
 For this feature, following fields are added:
 
 ```go
-// AllocatedDeviceStatus contains the status of an allocated device, if the
-// driver chooses to report it. This may include driver-specific information.
-type AllocatedDeviceStatus struct {
-  ...
-    // UsageRestrictedToNode is a copy of the UsageRestrictedToNode
-    // as defined for the device at the time when it was allocated.
-    // If true, the node selector of the allocation matches exactly
-    // the node that was chosen for the pod which triggered allocation.
-    //
-    // +optional
-    UsageRestrictedToNode bool
-  
-    // BindingConditions is a copy of the BindingConditions
-    // as defined for the device at the time when it was allocated.
-    // All of these conditions must be to True to proceed with binding the pod to the node
-    // while scheduling the pod.
-    //
-    // +optional
-    BindingConditions []string
+// DeviceRequestAllocationResult contains the allocation result for one request.
+type DeviceRequestAllocationResult struct {
+ ...
+	// BindingConditions contains a copy of the BindingConditions
+	// from the corresponding ResourceSlice at the time of allocation.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +listType=atomic
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingConditions []string
 
-    // BindingFailureConditions is a copy of the BindingFailureConditions
-    // as defined for the device at the time when it was allocated.
-    // If any is True, a binding failure occurred.
-    //
-    // +optional
-    BindingFailureConditions []string
+	// BindingFailureConditions contains a copy of the BindingFailureConditions
+	// from the corresponding ResourceSlice at the time of allocation.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +listType=atomic
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingFailureConditions []string
 
-    // BindingTimeout is a copy of the BindingTimeout
-    // as defined for the device at the time when it was allocated.
-    // If the timeout period is exceeded before all BindingConditions reach a True state, 
-    // the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
-    //
-    // The default timeout if not set is 10 minutes.
-    //
-    // +optional
-    BindingTimeout *metav1.Duration
+	// BindingTimeoutSeconds contains a copy of the BindingTimeoutSeconds
+	// from the corresponding ResourceSlice at the time of allocation.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gates.
+	//
+	// +optional
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	BindingTimeoutSeconds *int64
 }
 ```
 
@@ -436,11 +546,11 @@ type AllocatedDeviceStatus struct {
 
 When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform the following steps:
 
-1. **Set NodeSelector**: Before the `PreBind` phase, add the `NodeName` to the `ResourceClaim`'s `NodeSelector`.
+1. **Set NodeSelector in api-server**: During the `PreBind` phase, propagate the `NodeName` to the `ResourceClaim`'s `NodeSelector` to the api-server.
 
-If Conditions are present, the scheduler DRA plugin will perform the following steps during the `PreBind` phase:
+If Conditions are present, the scheduler DRA plugin will additionally perform the following steps:
 
-2. **Copy Conditions**: Copy `UsageRestrictedToNode`, `BindingTimeout`, `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `AllocatedDeviceStatus`.
+2. **Copy Conditions**: Copy `UsageRestrictedToNode`, `BindingTimeout`, `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `DeviceRequestAllocationResult`.
 3. **Wait for Conditions**: Wait for the following conditions:
    - Wait until all conditions in the BindingConditions are `True` before proceeding to Bind.
    - If any one of the conditions in the BindingFailureConditions becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
@@ -473,114 +583,60 @@ if it's not present in the ResourceSlice, the scheduler has 10 minutes as the de
 
 Even if the conditions indicating that the device is attached or that the attachment failed are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
-#### Handling ResourceSlices Upon Failure of Attachment
+#### Timeout Behavior for BindingConditions
+  To ensure Pods are not indefinitely blocked during the PreBind phase, a timeout mechanism is introduced for evaluating BindingConditions in ResourceClaim.
 
-During the scheduling cycle, the DRA plugin reserves a `ResourceSlice` for the `ResourceClaim`.
-In the binding cycle, the reserved `ResourceSlice` is assigned during `PreBind`.
-
-If a fabric device is selected, the scheduler waits for the device attachment during `PreBind`.
-The composable controller performs the attachment operation by checking the flag of BindingConditions in the `ResourceClaim`.
-If the attachment fails, the following steps are taken:
-
-1. **Update ResourceClaim**: The composable controller updates the `AllocatedDeviceStatus.Conditions` to indicate the failure of the attachment by setting a condition in BindingFailureConditions to `True`.
-2. **Fail the Binding Cycle**: The scheduler detects the failed attachment condition and fails the binding cycle. This prevents the pod from proceeding with an unattached device.
-3. **Unbind ResourceClaim and ResourceSlice**: The scheduler DRA plugin unbinds the `ResourceClaim` and `ResourceSlice` in `Unreserve`, clearing the allocation to prevent the fabric device from being used in the `ResourceClaim`.
-4. **Retry Scheduling**: In the next scheduling cycle, the scheduler attempts to bind the `ResourceClaim` again.
-
-### Composable Controller Design Overview
-
-Our controller's philosophy is to efficiently utilize fabric devices.
-Therefore, we prefer to allocate devices directly connected to the node over attached fabric devices (e.g., Node-local devices > Attached fabric devices > Pre-attached fabric devices).
-
-This design aims to efficiently utilize fabric devices, prioritizing node-local devices to improve performance.
-The composable controller manages fabric devices that can be attached and detached.
-Therefore, it publishes a list of free fabric devices as `ResourceSlices`.
-
-The structure we are considering is as follows:
-
-```yaml
-# Composable controller publishes this pool
-kind: ResourceSlice
-pool: composable-device
-driver: gpu.nvidia.com
-nodeSelector: fabric1
-devices:
-  - name: device1
-    UsageRestrictedToNode: true
-    ...
-  - name: device2
-    UsageRestrictedToNode: true
-    ...
+```go
+// AllocationResult contains attributes of an allocated resource.
+type AllocationResult struct {
+  ...
+	// AllocationTimestamp stores the time when the resources were allocated.
+	// This field is not guaranteed to be set, in which case that time is unknown.
+	//
+	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+	// feature gate.
+	//
+	// +optional
+	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+	AllocationTimestamp *metav1.Time
+}
 ```
 
-The vendor's DRA kubelet plugin will also publish the devices managed by the vendor as `ResourceSlices`.
+- **Triggering Timeout**:
+A timeout is triggered if all BindingConditions in the ResourceClaim.status.conditions do not reach status: "True" within the duration specified by BindingTimeoutSeconds.
 
-```yaml
-# Vendor DRA kubelet plugin publishes this pool
-kind: ResourceSlice
-pool: Node1
-driver: gpu.nvidia.com
-nodeName: Node1
-devices:
-  - name: device3
-  ...
-```
+- **Timeout Behavior**:
+When a timeout occurs:
 
-During the scheduling cycle, the DRA plugin reserves a `ResourceSlice` for the `ResourceClaim`.
-In the binding cycle, the reserved `ResourceSlice` is assigned during `PreBind`.
-If a fabric device is selected, the scheduler waits for the device attachment during `PreBind`.
-The composable controller performs the attachment operation by checking the flag of the `ResourceClaim`.
-Once the attachment is complete, the controller updates the `ResourceClaim` to indicate the completion of the attachment.
-The scheduler receives this update, completes the `PreBind`.
-Note that in Composable system, it abandons binding by reporting a failure, forcing scheduler to rerun scheduling cycle and bind to the attached device, which is visible now as a local device.
+  - The scheduler aborts the binding process.
+  - The Pod remains in the Unscheduled state.
+  - The allocation in the ResourceClaim is cleared.
+  - A condition indicating timeout may be recorded in the ResourceClaim.
 
-The composable controller removes device1 from the composable-device pool.
-```yaml
-# Composable controller publishes this pool
-kind: ResourceSlice
-pool: composable-device
-driver: gpu.nvidia.com
-nodeSelector: fabric1
-devices:
-  - name: device2
-  ...
-```
+- **Timeout Duration**:
+The timeout duration is defined by the BindingTimeoutSeconds field in the ResourceSlice.
+If unspecified, a default value (e.g., 600 seconds) is used.
+The scheduler enforces a maximum wait time (e.g., 20 minutes) to prevent indefinite blocking.
 
-If the vendor's plugin responds to hotplug, device1 will appear in the ResourceSlice published by the vendor.
-```yaml
-# Vendor DRA kubelet plugin publishes this pool
-kind: ResourceSlice
-pool: Node1
-driver: gpu.nvidia.com
-nodeName: Node1
-devices:
-  - name: device3
-  ...
-  - name: device1
-  ...
-```
+- **AllocationTimestamp**:
+The `AllocationTimestamp` field in the `AllocationResult` records the exact time when the resource allocation occurred—specifically, when the scheduler began waiting for the binding conditions to be satisfied.
+This timestamp is essential for implementing the timeout mechanism defined by `BindingTimeoutSeconds`, as it provides a consistent reference point for evaluating whether the timeout has expired.
+This field is particularly important in the following scenarios:
+  - Multiple Pods sharing a single ResourceClaim: Since each Pod may be scheduled at a different time, it becomes ambiguous which scheduling event should serve as the basis for timeout evaluation.
+  By recording the initial allocation time, `AllocationTimestamp` ensures consistent timeout behavior across all Pods referencing the same claim.
+  - A single Pod with multiple ResourceClaims: Each claim may have distinct readiness conditions and timeout requirements.
+  `AllocationTimestamp` allows the scheduler to manage timeouts independently for each claim, based on when its allocation began.
 
-Composable DRA controller exposes free devices list on the fabric that is not yet connected to a node as a ResourceSlice.
-Controller refreshes the ResourceSlice periodically (every 10 seconds).
-This means that it reflects the latest list of devices on the fabric.
-It does not "detect attach or detach to nodes and update them immediately in event handlers, etc."
-This is because it is difficult for a Composable DRA running on K8s to cover all cases where a ResourceSlice needs to be updated, such as when a new device is physically added to the fabric.
-We also expect vendor DRAs to periodically update the list of devices connected to the node as a ResourceSlice
-This requires the rescan function to be run periodically.
-
-Devices in composable ResourceSlice has a unique device name.
-However, that the device name is not an identifying name (for example, UUID).
-In Composable System, users attach devices by specifying the model name and number of devices they need.
-And until the device is actually attached to the node, the user does not know which specific individual is attached.
-
-Because of this concept, the Pool and ResourceSlice exposed by Composable DRA controller are separate for each model.
-The devices in the Pool for each model have unique device names, but are essentially information about how many devices of this model are in the ResourceSlice.
-Composable DRA controller also add a model name and so on into the attributes of each device.
-
-![composable-resourceslice](composable-resourceslice.png)
+By anchoring timeout evaluation to a well-defined point in time, `AllocationTimestamp` helps prevent Pods from being indefinitely blocked in the PreBind phase and ensures reliable scheduling behavior in complex resource configurations.
 
 ### Alternative approach
-Instead of implementing the solution within the scheduler, we can use "device autoscaler" which is a device version of ClusterAutoscaler(CA).
+This alternative approach is specific to Composable Disaggregated Infrastructure (CDI) environments.
+It provides a different way to handle device readiness for fabric-attached devices, and is not intended as a general replacement for BindingConditions.
+
+This section introduces another possible approach: using a "device autoscaler" to manage device attachment and detachment, similar to how the Cluster Autoscaler adds or removes nodes.
+Instead of having the scheduler wait for devices to become ready, the autoscaler would monitor unschedulable Pods and try to attach the necessary devices in the background.
+This approach could work alongside the BindingConditions mechanism, but it follows a different idea — letting the system react to scheduling failures instead of waiting for readiness before scheduling.
+
 The key points and main process flow of this alternative proposal are as follows:
 
 The scheduler references only node-local ResourceSlices.
@@ -615,7 +671,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -647,7 +703,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2025-05-26` - `79.3`
+- `k8s.io/dynamic-resource-allocation/resourceclaim`: `2025-05-26` : `90.9`
+- `k8s.io/dynamic-resource-allocation/resourceslice`: `2025-05-26` : `75.3` 
+- `k8s.io/dynamic-resource-allocation/structured`: `2025-05-26` : `91.4` 
 
 ##### Integration tests
 
@@ -666,7 +725,9 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- Simulate a controller updating ResourceClaim conditions
+- Verify scheduler behavior on success, failure, and timeout
+- Simulate multiple Pods referencing the same ResourceClaim with BindingConditions to verify the scheduler's behavior during the PreBind phase.
 
 ##### e2e tests
 
@@ -1110,11 +1171,21 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2024-12: Initial proposal drafted and discussed in SIG scheduling, WG device management.
+- 2025-03: KEP revised to introduce BindingConditions as a general mechanism.
+- 2025-05: Updated KEP submitted for review.
+- 2025-06: Improve some API descriptions, and clarify that "fail and reschedule" is an anti-pattern.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+- Adds complexity to the scheduler's PreBind phase, which may impact scheduling latency in large clusters.
+- Relies on external controllers to update readiness conditions correctly and promptly. Misbehaving controllers could cause Pods to be stuck or rescheduled unnecessarily.
+- May introduce subtle bugs if condition semantics are not well-defined or consistently implemented across different device types.
+- Requires careful coordination with Cluster Autoscaler and other scheduling extensions to avoid conflicts or inefficiencies.
 
 ## Alternatives
 
@@ -1123,6 +1194,10 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+- Implementing readiness checks entirely outside the scheduler, using a controller that marks Pods as schedulable only when devices are ready. This would avoid modifying the scheduler but reduce scheduling flexibility.
+- Using taints and tolerations to delay scheduling until devices are ready. This approach is less granular and harder to manage dynamically.
+- Relying solely on retry mechanisms after Pod failure, without modeling readiness explicitly. This leads to poor user experience and inefficient resource usage.
 
 ## Infrastructure Needed (Optional)
 
