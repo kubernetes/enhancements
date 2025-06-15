@@ -94,8 +94,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -472,15 +473,19 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-#### Alpha -> Beta Graduation
+#### Alpha
 
 - Implement the `enableScaleToZero` property
 - Ensure that all `minReplicas` state transitions from `0` to `1` are working as expected
+- E2E tests are passing without flakiness
 
-#### Beta -> GA Graduation
+#### Beta
 
 - Allowing time for feedback
-- E2E tests are passing without flakiness
+
+#### GA
+
+- Allowing time for feedback
 
 ### Upgrade / Downgrade Strategy
 
