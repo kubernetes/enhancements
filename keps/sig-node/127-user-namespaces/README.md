@@ -25,6 +25,7 @@
       - [Example without idmap mounts](#example-without-idmap-mounts)
       - [Example with idmap mounts](#example-with-idmap-mounts)
     - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
+    - [Non-conformant volume types](#non-conformant-volume-types)
   - [Pod Security Standards (PSS) integration](#pod-security-standards-pss-integration)
   - [Unresolved](#unresolved)
   - [Test Plan](#test-plan)
@@ -476,6 +477,11 @@ components that implement the interface.
 
 [kubeletVolumeHost-interface]: https://github.com/kubernetes/kubernetes/blob/36450ee422d57d53a3edaf960f86b356578fe996/pkg/volume/plugins.go#L322
 
+#### Non-conformant volume types
+
+Some volume types don't have support for idmapped mounts, like [raw block devices](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.26/#volumedevice-v1-core).
+If a pod runs with such a volume type and a user namespace, the kubelet will fail to create the pod.
+
 ### Pod Security Standards (PSS) integration
 
 [Pod Security Standards](https://k8s.io/docs/concepts/security/pod-security-standards)
@@ -492,6 +498,8 @@ For `baseline` and `restricted` namespaces, if a pod has `hostUsers` set to fals
 
 For `baseline` namespaces, pods with `hostUsers` set to false can set any value for the `capabilities.add` field,
 whereas normally in a `baseline` namespace a pod is restricted to adding certain capabilities.
+
+Finally, for `restricted` namespaces, `hostUsers` will be required to be set to `false`.
 
 The validation for capabilities can be relaxed in a `baseline` pod because capabilities
 are user namespaced in the linux kernel, and any pod does not have a seccomp profile (as baseline
@@ -892,14 +900,13 @@ When a pod hits this error returned by the kubelet, the status in `kubectl` is s
   Warning  FailedCreatePodSandBox  12s (x23 over 5m6s)  kubelet            Failed to create pod sandbox: user namespaces is not supported by the runtime
 ```
 
-The following kubelet metrics are useful to check:
- - `kubelet_running_pods`: Shows the actual number of pods running
- - `kubelet_desired_pods`: The number of pods the kubelet is _trying_ to run
+The following kubelet metrics will be added
+- `started_user_namespaced_pods_total`: Shows the number of pods that have been attempted to be created with a user namespace.
+- `started_user_namespaced_pods_errors_total`: The number of pods that failed to create that had a user namespace.
 
-If these metrics are very different, it means there are desired pods that can't be set to running.
-If that is the case, checking the pod events to see if they are failing for user namespaces reasons
-(like the errors shown in this KEP) is advised, in which case it is recommended to rollback or
-disable the feature gate.
+If the kubelet metric `started_user_namespaced_pods_errors_total` has a value close to `started_user_namespaced_pods_total`
+it means most of pods with userns started are failing. If that is the case, checking the pod events to see if they are failing for user namespaces reasons
+(like the errors shown in this KEP) is advised, in which case it is recommended to rollback or disable the feature gate.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -975,9 +982,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition name:
   - Other field:
 - [x] Other (treat as last resort)
-  - Details: check pods with pod.spec.hostUsers field set to false, and see if they are in RUNNING
-    state. Exec into a container and run `cat /proc/self/uid_map` to verify that the mappings are different
-    than the mappings on the host.
+  - Details: `started_user_namespaced_pods_total` metric is greater than `started_user_namespaced_pods_errors_total` for a given node.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1018,16 +1023,8 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No.
-
-This feature is using yet another namespace when creating a pod. If the pod creation fails (by
-an error on the kubelet or returned by the container runtime), a clear error is returned to the
-user. The feedback on this is very direct to the user actions.
-
-A metric like "errors returned in pods with user namespaces enabled" can be very noisy, as the error
-can be completely unrelated (image pull secret errors, configmap referenced and not defined, any
-other container runtime error, etc.). We can't see any metric that can be helpful, as the user has a
-very direct feedback already.
+Yes, two metrics will be added: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
+If error == total for a given node, then there is a problem on that node with user namespace creation.
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
@@ -1072,63 +1069,21 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
 No.
-
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
 
 ###### Will enabling / using this feature result in introducing new API types?
 
 No.
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
-
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 No.
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes. The pod.Spec.HostUsers field is a bool, should be small.
-
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1164,15 +1119,6 @@ The options we have for this plumbing to setup the rootfs:
 
 In any case, the kubernetes components do not need any change.
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
-
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 Not in any kubernetes component.
@@ -1184,26 +1130,7 @@ previous question for more details).
 This is not needed on newer kernels, as they can rely on idmapped mounts for the
 UID/GID shifting (it is just a bind mount).
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
-
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
-
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
 
 The kubelet is spliting the host UID/GID space for different pods, to use for
 their user namespace mapping. The design allows for 65k pods per node, and the
@@ -1222,22 +1149,15 @@ appropiately.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 No changes to current kubelet behaviors. The feature only uses kubelet-local information.
 
 ###### What are other known failure modes?
+
+For all of the following error modes, two metrics will be added: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
+For a given node, if total == error, then there is a problem creating user namespaces on that node.
+If the admin wants to dig deeper into the reason, they will have to check specific pod statuses.
 
 - Some filesystem used by the pod doesn't support idmap mounts on the kernel used.
   - Detection: How can it be detected via metrics? Stated another way:
@@ -1289,8 +1209,7 @@ No changes to current kubelet behaviors. The feature only uses kubelet-local inf
   - Detection: How can it be detected via metrics? Stated another way:
     how can an operator troubleshoot without logging into a master or worker node?
 
-        Errors are returned on pod creation, directly to the user (visible on the pod events). No
-        need to use metrics.
+        Errors are returned on pod creation, directly to the user (visible on the pod events).
 
         See the pod events, it should contain something like:
 
@@ -1322,7 +1241,6 @@ writing to this file.
     how can an operator troubleshoot without logging into a master or worker node?
 
         Errors are returned to the operation failed (like pod creation, visible on the pod events),
-        no need to see metrics nor logs.
 
         Errors are returned to the either on:
          * Kubelet initialization: the initialization fails if the feature gate is active and there is a
@@ -1374,19 +1292,6 @@ writing to this file.
 
         It is part of the system configuration.
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 This KEP doesn't introduce new SLOs and doesn't result in increasing time taken
@@ -1416,23 +1321,9 @@ be the cause of the problem.
 - Kubernetes 1.28: Support for stateful pods, renamed feature gate (alpha)
 - Kubernetes 1.30: Feature went off-by-default beta
 - Kubernetes 1.33: Feature goes on-by-default beta
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- Kubernetes 1.34: Feature adds metrics
 
 ## Drawbacks
-
-<!--
-Why should this KEP _not_ be implemented?
--->
 
 ## Alternatives
 
@@ -1530,16 +1421,4 @@ range needs to be used by the kubelet, that can be configured per-node.
 
 Therefore, this old concerned is now resolved.
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 ## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
