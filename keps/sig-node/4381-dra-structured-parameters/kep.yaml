@@ -12,9 +12,9 @@ reviewers:
   - "@johnbelamaric"
   - "@klueska"
 approvers:
-  - "@alculquicondor" # SIG Scheduling
+  - "@macsko" # SIG Scheduling
   - "@dchen1107" # SIG Node
-  - "@MaciekPytel" # SIG Autoscaling
+  - "@towca" # SIG Autoscaling
 
 see-also:
   - "/keps/sig-node/3063-dynamic-resource-allocation"
@@ -25,12 +25,13 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.30"
   beta: "v1.32"
+  stable: "v1.34"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -41,6 +42,9 @@ feature-gates:
       - kube-controller-manager
       - kube-scheduler
       - kubelet
+  - name: DRASchedulerFilterTimeout
+    components:
+      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release
@@ -51,3 +55,4 @@ metrics:
   - resourceclaim_controller_resource_claims
   - resourceclaim_controller_allocated_resource_claims
   - dra_operations_seconds in kubelet
+  - dra_resource_claims_in_use in kubelet

@@ -1,64 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-
 # [KEP-4381](https://github.com/kubernetes/enhancements/issues/4381): Dynamic Resource Allocation with Structured Parameters
 
 <!-- toc -->
@@ -149,40 +88,22 @@ SIG Architecture for cross-cutting KEPs).
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -255,17 +176,10 @@ structured parameters is as follows:
 
 This KEP defines a way to describe devices with a name and some associated
 attributes that are used to select devices.
+[Other KEPs](https://github.com/kubernetes/enhancements/issues?q=is%3Aissue%20DRA)
+add additional features on top of this base functionality.
 
 ## Motivation
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 Originally, Kubernetes and its scheduler only tracked CPU and RAM as
 resources for containers. Later, support for storage and discrete,
@@ -643,18 +557,6 @@ the ResourceClaim status.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
 #### Feature not used
 
 In a cluster where the feature is not used (no DRA driver installed, no
@@ -769,7 +671,10 @@ A DRA driver can have the following components:
 
 A [utility library](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation) for DRA drivers was developed.
 It does not have to be used by drivers, therefore it is not described further
-in this KEP.
+in this KEP. It's documentation and code describe best practices for
+developing a DRA driver. It is used by the
+[example DRA driver](https://github.com/kubernetes-sigs/dra-example-driver)
+which is meant to be a starting point for developing new DRA drivers.
 
 ### State and communication
 
@@ -955,28 +860,23 @@ more experimental parts of the API in the future. The new fields in the
 PodSpec are gated by the DynamicResourceAllocation feature gate and can only be
 set when it is enabled. Initially, they are declared as alpha. Even though they
 are alpha, changes to their schema are discouraged and would have to be done by
-using new field names.
-
-After promotion to beta they are still disabled by default unless the feature
-gate explicitly gets enabled. The feature gate remains off by default because
-DRA depends on a new API group which following the
-[convention](https://github.com/kubernetes/enhancements/tree/master/keps/sig-architecture/3136-beta-apis-off-by-default)
-is off by default.
+using new field names. After promotion to GA, they are enabled by default,
+but can still be disabled. Disabling is allowed because it couldn't be
+on-by-default during beta due to the dependency on the off-by-default API group
+and immediately turning it on by default with no fallback option could
+be too risky.
 
 ResourceClaim, DeviceClass and ResourceClaimTemplate are built-in types
-in `resource.k8s.io/v1beta1`. This beta group must be explicitly enabled in
-the apiserver's runtime configuration. Using builtin types was chosen instead
+in `resource.k8s.io`. Using builtin types was chosen instead
 of using CRDs because core Kubernetes components must interact with the new
 objects and installation of CRDs as part of cluster creation is an unsolved
 problem.
 
-The storage version of this API group is `v1beta1`. This enables a potential
-future removal of the `v1alpha3` version. `v1alpha3` is still supported for
-clients via conversion. This enables version skew testing (kubelet from 1.31
-with 1.32 control plane, incremental update) and makes DRA drivers written for
-1.31 immediately usable with 1.32. Cluster upgrades from 1.31 are supported,
-downgrades only if DRA is not enabled in the downgraded cluster or no resources
-exist in the cluster which use the `v1beta1` format.
+The storage version of this API group is `v1beta1`, the version introduced in
+1.32. Only the `v1` version is served by default. `v1beta1` must remain
+supported for encoding/decoding. Other betas remain available
+as long as required by the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
+but need to be enabled explicitly.
 
 Secrets are not part of this API: if a DRA driver needs secrets, for
 example to access its own backplane, then it can define custom parameters for
@@ -1017,9 +917,6 @@ needed and there is a single owner.
 //
 // For resources that are not local to a node, the node name is not set. Instead,
 // the driver may use a node selector to specify where the devices are available.
-//
-// This is an alpha type and requires enabling the DynamicResourceAllocation
-// feature gate.
 type ResourceSlice struct {
     metav1.TypeMeta
     // Standard object metadata
@@ -1171,22 +1068,6 @@ type Device struct {
     // +required
     Name string
 
-    // Basic defines one device instance.
-    //
-    // +optional
-    // +oneOf=deviceType
-    Basic *BasicDevice
-}
-```
-
-Future KEPs may define devices with other, more complex
-descriptions. Schedulers which don't support those will see a device with just
-a name, which indicates that the scheduler cannot allocate that device because
-it doesn't support the new device type yet.
-
-```go
-// BasicDevice defines one device instance.
-type BasicDevice struct {
     // Attributes defines the set of attributes for this device.
     // The name of each attribute must be unique in that set.
     //
@@ -1302,14 +1183,7 @@ type DeviceCapacity struct {
     // capacity (= share a single device between different consumers).
 ```
 
-The `v1alpha3` API directly mapped to a `resource.Quantity` instead of this
-`DeviceCapacity`. Semantically the two are currently equivalent, therefore
-custom conversion code makes it possible to continue supporting `v1alpha3`. At
-the time that "consumable capacity" gets added (if it gets added!) the alpha
-API probably can be removed because all clients will use the beta API.
-
 ###### ResourceClaim
-
 
 ```go
 // ResourceClaim describes a request for access to resources in the cluster,
@@ -1317,9 +1191,6 @@ API probably can be removed because all clients will use the beta API.
 // with specific properties, this is how that request is expressed. The status
 // stanza tracks whether this claim has been satisfied and what specific
 // resources have been allocated.
-//
-// This is an alpha type and requires enabling the DynamicResourceAllocation
-// feature gate.
 type ResourceClaim struct {
     metav1.TypeMeta
     // Standard object metadata
@@ -1479,12 +1350,8 @@ type DeviceRequest struct {
     // all ordinary claims to the device with respect to access modes and
     // any resource allocations.
     //
-    // This is an alpha field and requires enabling the DRAAdminAccess
-    // feature gate.
-    //
     // +optional
     // +default=false
-    // +featureGate=DRAAdminAccess
     AdminAccess bool
 }
 ```
@@ -1761,9 +1628,6 @@ more user-friendly "kind".
 // device configuration and selectors. It can be referenced in
 // the device requests of a claim to apply these presets.
 // Cluster scoped.
-//
-// This is an alpha type and requires enabling the DynamicResourceAllocation
-// feature gate.
 type DeviceClass struct {
     metav1.TypeMeta
     // Standard object metadata
@@ -1882,18 +1746,6 @@ type DeviceRequestAllocationResult struct {
     //
     // +required
     Device string
-
-    // AdminAccess indicates that this device was allocated for
-    // administrative access. See the corresponding request field
-    // for a definition of mode.
-    //
-    // This is an alpha field and requires enabling the DRAAdminAccess
-    // feature gate. Admin access is disabled if this field is unset or
-    // set to false, otherwise it is enabled.
-    //
-    // +optional
-    // +featureGate=DRAAdminAccess
-    AdminAccess *bool
 }
 
 // DeviceAllocationConfiguration gets embedded in an AllocationResult.
@@ -1928,9 +1780,6 @@ const (
 
 ```go
 // ResourceClaimTemplate is used to produce ResourceClaim objects.
-//
-// This is an alpha type and requires enabling the DynamicResourceAllocation
-// feature gate.
 type ResourceClaimTemplate struct {
     metav1.TypeMeta
     // Standard object metadata
@@ -1972,12 +1821,8 @@ type PodSpec {
     // will be made available to those containers which consume them
     // by name.
     //
-    // This is an alpha field and requires enabling the
-    // DynamicResourceAllocation feature gate.
-    //
     // This field is immutable.
     //
-    // +featureGate=DynamicResourceAllocation
     // +optional
     ResourceClaims []PodResourceClaim
    ...
@@ -2155,11 +2000,6 @@ for some unlikely edge cases (see below) there are no API calls during the main
 scheduling cycle. Instead, the plugin collects information and updates the
 cluster in the separate goroutine which invokes PreBind.
 
-When started with DRA enabled, the scheduler should check whether DRA is also
-enabled in the API server. Without such an explicit check, syncing the informer
-caches would fail when the feature gate is enabled but the API group is
-disabled. How to implement such a check reliably still needs to be determined.
-
 #### EventsToRegister
 
 This registers all cluster events that might make an unschedulable pod
@@ -2208,6 +2048,42 @@ format that can be used efficiently by Filter.
 This checks whether the given node has access to those ResourceClaims which
 were already allocated. For ResourceClaims that were not, it checks that the
 allocation can succeed for a node.
+
+This check can become time consuming. The cost of individual CEL expressions is
+limited, but how often they need to be evaluated is not limited because it
+depends on the number of requests per ResourceClaim, number of ResourceClaims,
+number of published devices in ResourceSlices, and the complexity of the
+requests. Other checks besides CEL evaluation also take time (usage checks,
+match attributes, etc.).
+
+Therefore the scheduler plugin supports a configurable timeout that is
+applied to the entire Filter call for each node. In case of a timeout,
+Filter returns Unschedulable. If Filter succeeds for some other node(s),
+scheduling continues with those. If Filter fails for all of them,
+the Pod is placed in the unschedulable queue. It will get checked again
+if changes in e.g. ResourceSlices or ResourceClaims indicate that
+another scheduling attempt might succeed. If this fails repeatedly,
+exponential backoff slows down future attempts.
+
+`scheduler_perf` results show Filter durations
+around 10 milliseconds
+([steady state](http://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfScheduling&Metric=scheduler_framework_extension_point_duration_seconds&Name=BenchmarkPerfScheduling%2FSteadyStateClusterResourceClaimTemplate%2Fempty_500nodes%2Ftest&event=not%20applicable&extension_point=Filter&plugin=not%20applicable&result=not%20applicable))
+and up to 200 milliseconds ([filling up a cluster](http://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfScheduling&Metric=scheduler_framework_extension_point_duration_seconds&Name=BenchmarkPerfScheduling%2FSchedulingWithResourceClaimTemplate%2F5000pods_500nodes%2Ftest&event=not%20applicable&extension_point=Filter&plugin=not%20applicable&result=not%20applicable)).
+The default timeout is 10 seconds, which is orders of magnitude higher than
+what is expected in practice to support also other, more complex workloads
+out-of-the-box. Administrators can reduce the timeout after checking the
+`scheduler_framework_extension_point_duration_seconds` metrics for the Filter
+operation in their cluster to prevent unexpectedly long Filter operations.
+
+Nonetheless, there is a risk that adding this timeout breaks unusual scenarios
+where pods were scheduled successfully by allowing the Filter operation to run
+longer. Depending on the scheduler configuration (queuing hints, periodic
+sweeping of the unscheduleable queue), pods also may not get retried unless
+something changes in the cluster related to DRA (ResourceClaim deallocation,
+ResourceSlice changes). To make mitigating this potential regression easier
+than reconfiguring the scheduler, there also is a `DRASchedulerFilterTimeout`
+feature gate which gets introduced as beta and enabled by default. Disabling it
+restores the previous behavior.
 
 #### Post-filter
 
@@ -2290,11 +2166,16 @@ k8s.io/kubelet/pkg/apis/dra gRPC interface. It was inspired by
 [CSI](https://github.com/container-storage-interface/spec/blob/master/spec.md),
 with “volume” replaced by “resource” and volume specific parts removed.
 
-Versions v1alpha4 and v1beta1 are supported by kubelet. Both are identical.
-DRA drivers should implement both because support for v1alpha4 might get
-removed.
+Versions v1beta1 and v1 are supported by kubelet. Both are identical.
+DRA drivers should implement both because support for v1beta1 will get
+removed eventually.
 
-The following metric mirrors the `csi_operations_seconds`:
+A DRA driver may use
+[seamless upgrades](https://github.com/kubernetes/kubernetes/blob/582b421393d0fad2ad4a83feba88977ac4434662/pkg/kubelet/pluginmanager/pluginwatcher/README.md#seamless-upgrade)
+to ensure that there is always a running driver instance on a node.
+
+The following metric mirrors the `csi_operations_seconds`, i.e.
+provides information about gRPC calls issued by the kubelet:
 - Metric name: `dra_operations_seconds`
 - Description: Dynamic Resource Allocation interface operation duration with gRPC error code status total
 - Type: Histogram
@@ -2353,6 +2234,18 @@ resource instance, then NodeUnprepareResource (see below) must have been called
 successfully before allowing the pod to be deleted. This ensures that network-attached resource are available again
 for other Pods, including those that might get scheduled to other nodes. It
 also signals that it is safe to deallocate and delete the ResourceClaim.
+
+This implies that a DRA driver must not get removed while it is in use on a
+node because otherwise pods get stuck while the kubelet (re)tries to call
+NodeUnprepareResources. A driver is in use if it has ResourceClaims which
+were prepared. The kubelet exposes that in a metric:
+- Metric name: `dra_resource_claims_in_use`
+- Description: The number of ResourceClaims that are currently in use on the node, by driver name (`driver_name` label value) and across all drivers (special value `<any>` for `driver_name`). Note that the sum of all by-driver counts is not the total number of in-use ResourceClaims because the same ResourceClaim might use devices from different drivers. Instead, use the count for the `<any>` driver_name.
+- Type: Histogram
+- Labels: `driver_name`
+
+Checking usage and removing a driver is inherently racy. See below
+under ["Troubleshooting"](#troubleshooting) for mitigations.
 
 ![kubelet](./kubelet.png)
 
@@ -2619,25 +2512,6 @@ None.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
 2022-05-24:
 
 - `k8s.io/kubernetes/pkg/scheduler`: 75.0%
@@ -2687,41 +2561,35 @@ End of v1.32 development cycle (~ https://github.com/kubernetes/kubernetes/pull/
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 77.4%
 
+v1.33.0:
+
+- `k8s.io/dynamic-resource-allocation/cel`: 88.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 91.3%
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 97.8%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.2%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 78.4%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 90.3%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 46.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 79.3%
+
 ##### Integration tests
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
 
 The scheduler plugin and resource claim controller are covered by the workloads
 in
-https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler_perf/config/performance-config.yaml
-with "Structured" in the name. Those tests run in:
+https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler_perf/dra/performance-config.yaml
+Several other integration tests exist in
+https://github.com/kubernetes/kubernetes/blob/master/test/integration/dra.
+
+Those tests run in:
 
 - [pre-submit](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration) and [periodic](https://testgrid.k8s.io/sig-release-master-blocking#integration-master) integration testing under `k8s.io/kubernetes/test/integration/scheduler_perf.scheduler_perf`
-- [periodic performance testing](https://testgrid.k8s.io/sig-scalability-benchmarks#scheduler-perf) which populates [http://perf-dash.k8s.io](http://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfResults&Metric=SchedulingThroughput&Name=SchedulingBasic%2F5000Nodes_10000Pods%2Fnamespace-2&extension_point=not%20applicable&plugin=not%20applicable&result=not%20applicable&event=not%20applicable)
-
-**TODO**: link to "Structured" once https://github.com/kubernetes/kubernetes/pull/127277) is merged.
+- [periodic performance testing](https://testgrid.k8s.io/sig-scalability-benchmarks#scheduler-perf) which populates [http://perf-dash.k8s.io](http://perf-dash.k8s.io/#/?jobname=scheduler-perf-benchmark&metriccategoryname=Scheduler&metricname=BenchmarkPerfScheduling&Metric=SchedulingThroughput&Name=BenchmarkPerfScheduling%2FSchedulingWithResourceClaimTemplate%2F5000pods_500nodes%2Ftest&event=not%20applicable&extension_point=not%20applicable&plugin=not%20applicable&result=not%20applicable)
 
 The periodic performance testing prevents performance regressions by tracking
 performance over time and by failing the test if performance drops below a
 threshold defined for each workload.
 
 ##### e2e tests
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
 
 End-to-end testing depends on a working DRA driver and a container runtime
 with CDI support. A [test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
@@ -2740,7 +2608,7 @@ calls happens inside the E2E test.
 
 All tests that don't involve actually running a Pod can become part of
 conformance testing. Those tests that run Pods cannot be because CDI support in
-runtimes is not required.
+runtimes and plugin support in the kubelet are not required for conformance.
 
 Test links:
 - [E2E](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra): https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra
@@ -2774,10 +2642,9 @@ Test links:
   or [example driver](https://github.com/kubernetes-sigs/dra-example-driver)
   changes based on above analysis
 - Address existing in-flight work and bugs ex.
-    [PR#129799](https://github.com/kubernetes/kubernetes/pull/129799),
-    [kubernetes#128964](https://github.com/kubernetes/kubernetes/issues/128964),
-    [kubernetes#129402](https://github.com/kubernetes/kubernetes/issues/129402).
-
+  - [PR#129799](https://github.com/kubernetes/kubernetes/pull/129799),
+  - [kubernetes#128964](https://github.com/kubernetes/kubernetes/issues/128964),
+  - [kubernetes#129402](https://github.com/kubernetes/kubernetes/issues/129402) (replaced by https://github.com/kubernetes/website/issues/51012).
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
@@ -2796,6 +2663,11 @@ Ideally, the latest release of a DRA driver should be used and it should
 support a wide range of structured type versions. Then problems due to version
 skew are less likely to occur.
 
+DRA drivers using the
+[dynamic-resource-allocation helper package](https://github.com/pohly/kubernetes/tree/3b5cfeaf204b0d836fc6881e07cd439ab57e22d1/staging/src/k8s.io/dynamic-resource-allocation/client)
+automatically make API calls with a version of the resource.k8s.io that is supported
+by the apiserver.
+
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
@@ -2811,6 +2683,10 @@ The answer in this section is for the core DRA.
     - kubelet
     - kube-scheduler
     - kube-controller-manager
+- [X] Feature gate
+  - Feature gate name: DRASchedulerFilterTimeout
+  - Components depending on the feature gate:
+    - kube-scheduler
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2821,6 +2697,9 @@ No.
 Yes. Applications that were already deployed and are running will continue to
 work, but they will stop working when containers get restarted because those
 restarted containers won't have the additional resources.
+
+Also, a DRA driver can be deinstalled. Workloads depending on DRA
+then no longer get scheduled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -2842,9 +2721,17 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Tests for apiserver will cover disabling the feature. This primarily matters
+[Tests for the apiserver](https://github.com/kubernetes/kubernetes/blob/43bb11b5c1a998d110b391c028a01691e4e568b6/pkg/api/pod/util_test.go#L950-L1110
+cover disabling the feature. This primarily matters
 for the extended PodSpec: the new fields must be preserved during updates even
 when the feature is disabled.
+
+Other test check for proper enabling/disabling of feature-gated functionality:
+- kube-scheduler: [event handlers](https://github.com/kubernetes/kubernetes/blob/43bb11b5c1a998d110b391c028a01691e4e568b6/pkg/scheduler/eventhandlers_test.go#L444-L495), [cluster events](https://github.com/kubernetes/kubernetes/blob/43bb11b5c1a998d110b391c028a01691e4e568b6/pkg/scheduler/framework/events_test.go#L415-L427)
+- [node restriction admission](https://github.com/kubernetes/kubernetes/blob/43bb11b5c1a998d110b391c028a01691e4e568b6/plugin/pkg/admission/noderestriction/admission_test.go#L2154-L2316)
+
+In the kubelet, a single if check controls whether the DRA manager is active.
+This is covered by the manual tests of upgrade/rollback behavior.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2878,8 +2765,9 @@ determine whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-This will be done manually before transition to beta by bringing up a KinD
-cluster with kubeadm and changing the feature gate for individual components.
+This was tested before promotion to beta, using `PRESERVE_ETCD=true hack/local-up-cluster.sh`.
+Pods using ResourceClaims started in one version could be removed by the other. When the feature
+is disabled, the new fields were ignored.
 
 Roundtripping of API types is covered by unit tests.
 
@@ -2889,13 +2777,6 @@ No.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 There will be pods which have a non-empty PodSpec.ResourceClaims field and ResourceClaim objects.
@@ -2903,6 +2784,8 @@ There will be pods which have a non-empty PodSpec.ResourceClaims field and Resou
 Metrics in kube-controller-manager about total
 (`resourceclaim_controller_resource_claims`) and allocated ResourceClaims
 (`resourceclaim_controller_allocated_resource_claims`).
+
+Metrics in kubelet about prepared, in-use ResourceClaims (`dra_resource_claims_in_use`).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -2989,16 +2872,6 @@ preparing resources on a node.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
 For Pods not using ResourceClaims, not much changes. The following components
@@ -3073,17 +2946,6 @@ The kubelet needs a gRPC connection to each DRA driver running on the node.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 The Kubernetes control plane will be down, so no new Pods get
@@ -3151,6 +3013,53 @@ already received all the relevant updates (Pod, ResourceClaim, etc.).
   - Testing: An E2E test covers the expected retry mechanism in kubelet when
     `NodePrepareResources` fails intermittently.
 
+- A DRA driver prepares a ResourceClaim for a pod, then fails or gets uninstalled.
+  The driver is needed to tear down the Pod.
+
+  - Detection: A Pod does not reach a final phase ("Succeeded" or "Failed") and
+    cannot be deleted. The `dra_resource_claims_in_use` for the node and driver
+    is larger than zero. The `dra_operations_seconds` metric for
+    `method_name: NodeUnprepareResources` with non-zero `grpc_status_code` increases.
+
+  - Mitigations: driver failure scenarios and mitigations must be documented by
+    the vendor. If it got deinstalled, it needs to be reinstalled.
+
+    With [device taints](https://github.com/kubernetes/enhancements/issues/5055),
+    admins can be sure that a driver is not needed anymore before removing it:
+    - Taint devices of a driver, optionally evicting pods.
+    - Check `dra_resource_claims_in_use`.
+    - When zero, remove the driver.
+
+  - Testing: An E2E test covers the expected retry mechanism in kubelet when
+    `NodeUnprepareResources` fails intermittently.
+
+- Some mutating Pod webhook that is installed in the cluster has not been updated
+  to the Kubernetes core v1 API from Kubernetes 1.32. It decodes into the pre-1.32
+  v1.Pod structure, which drops the updated ResourceClaim and ResourceClaimTemplate
+  fields, and sends back an encoding without them.
+
+  - Detection: Creating Pods fails with `must specify one of: resourceClaimName,
+    resourceClaimTemplateName` even though the client had set those.
+
+  - Mitigation: Ensure that mutating Pod webhooks are kept up-to-date or
+    decode into an unstructured object instead of v1.Pod.
+
+  This occurs also when other features extend the Pod structure and can also
+  occur for other types. This issue is listed here for the sake of completeness.
+
+- The scheduler fails to schedule pods because searching for available devices
+  that match the requests and constraints takes too long.
+
+  - Detection: Pods remain pending with `timed out trying to allocate devices`
+    as explanation.
+
+  - Mitigations: running the scheduler on a faster machine may help to make it
+    complete the necessary checks in time. Alternatively, the "FilterTimeout"
+    configuration of the "DynamicResources" scheduler plugin can be set
+    to something larger than then default 10 seconds. If it occurs for
+    workloads asking for devices of a specific DRA driver, then uninstalling
+    that driver will prevent wasting scheduler time on failing scheduling
+    attempts.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -3169,6 +3078,9 @@ Major milestones might include:
 
 - Kubernetes 1.30: Code merged as extension of v1alpha2
 - Kubernetes 1.31: v1alpha3 with new API and several new features
+- Kubernetes 1.32: promotion to beta with v1beta1
+- Kubernetes 1.33: revised v1beta2 API with the same structure as intended for GA
+- Kubernetes 1.34: promotion to GA (tentative)
 
 ## Drawbacks
 
