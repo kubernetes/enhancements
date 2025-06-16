@@ -195,9 +195,13 @@ impersonate.
 Introduce verbs `impersonate:user-info`, `impersonate:serviceaccount` and `impersonate:scheduled-node`:
 - `impersonate:user-info` limits the impersonator to impersonate users with 
 certain names/groups/userextras. The resources must be `users`/`groups`/`userextras`/`uids`.
-The resource names must be user names, group names or values in the user extras accoringly.
+and the user must not be a node (username with a prefix of `system:nodes`)
+The resource names must be usernames, group names or values in the user extras accoringly.
 - `impersonate:serviceaccount` that limits the impersonator to impersonate the serviceaccount with
 the certain name/namespace. The resources must be `serviceaccounts`.
+- `impersonate:node` that limits the impersonator to impersonate the node only. The resource
+must be `nodes`, and the resourceName should be the name of the node. The impersonator must have this
+verb to impersonate a node.
 - `impersonate:scheduled-node` that limits the impersonator to impersonate the node the 
 impersonator is running on. The resources must be `nodes`.
 
@@ -267,8 +271,9 @@ subjects:
 These permissions define: "The impersonator can impersonate a user with the name of
 someUser to list and watch pods in the default namespace."
 
-When receiving an impersonation request to list pods from the user `impersonator` with the header of
-`Impersonate-User:someUser`, the apiserver:
+### Subject Access Review Details
+When receiving an impersonation request to list pods cluster-wid from the user `impersonator`
+with the header of `Impersonate-User:someUser`, the apiserver:
 - Verifies if the impersonator has the permission to impersonate with the scope of the user.
 A subjectaccessreview is sent to the authorizer:
 ```yaml
@@ -384,13 +389,14 @@ subjects:
 
 #### Story 2
 
-As a controller, I am working as a deputy, receiving any user's request to access virtual machine console.
+As a controller, I am working as a deputy, receiving any user's request to access virtual machine console
+in the `default` namespace.
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonate-user
+  name: impersonate:vm:console
 rules:
 - apiGroups:
   - authentications.k8s.io
@@ -402,11 +408,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: impersonate-user
+  name: impersonate:vm:console
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: impersonate-user
+  name: impersonate:vm:console
 subjects:
 - kind: ServiceAccount
   name: deputy
@@ -459,6 +465,17 @@ There is possibility that the verbs with prefix of `impersonate-on:` have been
 used by other component, and been set in Role/ClusterRole. Since `impersonate`
 permission is also required for impersonator, the component will not get more
 power when permssion of `impersonate-on:` is given.
+
+#### High request volume leads to high load on authorization chain.
+
+For the scheduled node case, it is possible that a high request volume node
+agent could be constantly performing impersonated requests, each of which would
+add two extra authorization checks. This could put load on the authorization
+chain. We could cache the check results with a certain time period to mitigate
+it which will requires more complicated cache design:
+- the key should include resources/actions/subjects
+- the value should be marked as invalidated for a certain period.
+This part of design and implementation will be considered in beta phase.
 
 ## Design Details
 
@@ -558,16 +575,33 @@ spec:
   user: impersonator
 ```
 
-### Verb `impersonate:scheduled-node`
+### Verb `impersonate:node` and `impersonate:scheduled-node`
 
-This is a special verb to check when two conditions are met:
+When the request has the header of `Impersonate-User`, and the value has the prefix of `system:nodes`,
+this verb is checked instead of `impersonate:user-info`. The subjectaccessreview below will be sent
+to the authorizer:
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  resourceAttributes:
+    group: authentications.k8s.io
+    resource: nodes
+    name: someNode
+    verb: impersonate:nodes
+  user: impersonator
+```
+
+`impersonate:scheduled-node` is a special verb to check when two conditions are met:
 1. The impersonator is impersonating a node by setting the header `Impersonate-User` and the value has a prefix
 of `system:node:` on the request.
 2. The user info of the impersonator has an extra with key `authentication.kubernetes.io/node-name`, and the value
 should be the same as the value in the request header of `Impersonate-User` after removing prefix `system:node:`.
 It indicates that the impersonator is running on the same node it is impersonating.
 
-If the two conditions are both met, the following subjectaccessreview will be sent to the authorizer:
+The flow for checking these two verbs will be as following:
+1. If condition 1 is not met, verb `impersonate:user-info` will be checked instead.
+2. If both conditions are met, the verb `impersonate:scheduled-node` will be checked at first:
 ```yaml
 apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
@@ -578,27 +612,27 @@ spec:
     verb: impersonate:scheduled-node
   user: impersonator
 ```
-If one of the conditions is not met, verb `impersonate:scheduled-node` will not be checked and verb
-`impersonate:user-info` will be checked instead. For instance, if condition 2 is not met, the following
-subjectaccessreview will be sent.
+3. If check in step 2 is not passed, or only condition 1 is met, the verb impersonate:node will be checked:
 ```yaml
 apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
     group: authentications.k8s.io
-    resource: users
-    name: system:node:node1
-    verb: impersonate:user-info
+    resource: nodes
+    name: node1
+    verb: impersonate:node
   user: impersonator
 ```
 
 ### Auditing
 
-An audit event is recorded already for any allowed impersonation request. To record the reason why the impersonation
-is allowed, an annotation `allowed-impersonation-verbs` will be added. The value will be the list of impersonation
-related verbs checked. For example, `allowed-impersonation-verbs: impersonate:scheduled-node,impersonate-on:list`
-indicates that the impersonation request is allowed because it impersonates a scheduled node on list action.
+Audit events already contain the `impersonatedUser` field to denote if impersonation was used.
+To record the reason why the impersonation is allowed, an annotation `allowed-impersonation-verbs` will
+be added. The value will be the impersonation related verbs. For example,
+`allowed-impersonation-verbs: impersonate:scheduled-node` indicates that the impersonation request is
+allowed because it impersonates a scheduled node. The specific action such as `list` or `get`
+will not be included in the value given it can be inferred from the request itself.
 
 ### Test Plan
 
@@ -1144,6 +1178,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+NA
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1187,6 +1223,12 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+- Impersonation permission is set but request is disallowed with external authorizer.
+  - Detection: metrics of `authorization success` will show the unauthorized requests
+  - Mitigations: Stop sending the impersonation requests
+  - Diagnostics: APIServer log will show the reason why the request is unauthorized.
+  - Testing: There is no general test for that, user using external authorizer need to
+  test for the specific authorizer.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1202,6 +1244,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- Kubernetes 1.34: Alpha version of the KEP.
 
 ## Drawbacks
 

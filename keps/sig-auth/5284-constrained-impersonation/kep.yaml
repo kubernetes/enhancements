@@ -5,13 +5,14 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2025-05-07
 reviewers:
   - "@deads2k"
   - "@enj"
 approvers:
   - "@enj"
+  - "@liggitt"
 
 see-also:
 replaces:
