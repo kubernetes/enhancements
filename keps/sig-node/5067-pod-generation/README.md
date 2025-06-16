@@ -520,6 +520,13 @@ extending the production code to implement this enhancement.
 Unit tests will be implemented to cover code changes that implement the feature, 
 in the API server code and the kubelet code. 
 
+Core packages touched:
+* `pkg/registry/core/pod/strategy.go`: `2025-06-16` - `71.1`
+* `pkg/registry/core/pod/util.go`: `2025-06-16` - `74`
+* `pkg/apis/core/validation/validation.go`: `2025-06-16` - `84.6`
+* `pkg/kubelet`: `2025-06-16` - `71`
+* `pkg/kubelet/status`: `2025-06-16` - `86.8`
+
 ##### Integration tests
 
 <!--
@@ -561,12 +568,13 @@ E2E tests will be implemented to cover the following cases:
 they never change.
 
 Added tests:
-- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pods.go#L422-L719
-- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/common/node/ephemeral_containers.go#L66-L85
-- https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pod_resize.go#L276-L289
+`pod generation should start at 1 and increment per update`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+`custom-set generation on new pods and graceful delete`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+`issue 500 podspec updates and verify generation and observedGeneration eventually converge`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+`pod rejected by kubelet should have updated generation and observedGeneration`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+`pod observedGeneration field set in pod conditions`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+`pod-resize-scheduler-tests`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=pod-resize-scheduler-tests
 
-k8s triage link:
-- https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
 
 ### Graduation Criteria
 
@@ -647,7 +655,7 @@ in back-to-back releases.
 #### GA
 
 * No major bugs reported for three months. 
-* User feedback is green.
+* No negative user feedback.
 * Promote the [primary e2e tests](https://github.com/kubernetes/kubernetes/blob/08ee8bde594a42bc1a222c9fd25726352a1e6049/test/e2e/node/pods.go#L422-L719) to Conformance.
 
 ### Upgrade / Downgrade Strategy
@@ -829,6 +837,11 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 Unit tests will be added to cover the code that implements the feature, and will
 cover the cases of the feature gate being both enabled and disabled.
 
+The following unit test covers what happens if I disable a feature gate after having
+objects written with the new field (in this case, the field should persist).
+
+* https://github.com/kubernetes/kubernetes/blob/74210dd399c14582754e933de83a9e44b1d69c69/pkg/api/pod/util_test.go#L1228
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
@@ -858,10 +871,18 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-This feature is very minimal so we do not anticipate serious problems, but
-if the users see the `metadata.generation` and `status.observedGeneration` fields
+If users see the `metadata.generation` and `status.observedGeneration` fields
 are not being updated or are significantly misaligned, that indicates that
 the feature is not working as expected.
+
+Some metrics to look at that could indicate a problem include:
+- `kubelet_pod_start_total_duration_seconds`
+- `kubelet_pod_status_sync_duration_seconds`
+- `kubelet_pod_worker_duration_seconds`
+
+You could also check the [Pod Startup Latency SLI](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md).
+
+Any of these being significantly elevated could indicate an issue with the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -952,7 +973,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-N/A
+We can reuse the [Pod Startup Latency SLI/SLO](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md) here.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -960,7 +981,7 @@ N/A
 Pick one more of these and delete the rest.
 -->
 
-N/A
+We can reuse the [Pod Startup Latency SLI/SLO](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md) here.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
