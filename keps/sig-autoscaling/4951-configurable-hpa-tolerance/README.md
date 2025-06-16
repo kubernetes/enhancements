@@ -353,13 +353,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-We will add the follow [e2e autoscaling tests]:
+Existing e2e tests ensure the autoscaling behavior uses the default tolerance when no
+configurable tolerance is specified.
 
-- For both scale up and scale down:
-  - Workload does not scale because the metric ratio is in tolerance
-    ([PR](https://github.com/kubernetes/kubernetes/pull/130797/commits/4db8e8cc1dc2e5683c878b3ef29cb2e0fbe70f80#diff-832ab9989fa2683f7848ae1607c9a9aaa2bd245e5374efa0c5a87ba8edab464a)).
-  - Workload scales successfully because the metric ratio is out of tolerance.
-- Autoscaling uses the default when no tolerances are set.
+The new [e2e autoscaling tests] covering this feature are:
+
+- [Test with large configurable tolerance](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L509): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*large%20configurable%20tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*large%20configurable%20tolerance)
+
+Before the graduation to beta, we will add an integration test verifying the autoscaling
+behavior when smaller and larger than default tolerances are set on an HPA.
 
 [e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
@@ -436,7 +438,7 @@ in back-to-back releases.
 
 - All tests described in the [`e2e tests` section](#e2e-tests) are implemented
   and linked in this KEP.
-- We have monitored negative user feedback and addressed relevant concerns.
+- We have monitored for negative user feedback and addressed relevant concerns.
 
 ### Upgrade / Downgrade Strategy
 
@@ -551,7 +553,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-[Unit tests have been added](https://github.com/kubernetes/kubernetes/pull/130797/commits/a41284d9fa3a3d5a5e8760db6e9fd4f7e5e6fca6#diff-98f8520444a477d01c5cc2e56f92939d5fb07893a234b8fee5b67c7c147a20e0) to verify that HPAs with and without the new fields are
+[Unit tests have been added](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/pkg/apis/autoscaling/validation/validation_test.go#L1648) to verify that HPAs with and without the new fields are
 properly validated, both when the feature gate is enabled or not.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -594,9 +596,96 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-I have manually tested a cluster upgrade, and this feature is in alpha without
-(to the best of our knowledge) any user reporting an issue. GKE has automated
-upgrade/downgrade tests that did not report any issue.
+The upgrade→downgrade→upgrade testing was done manually using a 1.33 cluster with the following steps:
+
+1.  Start the cluster with the HPA enabled:
+
+    ```sh
+    kind create cluster --name configurable-tolerance --image kindest/node:v1.33.0 --config config.yaml
+    ```
+    with the following `config.yaml` file content:
+    ```yaml
+    kind: Cluster
+    apiVersion: kind.x-k8s.io/v1alpha4
+    featureGates:
+      "HPAConfigurableTolerance": true
+    nodes:
+    - role: control-plane
+    - role: worker
+    ```
+
+    Install metrics-server:
+    ```sh
+    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+    kubectl patch -n kube-system deployment metrics-server --type=json   -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+    ```
+    
+    Create a deployment starting Pods that consume a 50% CPU utilization, and an associated HPA with a very large tolerance:
+    ```sh
+    kubectl apply -f configurable-tolerance-test.yaml
+    ```
+    with the following `configurable-tolerance-test.yaml` file content:
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: cpu-stress-deployment
+      labels:
+        app: cpu-stressor
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: cpu-stressor
+      template:
+        metadata:
+          labels:
+            app: cpu-stressor
+        spec:
+          containers:
+            - name: cpu-stressor
+              image: alpine:latest
+              command: ["/bin/sh"]
+              args:  # Load: 1% (10 milliCPU)
+                - "-c"
+                - "apk add --no-cache stress-ng && stress-ng --cpu 1 --cpu-load 1 --cpu-method=crc16 --timeout 3600s"
+              resources:
+                requests:
+                  cpu: "20m"
+    ---
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: cpu-stress-hpa
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: cpu-stress-deployment
+      minReplicas: 1
+      maxReplicas: 5
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 10
+      behavior:
+        scaleUp:
+          tolerance: 20.  # 2000%
+    ```
+
+    Check that, after a 5 minutes, `kubectl describe hpa cpu-stress-hpa` displays `ScalingLimited: False` (i.e.
+    the HPA doesn't recommend to scale up because of the large tolerance).
+
+2.  Simulate downgrade by disabling the feature for api server and control-plane (update the `config.yaml` file
+    to set it to false). Follow the procedure described in step 1, and observe that this time
+    `kubectl describe hpa cpu-stress-hpa` displays `ScalingLimited: True`.
+
+4. Simulate downgrade by re-enabling the feature for api server and control-plane. Follow the procedure described
+   in step 1, and observe that the HPA description mentions `ScalingLimited: False`, demonstrates that the feature
+   is working again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -646,7 +735,7 @@ values. Users can get both values using
 and use them to verify that scaling events are triggered when their ratio is out
 of tolerance.
 
-The [controller-manager logs have been updated](https://github.com/kubernetes/kubernetes/pull/130797/commits/2dd9eda47ffd5556ff90446e91d22ddbecc05d2c#diff-f1c5a31aa8fb8e3fd64b6aa13d3358b504e6e25030f249f1652e244c105eafc7R846) 
+The [controller-manager logs have been updated](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/pkg/controller/podautoscaler/horizontal.go#L846) 
 to help users understand the behavior of the autoscaler. The data added to the
 logs includes the tolerance used for each scaling decision.
 
@@ -667,7 +756,9 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-N/A.
+Although the absolute value of the `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`
+metric depends on HPAs configuration, it should be unimpacted by this feature. This metric should not vary
+by more than 5%.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -679,8 +770,7 @@ This KEP is not expected to have any impact on SLIs/SLOs as it doesn't introduce
 a new HPA behavior, but merely allows users to easily change the value of a
 parameter that's otherwise difficult to update.
 
-Standard HPA metrics (e.g.
-`horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`) can
+The standard HPA metric `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds` can
 be used to verify the HPA controller health.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -857,13 +947,19 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-We do not expect any new failure mode. (While setting inappropriate `tolerance`
-values may cause HPAs to react too slowly or too fast, the feature is working as
-intended.)
+We do not expect any new failure mode. (While setting `tolerance` below 10% can cause HPAs
+to scale up and down as frequently as every 30s, and higher values might stop scaling altogether
+if the metric remains within the tolerance band, the feature is still working as intended.
+To make HPAs respond faster, decrease the tolerance value. Conversely, to make them respond
+slower, increase the tolerance value.)
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A.
+If possible increase the log level for kube-controller-manager and check controller logs:
+1. Search for "Proposing desired replicas", verify that the tolerance is set as expected,
+   and check (using `kubectl describe hpa`) if the ratio between the _current_ and _desired_
+   metric values is in tolerance.
+3. Look for warnings and errors which might point where the problem lies.
 
 ## Implementation History
 
@@ -881,6 +977,7 @@ Major milestones might include:
 2025-01-21: KEP PR merged.
 2025-03-24: [Implementation PR](https://github.com/kubernetes/kubernetes/pull/130797) merged.
 2025-05-15: Kubernetes v1.33 released (includes this feature).
+2025-05-16: This KEP updated for beta graduation.
 
 ## Drawbacks
 
