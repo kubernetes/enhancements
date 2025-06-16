@@ -304,7 +304,7 @@ Alternatively the can check the `kubernetes_feature_enabled` metric.
 The average `apiserver_request_duration_seconds` for logs/exec/port-forward requests is within reasonable limits.
 A raising value after enabling this feature could signal overhead introduced by the extra validation.
 
-> TODO: I expect the overhead to be negligible and probably to fall in within the standard deviation of the current average. Specially for long running requests like port-forward and exec. Is this even valuable to have here?
+In addition, the number of TLS connections made from API server to nodes should not increase.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -351,8 +351,6 @@ No. This only affects streaming APIs and these are not covered by SLIs/SLOs.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No.
-
-Note: depending on the implementation (caching the client-go transport or not) there might be a slight increase in memory (due to one transport per node being cached) or in CPU usage (due to building the transport on the fly for every request). This should be negligible.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
