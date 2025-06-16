@@ -985,7 +985,6 @@ Enabling or using this feature will result in new API calls, specifically:
 
   - API Call Type: GET (read) operations
   - Resources Involved: Deployments, ReplicaSets, and potentially other workload-related resources
-  - HPA controller
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1014,7 +1013,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-Yes, HorizontalPodAutoscaler objects will increase in size by approximately ~39 bytes for the string field when specified
+Yes, `HorizontalPodAutoscaler` objects will increase in size by approximately ~39 bytes for the string field when specified
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
