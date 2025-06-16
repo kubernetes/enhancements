@@ -18,13 +18,17 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API calls categorization](#api-calls-categorization)
-  - [1: Handling Pod rescheduling while waiting for the API call to complete](#1-handling-pod-rescheduling-while-waiting-for-the-api-call-to-complete)
+  - [1: How to handle Pod rescheduling while waiting for the API call to complete](#1-how-to-handle-pod-rescheduling-while-waiting-for-the-api-call-to-complete)
     - [Use advanced queue and don't block the Pod from being scheduled in the meantime](#use-advanced-queue-and-dont-block-the-pod-from-being-scheduled-in-the-meantime)
   - [2: What component should handle the API calls](#2-what-component-should-handle-the-api-calls)
     - [2.1: Make the API calls queued in a separate component](#21-make-the-api-calls-queued-in-a-separate-component)
     - [2.2: Send API calls through a kube-scheduler's cache](#22-send-api-calls-through-a-kube-schedulers-cache)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Asynchronous API call failure](#asynchronous-api-call-failure)
+    - [Object updated by an external component causing a race with the scheduler](#object-updated-by-an-external-component-causing-a-race-with-the-scheduler)
+    - [API calls added at a higher rate than execution rate leading to memory explosion](#api-calls-added-at-a-higher-rate-than-execution-rate-leading-to-memory-explosion)
+    - [Pod is retried based on an old object](#pod-is-retried-based-on-an-old-object)
 - [Design Details](#design-details)
   - [Proposal A: Create a separate component managing API calls](#proposal-a-create-a-separate-component-managing-api-calls)
   - [Proposal B: Make a scheduler's cache managing API calls](#proposal-b-make-a-schedulers-cache-managing-api-calls)
@@ -113,6 +117,9 @@ Already asynchronous calls could also be migrated to this approach.
 ### Non-Goals
 
 - Prioritize high-importance updates (like binding) over low-importance ones if updates to the kube-apiserver get throttled.
+- Change how the already asynchronous procedures, such as the binding cycle or asynchronous preemption goroutines, actually work.
+  They should remain asynchronous and continue to wait for the API calls to finish before proceeding.
+  Any further refinements to these stages could be added in future revisions of this KEP or in the separate ones.
 
 ## Proposal
 
@@ -120,10 +127,14 @@ There are a few ways to make API calls asynchronous.
 They are introduced below to facilitate discussion and identify the most suitable solution.
 
 These questions have to be answered:
-1) Handling Pod rescheduling while waiting for the API call to complete
+1) How to handle Pod rescheduling while waiting for the API call to complete
 2) What component should handle the API calls
 
 Also, races (collisions) between multiple API calls for a single object should be mitigated by the design.
+
+Note that this KEP focuses on making individual API calls asynchronous. Some procedures, such as the binding cycle or asynchronous preemption,
+will still be separate goroutines with the ability to wait for the (async) API calls to finish.
+This way, dependencies between calls that rely on each other won't need to be implemented.
 
 ### API calls categorization
 
@@ -175,7 +186,7 @@ In terms of API call priority, the order might be different (non-goal, but consi
   because the higher delay might affect other components like Cluster Autoscaler or Karpenter.
 - API calls for non-Pod resources (6 - 11) could be analyzed case by case, but are likely equally important to (5) or (4).
 
-### 1: Handling Pod rescheduling while waiting for the API call to complete
+### 1: How to handle Pod rescheduling while waiting for the API call to complete
 
 There are multiple possible ways to handle such API calls, especially for Pod status updates.
 Other (potential) use cases should also be considered when choosing the solution.
@@ -185,7 +196,7 @@ Three ways were analyzed, but the non-blocking approach, presented below, was se
 
 This approach allows the Pod to enter the scheduling queue and be scheduled again even before the status update API call completes, without blocking it.
 This requires implementing advanced logic for queueing API calls in the kube-scheduler and migrating **all** Pod-based API calls done during scheduling to this method,
-including the binding API call. The new component should be able to resolve any conflicts in the incoming API calls as well as parallelize them properly,
+including the binding API call. The new component should be able to resolve any conflicts in the incoming API calls and cluster status updates as well as parallelize them properly,
 e.g., don't parallelize two updates of the same Pod. This requires [making the API calls queued in a separate component](#21-make-the-api-calls-queued-in-a-separate-component) or
 [sending API calls through a kube-scheduler's cache](#22-send-api-calls-through-a-kube-schedulers-cache), presented below, to be implemented.
 
@@ -194,7 +205,7 @@ Still, a single error reporting path for Pod condition updates could be consider
 
 Pros:
 - Allows the Pod to be scheduled again even before the API call completes, which could reduce end-to-end Pod startup latency.
-- Simplifies introducing new API calls to the kube-scheduler if the collision handling logic is configured correctly.
+- Simplifies introducing new API calls to the kube-scheduler assuming the collision handling logic is implemented correctly.
 
 Cons:
 - Requires implementing complex, advanced queueing logic.
@@ -203,7 +214,9 @@ Cons:
 
 ### 2: What component should handle the API calls
 
-Another thing worth considering is how to indeed make the API calls asynchronous and what component should be responsible for this.
+Another thing worth considering is how to indeed make the API calls asynchronous and which component should be responsible for this.
+Two alternatives were considered. Ultimately, both contributed to the design of the final architecture,
+which consists of both queueing and caching approaches.
 
 #### 2.1: Make the API calls queued in a separate component
 
@@ -212,7 +225,7 @@ A new component might understand what the API calls are intended to do and event
 e.g., don't set `nominatedNodeName` when Pod binding is enqueued.
 Initially, it could be a framework, which might be extended in the future, e.g., by introducing the possibility of setting delays.
 
-However, it is questionable what should happen if two update API calls for the same Pod are enqueued.
+If two update API calls for the same Pod are enqueued the merging mechanism should be introduced to handle such case.
 See [API calls categorization](#api-calls-categorization) for more details.
 
 Pros:
@@ -231,7 +244,7 @@ Cons:
 
 A second approach could be to have a consistent Pod state in the kube-scheduler itself first and then change it through the API.
 This means that all API calls would have to go through the kube-scheduler's cache, change the Pod there, and after that, execute.
-However, Pod updates might come from outside the kube-scheduler, e.g., a user changes the spec or something changes the status (if it is even possible).
+However, Pod updates might come from outside the kube-scheduler, e.g., a user changes the spec or another component changes the status.
 This extended cache would have to merge the internal state of the Pod with the external state,
 including the Pod update made by the kube-scheduler that will come as an event as well.
 Now, the Pod object stored in the cache is based only on events that come to the kube-scheduler.
@@ -564,7 +577,6 @@ N/A
 
 #### GA
 
-- Migrate all API calls done during scheduling to the asynchronous version.
 - Gather feedback from users and fix reported bugs.
 
 ### Upgrade / Downgrade Strategy
