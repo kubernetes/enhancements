@@ -130,9 +130,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -412,6 +412,35 @@ Filtered pods are then used as the basis for replica calculations:
 ```
 If filtering fails (e.g., due to RBAC issues), the system defaults to using all pods, ensuring robust behavior.
 
+The HPA controller implements caching to optimize API server queries when checking pod ownership:
+
+```go
+type ControllerCache struct {
+    mutex         sync.RWMutex
+    resources     map[string]*ControllerCacheEntry
+    dynamicClient dynamic.Interface
+    restMapper    apimeta.RESTMapper
+    cacheTTL      time.Duration
+}
+
+type ControllerCacheEntry struct {
+    Resource    *unstructured.Unstructured
+    Error       error
+    LastFetched time.Time
+}
+```
+The cache system provides several benefits:
+
+- Reduced API Server Load: Caches controller resources to minimize API server queries
+- Improved Performance: Faster pod ownership validation through in-memory lookups
+- Configurable TTL: Allows tuning of cache freshness vs performance trade-off
+- Automatic Cleanup: Background goroutine removes expired entries
+
+When validating pod ownership, the system first checks the cache
+If a valid (non-expired) entry exists, it's returned immediately
+Otherwise, the controller fetches from the API server and updates the cache
+Expired entries are automatically cleaned up by a background goroutine
+
 ### Scope of Support
 
 This enhancement applies consistently across the following supported metric types in the HorizontalPodAutoscaler:
@@ -478,12 +507,20 @@ https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
 This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
+Tests for Pod Filters:
 
-- `pkg/apis/autoscaling/v1`: `2025-06-01` - `28.6%`
-- `pkg/apis/autoscaling/v2`: `2025-06-01` - `75.6%`
-- `pkg/apis/autoscaling/v2beta1`: `2025-06-01` - `69.1%`
-- `pkg/apis/autoscaling/v2beta2`: `2025-06-01` - `82.1%`
-- `pkg/controller/podautoscaler`: `2025-06-01` - `88.3%`
+- Verify `LabelSelectorFilter` includes all pods matching labels
+- Verify `OwnerReferenceFilter` includes only pods owned by target workload
+- Verify filters handle edge cases (no owners, broken chains, multiple owners)
+
+Tests for Replica Calculator:
+- Verify calculations with `LabelSelectorFilter` match current behavior
+- Verify calculations with `OwnerReferenceFilter` only include owned pods
+- Verify correct behavior with mixed owned/unowned pods
+
+
+- `/pkg/controller/podautoscaler`:`16 June 2025`-`88.0%`
+- `/pkg/controller/podautoscaler/metrics`:`16 June 2025`-`90.0%`
 
 ##### Integration tests
 
@@ -851,7 +888,16 @@ Standard HPA metrics (e.g. `horizontal_pod_autoscaler_controller_metric_computat
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-No.
+The following metrics should be added to improve cache observability:
+
+- Cache hit counter: Tracks when the controller successfully retrieves data from cache
+- Cache miss counter: Tracks when the controller needs to query the API server
+
+These metrics are essential for:
+- Monitoring cache effectiveness
+- Optimizing cache TTL settings
+- Identifying potential performance issues
+- Understanding API server query patterns
 
 ### Dependencies
 
