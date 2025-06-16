@@ -6,6 +6,8 @@ authors:
   - "@haircommander"
   - "@stlaz"
 owning-sig: sig-node
+participating-sigs:
+  - sig-auth
 status: implementable
 creation-date: 2021-03-10
 reviewers:
