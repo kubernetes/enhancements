@@ -340,6 +340,7 @@ type PodFilter interface {
 ```
 
 Two implementations are provided:
+
 `LabelSelectorFilter`:
 
 * Default implementation
