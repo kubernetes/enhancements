@@ -221,7 +221,7 @@ We will update the alpha kind e2e tests job to exercise this flow to start with,
 * Validation enabled for all kind e2e test jobs
 
 #### GA
-* Remove feature flag
+* Successful adoption by at least one provider
 
 ### Upgrade / Downgrade Strategy
 
@@ -373,6 +373,8 @@ It's part of the API server, so the feature will be unavailable.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
+
+* Implemenation options discussion: https://docs.google.com/document/d/1RqhAkGov_coHsB3lbAo-qfQl1MOfYvgpPUjiGMJ_3PY
 
 ## Drawbacks
 
