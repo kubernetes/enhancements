@@ -304,7 +304,7 @@ type SelectionStrategy string
 
 const (
     // LabelSelector selects all pods matching the target's label selector
-    LabelSelector selectionStrategy = "LabelSelector"
+    LabelSelector SelectionStrategy = "LabelSelector"
     
     // OwnerReference only selects pods owned by the target workload
     OwnerReference selectionStrategy = "OwnerReference"
