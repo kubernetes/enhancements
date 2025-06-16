@@ -95,6 +95,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
     - [Downgrade](#downgrade)
