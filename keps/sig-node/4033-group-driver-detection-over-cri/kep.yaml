@@ -38,6 +38,5 @@ feature-gates:
       - kubelet
 disable-supported: false
 
-# The following PRR answers are required at beta release
-# No metrics will be added for this feature, as it's an internal
-# implementation detail
+metrics:
+  - cri_losing_support
