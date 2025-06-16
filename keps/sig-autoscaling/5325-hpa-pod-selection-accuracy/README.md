@@ -346,6 +346,7 @@ Two implementations are provided:
 * Default implementation
 * Passes through all pods that match the label selector
 * Maintains existing behavior for backward compatibility
+
 `OwnerReferenceFilter`:
 
 * Validates pod ownership through reference chain
