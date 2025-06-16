@@ -681,7 +681,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No. By default, HPAs will continue to use the `LabelSelector` strategy unless the new `selectionStrategy` field is explicitly set to `OwnerReference`.
+No. By default, HPAs will continue to use the `LabelSelector` strategy unless the new `SelectionStrategy` field is explicitly set to `OwnerReference`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
