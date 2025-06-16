@@ -1,21 +1,5 @@
 # KEP-5030: Integrate Volume Attach limit into cluster autoscaler
 
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -131,6 +115,8 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 1. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodes from 0 in a nodegroup.
 2. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodegroups with existing nodes.
 3. Fix kubernetes built-in scheduler so as we do not schedule pods to nodes that doesn't have CSI driver installed.
+
+Since cluster-autoscaler changes need to happen first, `kube-schduler` changes are out-of-scope for alpha implementation in v1.34.
 
 
 ### User Stories (Optional)
