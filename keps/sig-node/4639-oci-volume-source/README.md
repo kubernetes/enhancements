@@ -586,8 +586,7 @@ feature cannot be used. Pods using the new `VolumeSource` combined with a not
 supported container runtime version will fail to run on the node, because the
 `Mount.host_path` field is not set for those mounts.
 
-For security reasons, volume mounts should set the [`noexec`] and `ro`
-(read-only) options by default.
+For security reasons, `ro` (read-only) options by default.
 
 Note: in the process of mounting images into the container's rootfs, there may need to be intermediate mounts created. This is especially relevant if
 the CRI implementation wishes to support one image being mounted with multiple different SELinux labels. If that's done, the CRI implementation is responsible
@@ -884,6 +883,7 @@ in back-to-back releases.
 - Allowing time for feedback
 - Consider a new `RuntimeConfig` field to indicate to end users if the feature
   is supported or not.
+- Security Evaluation ensuring robust protection without the `noexec` option
 
 ### Upgrade / Downgrade Strategy
 
