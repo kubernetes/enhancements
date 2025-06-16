@@ -157,7 +157,7 @@ Making the feature opt-in maintains compatibility with existing clusters using c
 
 #### Metrics
 
-In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_errors` that will track the number of errors due to the new CN validation.
+In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_total`. We will have two labels `success` and `failure`, allowing to track the number of errors due to the new CN validation.
 In addition, we will log the error including the node name, so cluster administrators can identify which nodes are affected and need to reissue their certificates.
 
 If the feature gate is disabled or if `--kubelet-certificate-authority` is not set, we won't publish the metric or run any validation code at all.
@@ -165,7 +165,7 @@ If the feature gate is disabled or if `--kubelet-certificate-authority` is not s
 If the feature gate is enabled, the kubelet CA is set (`--kubelet-certificate-authority`) but this feature is disabled, we will still run the validation code to collect the metric. However, if the validation fails we won't return an error, we will just increment the metric counter.
 
 We intentionally don't add the node name to the metric to avoid a high cardinality.
-The purpose of the metric is to easily/cheaply tell administrators if they can flip the feature on or not. If the answer is no (counter is greater than 0), the rest of the necessary information to detect the offending nodes will come from logs.
+The purpose of the metric is to easily/cheaply tell administrators if they can flip the feature on or not. If the answer is no (counter for `failure` label is greater than 0), the rest of the necessary information to detect the offending nodes will come from logs.
 
 ### TLS insecure
 
@@ -272,7 +272,7 @@ Already running workloads won't be impacted but cluster users won't be able to a
 
 ###### What specific metrics should inform a rollback?
 
-Not applicable.
+`kube_apiserver_validation_kubelet_cert_cn_total` can help inform a rollback. A non-zero value for the `failure` label will require invetsigation: if the rejected requests are going to legitimate nodes, the feature should be rolled back until kuebeler serving certificates are reissued.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -294,7 +294,7 @@ Alternatively the can check the `kubernetes_feature_enabled` metric.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Other
-  - Details: users can create a Node with a kubelet serving certificate that doesn't meet the CN requirements enforced by this validation (something different than `system:node:<node-name>`).Then run `kubectl logs` for any pod running in that node. If it returns an error for an invalid certificate, the feature is working.
+  - Details: when the feature is enabled, the metric `kube_apiserver_validation_kubelet_cert_cn_total` will increase for the `success` label.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -306,17 +306,16 @@ A raising value after enabling this feature could signal overhead introduced by 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `kube_apiserver_pod_logs_backend_tls_failure_total`
+  - Metric name: `kube_apiserver_validation_kubelet_cert_cn_total`
   - Components exposing the metric: kube-apiserver
-
-> TODO: should `kube_apiserver_pod_logs_backend_tls_failure_total` reflect errors due to the new CN validation?
-> It's technically a TLS failure, but it's not part of the base TLS client validations.
+  - If the feature is enabled, and the metric increases for the `failure` label, it signals a problem.
+  - If the service is healthy, the metric should increase.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-We could add a metric specific to track the number of requests that failed due to the new CN validation. In addition, we could track the time spent per request on the CN validation.
+We could add a metric to track the time spent per request on the CN validation.
 
-However, we consider these metrics to not provide enough value to justify the work to maintain them.
+However, we consider this metric to not provide enough value to justify the work to maintain it.
 
 ### Dependencies
 
