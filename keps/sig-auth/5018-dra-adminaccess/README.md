@@ -727,6 +727,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
+###### Will enabling / using this feature result in any new API calls?
+
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
