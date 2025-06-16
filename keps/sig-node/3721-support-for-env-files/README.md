@@ -289,13 +289,11 @@ KEY2=VALUE2
 ...
 ```
 
-2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars, In the alpha phase, environment variable keys are restricted to ASCII characters matching the pattern `[-._a-zA-Z][-._a-zA-Z0-9]*`. This restriction will be relaxed in the beta phase.
-
-2. **Variable Value**: Similarly, in the alpha phase, environment variable values are also limited to ASCII characters within the [-._a-zA-Z][-._a-zA-Z0-9]* range to prevent injection attacks caused by passing command control characters through environment variables. This restriction will also be lifted in the beta phase.
+2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars.
 
 3. **Duplicate Names**: If an environment variable is defined multiple times in the file, the last occurrence takes precedence and overrides any previous values.
 
-4. **Size Limit**: To start with, the maximum allowed size for the env file will be 64KiB. Limits for key-value length will be added as a part of implementation after additional investigation.
+4. **Size Limit**: To start with, the maximum allowed size for the env file will be 64KiB. Limits for key-value length will be added as a part of implementation after additional investigation, for environment variable names, we're temporarily enforcing a 128-character limit during the alpha phase, for environment variable values, we're temporarily enforcing a maximum size of 32k during alpha.
 
 5. **File Location**: The env file must be placed within the `emptyDir` volume associated with the pod. If it is not found in the correct location, the Kubernetes API server will reject the pod creation request.
 
@@ -446,10 +444,11 @@ with this new fields:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Automated tests will cover the scenarios with and without the changes proposed
-on this KEP. As defined under [Version Skew Strategy](#version-skew-strategy),
+We will manually attempt an upgrade-downgrade test with the following scenario.
+
+As defined under [Version Skew Strategy](#version-skew-strategy),
 we are assuming the cluster may have kubelets with older versions (without
-this KEP' changes), therefore this will be covered of following new tests:
+this KEP' changes):
 
 1. When the kubelet is upgraded, the env files will be instantiated in the
    container. On downgrade, the env files will be ignored but the pod will still
@@ -483,15 +482,18 @@ CONFIG_VAR=HELLO
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+The startup latency of schedulable stateless/stateful Pods may increase, but will remain consistent with the existing SLO standard.
+
+ref: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos
+
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+We can determine whether the service is healthy by checking if the `started_containers_errors_total` and `started_pods_errors_total` metrics are abnormally increasing.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+No
 
 ### Dependencies
 
@@ -515,11 +517,11 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No
+We have added the `fileKeyRef` data structure to `podSpec`, which will undoubtedly increase the size of the Pod API. The increase in size depends on the number of environment variables defined by the user, making it impossible to estimate the exact number of bytes added. However, this should not have a significant impact on the API. For many users, it merely involves migrating environment variables previously defined in `ConfigMap/Secret` to this new structure.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No
+The startup latency of schedulable stateless/stateful Pods may increase.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -527,7 +529,7 @@ No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No
+Environment variables are not typically associated with PIDs, sockets, or inodes. However, non-standard usage patterns may introduce risks. For example: if expanded variables are used to launch numerous network services or open excessive file descriptors (e.g., environment variables defining large numbers of port numbers), this could indirectly lead to socket exhaustion.
 
 ### Troubleshooting
 

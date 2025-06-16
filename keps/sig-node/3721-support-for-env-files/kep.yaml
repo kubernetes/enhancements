@@ -37,8 +37,9 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
-disable-supported: false
+disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - N/A
+  - started_containers_errors_total
+  - started_pods_errors_total
