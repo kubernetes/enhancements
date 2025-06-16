@@ -884,7 +884,20 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-N/A.
+This feature utilizes the existing HPA controller metrics:
+
+- `horizontal_pod_autoscaler_controller_reconciliation_duration_seconds`
+  - The new pod filtering should not significantly impact these durations
+
+- `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds`
+  - Measures time taken to calculate metrics with labels for action, error, and metric_type
+  - The pod filtering logic should work within existing computation time buckets (exponential buckets from 0.001s to ~16s)
+
+- `horizontal_pod_autoscaler_controller_metric_computation_total`
+  - Counts number of metric computations with labels for action, error, and metric_type
+  - The pod filtering should not introduce new error cases in metric computation
+
+The feature should maintain the current performance characteristics of these metrics.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
