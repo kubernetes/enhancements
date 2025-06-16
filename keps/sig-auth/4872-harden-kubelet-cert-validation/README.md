@@ -138,7 +138,10 @@ This will require cluster administrators to reissue any non-conforming certifica
 ### Risks and Mitigations
 
 This could disrupt existing clusters that are using custom kubelet serving certificates.
-These clusters will need to reissue their certificates before enabling this feature. We will allow to disable the validation through a command-line flag to allow for a smooth transition.
+
+In order to maintain compatibility by default with these clusters even after this feature goes GA, we will make it opt-in.
+
+Before enabling this feature on clusters with custom kubelet serving certificates, cluster administrators will need to reissue those certificates.
 
 ## Design Details
 
@@ -147,33 +150,29 @@ These clusters will need to reissue their certificates before enabling this feat
 We will introduce a feature flag `KubeletCertCNValidation` that will gate the usage of the new validation.
 This gate will start off by default in Alpha, will be turned on by default in Beta and will be removed in GA.
 
-In addition, we will allow to disable the validation through a command-line flag `--disable-kubelet-cert-cn-validation`.
-This flag can only be set if the `KubeletCertCNValidation` feature flag is enabled.
-This flag will allow cluster administrators to opt-out of this validation if they are using custom kubelet serving certificates that don't follow the `system:node:<nodename>` convention even after the feature gate is removed.
+In addition, the validation will be opt-in and enabled through a new command-line flag `--enable-kubelet-cert-cn-validation`.
+This flag can only be set if the `KubeletCertCNValidation` feature flag is enabled and if `--kubelet-certificate-authority` is set.
+
+Making the feature opt-in maintains compatibility with existing clusters using custom kubelet serving certificates that don't follow the `system:node:<nodename>` convention even after the feature gate is removed.
 
 #### Metrics
 
 In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_errors` that will track the number of errors due to the new CN validation.
 In addition, we will log the error including the node name, so cluster administrators can identify which nodes are affected and need to reissue their certificates.
 
-If the feature gate is disabled, we won't publish the metric or run any validation code at all.
+If the feature gate is disabled or if `--kubelet-certificate-authority` is not set, we won't publish the metric or run any validation code at all.
 
-If the feature gate is enabled but the feature is disabled (with `--disable-kubelet-cert-cn-validation`), we will still add the validation code to the HTTP transport, however, if the validation fails we won't return an error, we will just increment the metric counter.
+If the feature gate is enabled, the kubelet CA is set (`--kubelet-certificate-authority`) but this feature is disabled, we will still run the validation code to collect the metric. However, if the validation fails we won't return an error, we will just increment the metric counter.
 
 We intentionally don't add the node name to the metric to avoid a high cardinality.
 The purpose of the metric is to easily/cheaply tell administrators if they can flip the feature on or not. If the answer is no (counter is greater than 0), the rest of the necessary information to detect the offending nodes will come from logs.
-
-
-We will remove the metric once the feature is GA.
-
-> TODO: let's discuss this in the review. We could consider adding the node name to the metric or even keeping the metric post GA if it's valuable.
 
 ### TLS insecure
 
 Currently, if the Kube-API server is not configured with a `--kubelet-certificate-authority` the TLS client for kubelet server will skip the server certificate validation.
 Additionally, `logs` requests allow to configure `InsecureSkipTLSVerifyBackend` per request to skip the server certificate validation.
 
-To align with this behavior, we won't execute the CN validation if `--kubelet-certificate-authority` is not set or if `InsecureSkipTLSVerifyBackend` is set to true.
+To align with this behavior, we won't allow to enable the validation if `--kubelet-certificate-authority` is not set and we won't execute the CN validation if `InsecureSkipTLSVerifyBackend` is set to true.
 
 ### Test Plan
 
@@ -195,11 +194,12 @@ Existing test coverage for the packages we anticipate modifying:
 ##### Integration tests
 
 Integration tests will be added to ensure the following:
-* An error is returned if `--disable-kubelet-cert-cn-validation` is set but `KubeletCertCNValidation` feature flag is not enabled.
+* An error is returned if `--enable-kubelet-cert-cn-validation` is set but `KubeletCertCNValidation` feature flag is not enabled.
+* An error is returned if the feature `KubeletCertCNValidation` is enabled, `--enable-kubelet-cert-cn-validation` is set to true but `--kubelet-certificate-authority` is not set.
 * Validation for custom certificates works if feature flag is not enabled.
-* Validation for custom certificates works if feature flag enabled and `--disable-kubelet-cert-cn-validation` is set to true.
-* Validation for custom certificates fails if feature flag enabled and `--disable-kubelet-cert-cn-validation` is set to false or not set.
-* Validation for kubernetes issued certificates works if feature flag enabled and `--disable-kubelet-cert-cn-validation` is set to false or not set.
+* Validation for custom certificates works if feature flag enabled and `--enable-kubelet-cert-cn-validation` is not set or set to false.
+* Validation for custom certificates fails if feature flag enabled, `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
+* Validation for kubernetes issued certificates works if feature flag enabled,  `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
 
 ##### e2e tests
 
@@ -222,9 +222,7 @@ We believe is likely end-to-end tests won't be needed as unit and integration te
 
 ### Upgrade / Downgrade Strategy
 
-Once feature flag is on by default (starting in Beta), administrators using custom serving certs
-can use the proposed flag to disable the extra validation and maintain current behavior.
-They will be able to use this flag even after the feature flag is removed.
+The feature is opt-in and it can be disabled at any time by just not setting the `--enable-kubelet-cert-cn-validation` flag.
 
 ### Version Skew Strategy
 
@@ -240,7 +238,7 @@ Not applicable.
   - Feature gate name: `KubeletCertCNValidation`
   - Components depending on the feature gate: kube-apiserver
 - [x] Other
-  - Describe the mechanism: kube-apiserver command-line flag `--disable-kubelet-cert-cn-validation`
+  - Describe the mechanism: kube-apiserver command-line flag `--enable-kubelet-cert-cn-validation`
   - Will enabling / disabling the feature require downtime of the control
     plane? No. But requires restarting the kube-apiserver.
   - Will enabling / disabling the feature require downtime or reprovisioning
@@ -248,8 +246,9 @@ Not applicable.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. If a cluster is using custom kubelet serving certificates that don't follow the same convention as kubernetes issued certificates (CN is `system:node:<node-name>`),
-enabling this feature will make any connection initiated by the kube-api server fail (logs, exec and port-forwarding).
+Enabling the feature gate doesn't change any behavior.
+
+Enabling the validation does change the default certificate validation behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -289,7 +288,7 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 The cluster administrators can check the flags passed to the kube-apiserver if they have access to the control plane nodes.
-If the `--disable-kubelet-cert-cn-validation` flag is not set or set to false, the feature is being used.
+If the `--enable-kubelet-cert-cn-validation` flag set to true, the feature is being used.
 Alternatively the can check the `kubernetes_feature_enabled` metric.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -367,7 +366,7 @@ It's part of the API server, so the feature will be unavailable.
 
 - [API server can't connect to Nodes with custom kubelet serving certificates that don't follow the `system:node:<node-name>` convention]
   - Detection: `kubectl logs` returns a certificate validation error. 
-  - Mitigations: disable the validation with the `--disable-kubelet-cert-cn-validation` flag.
+  - Mitigations: disable the validation byt not setting `--enable-kubelet-cert-cn-validation` flag.
   - Diagnostics: error is returned by the API server, no additional logging needed.
   - Testing: We will have tests for this, this is basically testing that the feature works. 
 
@@ -377,7 +376,7 @@ It's part of the API server, so the feature will be unavailable.
 
 ## Drawbacks
 
-This could disrupt clusters that are using custom kubelet serving certificates. These clusters will need to reissue their certificates before enabling this feature.
+None.
 
 ## Alternatives
 
