@@ -565,13 +565,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-We will add the following e2e autoscaling tests:
+We will add the following [e2e autoscaling tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling):
 
 - For owner references strategy:
   - Workload should not scale up when CPU/Memory usage comes from pods not owned by the target
   - HPA ignores metrics from pods with matching labels but no owner reference to the target
-
-[e2e autoscaling tests](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling)
 
 ### Graduation Criteria
 
@@ -648,8 +646,23 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature gate (SPASelectionStrategy)
-- Initial e2e tests completed and enabled
+- Feature implemented behind a feature flag: `HPASelectionStrategy`
+- Unit and e2e tests passed as designed in [TestPlan](#test-plan).
+
+#### Beta
+
+- Unit and e2e tests passed as designed in [TestPlan](#test-plan).
+- Gather feedback from developers and surveys
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+
+#### GA
+
+- No negative feedback.
+- All issues and gaps identified as feedback during beta are resolved
 
 ### Upgrade / Downgrade Strategy
 
