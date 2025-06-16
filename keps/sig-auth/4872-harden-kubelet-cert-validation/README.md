@@ -191,11 +191,13 @@ Existing test coverage for the packages we anticipate modifying:
 - `k8s.io/kubernetes/pkg/kubelet/client`: `2024-10-07` - `28.2`
 - `k8s.io/client-go/transport`: `2024-10-07` - `59.4`
 
+On top of testing the validation itself, we will test that:
+* An error is returned if `--enable-kubelet-cert-cn-validation` is set but `KubeletCertCNValidation` feature flag is not enabled.
+* An error is returned if the feature `KubeletCertCNValidation` is enabled, `--enable-kubelet-cert-cn-validation` is set to true but `--kubelet-certificate-authority` is not set.
+
 ##### Integration tests
 
 Integration tests will be added to ensure the following:
-* An error is returned if `--enable-kubelet-cert-cn-validation` is set but `KubeletCertCNValidation` feature flag is not enabled.
-* An error is returned if the feature `KubeletCertCNValidation` is enabled, `--enable-kubelet-cert-cn-validation` is set to true but `--kubelet-certificate-authority` is not set.
 * Validation for custom certificates works if feature flag is not enabled.
 * Validation for custom certificates works if feature flag enabled and `--enable-kubelet-cert-cn-validation` is not set or set to false.
 * Validation for custom certificates fails if feature flag enabled, `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
@@ -203,7 +205,7 @@ Integration tests will be added to ensure the following:
 
 ##### e2e tests
 
-We believe is likely end-to-end tests won't be needed as unit and integration tests will cover all the scenarios. If it's not possible to cover all the scenarios, we will add e2e tests. It's also quite likely that existing e2e tests will cover the new behavior once the feature gate is enabled, so new tests might only be needed for the transition period.
+We will update the alpha kind e2e tests job to exercise this flow to start with, and once the functionality is beta, we will update all kind e2e test jobs to run with this verification.
 
 ### Graduation Criteria
 
@@ -216,6 +218,7 @@ We believe is likely end-to-end tests won't be needed as unit and integration te
 #### Beta
 * Address user reviews and iterate if needed
 * Feature flag on by default
+* Validation enabled for all kind e2e test jobs
 
 #### GA
 * Remove feature flag
