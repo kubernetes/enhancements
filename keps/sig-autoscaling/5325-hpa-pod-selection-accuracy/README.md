@@ -572,6 +572,10 @@ We will add the following [e2e autoscaling tests](https://github.com/kubernetes/
 - For owner references strategy:
   - Workload should not scale up when CPU/Memory usage comes from pods not owned by the target
   - HPA ignores metrics from pods with matching labels but no owner reference to the target
+- For label selector strategy:
+  - Workload scales up when CPU/Memory usage comes from any pods matching labels (current behavior)
+  - HPA considers metrics from all pods with matching labels regardless of ownership
+  - Verify backward compatibility when SelectionStrategy is not set
 
 ### Graduation Criteria
 
