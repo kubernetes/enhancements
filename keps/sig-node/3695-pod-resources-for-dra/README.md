@@ -1,4 +1,4 @@
-# KEP-3695: Extend the PodResources API to include resources allocated by DRA
+ KEP-3695: Extend the PodResources API to include resources allocated by DRA
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -36,17 +36,17 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -274,8 +274,8 @@ These cases will be added in the existing e2e tests:
 
 #### Beta
 
-- [] Gather feedback from consumers of the DRA feature.
-  - Integration with the NVIDIA DCGM exporter.
+- [x] Gather feedback from consumers of the DRA feature.
+  - Integration with the NVIDIA DCGM exporter (https://github.com/NVIDIA/dcgm-exporter/pull/501) to gather per pod Dynamic Resources managed by [k8s-dra-driver-gpu](https://github.com/NVIDIA/k8s-dra-driver-gpu).
 - [x] No major bugs reported in the previous cycle.
 
 #### GA
@@ -334,7 +334,7 @@ The API becomes available again. The API is stateless, so no recovery is needed,
 
 ###### Are there any tests for feature enablement/disablement?
 
-e2e test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code.
+e2e test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. (https://github.com/kubernetes/kubernetes/pull/116846)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -439,9 +439,7 @@ N/A.
 
 - 2024-09-10: KEP Updated to reflect the current state of the implementation.
 
-- Kubernetes 1.27: Alpha version of the KEP.
-
-- Kubernetes 1.34: Beta version of the KEP.
+- 2025-05-27: Beta version of the KEP.
 
 ## Drawbacks
 
