@@ -575,7 +575,7 @@ We will add the following [e2e autoscaling tests](https://github.com/kubernetes/
 - For label selector strategy:
   - Workload scales up when CPU/Memory usage comes from any pods matching labels (current behavior)
   - HPA considers metrics from all pods with matching labels regardless of ownership
-  - Verify backward compatibility when SelectionStrategy is not set
+  - Verify backward compatibility when `SelectionStrategy` is not set
 
 ### Graduation Criteria
 
@@ -729,7 +729,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: SPASelectionStrategy
+  - Feature gate name: `HPASelectionStrategy`
   - Components depending on the feature gate: `kube-controller-manager` and
     `kube-apiserver`.
 
