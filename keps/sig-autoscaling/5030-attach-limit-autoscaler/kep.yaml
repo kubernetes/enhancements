@@ -2,7 +2,7 @@ title: Integrate CSI Volume attach limits with cluster autoscaler
 kep-number: 5030
 authors:
   - "@gnufied"
-owning-sig: sig-storage
+owning-sig: sig-autoscaling
 participating-sigs:
   - sig-storage
   - sig-scheduling
