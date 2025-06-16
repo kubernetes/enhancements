@@ -100,7 +100,7 @@ If a rogue node obtained a certificate for an IP it does not own and reroute tra
 
 Provided an actor with control of a node can impersonate another node, the impact would be:
 
-* Break confidentiality of the requests sent by the Kube-API server to the kubelet (e.g kubectl exec/logs).These are usually user-driven requests. That gives the threat actor the possibility of producing incorrect or mis-leading feedback. In the exec case, it could allow a threat actor to issue prompts for credentials. In addition, the exec commands might contain user secrets.  
+* Break confidentiality of the requests sent by the Kube-API server to the kubelet (e.g kubectl exec/logs). These are usually user-driven requests. That gives the threat actor the possibility of producing incorrect or misleading feedback. In the exec case, it could allow a threat actor to issue prompts for credentials. In addition, the exec commands might contain user secrets.  
 * Break confidentiality of credentials if the client uses token based authentication. This is probably more common for non Kube-API server clients, given mTLS is common for Kube-API server to kubelet communication.
 
 ### Goals
@@ -114,7 +114,7 @@ Provided an actor with control of a node can impersonate another node, the impac
 
 ## Proposal
 
-We propose that the Kube API server is modified to validate the Common Name (CN) of the kubelet's serving certificate is equal to `system:node:<nodename>`.
+We propose that the Kube API server is modified to validate the Common Name (CN) of the kubelet's serving certificate to be equal to `system:node:<nodename>`.
 `nodename` is the name of the Node object as reported by the kubelet. When the Kube-API server connects to the kubelet server (e.g. for logs, exec, port-forward), it always knows the Node it's connecting to.
 
 ### User Stories (Optional)
@@ -148,7 +148,7 @@ Before enabling this feature on clusters with custom kubelet serving certificate
 ### Enabling the feature
 
 We will introduce a feature flag `KubeletCertCNValidation` that will gate the usage of the new validation.
-This gate will start off by default in Alpha, will be turned on by default in Beta and will be removed in GA.
+This gate will start disabled by default in Alpha, will be turned on by default in Beta and will be removed in GA.
 
 In addition, the validation will be opt-in and enabled through a new command-line flag `--enable-kubelet-cert-cn-validation`.
 This flag can only be set if the `KubeletCertCNValidation` feature flag is enabled and if `--kubelet-certificate-authority` is set.
@@ -157,7 +157,7 @@ Making the feature opt-in maintains compatibility with existing clusters using c
 
 #### Metrics
 
-In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_total`. We will have two labels `success` and `failure`, allowing to track the number of errors due to the new CN validation.
+In order to help cluster administrators determine if it's safe to enable the feature, we propose to add a new metric `kube_apiserver_validation_kubelet_cert_cn_total`. We will have two labels `success` and `failure`, allowing us to track the number of errors due to the new CN validation.
 In addition, we will log the error including the node name, so cluster administrators can identify which nodes are affected and need to reissue their certificates.
 
 If the feature gate is disabled or if `--kubelet-certificate-authority` is not set, we won't publish the metric or run any validation code at all.
@@ -170,9 +170,9 @@ The purpose of the metric is to easily/cheaply tell administrators if they can f
 ### TLS insecure
 
 Currently, if the Kube-API server is not configured with a `--kubelet-certificate-authority` the TLS client for kubelet server will skip the server certificate validation.
-Additionally, `logs` requests allow to configure `InsecureSkipTLSVerifyBackend` per request to skip the server certificate validation.
+Additionally, `logs` requests allow configuring `InsecureSkipTLSVerifyBackend` per request to skip the server certificate validation.
 
-To align with this behavior, we won't allow to enable the validation if `--kubelet-certificate-authority` is not set and we won't execute the CN validation if `InsecureSkipTLSVerifyBackend` is set to true.
+To align with this behavior, we won't allow enabling the validation if `--kubelet-certificate-authority` is not set and we won't execute the CN validation if `InsecureSkipTLSVerifyBackend` is set to true.
 
 ### Test Plan
 
@@ -198,10 +198,10 @@ On top of testing the validation itself, we will test that:
 ##### Integration tests
 
 Integration tests will be added to ensure the following:
-* Validation for custom certificates works if feature flag is not enabled.
-* Validation for custom certificates works if feature flag enabled and `--enable-kubelet-cert-cn-validation` is not set or set to false.
-* Validation for custom certificates fails if feature flag enabled, `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
-* Validation for kubernetes issued certificates works if feature flag enabled,  `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
+* Validation for custom certificates works if the feature flag is not enabled.
+* Validation for custom certificates works if the feature flag is enabled and `--enable-kubelet-cert-cn-validation` is not set or set to false.
+* Validation for custom certificates fails if the feature flag is enabled, `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
+* Validation for kubernetes issued certificates works if the feature flag is enabled,  `--kubelet-certificate-authority` is set and `--enable-kubelet-cert-cn-validation` is set to true.
 
 ##### e2e tests
 
@@ -255,7 +255,7 @@ Enabling the validation does change the default certificate validation behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature can be disabled once enabled by just setting the command-line flag to true.
+Yes, the feature can be disabled once enabled by not setting the command-line flag.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -275,7 +275,7 @@ Already running workloads won't be impacted but cluster users won't be able to a
 
 ###### What specific metrics should inform a rollback?
 
-`kube_apiserver_validation_kubelet_cert_cn_total` can help inform a rollback. A non-zero value for the `failure` label will require invetsigation: if the rejected requests are going to legitimate nodes, the feature should be rolled back until kuebeler serving certificates are reissued.
+`kube_apiserver_validation_kubelet_cert_cn_total` can help inform a rollback. A non-zero value for the `failure` label will require investigation: if the rejected requests are going to legitimate nodes, the feature should be rolled back until kubelet serving certificates are reissued.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -291,8 +291,8 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 The cluster administrators can check the flags passed to the kube-apiserver if they have access to the control plane nodes.
-If the `--enable-kubelet-cert-cn-validation` flag set to true, the feature is being used.
-Alternatively the can check the `kubernetes_feature_enabled` metric.
+If the `--enable-kubelet-cert-cn-validation` flag is set to true, the feature is being used.
+Alternatively, they can check the `kubernetes_feature_enabled` metric.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -302,7 +302,7 @@ Alternatively the can check the `kubernetes_feature_enabled` metric.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 The average `apiserver_request_duration_seconds` for logs/exec/port-forward requests is within reasonable limits.
-A raising value after enabling this feature could signal overhead introduced by the extra validation.
+A rising value after enabling this feature could signal overhead introduced by the extra validation.
 
 In addition, the number of TLS connections made from API server to nodes should not increase.
 
@@ -366,7 +366,7 @@ It's part of the API server, so the feature will be unavailable.
 
 - [API server can't connect to Nodes with custom kubelet serving certificates that don't follow the `system:node:<node-name>` convention]
   - Detection: `kubectl logs` returns a certificate validation error. 
-  - Mitigations: disable the validation byt not setting `--enable-kubelet-cert-cn-validation` flag.
+  - Mitigations: disable the validation by not setting `--enable-kubelet-cert-cn-validation` flag.
   - Diagnostics: error is returned by the API server, no additional logging needed.
   - Testing: We will have tests for this, this is basically testing that the feature works. 
 
@@ -374,7 +374,7 @@ It's part of the API server, so the feature will be unavailable.
 
 ## Implementation History
 
-* Implemenation options discussion: https://docs.google.com/document/d/1RqhAkGov_coHsB3lbAo-qfQl1MOfYvgpPUjiGMJ_3PY
+* Implementation options discussion: https://docs.google.com/document/d/1RqhAkGov_coHsB3lbAo-qfQl1MOfYvgpPUjiGMJ_3PY
 
 ## Drawbacks
 
