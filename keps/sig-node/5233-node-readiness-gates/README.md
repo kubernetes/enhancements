@@ -122,7 +122,7 @@ This KEP does not aim to
 
 ## Proposal
 
-### Main-Idea:
+### Main Idea:
 
 This proposal's core idea is to make a node's transition to a fully schedulable state dependent not only on the Kubelet's default `Ready` condition but also on custom criteria defined by the cluster administrator.
 
