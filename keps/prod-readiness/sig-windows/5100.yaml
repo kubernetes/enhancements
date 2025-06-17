@@ -4,3 +4,5 @@
 kep-number: 5100
 beta: 
   approver: "@soltysh"
+stable: 
+  approver: "@soltysh"
