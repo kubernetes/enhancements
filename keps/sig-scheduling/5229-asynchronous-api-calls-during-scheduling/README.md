@@ -30,8 +30,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [API calls added at a higher rate than execution rate leading to memory explosion](#api-calls-added-at-a-higher-rate-than-execution-rate-leading-to-memory-explosion)
     - [Pod is retried based on an old object](#pod-is-retried-based-on-an-old-object)
 - [Design Details](#design-details)
-  - [Proposal A: Create a separate component managing API calls](#proposal-a-create-a-separate-component-managing-api-calls)
-  - [Proposal B: Make a scheduler's cache managing API calls](#proposal-b-make-a-schedulers-cache-managing-api-calls)
   - [Proposal C: Create a separate component managing API calls, but treat the cache as a middleware](#proposal-c-create-a-separate-component-managing-api-calls-but-treat-the-cache-as-a-middleware)
   - [Summary of API call management](#summary-of-api-call-management)
     - [Enqueueing a new API call](#enqueueing-a-new-api-call)
@@ -65,6 +63,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [1.1: Handle API calls in the scheduling queue](#11-handle-api-calls-in-the-scheduling-queue)
     - [1.2: Handle API calls in the handleSchedulingFailure](#12-handle-api-calls-in-the-handleschedulingfailure)
     - [2.1: Just dispatch goroutines](#21-just-dispatch-goroutines)
+  - [Alternative design proposals](#alternative-design-proposals)
+    - [Proposal A: Create a separate component managing API calls](#proposal-a-create-a-separate-component-managing-api-calls)
+    - [Proposal B: Make a scheduler's cache managing API calls](#proposal-b-make-a-schedulers-cache-managing-api-calls)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -316,97 +317,10 @@ Still, any future use cases might introduce issues here, so caching the updates 
 
 ## Design Details
 
-This section describes the most important design details and three proposals based on the above ideas, that combine queueing, caching,
-and having a separate component managing the API calls.
-
-### Proposal A: Create a separate component managing API calls
-
-![proposal A](proposal-A-separate-component.png)
-
-Implementing an API queue could be made by adding a new component to the scheduler that will have to understand the API calls' details
-as well as be (potentially) able to modify the cache (see dotted lines in the diagram). This approach would provide an extensible interface and understand the precedence of API calls.
-Having a new component on its own would cause the cache to be less informed, i.e., not updated with API calls' details, providing the scheduler with outdated data.
-It could be prevented by making an API queue a middleware between the event handler and a cache (dotted lines). This won't have to be fully implemented in the first place (only support a subset of use cases),
-but will allow handling multiple cached storages that are currently in the scheduler, i.e., scheduler cache, nominator, DRA manager (`claimTracker`), and volume binding `AssumeCache`.
-
-The interface for the new component could look like the following:
-
-```go
-type APICallType string
-
-const (
-	StatusUpdateCall APICallType = "status_update"
-	BindingCall      APICallType = "binding"
-	PreemptionCall   APICallType = "preemption"
-	// PVCBinding etc.
-)
-
-// APICall describes the API call to be made and store all required data to make the call,
-// e.g. fields that should be updated or object to be added/removed.
-type APICall interface {
-	// CallType returns an API call type
-	CallType() APICallType
-	// UID returns UID of an object that this call is related to
-	UID() types.UID
-	// Execute makes the actual API call
-	Execute(client clientset.Interface) error
-	// Merge merges two API calls with the same APICallType into one
-	Merge(oldObj APICall) (bool, error)
-  
-	// Not required from the very beginning:
-
-	// Update updates the obj using APICall details and returns the new version
-	Update(obj any) (any, error)
-}
-
-type QueuedAPICall struct {
-	APICall
-	// OnFinish is a channel where the API call result is sent.
-	// It allows to synchronize on the call completeness, e.g., in binding
-	// and handle its result well.
-	OnFinish chan<- error
-}
-
-type APIQueue struct {
-	...
-}
-
-func (aq *APIQueue) Add(apiCall QueuedAPICall) error {
-	// If API call for specific UID is already enqueued,
-	// check the callType and skip, replace or merge the call depending on precedence.
-	...
-}
-
-func (aq *APIQueue) Update(obj any) (any, error) {
-	// Update the object using API call details if any is enqueued for its UID.
-	...
-}
-
-func (aq *APIQueue) Run() {
-	// Dispatch limited number of goroutines if queue is non empty.
-	...
-}
-```
-
-APIQueue would provide an `Add()` method would would be used to enqueue an API call that has to be executed.
-`APICall` would provide all required methods to handle it, especially `Execute()` for running, `Merge()` for merging it with the same call type (e.g. `StatusUpdateCall`) that is already enqueued.
-Supporting a cache would need adding `Update()` method that would take the object and update it with API call details (e.g., set NominatedNodeName in a Pod that will be soon updated by the call).
-This updated object could be then stored in the cache, and having the call details would allow to know what fields would need to be changed if any future update occurs before the API call is executed.
-
-### Proposal B: Make a scheduler's cache managing API calls
-
-![proposal B](proposal-B-cache.png)
-
-This approach differs from the previous one. Instead of creating a separate component, this would reuse the scheduler's cache to handle API calls.
-Its advantage would be keeping a consistent state of the updated object in the scheduler and invisibly dispatching API calls if needed.
-The largest caveat could be refactoring the scheduler's cache if non-Pod API call would have to be supported - the cache is currently split into multiple, more specialized caches,
-i.e., scheduler cache, nominator, DRA manager (`claimTracker`), and volume binding `AssumeCache`. This means that the scheduler's cache might need to be extended by these use cases or
-be able to support those custom storage options using some interfaces. Having a cache would still require storing additional metadata (details), similar to proposal A,
-required to make the API calls and to be able to handle incoming updates from the event handler properly (store information about what the API call will change and be able to apply them on an updated object).
-
-It would also require adding specialized methods to the cache to consume details needed to merge the calls and objects properly; for instance, the default `UpdatePod` method might not be useful,
-because it would be too generic for our use cases. Supporting out-of-tree plugins might also be harder, as it would require making the cache extensible to store some custom objects
-and somehow add new methods.
+This section describes the most important design details. Three proposals based on the above ideas that combine queueing, caching,
+and a separate component for managing API calls were considered. Ultimately, proposal C was selected,
+and the details of proposals A and B can be found in the [alternative design proposals](#alternative-design-proposals) section at the end of the KEP.
+Specifically, see [proposal A](#proposal-a-create-a-separate-component-managing-api-calls) for the proposed `APIQueue` structure.
 
 ### Proposal C: Create a separate component managing API calls, but treat the cache as a middleware
 
@@ -473,8 +387,7 @@ It would work similarly to updating a cache in the section above.
 
 It also should be defined how to handle such external updates if the API call is completed and the scheduler is waiting for the update to come in event handlers.
 The `ResourceVersion` of the object could be used to distinguish it, i.e., apply the API call details
-as long as the `ResourceVersion` of the received object is older than the version received by the update API call.
-Doing so would require storing the `ResourceVersion` of the updated object received from the API call somewhere in the cache or the queue.
+as long as the `ResourceVersion` of the received object is older than the version returned by the update API call.
 
 #### Executing the API call
 
@@ -484,10 +397,13 @@ it will be freed for the next call.
 
 #### Enqueueing an API call while a previous one is in-flight
 
-One other possible scenario is when an API call is executing (is in-flight) and a new API call for the same object wants to be added.
-If both have the same call type, standard merging logic could be used, i.e., merge the new API call with the API call in flight.
-If the new call is less relevant, it should be skipped, but if it's more relevant, it should be stored, and after the previous call ends,
-the object UID should be re-added to the queue.
+One other possible scenario occurs when an API call is executing (is in-flight) and a new API call for the same object is added.
+If both calls have the same type, standard merging logic could be applied. This involves merging the new API call with the in-flight call itself
+(note that the in-flight call should still be stored in the map with details, but not in the queue with resource IDs).
+
+If the new call is less relevant, it should be skipped. However, if it's more relevant, it should be stored, and once the in-flight call completes,
+the object's UID should be re-added to the queue. Re-adding it earlier isn't feasible, as two API calls for the same object shouldn't be executed concurrently,
+which could lead to unexpected behaviors.
 
 #### Waiting for the API call to finish
 
@@ -502,6 +418,14 @@ but proposals B and C would require passing it through cache methods, which coul
 As API calls are getting overwritten or skipped, failure of one call might end up in losing multiple operations.
 That's why, for retryable errors, it should be possible to re-enqueue the API call and try it again soon
 Such logic could be explored, but having an `OnFinish` channel and handling errors by the caller should be enough for the actual use cases.
+
+For example, if a binding API call fails, the binding cycle procedure for that Pod will be notified via the `OnFinish` channel.
+It will then invoke a failure handler that re-adds the Pod to the scheduling queue to retry.
+
+If no procedure tracks the `OnFinish` handler of a call (e.g., for a status update), the error will be unhandled (only logged).
+This aligns with the current implementation, and status updates aren't critical enough to implement more advanced retry logic.
+Update conflicts also won't be an issue for status updates, as a strategic merge patch is used,
+and the update will overwrite a condition and `NominatedNodeName` if a conflict occurs.
 
 ### Test Plan
 
@@ -607,7 +531,8 @@ This is a purely in-memory feature for the kube-scheduler, and hence there is no
 ###### Does enabling the feature change any default behavior?
 
 Pod scheduling might be retried even if the API call hasn't yet been executed.
-For instance, it might happen before the `PodScheduled` condition is set to `false`.
+For instance, a Pod might be retried before its `PodScheduled` condition is set to `false` (indicating it's unschedulable).
+Consequently, external components that would rely on a strict ordering of `applying a condition -> retrying a Pod` might be less informed.
 
 Moreover, some API calls might be canceled. In such cases, if the Pod is bound shortly after,
 the `PodScheduled` condition might not be set to `false` at all, as the binding takes precedence.
@@ -887,6 +812,101 @@ Cons:
 - Higher-level mechanisms (like 1.1 or 1.2) would be needed to prevent pod update races.
 - `nominatedNodeName` scenario support would require more effort in (1.1) or (1.2).
 - Prevents from further optimizations, e.g. can't merge two API calls.
+
+### Alternative design proposals
+
+Three design proposals were considered, but the [proposal C](#proposal-c-create-a-separate-component-managing-api-calls-but-treat-the-cache-as-a-middleware) was selected to be implemented.
+Below, another two proposals are presented for comparison.
+
+#### Proposal A: Create a separate component managing API calls
+
+![proposal A](proposal-A-separate-component.png)
+
+Implementing an API queue could be made by adding a new component to the scheduler that will have to understand the API calls' details
+as well as be (potentially) able to modify the cache (see dotted lines in the diagram). This approach would provide an extensible interface and understand the precedence of API calls.
+Having a new component on its own would cause the cache to be less informed, i.e., not updated with API calls' details, providing the scheduler with outdated data.
+It could be prevented by making an API queue a middleware between the event handler and a cache (dotted lines). This won't have to be fully implemented in the first place (only support a subset of use cases),
+but will allow handling multiple cached storages that are currently in the scheduler, i.e., scheduler cache, nominator, DRA manager (`claimTracker`), and volume binding `AssumeCache`.
+
+The interface for the new component could look like the following:
+
+```go
+type APICallType string
+
+const (
+	StatusUpdateCall APICallType = "status_update"
+	BindingCall      APICallType = "binding"
+	PreemptionCall   APICallType = "preemption"
+	// PVCBinding etc.
+)
+
+// APICall describes the API call to be made and store all required data to make the call,
+// e.g. fields that should be updated or object to be added/removed.
+type APICall interface {
+	// CallType returns an API call type
+	CallType() APICallType
+	// UID returns UID of an object that this call is related to
+	UID() types.UID
+	// Execute makes the actual API call
+	Execute(client clientset.Interface) error
+	// Merge merges two API calls with the same APICallType into one
+	Merge(oldObj APICall) (bool, error)
+  
+	// Not required from the very beginning:
+
+	// Update updates the obj using APICall details and returns the new version
+	Update(obj any) (any, error)
+}
+
+type QueuedAPICall struct {
+	APICall
+	// OnFinish is a channel where the API call result is sent.
+	// It allows to synchronize on the call completeness, e.g., in binding
+	// and handle its result well.
+	OnFinish chan<- error
+}
+
+type APIQueue struct {
+	...
+}
+
+func (aq *APIQueue) Add(apiCall QueuedAPICall) error {
+	// If API call for specific UID is already enqueued,
+	// check the callType and skip, replace or merge the call depending on precedence.
+	...
+}
+
+func (aq *APIQueue) Update(obj any) (any, error) {
+	// Update the object using API call details if any is enqueued for its UID.
+	...
+}
+
+func (aq *APIQueue) Run() {
+	// Dispatch limited number of goroutines if queue is non empty.
+	...
+}
+```
+
+APIQueue would provide an `Add()` method would would be used to enqueue an API call that has to be executed.
+`APICall` would provide all required methods to handle it, especially `Execute()` for running, `Merge()` for merging it with the same call type (e.g. `StatusUpdateCall`) that is already enqueued.
+Supporting a cache would need adding `Update()` method that would take the object and update it with API call details (e.g., set NominatedNodeName in a Pod that will be soon updated by the call).
+This updated object could be then stored in the cache, and having the call details would allow to know what fields would need to be changed if any future update occurs before the API call is executed.
+
+#### Proposal B: Make a scheduler's cache managing API calls
+
+![proposal B](proposal-B-cache.png)
+
+This approach differs from the previous one. Instead of creating a separate component, this would reuse the scheduler's cache to handle API calls.
+Its advantage would be keeping a consistent state of the updated object in the scheduler and invisibly dispatching API calls if needed.
+The largest caveat could be refactoring the scheduler's cache if non-Pod API call would have to be supported - the cache is currently split into multiple, more specialized caches,
+i.e., scheduler cache, nominator, DRA manager (`claimTracker`), and volume binding `AssumeCache`. This means that the scheduler's cache might need to be extended by these use cases or
+be able to support those custom storage options using some interfaces. Having a cache would still require storing additional metadata (details), similar to proposal A,
+required to make the API calls and to be able to handle incoming updates from the event handler properly (store information about what the API call will change and be able to apply them on an updated object).
+
+It would also require adding specialized methods to the cache to consume details needed to merge the calls and objects properly; for instance, the default `UpdatePod` method might not be useful,
+because it would be too generic for our use cases. Supporting out-of-tree plugins might also be harder, as it would require making the cache extensible to store some custom objects
+and somehow add new methods.
+
 
 
 ## Infrastructure Needed (Optional)
