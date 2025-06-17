@@ -31,7 +31,6 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -671,17 +670,15 @@ At beta we will revisit if e2e buckets are warranted for e2e node, and after gat
 - Kubelet cache is duplicated in memory and on disk. This is more resilient to I/O
   operation errors when reading from disk.
 
-#### Deprecation
-
-N/A in alpha
-TBD subsequent to alpha
-
 ### Upgrade / Downgrade Strategy
 
 ### Version Skew Strategy
 
-N/A for alpha
-TBD subsequent to alpha
+Version skew between the versions of the on-disk cache records should be handled
+during initialization of the cache by performing a storage migration (e.g. migrating
+the records from v1alpha1 to v1beta1).
+
+The kubelet should be able to read cache records within the supported kubelet skew.
 
 ## Production Readiness Review Questionnaire
 
