@@ -705,7 +705,8 @@ No, the default behavior remains the same.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, you can disable the feature-gate manually once it's in Beta, this will affect StatefulSets that are in the middle of a rollout when the feature gets disabled.
-If the feature is disabled in the middle of the rollout, the rollout will continue as if maxUnavailable is 1.
+If the feature is disabled in the middle of the rollout, the rollout will continue as if maxUnavailable is 1. If there is more than one pod 
+undergoing an update, it will wait for them to complete their update, and continue as if maxUnavailable is 1.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
