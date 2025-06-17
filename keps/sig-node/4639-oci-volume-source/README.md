@@ -1374,6 +1374,7 @@ Major milestones might include:
 - 21-06-2024 KEP merged, targeted at alpha
 - 02-10-2024 KEP updated
 - 06-02-2025 KEP targeting beta in v1.33
+- 06-17-2025 KEP retargeting beta in v1.34, dropped noexec requirement
 
 ## Drawbacks
 
