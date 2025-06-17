@@ -485,9 +485,17 @@ this:
   leading to a situation where the claim will never be deallocated.
 - For new pods that gets scheduled, the scheduler will add pod references in the
   `ReservedFor` list, despite there being a non-pod reference here. So it ends up with
-  both pod and non-pod references in the list. We need to make sure the system can
-  handle this, as it might also happen as a result of disablement and the enablement
-  of the feature.
+  both pod and non-pod references in the list. We can manage both pod and non-pod
+  references in the list by letting the workload controllers add the non-pod reference
+  even if it sees pod references and making sure that the resourceclaim controller removes
+  pod references even if there are non-pod references in the list. For deallocation, it is
+  only safe when no pods are consuming the claim, so both workload and pod reference should
+  be removed once that is true.
+
+We will also provide explicit recommendations for how users can manage downgrades or
+disabling this feature. This means manually updating the references in the `ReservedFor` list
+to be pods rather than the reference to workload resources. We don't plan on providing
+automation for this.
 
 ### Version Skew Strategy
 
