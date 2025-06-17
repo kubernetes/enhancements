@@ -1,0 +1,39 @@
+title: Resource State Metrics
+kep-number: 4785
+authors:
+  - "@rexagod"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-instrumentation
+status: provisional
+creation-date: 2024-08-27
+reviewers:
+  - "@chrischdi"
+  - "@dgrisonnet"
+  - "@mrueg"
+  - "@richabanker"
+  - "@sftim"
+  - "@simonpasquier"
+approvers:
+  - "@dgrisonnet"
+  - "@mrueg"
+  - "@richabanker"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "" # This is external to the k/k tree.
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone: {} # This is external to the k/k tree.
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: [] # This is external to the k/k tree.
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: [] # This is external to the k/k tree.
