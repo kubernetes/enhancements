@@ -33,7 +33,7 @@ latest-milestone: "v1.34"
 milestone:
   alpha: "v1.33"
   beta: "v1.34"
-  stable: "v1.36"
+  stable: "v1.35"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

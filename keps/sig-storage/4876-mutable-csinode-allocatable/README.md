@@ -475,7 +475,6 @@ All unit tests/integration/e2e tests completed and enabled:
 
 #### GA
 
-- Feature stability: at least 2 releases between Beta and GA.
 - No bug reports / feedback / improvements to address in k/k.
 - No bug reports in Cluster Autoscalar as a result of this enhancement (*this KEP does not affect CA, but we have added this requirement out of an abundance of caution, as requested by CA.*)
 
@@ -560,7 +559,7 @@ well as the [existing list] of feature gates.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MutableCSINodeAllocatableCount`
-  - Components depending on the feature gate: `kube-apiserver`, `kubelet`.
+  - Components depending on the feature gate: `kube-apiserver`, `kubelet`, `kube-scheduler`.
 
 ###### Does enabling the feature change any default behavior?
 
