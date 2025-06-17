@@ -2,30 +2,48 @@ title: Implement maxUnavailable for StatefulSets
 kep-number: 961
 authors:
   - "@krmayankk"
+  - "@kerthcet"
+  - "@knelasevero"
+  - "@edwinhr716"
 owning-sig: sig-apps
-participating-sigs:
-  - sig-apps
+participating-sigs: []
+status: implementable
+creation-date: 2018-12-29
 reviewers:
   - "@janetkuo"
   - "@kow3ns"
+  - "@soltysh"
 approvers:
   - "@janetkuo"
   - "@kow3ns"
-editor: TBD
-creation-date: 2018-12-29
-last-updated: 2022-01-01
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
+  - "@soltysh"
+
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.24"
-  beta: "v1.25"
-  stable: "v1.26"
-latest-milestone: "v1.24"
-stage: "alpha"
+  beta: "v1.34"
+  stable: TBD
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: MaxUnavailableStatefulSet
+    components:
+      - kube-controller-manager
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - statefulset_unavailability_violation
