@@ -943,7 +943,8 @@ Steps to disable the feature:
 3. Restart the kubelet.
 
 These steps need to be performed on all nodes in the cluster.
-After restarting the kubelet on all nodes, remove the allowed audiences for which the kubelet is allowed to generate service account tokens for image pulls in KAS by removing the previous `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb.
+After restarting the kubelet on all nodes, remove the allowed audiences for which the kubelet is allowed to generate service account tokens for image pulls in KAS by
+removing the previous `ClusterRole` or `Role` with the `request-serviceaccounts-token-audience` verb, along with the corresponding `ClusterRoleBinding` or `RoleBinding` that binds the role to the kubelet.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
