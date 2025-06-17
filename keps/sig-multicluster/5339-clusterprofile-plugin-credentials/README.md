@@ -67,9 +67,16 @@ SIG Architecture for cross-cutting KEPs).
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+    - [External credentials Provider plugin mechanism](#external-credentials-provider-plugin-mechanism)
+  - [Standardizing the Provider definition](#standardizing-the-provider-definition)
+    - [Cluster Data](#cluster-data)
+    - [ClusterProfile Example](#clusterprofile-example)
+  - [Configuring plugins in the controller](#configuring-plugins-in-the-controller)
+  - [Plugin Examples](#plugin-examples)
+    - [Secret Reader plugin](#secret-reader-plugin)
+    - [GKE with Workload Identity Federation](#gke-with-workload-identity-federation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -288,7 +295,8 @@ type Cluster struct {
 	// to be stored directly in the kubeconfig.
 	// +optional
 	Config runtime.RawExtension `json:"config,omitempty"`
-}```
+}
+```
 
 
 #### ClusterProfile Example
