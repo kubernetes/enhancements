@@ -7,9 +7,11 @@ participating-sigs:
 status: implementable
 creation-date: 2024-09-24
 reviewers:
-  - TBD
+  - "@enj"
+  - "@liggitt"
 approvers:
-  - TBD
+  - "@enj"
+  - "@liggitt"
 
 see-also:
 replaces:
@@ -38,3 +40,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - "kube_apiserver_validation_kubelet_cert_cn_total"
+  - "apiserver_request_duration_seconds"
