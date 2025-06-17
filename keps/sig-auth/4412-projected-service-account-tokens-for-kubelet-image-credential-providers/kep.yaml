@@ -16,12 +16,13 @@ see-also:
 - "/keps/sig-node/2535-ensure-secret-pulled-images"
 creation-date: "2024-09-09"
 status: implementable
-stage: alpha
-latest-milestone: "v1.33"
+stage: beta
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.33"
+  beta: "v1.34"
 feature-gates:
-- name: ServiceAccountTokenForKubeletCredentialProviders
+- name: KubeletServiceAccountTokenForCredentialProviders
   components:
   - kubelet
 - name: ServiceAccountNodeAudienceRestriction
@@ -29,4 +30,4 @@ feature-gates:
   - kube-apiserver
 disable-supported: true
 metrics:
-- "TODO"
+- kubelet_credential_provider_config_hash
