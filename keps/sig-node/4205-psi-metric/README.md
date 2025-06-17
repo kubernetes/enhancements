@@ -10,9 +10,9 @@
     - [Story 1](#story-1)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-    - [CPU](#cpu)
-    - [Memory](#memory)
-    - [IO](#io)
+      - [CPU](#cpu)
+      - [Memory](#memory)
+      - [IO](#io)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -125,16 +125,25 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 ```
 
 ```go
+// PSI data for an individual resource.
 type PSIData struct {
-	Avg10  *float64 `json:"avg10"`
-	Avg60  *float64 `json:"avg60"`
-	Avg300 *float64 `json:"avg300"`
-	Total  *float64 `json:"total"`
+	// Total time duration for tasks in the cgroup have waited due to congestion.
+	// Unit: nanoseconds.
+	Total  uint64 `json:"total"`
+	// The average (in %) tasks have waited due to congestion over a 10 second window.
+	Avg10  float64 `json:"avg10"`
+	// The average (in %) tasks have waited due to congestion over a 60 second window.
+	Avg60  float64 `json:"avg60"`
+	// The average (in %) tasks have waited due to congestion over a 300 second window.
+	Avg300 float64 `json:"avg300"`
 }
 
+// PSI statistics for an individual resource.
 type PSIStats struct {
-	Some *PSIData `json:"some,omitempty"`
-	Full *PSIData `json:"full,omitempty"`
+	// PSI data for some tasks in the cgroup.
+	Some PSIData `json:"some,omitempty"`
+	// PSI data for all tasks in the cgroup.
+	Full PSIData `json:"full,omitempty"`
 }
 ```
 
@@ -146,7 +155,7 @@ metric data will be available through CRI instead.
 ```go
 type CPUStats struct { 
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -154,7 +163,7 @@ type CPUStats struct {
 ```go
 type MemoryStats struct {
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -166,7 +175,7 @@ type IOStats struct {
 	Time metav1.Time `json:"time"`
 
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 
 type NodeStats struct {
@@ -220,6 +229,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 - `k8s.io/kubernetes/pkg/kubelet/server/stats`: `2023-10-04` - `74.4%`
+- `k8s.io/kubernetes/pkg/kubelet/stats`: `2025-06-10` - `77.4%`
 
 ##### Integration tests
 
@@ -238,6 +248,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+Within Kubernetes, the feature is implemented solely in kubelet. Therefore a Kubernetes integration test doesn't apply here.
+
 Any identified external user of either of these endpoints (prometheus, metrics-server) should be tested to make sure they're not broken by new fields in the API response. 
 
 ##### e2e tests
@@ -252,7 +264,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- `test/e2e_node/summary_test.go`: `https://storage.googleapis.com/k8s-triage/index.html?test=test%2Fe2e_node%2Fsummary_test.go`
 
 ### Graduation Criteria
 
@@ -269,7 +281,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Allowing time for feedback.
 
 #### GA
-- TBD
+- Gather evidence of real world usage.
+- No major issue reported.
 
 #### Deprecation
 
@@ -338,12 +351,6 @@ well as the [existing list] of feature gates.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: KubeletPSI
   - Components depending on the feature gate: kubelet
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -368,7 +375,7 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-No PSI metrics will be availabe in kubelet Summary API nor Prometheus metrics if the
+No PSI metrics will be available in kubelet Summary API nor Prometheus metrics if the
 feature was rolled back.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -405,12 +412,33 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The PSI metrics in kubelet Summary API and Prometheus metrics are for monitoring purpose,
+and are not used by Kubernetes itself to inform workload lifecycle decisions. Therefore it should
+not impact running workloads.
+
+If there is a bug and kubelet fails to serve the metrics during rollout, the kubelet Summary API
+and Prometheus metrics could be corrupted, and other components that depend on those metrics could
+be impacted. Disabling the feature gate / rolling back the feature should be safe.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+PSI metrics exposed at kubelet `/metrics/cadvisor` endpoint:
+
+```
+container_pressure_cpu_stalled_seconds_total
+container_pressure_cpu_waiting_seconds_total
+container_pressure_memory_stalled_seconds_total
+container_pressure_memory_waiting_seconds_total
+container_pressure_io_stalled_seconds_total
+container_pressure_io_waiting_seconds_total
+```
+
+kubelet Summary API at the `/stats/summary` endpoint.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -420,11 +448,22 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Test plan:
+- Create pods when the feature is alpha and disabled
+- Upgrade kubelet so the feature is beta and enabled
+  - Pods should continue to run
+  - PSI metrics should be reported in kubelet Summary API and Prometheus metrics
+- Roll back kubelet to previous version
+  - Pods should continue to run
+  - PSI metrics should no longer be reported
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No
 
 ### Monitoring Requirements
 
@@ -456,13 +495,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: The feature is only about metrics surfacing. One can know that it is working by reading the metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -480,6 +514,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+
+kubelet Summary API and Prometheus metrics should continue serving traffics meeting their originally targeted SLOs
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -584,6 +620,7 @@ NA
 
 - 2023/09/13: Initial proposal
 - 2025/06/10: Drop Phase 2 from this KEP. Phase 2 will be tracked in its own KEP to allow separate milestone tracking
+- 2025/06/10: Update the proposal with Beta requirements
 
 ## Drawbacks
 
