@@ -43,4 +43,7 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+- kubelet_pod_start_total_duration_seconds
+- kubelet_pod_status_sync_duration_seconds
+- kubelet_pod_worker_duration_seconds
