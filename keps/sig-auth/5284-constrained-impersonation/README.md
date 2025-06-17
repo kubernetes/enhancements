@@ -76,20 +76,37 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Subject Access Review Details](#subject-access-review-details)
+    - [workflow when the feature is enabled](#workflow-when-the-feature-is-enabled)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [The verbs with <code>impersonate-on:</code> prefix has been used by other component.](#the-verbs-with-impersonate-on-prefix-has-been-used-by-other-component)
+    - [High request volume leads to high load on authorization chain.](#high-request-volume-leads-to-high-load-on-authorization-chain)
+    - [Delegating permission of impersonating wildcard action or wildcard subjects is not supported](#delegating-permission-of-impersonating-wildcard-action-or-wildcard-subjects-is-not-supported)
 - [Design Details](#design-details)
+  - [Verb <code>impersonate:user-info</code>](#verb-impersonateuser-info)
+    - [Header <code>Impersonate-User</code> is set](#header-impersonate-user-is-set)
+    - [Header <code>Impersonate-Group</code> is set](#header-impersonate-group-is-set)
+    - [Header <code>Impersonate-Uid</code> is set](#header-impersonate-uid-is-set)
+    - [Header with prefix <code>Impersonate-Extra-</code> is set](#header-with-prefix-impersonate-extra--is-set)
+  - [Verb <code>impersonate:serviceaccount</code>](#verb-impersonateserviceaccount)
+  - [Verb <code>impersonate:node</code> and <code>impersonate:scheduled-node</code>](#verb-impersonatenode-and-impersonatescheduled-node)
+  - [Auditing](#auditing)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [New kube-apiserver, old <code>impersonate</code> permission](#new-kube-apiserver-old-impersonate-permission)
+    - [Old kube-apiserver, new <code>impersonate-on:</code> and <code>impersonate:</code> permission](#old-kube-apiserver-new-impersonate-on-and-impersonate-permission)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -100,6 +117,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Use <code>impersonate:user-info</code> instead of <code>impersonate:serviceaccount</code> and <code>impersonate:node</code>](#use-impersonateuser-info-instead-of-impersonateserviceaccount-and-impersonatenode)
+  - [Subject Access Review](#subject-access-review)
+  - [Setting a special APIGroup suffix instead of special verb](#setting-a-special-apigroup-suffix-instead-of-special-verb)
+  - [Check permission intersection of impersonator and target user](#check-permission-intersection-of-impersonator-and-target-user)
+  - [Expand RBAC/SAR](#expand-rbacsar)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -192,7 +214,8 @@ Introduce a set of verbs with prefix of `impersonate-on:`, e.g. `impersonate-on:
 `impersonate-on:get`. The impersonator needs to have these verbs with certain resources to
 impersonate. 
 
-Introduce verbs `impersonate:user-info`, `impersonate:serviceaccount` and `impersonate:scheduled-node`:
+Introduce verbs `impersonate:user-info`, `impersonate:serviceaccount`， `impersonate:node` and
+`impersonate:scheduled-node`:
 - `impersonate:user-info` limits the impersonator to impersonate users with 
 certain names/groups/userextras. The resources must be `users`/`groups`/`userextras`/`uids`.
 and the user must not be a node (username with a prefix of `system:nodes`)
@@ -206,13 +229,14 @@ verb to impersonate a node.
 impersonator is running on. The resources must be `nodes`.
 
 For clusters that use RBAC authz mode, two permissions will be required for impersonation. For example:
-1. The permission to impersonate a certain user. This is a cluster scoped
-permission.
+to express "system:serviceaccount:default:default can impersonate a user named someUser solely to list
+and watch pods in the default namespace."
+1. The permission to constrained impersonate a certain user. This is a cluster scoped permission.
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonate
+  name: constrained-impersonate-only-someUser
 rules:
 - apiGroups:
   - authentications.k8s.io
@@ -272,7 +296,7 @@ These permissions define: "The impersonator can impersonate a user with the name
 someUser to list and watch pods in the default namespace."
 
 ### Subject Access Review Details
-When receiving an impersonation request to list pods cluster-wid from the user `impersonator`
+When receiving an impersonation request to list pods cluster-wide from the user `impersonator`
 with the header of `Impersonate-User:someUser`, the apiserver:
 - Verifies if the impersonator has the permission to impersonate with the scope of the user.
 A subjectaccessreview is sent to the authorizer:
@@ -295,6 +319,7 @@ kind: SubjectAccessReview
 spec:
   resourceAttributes:
     resource: pods
+    namespace: default
     verb: impersonate-on:list
   user: impersonator
 ```
@@ -471,11 +496,17 @@ power when permssion of `impersonate-on:` is given.
 For the scheduled node case, it is possible that a high request volume node
 agent could be constantly performing impersonated requests, each of which would
 add two extra authorization checks. This could put load on the authorization
-chain. We could cache the check results with a certain time period to mitigate
-it which will requires more complicated cache design:
-- the key should include resources/actions/subjects
-- the value should be marked as invalidated for a certain period.
-This part of design and implementation will be considered in beta phase.
+chain. Comparing to other alternatives which would also introduce at least
+one authorization check for each request call, the proposal is able to
+satisfy more use case.
+
+#### Delegating permission of impersonating wildcard action or wildcard subjects is not supported
+
+Permissions must be delegated using specified verbs with the prefix of `impersonate:` and
+`impersonate-on:`. Expressing a permission to impersonate ANY subject or ANY action is not
+possible, since the authorization model does not have the concept of partial wildcard on verbs.
+It should be ok since all these permission for constrained impersonation are strictly additive which
+means it should be added when certain impersonation requests are needed.
 
 ## Design Details
 
@@ -708,12 +739,19 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- SubjectAccessReview check on impersonating user. For RBAC authz mode, this might look like:
+- SubjectAccessReview check on impersonating user.
+  - The impersonator can impersonate bob.
+  - The impersonator cannot impersonate alice.
+  - The impersonator can impersonate on listing and getting pods
+  - The impersonator cannot impersonate on updating pods
+  - The impersonator can impersonate on getting pod/exec subresource
+  - The impersonator cannot impersonate on get pod/log subresource
+  For RBAC authz mode, this might look like:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonate-user
+  name: impersonate-bob
 rules:
 - apiGroups:
   - authentications.k8s.io
@@ -727,28 +765,30 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: impersonate:vm:console
+  name: impersonate-pod-action
   namespace: default
 rules:
-  - apiGroups:
-    - ""
-    resources:
-    - nodes
+  - resources:
+    - pods
+    - pod/exec
     verbs:
     - impersonate-on:list
+    - impersonate-on:get
 ```
-  - The impersonator can impersonate bob.
-  - The impersonator cannot impersonate alice.
-  - The impersonator can impersonate on listing nodes
-  - The impersonator cannot impersonate on updating nodes
-
-- SAR check on impersonate scheduled node with permissions. The impersonator has the
+- SAR check on impersonating scheduled node with permissions. The impersonator has the
 user extra info of `"authentication.kubernetes.io/node-name": "node1"`
+  - The impersonator can impersonate node1.
+  - The impersonator cannot impersonate node2.
+  - The impersonator cannot impersonate bob.
+  - The impersonator can impersonate on listing pods.
+  - The impersonator cannot impersonate on updating pods,
+
+  with the permission like this:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonate-user
+  name: impersonate-scheduled-node
 rules:
 - apiGroups:
   - authentications.k8s.io
@@ -760,7 +800,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: impersonate:vm:console
+  name: impersonate-pod-action
   namespace: default
 rules:
   - apiGroups:
@@ -770,18 +810,30 @@ rules:
     verbs:
     - impersonate-on:list
 ```
-  - The impersonator can impersonate node1.
-  - The impersonator cannot impersonate node2.
-  - The impersonator cannot impersonate bob.
-  - The impersonator can impersonate on listing pods.
-  - The impersonator cannot impersonate on updating pods,
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- SAR check on impersonating service account
+- SAR check on impersonating nodes
+
+Each test should cover positive and negative cases with multiple resources and verbs.
+
+- Permission delegation:
+  - bob has the `impersonate:user-info` permission, and can delegate the `impersonate:user-info`
+  permission to alice.
+  - bob cannot delegate the `impersonate:node` permission to alice.
+  - bob has the `impersonate:list` permission on pods resource, and can delegate the permission
+  to alice.
+  - bob cannot delegate the `impersonate:update` permission on pods resource to alice.
 
 ##### e2e tests
 
-This feature is fully tested with unit and integration tests. An eventual conformance
-test is needed as part of GA
+In addition to testing with unit and integration tests. E2E tests will be added covering below cases.
+
+- A user cannot impersonate a subresource until the correct constrained impersonation permissions is
+set for the user.
+- A sericeaccount with the correct constrained impersonation permission is able to impersonate
+the node to list pods.
+
+An eventual conformance test is needed as part of GA.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
@@ -823,8 +875,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 - Determine if additional tests are necessary
 - Ensure reliability of existing tests
-- Determine if some caching mechanism should be introduced to reduce the extra
-permission check call
+- Determine if some mechanism should be introduced to reduce the extra permission checks
 
 #### GA
 
@@ -924,7 +975,7 @@ Yes. Set the feature gate to false and restart the kube-apiserver.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No addtional configuration is needed.
+No additional configuration is needed.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1252,6 +1303,18 @@ Major milestones might include:
 - Several additional authorization checks are added introducing some overhead.
 
 ## Alternatives
+
+### Use `impersonate:user-info` instead of `impersonate:serviceaccount` and `impersonate:node`
+
+Verb `impersonate:serviceaccount` and `impersonate:node` are special cases of verb
+`impersonate:user-info`. Without these two verbs, it is still possible to use verb
+`impersonate:user-info` with certain username, e.g. username with the prefix
+`system:serviceaccounts:` or the prerix `system:nodes`. However, providing the two special
+verbs would delegation of permissions and support more expressions:
+
+- Verb `impersonate:serviceaccount` can support a permission to allow impersonating any
+serviceaccounts in a certain namespace.
+- Verb `impersonate:node` can support a permission to allow impersonating any node.
 
 ### Subject Access Review
 
