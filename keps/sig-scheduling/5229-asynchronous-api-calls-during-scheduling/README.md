@@ -398,12 +398,9 @@ it will be freed for the next call.
 #### Enqueueing an API call while a previous one is in-flight
 
 One other possible scenario occurs when an API call is executing (is in-flight) and a new API call for the same object is added.
-If both calls have the same type, standard merging logic could be applied. This involves merging the new API call with the in-flight call itself
+If both calls have the same type, standard merging logic could be applied. This involves adjusting the new API call with the in-flight call's details
+to reflect the changes that are already in-flight and avoid repeating them in the next call
 (note that the in-flight call should still be stored in the map with details, but not in the queue with resource IDs).
-
-If the new call is less relevant, it should be skipped. However, if it's more relevant, it should be stored, and once the in-flight call completes,
-the object's UID should be re-added to the queue. Re-adding it earlier isn't feasible, as two API calls for the same object shouldn't be executed concurrently,
-which could lead to unexpected behaviors.
 
 #### Waiting for the API call to finish
 
