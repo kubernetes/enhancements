@@ -38,7 +38,7 @@
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
   - [Instrumentation](#instrumentation)
-    - [<code>kubelet_container_resize_attempts_total</code>](#kubelet_container_resize_attempts_total)
+    - [<code>kubelet_container_requested_resizes_total</code>](#kubelet_container_requested_resizes_total)
     - [<code>kubelet_pod_resize_duration_seconds</code>](#kubelet_pod_resize_duration_seconds)
     - [<code>kubelet_pod_pending_resizes</code>](#kubelet_pod_pending_resizes)
     - [<code>kubelet_pod_in_progress_resizes</code>](#kubelet_pod_in_progress_resizes)
@@ -891,7 +891,7 @@ Other components:
 
 The kubelet will record the following metrics:
 
-#### `kubelet_container_resize_attempts_total`
+#### `kubelet_container_requested_resizes_total`
 
 This metric tracks the total number of resize attempts observed by the Kubelet, counted at the container level.
 A single pod update changing multiple containers will be considered separate resize attempts.
