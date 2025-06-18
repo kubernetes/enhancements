@@ -452,6 +452,18 @@ Such state can only happen when user set `volumeClaimUpdatePolicy` to `InPlace` 
 or disable the previously enabled feature-gate.
 We require user to initiate another rollout to update the PVCs, to avoid any surprise.
 
+When `volumeClaimUpdatePolicy` is updated from `OnClaimDelete` to `InPlace`,
+StatefulSet controller will begin to add claim templates to ControllerRevision,
+which will change its hash and trigger an rollout.
+The rollout works like a volumeClaimTemplates only rollout above.
+In this case, step 3 will be no-op if PVC is not changed actually (apart from adding the new controller-revision-hash label),
+so the rollout should proceed really fast.
+
+When `volumeClaimUpdatePolicy` is updated from `InPlace` to `OnClaimDelete`,
+StatefulSet controller will begin to remove claim templates to ControllerRevision,
+which will change its hash and trigger an rollout.
+PVCs will not be touched and Pods will be updated with new `controller-revision-hash` label. 
+
 Failure cases: don't left too many PVCs being updated in-place. We expect to update the PVCs in order.
 
 - If the PVC update fails, we should block the StatefulSet rollout process.
