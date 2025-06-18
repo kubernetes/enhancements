@@ -112,7 +112,7 @@ Already asynchronous calls could also be migrated to this approach.
 ### Goals
 
 - P0: Make the scheduling cycle free of blocking API calls, i.e., make all API calls asynchronous.
-- P0: Make the solution extendable for future use cases.
+- P0: Make the solution extendable for custom/future use cases.
 - P1: Skip some types of updates if they soon become irrelevant by consecutive updates.
 
 ### Non-Goals
@@ -314,6 +314,12 @@ However, if it turns out to be a real problem, a timeout could be added to the A
 Since a Pod won't be blocked from retrying scheduling when an status update API call for that Pod is being executed, it might enter the next scheduling cycle before the call completes.
 However, the `PodScheduled` condition is not used during scheduling, and `NominatedNodeName` is reflected in the `nominator`, so having an outdated Pod object won't cause any harm.
 Still, any future use cases might introduce issues here, so caching the updates could be considered to fully mitigate this risk.
+
+#### Out-of-tree plugins start using asynchronous API calls framework
+
+The framework should be designed to handle such custom use cases, but it should be explicitly documented what capabilities are allowed (and supported) for out-of-tree plugins.
+For example, adding a new Pod-based API call might require changes in the original implementations.
+Not all use cases might be covered by the first release of this feature, but eventually, they should be fully supported and documented accordingly.
 
 ## Design Details
 
@@ -840,7 +846,7 @@ const (
 // APICall describes the API call to be made and store all required data to make the call,
 // e.g. fields that should be updated or object to be added/removed.
 type APICall interface {
-	// CallType returns an API call type
+  // CallType returns an API call type. This should be unique across all APICall implementations that could be in the queue at one moment.
 	CallType() APICallType
 	// UID returns UID of an object that this call is related to
 	UID() types.UID
@@ -886,6 +892,7 @@ func (aq *APIQueue) Run() {
 
 APIQueue would provide an `Add()` method would would be used to enqueue an API call that has to be executed.
 `APICall` would provide all required methods to handle it, especially `Execute()` for running, `Merge()` for merging it with the same call type (e.g. `StatusUpdateCall`) that is already enqueued.
+There should be only one `APICall` implementation with the same `CallType` at any given moment (prevented by `APIQueue`), but extending this behavior could be considered in the future.
 Supporting a cache would need adding `Update()` method that would take the object and update it with API call details (e.g., set NominatedNodeName in a Pod that will be soon updated by the call).
 This updated object could be then stored in the cache, and having the call details would allow to know what fields would need to be changed if any future update occurs before the API call is executed.
 
