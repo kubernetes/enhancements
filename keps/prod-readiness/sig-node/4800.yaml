@@ -1,3 +1,5 @@
 kep-number: 4800
 alpha:
   approver: "@soltysh"
+beta:
+  approver: "@soltysh"
