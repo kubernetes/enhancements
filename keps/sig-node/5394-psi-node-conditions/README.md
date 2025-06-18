@@ -284,7 +284,15 @@ to a different kubelet version.
 
 ### Version Skew Strategy
 
-N/A
+kubelet is responsible of setting node conditions to True or False. While kube-scheduler is responsible of applying / removing taints to the nodes based on the conditions.
+
+Any / Both component being rolled back could result in stale node conditions and/or taints. Stale node condition can be misleading, while stale taint can be even worse as it may affect workload scheduling.
+
+We need to ensure the node conditions and taints get cleaned up when
+1. The feature gate is disabled in any of the component
+2. The version is rolled back in any of the component
+
+in which case the feature can be safely disabled / rolled back.
 
 ## Production Readiness Review Questionnaire
 
@@ -438,7 +446,12 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-TBD
+
+One can check if the proposed node conditions are set (True or False) in all nodes in the cluster.
+
+If the cluster admin sets up metrics that monitor node conditions in the cluster, that metrics can be used to tell if the feature is used. Note that such metrics could show no usage even when the feature is enabled and in use, since the node condition may not be set to True if there is no node-level resource pressure.
+
+One can also check if kubelet is surfacing PSI metrics in `/metrics/cadvisor`. Surfacing PSI metrics is a prerequisite for the PSI-based node condition feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -451,13 +464,16 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
+- [x] Events
+  - Event Reason: kubelet should record an event when setting the node condition to True / False and record the reasons (based on PSI data).
+- [x] API .status
   - Condition name: 
+    - SystemMemoryContentionPressure
+    - SystemDiskContentionPressure
+    - KubepodsMemoryContentionPressure
+    - KubepodsDiskContentionPressure
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+    - Check the actual PSI data for the nodes in kubelet metrics
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -488,6 +504,8 @@ Pick one more of these and delete the rest.
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
+
+TBD. Since kubelet checks the PSI data and sets node condition accordingly, we should have metrics in place to monitor that kubelet is indeed performing this tasks and refreshing node conditions. This can help us detect issues where a bug causes kubelet to get stuck and the node conditions become stale.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
