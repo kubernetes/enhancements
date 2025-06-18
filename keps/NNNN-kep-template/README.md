@@ -414,6 +414,7 @@ in back-to-back releases.
 
 #### Deprecation
 
+<!--
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
