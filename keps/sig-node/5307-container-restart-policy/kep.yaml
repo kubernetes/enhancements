@@ -5,7 +5,7 @@ authors:
   - "@SergeyKanzhelev"
 owning-sig: sig-node
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2025-05-16
 reviewers:
   - "@SergeyKanzhelev"
