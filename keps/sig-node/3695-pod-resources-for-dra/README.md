@@ -107,7 +107,7 @@ to allow querying specific pods for their allocated resources.
 returns the list of PodResources for *all* pods across *all* namespaces in the
 cluster). That is, it allows one to specify a specific pod and namespace to
 retrieve PodResources from, rather than having to query all of them all at
-once.
+once. `Get()` returns error if the pod is known to the kubelet, but is terminated.
 
 The full PodResources API (including our proposed extensions) can be seen below:
 
