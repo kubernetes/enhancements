@@ -218,7 +218,8 @@ Introduce verbs `impersonate:user-info`, `impersonate:serviceaccount`， `impers
 `impersonate:scheduled-node`:
 - `impersonate:user-info` limits the impersonator to impersonate users with 
 certain names/groups/userextras. The resources must be `users`/`groups`/`userextras`/`uids`.
-and the user must not be a node (username with a prefix of `system:nodes`)
+and the user must not be a node (username with a prefix of `system:node:`) and the user must
+not be a service account (username with a prefix of `system:serviceaccount:`)
 The resource names must be usernames, group names or values in the user extras accoringly.
 - `impersonate:serviceaccount` that limits the impersonator to impersonate the serviceaccount with
 the certain name/namespace. The resources must be `serviceaccounts`.
@@ -250,7 +251,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: impersonate
+  name: constrained-impersonate-only-someUser
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -343,13 +344,24 @@ The impersonator does not need the permission for the target action.
 
 ```mermaid
 flowchart TD
-    A[receive request] -->|feature enabled| B{Verify the requester has the permission to impersonate with the scope of the user}
-    B --> |yes| C{Verify the requester has the permission to impersonate the target action}
-    C -->|yes| D[Allow]
-    A -->|feature disable| E{Verify the requester has the legacy impersonate permission}
-    E -->|yes| D
-    B -->|no| E
-    C -->|no| E
+  A[receive request] -->|feature enabled| B{Identify the target user via impersonation header}
+  B --> |Impersonate-User has the prefix of system:node|C{The requester is on the same node}
+  C --> |yes| D{Requester is authorized with impersonate:scheduled-node}
+  C --> |no| E{Requester is authorized with impersonate:node}
+  D --> |yes| F{Requester is authorized to impersonate the target action}
+  D --> |no| E
+  E --> |yes| F
+  E --> |no| H
+  F -->|yes| G[Allow]
+  A -->|feature disable| H{Requester has the legacy impersonate permission}
+  H -->|yes| G
+  F -->|no| H
+  B --> |Impersonate-User has the prefix of system:serviceaccount| I{Requester is authorized with impersonate:serviceaccount}
+  I --> |yes| F
+  I --> |no| H
+  B --> J{Requester is authorized with impersonate:user-info}
+  J --> |yes|F
+  J --> |no|H
 ```
 
 ### User Stories (Optional)
@@ -659,9 +671,9 @@ spec:
 ### Auditing
 
 Audit events already contain the `impersonatedUser` field to denote if impersonation was used.
-To record the reason why the impersonation is allowed, an annotation `allowed-impersonation-verbs` will
-be added. The value will be the impersonation related verbs. For example,
-`allowed-impersonation-verbs: impersonate:scheduled-node` indicates that the impersonation request is
+To record the reason why the impersonation is allowed, a field `impersonationConstraint` will
+be added in the `impersonatedUser`. The value will be the impersonation related verbs. For example,
+`impersonate:scheduled-node` indicates that the impersonation request is
 allowed because it impersonates a scheduled node. The specific action such as `list` or `get`
 will not be included in the value given it can be inferred from the request itself.
 
@@ -899,7 +911,7 @@ enhancement:
 
 On upgrade to a version that enables the feature
 * the previous impersonator with impersonate permission will still work, but it is highly
-recommanded to use the new permissions with less privilege.
+recommended to use the new permissions with less privilege.
 
 
 * authorization webhooks needs to recognize the verb with prefix of `impersonate-on:` and
@@ -1013,8 +1025,9 @@ be authorized to impersonate. Impersonator will need to have the unscoped impers
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-
-Authz latency for impersonation is too long.
+authorization_attempts_total shows greatly increased number.
+authorization_duration_seconds_bucket shows greatly increased number of request
+with longer duration.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1023,6 +1036,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+Integration tests cover feature gate disablement and enablement.
+
+Manual tests to cover upgrade->downgrade->upgrade:
+1. Deploy k8s 1.33
+2. create impersonate permissions for user bob and verify impersonation
+3. Upgrade to 1.34 and enable the `ConstrainedImpersonation` featuregate.
+4. Verify impersonation of user bob.
+5. create permission for constrained impersonation for user alice and verify impersonation
+6. Downgrade to 1.33. Verify impersonation for user bob and alice. Alice would not be able
+to impersonate while bob is able to.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1168,7 +1192,10 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
-No.
+Yes, enabling the feature will result in two additional SAR checks when kube-apiserver
+receives an impersonation request.
+- A SAR request to check if the impersonator is authorized to impersonate the target user.
+- A SAR request to check if the impersonater is authorized to perform the action via impersonation.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
