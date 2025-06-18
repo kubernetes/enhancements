@@ -262,7 +262,7 @@ The `prefer-align-cpus-by-uncorecache` feature will be enabled and tested indivi
 - `full-pcpus-only`
 - Topology Manager NUMA Affinity
 
-The following CPU Topologies are representative of various uncore cache architectures and will be added to policy_test.go and represented in the unit testing. 
+The following CPU Topologies are representative of various uncore cache architectures and will be added to [policy_test.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/cpumanager/policy_test.go) and represented in the unit testing. 
 
 - 1P AMD EPYC 7702P 64C (smt-on/off) NPS=1, 16 uncore cache instances/socket
 - 2P AMD EPYC 7303 32C (smt-on/off) NPS=1, 4 uncore cache instances/socket
@@ -279,27 +279,25 @@ N/A. This feature requires a e2e test for testing.
 
 ##### e2e tests
 
-- For e2e testing, checks will be added to determine if the node has a split uncore cache topology. If node does not meet the requirement to have multiple uncore caches, the added tests will be skipped. 
-- e2e testing should cover the deployment of a pod that is following uncore cache alignment. CPU assignment can be determined by podresources API and programatically cross-referenced to syfs topology information to determine proper uncore cache alignment.
-- For e2e testing, guaranteed pods will be deployed with various CPU size requirements on our own baremetal instances across different vendor architectures and confirming the CPU assignments to uncore cache core groupings. This feature is intended for baremetal only and not cloud instances.
-- Update CI to test GCP instances of different architectures utilizing uncore cache alignment feature.
-
+- [should update alignment counters when pod successfully run taking less than uncore cache group](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/cpu_manager_metrics_test.go):[SIG-node](https://testgrid.k8s.io/sig-node):[SIG-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet)
+- [should update alignment counters when pod successfully run taking a full uncore cache group](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/cpu_manager_metrics_test.go):[SIG-node](https://testgrid.k8s.io/sig-node):[SIG-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet)
+- [should not update alignment counters when pod successfully run taking more than a uncore cache group](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/cpu_manager_metrics_test.go):[SIG-node](https://testgrid.k8s.io/sig-node):[SIG-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet)
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Feature implemented behind a feature gate flag option
-- Test cases created for feature
+- Add unit test coverage
+- Added metrics to cover observability needs
+- Added e2e tests for metrics
 
 #### Beta
 
 - Address bug fixes: ability to schedule odd-integer CPUs for uncore cache alignment
-- Add missing feature: sort uncore caches by largest quantity of available CPUs instead of numerical order 
 - Add test cases to ensure functional compatibility with existing CPUManager options
 - Add test cases to ensure and report incompatibility with existing CPUManager options that are not supported with prefer-align-cpus-by-uncore-cache
-- Additional benchmarks to show performance benefit of prefer-align-cpus-by-uncore-cache feature
-- Add metric for uncore cache alignment and incorporate to E2E tests
+- Add E2E test coverage for feature
 
 ### Upgrade / Downgrade Strategy
 
@@ -370,7 +368,7 @@ Feature will be enabled. Proper drain of node and restart of kubelet required. F
 
 E2E test will demonstrate default behavior is preserved when `CPUManagerPolicyOptions` feature gate is disabled.
 Metric created to check uncore cache alignment after cpuset is determined and utilized in E2E tests with feature enabled. 
-See PR#130133 (https://github.com/kubernetes/kubernetes/pull/130133)
+See [cpu_manager_metrics_test.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/cpu_manager_metrics_test.go)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -380,13 +378,13 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Rollout/rollback should not fail since the feature is hidden behind feature gates and will not be enabled by default.
-Enabling the feature will require the Kubelet to restart, introducing potential for kubelet to fail to start or crash, which can affect existing workloads.
-In response, drain the node and restart the kubelet.
+This feature is a best-effort alignment of CPUs to uncore caches that requires a kubelet restart that must not affect running workloads. No changes needed to cpu_manager_state file.
+A rollout may fail based upon existing workloads that create fragmented uncore caches on the node, potentially resulting in CPUset distribution across multiple caches based upon the CPU quantity requirements and the best-effort policy.
+Metrics below can help the user track alignment, but a rollback will not help because the feature is not a strict alignment to uncore caches, but a best-effort to reduce shared uncore caches.
 
 ###### What specific metrics should inform a rollback?
 
-`AlignedUncoreCache` metric can be tracked to measure if there are issues in the cpuset allocation that can determine if a rollback is necessary.
+`kubelet_container_aligned_compute_resources_count` and `container_aligned_compute_resources_failure_count` metric can be tracked to measure if there are issues in the cpuset allocation that can determine if a rollback is necessary.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -405,7 +403,7 @@ Reference CPUID info in podresources API to be able to verify assignment.
 ###### How can an operator determine if the feature is in use by workloads?
 
 Reference podresources API to determine CPU assignment and CacheID assignment per container.
-Use 'container_aligned_compute_resources_count' metric which reports the count of containers getting aligned compute resources. See PR#127155 (https://github.com/kubernetes/kubernetes/pull/127155).
+Use 'container_aligned_compute_resources_count' metric which reports the count of containers getting aligned compute resources. See [kubelet/metrics/metrics.go](https://github.com/kubernetes/kubernetes/blob/8f1f17a04f62ab64ebe4f0b9d7f5f799bf56a0d9/pkg/kubelet/metrics/metrics.go#L135).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -417,12 +415,13 @@ Reference podresources API to determine CPU assignment.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-CPUset allocation should be on the fewest amount of uncore caches as possible on the node.
+In default Kubernetes installation, 99th percentile per cluster-day <= X
+This feature is best-effort and will not cause failed admission, but can introduce admission delay.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - Metrics
-  - `container_aligned_compute_resource_count` can be used to determine Uncore Cache alignment
+  - `topology_manager_admission_duration_ms` can be used to determine pod admission time
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
