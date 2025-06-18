@@ -348,7 +348,12 @@ Kubelet may fail to start. The new API may report inconsistent data, or may caus
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not Applicable.
+Not Applicable. Because this change:
+
+- Is read-only in the kubelet’s in-memory state.
+- Is behind a feature gate, so turning it off simply disables the new endpoints without affecting any existing behavior.
+
+In practice, restart the kubelet with the gate disabled (rollback) or re-enabled (upgrade), and the API behavior reverts or returns without loss of data or consistency. Therefore we don’t need a special upgrade/downgrade test matrix for this KEP.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -373,7 +378,9 @@ Call the PodResources API and see the result.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A.
+100% in normal operation. The proposed API exposes in read only mode kubelet internal data, critical for functioning of the kubelet.
+This data has to be available 100% of the time for the proper functioning of the kubelet, thus is expected to be available 100% of time.
+The only possible error source is the API calls being throttled by the rate-limiting introduced with the GA graduation of the parent KEP 606.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -409,29 +416,35 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+No. Enabling this feature does not change the number of API objects returned. But it may increase the size of each object whenever there are Dynamic Resources to report where each ContainerResources now has an extra dynamic_resources field.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No. Feature is out of existing any paths in kubelet.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+Negligible amount of CPU and memory. Because the API is purely read-only and piggy-backs on the kubelet’s existing cache and checkpointing machinery, exposing Dynamic Resources incurs only similar minimal serialization and storage as CPUManager and DeviceManager—so any extra CPU, memory, disk, or I/O impact is negligible.
 
-DDOSing the API can lead to resource exhaustion.
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No, because the endpoint queries existing data structures inside the kubelet.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A.
+No impact, the feature is node-local.
 
 ###### What are other known failure modes?
 
-The API will always return a well-known error. In normal operation, the API is expected to never return an error and always return a valid response, because it utilizes internal kubelet data which is always available. Bugs may cause the API to return unexpected errors, or to return inconsistent data. Consumers of the API should treat unexpected errors as bugs of this API.
+feature gate disabled: The API will always return a well-known error. In normal operation, the API is expected to never return an error and always return a valid response, because it utilizes internal kubelet data which is always available.
+Bugs may cause the API to return unexpected errors, or to return inconsistent data.
+Consumers of the API should treat unexpected errors as bugs of this API.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A.
+Check the error code to learn if the consumer of the API is being throttle by rate limiting introduced in the parent KEP 606.
+Check the kubelet logs to learn about resource allocation errors.
 
 ## Implementation History
 
@@ -443,4 +456,8 @@ N/A.
 
 ## Drawbacks
 
+N/A
+
 ## Alternatives
+
+N/A
