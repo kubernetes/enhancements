@@ -31,7 +31,6 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -51,20 +50,20 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -671,17 +670,15 @@ At beta we will revisit if e2e buckets are warranted for e2e node, and after gat
 - Kubelet cache is duplicated in memory and on disk. This is more resilient to I/O
   operation errors when reading from disk.
 
-#### Deprecation
-
-N/A in alpha
-TBD subsequent to alpha
-
 ### Upgrade / Downgrade Strategy
 
 ### Version Skew Strategy
 
-N/A for alpha
-TBD subsequent to alpha
+Version skew between the versions of the on-disk cache records should be handled
+during initialization of the cache by performing a storage migration (e.g. migrating
+the records from v1alpha1 to v1beta1).
+
+The kubelet should be able to read cache records within the supported kubelet skew.
 
 ## Production Readiness Review Questionnaire
 
@@ -738,13 +735,32 @@ the behavior of the pull policies will revert to the previous behavior.
 
 ###### What specific metrics should inform a rollback?
 
-If the feature gate is enabled, the kubelet will gather metrics `image_pull_secret_recheck_miss` and
-`image_pull_secret_recheck_hit` which are both histograms counting the number of images that had a cache miss/hit.
+Enabling the feature will make the kubelet expose several metrics:
+- each caching layers should provide the following:
+    - `<cache_name>_<pullintents/pulledrecords>_total` gauge for the number of records (e.g. files, keys of a map)
+      that are kept in the cache
+- `image_mustpull_checks_total` counter vector tracks how many times the check for
+  image pull credentials was called
+  - labels:
+    - `result`:
+      - "credentialPolicyAllowed" for cases where the kubelet's credential verification pull policy allows
+        access to the image (e.g. via allowlist or to an image pre-pulled to the node)
+      - "credentialRecordFound" when a matching credential record was found in the cache positively verifying access to an image
+      - "mustAuthenticate" when an additional check is required to verify access to the image, normally done by
+        authentication and verifying manifest access at a container registry for the image when the layers are already local
+      - "error" in error cases
+- the `ensure_image_requests_total` counter vector tracks how many times EnsureImageExists()
+  was called
+  - labels:
+    - `pull_policy` - either of "never", "ifnotpresent" or "always", according to container image pull policy
+    - `present_locally` - "true" if the image is present on the node per container runtime, "false" if it isn't,
+                          "unknown" if there was an error before this was determined
+    - `pull_required` - "true" if an image was requested to be pulled (e.g. from credential reverification
+                        mechanism or by the ImagePullPolicy from the Pod), "false" if not,
+                        "unknown" if there was an error before this was determined
 
-This will allow an admin to see how many images have authorization checks done.
-
-A histogram was chosen to allow an admin to compare registry uptime with cache misses, as the main failure scenerio is registry unavailability
-could cause pods not to come up, because the kubelet doesn't have credentials cached.
+This will allow an admin to see how many reverification checks are being requested for existing images and how
+many requests make it all the way to the persistent cache.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -758,37 +774,58 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-When the feature is enabled, the kubelet will emit a metric `image_pull_secret_recheck_miss` and `image_pull_secret_recheck_hit` that will happen when a cache miss happens.
-This will happen regardless of whether the feature is enabled in the kubelet via its configuration flag.
+When the feature is enabled, the kubelet will emit a metric named `image_mustpull_checks_total`.
 
-To determine if the feature is actually working, they will have to check manually.
+Admins can also check the node's filesystem, where a directory `image_manager` with subdirectories
+`pulling` and `pulled` should be present in the kubelet's main directory.
 
-A user could check if images pulled with credentials by a first pod, are also pulled with credentials by a second pod that is
-using the pull if not present image pull policy.
-
-It also will show up as network events. Though only the manifests will be revalidated against the container image repository,
-large contents will not be pulled. Thus one could monitor traffic to the registry.
+If the feature was used by at least one workload that successfully started and is running a container with
+a non-preloaded image (based on the policy), they should be able to find a file with a matching record of a
+pulled image in the `<kubelet dir>/image_manager/pulled` directory at the node that
+is running the workload's pod. The filename structure for these directories is described
+in [Cache Directory Structure](#cache-directory-structure).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Can test for an image pull failure event coming from a second pod that does not have credentials to pull the image
-where the image is present and the image pull policy is if not present.
+Users are able to observe events in case workloads in their namespaces
+were successfully able to retrieve an image that was previously pulled to a node.
 
 - [x] Events
-  - Event Reason: "kubelet  Failed to pull image" ... "unexpected status code [manifests ...]: 401 Unauthorized"
-
+  - Event message: "Container image ... already present on machine **and can be accessed by the pod**"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-TBD
+Since the kubelet does not provide image pull success rate at the time of writing,
+the SLO for the feature should be based on the remote registries image pull success
+rate.
+
+The use of the feature may result in an increased rate of image pull requests
+when compared to the old use of the "IfNotPresent" pod image pull policy. Given
+how image pulling works, depending on the container registry authorization implementation,
+this might mean an increase of 401 (Unauthorized), 403 (Forbidden) or 404 (NotFound) errors
+but these should be directly proportional to the number of successful pulls.
+
+A disproportionate increase in the number of unsuccessful pulls would suggest misuse
+of pods' "IfNotPresent" image pull policy within the cluster.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-TBD
+These metrics might spike when the node is getting initialized and so
+it makes sense to observe these in a later stage of the node's lifetime.
+
+- [x] Metrics
+  - Metric name: `kubelet_imagemanager_ondisk_pullintents_total`, `kubelet_imagemanager_inmemory_pullintents_total`
+    should usually be around 0, indicates the number of tracked in-flight image pulls.
+  - Metric name: if `kubelet_imagemanager_ensure_image_requests_total{pull_policy!="always", present_locally="true",pull_required="true"}` (i.e. "reverifies requested") gets
+    too close to `kubelet_imagemanager_ensure_image_requests_total{pull_policy!="always", present_locally!="unknown",pull_required!="unknown"}` (i.e. "all non-error image requests")
+    this might suggest either a) credentials are not very commonly shared within the cluster;
+    or b) there is a problem with the credential-tracking cache. To consider the values
+    too close, "reverifies requested" / "all non-error image requests" would be above 0.9.
+  - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-TBD needed for Beta
+No.
 
 ### Dependencies
 
@@ -845,7 +882,8 @@ Reduce the number of cache misses (as seen through the metrics) by ensuring simi
 
 ## Implementation History
 
-TBD
+- [x] 2024-10-08 - Reworked version of the KEP merged, accepted as implementable
+- [x] 2025-03-17 - Alpha implementation merged - https://github.com/kubernetes/kubernetes/pull/128152
 
 ## Drawbacks [optional]
 
@@ -860,7 +898,9 @@ ensure the image instead of kubelet.
 - For beta, we may want to consider deleting cached credentials upon Kubernetes secret / namespace deletion.
 - Discussions went back and forth as to whether to persist the cache across reboots. It was decided to do so.
 - `Never` could be always allowed to use an image on the node, regardless of its presence on the node. However, this would functionally disable this feature from a security standpoint.
+- Consider incorporating the ":latest" or a missing tag as a special case of why an image was requested
+  to be pulled in the `kubelet_imagemanager_ensure_image_requests_total` metric.
 
 ## Infrastructure Needed [optional]
 
-TBD
+--
