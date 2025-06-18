@@ -18,8 +18,12 @@
   - [API Changes](#api-changes)
     - [CSINode](#csinode)
     - [CSIDriver](#csidriver)
+    - [VolumeError](#volumeerror)
     - [Validation Changes](#validation-changes)
-    - [Volume Plugin Manager](#volume-plugin-manager)
+    - [CSI Node Updater](#csi-node-updater)
+      - [Implementation details](#implementation-details)
+    - [Update behavior](#update-behavior)
+    - [Error handling](#error-handling)
     - [NodeInfoManager Interface Extension](#nodeinfomanager-interface-extension)
     - [CSINode Update Behavior](#csinode-update-behavior)
     - [Pod Construction Changes](#pod-construction-changes)
@@ -186,18 +190,42 @@ type VolumeNodeResources struct {
 
 #### CSIDriver
 
-A new field, `NodeAllocatableUpdatePeriodSeconds`, will be added to the `CSIDriverSpec` struct. This field allows a CSI driver to specify the interval at which the Kubelet should periodically query a driver's `NodeGetInfo` RPC endpoint to update the `CSINode` object. If this field is not set, updates will only occur in response to volume attachment failures as a result of no capacity.
+A new field, `NodeAllocatableUpdatePeriodSeconds`, will be added to the `CSIDriverSpec` struct. This field allows a CSI driver to specify the interval at which the Kubelet should periodically query a driver's `NodeGetInfo` RPC endpoint to update the `CSINode` object. If this field is not set, no updates occur (neither periodic nor upon detecting capacity-related failures), and the allocatable count remains static.
 
 ```golang
 // CSIDriverSpec is the specification of a CSIDriver.
 type CSIDriverSpec struct {
     ...
-    // NodeAllocatableUpdatePeriodSeconds specifies the interval between periodic updates of
-    // the CSINode allocatable capacity for this driver. If not set, periodic updates
-    // are disabled, and updates occur only upon detecting capacity-related failures.
-    // The minimum allowed value for this field is 10 seconds.
-    // +optional
+	// nodeAllocatableUpdatePeriodSeconds specifies the interval between periodic updates of
+	// the CSINode allocatable capacity for this driver. When set, both periodic updates and
+	// updates triggered by capacity-related failures are enabled. If not set, no updates
+	// occur (neither periodic nor upon detecting capacity-related failures), and the
+	// allocatable.count remains static. The minimum allowed value for this field is 10 seconds.
+	//
+	//
+	// This field is mutable.
+	//
+	// +featureGate=MutableCSINodeAllocatableCount
+	// +optional
     NodeAllocatableUpdatePeriodSeconds *int64
+}
+```
+
+#### VolumeError
+
+A new field, `ErrorCode`, will be added to the `VolumeError` struct to facilitate detection of capacity-related errors:
+
+```golang
+// Captures an error encountered during a volume operation.
+type VolumeError struct {
+   ...
+  // errorCode is a numeric gRPC code representing the error encountered during Attach or Detach operations.
+  //
+  // This is an optional field that requires the MutableCSINodeAllocatableCount feature gate being enabled to be set.
+  //
+  // +featureGate=MutableCSINodeAllocatableCount
+  // +optional
+    ErrorCode *int32
 }
 ```
 
@@ -226,20 +254,53 @@ func ValidateCSINodeUpdate(new, old *storage.CSINode) field.ErrorList {
 
 This updated logic allows the `Allocatable.Count` field to be modified when the feature gate is enabled, while ensuring all other fields remain immutable. When the feature gate is disabled, it falls back to the existing validation logic for backward compatibility.
 
-#### Volume Plugin Manager
+#### CSI Node Updater
 
-A new goroutine will be started in VolumePluginMgr’s [Run()](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/plugins.go#L953) func if the `NodeAllocatableUpdatePeriodSeconds` is set to a nonzero value. This goroutine will periodically trigger updates to the `CSINode` object based on the specified interval:
+A new plugin-level updated will be implemented in `kubernetes/pkg/volume/csi/csi_node_updater.go` to manage periodic updates of CSINode allocatable counts. This updater watches for changes to CSIDriver objects and manages per-driver update goroutines based on the `NodeAllocatableUpdatePeriodSeconds` setting.
+
+##### Implementation details
 
 ```golang
-func (pm *VolumePluginMgr) Run(stopCh <-chan struct{}) {
-    if pm.csiNodeUpdateInterval > 0 {
-        go wait.Until(pm.updateCSINodeInfo, pm.csiNodeUpdateInterval, stopCh)
+// csiNodeUpdater watches for changes to CSIDriver objects and manages the lifecycle
+// of per-driver goroutines that periodically update CSINodeDriver.Allocatable information
+type csiNodeUpdater struct {
+    // Informer for CSIDriver objects
+    driverInformer cache.SharedIndexInformer
+    
+    // Map of driver names to stop channels for update goroutines
+    driverUpdaters sync.Map
+    
+    // Ensures the updater is only started once
+    once sync.Once
+}
+```
+#### Update behavior
+
+When a `CSIDriver` object is added or updated with `NodeAllocatableUpdatePeriodSeconds` set, the updater checks if the driver is installed on the node before running periodic updates.
+
+When `NodeAllocatableUpdatePeriodSeconds` is modified, the updater automatically adjusts by stopping the old goroutine and starting a new one. Setting the period to 0 or nil stops updates entirely. Driver uninstallation or `CSIDriver` object deletion also stops the update goroutine for that specific driver.
+
+```golang
+func (u *csiNodeUpdater) runPeriodicUpdate(driverName string, period time.Duration, stopCh <-chan struct{}) {
+    ticker := time.NewTicker(period)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-ticker.C:
+            if err := updateCSIDriver(driverName); err != nil {
+                klog.ErrorS(err, "Failed to update CSIDriver", "driver", driverName)
+            }
+        case <-stopCh:
+            return
+        }
     }
 }
 ```
 
-In case of a failure during the `updateCSINodeInfo` call, the `Allocatable.Count` will retain its current value and `updateCSINodeInfo` will be retried.
+#### Error handling
 
+If `updateCSIDriver()` fails, the error is logged but the allocatable count retains its current value. Updates continue at the configured interval regardless of individual failures.
 
 #### NodeInfoManager Interface Extension
 
@@ -262,7 +323,7 @@ This table explains how updates to the `CSINode.Spec.Drivers[*].Allocatable.Coun
 | **Feature Flag Status**                  | **`NodeAllocatableUpdatePeriodSeconds`** | **Behavior**                                                                                                                           |
 |------------------------------------------|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
 | Enabled                              | Set                                 | Periodic updates occur at the defined interval + when invalid state is detected (volume attachment failures due to `ResourceExhausted`)|
-| Enabled                              | Not set                             | Updates occur only in response to volume attachment failures (`ResourceExhausted` errors)                                             |
+| Enabled                              | Not set                             | No updates occur; `Allocatable.Count` remains static                                             |
 | Disabled                             | Set                                 | `NodeAllocatableUpdatePeriodSeconds` is ignored; `Allocatable.Count` remains static and immutable                                              |
 | Disabled                             | Not set                             | No updates occur; `Allocatable.Count` remains static and immutable                                                                    |
 
@@ -271,7 +332,7 @@ This table explains how updates to the `CSINode.Spec.Drivers[*].Allocatable.Coun
 
 To address race conditions where the scheduler assigns stateful pods to nodes with insufficient capacity, Kubelet's pod construction process during [WaitForAttachAndMount](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/volumemanager/volume_manager.go#L393) will now handle `ResourceExhausted` errors returned by CSI drivers during the `ControllerPublishVolume` RPC.
 
-The `ResourceExhausted` error is directly reported on the `VolumeAttachment` object associated with the relevant attachment. To facilitate easier detection of `ResourceExhausted` errors from `VolumeAttachment` statuses, we propose adding a `StatusCode` field to the [VolumeError](https://github.com/kubernetes/api/blob/master/storage/v1/types.go#L219) struct.
+The `ResourceExhausted` error is directly reported on the `VolumeAttachment` object associated with the relevant attachment. To facilitate easier detection of `ResourceExhausted` errors from `VolumeAttachment` statuses, we propose adding a `ErrorCode` field to the [VolumeError](https://github.com/kubernetes/api/blob/master/storage/v1/types.go#L219) struct.
 
 ```golang
 if err := kl.volumeManager.WaitForAttachAndMount(pod); err != nil {
@@ -367,9 +428,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- Test that updates to `CSINode.Spec.Drivers[*].Allocatable.Count` are properly reflected when the `MutableCSINodeAllocatableCount` feature gate is enabled.
-- Test that periodic updates occur at the specified `NodeAllocatableUpdatePeriodSeconds`.
-- Test that `ResourceExhausted` errors during volume attachment trigger an immediate update of the CSINode object.
+N/A, this enhancement does not introduce configuration parameters or CLI options that are used to start binaries. See e2e and graduation criteria for a comprehensive list of code coverage.
 
 ##### e2e tests
 
@@ -383,31 +442,41 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- Test the impact on pod scheduling when `CSINode.Spec.Drivers[*].Allocatable.Count` is updated, ensuring that pods are not scheduled to nodes with insufficient capacity.
 - Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.
+
+testgrid.k8s.io: https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-kind-alpha-beta-features
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag.
-- Initial unit tests/integration tests completed and enabled.
+- [✅] [Feature implemented behind a feature flag.](https://github.com/kubernetes/kubernetes/pull/130007)
+- [✅] [Initial unit tests/integration tests completed and enabled.](https://github.com/kubernetes/kubernetes/pull/130007)
 
 #### Beta
 
-- Allowing time for feedback (at least 2 releases between beta and GA).
-- All unit tests/integration/e2e tests completed and enabled.
-  - Validate kubelet behavior when API server rejects `CSINode` updates (older API server version).
-  - Validate CSI driver behavior with and without the `NodeAllocatableUpdatePeriodSeconds` field set.
-  - Validate scheduler behavior remains consistent regardless of whether `CSINode.Spec.Drivers[*].Allocatable.Count` is being dynamically updated or not.
-  - Validate cluster autoscalar behavior is not changed as a result of changes introduced in this KEP.
-  - Validate pod construction failure handling in kubelet, ensuring it correctly updates the `CSINode` object when the feature is enabled and the API server supports it.
+All unit tests/integration/e2e tests completed and enabled:
+  - [✅] [Test the end-to-end workflow of updating `CSINode.Spec.Drivers[*].Allocatable.Count` using a CSI driver.](https://github.com/kubernetes/kubernetes/pull/130942)
+  - [✅] **CSINode Updater**
+    - [Test when `NodeAllocatableUpdatePeriodSeconds` is modified that the updater is re-configured.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L168)
+    - [Test driver with nil `NodeAllocatableUpdatePeriodSeconds` that updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L146)
+    - [Test when driver is not installed the updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L103)
+    - [Test when driver is not found in informer the updater is terminated.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_node_updater_test.go#L124)
+  - [✅] **VolumeAttachment Error Code**
+    - [Test error code detection.](https://github.com/kubernetes/kubernetes/blob/master/pkg/volume/csi/csi_plugin_test.go#L1475)
+    - [Verify error codes are dropped when feature is disabled and not previously set.](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/storage/volumeattachment/strategy_test.go#L184)
+    - [Verify error codes are not dropped when set in old object.](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/storage/volumeattachment/strategy_test.go#L209)
+  - [✅] **Scheduler QueueingHintFn**
+    - [Test when Allocatable value is increased that Stateful pod is queued.](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/nodevolumelimits/csi_test.go#L993)
+    - [Test when Allocatable value is decreased that Stateful pod is not queued.](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/nodevolumelimits/csi_test.go#L1011)
+  - [✅] **Feature Gate / API Validation**
+    - [Test Allocatable value is updated when feature gate is enabled.](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/storage/validation/validation_test.go#L1456)
+    - [Test Allocatable value is unchanged when feature gate is disabled.](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/storage/validation/validation_test.go#L1268)
 
 #### GA
 
-- All beta criteria have been satisfied.
-- Feature is stable.
-- No bug reports / feedback / improvements to address.
+- No bug reports / feedback / improvements to address in k/k.
+- No bug reports in Cluster Autoscalar as a result of this enhancement (*this KEP does not affect CA, but we have added this requirement out of an abundance of caution, as requested by CA.*)
 
 ### Upgrade / Downgrade Strategy
 
@@ -490,7 +559,7 @@ well as the [existing list] of feature gates.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MutableCSINodeAllocatableCount`
-  - Components depending on the feature gate: `kube-apiserver`, `kube-controller-manager`, `kubelet`.
+  - Components depending on the feature gate: `kube-apiserver`, `kubelet`, `kube-scheduler`.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -556,12 +625,35 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The rollout or rollback of this feature is designed such that it cannot fail in a way that impacts cluster operation.
+
+During rollout, if the API server / Kubelet doesn't support the feature or if there's a version mismatch, update attempts to CSINode.Allocatable will fail gracefully, maintaining the existing value. This ensures that the worst-case scenario is simply a continuation of the current behavior, rather than a failure state.
+
+For rollback, disabling the feature gate will immediately stop any updates to the allocatable property. Kubernetes will continue using the last known value, which may be outdated but won't cause operational issues.
+
+In essence, the feature's best-effort nature and feature gate protection make it resilient against rollout or rollback failures. The primary risk is temporary inconsistency in reported capacities during transition periods, but this does not impact running workloads or overall cluster stability.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+**Unexpected API server errors** 
+
+- `apiserver_request_total{group="storage.k8s.io", resource="csinodes", verb=~"UPDATE|PATCH", code=~"4..|5.."}` - A sustained failure rate of 4xx/5xx HTTP responses for >= 2 minutes indicates the feature is misbehaving and warrants rollback.
+
+**API server latency degradation**
+
+- `apiserver_request_duration_seconds{resource="csinodes", verb=~"UPDATE|PATCH"}` - Significant increases in p95 or p99 latency for CSINode updates are not expected and may suggest API server contention.
+
+Besides this, since the enhancement implements best-effort updates to the CSINode.Allocatable property, the only scenarios that would necessitate a rollback are:
+
+- Unexpected kubelet crashes after enabling the feature.
+- API server crashes related to CSINode updates.
+
+In both cases, component crashes would be evident through standard monitoring of node and control plane health.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -571,11 +663,21 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Yes, the following test scenarios were validated in the Alpha release:
+
+- Upgrade path: API server and Kubelet upgrades were tested with the feature gate enabled, confirming that CSINode updates begin working once both components support the feature.
+
+- Downgrade path: When the feature gate is disabled or components are downgraded, confirmed that CSINode.Allocatable remains at its last value and becomes immutable again.
+
+- upgrade->downgrade->upgrade path: Verified that the full cycle works as expected, with CSINode updates resuming when the feature is re-enabled without requiring additional configuration.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -594,6 +696,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+An operator can determine if this feature is in use by checking the CSIDriver objects in their cluster for the `nodeAllocatableUpdatePeriodSeconds` field. If this field is set on a CSI driver, the feature is being used. This is similar to how operators check for other CSI capabilities through fields in the CSIDriver object, such as `fsGroupPolicy` or `podInfoOnMount`.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -605,13 +709,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] API .status
+  - `VolumeAttachment.Status.Errors[].ErrorCode` will be populated with the gRPC error code when a `ResourceExhausted` error occurs during a driver's `ControllerPublishVolume` RPC.
+  - `CSINode.Spec.Drivers[*].Allocatable.Count` will be updated periodically based on the `nodeAllocatableUpdatePeriodSeconds` configuration in the CSIDriver object.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -630,18 +730,21 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+For this enhancement, the following SLOs are reasonable:
+
+- 99.9% of CSINode updates (both periodic and reactive) should complete within 1 second of being triggered.
+- The introduction of this feature should not increase the overall API server error rate (5xx errors) by more than 0.1%.
+- No measurable impact on pod startup latency, as CSINode updates are performed asynchronously.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+Operators can measure the rate of PATCH/UPDATE calls to the `csinodes` API resource that return a status code of 200. A consistent rate matching the configured `NodeAllocatableUpdatePeriodSeconds` indicates that periodic updates are working as expected:
+
+`apiserver_request_total{group="storage.k8s.io", resource="csinodes", verb=~"PATCH|UPDATE", code="200"}`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -649,6 +752,12 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+While the following metrics could provide more granular visibility into the feature's operation, they weren't added because the Kubernetes API server already exposes metrics that provide sufficient visibility into CSINode update activity more generally (allows for tracking status code responses and latency). 
+
+- `csi_node_updates_total`: Could track `CSINode.Spec.Drivers[*].Allocatable` updates attempted (periodic/reactive).
+- `csi_node_update_errors_total`: Could track failed update attempts.
+- `csi_node_update_duration_seconds`: Could track update latency.
 
 ### Dependencies
 
@@ -672,6 +781,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature primarily depends on CSI drivers implementing the `NodeGetInfo` RPC to report volume attachment limits. If a CSI driver is unavailable, the `CSINode.Spec.Drivers[*].Allocatable` value remains at its last known value. Degraded performance or high error rates in CSI drivers may cause periodic or reactive updates to fail, but this only results in using the last known value, with no impact on existing workloads. 
+
+Beyond CSI drivers, which are already a requirement for volume operations, this feature introduces no additional service dependencies. It builds upon existing Kubernetes components (kubelet and API server) and their normal operation.
 
 ### Scalability
 
@@ -705,7 +818,7 @@ Yes, there will be new API calls to update the `CSINode` object:
 ```
 API call type: PATCH
 Estimated throughput: Depends on the `NodeAllocatableUpdatePeriodSeconds` setting and the frequency of volume attachment failures.
-Originating component: Kubelet, KCM
+Originating component: Kubelet
 ```
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -800,6 +913,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+When the API server is unavailable, `CSINode` update attempts fail and are logged, however, the periodic update goroutines will continue running and retry at their configured intervals. Additionally, `ResourceExhausted` errors cannot trigger immediate updates since `VolumeAttachment` statuses cannot be read. Existing allocatable values remain unchanged and stateful workloads continue running normally. 
+
 ###### What are other known failure modes?
 
 <!--
@@ -815,7 +930,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+No other known failure modes.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
@@ -829,6 +948,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2024-08-08 - Enhancement proposed in sig-storage.
+- 2024-09-25 - Enhancement officially submitted to Kubernetes.
+- 2025-04-23 - Kubernetes v1.33: Enhancement implemented and released in Alpha.
 
 ## Drawbacks
 
