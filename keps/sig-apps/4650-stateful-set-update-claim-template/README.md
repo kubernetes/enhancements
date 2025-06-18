@@ -113,6 +113,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Reconcile all PVCs regardless of Pod revision labels](#reconcile-all-pvcs-regardless-of-pod-revision-labels)
   - [Treat all incompatible PVCs as unavailable replicas](#treat-all-incompatible-pvcs-as-unavailable-replicas)
   - [Integrate with RecoverVolumeExpansionFailure feature](#integrate-with-recovervolumeexpansionfailure-feature)
+  - [Order of Pod / PVC updates](#order-of-pod--pvc-updates)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -186,6 +187,7 @@ Specifically, we will allow modifying the following fields of `spec.volumeClaimT
 * modifying Volume AttributesClass used by the claim (`spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
 * modifying VolumeClaim template's labels (`spec.volumeClaimTemplates.metadata.labels`)
 * modifying VolumeClaim template's annotations (`spec.volumeClaimTemplates.metadata.annotations`)
+
 When `volumeClaimTemplates` is updated, the StatefulSet controller will reconcile the
 PersistentVolumeClaims in the StatefulSet's pods.
 The behavior of updating PersistentVolumeClaim is similar to updating Pod.
@@ -264,7 +266,6 @@ specify how to coordinate the update of PVCs and Pods. Possible values are:
 
 Additionally collect the status of managed PVCs, and show them in the StatefulSet status.
 Some fields in the `status` are updated to reflect the status of the PVCs:
-- claimsReadyReplicas: the number of replicas with all PersistentVolumeClaims ready to use.
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
 
@@ -358,7 +359,7 @@ This might be a good place to talk about core concepts and how they relate.
 When designing the `InPlace` update strategy, we want to reuse the infrastructures controlling Pod rollout.
 We apply the changes to the PVCs before we set new `controller-revision-hash` label.
 New invariance established about PVCs:
-If the Pod has revision A label, all its PVCs are either not existing yet, or updated to revision A.
+If the Pod has revision A label, all its PVCs are either not existing yet, or updated to revision A and ready.
 
 We introduce `controller-revision-hash` label on PVCs to:
 * Record where have progressed, to ensure each PVC is only updated once per rollout.
@@ -420,28 +421,31 @@ but StatefulSet controller should not touch the PVCs and preserve the current be
 Following describes the workflow when `volumeClaimUpdatePolicy` is `InPlace`.
 
 When updating volumeClaimTemplates along with pod template, we will go through the following steps:
-1. Delete the old pod.
-2. Apply the changes to the PVCs used by this replica.
-3. Create the new pod with new `controller-revision-hash` label.
-4. Wait for the new pod and PVCs to be ready.
-5. Advance to the next replica and repeat from step 1.
+1. Apply the changes to the PVCs used by this replica.
+2. Wait for the PVCs to be ready.
+3. Delete the old pod.
+4. Create the new pod with new `controller-revision-hash` label.
+5. Wait for the new pod to be ready.
+6. Advance to the next replica and repeat from step 1.
 
 When only updating the volumeClaimTemplates:
 1. Apply the changes to the PVCs used by this replica.
-2. Update the pod with new `controller-revision-hash` label.
-3. Wait for the PVCs to be ready.
+2. Wait for the PVCs to be ready.
+3. Update the pod with new `controller-revision-hash` label.
 4. Advance to the next replica and repeat from step 1.
 
 Assuming we are updating a replica from revision A to revision B:
 
 | Pod | PVC | Action |
 | --- | --- | --- |
-| - | not existing | create PVC at revision B |
+| not existing | not existing | create PVC at revision B |
 | not existing | at revision A | update PVC to revision B |
 | not existing | at revision B | create Pod at revision B |
+| at revision A | not existing | create PVC at revision B |
 | at revision A | at revision A | update PVC to revision B |
-| at revision A | at revision B | delete Pod or update Pod label |
-| at revision B | existing | wait for Pod/PVC to be ready |
+| at revision A | at revision B | wait for PVC to be ready, then delete Pod or update Pod label |
+| at revision B | not existing | create PVC at revision B |
+| at revision B | existing | wait for Pod to be ready |
 
 Note that when Pod is at revision B but PVC is at revision A, we will not update PVC.
 Such state can only happen when user set `volumeClaimUpdatePolicy` to `InPlace` when the feature-gate of KCM is disabled,
@@ -451,10 +455,16 @@ We require user to initiate another rollout to update the PVCs, to avoid any sur
 Failure cases: don't left too many PVCs being updated in-place. We expect to update the PVCs in order.
 
 - If the PVC update fails, we should block the StatefulSet rollout process.
-  This will also block the creation of new Pod.
-  We should detect common cases (e.g. storage class mismatch) and report events before deleting the old Pod.
-  If this still happens (e.g., because of webhook), We should retry and report events for this.
+  We should retry and report events for this.
   The events and status should look like those when the Pod creation fails.
+  We update PVC before deleting the old Pod, so failure of PVC update should not disrupt running Pods,
+  and user should have time to fix this manually.
+  The failure cases of this kind includes (but not limited to):
+  - immutable fields mismatch (e.g. storageClassName)
+  - webhook
+  - [storage quota](https://kubernetes.io/docs/concepts/policy/resource-quotas/#storage-resource-quota)
+  - [VAC quota](https://kubernetes.io/docs/concepts/policy/resource-quotas/#resource-quota-per-volumeattributesclass)
+  - StorageClass.allowVolumeExpansion not set to true
 
 - While waiting for the PVC to become ready,
   We should update status, just like what we do when waiting for Pod to be ready.
@@ -465,6 +475,8 @@ Failure cases: don't left too many PVCs being updated in-place. We expect to upd
 - If the `volumeClaimTemplates` is updated again when the previous rollout is blocked,
   similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
   user may need to manually deal with the blocking PVCs (update or delete them).
+  - If the PVC cannot become ready because of the old Pod (e.g. unable to schedule),
+    user can delete the Pod and the StatefulSet controller will create a new Pod at new revision.
 
 In all cases, if the user determines the failure of updating PVCs is not critical,
 he can change `volumeClaimUpdatePolicy` back to `OnClaimDelete` to unblock normal Pod rollout.
@@ -1240,6 +1252,21 @@ So we don't know what to set if `volumeClaimTemplates` is smaller than PVC statu
 
 User can still update PVC manually.
 
+### Order of Pod / PVC updates
+
+We've considered delete the Pod while/before updating the PVC, but realized several issues:
+* The admission of PVC update is fairly complex, it can fail for many reasons.
+  We want to make sure the Pod is still running if we cannot update the PVC.
+* As described in [KEP-5381], we want to allow affinity change when the VolumeAttributesClass is updated.
+  Updating PVC and Pod concurrently may trigger a race condition where the Pod can be scheduled to wrong node.
+
+The current order (wait for PVC ready before delete old Pod) has an extra advantage:
+When Pod is ready, it is guaranteed that the PVC is ready too.
+So any existing tools to monitor StatefulSet rollout process does not need to change.
+
+This downside is that the concurrency is lower, so the rolling update may take longer.
+
+[KEP-5381]: https://github.com/kubernetes/enhancements/blob/0602a5f744b8e4e201d7bd90eb69e67f1b9baf62/keps/sig-storage/5381-mutable-pv-affinity/README.md#notesconstraintscaveats-optional
 
 ## Infrastructure Needed (Optional)
 
