@@ -34,7 +34,7 @@ replaces:
 
 stage: "beta"
 
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 milestone:
   alpha: "v1.27"
