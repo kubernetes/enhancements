@@ -29,6 +29,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Object updated by an external component causing a race with the scheduler](#object-updated-by-an-external-component-causing-a-race-with-the-scheduler)
     - [API calls added at a higher rate than execution rate leading to memory explosion](#api-calls-added-at-a-higher-rate-than-execution-rate-leading-to-memory-explosion)
     - [Pod is retried based on an old object](#pod-is-retried-based-on-an-old-object)
+    - [Out-of-tree plugins start using asynchronous API calls framework](#out-of-tree-plugins-start-using-asynchronous-api-calls-framework)
 - [Design Details](#design-details)
   - [Proposal C: Create a separate component managing API calls, but treat the cache as a middleware](#proposal-c-create-a-separate-component-managing-api-calls-but-treat-the-cache-as-a-middleware)
   - [Summary of API call management](#summary-of-api-call-management)
