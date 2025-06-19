@@ -1,4 +1,4 @@
-# KEP-3695: Extend the PodResources API to include resources allocated by DRA
+ KEP-3695: Extend the PodResources API to include resources allocated by DRA
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -36,17 +36,17 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -107,7 +107,7 @@ to allow querying specific pods for their allocated resources.
 returns the list of PodResources for *all* pods across *all* namespaces in the
 cluster). That is, it allows one to specify a specific pod and namespace to
 retrieve PodResources from, rather than having to query all of them all at
-once.
+once. `Get()` returns error if the pod is known to the kubelet, but is terminated.
 
 The full PodResources API (including our proposed extensions) can be seen below:
 
@@ -274,8 +274,9 @@ These cases will be added in the existing e2e tests:
 
 #### Beta
 
-- [ ] Gather feedback from consumers of the DRA feature.
-- [ ] No major bugs reported in the previous cycle.
+- [x] Gather feedback from consumers of the DRA feature.
+  - Integration with the NVIDIA DCGM exporter (https://github.com/NVIDIA/dcgm-exporter/pull/501) to gather per pod Dynamic Resources managed by [k8s-dra-driver-gpu](https://github.com/NVIDIA/k8s-dra-driver-gpu).
+- [x] No major bugs reported in the previous cycle.
 
 #### GA
 
@@ -333,7 +334,7 @@ The API becomes available again. The API is stateless, so no recovery is needed,
 
 ###### Are there any tests for feature enablement/disablement?
 
-e2e test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code.
+e2e test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. (https://github.com/kubernetes/kubernetes/pull/116846)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -347,7 +348,12 @@ Kubelet may fail to start. The new API may report inconsistent data, or may caus
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not Applicable.
+Not Applicable. Because this change:
+
+- Is read-only in the kubelet’s in-memory state.
+- Is behind a feature gate, so turning it off simply disables the new endpoints without affecting any existing behavior.
+
+In practice, restart the kubelet with the gate disabled (rollback) or re-enabled (upgrade), and the API behavior reverts or returns without loss of data or consistency. Therefore we don’t need a special upgrade/downgrade test matrix for this KEP.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -372,7 +378,9 @@ Call the PodResources API and see the result.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A.
+100% in normal operation. The proposed API exposes in read only mode kubelet internal data, critical for functioning of the kubelet.
+This data has to be available 100% of the time for the proper functioning of the kubelet, thus is expected to be available 100% of time.
+The only possible error source is the API calls being throttled by the rate-limiting introduced with the GA graduation of the parent KEP 606.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -408,29 +416,35 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+No. Enabling this feature does not change the number of API objects returned. But it may increase the size of each object whenever there are Dynamic Resources to report where each ContainerResources now has an extra dynamic_resources field.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No. Feature is out of existing any paths in kubelet.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+Negligible amount of CPU and memory. Because the API is purely read-only and piggy-backs on the kubelet’s existing cache and checkpointing machinery, exposing Dynamic Resources incurs only similar minimal serialization and storage as CPUManager and DeviceManager—so any extra CPU, memory, disk, or I/O impact is negligible.
 
-DDOSing the API can lead to resource exhaustion.
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No, because the endpoint queries existing data structures inside the kubelet.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A.
+No impact, the feature is node-local.
 
 ###### What are other known failure modes?
 
-The API will always return a well-known error. In normal operation, the API is expected to never return an error and always return a valid response, because it utilizes internal kubelet data which is always available. Bugs may cause the API to return unexpected errors, or to return inconsistent data. Consumers of the API should treat unexpected errors as bugs of this API.
+feature gate disabled: The API will always return a well-known error. In normal operation, the API is expected to never return an error and always return a valid response, because it utilizes internal kubelet data which is always available.
+Bugs may cause the API to return unexpected errors, or to return inconsistent data.
+Consumers of the API should treat unexpected errors as bugs of this API.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A.
+Check the error code to learn if the consumer of the API is being throttle by rate limiting introduced in the parent KEP 606.
+Check the kubelet logs to learn about resource allocation errors.
 
 ## Implementation History
 
@@ -438,6 +452,12 @@ N/A.
 
 - 2024-09-10: KEP Updated to reflect the current state of the implementation.
 
+- 2025-05-27: Beta version of the KEP.
+
 ## Drawbacks
 
+N/A
+
 ## Alternatives
+
+N/A

@@ -4,8 +4,8 @@ authors:
   - "@moshe010"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
-creation-date: implementable
+status: implementable
+creation-date: 2023-02-07
 reviewers:
   - "@ffromani"
   - "@swatisehgal"
@@ -18,17 +18,17 @@ see-also:
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.27"
+latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.27"
-  beta: "v1.33"
+  beta: "v1.34"
   stable: "v1.36"
 
 # The following PRR answers are required at alpha release
