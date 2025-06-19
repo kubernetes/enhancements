@@ -122,6 +122,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Setting a special APIGroup suffix instead of special verb](#setting-a-special-apigroup-suffix-instead-of-special-verb)
   - [Check permission intersection of impersonator and target user](#check-permission-intersection-of-impersonator-and-target-user)
   - [Expand RBAC/SAR](#expand-rbacsar)
+    - [Conditional Authorization](#conditional-authorization)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -171,7 +172,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This is to add additional access control over the existing impersonation action. An impersonator
 who impersonates another user is required to have the additional permissions to impersonate on
-certain group resources and verbs.
+certain group resources and verbs. In order for the request to succeed, the impersonated principal
+must have permission to perform the request, just like before.
 
 ## Motivation
 Today an impersonator can impersonate another user if the impersonator has the permission of
@@ -222,16 +224,31 @@ and the user must not be a node (username with a prefix of `system:node:`) and t
 not be a service account (username with a prefix of `system:serviceaccount:`)
 The resource names must be usernames, group names or values in the user extras accoringly.
 - `impersonate:serviceaccount` that limits the impersonator to impersonate the serviceaccount with
-the certain name/namespace. The resources must be `serviceaccounts`.
+the certain name/namespace. The resource must be `serviceaccounts`.
 - `impersonate:node` that limits the impersonator to impersonate the node only. The resource
 must be `nodes`, and the resourceName should be the name of the node. The impersonator must have this
 verb to impersonate a node.
 - `impersonate:scheduled-node` that limits the impersonator to impersonate the node the 
-impersonator is running on. The resources must be `nodes`.
+impersonator is running on. The resources must be `nodes`. For a controller impersonating the node
+that it is running on, it will need to know the node name obtained via downward API:
+```yaml
+env:
+- name: MY_NODE_NAME
+  valueFrom:
+    fieldRef:
+    fieldPath: spec.nodeName
+```
+and then set in the kubeconfig:
+```go
+kubeConfig, _ := clientcmd.BuildConfigFromFlags("", "")
+kubeConfig.Impersonate = rest.ImpersonationConfig{
+	UserName: "system:node:" + os.Getenv("MY_NODE_NAME"),
+}
+```
 
-For clusters that use RBAC authz mode, two permissions will be required for impersonation. For example:
-to express "system:serviceaccount:default:default can impersonate a user named someUser solely to list
-and watch pods in the default namespace."
+Two permissions will be required for impersonation. An example of how to express 
+"`system:serviceaccount:default:default` can impersonate a user named someUser solely to list
+and watch pods in the default namespace." using Kubernetes RBAC:
 1. The permission to constrained impersonate a certain user. This is a cluster scoped permission.
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -240,7 +257,7 @@ metadata:
   name: constrained-impersonate-only-someUser
 rules:
 - apiGroups:
-  - authentications.k8s.io
+  - authentication.k8s.io
   resources:
   - users # allowed resources are users/groups/userextras/uids
   resourceNames:
@@ -255,7 +272,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: impersonate
+  name: constrained-impersonate-only-someUser
 subjects:
   - kind: ServiceAccount
     name: default
@@ -267,7 +284,7 @@ cluster scoped or namespace scoped.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: impersonate-action
+  name: impersonate-allow-only-listwatch-pods
   namespace: default
 rules:
 - apiGroups:
@@ -281,12 +298,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: impersonate
+  name: impersonate-allow-only-listwatch-pods
   namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: impersonate-action
+  name: impersonate-allow-only-listwatch-pods
 subjects:
   - kind: ServiceAccount
     name: default
@@ -306,7 +323,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: users
     name: someUser
     verb: impersonate:user-info
@@ -433,10 +450,10 @@ in the `default` namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonate:vm:console
+  name: impersonate-user:vm:console
 rules:
 - apiGroups:
-  - authentications.k8s.io
+  - authentication.k8s.io
   resources:
   - users
   verbs:
@@ -445,11 +462,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: impersonate:vm:console
+  name: impersonate-user:vm:console
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: impersonate:vm:console
+  name: impersonate-user:vm:console
 subjects:
 - kind: ServiceAccount
   name: deputy
@@ -458,7 +475,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: impersonate:vm:console
+  name: impersonate:vm:console:get
   namespace: default
 rules:
   - apiGroups:
@@ -471,12 +488,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: impersonate-user
+  name: impersonate:vm:console:get
   namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: impersonate:vm:console
+  name: impersonate:vm:console:get
 subjects:
 - kind: ServiceAccount
   name: deputy
@@ -499,9 +516,9 @@ Consider including folks who also work outside the SIG or subproject.
 #### The verbs with `impersonate-on:` prefix has been used by other component.
 
 There is possibility that the verbs with prefix of `impersonate-on:` have been
-used by other component, and been set in Role/ClusterRole. Since `impersonate`
+used by other component, and been set in Role/ClusterRole. Since `impersonate:<type>`
 permission is also required for impersonator, the component will not get more
-power when permssion of `impersonate-on:` is given.
+power when permission of `impersonate-on:` is given.
 
 #### High request volume leads to high load on authorization chain.
 
@@ -543,7 +560,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: users
     name: someUser
     verb: impersonate:user-info
@@ -559,13 +576,13 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: groups
     name: someGroup
     verb: impersonate:user-info
   user: impersonator
 ```
-will be sent to the authorizer
+will be sent to the authorizer for each group.
 
 #### Header `Impersonate-Uid` is set
 
@@ -575,13 +592,13 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: uids
     name: someUID
     verb: impersonate:user-info
   user: impersonator
 ```
-will be sent to the authorizer
+will be sent to the authorizer.
 
 #### Header with prefix `Impersonate-Extra-` is set
 
@@ -591,14 +608,14 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: userextras
     subresource: extraKey
     name: extraValue
     verb: impersonate:user-info
   user: impersonator
 ```
-will be sent to the authorizer
+will be sent to the authorizer for each key and value pair.
 
 ### Verb `impersonate:serviceaccount`
 
@@ -610,7 +627,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: serviceaccounts
     name: serviceaccount-name
     namespace: serviceaccount-namespace
@@ -628,7 +645,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: nodes
     name: someNode
     verb: impersonate:nodes
@@ -650,7 +667,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: nodes
     verb: impersonate:scheduled-node
   user: impersonator
@@ -661,7 +678,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 spec:
   resourceAttributes:
-    group: authentications.k8s.io
+    group: authentication.k8s.io
     resource: nodes
     name: node1
     verb: impersonate:node
@@ -756,8 +773,8 @@ This can be done with:
   - The impersonator cannot impersonate alice.
   - The impersonator can impersonate on listing and getting pods
   - The impersonator cannot impersonate on updating pods
-  - The impersonator can impersonate on getting pod/exec subresource
-  - The impersonator cannot impersonate on get pod/log subresource
+  - The impersonator can impersonate on getting pods/exec subresource
+  - The impersonator cannot impersonate on get pods/log subresource
   For RBAC authz mode, this might look like:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -766,7 +783,7 @@ metadata:
   name: impersonate-bob
 rules:
 - apiGroups:
-  - authentications.k8s.io
+  - authentication.k8s.io
   resources:
   - users
   resourceNames:
@@ -803,7 +820,7 @@ metadata:
   name: impersonate-scheduled-node
 rules:
 - apiGroups:
-  - authentications.k8s.io
+  - authentication.k8s.io
   resources:
   - nodes
   verbs:
@@ -1014,7 +1031,7 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-There is not impact on rollout, the impersonator with existing impersonate permission can still perform the action.
+There is no impact on rollout, the impersonator with existing impersonate permission can still perform the action.
 When the system rollback, impersonator with `impersonate-on:` and `impersonate:` permission will no longer
 be authorized to impersonate. Impersonator will need to have the unscoped impersonate permission.
 
@@ -1025,9 +1042,16 @@ be authorized to impersonate. Impersonator will need to have the unscoped impers
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-authorization_attempts_total shows greatly increased number.
-authorization_duration_seconds_bucket shows greatly increased number of request
-with longer duration.
+
+`apiserver_authorization_decisions_total` shows greatly increased number.
+However, we cannot identify the impersonation action from the metrics today.
+We could introduce a new metrics `apiserver_authorization_decisions_total_by_verb` so that filtering
+based on impersonation related verbs can tell the number.
+We could also introduce a new metrics `apiserver_authorization_decisions_duration_seconds`.
+
+When webhook authorizer is used, if `apiserver_authorization_webhook_evaluations_total` and
+`apiserver_authorization_webhook_duration_seconds` shows greatly increase number, users should
+also pay attention.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1382,7 +1406,7 @@ the action when impersonating.
 
 ### Expand RBAC/SAR
 
-Introduce additional API to define more fine grained access control rule, and ref the rule in SAR.
+Introduce additional API to define more fine-grained access control rule, and ref the rule in SAR.
 One example is
 
 ```yaml
@@ -1410,6 +1434,14 @@ One example is
 And authorizer checks the accessRule on whether a certain impersonate action is allowed. This is a more
 complicated approach that requires changes on existing RBAC/SAR, while the current proposal does not
 introduce change on RBAC/SAR.
+
+#### Conditional Authorization
+
+Conditional authorization is the emerging work to provide more complicated authorization policy
+with CEL expressions. Potentially it would be able to reduce the number of permission checks for the impersonation
+in this proposal. The work is still in very early stage, and will bring many changes in the exising authorization
+model. It is possible to enhance constrained impersonation in this proposal with conditional authorization in the
+future.
 
 ## Infrastructure Needed (Optional)
 
