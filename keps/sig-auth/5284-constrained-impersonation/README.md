@@ -118,12 +118,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Use <code>impersonate:user-info</code> instead of <code>impersonate:serviceaccount</code> and <code>impersonate:node</code>](#use-impersonateuser-info-instead-of-impersonateserviceaccount-and-impersonatenode)
-  - [Subject Access Review](#subject-access-review)
+  - [Controller participation in SubjectAccessReview for impersonation](#controller-participation-in-subjectaccessreview-for-impersonation)
   - [Setting a special APIGroup suffix instead of special verb](#setting-a-special-apigroup-suffix-instead-of-special-verb)
   - [Check permission intersection of impersonator and target user](#check-permission-intersection-of-impersonator-and-target-user)
   - [Expand RBAC/SAR](#expand-rbacsar)
     - [Conditional Authorization](#conditional-authorization)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -905,6 +904,8 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Determine if additional tests are necessary
 - Ensure reliability of existing tests
 - Determine if some mechanism should be introduced to reduce the extra permission checks
+- Alternatives have been reviewed, and we have consensus not to switch to an alternative
+  approach.
 
 #### GA
 
@@ -1122,7 +1123,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
+- [x] Other (treat as last resort)
   - Details: User creates the permission and check if the impersonate on certain action
   works.
 
@@ -1367,7 +1368,7 @@ verbs would delegation of permissions and support more expressions:
 serviceaccounts in a certain namespace.
 - Verb `impersonate:node` can support a permission to allow impersonating any node.
 
-### Subject Access Review
+### Controller participation in SubjectAccessReview for impersonation
 
 The controller can sends a SAR request, and then uses its own permission to perform the action.
 The main difference from impersonation is:
@@ -1439,14 +1440,6 @@ introduce change on RBAC/SAR.
 
 Conditional authorization is the emerging work to provide more complicated authorization policy
 with CEL expressions. Potentially it would be able to reduce the number of permission checks for the impersonation
-in this proposal. The work is still in very early stage, and will bring many changes in the exising authorization
+in this proposal. The work is still in very early stage, and will bring many changes in the existing authorization
 model. It is possible to enhance constrained impersonation in this proposal with conditional authorization in the
 future.
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
