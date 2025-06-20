@@ -1,4 +1,4 @@
-# KEP-4205: PSI Based Node Conditions
+# KEP-4205: Expose PSI Metrics
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -8,22 +8,18 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
-    - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-    - [Phase 1](#phase-1)
       - [CPU](#cpu)
       - [Memory](#memory)
       - [IO](#io)
-    - [Phase 2 to add PSI based actions.](#phase-2-to-add-psi-based-actions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha](#phase-1-alpha)
-    - [Phase 2: Alpha](#phase-2-alpha)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
     - [Deprecation](#deprecation)
@@ -85,7 +81,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes adding support in kubelet to read Pressure Stall Information (PSI) metric pertaining to CPU, Memory and IO resources exposed from cAdvisor and runc. This will enable kubelet to report node conditions which will be utilized to prevent scheduling of pods on nodes experiencing significant resource constraints.
+This KEP proposes adding support in kubelet to read Pressure Stall Information (PSI) metric pertaining to CPU, Memory and IO resources exposed from cAdvisor and runc.
 
 ## Motivation
 
@@ -98,11 +94,6 @@ In short, PSI metric are like barometers that provide fair warning of impending 
 This proposal aims to:
 1. Enable the kubelet to have the PSI metric of cgroupv2 exposed from cAdvisor and Runc.
 2. Enable the pod level PSI metric and expose it in the Summary API.
-3. Utilize the node level PSI metric to set node condition and node taints.
-
-It will have two phases:
-Phase 1: includes goal 1, 2 
-Phase 2: includes goal 3
 
 ### Non-Goals
 
@@ -119,23 +110,13 @@ Today, to identify disruptions caused by resource crunches, Kubernetes users nee
 install node exporter to read PSI metric. With the feature proposed in this enhancement, 
 PSI metric will be available for users in the Kubernetes metrics API.
 
-#### Story 2
-
-Kubernetes users want to prevent new pods to be scheduled on the nodes that have resource starvation. By using PSI metric, the kubelet will set Node Condition to avoid pods being scheduled on nodes under high resource pressure. The node controller could then set a [taint on the node based on these new Node Conditions](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/#taint-nodes-by-condition).
-
 ### Risks and Mitigations
 
-There are no significant risks associated with Phase 1 implementation that involves integrating
+There are no significant risks associated with integrating
 the PSI metric in kubelet from either from cadvisor runc libcontainer library or kubelet's CRI runc libcontainer implementation which doesn't involve any shelled binary operations.
-
-Phase 2 involves utilizing the PSI metric to report node conditions. There is a potential
-risk of early reporting for nodes under pressure. We intend to address this concern
-by conducting careful experimentation with PSI threshold values to identify the optimal
-default threshold to be used for reporting the nodes under heavy resource pressure.
 
 ## Design Details
 
-#### Phase 1
 1. Add new Data structures PSIData and PSIStats corresponding to the PSI metric output format as following:
 
 ```
@@ -144,16 +125,25 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=0
 ```
 
 ```go
+// PSI data for an individual resource.
 type PSIData struct {
-	Avg10  *float64 `json:"avg10"`
-	Avg60  *float64 `json:"avg60"`
-	Avg300 *float64 `json:"avg300"`
-	Total  *float64 `json:"total"`
+	// Total time duration for tasks in the cgroup have waited due to congestion.
+	// Unit: nanoseconds.
+	Total  uint64 `json:"total"`
+	// The average (in %) tasks have waited due to congestion over a 10 second window.
+	Avg10  float64 `json:"avg10"`
+	// The average (in %) tasks have waited due to congestion over a 60 second window.
+	Avg60  float64 `json:"avg60"`
+	// The average (in %) tasks have waited due to congestion over a 300 second window.
+	Avg300 float64 `json:"avg300"`
 }
 
+// PSI statistics for an individual resource.
 type PSIStats struct {
-	Some *PSIData `json:"some,omitempty"`
-	Full *PSIData `json:"full,omitempty"`
+	// PSI data for some tasks in the cgroup.
+	Some PSIData `json:"some,omitempty"`
+	// PSI data for all tasks in the cgroup.
+	Full PSIData `json:"full,omitempty"`
 }
 ```
 
@@ -165,7 +155,7 @@ metric data will be available through CRI instead.
 ```go
 type CPUStats struct { 
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -173,7 +163,7 @@ type CPUStats struct {
 ```go
 type MemoryStats struct {
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 ```
 
@@ -185,7 +175,7 @@ type IOStats struct {
 	Time metav1.Time `json:"time"`
 
 	// PSI stats of the overall node
-	PSI cadvisorapi.PSIStats `json:"psi,omitempty"`
+	PSI *PSIStats `json:"psi,omitempty"`
 }
 
 type NodeStats struct {
@@ -193,49 +183,6 @@ type NodeStats struct {
 	IO *IOStats `json:"io,omitempty"`
 }
 ```
-
-#### Phase 2 to add PSI based actions.
-**Note:** These actions are tentative, and will depend on different the outcome from testing and discussions with sig-node members, users, and other folks. 
-
-1. Introduce a new kubelet config parameter, pressure threshold, to let users specify the pressure percentage beyond which the kubelet would report the node condition to disallow workloads to be scheduled on it.
-
-2. Add new node conditions corresponding to high PSI (beyond threshold levels) on CPU, Memory and IO.
-
-```go
-// These are valid conditions of the node. Currently, we don't have enough information to decide
-// node condition.
-const (
-…
-	// Conditions based on pressure at system level cgroup.
-	NodeSystemCPUContentionPressure    NodeConditionType = "SystemCPUContentionPressure"
-	NodeSystemMemoryContentionPressure NodeConditionType = "SystemMemoryContentionPressure"
-	NodeSystemDiskContentionPressure   NodeConditionType = "SystemDiskContentionPressure"
-
-	// Conditions based on pressure at kubepods level cgroup.
-	NodeKubepodsCPUContentionPressure    NodeConditionType = "KubepodsCPUContentionPressure"
-	NodeKubepodsMemoryContentionPressure NodeConditionType = "KubepodsMemoryContentionPressure"
-	NodeKubepodsDiskContentionPressure   NodeConditionType = "KubepodsDiskContentionPressure"
-)
-```
-
-3. Kernel collects PSI data for 10s, 60s and 300s timeframes. To determine the optimal observation timeframe, it is necessary to conduct tests and benchmark performance. 
-In theory, 10s interval might be rapid to taint a node with NoSchedule effect. Therefore, as an initial approach, opting for a 60s timeframe for observation logic appears more appropriate. 
-
-  Add the observation logic to add node condition and taint as per following scenarios:
-  * If avg60 >= threshold, then record an event indicating high resource pressure.
-  * If avg60 >= threshold and is trending higher i.e. avg10 >= threshold, then set Node Condition for high resource contention pressure. This should ensure no new pods are scheduled on the nodes under heavy resource contention pressure.
-  * If avg60 >= threshold for a node tainted with NoSchedule effect,  and is trending lower i.e. avg10 <= threshold, record an event mentioning the resource contention pressure is trending lower.
-  * If avg60 < threshold for a node tainted with NoSchedule effect, remove the NodeCondition.
-
-4. Collaborate with sig-scheduling to modify TaintNodesByCondition feature to integrate new taints for the new Node Conditions introduced in this enhancement.
-
-* `node.kubernetes.io/memory-contention-pressure=:NoSchedule`
-* `node.kubernetes.io/cpu-contention-pressure=:NoSchedule`
-* `node.kubernetes.io/disk-contention-pressure=:NoSchedule`
-
-5. Perform experiments to finalize the default optimal pressure threshold value.
-
-6. Add a new feature gate PSINodeCondition, and guard the node condition related logic behind the feature gate. Set `--feature-gates=PSINodeCondition=true` to enable the feature.
 
 ### Test Plan
 
@@ -282,6 +229,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 - `k8s.io/kubernetes/pkg/kubelet/server/stats`: `2023-10-04` - `74.4%`
+- `k8s.io/kubernetes/pkg/kubelet/stats`: `2025-06-10` - `77.4%`
 
 ##### Integration tests
 
@@ -300,6 +248,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+Within Kubernetes, the feature is implemented solely in kubelet. Therefore a Kubernetes integration test doesn't apply here.
+
 Any identified external user of either of these endpoints (prometheus, metrics-server) should be tested to make sure they're not broken by new fields in the API response. 
 
 ##### e2e tests
@@ -314,23 +264,15 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- `test/e2e_node/summary_test.go`: `https://storage.googleapis.com/k8s-triage/index.html?test=test%2Fe2e_node%2Fsummary_test.go`
 
 ### Graduation Criteria
 
-#### Phase 1: Alpha
+#### Alpha
 
 - PSI integrated in kubelet behind a feature flag.
 - Unit tests to check the fields are populated in the 
   Summary API response.
-
-#### Phase 2: Alpha
-
-- Implement Phase 2 of the enhancement which enables kubelet to 
-report node conditions based off PSI values.
-- Initial e2e tests completed and enabled if CRI implementation supports
-it.
-- Add documentation for the feature.
 
 #### Beta
 
@@ -339,7 +281,8 @@ it.
 - Allowing time for feedback.
 
 #### GA
-- TBD
+- Gather evidence of real world usage.
+- No major issue reported.
 
 #### Deprecation
 
@@ -406,14 +349,8 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PSINodeCondition
+  - Feature gate name: KubeletPSI
   - Components depending on the feature gate: kubelet
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -421,7 +358,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Not in Phase 1. Phase 2 is TBD in K8s 1.31.
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -438,9 +375,8 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-When the feature is disabled, the Node Conditions will still exist on the nodes. However,
-they won't be any consumers of these node conditions. When the feature is re-enabled,
-the kubelet will override out of date Node Conditions as expected.
+No PSI metrics will be available in kubelet Summary API nor Prometheus metrics if the
+feature was rolled back.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -476,12 +412,33 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The PSI metrics in kubelet Summary API and Prometheus metrics are for monitoring purpose,
+and are not used by Kubernetes itself to inform workload lifecycle decisions. Therefore it should
+not impact running workloads.
+
+If there is a bug and kubelet fails to serve the metrics during rollout, the kubelet Summary API
+and Prometheus metrics could be corrupted, and other components that depend on those metrics could
+be impacted. Disabling the feature gate / rolling back the feature should be safe.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+PSI metrics exposed at kubelet `/metrics/cadvisor` endpoint:
+
+```
+container_pressure_cpu_stalled_seconds_total
+container_pressure_cpu_waiting_seconds_total
+container_pressure_memory_stalled_seconds_total
+container_pressure_memory_waiting_seconds_total
+container_pressure_io_stalled_seconds_total
+container_pressure_io_waiting_seconds_total
+```
+
+kubelet Summary API at the `/stats/summary` endpoint.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -491,11 +448,22 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Test plan:
+- Create pods when the feature is alpha and disabled
+- Upgrade kubelet so the feature is beta and enabled
+  - Pods should continue to run
+  - PSI metrics should be reported in kubelet Summary API and Prometheus metrics
+- Roll back kubelet to previous version
+  - Pods should continue to run
+  - PSI metrics should no longer be reported
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No
 
 ### Monitoring Requirements
 
@@ -513,12 +481,8 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-For Phase 1:
 Use `kubectl get --raw "/api/v1/nodes/{$nodeName}/proxy/stats/summary"` to call Summary API. If the PSIStats field is seen in the API response,
 the feature is available to be used by workloads.
-
-For Phase 2:
-TBD
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -531,13 +495,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: The feature is only about metrics surfacing. One can know that it is working by reading the metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -555,6 +514,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
+
+kubelet Summary API and Prometheus metrics should continue serving traffics meeting their originally targeted SLOs
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -658,10 +619,12 @@ NA
 ## Implementation History
 
 - 2023/09/13: Initial proposal
+- 2025/06/10: Drop Phase 2 from this KEP. Phase 2 will be tracked in its own KEP to allow separate milestone tracking
+- 2025/06/10: Update the proposal with Beta requirements
 
 ## Drawbacks
 
-No drawbacks in Phase 1 identified. There's no reason the enhancement should not be
+No drawbacks identified. There's no reason the enhancement should not be
 implemented. This enhancement now makes it possible to read PSI metric without installing
 additional dependencies
 
