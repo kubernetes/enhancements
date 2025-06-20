@@ -279,6 +279,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Feature gate is enabled by default.
 - Extend e2e test coverage.
 - Allowing time for feedback.
+- Performance testing to verify:
+    - Verification enabling PSI on nodes doesn't introduce excessive CPU or memory usage in the kernel
+    - PSI metrics collection doesn't introduce excessive CPU or memory usage increase in the kubelet
 
 #### GA
 - Gather evidence of real world usage.
