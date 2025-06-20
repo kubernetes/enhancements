@@ -1,3 +1,5 @@
 kep-number: 4816
 alpha:
   approver: "@jpbetz"
+beta:
+  approver: "@johnbelamaric"
