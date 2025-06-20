@@ -224,7 +224,7 @@ know that this has succeeded?
   * modifying Volume AttributesClass used by the claim( `spec.volumeClaimTemplates.spec.volumeAttributesClassName`)
   * modifying VolumeClaim template's labels (`spec.volumeClaimTemplates.metadata.labels`)
   * modifying VolumeClaim template's annotations (`spec.volumeClaimTemplates.metadata.annotations`)
-* Add `.spec.volumeClaimUpdatePolicy` allowing users to decide how the volume claim will be updated: in-place or on PVC deletion.
+* Add `.spec.volumeClaimUpdateStrategy` allowing users to decide how the volume claim will be updated: in-place or on PVC deletion.
 
 
 ### Non-Goals
@@ -259,16 +259,77 @@ Change API server to allow specific updates to `volumeClaimTemplates` of a State
    * `spec.volumeClaimTemplates.metadata.labels`
    * `spec.volumeClaimTemplates.metadata.annotations`
 
-Introduce a new field in StatefulSet `spec`: `volumeClaimUpdatePolicy` to
-specify how to coordinate the update of PVCs and Pods. Possible values are:
+Introduce a new field in StatefulSet `spec`: `volumeClaimUpdateStrategy` to
+specify how to coordinate the update of PVCs and Pods.
+It is defined as a struct to allow future extensions.
+Possible types are:
 - `OnClaimDelete`: the default value, only update the PVC when the the old PVC is deleted.
 - `InPlace`: patch the PVC in-place if possible. Also includes the `OnClaimDelete` behavior.
 
+```golang
+type StatefulSetSpec struct {
+	// volumeClaimUpdateStrategy indicates how PersistentVolumeClaims should be
+	// updated to match the volumeClaimTemplates.
+	// +optional
+	VolumeClaimUpdateStrategy StatefulSetVolumeClaimUpdateStrategy
+}
+
+// StatefulSetVolumeClaimUpdateStrategy indicates the strategy that the StatefulSet
+// controller will use to update PersistentVolumeClaims. It includes any additional parameters
+// necessary to perform the update for the indicated strategy.
+type StatefulSetVolumeClaimUpdateStrategy struct {
+	// Type indicates the type of the StatefulSetVolumeClaimUpdateStrategy.
+	Type StatefulSetVolumeClaimUpdateStrategyType
+}
+
+// StatefulSetVolumeClaimUpdateStrategyType is a string enumeration type that enumerates
+// all possible update strategies for the PersistentVolumeClaims managed by StatefulSet.
+type StatefulSetVolumeClaimUpdateStrategyType string
+
+const (
+	// InPlaceStatefulSetVolumeClaimUpdateStrategy indicates that the updates to
+	// volumeClaimTemplate will be propagated to the managed PersistentVolumeClaims
+	// before updating the Pods. Claims are recreated at the same revision as the corresponding Pod.
+	// The update is in-place without interruption or data loss.
+	InPlaceStatefulSetVolumeClaimUpdateStrategy StatefulSetVolumeClaimUpdateStrategyType = "InPlace"
+	// OnClaimDeleteStatefulSetVolumeClaimUpdateStrategy triggers the legacy behavior.
+	// Updates to volumeClaimTemplate only affects the new claims. Version
+	// tracking and ordered rolling updates are disabled. Claims are recreated
+	// from the StatefulSetSpec when they are manually deleted.
+	OnClaimDeleteStatefulSetVolumeClaimUpdateStrategy StatefulSetVolumeClaimUpdateStrategyType = "OnClaimDelete"
+)
+```
 
 Additionally collect the status of managed PVCs, and show them in the StatefulSet status.
 Some fields in the `status` are updated to reflect the status of the PVCs:
 - currentRevision, updateRevision, currentReplicas, updatedReplicas
   are updated to reflect the status of PVCs.
+
+```diff
+ // StatefulSetStatus represents the current state of a StatefulSet.
+ type StatefulSetStatus struct {
+-	// currentReplicas is the number of Pods created by the StatefulSet controller from the StatefulSet version
++	// currentReplicas is the number replicas with PersistentVolumeClaims updated to and Pods created from the StatefulSet version
+ 	// indicated by currentRevision.
+ 	CurrentReplicas int32
+ 
+-	// updatedReplicas is the number of Pods created by the StatefulSet controller from the StatefulSet version
++	// updatedReplicas is the number replicas with PersistentVolumeClaims updated to and Pods created from the StatefulSet version
+ 	// indicated by updateRevision.
+ 	UpdatedReplicas int32
+ 
+-	// currentRevision, if not empty, indicates the version of the StatefulSet used to generate Pods in the
++	// currentRevision, if not empty, indicates the version of the StatefulSet used to generate PersistentVolumeClaims and Pods in the
+ 	// sequence [0,currentReplicas).
+ 	CurrentRevision string
+ 
+-	// updateRevision, if not empty, indicates the version of the StatefulSet used to generate Pods in the sequence
++	// updateRevision, if not empty, indicates the version of the StatefulSet used to generate PersistentVolumeClaims and Pods in the sequence
+ 	// [replicas-updatedReplicas,replicas)
+ 	UpdateRevision string
+ }
+```
+We will decrease `currentReplicas` when we start to update the PVCs, and increase `updatedReplicas` when we create the new Pods.
 
 With these changes, user can still use `kubectl rollout status` to monitor the update process,
 both for automated patching and for the PVCs that need manual intervention.
@@ -285,8 +346,9 @@ to ensure we have the correct version of PVC in cache when determining whether t
 
 Additionally watch for events from PVCs, in order to kickoff the update process when the PVC becomes ready.
 
-If `volumeClaimUpdatePolicy` is `OnClaimDelete`, nothing changes. This field acts like a per-StatefulSet feature-gate.
-The changes described below applies only for `InPlace` policy.
+If the `volumeClaimUpdateStrategy` field is set to `OnClaimDelete`, nothing changes.
+To opt in to the new behavior, the `inPlace` policy should be used.
+This new behaviour is described below.
 
 Include `volumeClaimTemplates` in the `ControllerRevision`.
 
@@ -294,7 +356,7 @@ Since modifying `volumeClaimTemplates` will change the hash,
 Add support for updating `controller-revision-hash` label of the Pod without deleting and recreating the Pod,
 if the pod template is not changed.
 
-Before creating a new Pod, or, if the Pod template is not changed, updating the label,
+Before deleting an old Pod, or, if the Pod template is not changed, updating the label,
 use server-side apply to update the PVCs used by the Pod.
 
 The patch used in server-side apply is the volumeClaimTemplates in the StatefulSet, except:
@@ -418,9 +480,9 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-When `volumeClaimUpdatePolicy` is `OnClaimDelete`, APIServer should accept the changes to `volumeClaimTemplates`,
+When `volumeClaimUpdateStrategy` is `OnClaimDelete`, APIServer should accept the changes to `volumeClaimTemplates`,
 but StatefulSet controller should not touch the PVCs and preserve the current behaviour.
-Following describes the workflow when `volumeClaimUpdatePolicy` is `InPlace`.
+Following describes the workflow when `volumeClaimUpdateStrategy` is `InPlace`.
 
 When updating volumeClaimTemplates along with pod template, we will go through the following steps:
 1. Apply the changes to the PVCs used by this replica.
@@ -450,18 +512,18 @@ Assuming we are updating a replica from revision A to revision B:
 | at revision B | existing | wait for Pod to be ready |
 
 Note that when Pod is at revision B but PVC is at revision A, we will not update PVC.
-Such state can only happen when user set `volumeClaimUpdatePolicy` to `InPlace` when the feature-gate of KCM is disabled,
+Such state can only happen when user set `volumeClaimUpdateStrategy` to `InPlace` when the feature-gate of KCM is disabled,
 or disable the previously enabled feature-gate.
 We require user to initiate another rollout to update the PVCs, to avoid any surprise.
 
-When `volumeClaimUpdatePolicy` is updated from `OnClaimDelete` to `InPlace`,
+When `volumeClaimUpdateStrategy` is updated from `OnClaimDelete` to `InPlace`,
 StatefulSet controller will begin to add claim templates to ControllerRevision,
 which will change its hash and trigger an rollout.
 The rollout works like a volumeClaimTemplates only rollout above.
 In this case, step 3 will be no-op if PVC is not changed actually (apart from adding the new controller-revision-hash label),
 so the rollout should proceed really fast.
 
-When `volumeClaimUpdatePolicy` is updated from `InPlace` to `OnClaimDelete`,
+When `volumeClaimUpdateStrategy` is updated from `InPlace` to `OnClaimDelete`,
 StatefulSet controller will begin to remove claim templates to ControllerRevision,
 which will change its hash and trigger an rollout.
 PVCs will not be touched and Pods will be updated with new `controller-revision-hash` label. 
@@ -493,7 +555,7 @@ Failure cases: don't left too many PVCs being updated in-place. We expect to upd
     user can delete the Pod and the StatefulSet controller will create a new Pod at new revision.
 
 In all cases, if the user determines the failure of updating PVCs is not critical,
-he can change `volumeClaimUpdatePolicy` back to `OnClaimDelete` to unblock normal Pod rollout.
+he can change `volumeClaimUpdateStrategy` back to `OnClaimDelete` to unblock normal Pod rollout.
 
 
 ### Test Plan
@@ -572,8 +634,8 @@ This can be done with:
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
-- When the feature gate is enabled, existing StatefulSets gains a default `volumeClaimUpdatePolicy` of `OnClaimDelete`, and can be updated to `InPlace`.
-  Then disable the feature gate, `volumeClaimUpdatePolicy` field should remain unchanged, but user can clear it manually.
+- When the feature gate is enabled, existing StatefulSets gains a default `volumeClaimUpdateStrategy` of `OnClaimDelete`, and can be updated to `InPlace`.
+  Then disable the feature gate, `volumeClaimUpdateStrategy` field should remain unchanged, but user can clear it manually.
 
 - When the feature gate is disabled in the mid of the PVC rollout, we should not update or wait for the PVCs anymore.
   `volumeClaimTemplate` should remains in the controllerRevision. And the current rollout should finish successfully.
@@ -597,7 +659,7 @@ If e2e tests are not necessary or useful, explain why.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
-- When feature gate is enabled, update the StatefulSet `volumeClaimTemplates` with `volumeClaimUpdatePolicy: InPlace` can successfully expand the PVCs.
+- When feature gate is enabled, update the StatefulSet `volumeClaimTemplates` with `volumeClaimUpdateStrategy: InPlace` can successfully expand the PVCs.
   And running Pods are not restarted.
 
 ### Graduation Criteria
@@ -717,7 +779,7 @@ enhancement:
 No changes required to maintain previous behavior.
 
 To make use of the enhancement, user can update `volumeClaimTemplates` of existing StatefulSets.
-One can also update `volumeClaimUpdatePolicy` to `InPlace` in order to rollout the changes automatically.
+One can also update `volumeClaimUpdateStrategy` to `InPlace` in order to rollout the changes automatically.
 
 ### Version Skew Strategy
 
@@ -737,13 +799,13 @@ enhancement:
 No coordinating between the control plane and nodes are required, since this KEP does not involve nodes.
 
 Should enable this feature for APIServer before kube-controller-manager.
-An n-1 kube-controller-manager should ignore the `volumeClaimUpdatePolicy` field and never touch PVCs.
+An n-1 kube-controller-manager should ignore the `volumeClaimUpdateStrategy` field and never touch PVCs.
 It should always create PVCs with the latest `volumeClaimTemplates`.
 
-If `volumeClaimUpdatePolicy` is set to `InPlace` while the kube-controller-manager is down,
+If `volumeClaimUpdateStrategy` is set to `InPlace` while the kube-controller-manager is down,
 when new kube-controller-manager starts, it should pick this up and start rolling out PVCs immediately.
 
-If `volumeClaimUpdatePolicy` is set to `InPlace` when the feature-gate of kube-controller-manager is disabled,
+If `volumeClaimUpdateStrategy` is set to `InPlace` when the feature-gate of kube-controller-manager is disabled,
 kube-controller-manager should still update the controllerRevision and label on Pods.
 After that, when the feature-gate of kube-controller-manager is enabled,
 user needs to update the `volumeClaimTemplates` again to trigger another rollout.
@@ -803,10 +865,10 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 The update to StatefulSet `volumeClaimTemplates` will be accepted by the API server while it is previously rejected.
-StatefulSets gains a new field `volumeClaimUpdatePolicy` with default value `OnClaimDelete`.
+StatefulSets gains a new field `volumeClaimUpdateStrategy` with default value `OnClaimDelete`.
 
 Otherwise No.
-If `volumeClaimUpdatePolicy` is `OnClaimDelete` (the default values),
+If `volumeClaimUpdateStrategy` is `OnClaimDelete` (the default values),
 the behavior of StatefulSet controller is almost the same as before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -824,13 +886,13 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 Yes. Since the `volumeClaimTemplates` can already differ from the actual PVCs now,
 disable this feature gate should not leave any inconsistent state.
 
-The `volumeClaimUpdatePolicy` field will not be cleared automatically.
+The `volumeClaimUpdateStrategy` field will not be cleared automatically.
 When it is set to `InPlace`, `volumeClaimTemplates` also remains in the controllerRevision.
-User can rollback each StatefulSet manually by deleting the `volumeClaimUpdatePolicy` field.
+User can rollback each StatefulSet manually by deleting the `volumeClaimUpdateStrategy` field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the `volumeClaimUpdatePolicy` is already set to `InPlace`,
+If the `volumeClaimUpdateStrategy` is already set to `InPlace`,
 user needs to update the `volumeClaimTemplates` again to trigger a rollout.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -848,9 +910,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 Will add unit tests for the StatefulSet controller with and without the feature gate,
-`volumeClaimUpdatePolicy` set to `InPlace` and `OnClaimDelete` respectively.
+`volumeClaimUpdateStrategy` set to `InPlace` and `OnClaimDelete` respectively.
 
-Will add unit tests for exercising the switch of feature gate when `volumeClaimUpdatePolicy` already set. 
+Will add unit tests for exercising the switch of feature gate when `volumeClaimUpdateStrategy` already set. 
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1137,7 +1199,7 @@ For each of them, fill in the following information by copying the below templat
   - Detection: apiserver_request_total{resource="persistentvolumeclaims",verb="patch",code!="200"} increased. Events on StatefulSet.
   - Mitigations: 
     - Undo `volumeClaimTemplates` changes
-    - Set `volumeClaimUpdatePolicy` to `OnClaimDelete`
+    - Set `volumeClaimUpdateStrategy` to `OnClaimDelete`
   - Diagnostics: Events on StatefulSet
   - Testing: Will test the Event is emitted
 
@@ -1145,7 +1207,7 @@ For each of them, fill in the following information by copying the below templat
   - Detection: Events on PVC. controller_{modify,expand}_volume_errors_total metrics on external-resizer
   - Mitigations:
     - Undo `volumeClaimTemplates` changes
-    - Set `volumeClaimUpdatePolicy` to `OnClaimDelete`
+    - Set `volumeClaimUpdateStrategy` to `OnClaimDelete`
     - Edit PVC manually to correct the issue
   - Diagnostics: Events on PVC, logs of external-resizer
   - Testing: No. the error is already reported on the PVC, by external-resizer.
@@ -1284,10 +1346,10 @@ This downside is that the concurrency is lower, so the rolling update may take l
 
 ### When to track `volumeClaimTemplates` in `ControllerRevision`
 
-The current design tracks volumeClaimTemplates in ControllerRevision only when `volumeClaimUpdatePolicy` is set to `InPlace`.
+The current design tracks volumeClaimTemplates in ControllerRevision only when `volumeClaimUpdateStrategy` is set to `InPlace`.
 
 There are two reasons:
-1. We want a new revision to trigger the rollout when `volumeClaimUpdatePolicy` is changed from `OnClaimDelete` to `InPlace`.
+1. We want a new revision to trigger the rollout when `volumeClaimUpdateStrategy` is changed from `OnClaimDelete` to `InPlace`.
 2. We want to avoid updating all the Pods under any StatefulSet at once when the feature-gate is enabled, to avoid overloading the control-plane.
 
 If we track volumeClaimTemplates whenever the feature-gate is enabled, we violate all these reasons.
@@ -1299,13 +1361,13 @@ Or we can make this tri-state:
 
 While this resolves reason 2, it still violates reason 1.
 
-We can add volumeClaimUpdatePolicy to ControllerRevision to resolve reason 1.
+We can add volumeClaimUpdateStrategy to ControllerRevision to resolve reason 1.
 But all the policies we already have does not present in ControllerRevision. So this is not ideal either.
 
 The down-side of the current design is that `kubectl rollout undo` may not work as expected sometimes.
 
-* If `volumeClaimUpdatePolicy` is set to `OnClaimDelete`, `kubectl rollout undo` will not undo the `volumeClaimTemplates`.
-* When changing `volumeClaimUpdatePolicy` from `OnClaimDelete` to `InPlace` to trigger the rollout, `kubectl rollout undo` will be no-op.
+* If `volumeClaimUpdateStrategy` is set to `OnClaimDelete`, `kubectl rollout undo` will not undo the `volumeClaimTemplates`.
+* When changing `volumeClaimUpdateStrategy` from `OnClaimDelete` to `InPlace` to trigger the rollout, `kubectl rollout undo` will be no-op.
 * Consider the following history:
   1. Pod Rev1 + PVC Rev1 + `OnClaimDelete`
   2. Pod Rev2 + PVC Rev1 + `InPlace`
