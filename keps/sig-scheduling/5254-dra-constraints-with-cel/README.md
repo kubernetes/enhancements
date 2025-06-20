@@ -732,7 +732,7 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, through the feature gate. Pods that are already running will continue unaffected. New workloads trying to utilize the feature will not work. If any of the feature gates in kube-apiserver, kube-scheduler, and kube-controller-manager are disabled, the feature will not work. The pod will either not be created or will be in a pending state with the corresponding error message. 
+Yes, through feature gates. If the feature gate is disabled in kube-apiserver, kube-scheduler, or kube-controller-manager, the feature will not work. Existing running Pods continue  unaffected. New workloads cannot use the feature, and pod creation will fail if attempting to use the feature. Existing pods that need rescheduling will remain in pending state. Pod description will notify users to enable the feature gate. The reason for not allowing existing pods to re-schedule is because users expect optimal placement for these pods, which cannot happen when the feature is disabled
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
