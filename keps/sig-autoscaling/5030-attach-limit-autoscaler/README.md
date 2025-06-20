@@ -139,6 +139,13 @@ Scheduler changes can only be merged after cluster-autoscaler changes has been G
 As mentioned above, there is a risk associated with scheduler changes being merged before cluster-autoscaler changes can be merged, but we want to mitigate
 this by making sure cluster-autoscaler changes are merged first and has N+2 window before scheduler changes can be made GA. 
 
+
+Please note the risk exists in-terms of `kube-scheduler` code that is vendored in cluster-autoscaler. The risk doesn't exist from independently running `kube-scheduler`
+and cluster-autoscaler. So we have to be careful not to vendor a version of `kube-scheduler` in cluster-autoscaler that prevents scheduling of pods (that requires CSI volumes)
+to nodes that don't have CSI driver until `cluster-autoscaler` can properly take into account CSI node limits available in upcoming node.
+
+
+
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
 For example, consider both security and how this will impact the larger
@@ -323,11 +330,12 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-For the case of newer scheduler running with older autoscaler, we propose that `VolumeLimitScaling` feature
-should be disabled in the scheduler. 
+In general Upgrade and Downgrade of `cluster-autoscaler` should be fine, it just means how CA scales nodes will 
+change.
 
-Upgrade and downgrade of `cluster-autoscaler` should be straightforward since there are no API changes 
-involved and it just means the feature will stop working once downgraded.
+The concern about about `kube-scheduler` and `cluster-autoscaler` coupling does not apply to running versions, it just means
+that `cluster-autoscaler` should not bundle a version of `kube-scheduler` that blocks pods(that require CSI volumes) from getting scheduled, until
+CA is properly aware of volume limits.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
