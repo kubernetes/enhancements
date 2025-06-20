@@ -114,6 +114,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Treat all incompatible PVCs as unavailable replicas](#treat-all-incompatible-pvcs-as-unavailable-replicas)
   - [Integrate with RecoverVolumeExpansionFailure feature](#integrate-with-recovervolumeexpansionfailure-feature)
   - [Order of Pod / PVC updates](#order-of-pod--pvc-updates)
+  - [When to track <code>volumeClaimTemplates</code> in <code>ControllerRevision</code>](#when-to-track-volumeclaimtemplates-in-controllerrevision)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -387,6 +388,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 Since we don't allow decreasing the storage size of `volumeClaimTemplates`,
 it is not possible to run `kubectl rollout undo` after increasing it.
+This may surprise users already working with StatefulSets, maybe a breaking change.
 We may loose this restriction in the future.
 But unfortunately, since volume expansion cannot be fully cancelled,
 undoing StatefulSet changes may not be enough to revert the system to the previous state,
@@ -1279,6 +1281,41 @@ So any existing tools to monitor StatefulSet rollout process does not need to ch
 This downside is that the concurrency is lower, so the rolling update may take longer.
 
 [KEP-5381]: https://github.com/kubernetes/enhancements/blob/0602a5f744b8e4e201d7bd90eb69e67f1b9baf62/keps/sig-storage/5381-mutable-pv-affinity/README.md#notesconstraintscaveats-optional
+
+### When to track `volumeClaimTemplates` in `ControllerRevision`
+
+The current design tracks volumeClaimTemplates in ControllerRevision only when `volumeClaimUpdatePolicy` is set to `InPlace`.
+
+There are two reasons:
+1. We want a new revision to trigger the rollout when `volumeClaimUpdatePolicy` is changed from `OnClaimDelete` to `InPlace`.
+2. We want to avoid updating all the Pods under any StatefulSet at once when the feature-gate is enabled, to avoid overloading the control-plane.
+
+If we track volumeClaimTemplates whenever the feature-gate is enabled, we violate all these reasons.
+
+Or we can make this tri-state:
+* empty/nil: the default and preserve the current behavior.
+* `OnClaimDelete`: Add volumeClaimTemplate to the history, but don't update PVCs
+* `InPlace`: Add volumeClaimTemplate to the history, and also update PVCs in-place
+
+While this resolves reason 2, it still violates reason 1.
+
+We can add volumeClaimUpdatePolicy to ControllerRevision to resolve reason 1.
+But all the policies we already have does not present in ControllerRevision. So this is not ideal either.
+
+The down-side of the current design is that `kubectl rollout undo` may not work as expected sometimes.
+
+* If `volumeClaimUpdatePolicy` is set to `OnClaimDelete`, `kubectl rollout undo` will not undo the `volumeClaimTemplates`.
+* When changing `volumeClaimUpdatePolicy` from `OnClaimDelete` to `InPlace` to trigger the rollout, `kubectl rollout undo` will be no-op.
+* Consider the following history:
+  1. Pod Rev1 + PVC Rev1 + `OnClaimDelete`
+  2. Pod Rev2 + PVC Rev1 + `InPlace`
+  3. Pod Rev2 + PVC Rev2 + `InPlace`
+
+  Now if user revert to history 1 directly, `volumeClaimTemplates` will not be reverted.
+  But if the user revert to history 2, then history 1, `volumeClaimTemplates` will be reverted.
+
+While somewhat surprising, `kubectl rollout undo` is just a convenient method to update the StatefulSet.
+User can always do the update manually. So this is not a big problem.
 
 ## Infrastructure Needed (Optional)
 
