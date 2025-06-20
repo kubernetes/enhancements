@@ -802,6 +802,7 @@ in back-to-back releases.
 #### GA
 
 - Gather feedback
+  - Cloudsmith has developed a [new credential provider plugin](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider) that authenticates with cloudsmith registries using service account tokens. [Blog](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider), [Demo video](https://github.com/cloudsmith-io/cloudsmith-kubernetes-credential-provider), [Feedback on slack](https://kubernetes.slack.com/archives/C0EN96KUY/p1750373833832959).
 
 ### Upgrade / Downgrade Strategy
 
