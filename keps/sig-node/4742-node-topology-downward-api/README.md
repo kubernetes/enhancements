@@ -98,7 +98,7 @@ we aim to simplify access to this information for Pods via the Downward API.
 
 ### Goals
 
-* Values from Node labels `topology.k8s.io/zone`, `topology.k8s.io/region` and `kubernetes.io/hostname` are made
+* Values from Node labels `topology.kubernetes.io/zone`, `topology.kubernetes.io/region` and `kubernetes.io/hostname` are made
   available via downward API
 * Additional node labels can be made available via downward API using admission webhooks that mutate `pods/binding`.
 
@@ -222,10 +222,11 @@ E2E tests will also ensure behavior is exercised when the feature gate is enable
 - All standard topology labels can be retrieved using downward API.
 - Behavior is implemented behind a feature gate that is off by default.
 - Initial unit, integration and e2e tests completed and enabled.
+- Fix standard topology label used in PodTopologyLabels admission controller (topology.k8s.io -> topology.kubernetes.io)
 
 #### Beta
 
-TODO after Alpha.
+- Unit, integration and e2e tests
 
 #### GA
 
@@ -290,7 +291,9 @@ Tests will be added to ensure feature gate works as expected.
 
 ### Rollout, Upgrade and Rollback Planning
 
-TODO for Beta.
+Manual testing will be exercised to ensure that PodTopologyLabelsAdmission can be enabled and then disabled.
+When disabled, existing Pods with topology labels will continue to run with those labels and new Pods will no longer
+container topology labels.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -402,6 +405,7 @@ Revert feature gate and stop consuming downward API.
 ## Implementation History
 
 - `v1.33`: initial KEP is accepeted and alpha implementation is complete
+- `v1.34`: fix topology labels from topology.k8s.io to topology.kubernetes.io.
 
 ## Drawbacks
 
