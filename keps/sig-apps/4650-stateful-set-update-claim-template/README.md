@@ -256,6 +256,7 @@ nitty-gritty.
 Change API server to allow specific updates to `volumeClaimTemplates` of a StatefulSet:
    * `spec.volumeClaimTemplates.spec.resources.requests.storage` (increase only)
    * `spec.volumeClaimTemplates.spec.volumeAttributesClassName`
+     * Note that this field is currently disabled by default. But should not affect the progress of this KEP.
    * `spec.volumeClaimTemplates.metadata.labels`
    * `spec.volumeClaimTemplates.metadata.annotations`
 
