@@ -5,8 +5,10 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non Goals](#non-goals)
 - [Proposal](#proposal)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Design Principles](#design-principles)
   - [Components/Features changes](#componentsfeatures-changes)
@@ -102,7 +104,25 @@ This proposal aims to:
 1. Extend the In-Place Pod Resize (IPPR) functionality to support dynamic
    adjustments of pod-level CPU and Memory resources.
 2. Ensure compatibility and proper interaction between pod-level IPPR and existing container-level IPPR mechanisms.
-3. Provide clear mechanisms for tracking and reporting the actual allocated pod-level resources in PodStatus
+3. Provide clear mechanisms for tracking and reporting the actual allocated
+   pod-level resources in PodStatus
+
+### Non Goals
+
+1. This KEP focuses solely on in-place resizing of core compute resources (CPU and
+  Memory) at the pod level. Extending this functionality to other resource types
+  (e.g., GPUs, network bandwidth) is outside the current scope.
+
+2. This KEP does not aim to implement dynamic changes to a pod's QoS class based on
+   in-place resource resize operations. 
+
+3. No dynamic adjustments for Init Containers that have already finished and can't
+    be restarted.
+
+4. No automatic removal of lower-priority pods to make room for a pod that's resizing its resources.
+
+5. This KEP doesn't aim to fix every complex timing issue that can happen between
+   the Kubelet and the scheduler during resizes that already exist in [KEP#1287](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/1287-in-place-update-pod-resources/README.md).
 
 ## Proposal
 ### Notes/Constraints/Caveats
@@ -117,6 +137,26 @@ This proposal aims to:
    **opt-in** feature, and will have no effect on existing deployments.
 
 3. This feature relies on the PodLevelResources, InPlacePodVerticalScaling and InPlacePodLevelResourcesVerticalScaling feature gates being enabled.
+
+### Risks and Mitigations
+
+1. Backward compatibility: For pods with pod-level resources, when Pod.Spec.Resources
+   becomes representative of desired state, and Pod's actual resource configurations are
+   tracked in Pod.Status.Resources, applications that query PodSpec and rely on
+   Resources in PodSpec to determine resource configurations will see values that
+   may not represent actual configurations. As a mitigation, this change needs to be
+   documented and highlighted in the release notes, and in
+   top-level Kubernetes documents.
+
+2. Resizing memory lower: Lowering cgroup memory limits may not work as pages could
+   be in use, and approaches such as setting limit near current usage may be
+   required. This issue needs further investigation.
+
+3. Scheduler race condition: If a resize happens concurrently with the scheduler
+   evaluating the node where the pod is resized, it can result in a node being
+   over-scheduled, which will cause the pod to be rejected with an OutOfCPU or
+   OutOfMemory error. Solving this race condition is out of scope for this KEP, but
+   a general solution may be considered in the future. 
 
 ## Design Details
 
