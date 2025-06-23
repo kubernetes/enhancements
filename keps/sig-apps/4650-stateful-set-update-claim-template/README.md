@@ -331,6 +331,7 @@ Some fields in the `status` are updated to reflect the status of the PVCs:
  }
 ```
 We will decrease `currentReplicas` when we start to update the PVCs, and increase `updatedReplicas` when we create the new Pods.
+We update `currentRevision` to `updateRevision` when all Pods and PVCs are ready.
 
 With these changes, user can still use `kubectl rollout status` to monitor the update process,
 both for automated patching and for the PVCs that need manual intervention.
@@ -501,21 +502,26 @@ When only updating the volumeClaimTemplates:
 
 Assuming we are updating a replica from revision A to revision B:
 
-| Pod | PVC | Action |
-| --- | --- | --- |
-| not existing | not existing | create PVC at revision B |
-| not existing | at revision A | update PVC to revision B |
-| not existing | at revision B | create Pod at revision B |
-| at revision A | not existing | create PVC at revision B |
-| at revision A | at revision A | update PVC to revision B |
-| at revision A | at revision B | wait for PVC to be ready, then delete Pod or update Pod label |
-| at revision B | not existing | create PVC at revision B |
-| at revision B | existing | wait for Pod to be ready |
+| # | Pod | PVC | Action |
+| --- | --- | --- | --- |
+| 1 | not existing | not existing | create PVC at revision B |
+| 2 | not existing | at revision A | create Pod at revision B |
+| 3 | not existing | at revision B | create Pod at revision B |
+| 4 | at revision A | not existing | create PVC at revision B |
+| 5 | at revision A | at revision A | update PVC to revision B |
+| 6 | at revision A | at revision B | wait for PVC to be ready, then delete Pod or update Pod label |
+| 7 | at revision B | not existing | create PVC at revision B |
+| 8 | at revision B | at revision A | update PVC to revision B |
+| 9 | at revision B | at revision B | wait for Pod and PVCs to be ready, then advance to next replica |
 
-Note that when Pod is at revision B but PVC is at revision A, we will not update PVC.
-Such state can only happen when user set `volumeClaimUpdateStrategy` to `InPlace` when the feature-gate of KCM is disabled,
-or disable the previously enabled feature-gate.
-We require user to initiate another rollout to update the PVCs, to avoid any surprise.
+A normal rollout should be like: 5 -> 6 (-> 3) -> 9.
+
+Normally, when Pod is at revision B, PVCs will be at revision B and already ready, unless:
+* when user set `volumeClaimUpdateStrategy` to `InPlace` when the feature-gate of KCM is disabled,
+  or disable the previously enabled feature-gate.
+* When the Pod is deleted externally, e.g. be evicted or deleted manually.
+
+In such cases, we will still update PVCs at 8 and wait for the PVCs to be ready at 9.
 
 When `volumeClaimUpdateStrategy` is updated from `OnClaimDelete` to `InPlace`,
 StatefulSet controller will begin to add claim templates to ControllerRevision,
@@ -535,7 +541,7 @@ Failure cases: don't left too many PVCs being updated in-place. We expect to upd
   We should retry and report events for this.
   The events and status should look like those when the Pod creation fails.
   We update PVC before deleting the old Pod, so failure of PVC update should not disrupt running Pods,
-  and user should have time to fix this manually.
+  and user should have enough time to fix this manually.
   The failure cases of this kind includes (but not limited to):
   - immutable fields mismatch (e.g. storageClassName)
   - webhook
@@ -548,15 +554,15 @@ Failure cases: don't left too many PVCs being updated in-place. We expect to upd
   We should block the StatefulSet rollout process if the PVC is never ready.
 
 - When individual PVC failed to become ready, the user can update that PVC manually to bring it back to ready.
+  - If the PVC cannot become ready because of the old Pod (e.g. unable to schedule),
+    user can delete the Pod and the StatefulSet controller will create a new Pod at new revision.
 
 - If the `volumeClaimTemplates` is updated again when the previous rollout is blocked,
   similar to [Pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback),
   user may need to manually deal with the blocking PVCs (update or delete them).
-  - If the PVC cannot become ready because of the old Pod (e.g. unable to schedule),
-    user can delete the Pod and the StatefulSet controller will create a new Pod at new revision.
 
 In all cases, if the user determines the failure of updating PVCs is not critical,
-he can change `volumeClaimUpdateStrategy` back to `OnClaimDelete` to unblock normal Pod rollout.
+he can change `volumeClaimUpdateStrategy` back to `OnClaimDelete` to unblock normal Pod rollout immediately.
 
 
 ### Test Plan
@@ -803,13 +809,10 @@ Should enable this feature for APIServer before kube-controller-manager.
 An n-1 kube-controller-manager should ignore the `volumeClaimUpdateStrategy` field and never touch PVCs.
 It should always create PVCs with the latest `volumeClaimTemplates`.
 
-If `volumeClaimUpdateStrategy` is set to `InPlace` while the kube-controller-manager is down,
-when new kube-controller-manager starts, it should pick this up and start rolling out PVCs immediately.
-
 If `volumeClaimUpdateStrategy` is set to `InPlace` when the feature-gate of kube-controller-manager is disabled,
 kube-controller-manager should still update the controllerRevision and label on Pods.
 After that, when the feature-gate of kube-controller-manager is enabled,
-user needs to update the `volumeClaimTemplates` again to trigger another rollout.
+updates to PVCs will be picked up and rollout will start automatically.
 
 ## Production Readiness Review Questionnaire
 
@@ -1336,10 +1339,22 @@ We've considered delete the Pod while/before updating the PVC, but realized seve
   We want to make sure the Pod is still running if we cannot update the PVC.
 * As described in [KEP-5381], we want to allow affinity change when the VolumeAttributesClass is updated.
   Updating PVC and Pod concurrently may trigger a race condition where the Pod can be scheduled to wrong node.
+* Pod may depends on PVC updates, e.g. when the volume is full. So we should not wait for Pod to be ready before updating PVC.
 
-The current order (wait for PVC ready before delete old Pod) has an extra advantage:
-When Pod is ready, it is guaranteed that the PVC is ready too.
+That left us with two options:
+1. Wait for PVC ready before delete old Pod.
+2. Wait for new Pod to be scheduled, with all volumes attached before update PVC.
+
+We choose 1 currently. This has an extra advantage:
+When Pod is ready, PVCs will almost always be ready too.
 So any existing tools to monitor StatefulSet rollout process does not need to change.
+But this is not guaranteed. If the Pod is deleted before the PVC is ready (be evicted, or manually),
+we still want to ensure maximum Pod availability, so we will still create the Pod.
+In this case, the Pod may be ready before PVCs are ready.
+
+We can choose to create Pod at current revision (instead of update revision) if PVCs are not ready.
+But there may be some case where the PVCs depends on the new Pod (e.g. old Pod is not schedulable).
+We don't want to block them.
 
 This downside is that the concurrency is lower, so the rolling update may take longer.
 
