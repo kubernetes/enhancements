@@ -243,28 +243,36 @@ type CredentialsConfig struct {
 
 #### Cluster Data
 
-The Cluster structure for the exec defined in KEP 541, [implemented in k/k](https://github.com/kubernetes/kubernetes/blob/a34c07971b610eb33908a743eadb4c61beeecc50/staging/src/k8s.io/client-go/pkg/apis/clientauthentication/types.go#L73-L80) assumes the following:
+The Cluster structure for the exec defined in KEP 541, [implemented in k/client-go](https://github.com/kubernetes/client-go/blob/master/tools/clientcmd/api/types.go#L69-L106) assumes the following:
 
 ```
 type Cluster struct {
+	// LocationOfOrigin indicates where this object came from.  It is used for round tripping config post-merge, but never serialized.
+	// +k8s:conversion-gen=false
+	LocationOfOrigin string `json:"-"`
 	// Server is the address of the kubernetes cluster (https://hostname:port).
 	Server string `json:"server"`
-	// TLSServerName is passed to the server for SNI and is used in the client to
-	// check server certificates against. If ServerName is empty, the hostname
-	// used to contact the server is used.
+	// TLSServerName is used to check server certificate. If TLSServerName is empty, the hostname used to contact the server is used.
 	// +optional
 	TLSServerName string `json:"tls-server-name,omitempty"`
-	// InsecureSkipTLSVerify skips the validity check for the server's certificate.
-	// This will make your HTTPS connections insecure.
+	// InsecureSkipTLSVerify skips the validity check for the server's certificate. This will make your HTTPS connections insecure.
 	// +optional
 	InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
-	// CAData contains PEM-encoded certificate authority certificates.
-	// If empty, system roots should be used.
-	// +listType=atomic
+	// CertificateAuthority is the path to a cert file for the certificate authority.
+	// +optional
+	CertificateAuthority string `json:"certificate-authority,omitempty"`
+	// CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority
 	// +optional
 	CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
-	// ProxyURL is the URL to the proxy to be used for all requests to this
-	// cluster.
+	// ProxyURL is the URL to the proxy to be used for all requests made by this
+	// client. URLs with "http", "https", and "socks5" schemes are supported.  If
+	// this configuration is not provided or the empty string, the client
+	// attempts to construct a proxy configuration from http_proxy and
+	// https_proxy environment variables. If these environment variables are not
+	// set, the client does not attempt to proxy requests.
+	//
+	// socks5 proxying does not currently support spdy streaming endpoints (exec,
+	// attach, port forward).
 	// +optional
 	ProxyURL string `json:"proxy-url,omitempty"`
 	// DisableCompression allows client to opt-out of response compression for all requests to the server. This is useful
@@ -272,31 +280,16 @@ type Cluster struct {
 	// compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
 	// +optional
 	DisableCompression bool `json:"disable-compression,omitempty"`
-	// Config holds additional config data that is specific to the exec
-	// plugin with regards to the cluster being authenticated to.
-	//
-	// This data is sourced from the clientcmd Cluster object's
-	// extensions[client.authentication.k8s.io/exec] field:
-	//
-	// clusters:
-	// - name: my-cluster
-	//   cluster:
-	//     ...
-	//     extensions:
-	//     - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
-	//       extension:
-	//         audience: 06e3fbd18de8  # arbitrary config
-	//
-	// In some environments, the user config may be exactly the same across many clusters
-	// (i.e. call this exec plugin) minus some details that are specific to each cluster
-	// such as the audience.  This field allows the per cluster config to be directly
-	// specified with the cluster info.  Using this field to store secret data is not
-	// recommended as one of the prime benefits of exec plugins is that no secrets need
-	// to be stored directly in the kubeconfig.
+	// Extensions holds additional information. This is useful for extenders so that reads and writes don't clobber unknown fields
 	// +optional
-	Config runtime.RawExtension `json:"config,omitempty"`
+	Extensions map[string]runtime.Object `json:"extensions,omitempty"`
 }
 ```
+
+In this structure, not all fields would apply, such as:
+
+* `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't have a filesystem)
+* `Extensions`, while extensions may be good in the future, we may not leverage them.
 
 
 #### ClusterProfile Example
