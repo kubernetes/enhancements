@@ -289,7 +289,6 @@ type Cluster struct {
 In this structure, not all fields would apply, such as:
 
 * `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't have a filesystem)
-* `Extensions`, while extensions may be good in the future, we may not leverage them.
 
 
 #### ClusterProfile Example
