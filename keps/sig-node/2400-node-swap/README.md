@@ -495,13 +495,14 @@ to not permit the use of swap by setting `memory-swap` equal to `limit`.
 
 This feature was created so that we iterate on adding swap to Kubernetes.
 Due to this, pods will not be able to request swap memory directly nor explicitly for the current implementation.
-To make swap more useful for workloads, we acknowledge the need for proper APIs for swap to make it customizable and flexible.
+In additions, as stated in the KEP's summary, issues like evictions and scheduling won't be addressed in this KEP. 
+To make swap more useful for workloads, we acknowledge the need for proper APIs for swap to make it customizable and flexible,
+eviction and scheduling aware.
 
 For example, we're considering the following features for future KEPs:
-- Swap should be opt-in and opt-out at the workload level.
-- Customization of swap limit calculation for workloads.
-- Eviction Manager to be more flexible in regards to swap limits.
-- Eviction Manager should look at more advanced ways of determining swap pressure (PSI for example).
+- [KEP-5359] Pod-Level Swap Control: https://github.com/kubernetes/enhancements/issues/5359.
+- [KEP-5424] Swap-Aware Scheduling: https://github.com/kubernetes/enhancements/issues/5424.
+- [KEP-5433] Swap-Aware Evictions: https://github.com/kubernetes/enhancements/issues/5433.
 
 ### Risks and Mitigations
 
