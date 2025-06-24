@@ -18,10 +18,6 @@
       - [Swap as the default](#swap-as-the-default)
   - [Steps to Calculate Swap Limit](#steps-to-calculate-swap-limit)
     - [Example](#example)
-  - [Swap-aware Evictions](#swap-aware-evictions)
-    - [Background](#background)
-    - [Defining &quot;accessible swap&quot;](#defining-accessible-swap)
-    - [Changes to the eviction manager's memory pressure handling](#changes-to-the-eviction-managers-memory-pressure-handling)
   - [User Stories](#user-stories)
     - [Improved Node Stability](#improved-node-stability)
     - [Long-running applications that swap out startup memory](#long-running-applications-that-swap-out-startup-memory)
@@ -187,7 +183,6 @@ will be necessary to implement the third scenario.
 - Cluster administrators can enable and configure kubelet swap utilization on a
   per-node basis.
 - Use of swap memory for cgroupsv2.
-- Swap-aware eviction manager.
 
 ### Non-Goals
 
@@ -205,6 +200,11 @@ will be necessary to implement the third scenario.
 - Supporting zram, zswap, or other memory types like SGX EPC. These could be
   addressed in a follow-up KEP, and are out of scope.
 - Use of swap for cgroupsv1.
+- Add pod-level APIs to control swap configuration on a per-pod basis.
+- Add scheduling mechanisms to target nodes with swap enabled/disabled or a certain swap configuration.
+- Make the eviction manager swap-aware.
+The existing eviction hierarchy based on QoS tiers is preserved to ensure introduction of swap does not fundamentally
+change how Kubernetes handles node-pressure eviction.  
 
 [swappiness]: https://en.wikipedia.org/wiki/Memory_paging#Swappiness
 
@@ -314,67 +314,6 @@ Step 2: Determine swap limitation for the containers:
 In this example, Container A would have a swap limit of 19 GB, and Container B would have a swap limit of 9.5 GB.
 
 This approach allocates swap limits based on each container's memory request and adjusts the proportion based on the total swap memory available in the system. It ensures that each container gets a fair share of the swap space and helps maintain resource allocation efficiency.
-
-### Swap-aware Evictions
-
-As part of this KEP, the eviction manager will be enhanced to be swap-aware.
-This update will enable the eviction manager to account for swap usage in its decision-making process.
-By doing so, it will help prevent the system from exhausting swap space, thereby maintaining system stability and responsiveness.
-
-#### Background
-
-Before this KEP, kubelet's eviction manager completely overlooked swap memory, leading to several issues:
-* Inaccessible Swap: The memory eviction threshold is configured in such a way that swap is never triggered during node-level pressure, 
-as eviction occurs before the node starts swapping memory.
-* Unfairness & Instability: The eviction manager may evict the "wrong" or innocent pods, failing to address the actual memory pressure.
-* Unexpected Behavior: Pods that exceed their memory limits (with regular and swap memory) are not evicted first,
-even though they would immediately get killed if swap were not used.
-
-Here we present an extension to the eviction manager that will address these issues by becoming swap-aware.
-The proposed logic is fully backward compatible and requires no additional configuration, making it completely transparent to the user.
-
-To achieve this, we recommend enhancing the eviction manager's memory pressure handling to account for swap memory, rather than adding a distinct swap signal.
-Memory and swap are inherently connected and should be addressed as a single issue.
-By integrating swap memory into the eviction manager's logic, we ensure a more accurate and efficient handling of system resources.
-For example, separating memory and swap memory is problematic because swap is not used until memory is full.
-However, with the approach suggested in this KEP memory will not be considered full until the accessible swap is also full.
-
-#### Defining "accessible swap"
-
-Let `accessible swap` be the amount of swap that is accessible by pods according to the [LimitedSwap swap behavior](#steps-to-calculate-swap-limit).
-Note that the amount of accessible swap changes in time according to the pods running on the node.
-
-In addition, note that since only some of the Burstable QoS pods will have access to swap, the swap space will
-almost never be used in its entirety by workloads. In other words, this approach will effectively leave some of
-the swap space inaccessible for pods and reserved for system daemons and other system processes.
-
-#### Changes to the eviction manager's memory pressure handling
-
-When dealing with evictions, there are two main questions needed to be answered:
-how to identify when the node is under pressure and how to rank pods for eviction.
-
-The eviction manager will become swap aware by making the following changes to its memory pressure handling:
-- **How to identify pressure**: The eviction manager will consider the total sum of all running pods' accessible swap as additional memory capacity.
-- **How to rank pods for eviction**: In the context of ranking pods for evictions, swap memory is considered as additional "regular" memory
-and accessible swap is considered as additional memory request.
-This is relevant for checking whether memory requests are exceeded [1] or for identifying which pods uses more memory [2].
-
-In other words, the order of evictions documented [3] will have to change to the following:
-> ```
-> The kubelet uses the following parameters to determine the pod eviction order:
-> 1. Whether the pod's resource usage with swap (memory usage + swap usage) exceeds requests with swap (memory requests + swap requests).
-> 2. [Pod Priority](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/).
-> 3. The pod's resource usage (memory usage + swap usage) relative to requests (memory requests + swap requests).
-> ```
-
-That is, in (1) and (3) swap is considered as an additional resource usage and memory request.  Step (2) is unchanged.
-
-On nodes with swap disabled, the accessible swap will equal to zero and pods won't be able to use swap,
-hence the eviction manager will behave the same as before.
-
-[1] https://github.com/kubernetes/kubernetes/blob/d8093cc40394b8e25a864576fe6a38306730d3cb/pkg/kubelet/eviction/helpers.go#L684
-[2] https://github.com/kubernetes/kubernetes/blob/d8093cc40394b8e25a864576fe6a38306730d3cb/pkg/kubelet/eviction/helpers.go#L703
-[3] https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#pod-selection-for-kubelet-eviction
 
 ### User Stories
 
@@ -549,9 +488,6 @@ This can cause problems where workloads can use up all swap.
 If all swap is used up on a node, it can make the node go unhealthy.
 To avoid exhausting swap on a node, `UnlimitedSwap` was dropped from the API in beta2.
 
-It was determined that the eviction manager should still be able to protect the node in case of swap memory pressure.
-In this case, we will teach the eviction manager to be aware of swap as a resource to avoid exhausting swap resource.
-
 #### Security risk
 
 Enabling swap on a system without encryption poses a security risk, as critical information, such as Kubernetes secrets, may be swapped out to the disk. If an unauthorized individual gains access to the disk, they could potentially obtain these secrets. To mitigate this risk, it is recommended to use encrypted swap. However, handling encrypted swap is not within the scope of kubelet; rather, it is a general OS configuration concern and should be addressed at that level. Nevertheless, it is essential to provide documentation that warns users of this potential issue, ensuring they are aware of the potential security implications and can take appropriate steps to safeguard their system.
@@ -601,7 +537,6 @@ We summarize the implementation plan as following:
    the CRI on the amount of swap to allocate to each container. The container
    runtime will then write the swap settings to the container level cgroup.
 1. Add node stats to report swap usage.
-1. Enhance eviction manager to protect against swap memory running out.
 
 ### Enabling swap as an end user
 
