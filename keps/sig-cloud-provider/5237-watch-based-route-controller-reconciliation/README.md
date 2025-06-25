@@ -210,7 +210,7 @@ This is mitigated by the feature gate `CloudControllerManagerWatchBasedRoutesRec
 
 Other controllers rely on “Owner” references to make sure that the resource is only deleted when the controller had the chance to run any cleanup. This is currently not implemented for any controller in [`k8s.io/cloud-provider`](http://k8s.io/cloud-provider). Because of this, Nodes may get deleted without the possibility to process the event in the route controller.
 
-This can cause issues with limits on the number of routes in the infrastructure provider, as well as invalid routes being advertised as valid, causing possible networking reliability or confidentiality issues. s
+This can cause issues with limits on the number of routes in the infrastructure provider, as well as invalid routes being advertised as valid, causing possible networking reliability or confidentiality issues.
 
 This is mitigated by:
 
