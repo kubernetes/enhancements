@@ -104,6 +104,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [What changes is an existing cluster required to make on upgrade, in order to maintain previous behavior?](#what-changes-is-an-existing-cluster-required-to-make-on-upgrade-in-order-to-maintain-previous-behavior)
+    - [What changes is an existing cluster required to make on upgrade, in order to make use of the enhancement?](#what-changes-is-an-existing-cluster-required-to-make-on-upgrade-in-order-to-make-use-of-the-enhancement)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -474,6 +476,15 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+#### What changes is an existing cluster required to make on upgrade, in order to maintain previous behavior?
+
+The feature is off by default, nothing needs to be done.
+
+#### What changes is an existing cluster required to make on upgrade, in order to make use of the enhancement?
+
+Turn on feature gate `CacherLabelIndex` of apiserver and add `--index-labels=pods#label-Name1;label-Name2` command line options for apiserver to make use of the enhancement.
+
+
 ### Version Skew Strategy
 
 <!--
@@ -488,6 +499,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This enhancement won't introduce any version skew problem.
 
 ## Production Readiness Review Questionnaire
 
@@ -552,7 +565,7 @@ automations, so be extremely careful here.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by disabling `CacherLabelIndex` FeatureGate for `kube-apiserver` and removing commandline options `LabelIndex`.
+Yes, by disabling `CacherLabelIndex` FeatureGate for `kube-apiserver` and removing commandline options `--index-labels`.
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
 feature, can it break the existing applications?).
@@ -571,6 +584,7 @@ The expected behavior of the feature will be restored.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. There are [tests in cacher_test.go](https://github.com/kubernetes/kubernetes/pull/126284) that verifies the list and watch results when interacting with apiserver that has the `CacherLabelIndex` feature enabled/disabled.
+
 <!--
 The e2e framework does not currently support enabling or disabling feature
 gates. However, unit tests in each component dealing with managing data, created
@@ -602,6 +616,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Feature does not have a direct impact on rollout/rollback.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -616,12 +632,15 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Not yet.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -656,6 +675,15 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
+This is an internal improvements of apiserver that the end users may find the list requests matching label indexes are processed a bit faster than before.
+
+Speeking of improvements to handle watch requests, the users may not notice any performance difference if there aren't many watch requests.
+I notice a watch performance issue under stress tests of:
+- above 800 pod/s creating requests
+- thousands of concurrent watch requests.
+The qps of client receiving pod event by watch may not catch up with creating qps without this feature.
+
+
 - [ ] Events
   - Event Reason: 
 - [ ] API .status
@@ -681,6 +709,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+None have been defined yet.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -688,9 +718,9 @@ Pick one more of these and delete the rest.
 -->
 
 - [ ] Metrics
-  - Metric name:
+  - Metric name: apiserver_watch_cache_watcher_counter(counter, if watch by label-Name1 index is ok, we can see the counter with label `index="label-Name1"` is increased, and if the watcher terminates, we can see the counter decrease`)
   - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - Components exposing the metric: apiserver
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -700,6 +730,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+No.
 
 ### Dependencies
 
