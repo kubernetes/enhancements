@@ -1003,10 +1003,12 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a `ServiceExportConflict` condition will be set on all
-`ServiceExport`s for the conflicted service with a description of the conflict.
-The conflict will be resolved by assigning precedence based on each
-`ServiceExport`'s `creationTimestamp`, from oldest to newest.**
+not simply be merged, the conflict will be resolved by assigning precedence based on each
+`ServiceExport`'s `creationTimestamp`, from oldest to newest. A `ServiceExportConflict` condition
+will be set on the `ServiceExport`s for the conflicted service with a description of the conflict.
+It is recommended to set the `ServiceExportConflict` condition on all the constituent `ServiceExport`s
+to provide maximum visibility to the user, however, if this is not feasible for an implementation,
+at a minimum it should be set on the constituent `ServiceExport`s that introduced the conflict.**
 
 #### Service Port
 
