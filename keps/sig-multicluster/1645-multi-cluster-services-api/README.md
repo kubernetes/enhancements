@@ -437,22 +437,8 @@ type ServiceExportStatus struct {
         // +listMapKey=type
         Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
-
-const (
-        // ServiceExportValid means that the service referenced by this
-        // service export has been recognized as valid by an mcs-controller.
-        // This will be false if the service is found to be unexportable
-        // (ExternalName, not found).
-        ServiceExportValid = "Valid"
-        // ServiceExportConflict means that there is a conflict between two
-        // exports for the same Service. When "True", the condition message
-        // should contain enough information to diagnose the conflict:
-        // field(s) under contention, which cluster won, and why.
-        // Users should not expect detailed per-cluster information in the
-        // conflict message.
-        ServiceExportConflict = "Conflict"
-)
 ```
+
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
 kind: ServiceExport
@@ -461,17 +447,20 @@ metadata:
   namespace: my-ns
 status:
   conditions:
-  - type: Ready
+  - type: Accepted
     status: "True"
-    message: "Service export is ready"
     lastTransitionTime: "2020-03-30T01:33:51Z"
-  - type: Valid
-    status: "True"
-    message: "Service export is valid"
-    lastTransitionTime: "2020-03-30T01:33:55Z"
-  - type: Conflict
+    reason: Accepted
+    message: "The ServiceExport and its Service is exportable."
+  - type: Exported
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: Exported
+    message: "The service has been exported"
+  - type: Conflicted
+    status: "True"
+    lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: TypeConflict
     message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
 ```
 
