@@ -17,10 +17,9 @@ limitations under the License.
 package proposal
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
-
-	"github.com/pkg/errors"
 )
 
 type Options struct {
