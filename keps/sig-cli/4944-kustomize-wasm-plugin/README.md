@@ -263,7 +263,7 @@ This might be a good place to talk about core concepts and how they relate.
 
 - Current kustomize plugin system called `Exec/Container KRM functions` is
   using stdin/stdout to communicate between kustomize and the plugin.
-  - WASI is support to stdin/stdout, so We reuse the current interface
+  - WASI also supports stdin/stdout, so we will reuse the current interface
     definitions and users can migrate with minimal changes.
 - Now,
   [Wasm binary can be distributed with OCI registry](https://tag-runtime.cncf.io/wgs/wasm/deliverables/wasm-oci-artifact/).
