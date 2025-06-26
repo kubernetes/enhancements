@@ -435,43 +435,23 @@ type ServiceExportStatus struct {
         // +patchMergeKey=type
         // +listType=map
         // +listMapKey=type
-        Conditions []ServiceExportCondition `json:"conditions,omitempty"`
+        Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
-// ServiceExportConditionType identifies a specific condition.
-type ServiceExportConditionType string
-
-const {
-      // ServiceExportValid means that the service referenced by this
-      // service export has been recognized as valid by an mcs-controller.
-      // This will be false if the service is found to be unexportable
-      // (ExternalName, not found).
-      ServiceExportValid ServiceExportConditionType = "Valid"
-      // ServiceExportConflict means that there is a conflict between two
-      // exports for the same Service. When "True", the condition message
-      // should contain enough information to diagnose the conflict:
-      // field(s) under contention, which cluster won, and why.
-      // Users should not expect detailed per-cluster information in the
-      // conflict message.
-      ServiceExportConflict ServiceExportConditionType = "Conflict"
-}
-
-// ServiceExportCondition contains details for the current condition of this
-// service export.
-//
-// Once KEP-1623 (sig-api-machinery/1623-standardize-conditions) is
-// implemented, this will be replaced by metav1.Condition.
-type ServiceExportCondition struct {
-        Type ServiceExportConditionType `json:"type"`
-        // Status is one of {"True", "False", "Unknown"}
-        Status corev1.ConditionStatus `json:"status"`
-        // +optional
-        LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-        // +optional
-        Reason *string `json:"reason,omitempty"`
-        // +optional
-        Message *string `json:"message,omitempty"`
-}
+const (
+        // ServiceExportValid means that the service referenced by this
+        // service export has been recognized as valid by an mcs-controller.
+        // This will be false if the service is found to be unexportable
+        // (ExternalName, not found).
+        ServiceExportValid = "Valid"
+        // ServiceExportConflict means that there is a conflict between two
+        // exports for the same Service. When "True", the condition message
+        // should contain enough information to diagnose the conflict:
+        // field(s) under contention, which cluster won, and why.
+        // Users should not expect detailed per-cluster information in the
+        // conflict message.
+        ServiceExportConflict = "Conflict"
+)
 ```
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
@@ -483,9 +463,11 @@ status:
   conditions:
   - type: Ready
     status: "True"
+    message: "Service export is ready"
     lastTransitionTime: "2020-03-30T01:33:51Z"
-  - type: InvalidService
-    status: "False"
+  - type: Valid
+    status: "True"
+    message: "Service export is valid"
     lastTransitionTime: "2020-03-30T01:33:55Z"
   - type: Conflict
     status: "True"
@@ -704,7 +686,8 @@ this cluster.
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
-  service, an `InvalidService` condition will be set on the export.
+  service, a condition type `Valid` with a `false` status will be set on the
+  `ServiceExport`.
 
 #### ClusterSetIP
 
