@@ -149,7 +149,7 @@ a more robust solution for custom resource transformations.
 
 The current Kustomize plugin ecosystem faces several operational challenges that
 limit its effectiveness in various environments. Container plugins, while
-providing good isolation, require a Docker runtime, which is often unavailable
+providing good isolation, require a container runtime, which is often unavailable
 or restricted in CI/CD environments due to security policies or resource
 constraints. Exec plugins are tightly coupled to their underlying operating
 system and execution environment, requiring platform-specific compilation and
