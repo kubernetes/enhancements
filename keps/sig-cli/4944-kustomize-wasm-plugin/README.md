@@ -261,8 +261,8 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-- Current kustomize plugin systen that called `Exec/Container KRM functions` is
-  using stdin/stdout to communicate with kustomize to plugins.
+- Current kustomize plugin system called `Exec/Container KRM functions` is
+  using stdin/stdout to communicate between kustomize and the plugin.
   - WASI is support to stdin/stdout, so We reuse the current interface
     definitions and users can migrate with minimal changes.
 - Now,
