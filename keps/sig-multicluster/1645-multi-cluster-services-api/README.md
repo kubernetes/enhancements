@@ -675,8 +675,8 @@ this cluster.
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
-  service, a condition type `Valid` with a `false` status will be set on the
-  `ServiceExport`.
+  service, a condition type `Accepted` with reason `InvalidServiceType` and
+  status `false` will be set on the `ServiceExport`.
 
 #### ClusterSetIP
 
@@ -975,8 +975,8 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a `ServiceExportConflict` condition will be set on all
-`ServiceExport`s for the conflicted service with a description of the conflict.
+not simply be merged, a `Conflicted` condition with a `false` status will be set
+on all `ServiceExport`s for the conflicted service with a description of the conflict.
 The conflict will be resolved by assigning precedence based on each
 `ServiceExport`'s `creationTimestamp`, from oldest to newest.**
 
