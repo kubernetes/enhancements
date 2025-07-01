@@ -309,7 +309,7 @@ type ContainerRestartPolicy string
 const (
   ContainerRestartPolicyAlways ContainerRestartPolicy = "Always"
   ContainerRestartPolicyNever ContainerRestartPolicy = "Never"
-  ContainerRestartPolicyOnFailure ContainerRestartPolicyOnFailure = "OnFailure"
+  ContainerRestartPolicyOnFailure ContainerRestartPolicy = "OnFailure"
 )
 
 type Container struct {
@@ -774,7 +774,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ContainerRestartPolicy
+  - Feature gate name: ContainerRestartRules
   - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
