@@ -368,6 +368,22 @@ message ControllerModifyVolumeRequest {
   // Indicates whether the CO allows the SP to update the topology
   // as a part of the modification.
   bool allow_topology_updates = 4;
+
+  // Specifies where (regions, zones, racks, etc.) the
+  // volume MUST be accessible from after modification.
+  // COs SHALL only specify topological accessibility
+  // information supported by the SP.
+  // This field is OPTIONAL.
+  // This field SHALL NOT be specified unless the SP has the
+  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability, the
+  // MODIFY_VOLUME_TOPOLOGY controller capability and
+  // allow_topology_updates is set to true.
+  // If this field is not specified and the SP has the
+  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability, the
+  // MODIFY_VOLUME_TOPOLOGY controller capability and
+  // allow_topology_updates is set to true, the SP MAY
+  // modify the volume topology according to the mutable_parameters.
+  TopologyRequirement accessibility_requirements = 5;
 }
 
 message ControllerModifyVolumeResponse {
@@ -981,6 +997,40 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
+Instead of adding new fields to CSI GRPC `ControllerModifyVolume`, we could add a new GRPC `ControllerModifyVolumeTopology`:
+
+```protobuf
+rpc ControllerModifyVolumeTopology (ControllerModifyVolumeTopologyRequest)
+  returns (ControllerModifyVolumeTopologyResponse) {
+    option (alpha_method) = true;
+  }
+
+message ControllerModifyVolumeTopologyRequest {
+  option (alpha_message) = true;
+  string volume_id = 1;
+  map<string, string> secrest = 2 [(csi_secret) = true];
+  map<string, string> mutable_parameters = 3;
+  TopologyRequirement accessibility_requirements = 4;
+}
+
+message ControllerModifyVolumeTopologyResponse {
+  option (alpha_message) = true;
+  repeated Topology accessible_topology = 1;
+  bool in_progress = 2;
+}
+```
+
+The workflow of this new GRPC is essentially the same as the current `ControllerModifyVolume` GRPC, but it allows SPs to mutate the accessible
+topologies of volumes by default.
+
+SPs with the `MODIFY_VOLUME_TOPOLOGY` controller capability should use this new GRPC instead of `ControllerModifyVolume` when modifying volumes.
+
+Comparison between these two approaches:
+| Criteria | PR 592 (Extended GRPC) | PR 593 (New GRPC) |
+| -------- | ---------------------- | ----------------- |
+| Maintenance Difficulty | ✅ Low | ⚠️ High, need to also modify ControllerModifyVolumeTopology when making changes to ControllerModifyVolume |
+| Implementation Complexity | ✅ Low | ⚠️ High, SPs will have to implement a new GRPC if they want to support topology modification even if they have implemented ControllerModifyVolume |
+| Side Effects | ⚠️ Will impede the GA process of K8s VAC  | ✅ No influence on other features |
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
