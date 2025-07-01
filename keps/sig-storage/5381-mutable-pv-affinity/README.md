@@ -422,6 +422,44 @@ But this KEP does not cover the automatic correction. Kubernetes should only ret
 
 Scheduler Enhancements: make sure the Pod is re-queued when the PV is updated.
 
+A typical workflow is (taking the user story 1 as an example):
+1. User create a `VolumeAttributeClass`:
+   ```yaml
+   apiVersion: storage.k8s.io/v1beta1
+   kind: VolumeAttributesClass
+   metadata:
+     name: regional
+   driverName: csi.provider.com
+   parameters:
+     type: regional
+   ```
+2. User modify the `volumeAttributesClassName` in the PVC to `regional`
+3. external-resizer initiate ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "regional"}`
+4. CSI driver blocks until the modification finished, then return with `accessible_topology` set to `[{"topology.kubernetes.io/region": "cn-beijing"}]`
+5. external-resizer sets `PersistentVolume.spec.nodeAffinity` accordingly, then update the PV status to indicate the modification is successful.
+
+If it takes long to modify the volume, the new topology is not strictly less restrictive,
+and SP wants to minimize the time window of the race condition (taking the user story 2 as an example):
+1. User create a `VolumeAttributeClass`:
+   ```yaml
+   apiVersion: storage.k8s.io/v1beta1
+   kind: VolumeAttributesClass
+   metadata:
+     name: essd
+   driverName: csi.provider.com
+   parameters:
+     type: cloud_essd
+   ```
+2. User modify the `volumeAttributesClassName` in the PVC to `essd`
+3. external-resizer initiate ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "cloud_essd"}`
+4. CSI driver returns with `in_progress` set to true, and `accessible_topology` set to `[{"provider.com/disktype.cloud_essd": "available"}]`
+5. external-resizer sets `PersistentVolume.spec.nodeAffinity` accordingly, but the PV status is not updated yet.
+   From now on, the new Pod will be scheduled to nodes with `provider.com/disktype.cloud_essd: available`,
+   maybe they will stuck in `ContainerCreating` state until the modification finishes.
+6. external-resizer go back to step 3, retries until `in_progress` is set to false.
+7. external-resizer update the PV status to indicate the modification is successful.
+
+
 ### Test Plan
 
 <!--
