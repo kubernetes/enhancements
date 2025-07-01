@@ -91,6 +91,8 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [New GRPC](#new-grpc)
+  - [User Specified Topology Requirement](#user-specified-topology-requirement)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -368,22 +370,6 @@ message ControllerModifyVolumeRequest {
   // Indicates whether the CO allows the SP to update the topology
   // as a part of the modification.
   bool allow_topology_updates = 4;
-
-  // Specifies where (regions, zones, racks, etc.) the
-  // volume MUST be accessible from after modification.
-  // COs SHALL only specify topological accessibility
-  // information supported by the SP.
-  // This field is OPTIONAL.
-  // This field SHALL NOT be specified unless the SP has the
-  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability, the
-  // MODIFY_VOLUME_TOPOLOGY controller capability and
-  // allow_topology_updates is set to true.
-  // If this field is not specified and the SP has the
-  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability, the
-  // MODIFY_VOLUME_TOPOLOGY controller capability and
-  // allow_topology_updates is set to true, the SP MAY
-  // modify the volume topology according to the mutable_parameters.
-  TopologyRequirement accessibility_requirements = 5;
 }
 
 message ControllerModifyVolumeResponse {
@@ -997,7 +983,10 @@ Why should this KEP _not_ be implemented?
 -->
 
 ## Alternatives
-Instead of adding new fields to CSI GRPC `ControllerModifyVolume`, we could add a new GRPC `ControllerModifyVolumeTopology`:
+
+### New GRPC
+
+Instead of adding new fields to CSI GRPC `ControllerModifyVolume`, we could add a new GRPC `ControllerModifyVolumeTopology` (Other candidate names: `ControllerMigrateVolume`):
 
 ```protobuf
 rpc ControllerModifyVolumeTopology (ControllerModifyVolumeTopologyRequest)
@@ -1010,7 +999,6 @@ message ControllerModifyVolumeTopologyRequest {
   string volume_id = 1;
   map<string, string> secrest = 2 [(csi_secret) = true];
   map<string, string> mutable_parameters = 3;
-  TopologyRequirement accessibility_requirements = 4;
 }
 
 message ControllerModifyVolumeTopologyResponse {
@@ -1023,14 +1011,34 @@ message ControllerModifyVolumeTopologyResponse {
 The workflow of this new GRPC is essentially the same as the current `ControllerModifyVolume` GRPC, but it allows SPs to mutate the accessible
 topologies of volumes by default.
 
-SPs with the `MODIFY_VOLUME_TOPOLOGY` controller capability should use this new GRPC instead of `ControllerModifyVolume` when modifying volumes.
+SPs with the `MODIFY_VOLUME_TOPOLOGY` controller capability should implement both this new GRPC and `ControllerModifyVolume`.
+New COs that support modify volume topology (i.e. external-resizer) should only call the new GRPC when modifying volumes.
+Old COs can continue to call `ControllerModifyVolume`. SPs should reject such requests if topology will be changed.
 
 Comparison between these two approaches:
-| Criteria | PR 592 (Extended GRPC) | PR 593 (New GRPC) |
+| Criteria | [PR 592](https://github.com/container-storage-interface/spec/pull/592) (Extended GRPC) | [PR 593](https://github.com/container-storage-interface/spec/pull/593) (New GRPC) |
 | -------- | ---------------------- | ----------------- |
 | Maintenance Difficulty | ✅ Low | ⚠️ High, need to also modify ControllerModifyVolumeTopology when making changes to ControllerModifyVolume |
 | Implementation Complexity | ✅ Low | ⚠️ High, SPs will have to implement a new GRPC if they want to support topology modification even if they have implemented ControllerModifyVolume |
 | Side Effects | ⚠️ Will impede the GA process of K8s VAC  | ✅ No influence on other features |
+
+### User Specified Topology Requirement
+
+Currently we don't support user specified topology requirement.
+We've considered a design:
+* Add `accessibility_requirements` in `ModifyVolumeRequest`, like that in `CreateVolumeRequest`
+* Add `allowedTopologies` in `VolumeAttributeClass`, like that in `StorageClass`
+
+But facing a lot of unresolved questions:
+* How to merge `allowedTopologies` from `VolumeAttributeClass`, `StorageClass`?
+* Should we use `allowedTopologies` from `StorageClass` if it is not specified in `VolumeAttributeClass`?
+* Should we consider the topology of the currently attached nodes?
+* Should we consider the topology of all the nodes in the cluster?
+
+In most cases, SP can determine the desired topology of a volume from the `mutable_parameters`, or from the currently attached nodes.
+An exception could be: modifying a volume from regional to zonal, and it is not attached to any node.
+In this case, SP will need more information from the CO to determine the desired zone.
+But we don't have such use case now, we decided leave it as a future work.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
