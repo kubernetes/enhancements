@@ -813,7 +813,6 @@ cgroup knobs are validated to be defined as expected with no real memory stress 
 
 For beta 3:
 
-- We want e2e tests that can confirm that eviction will take in account swap usage
 - Add a lane dedicated for swap testing, including stress tests and other tests that might be disruptive and intensive.
 These lanes are called "swap-conformance", and are (and should remain) consistently green:
   - [kubelet-swap-conformance-fedora-serial](https://testgrid.k8s.io/sig-node-kubelet#kubelet-swap-conformance-fedora-serial): Green.
@@ -821,6 +820,7 @@ These lanes are called "swap-conformance", and are (and should remain) consisten
 
 For GA:
 
+- Run memory eviction tests as part of the swap-conformance lanes. 
 - Ensure that all e2e tests, especially swap-conformance tests, are consistently green.
 
 ### Graduation Criteria
