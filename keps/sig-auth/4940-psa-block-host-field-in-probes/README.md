@@ -112,6 +112,14 @@ probes with the Host field set when using the (about to be deprecated) API.
 This is implemented by [kubernetes PR 125271](https://github.com/kubernetes/kubernetes/pull/125271)
 that does exactly that.
 
+NOTE: Given there is still a use case where admins might be deploying the apiserver
+or any controlplane host-networked pod service to have probes with `.Host` field set to
+localhost (127.0.0.1). This is because there could be firewall rules blocking access to public nodeIP
+for good reasons. Hence we would continue to allow for this use case meaning the only values
+allowed on the `.Host` field would be `127.0.0.1` and `::1`. See [this snippet] for example.
+
+[this snippet]: https://github.com/kubernetes/kops/blob/5dd2f468b46fda43f3a63ba1e6dc7c55c21919eb/nodeup/pkg/model/kube_apiserver.go#L603
+
 ### Risks and Mitigations
 
 There might be users who depend on the `Host` field in
