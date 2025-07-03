@@ -88,7 +88,8 @@ lead to blind SSRF attacks.
 ### Goals
 
 * Add  Pod Security Admission (PSA) to enable admins to restrict
-  users from creating probes with the `Host` field set.
+  users from creating probes with the `Host` field set to disallowed
+  values. The only allowed values will be `127.0.0.1` and `::1`.
 * The Baseline Pod Security Standard (PSS) will be updated to enforce
   blocking this field so that it helps with easier adoption for
   workload operators given this is a known issue we want to prevent.
@@ -108,9 +109,18 @@ we do not plan to offer it in the new types.
 
 Meanwhile, the older API is never going to go away. So we also want to
 add PSA to allow admins to be able to restrict users from creating
-probes with the Host field set when using the (about to be deprecated) API.
-This is implemented by [kubernetes PR 125271](https://github.com/kubernetes/kubernetes/pull/125271)
+probes with the Host field set with disallowed values when using the
+(about to be deprecated) API. This is implemented by
+[kubernetes PR 125271](https://github.com/kubernetes/kubernetes/pull/125271)
 that does exactly that.
+
+Given there is still a use case where admins might be deploying the apiserver
+or any controlplane host-networked pod service to have probes with `.Host` field set to
+localhost (127.0.0.1). This is because there could be firewall rules blocking access to public nodeIP
+for good reasons. Hence we would continue to allow for this use case meaning the only values
+allowed on the `.Host` field would be `127.0.0.1` and `::1`. See [this snippet] for example.
+
+[this snippet]: https://github.com/kubernetes/kops/blob/5dd2f468b46fda43f3a63ba1e6dc7c55c21919eb/nodeup/pkg/model/kube_apiserver.go#L603
 
 ### Risks and Mitigations
 
@@ -123,7 +133,9 @@ the PSA to block it.
 ## Design Details
 
 Add a Baseline APILevel Pod Security Admission policy to allow admins of the
-cluster to block users from setting `.host` field in:
+cluster to block users from setting `.host` field to disallowed values in the
+following fields. The only allowed values will be `127.0.0.1` and `::1` and everything
+else will be blocked.
 
 * spec.containers[*].LivenessProbe.ProbeHandler.HTTPGet.Host
 * spec.containers[*].ReadinessProbe.ProbeHandler.HTTPGet.Host
@@ -168,10 +180,11 @@ Current test coverage status for the package is:
 
 The following integration tests will be added to verify the PSA validation logic:
 
-1. Test that pods with `.host` field set in probes are rejected when PSA is enabled with baseline level
-2. Test that pods without `.host` field set in probes are allowed when PSA is enabled with baseline level
-3. Test that existing pods with `.host` field set continue to work when PSA is enabled
-4. Test that pods with `.host` field set are allowed when PSA is disabled or using an older version
+1. Test that pods with `.host` field set to disallowed values in probes are rejected when PSA is enabled with baseline level
+2. Test that pods with `.host` field set to allowed values in probes are accepted when PSA is enabled with baseline level
+3. Test that pods without `.host` field set in probes are allowed when PSA is enabled with baseline level
+4. Test that existing pods with `.host` field set continue to work when PSA is enabled
+5. Test that pods with `.host` field set are allowed when PSA is disabled or using an older version
 
 These tests will be added to:
 - `test/integration/auth/podsecurity_test.go`
@@ -198,9 +211,12 @@ All related code will land within the same single release
 
 ### Upgrade / Downgrade Strategy
 
-Any older pods with this field set should not be affected
-with the above solution. Only newer pods getting created
-with the field will be alerted.
+Any older pods with this field set to allowed values should
+not be affected with the above solution.
+
+Any older pods with this field set to disallowed values should
+not be affected with the above solution. Only newer pods getting
+created with the field will be alerted.
 
 Users who are using this field can switch to using exec
 probes moving forward which should unblock them given exec
