@@ -2,6 +2,12 @@
 
 reviewers:
   - sig-multicluster-leads
+  - corentone
+  - jnpacker
+  - MrFreezeex
+  - munnerz
+  - RainbowMango
+  - ryanzhang-oss
 approvers:
   - sig-multicluster-leads
 labels:
