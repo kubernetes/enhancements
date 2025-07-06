@@ -86,12 +86,14 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [the fallback could be done when it's actually not needed.](#the-fallback-could-be-done-when-its-actually-not-needed)
 - [Design Details](#design-details)
   - [new API changes](#new-api-changes)
   - [ScaleUpFailed](#scaleupfailed)
+  - [[Beta] <code>scaleupTimeout</code> in the scheduler configuration](#beta-scaleuptimeout-in-the-scheduler-configuration)
     - [How we implement <code>TriggeredScaleUp</code> in the cluster autoscaler](#how-we-implement-triggeredscaleup-in-the-cluster-autoscaler)
   - [PreemptionFalied](#preemptionfalied)
   - [What if are both specified in <code>FallbackCriterion</code>?](#what-if-are-both-specified-in-fallbackcriterion)
@@ -215,6 +217,7 @@ know that this has succeeded?
 - A new field `fallbackCriteria` is introduced to `PodSpec.TopologySpreadConstraint[*]` 
   - `ScaleUpFailed` to fallback when the cluster autoscaler fails to create new Node for Pod.
   - `PreemptionFailed` to fallback when preemption doesn't help make Pod schedulable.
+- A new config field `scaleupTimeout` is introduced to the PodTopologySpread plugin's configuration.
 - introduce `TriggeredScaleUp` in Pod condition 
   - change the cluster autoscaler to set it `false` when it cannot create new Node for the Pod, `true` when success.
 
@@ -272,6 +275,26 @@ topologySpreadConstraints:
 ```
 
 #### Story 2
+
+Similar to Story 1, but additionally you want to fallback when the cluster autoscaler doesn't react within the certain time.
+In that case, maybe the cluster autoscaler is down, or it takes too long time to handle pods.
+
+In this case, in addition to use `ScaleUpFailed` in `fallbackCriteria` like Story 1,
+the cluster admin can use `scaleupTimeout` in the scheduler configuration.
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - schedulerName: default-scheduler
+    pluginConfig:
+      - name: PodTopologySpread
+        args:
+          # trigger the fallback if a pending pod has been unschedulable for 5 min, but the cluster autoscaler hasn't yet react
+          scaleupTimeout: 5m 
+```
+
+#### Story 3
 
 Your cluster doesn't have the cluster autoscaler 
 and has some low-priority Pods to make space (often called overprovisional Pods, balloon Pods, etc.).
@@ -378,6 +401,60 @@ which creates new Node for Pod typically by the cluster autoscaler.
 2. The cluster autoscaler finds those unschedulable Pod(s) but cannot create Nodes because of stockouts.
 3. The cluster autoscaler adds `TriggeredScaleUp: false`. 
 4. The scheduler notices `TriggeredScaleUp: false` on Pod and schedules that Pod while falling back to `ScheduleAnyway` on Pod Topology Spread.
+
+### [Beta] `scaleupTimeout` in the scheduler configuration
+
+_This is targeting beta._
+
+We'll implement `ScaleupTimeout` to address the additional fallback cases,
+for example, when the cluster autoscaler is down, or the cluster autoscaler takes longer time than usual.
+
+```go
+type PodTopologySpreadArgs struct {
+  // ScaleupTimeout defines the time that the scheduler waits for the cluster autoscaler to create nodes for pending pods rejected by Pod Topology Spread.
+  // If the cluster autoscaler hasn't put any value on `TriggeredScaleUp` condition for this period of time, 
+  // the plugin triggers the fallback for topology spread constraints with `ScaleUpFailed` in `FallbackCriteria`.
+  // This is for the use cases like needing the fallback when the cluster autoscaler is down or taking too long time to react.
+  // Note that we don't guarantee that `ScaleupTimeout` means the pods are going to be retried exactly after this timeout period.
+  // The scheduler will surely retry those pods, but there might be some delay, depending on other pending pods, those pods' backoff time, and the scheduling queue's processing timing. 
+  // 
+  // This is optional; If it's empty, `ScaleUpFailed` in `FallbackCriteria` is only handled when the cluster autoscaler puts `TriggeredScaleUp: false`.
+  ScaleupTimeout *metav1.Duration
+}
+```
+
+One difficulty here is: how we move pods rejected by the PodTopologySpread plugin to activeQ/backoffQ when the timeout is reached and the fallback should be triggered.
+Currently, all the requeueing is triggered by a cluster event and we don't have any capability to trigger it by time since it's put in the unschedulable pod pool.
+
+We'll need to implement a new special cluster event, `Resource: Time`.
+The PodTopologySpread plugin (or other plugins, if they need) would use it in `EventsToRegister` like this:
+
+```go
+// It means pods rejected by this plugin may become schedulable by the time flies.
+// isSchedulableAfterTimePasses is called periodically with rejected pods.
+{Event: fwk.ClusterEvent{Resource: fwk.Time}, QueueingHintFn: pl.isSchedulableAfterTimePasses}
+```
+
+At the scheduling queue, we'll have a new function `triggerTimeBasedQueueingHints`, which is triggered periodically, like `flushBackoffQCompleted`.
+In `triggerTimeBasedQueueingHints`, Queueing Hints with the `Resource: Type` event are triggered for pods rejected by those plugins,
+and the scheduling queue requeues/doesn't requeue pods based on QHints, as usual.
+
+`triggerTimeBasedQueueingHints` is triggered periodically, **but not very often**. Probably once 30 sec is enough.
+This is because:
+- Triggering `triggerTimeBasedQueueingHints` very often could impact the scheduling throughput because of the queue's lock.
+- Even if pods were requeued exactly after `ScaleupTimeout` passed, either way, those pods might have to wait for the backoff time to be completed, 
+and for other pods in activeQ to be handled. 
+
+For this reason, as you see in the above `ScaleupTimeout` comment, we would **not** guarantee that `ScaleupTimeout` means the pods are going to be retried exactly after the timeout period.
+
+As a summary, the `ScaleupTimeout` config will work like this:
+1. Pod with `ScaleUpFailed` in `FallbackCriteria` is rejected by the PodTopologySpread plugin.
+2. There's no cluster event that the PodTopologySpread plugin requeues the pod with.
+3. The cluster autoscaler somehow doesn't react to this pod. Maybe it's down.
+4. The scheduling queue triggers `triggerTimeBasedQueueingHints` periodically, and `triggerTimeBasedQueueingHints` invokes the PodTopologySpread plugin's QHint for `Resource: Type` event. 
+5. `ScaleupTimeout` is reached: the PodTopologySpread plugin's QHint for `Resource: Type` event returns `Queue` by comparing the pod's last scheduling time and `ScaleupTimeout`.
+6. The pod is retried, and the PodTopologySpread plugin regards TopologySpreadConstraint with `ScaleUpFailed` in `FallbackCriteria` as `ScheduleAnyway`. (fallback is triggered)
+
 
 #### How we implement `TriggeredScaleUp` in the cluster autoscaler
 
