@@ -661,7 +661,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-No yet as no implementation is available.
+No yet as no implementation based on the new condition is available.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -688,7 +688,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-The feature is used if workloads are scaled to zero by the autoscaling controller.
+The new status will be visible inside the `kube_horizontalpodautoscaler_status_condition` metric provided by [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) as
+and the `minReplicas: 0` setting reflected in `kube_horizontalpodautoscaler_spec_min_replicas`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
