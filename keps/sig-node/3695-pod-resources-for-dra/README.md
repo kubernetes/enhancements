@@ -347,9 +347,10 @@ The API becomes available again. The API is stateless, so no recovery is needed,
 
 ###### Are there any tests for feature enablement/disablement?
 
-This e2e test (https://github.com/kubernetes/kubernetes/pull/116846) will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. The explicit on/off tests are scattered across the existing tests:
-- https://github.com/kubernetes/kubernetes/blob/v1.34.0-alpha.1/test/e2e_node/podresources_test.go#L977
-- https://github.com/kubernetes/kubernetes/blob/v1.34.0-alpha.1/test/e2e_node/podresources_test.go#L1066
+This e2e test (https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1169) will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. The explicit on/off tests are scattered across the existing tests:
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1115
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1820
+
 
 ### Rollout, Upgrade and Rollback Planning
 
