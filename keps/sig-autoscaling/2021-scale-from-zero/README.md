@@ -262,7 +262,10 @@ As `replicas: 0` is now a possible state when using `minReplicas: 0` it can no l
 Additionally the `replicas: 0` state is problematic as updating a HPA object `minReplicas` from `0` to `1` has different behavior. If `replicas` was `0` during the update, HPA
 will be disabled for the resource, if it was `> 0`, HPA will continue with the new `minReplicas` value.
 
-To resolve this issue the KEP is introducing an explicit `enableScaleToZero` property to explicitly enable/disable scale from/to zero.
+To resolve this issue the KEP is introducing an explicit `ScaledToZero` condition inside the `HorizontalPodAutoscalerStatus`. When `ScaledToZero=True` was recorded the HPA will scale
+up a workload from `0 ~> 1` and otherwise maintain the current behavior of performing no change.
+
+When the HPA scales a workload from `1 ~> 0`, it records the `ScaledToZero=True` condition inside the status.
 
 ### Risks and Mitigations
 
@@ -278,8 +281,11 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-From an UX perspective the two stage opt-out / opt-in from scale to zero might feel a bit tedious, but the only other available option seems to be deprecating the implicit HPA pause on `replicas: 0`. While this might provide an improved
-UX, it would require a full deprecation cycle (12 months) before graduating this feature from alpha to beta.
+As `ScaledToZero` is no explicit property, applying a new Deployment with `replicas: 0` and HPA `minReplicas: 0` can be confusing as the Deployment will never scale.
+
+This needs should be documented and is detectable by looking at the existing `ScalingActive` condition.
+
+In the future pausing the HPA can become an explicit feature and the implicit pausing via `replicas: 0` can be deprecate to remove this confusing.
 
 ## Design Details
 
@@ -290,28 +296,14 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We would add `EnableScaleToZero *bool` to the HPA `spec.behavior`.
+Add `ScaledToZero` as HPA `HorizontalPodAutoscalerConditionType`
 
 ```golang
-type HorizontalPodAutoscalerBehavior struct {
-    ScaleUp           *HPAScalingRules
-    ScaleDown         *HPAScalingRules
-    EnableScaleToZero *bool
-}
 
-type HorizontalPodAutoscalerSpec struct {
-    ScaleTargetRef CrossVersionObjectReference
-    MinReplicas    *int32
-    MaxReplicas    int32
-    Metrics        []MetricSpec
-    Behavior       *HorizontalPodAutoscalerBehavior
-}
-```
-
-The `EnableScaleToZero` controls whether the `MinReplicas` can set to `>=0` (`true`, new behavior) or `>=1` (`false`, current behavior). The default will be `false` to preserve the current behavior.
-
-If `EnableScaleToZero` has been enabled, it can only be disabled when the scaled resource has at least one replica
-running and `MinReplicas` is `>=1`.
+const (
+ // ScaledToZero indicates that the HPA controller scaled the workload to zero.
+ ScaledToZero HorizontalPodAutoscalerConditionType = "ScaledToZero"
+)
 
 ### Test Plan
 
@@ -338,10 +330,10 @@ existing tests to make this code solid enough prior to committing the changes ne
 to implement this enhancement.
 
 Most logic related to this KEP is contained in the HPA controller so the testing of
-the various `minReplicas`, `replicas` and `enableScaleToZero` should be achievable with unit tests.
+the various `minReplicas`, `replicas` and `ScaledToZero` should be achievable with unit tests.
 
 Additionally integration tests should be added for enable scale to zero by, setting
- `enableScaleToZero: true`, setting `minReplicas: 1` and waiting for `replicas` to become `0` and another test for increasing `minReplicas: 1` and observing that `replicas` became `1` again and , setting `enableScaleToZero: false` afterwards.
+ `ScaledToZero: true`, setting `minReplicas: 1` and waiting for `replicas` to become `0` and another test for increasing `minReplicas: 1` and observing that `replicas` became `1` again and confirming that `ScaledToZero: true` has been removed.
 
 ##### Prerequisite testing updates
 
@@ -475,7 +467,7 @@ in back-to-back releases.
 
 #### Alpha
 
-- Implement the `enableScaleToZero` property
+- Implement the `ScaleToZero` condition recording
 - Ensure that all `minReplicas` state transitions from `0` to `1` are working as expected
 - E2E tests are passing without flakiness
 
@@ -503,9 +495,7 @@ enhancement:
 
 As this KEP changes the allowed values for `minReplicas`, special care is required for the downgrade case to not prevent any kind of updates for HPA objects using `minReplicas: 0`. The alpha code already accepts `minReplicas: 0` with the flag enabled or disabled since Kubernetes version 1.16 downgrades to any version >= 1.16 aren't an issue.
 
-The new flag `enableScaleToZero` defaults to `false`, which was has been the previous behavior. The flag should be disabled before downgrading as otherwise the
-HPA for deployments with zero replicas will be disabled until replicas have been
-raised explicitly to at least `1`.
+Before downgrading all HPAs need to be set to `minReplicas: 1` to avoid any deployments being stuck at `replicas: 1`.
 
 ### Version Skew Strategy
 
@@ -590,7 +580,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-  HPA creation/update with `minReplicas: 0` is no longer rejected, if the `enableScaleToZero` field is set to true.
+  HPA creation/update with `minReplicas: 0` is no longer rejected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -649,9 +639,10 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-There are no expected side-effects when the rollout fails as the new `enableScaleToZero` flag should only be enabled once the version upgraded completed and should be disabled before attempting a rollback.
+There are no expected side-effects when the rollout fails as the new `ScaleToZero` condition should only be enabled once the version upgraded completed.
 
-In case this is missed, HPA for deployments with zero replicas will be disabled until replicas have been raised explicitly to at least `1`.
+If an rollback is attempted, all HPAs should be updated to `minReplicas: 1` as otherwise HPA for deployments with zero replicas will be disabled until
+replicas have been raised explicitly to at least `1`.
 
 ###### What specific metrics should inform a rollback?
 
