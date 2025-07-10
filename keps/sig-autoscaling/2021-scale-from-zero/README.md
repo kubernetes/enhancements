@@ -263,7 +263,7 @@ Additionally the `replicas: 0` state is problematic as updating a HPA object `mi
 will be disabled for the resource, if it was `> 0`, HPA will continue with the new `minReplicas` value.
 
 To resolve this issue the KEP is introducing an explicit `ScaledToZero` condition inside the `HorizontalPodAutoscalerStatus`. When `ScaledToZero=True` was recorded the HPA will scale
-up a workload from `0 ~> 1` and otherwise maintain the current behavior of performing no change.
+up a workload from `0 ~> 1` and remove the condition `ScaledToZero=True`. If the condition is not found, the HPA maintains the current behavior of performing no change.
 
 When the HPA scales a workload from `1 ~> 0`, it records the `ScaledToZero=True` condition inside the status.
 
@@ -299,11 +299,11 @@ proposal will be implemented, this is the place to discuss them.
 Add `ScaledToZero` as HPA `HorizontalPodAutoscalerConditionType`
 
 ```golang
-
 const (
  // ScaledToZero indicates that the HPA controller scaled the workload to zero.
  ScaledToZero HorizontalPodAutoscalerConditionType = "ScaledToZero"
 )
+```
 
 ### Test Plan
 
