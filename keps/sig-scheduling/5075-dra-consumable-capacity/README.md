@@ -101,7 +101,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [ ] (R) Min Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
@@ -144,6 +144,7 @@ Relations to other KEPs:
 - [KEP 4815](https://github.com/kubernetes/enhancements/issues/4815): The partitioned devices can be a shareable device or have mutually exclusive partitions where one partition is shareable and the other is not.
 - [KEP 5007](https://github.com/kubernetes/enhancements/issues/5007): The allocated share can be provisioned at the pre-bind step.
 - [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share ID.
+- [KEP 4816](https://github.com/kubernetes/enhancements/issues/4816): The enhancement must be able to handle subrequests when the DRAPrioritizedList feature is enabled.
 
 A motivating use case is to allocate a shareable network device in the [CNI DRA driver](https://github.com/kubernetes-sigs/cni-dra-driver)
 which can be selected by more than one pod on demand during scheduling.
@@ -232,10 +233,10 @@ For examples of device driver migration, see the [Examples](#examples) section b
 
 ## Design Details
 
-This enhancement introduces a `allowMultipleAllocations` field within the `Device` of the ResourceSlice
+This enhancement introduces a `AllowMultipleAllocations` field within the `Device` of the ResourceSlice
 to mark whether the device is shareable among multiple resource claims (or requests).
 The multi-allocatable device can be assigned to more than one request if it satisfies the selection criteria and constraints.
-The select condition `device.allowMultipleAllocations == true/false` can be used to select the device with a `allowMultipleAllocations` property or not in a CEL selector.
+The select condition `device.allowMultipleAllocations == true/false` can be used to select the device with a `AllowMultipleAllocations` property or not in a CEL selector.
 
 The enhancement also adds a `SharingPolicy` field to `DeviceCapacity`.
 This field specifies how the capacity can be shared between different requests.
@@ -254,9 +255,9 @@ based on the capacity's sharing policy.
 If users do not specify a capacity request for consumable capacity, the default consumed value will be applied.
 There is always such a default because capacities without a policy are not consumable.
 
-A device with `allowMultipleAllocations` property can only be allocated
+A device with `AllowMultipleAllocations` property can only be allocated
 when its consumability has been verified and its attributes match the request's selectors and constraints.
-The newly added `consumedCapacities` field in the `DeviceRequestAllocationResult` will be set to the calculated capacity upon a successful allocation.
+The newly added `ConsumedCapacities` field in the `DeviceRequestAllocationResult` will be set to the calculated capacity upon a successful allocation.
 This value may differ from the originally requested amount, as it is rounded up to the nearest valid value based on the device’s sharing policy.
 If no specific amount is requested, a default consumption value is applied.
 
@@ -271,97 +272,129 @@ To enable this enhancement, the following API updates are proposed.
 // on its attributes. Besides the name, exactly one field must be set.
 type Device struct {
 ...
-   // AllowMultipleAllocations marks whether the device is allowed to be allocated for multiple times.
-   //
-   // A device with allowMultipleAllocations="true" can be allocated more than once,
-   // and its capacity is shared, regardless of whether the CapacitySharingPolicy is defined or not.
-   //
-   // +optional
-   // +featureGate=DRAConsumableCapacity
-   AllowMultipleAllocations *bool
+	// AllowMultipleAllocations marks whether the device is allowed to be allocated to multiple DeviceRequests.
+	//
+	// If AllowMultipleAllocations is set to true, the device can be allocated more than once,
+	// and its capacity is shared, regardless of whether the CapacitySharingPolicy is defined or not.
+	//
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	AllowMultipleAllocations *bool
 }
 
 // DeviceCapacity describes a quantity associated with a device.
 type DeviceCapacity struct {
-    // Value defines how much of a certain device capacity is available.
-    //
-    // If the capacity is consumable (i.e., a SharingPolicy is specified),
-    // the consumed amount is deducted and cached in memory by the scheduler.
-    // Note that the remaining capacity is not reflected in the resource slice.
-    //
-    // +required
-    Value resource.Quantity
+	// Value defines how much of a certain capacity that device has.
+	//
+	// This field reflects the fixed total capacity and does not change.
+	// If the capacity is consumable (i.e., allowMultipleAllocations is set to true
+	// and sharingPolicy is defined), the consumed amount is tracked separately by scheduler
+	// and does not affect this value.
+	//
+	// +required
+	Value resource.Quantity
 
-   // SharingPolicy specifies that this device capacity must be consumed
-   // by each resource claim according to the defined sharing policy.
-   // The Device must allow multiple allocations.
-   //
-   // +optional
-   // +featureGate=DRAConsumableCapacity
-   SharingPolicy *CapacitySharingPolicy
+	// SharingPolicy defines how this DeviceCapacity must be consumed
+	// when the device is allowed to be shared by multiple allocations.
+	//
+	// The Device must have allowMultipleAllocations set to true in order to set a sharingPolicy.
+	//
+	// If this field is unset, capacity sharing is unconstrained:
+	// it can be shared with any number of DeviceRequests,
+	// and the scheduler will not deduct (consume) its value from capacity of DeviceRequests,
+	// even if those requests are defined, when the device is allocated.
+	//
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	SharingPolicy *CapacitySharingPolicy
 }
 
-// CapacitySharingPolicy defines how requests consume the available capacity.
-// A policy must have a default value to be applied when no value is explicitly provided.
-// It can either specify a range of valid values or a discrete set of them.
-// Exactly one of them must be defined.
-// The default value must be a valid value.
+// CapacitySharingPolicy defines how requests consume device capacity.
+//
+// The Default field must be defined for the scheduler to consume the capacity
+// and to ensure that the total allocated capacity remains within the DeviceCapacity's Value.
+//
+// The ValidSharingValues field (either ValidValues or ValidRange) is optional.
+// At most one of ValidSharingValues can be defined.
+// If any ValidSharingValues are defined, Default must also be defined and valid.
 type CapacitySharingPolicy struct {
-   // Default specifies the default capacity to be used for a consumption request.
-   //
-   // +required
-   Default resource.Quantity
+	// Default specifies how much of this capacity is consumed by a request
+	// that does not contain an entry for it in DeviceRequest's Capacity.
+	//
+	// +optional
+	Default *resource.Quantity
 
-   // ValidValues defines a set of acceptable quantity values in consuming requests.
-   //
-   // +optional
-   // +oneOf=ValidSharingValues
-   ValidValues []resource.Quantity
+	// ValidValues defines a set of acceptable quantity values in consuming requests.
+	//
+	// Must not contain more than 10 entries.
+	//
+	// If this field is set, Default must be defined and it must be included in ValidValues list.
+	//
+	// +optional
+	// +listType=atomic
+	// +oneOf=ValidSharingValues
+	ValidValues []resource.Quantity
 
-   // ValidRange defines an acceptable quantity value range in consuming requests.
-   //
-   // +optional
-   // +oneOf=ValidSharingValues
-   ValidRange *CapacitySharingPolicyRange
-
-   // Potential extension: allow defining a `strategy` on a specific capacity
-   // to specify default scheduling behavior when it is not explicitly requested.
+	// ValidRange defines an acceptable quantity value range in consuming requests.
+	//
+	// If this field is set, Default must be defined and it must fall within the defined ValidRange.
+	//
+	// +optional
+	// +oneOf=ValidSharingValues
+	ValidRange *CapacitySharingPolicyRange
 }
 
 // CapacitySharingPolicyRange defines a valid range for consumable capacity values.
 //
-// - If the requested amount is less than Minimum, it is rounded up to the Minimum value.
-// - If the requested amount is between Minimum and Maximum, ChunkSize is set,
-//   and the amount does not align with the ChunkSize,
-//   it will be rounded up to the next value matching Minimum + (n * ChunkSize).
-// - If the requested or rounded amount exceeds Maximum (if set), the request does not satisfy the policy,
-//   and the device cannot be allocated.
-//
-// - If ChunkSize is not set, the requested amount is used as-is, provided it falls within the range.
+//   - If the requested amount is less than Min, it is rounded up to the Min value.
+//   - If Step is set and the requested amount is between Min and Max but not aligned with Step,
+//     it will be rounded up to the next value equal to Min + (n * Step).
+//   - If Step is not set, the requested amount is used as-is if it falls within the range Min to Max (if set).
+//   - If the requested or rounded amount exceeds Max (if set), the request does not satisfy the policy,
+//     and the device cannot be allocated.
 type CapacitySharingPolicyRange struct {
-    // Minimum specifies the minimum capacity allowed for a consumption request.
-    //
-    // Minimum must be less than or equal to the capacity value.
-    // Default must be more than or equal to the minimum.
-    //
-    // +required
-    Minimum resource.Quantity
+	// Min specifies the minimum capacity allowed for a consumption request.
+	//
+	// Min must be less than or equal to the capacity value.
+	// Default must be more than or equal to the minimum.
+	//
+	// +required
+	Min resource.Quantity
 
-    // Maximum defines the upper limit for capacity that can be requested.
-    //
-    // Maximum must be less than or equal to the capacity value.
-    // Minimum and default must be less than or equal to the maximum.
-    //
-    // +optional
-    Maximum *resource.Quantity
+	// Max defines the upper limit for capacity that can be requested.
+	//
+	// Max must be less than or equal to the capacity value.
+	// Min and Default must be less than or equal to the maximum.
+	//
+	// +optional
+	Max *resource.Quantity
 
-    // ChunkSize defines the step size between valid capacity amounts within the range.
-    //
-    // Maximum and default must be a multiple of the chunk size.
-    // Minimum + chunk size must be less than or equal to the capacity value.
-    //
-    // +optional
-    ChunkSize *resource.Quantity
+	// Step defines the step size between valid capacity amounts within the range.
+	//
+	// Max (if set) and Default must be a multiple of Step.
+	// Min + Step must be less than or equal to the capacity value.
+	//
+	// +optional
+	Step *resource.Quantity
+}
+```
+
+#### CELDeviceSelector's description
+
+```go
+type CELDeviceSelector struct {
+	// ...
+	// The expression's input is an object named "device", which carries
+	// the following properties:
+	//  - driver (string): the name of the driver which defines this device.
+	//  - attributes (map[string]object): the device's attributes, grouped by prefix
+	//    (e.g. device.attributes["dra.example.com"] evaluates to an object with all
+	//    of the attributes which were prefixed by "dra.example.com".
+	//  - capacity (map[string]object): the device's capacities, grouped by prefix.
+	//  - allowMultipleAllocations (bool): the allowMultipleAllocations property of the device (v1.34+).
+	// ...
+	// +required
+	Expression string
 }
 ```
 
@@ -370,117 +403,143 @@ type CapacitySharingPolicyRange struct {
 The `CapacityRequests` field is defined within each supported device request type, such as `DeviceSubRequest` and `ExactDeviceRequest`.
 
 ```go
-// DeviceSubRequest is similar to ExactDeviceRequest, but doesn't expose the
-// AdminAccess field as that one is only supported when requesting a
-// specific device.
 type DeviceSubRequest struct {
-...
-   // CapacityRequests define resource requirements against each capacity.
-   //
-   // +optional
-   // +featureGate=DRAConsumableCapacity
-   CapacityRequests *CapacityRequirements
+
+	// Capacity define resource requirements against each capacity.
+	//
+	// If this field is unset and the device supports multiple allocations,
+	// the default value will be applied to each capacity with a defined sharing policy.
+	//
+	// Applies to each device allocation.
+	// If Count > 1,
+	// request fails if there aren't enough devices that meet the requirements.
+	// If AllocationMode is set to All,
+	// request fails if any device doesn't meet the requirements.
+	//
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	Capacity *CapacityRequirements
+
 }
 
 // ExactDeviceRequest is a request for one or more identical devices.
 type ExactDeviceRequest struct {
-...
-   // CapacityRequests define resource requirements against each capacity.
-   //
-   // +optional
-   // +featureGate=DRAConsumableCapacity
-   CapacityRequests *CapacityRequirements
-}
 
+	// Capacity define resource requirements against each capacity.
+	//
+	// If this field is unset and the device supports multiple allocations,
+	// the default value will be applied to each capacity with a defined sharing policy.
+	//
+	// Applies to each device allocation.
+	// If Count > 1,
+	// request fails if there aren't enough devices that meet the requirements.
+	// If AllocationMode is set to All,
+	// request fails if any device doesn't meet the requirements.
+	//
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	Capacity *CapacityRequirements
+
+}
 
 // CapacityRequirements defines the capacity requirements for a specific device request.
 type CapacityRequirements struct {
-    // Minimum defines the minimum amount of each device capacity required for the request.
-    //
-    // If the capacity has a sharing policy, this value is rounded up to the nearest valid amount
-    // according to that policy. The rounded value is used during scheduling to determine how much capacity to consume.
-    //
-    // If the quantity does not have a sharing policy, this value is used as an additional filtering
-    // condition against the available capacity on the device.
-    // This is semantically equivalent to a CEL selector with
-    // `device.capacity[<domain>].<name>.compareTo(quantity(<minimum quantity>)) >= 0`
-    // For example, device.capacity['test-driver.cdi.k8s.io'].counters.compareTo(quantity('2')) >= 0
-    //
-    // +optional
-   Minimum map[QualifiedName]resource.Quantity
+	// Requests represent individual device resource requests for distinct resources,
+	// all of which must be provided by the device.
+	//
+	// For each device capacity with a defined sharingPolicy,
+	// the scheduler uses the policy to determine how much capacity is consumed:
+	// - If no capacity request is specified, the device sharingPolicy.default value is used.
+	// - If the device sharingPolicy defines a validRange,
+	//   the capacity request is rounded up to the nearest valid value in the range.
+	// - If the device sharingPolicy defines validValues, the capacity request is rounded up to the nearest valid value.
+	// The consumed capacity is written to the resource claim status.devices[*].consumedCapacity field.
+	//
+	// This value is used as an additional filtering condition against the available capacity on the device.
+	// This is semantically equivalent to a CEL selector with
+	// `device.capacity[<domain>].<name>.compareTo(quantity(<request quantity>)) >= 0`.
+	// For example, device.capacity['test-driver.cdi.k8s.io'].counters.compareTo(quantity('2')) >= 0.
+	//
+	// +optional
+	Requests map[QualifiedName]resource.Quantity
 }
 
-// DeviceConstraint must have exactly one field set besides Requests.
 type DeviceConstraint struct {
-	...
-   // DistinctAttribute requires that all devices in question have this
-   // attribute and that its type and value are unique across those devices.
-   //
-   // This acts as the inverse of MatchAttribute.
-   //
-   // This constraint is used to avoid allocating multiple requests to the same device
-   // by ensuring attribute-level differentiation.
-   //
-   // This is useful for scenarios where resource requests must be fulfilled by separate physical devices.
-   // For example, a container requests two network interfaces that must be allocated from two different physical NICs.
-   //
-   // +optional
-   // +oneOf=ConstraintType
-   DistinctAttribute *FullyQualifiedName
-}
 
+	// DistinctAttribute requires that all devices in question have this
+	// attribute and that its type and value are unique across those devices.
+	//
+	// This acts as the inverse of MatchAttribute.
+	//
+	// This constraint is used to avoid allocating multiple requests to the same device
+	// by ensuring attribute-level differentiation.
+	//
+	// This is useful for scenarios where resource requests must be fulfilled by separate physical devices.
+	// For example, a container requests two network interfaces that must be allocated from two different physical NICs.
+	//
+	// +optional
+	// +oneOf=ConstraintType
+	// +featureGate=DRAConsumableCapacity
+	DistinctAttribute *FullyQualifiedName
+
+}
 ```
 
 #### ResourceClaimStatus's DeviceRequestAllocationResult
 
 ```go
 type DeviceRequestAllocationResult struct {
-  ...
 
 	// ShareID uniquely identifies an individual allocation share of a device,
 	// used when the device supports multiple simultaneous allocations.
 	// It serves as an additional map key to differentiate concurrent shares
 	// of the same device.
 	//
-	// The ID is randomly generated as a hexadecimal (hex) string for each allocation share.
-	// It must be unique among all currently allocated shares for the same device
-	// (i.e., uniqueness is required only at the device level, not globally).
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	ShareID *types.UID
+
+	// ConsumedCapacity tracks the amount of capacity consumed per device as part of the claim request.
+	// The consumed amount may differ from the requested amount: it is rounded up to the nearest valid
+	// value based on the device’s sharing policy if applicable and must not be less than the requested amount.
 	//
-	// Hex is chosen for its compact representation, ease of generation from binary,
-	// and suitability for identifiers in logs, APIs, and storage.
+	// The total consumed capacity for each device must not exceed the DeviceCapacity's Value.
+	//
+	// This field is populated only for devices that support multiple allocations.
+	// It references only DeviceCapacity entries that have a specified sharingPolicy,
+	// and is empty if no such entries exist.
+	//
+	// +optional
+	// +featureGate=DRAConsumableCapacity
+	ConsumedCapacity map[QualifiedName]resource.Quantity
+}
+
+type ResourceClaimStatus struct {
+
+	// Devices contains the status of each device allocated for this
+	// claim, as reported by the driver. This can include driver-specific
+	// information. Entries are owned by their respective drivers.
+	//
+	// +optional
+	// +listType=map
+	// +listMapKey=driver
+	// +listMapKey=device
+	// +listMapKey=pool
+	// +listMapKey=shareID
+	// +featureGate=DRAResourceClaimDeviceStatus
+	Devices []AllocatedDeviceStatus
+}
+
+type AllocatedDeviceStatus struct {
+
+	// ShareID uniquely identifies an individual allocation share of the device.
+	//
+	// If specified, must be a valid UID.
 	//
 	// +optional
 	// +featureGate=DRAConsumableCapacity
 	ShareID *string
 
-  // Alternatively, SharedAllocationIndex could have been used as a reference to the allocation result.
-  // However, the index may become outdated if the allocation is reallocated (should that ever be supported),
-  // making it less reliable than ShareID.
-
-  // ConsumedCapacities tracks the amount of capacity consumed per device as part of the claim request.
-  // The consumed amount may differ from the requested amount: it is rounded up to the nearest valid
-  // value based on the device’s sharing policy if applicable.
-  //
-  // The total consumed capacity for each device must not exceed its available capacity.
-  //
-  // This field references only consumable capacities of a device and is empty when there are none.
-  //
-  // +optional
-  // +featureGate=DRAConsumableCapacity
-   ConsumedCapacities map[QualifiedName]resource.Quantity
-}
-
-// AllocatedDeviceStatus contains the status of an allocated device, if the
-// driver chooses to report it. This may include driver-specific information.
-type AllocatedDeviceStatus struct {
-	// Device references one device instance via its name in the driver's
-	// resource pool. It must be a DNS label.
-	//
-	// If the allocation result includes a ShareID, the Device field is extended with the ShareID,
-	// formatted as `<device name>/<share id>`.
-	//
-	// +required
-	Device string
 }
 ```
 
@@ -495,7 +554,7 @@ type AllocatedDeviceStatus struct {
   whether the consumed capacity would exceed the device's remaining capacity. 
   The remaining capacity is calculated based on the sum of already allocated and currently allocating capacities.
   - consumed capacity is derived from the requested amount specified in the resource claim, adjusted by the device’s capacity sharing policy, if defined.
-  - This value may differ from the originally requested amount—it is rounded up to the nearest valid capacity according to the policy (e.g., using Minimum + ⌈(Requested - Minimum)/ChunkSize⌉ × ChunkSize logic).
+  - This value may differ from the originally requested amount—it is rounded up to the nearest valid capacity according to the policy (e.g., using Min + ⌈(Requested - Min)/Step⌉ × Step logic).
 - If the device has enough remaining capacity to satisfy the consumed amount, constraint checks are applied. 
   In addition to the existing MatchAttribute, this proposal introduces a new constraint: `DistinctAttribute`, which ensures attribute uniqueness across allocated devices.
 - Once all selection and constraint checks pass, the allocation is valid. The allocation result is updated with:
@@ -506,7 +565,7 @@ type AllocatedDeviceStatus struct {
 - Finally, the share identifiers and consumed capacities from all internal results
   are propagated to the DeviceRequestAllocationResult.
 
-### Handles Device Updates for `allowMultipleAllocations` and `sharingPolicy`
+### Handles Device Updates for `AllowMultipleAllocations` and `SharingPolicy`
 
 - If a device is updated from **dedicated** (`allowMultipleAllocations: false`) to **multi-allocatable** (`allowMultipleAllocations: true`), it must continue to behave as a dedicated device and not allow sharing **until all existing resource claims for that device are released**.
 - If a device is updated from multi-allocatable to dedicated, it should no longer be available for new allocations. However, already allocated devices should not be deallocated.
@@ -542,8 +601,8 @@ spec:
           sharingPolicy:
             default: "1Mi"
             validRange:
-              minimum: "1Mi"
-              chunkSize: "8"
+              min: "1Mi"
+              step: "8"
           value: "10Gi"
 ```
 
@@ -554,12 +613,12 @@ kind: ResourceClaim
 ...
 spec:
   devices:
-    requests:
+    requests: # for devices
     - name: nic
       exactly:
         deviceClassName: qos-aware-shared.device.x-k8s.io
-        capacityRequests:
-          minimum:
+        capacity:
+          requests: # for resources which must be provided by those devices
             bandwidth: 5Gi
 ```
 
@@ -582,7 +641,8 @@ status:
         cniVersion: 1.1.0
         ips:
         - address: 10.0.103.49/16
-      device: eth1/0d274f
+      device: eth1
+      shareID: 0d274f
       ...
 ```
 
@@ -613,7 +673,7 @@ spec:
 
 #### Device driver migration
 
-- Change `allowMultipleAllocations` from `false` to `true`.
+- Change `AllowMultipleAllocations` from `false` to `true`.
 
   ```yaml
   kind: ResourceSlice
@@ -634,8 +694,8 @@ spec:
             sharingPolicy:
               default: 80Gi
               validRange:
-                minimum: 10Gi
-                chunkSize: 10Gi
+                min: 10Gi
+                step: 10Gi
             value: 80Gi
   ```
 
@@ -665,8 +725,8 @@ spec:
             - name: gpu
               exactly:
                 deviceClassName: example.dra.x-k8s.io
-                capacityRequests:
-                  minimum:
+                capacity:
+                  requests:
                     memory: 80Gi
       ```
 
@@ -681,8 +741,8 @@ spec:
         - name: gpu
           exactly:
             deviceClassName: example.dra.x-k8s.io
-            capacityRequests:
-              minimum:
+            capacity:
+              requests:
                 memory: 10Gi
     ```
 
@@ -703,15 +763,15 @@ spec:
           sharingPolicy:
             default: 300
             validRange:
-              minimum: 300
-              chunkSize: 100
+              min: 300
+              step: 100
           value: 700
         memory:
           sharingPolicy:
             default: 80Gi
             validRange:
-              minimum: 10Gi
-              chunkSize: 10Gi
+              min: 10Gi
+              step: 10Gi
           value: 80Gi
   ```
 
@@ -726,8 +786,8 @@ spec:
           - name: gpu
             exactly:
               deviceClassName: example.dra.x-k8s.io
-              capacityRequests:
-                minimum:
+              capacity:
+                requests:
                   memory: 10Gi
     ```
 
@@ -744,14 +804,14 @@ spec:
           - name: gpu
             exactly:
               deviceClassName: example.dra.x-k8s.io
-              capacityRequests:
-                minimum:
+              capacity:
+                requests:
                   power: 300
     ```
 
     `gpu0` will be allocated with 80Gi memory and 300W powercap and it cannot be allocated to the other Pod due to memory guarantee.
 
-- Change `allowMultipleAllocations` from `true` to `false` and request minimum capacity request.
+- Change `AllowMultipleAllocations` from `true` to `false` and request minimum capacity request.
 
   ```yaml
   devices:
@@ -777,8 +837,8 @@ spec:
       - name: gpu
         exactly:
           deviceClassName: example.dra.x-k8s.io
-          capacityRequests:
-            minimum:
+          capacity:
+            requests:
               memory: 10Gi
   ```
 
@@ -814,13 +874,16 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 **Sharing Policy (Device Capacity Test)**
 
-- If a default is defined, require exactly one of `validValues` or `validRange`.
+- Default value is required.
 - The default must be included in the options for `validValues`, or fall within the specified `validRange`.
-- Options must be a list of unique values.
-- The option size should be kept within limits to avoid excessive growth.
+- `validValues` and `validRange` must not be defined at the same time within a single `sharingpolicy`.
+- `validValues` must be a list of unique values.
+- `validValues` must be in ascending order.
+- The `validValues` size should be kept within 10 to avoid excessive growth.
 - The minimum must be less than or equal to the maximum in the `validRange`.
 - If a chunk size is defined, both the default and the maximum must be multiples of the chunk size.
 - The minimum, maximum, and (minimum + chunk size) must each be less than the capacity value.
+- If `AllowMultipleAllocations` of the device is not set or set to false, `SharingPolicy`for any of its capacity must not be defined.
 
 **Distinct Attribute**
 
@@ -828,12 +891,24 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - If the feature gate is enabled, exactly one of `matchAttribute` or `distinctAttribute` must be provided.
 - If the feature gate is disabled, `matchAttribute` is required.
 
-**Device Name and Share ID**
+**Share ID**
 
-- If the feature gate is enabled and multi-allocation is allowed, ensure the device domain name length is sufficient: it must be at least (share ID size + 1).
-- The share ID must have a designated size and must be decodable as hex.
-- When this feature gate and `deviceStatusFeatureGate` ([KEP 4817](https://github.com/kubernetes/enhancements/issues/4817)) are enabled, the `device` field in the allocated device status may contain a `/`. In that case, the first part must be validated as a device name, and the second part as a share ID. This extended device name should enable a one-to-one mapping with the allocation result which contains a share ID.
-- If the feature gate is disabled, share ID and allow multi-allocation should be ignored. The device name with `/` should be failed.
+- When this feature gate and `deviceStatusFeatureGate` ([KEP 4817](https://github.com/kubernetes/enhancements/issues/4817)) are enabled, the combination keys of `driver`, `pool`, `device`, and `shareID`in `Status.Devices` must be a one-to-one mapping with those keys in `Status.Allocation.Devices`.
+
+**Create Strategy**
+
+- Keep fields if the feature is enabled for `ResourceSlice`, `ResourceClaim`, and `ResourceClaimTemplate`
+- Drop fields if the feature is disabled for `ResourceSlice`, `ResourceClaim`, and `ResourceClaimTemplate`
+
+**Update Strategy**
+
+- Keep existing fields if the feature is enabled `ResourceSlice`, `ResourceClaim`, and `ResourceClaimTemplate`
+- Keep existing fields of `ResourceSlice` if any feature field is set in the old `ResourceSlice`.
+- Keep existing fields of `ResourceClaim` and `ResourceClaimTemplate` if any feature field is set in the old `ResourceClaim` or `ResourceClaimTemplate`.
+- Keep existing fields of `ResourceClaim` if any feature field is set in the old `ResourceClaim.Status`.
+- Drop fields if the feature is disabled and the fields has not been used by the old resource as described above.
+  - If the `DRAPrioritizedList` is enabled, the `CapacityRequests` of `DeviceSubRequest` in `FirstAvailable` must be dropped as well.
+- The same strategy for `ResourceClaim` must be followed regardless of `DRADeviceStatus` feature enablement.
 
 ###### Allocator
 
@@ -843,7 +918,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - must not allocate a device which do not allow multiple allocations more than once
 - can exclude dedicated device from allocation with CEL
 - can limit allocation to multi-allocatable device with CEL
-- can work with partitionable devices
+- can work with `DRAPartitionableDevices` feature.
 
 **Consumable Capacity**
 
@@ -851,23 +926,30 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 - can add/remove consumed capacity of allocating devices
 - can round up and compute user-requesting minimum capacity according to sharing policy range and chunk size
 - requested capacity for non-consumable capacity acts like a `>=` filter
+- can work with `DRAPrioritizedList` feature's subrequests.
 
 **Distinct Attribute**
+
 - can prevent allocating the same device in the same request with a distinct constraint
 - can allocate different device in the same request with a distinct contraint
 
 ###### Coverage
 
-- `k8s.io/dynamic-resource-allocation/structured:`:	`6/4/2025` - `87.5`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `6/4/2025` - `97.8`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `6/5/2025` - `85.5` 
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `6/5/2025` - `69.1`
+- `k8s.io/dynamic-resource-allocation/structured`:	`7/23/2025` - `54.5`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental:`:	`7/23/2025` - `90.2`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `7/23/2025` - `97.9`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `7/23/2025` - `88.7` 
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `7/23/2025` - `73.2`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `7/23/2025` - `70.8`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `7/23/2025` - `82.0`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `7/23/2025` - `92.7`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `7/23/2025` - `46.2`
 
 ##### Integration tests
 
 The existing [integration tests for kube-scheduler which measure performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme) will be extended to cover the overheaad of running the additional logic to support the features in this KEP. 
 
-We will extend the test for creating large ResourceSlices to ensure that a ResourceSlice using the new fields satisfies the etcd limits.
+We extend the test for creating large ResourceSlices to ensure that a ResourceSlice using the new fields satisfies the etcd limits.
 
 ##### e2e tests
 
@@ -881,7 +963,14 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-We will extend [the DRA test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver) to enable support for this feature and add tests to ensure they are handled by the scheduler as described in this KEP.
+We extend [the DRA test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver) to enable support for this feature and add tests to ensure they are handled by the scheduler as described in this KEP.
+
+The following functionalities should be covered in E2E tests:
+
+- **ResourceSlice creation**: The ResourceSlice must be created successfully with `AllowMultipleAllocations` and a `SharingPolicy`.
+- **Pod Scheduling with Available Capacity**: A Pod with a resource claim must run successfully when the requested capacity is available.
+- **Capacity Enforcement**: A Pod must stay in Pending state if it requests more than the remaining capacity, even if the request is less than the total capacity.
+- **Capacity Release and Re-Scheduling**: When a Pod is deleted, its reserved capacity must be released, and any pending Pod with a satisfied request must start running.
 
 ### Graduation Criteria
 
@@ -968,16 +1057,17 @@ In the context of this enhancement, the following strategy is proposed:
 
 * **All introduced fields are optional and can be omitted if empty.** This means that during the upgrade or downgrade process, if certain fields or configurations are not required, they can be left out without causing issues or disrupting the upgrade process.
 
-* **The introduced mechanisms will only be applied if the "allowMultipleAllocations" field of the device is not set.**
-  This ensures that the feature only activates when specific conditions are met, providing flexibility in how the feature is applied.
+* The general upgrade and downgrade processes will follow the DRA strategy.
 
-  If the "allowMultipleAllocations" field is not set, the scheduling mechanisms related to the shared device (e.g., allocating network resources, managing devices) will be triggered according to the introduced enhancement.
+* The upgrade and downgrade processes of shareID will follow the optional map keys strategy.
 
-* **The upgrade and downgrade processes will follow the DRA strategy.**
+* The upgrade and downgrade processes of allowMultipleAllocations CEL will follow the VersionOptions method.
 
 ### Version Skew Strategy
 
-During version skew, where the API server supports the feature but the scheduler does not, the introduced field can be set, but it will be ignored. In this case, all devices have allowMultipleAllocations=`false`, and all capacities will be considered non-consumable. No errors or warnings will be triggered, but the field will have no effect.
+During version skew, where the API server supports the feature but the scheduler does not, the scheduler will throw an error if the `ResourceClaim` contains `CapacityRequests` to prevent allocating the devices that doesn't meet the user requests. If there is no `CapacityRequests`, the scheduler continues scheduling and ignores the `allowMultipleAllocation` and `sharingPolicy` fields in `ResourceSlice`.
+
+If the feature is enabled on scheduler but is disabled on API server. The scheduler can continue scheduling as-is without feature fields.
 
 ## Production Readiness Review Questionnaire
 
@@ -1057,13 +1147,13 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
 Yes, this feature can be disabled once it has been enabled.
-The `allowMultipleAllocations` flag, `sharingPolicy` and `capacityRequests` fields will be dropped.
-However, the `shareID`, `consumedCapacities`, and renamed device (`<device id>/<share id>`) in device status needs to remain to keep the existing allocation result reference valid.
+The `AllowMultipleAllocations` flag, `SharingPolicy` and `CapacityRequests` fields will be dropped.
+However, the `ShareID`, `ConsumedCapacities`, and renamed device (`<device id>/<share id>`) in device status needs to remain to keep the existing allocation result reference valid.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The fields will be available again for read and write. 
-However, the previously dropped `sharingPolicy`, `capacityRequests`, and `consumedCapacities` will be missing. 
+However, the previously dropped `SharingPolicy`, `CapacityRequests`, and `ConsumedCapacities` will be missing. 
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1105,8 +1195,8 @@ will rollout across nodes.
 -->
 
 - Enabling the feature gate will enable the field to be written and therefore invoke validation of the field.
-- Disabling the feature gate will drop the ability to consume the capacity in scheduling so that the `consumedCapacities` in the allocation result should be also dropped. If the external party uses the reference to this field to manage the QoS-aware devices, it may fail if there is no handler.
-- Disabling the feature gate is equivalent to unset `allowMultipleAllocations` and `sharingPolicy`, the scheduler will handle as described in [this previous section](#handles-device-updates-for-allowmultipleallocations-and-sharingpolicy).
+- Disabling the feature gate will drop the ability to consume the capacity in scheduling so that the `ConsumedCapacities` in the allocation result should be also dropped. If the external party uses the reference to this field to manage the QoS-aware devices, it may fail if there is no handler.
+- Disabling the feature gate is equivalent to unset `AllowMultipleAllocations` and `SharingPolicy`, the scheduler will handle as described in [this previous section](#handles-device-updates-for-allowmultipleallocations-and-sharingpolicy).
 
 ###### What specific metrics should inform a rollback?
 
@@ -1439,7 +1529,7 @@ Cons:
     compared to a boolean when there is only a single binary option to serve the purpose.
 
     Note:
-    - Potential extensions to the allocation strategy can be introduced for each capacity attribute defined in the `SharingPolicy`.
+    - A potential extension to the allocation strategy can be introduced for each capacity attribute defined in the `SharingPolicy`.
       For example, a `strategy` field could be added to explicitly define the scheduling behavior for a specific capacity:
 
       ```yaml
@@ -1453,6 +1543,10 @@ Cons:
       - `BlockOrShare`: The inverse of `ConsumedOrNever`. If the first consumer requests no capacity, it consumes the entire device (i.e., full capacity). If it does specify a capacity request, the device remains shareable up to the guaranteed amount.
 
       The current default behavior is `AlwaysConsumed` when the sharingPolicy is defined.
+
+    - Additionally, a common SharingPolicy can be defined in the Device struct (similar to mixins)
+      and reference it using new fields named `SharingPolicyRef` or `SharingPolicyName`,
+      which are mutually exclusive with the Default field as discussed in [this comment's thread](https://github.com/kubernetes/kubernetes/pull/132522#discussion_r2208705536).
 
 2. Use a **count** field to specify how many times a device can be reallocated to different resource requests.
 
@@ -1508,6 +1602,43 @@ Cons:
   it may not require them to come from different devices.
   It can accept allocations from either the same or different shareable devices.
 - Not configurable—users can't override this behavior when needed.
+
+### Identifying shared device in the device status
+
+When the same device are allocated multiple times to different requests, `ShareID` is required to differentiate between different allocation especially useful when the different allocation has a different status set in the `AllocatedDeviceStatus`.
+
+`ShareID`, which is intended to serve as part of a composite key for identifying devices, cannot be added to the map keys of the listType because fields used as map keys must be required. Making `ShareID` required is not an option, as the API feature gate should not introduce required fields.
+
+**Current Approach:**
+
+Append the `Device` with `/<share id>` and workarounds on validation function.
+
+**Alternative:**
+
+Update `api-machinery` to support adding new keys to listType=map - [GitHub Issue](https://github.com/kubernetes/kubernetes/issues/132524)
+
+### Defining a valid range for SharingPolicy
+
+**Current Approach:**
+
+Newly define minimum, maximum, and chunk size and implement a function to validate the value in range.
+
+**Alternative:**
+
+The range can be defined and validated using a `LimitRange` match.
+Enforcing min/max/default values via `LimitRange` is a generally useful mechanism.
+
+### Alternative words
+
+- `Device.AllowMultipleAllocations`: The alternative names proposed were: `Shareable`, `Shared`, and `AllowShared`.
+
+- `CapacityRequirements.Min`:
+  The alternative names proposed were: `Required`, `Reservation`, `Consumption`, and `Requests`.
+  `Requests` was dropped since it's already used in the DRA API for device requests.
+  `Min` was selected because the actual consumed capacity can be rounded up
+  based on the sharing policy — for example, to match a defined chunk size or meet a minimum requirement.
+
+- `ChumkSize`: The alternative names proposed were: `StepSize`, `UnitSize`.
 
 ## Infrastructure Needed (Optional)
 
