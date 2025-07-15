@@ -92,9 +92,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [the fallback could be done when it's actually not needed.](#the-fallback-could-be-done-when-its-actually-not-needed)
 - [Design Details](#design-details)
   - [new API changes](#new-api-changes)
-  - [ScaleUpFailed](#scaleupfailed)
-  - [[Beta] <code>scaleupTimeout</code> in the scheduler configuration](#beta-scaleuptimeout-in-the-scheduler-configuration)
-    - [How we implement <code>TriggeredScaleUp</code> in the cluster autoscaler](#how-we-implement-triggeredscaleup-in-the-cluster-autoscaler)
+  - [NodeProvisioningFailed](#nodeprovisioningfailed)
+  - [[Beta] <code>nodeProvisioningTimeout</code> in the scheduler configuration](#beta-nodeprovisioningtimeout-in-the-scheduler-configuration)
+    - [How we implement <code>NodeProvisioningInProgress</code> in the cluster autoscaler](#how-we-implement-nodeprovisioninginprogress-in-the-cluster-autoscaler)
   - [PreemptionFalied](#preemptionfalied)
   - [What if are both specified in <code>FallbackCriterion</code>?](#what-if-are-both-specified-in-fallbackcriterion)
   - [Test Plan](#test-plan)
@@ -118,7 +118,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [introduce <code>DoNotScheduleUntilScaleUpFailed</code> and <code>DoNotScheduleUntilPreemptionFailed</code>](#introduce-donotscheduleuntilscaleupfailed-and-donotscheduleuntilpreemptionfailed)
+  - [introduce <code>DoNotScheduleUntilNodeProvisioningFailed</code> and <code>DoNotScheduleUntilPreemptionFailed</code>](#introduce-donotscheduleuntilnodeprovisioningfailed-and-donotscheduleuntilpreemptionfailed)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -187,7 +187,7 @@ updates.
 
 A new field `fallbackCriteria` is introduced to `PodSpec.TopologySpreadConstraint[*]` 
 to represent when to fallback from DoNotSchedule to ScheduleAnyway.
-It can contain two values: `ScaleUpFailed` to fall back when the cluster autoscaler fails to create new Node for Pods,
+It can contain two values: `NodeProvisioningFailed` to fall back when the cluster autoscaler fails to create new Node for Pods,
 and `PreemptionFailed` to fall back when the preemption doesn't help to make Pods schedulable.
 
 ## Motivation
@@ -215,10 +215,10 @@ know that this has succeeded?
 -->
 
 - A new field `fallbackCriteria` is introduced to `PodSpec.TopologySpreadConstraint[*]` 
-  - `ScaleUpFailed` to fallback when the cluster autoscaler fails to create new Node for Pod.
+  - `NodeProvisioningFailed` to fallback when the cluster autoscaler fails to create new Node for Pod.
   - `PreemptionFailed` to fallback when preemption doesn't help make Pod schedulable.
-- A new config field `scaleupTimeout` is introduced to the PodTopologySpread plugin's configuration.
-- introduce `TriggeredScaleUp` in Pod condition 
+- A new config field `nodeProvisioningTimeout` is introduced to the PodTopologySpread plugin's configuration.
+- introduce `NodeProvisioningInProgress` in Pod condition 
   - change the cluster autoscaler to set it `false` when it cannot create new Node for the Pod, `true` when success.
 
 ### Non-Goals
@@ -259,7 +259,7 @@ you want to fallback from DoNotSchedule to ScheduleAnyway
 because otherwise you'd hurt the availability of workload to achieve a better availability via Pod Topology Spread.
 That's putting the cart before the horse.
 
-In this case, you can use `ScaleUpFailed` in `fallbackCriteria`,
+In this case, you can use `NodeProvisioningFailed` in `fallbackCriteria`,
 to fallback from DoNotSchedule to ScheduleAnyway 
 
 ```yaml
@@ -268,7 +268,7 @@ topologySpreadConstraints:
     topologyKey: topology.kubernetes.io/zone
     whenUnsatisfiable: DoNotSchedule
     fallbackCriteria:
-      - ScaleUpFailed
+      - NodeProvisioningFailed
     labelSelector:
       matchLabels:
         foo: bar
@@ -279,8 +279,8 @@ topologySpreadConstraints:
 Similar to Story 1, but additionally you want to fallback when the cluster autoscaler doesn't react within the certain time.
 In that case, maybe the cluster autoscaler is down, or it takes too long time to handle pods.
 
-In this case, in addition to use `ScaleUpFailed` in `fallbackCriteria` like Story 1,
-the cluster admin can use `scaleupTimeout` in the scheduler configuration.
+In this case, in addition to use `NodeProvisioningFailed` in `fallbackCriteria` like Story 1,
+the cluster admin can use `nodeProvisioningTimeout` in the scheduler configuration.
 
 ```yaml
 apiVersion: kubescheduler.config.k8s.io/v1
@@ -291,7 +291,7 @@ profiles:
       - name: PodTopologySpread
         args:
           # trigger the fallback if a pending pod has been unschedulable for 5 min, but the cluster autoscaler hasn't yet react
-          scaleupTimeout: 5m 
+          nodeProvisioningTimeout: 5m 
 ```
 
 #### Story 3
@@ -361,8 +361,8 @@ proposal will be implemented, this is the place to discuss them.
 type FallbackCriterion string
 
 const (
-  // ScaleUpFailed represents when the Pod has `TriggeredScaleUp: false` in its condition.
-  ScaleUpFailed    FallbackCriterion = "ScaleUpFailed"
+  // NodeProvisioningFailed represents when the Pod has `NodeProvisioningInProgress: false` in its condition.
+  NodeProvisioningFailed    FallbackCriterion = "NodeProvisioningFailed"
   // PreemptionFailed represents when the scheduler tried to make space for the Pod by the preemption, but failed.
   // Specifically, when the Pod doesn't have `NominatedNodeName` while having `PodScheduled: false`.
   PreemptionFailed FallbackCriterion = "PreemptionFailed"
@@ -382,44 +382,44 @@ type TopologySpreadConstraint struct {
 // These are valid conditions of pod.
 const (
 ......
-  // TriggeredScaleUp indicates that the Pod triggered scaling up the cluster.
+  // NodeProvisioningInProgress indicates that the Pod triggered scaling up the cluster.
   // If it's true, new Node for the Pod was successfully created.
   // Otherwise, new Node for the Pod tried to be created, but failed.
-  TriggeredScaleUp PodConditionType = "TriggeredScaleUp"
+  NodeProvisioningInProgress PodConditionType = "NodeProvisioningInProgress"
 )
 ```
 
-### ScaleUpFailed
+### NodeProvisioningFailed
 
-`ScaleUpFailed` is used to fallback when the Pod doesn't trigger scaling up the cluster.
-`TriggeredScaleUp` is a new condition to show whether the Pod triggers scaling up the cluster, 
+`NodeProvisioningFailed` is used to fallback when the Pod doesn't trigger scaling up the cluster.
+`NodeProvisioningInProgress` is a new condition to show whether the Pod triggers scaling up the cluster, 
 which creates new Node for Pod typically by the cluster autoscaler.
 
 **fallback scenario**
 
 1. Pod is rejected and stays unschedulable.
 2. The cluster autoscaler finds those unschedulable Pod(s) but cannot create Nodes because of stockouts.
-3. The cluster autoscaler adds `TriggeredScaleUp: false`. 
-4. The scheduler notices `TriggeredScaleUp: false` on Pod and schedules that Pod while falling back to `ScheduleAnyway` on Pod Topology Spread.
+3. The cluster autoscaler adds `NodeProvisioningInProgress: false`. 
+4. The scheduler notices `NodeProvisioningInProgress: false` on Pod and schedules that Pod while falling back to `ScheduleAnyway` on Pod Topology Spread.
 
-### [Beta] `scaleupTimeout` in the scheduler configuration
+### [Beta] `nodeProvisioningTimeout` in the scheduler configuration
 
 _This is targeting beta._
 
-We'll implement `ScaleupTimeout` to address the additional fallback cases,
+We'll implement `NodeProvisioningTimeout` to address the additional fallback cases,
 for example, when the cluster autoscaler is down, or the cluster autoscaler takes longer time than usual.
 
 ```go
 type PodTopologySpreadArgs struct {
-  // ScaleupTimeout defines the time that the scheduler waits for the cluster autoscaler to create nodes for pending pods rejected by Pod Topology Spread.
-  // If the cluster autoscaler hasn't put any value on `TriggeredScaleUp` condition for this period of time, 
-  // the plugin triggers the fallback for topology spread constraints with `ScaleUpFailed` in `FallbackCriteria`.
+  // NodeProvisioningTimeout defines the time that the scheduler waits for the cluster autoscaler to create nodes for pending pods rejected by Pod Topology Spread.
+  // If the cluster autoscaler hasn't put any value on `NodeProvisioningInProgress` condition for this period of time, 
+  // the plugin triggers the fallback for topology spread constraints with `NodeProvisioningFailed` in `FallbackCriteria`.
   // This is for the use cases like needing the fallback when the cluster autoscaler is down or taking too long time to react.
-  // Note that we don't guarantee that `ScaleupTimeout` means the pods are going to be retried exactly after this timeout period.
+  // Note that we don't guarantee that `NodeProvisioningTimeout` means the pods are going to be retried exactly after this timeout period.
   // The scheduler will surely retry those pods, but there might be some delay, depending on other pending pods, those pods' backoff time, and the scheduling queue's processing timing. 
   // 
-  // This is optional; If it's empty, `ScaleUpFailed` in `FallbackCriteria` is only handled when the cluster autoscaler puts `TriggeredScaleUp: false`.
-  ScaleupTimeout *metav1.Duration
+  // This is optional; If it's empty, `NodeProvisioningFailed` in `FallbackCriteria` is only handled when the cluster autoscaler puts `NodeProvisioningInProgress: false`.
+  NodeProvisioningTimeout *metav1.Duration
 }
 ```
 
@@ -442,29 +442,29 @@ and the scheduling queue requeues/doesn't requeue pods based on QHints, as usual
 `triggerTimeBasedQueueingHints` is triggered periodically, **but not very often**. Probably once 30 sec is enough.
 This is because:
 - Triggering `triggerTimeBasedQueueingHints` very often could impact the scheduling throughput because of the queue's lock.
-- Even if pods were requeued exactly after `ScaleupTimeout` passed, either way, those pods might have to wait for the backoff time to be completed, 
+- Even if pods were requeued exactly after `NodeProvisioningTimeout` passed, either way, those pods might have to wait for the backoff time to be completed, 
 and for other pods in activeQ to be handled. 
 
-For this reason, as you see in the above `ScaleupTimeout` comment, we would **not** guarantee that `ScaleupTimeout` means the pods are going to be retried exactly after the timeout period.
+For this reason, as you see in the above `NodeProvisioningTimeout` comment, we would **not** guarantee that `NodeProvisioningTimeout` means the pods are going to be retried exactly after the timeout period.
 
-As a summary, the `ScaleupTimeout` config will work like this:
-1. Pod with `ScaleUpFailed` in `FallbackCriteria` is rejected by the PodTopologySpread plugin.
+As a summary, the `NodeProvisioningTimeout` config will work like this:
+1. Pod with `NodeProvisioningFailed` in `FallbackCriteria` is rejected by the PodTopologySpread plugin.
 2. There's no cluster event that the PodTopologySpread plugin requeues the pod with.
 3. The cluster autoscaler somehow doesn't react to this pod. Maybe it's down.
 4. The scheduling queue triggers `triggerTimeBasedQueueingHints` periodically, and `triggerTimeBasedQueueingHints` invokes the PodTopologySpread plugin's QHint for `Resource: Type` event. 
-5. `ScaleupTimeout` is reached: the PodTopologySpread plugin's QHint for `Resource: Type` event returns `Queue` by comparing the pod's last scheduling time and `ScaleupTimeout`.
-6. The pod is retried, and the PodTopologySpread plugin regards TopologySpreadConstraint with `ScaleUpFailed` in `FallbackCriteria` as `ScheduleAnyway`. (fallback is triggered)
+5. `NodeProvisioningTimeout` is reached: the PodTopologySpread plugin's QHint for `Resource: Type` event returns `Queue` by comparing the pod's last scheduling time and `NodeProvisioningTimeout`.
+6. The pod is retried, and the PodTopologySpread plugin regards TopologySpreadConstraint with `NodeProvisioningFailed` in `FallbackCriteria` as `ScheduleAnyway`. (fallback is triggered)
 
 
-#### How we implement `TriggeredScaleUp` in the cluster autoscaler
+#### How we implement `NodeProvisioningInProgress` in the cluster autoscaler
 
-Basically, we just put `TriggeredScaleUp: false` for Pods in [status.ScaleUpStatus.PodsRemainUnschedulable](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/processors/status/scale_up_status_processor.go#L37) every [reconciliation (RunOnce)](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/core/static_autoscaler.go#L296).
+Basically, we just put `NodeProvisioningInProgress: false` for Pods in [status.ScaleUpStatus.PodsRemainUnschedulable](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/processors/status/scale_up_status_processor.go#L37) every [reconciliation (RunOnce)](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/core/static_autoscaler.go#L296).
 
 This `status.ScaleUpStatus.PodsRemainUnschedulable` contains Pods that the cluster autoscaler [simulates](https://github.com/kubernetes/autoscaler/blob/109998dbf30e6a6ef84fc37ebaccca23d7dee2f3/cluster-autoscaler/core/scaleup/orchestrator/orchestrator.go#L536) the scheduling process for and determines that Pods wouldn't be schedulable in any node group. 
 
 So, for a simple example, 
 if a Pod has 64 cpu request, but no node group can satisfy 64 cpu requirement,
-the Pod would be in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `TriggeredScaleUp: false`.
+the Pod would be in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `NodeProvisioningInProgress: false`.
 
 A complicated scenario could also be covered by this way;
 supposing a Pod has 64 cpu request and only a node group can satisfy 64 cpu requirement,
@@ -474,7 +474,7 @@ but the node group size increase request would be rejected by the cloud provider
 The node group is then considered to be non-safe for a while,
 and the next reconciliation happens without taking the failed node group into account.
 As said, there's no other node group that can satisfy 64 cpu requirement,
-and then the Pod would be finally in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `TriggeredScaleUp: false`.
+and then the Pod would be finally in `status.ScaleUpStatus.PodsRemainUnschedulable`; get `NodeProvisioningInProgress: false`.
 
 ### PreemptionFalied
 
@@ -650,13 +650,13 @@ in back-to-back releases.
 
 - [] The feature gate is added, which is disabled by default.
 - [] Add a new field `fallbackCriteria` to `TopologySpreadConstraint` and feature gating.
-  - [] implement `ScaleUpFailed` to fallback when CA fails to create new Node for Pod.
+  - [] implement `NodeProvisioningFailed` to fallback when CA fails to create new Node for Pod.
   - [] implement `PreemptionFailed` to fallback when preemption doesn't help make Pod schedulable.
-- [] introduce `TriggeredScaleUp` in Pod condition 
+- [] introduce `NodeProvisioningInProgress` in Pod condition 
 - [] Implement all tests mentioned in the [Test Plan](#test-plan).
 
 Out of Kubernetes, but:
-- [] (cluster autoscaler) set `TriggeredScaleUp` after trying to create Node for Pod.
+- [] (cluster autoscaler) set `NodeProvisioningInProgress` after trying to create Node for Pod.
 
 #### Beta
 
@@ -689,8 +689,8 @@ their Pod specs as it is.
 To use this enhancement, users need to enable the feature gate (during this feature is in the alpha.),
 and add `fallbackCriteria` on their `TopologySpreadConstraint`.
 
-Also, if users want to use `ScaleUpFailed`, they need to use the cluster autoscaler
-that supports `TriggeredScaleUp` Pod condition.
+Also, if users want to use `NodeProvisioningFailed`, they need to use the cluster autoscaler
+that supports `NodeProvisioningInProgress` Pod condition.
 
 **Downgrade**
 
@@ -1094,10 +1094,10 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### introduce `DoNotScheduleUntilScaleUpFailed` and `DoNotScheduleUntilPreemptionFailed`
+### introduce `DoNotScheduleUntilNodeProvisioningFailed` and `DoNotScheduleUntilPreemptionFailed`
 
-Instead of `FallBackCriteria`, introduce `DoNotScheduleUntilScaleUpFailed` and `DoNotScheduleUntilPreemptionFailed` in `WhenUnsatisfiable`.
-`DoNotScheduleUntilScaleUpFailed` corresponds to `ScaleUpFailed`, 
+Instead of `FallBackCriteria`, introduce `DoNotScheduleUntilNodeProvisioningFailed` and `DoNotScheduleUntilPreemptionFailed` in `WhenUnsatisfiable`.
+`DoNotScheduleUntilNodeProvisioningFailed` corresponds to `NodeProvisioningFailed`, 
 and `DoNotScheduleUntilPreemptionFailed` corresponds to `PreemptionFailed`.
 
 We noticed a downside in this way, compared to `FallBackCriteria`.
@@ -1106,7 +1106,7 @@ For example, PodAffinity and NodeAffinity, if it's written in `requiredDuringSch
 And if it's written in `preferredDuringSchedulingIgnoredDuringExecution`, it's preferred.
 
 In the future, we may want to introduce similar fallback mechanism in such other scheduling constraints, 
-but, we couldn't make the similar API design if we went with `DoNotScheduleUntilScaleUpFailed` and `DoNotScheduleUntilPreemptionFailed`, 
+but, we couldn't make the similar API design if we went with `DoNotScheduleUntilNodeProvisioningFailed` and `DoNotScheduleUntilPreemptionFailed`, 
 as they don't define preferred or required in enum value like `WhenUnsatisfiable`.
 
 On the other hand, `FallBackCriteria` allows us to unify APIs in all scheduling constraints. 
