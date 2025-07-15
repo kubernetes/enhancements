@@ -151,9 +151,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
@@ -209,7 +209,7 @@ which go beyond running particular images.
       artifact, we don't want the runtime to be the entity responsible for
       interpreting and correctly processing it to its final consumable state.
       That could be delegated to the consumer or perhaps to some hooks and is
-      out of scope for alpha.
+      out of scope for this enhancement.
 - Manifest list use cases are left out for now and will be restricted to
   matching architecture like we do today for images. In the future (if there are
   use cases) we will consider support for lists with items separated by
@@ -586,7 +586,8 @@ feature cannot be used. Pods using the new `VolumeSource` combined with a not
 supported container runtime version will fail to run on the node, because the
 `Mount.host_path` field is not set for those mounts.
 
-For security reasons, `ro` (read-only) options by default.
+For security reasons, `ro` (read-only) option is set by default. Having `rw`
+(read-write) support will require a follow-up enhancement.
 
 Note: in the process of mounting images into the container's rootfs, there may need to be intermediate mounts created. This is especially relevant if
 the CRI implementation wishes to support one image being mounted with multiple different SELinux labels. If that's done, the CRI implementation is responsible
@@ -781,12 +782,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with multiple pods and same image on the same node
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and multiple volumes
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and pull policy of Always
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] subPath should succeed when using a valid subPath
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] subPath should fail if subPath in volume is not existing
 
 https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
-
-When [containerd](https://github.com/containerd/containerd/pull/10579) adds
-support for the feature, then the e2e tests will become available for that
-runtime as well.
 
 ### Graduation Criteria
 
@@ -880,10 +879,14 @@ in back-to-back releases.
 
 - Multiple examples of real world uses
 - Production support in both CRI-O and containerd
-- Allowing time for feedback
-- Consider a new `RuntimeConfig` field to indicate to end users if the feature
-  is supported or not.
-- Security Evaluation ensuring robust protection without the `noexec` option
+    - Removing the separate test lane:
+      https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
+    - Move e2e test to node conformance and remove the
+      `[NodeFeature:ImageVolume]` flag.
+      - Create a simple conformance test that creates a pod using an image
+        volume and verifies the output.
+- Allowing time for feedback:
+    - https://github.com/kubernetes/kubernetes/issues/131557
 
 ### Upgrade / Downgrade Strategy
 
@@ -1075,18 +1078,23 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Manual testing that will be done:
+Manual testing that has been done:
 
-- Upgrade:
-  - Enable the feature in the kube-apiserver, kubelet and container runtime
-  - Create a workload which uses the feature
-  - Verify that the image volume has been mounted.
+- **Upgrade**:
+  1. Enable the feature in the kube-apiserver, kubelet and container runtime
+  2. Create a workload which uses the feature
+  3. Verify that the image volume has been mounted.
 
-- Rollback:
-  - Disable the feature by rolling back the kube-apiserver, kubelet or
-    container runtime
-  - Recreate the workload, which will now fail because of either the not
-    existing API or the unsupported runtime version.
+- **Rollback**:
+  1. Disable the feature by rolling back the kube-apiserver, kubelet or
+     container runtime
+  2. Recreate the workload
+  3. Verify that:
+     - Container creation will fail because of using an not existing API
+     - Container creation will fail because volume plugin of the kubelet is not
+       available.
+     - Container creation will succeed but volume won't get mounted if container
+       runtime does not support the feature due to lacking CRI support.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1104,6 +1112,9 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+The added metrics `image_volume_requested_total` `image_volume_mounted_success`
+`image_volume_mounted_error` can be used for monitoring.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1375,6 +1386,7 @@ Major milestones might include:
 - 02-10-2024 KEP updated
 - 06-02-2025 KEP targeting beta in v1.33
 - 06-17-2025 KEP retargeting beta in v1.34, dropped noexec requirement
+- 09-03-2025 KEP retargeting GA in v1.35
 
 ## Drawbacks
 
