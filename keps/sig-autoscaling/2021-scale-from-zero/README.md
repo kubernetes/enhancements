@@ -231,7 +231,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-Allow the HPA to scale from and to zero using `minReplicas: 0` when explicitly enabled with a flag.
+Allow the HPA to scale from and to zero using `minReplicas: 0` and a HPA status condition.
 
 ### User Stories (Optional)
 
@@ -262,7 +262,7 @@ As `replicas: 0` is now a possible state when using `minReplicas: 0` it can no l
 Additionally the `replicas: 0` state is problematic as updating a HPA object `minReplicas` from `0` to `1` has different behavior. If `replicas` was `0` during the update, HPA
 will be disabled for the resource, if it was `> 0`, HPA will continue with the new `minReplicas` value.
 
-To resolve this issue the KEP is introducing an explicit `ScaledToZero` condition inside the `HorizontalPodAutoscalerStatus`. When `ScaledToZero=True` was recorded the HPA will scale
+To resolve these issues the KEP is introducing an explicit `ScaledToZero` condition inside the `HorizontalPodAutoscalerStatus`. When `ScaledToZero=True` was recorded the HPA will scale
 up a workload from `0 ~> 1` and remove the condition `ScaledToZero=True`. If the condition is not found, the HPA maintains the current behavior of performing no change.
 
 When the HPA scales a workload from `1 ~> 0`, it records the `ScaledToZero=True` condition inside the status.
