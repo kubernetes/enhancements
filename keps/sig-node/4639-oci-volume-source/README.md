@@ -151,9 +151,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
@@ -781,6 +781,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with multiple pods and same image on the same node
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and multiple volumes
 - [sig-node] ImageVolume [NodeFeature:ImageVolume] should succeed with pod and pull policy of Always
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] subPath should succeed when using a valid subPath
+- [sig-node] ImageVolume [NodeFeature:ImageVolume] subPath should fail if subPath in volume is not existing
 
 https://testgrid.k8s.io/sig-node-cri-o#pr-crio-cgrpv2-imagevolume-e2e
 
@@ -881,8 +883,6 @@ in back-to-back releases.
 - Multiple examples of real world uses
 - Production support in both CRI-O and containerd
 - Allowing time for feedback
-- Consider a new `RuntimeConfig` field to indicate to end users if the feature
-  is supported or not.
 - Security Evaluation ensuring robust protection without the `noexec` option
 
 ### Upgrade / Downgrade Strategy
@@ -1104,6 +1104,9 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
+
+The added metrics `image_volume_requested_total` `image_volume_mounted_success`
+`image_volume_mounted_error` can be used for monitoring.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1375,6 +1378,7 @@ Major milestones might include:
 - 02-10-2024 KEP updated
 - 06-02-2025 KEP targeting beta in v1.33
 - 06-17-2025 KEP retargeting beta in v1.34, dropped noexec requirement
+- 07-15-2025 KEP retargeting GA in v1.35
 
 ## Drawbacks
 
