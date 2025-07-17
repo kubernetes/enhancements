@@ -265,6 +265,12 @@ These cases will be added in the existing e2e tests:
   - Get API work with DRA and device plugin.
   - List API work with DRA and Device plugin.
 
+[Get](https://github.com/kubernetes/kubernetes/pull/116846): [sig-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet?include-filter-by-regex=PodResources), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=PodResources)
+
+Other improvements are addressed in:
+- https://github.com/kubernetes/kubernetes/pull/132028
+- https://github.com/kubernetes/kubernetes/pull/132345
+
 ### Graduation Criteria
 
 #### Alpha
@@ -282,6 +288,13 @@ These cases will be added in the existing e2e tests:
 
 - [ ] Allowing time for feedback (1 year).
 - [ ] Risks have been addressed.
+- [ ] Add explicit feature enablement/disablement tests, before the feature is turned on by default.
+- [ ] Additional test cases are needed to verify Get() behavior in diverse scenarios
+  - Pods with multiple containers.
+  - Pods that do not use any exclusive resources.
+  - Comparison of List() and Get() on returned pods to validate consistency.
+  - Pod exists but container name is invalid
+  - Get() is called on terminated pods to validate appropriate error handling.
 
 ### Upgrade / Downgrade Strategy
 
@@ -334,7 +347,10 @@ The API becomes available again. The API is stateless, so no recovery is needed,
 
 ###### Are there any tests for feature enablement/disablement?
 
-e2e test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. (https://github.com/kubernetes/kubernetes/pull/116846)
+This e2e test (https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1169) will demonstrate that when the feature gate is disabled, the API returns the appropriate error code. The explicit on/off tests are scattered across the existing tests:
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1115
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/podresources_test.go#L1820
+
 
 ### Rollout, Upgrade and Rollback Planning
 
