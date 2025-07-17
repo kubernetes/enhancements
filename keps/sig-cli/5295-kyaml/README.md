@@ -130,7 +130,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes to add a new output format for kubectl,
 called "KYAML"
-(as in `kubectl get -o kayml ...`).
+(as in `kubectl get -o kyaml ...`).
 This format is a strict subset (aka "dialect") of standard YAML,
 and so should be parseable by the existing ecosystem.
 This dialect seeks to emphasize syntactical choices which avoid
