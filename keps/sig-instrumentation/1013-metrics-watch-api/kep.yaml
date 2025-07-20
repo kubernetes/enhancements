@@ -6,13 +6,21 @@ owning-sig: sig-instrumentation
 participating-sigs:
   - sig-autoscaling
 reviewers:
-  - TBD
+  - "@dashpole"
+  - "@brancz"
 approvers:
-  - TBD
-editor: TBD
+  - "@dashpole"
+  - "@brancz"
+editor: "@x13n"
 creation-date: 2019-04-25
-last-updated: 2019-04-29
-status: provisional
+last-updated: 2025-07-20
+status: implementable
+stage: beta
+latest-milestone: "v1.35"
+milestone:
+  alpha: "v1.33"
+  beta: "v1.34"
+  stable: "v1.35"
 see-also:
 replaces:
 superseded-by:
