@@ -586,6 +586,7 @@ Those information can be obtained during the "registering" process but this is o
 ##### Secret format
 - The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
 - The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
+- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
 - The access information in the secret must contain the following fields
   - **Config**: This field contains cluster access information compatible with the
     [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
