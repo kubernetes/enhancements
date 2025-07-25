@@ -325,6 +325,10 @@ type ResourceSliceMixins struct {
   // shared attributes and capacities that an actual device can "include"
   // to extend the set of attributes and capacities it already defines.
   //
+  // The maximum number of device mixins in a ResourceSlice is 128
+  // and the total number of attributes and capacities across device
+  // mixins and devices in a single ResourceSlice must not exceed 4096.
+  //
   // +optional
   // +listType=atomic
   Device []DeviceMixin
@@ -333,6 +337,11 @@ type ResourceSliceMixins struct {
   // consumption mixins, each of which contains a set of counters
   // that a device will consume from a counter set.
   //
+  // The maximum number of device counter consumption mixins in a
+  // ResourceSlice is 128 the total number of consumed counters across device
+  // counter consumption mixins and devices in a single
+  // ResourceSlice must not exceed 2048.
+  //
   // +optional
   // +listType=atomic
   DeviceCounterConsumption []DeviceCounterConsumptionMixin
@@ -340,6 +349,10 @@ type ResourceSliceMixins struct {
   // CounterSet represents a list of counter set mixins, i.e.
   // a collection of counters that a CounterSet can "include"
   // to extend the set of counters it already defines.
+  //
+  // The maximum number of counter set mixins in a ResourceSlice is
+  // 32 and the total number of counters across counter set mixins and
+  // counter sets in a single ResourceSlice must not exceed 256.
   //
   // +optional
   // +listType=atomic
@@ -460,7 +473,7 @@ type DeviceCounterConsumption struct {
   // The mixins referenced here must be defined in the same
   // ResourceSlice.
   //
-  // The maximum number of includes is 8.
+  // The maximum number of includes is 4.
   //
   // +featureGate=DRAResourceSliceMixins
   // +optional
@@ -501,10 +514,18 @@ The ResourceSlice-wide limits will be:
 * Total combined number of attributes and capacity in a ResourceSlice is 4096 (so with the maximum number of devices, there can be 32 per device).
 * Total number of counters is 256.
 * Total number of consumed counters is 2048 (so with the maximum number of devices, there can be 16 per device).
+* Total number of counter sets is 32.
+* Total number of device mixins is 128 (same as max number of devices).
+* Total number of counter set mixins is 32 (same as max number of counter sets).
+* Total number of device counter consumption mixins is 128.
+
 
 We will still enforce some per-field limits:
-* The number of mixins that can be referenced from each device, counter set or device counter consumption is 8.
+* The number of mixins that can be referenced from each device or counter set is 8.
+* The number of mixins that can be referenced from each device counter consumption is 4.
 * The number of taints per device is 4.
+* The number of device counter consumptions per device is 4. This means that each device can only consume counters from a maximum of 4 different counter sets.
+
 
 We will also enforce one limit on the flattened device:
 * The combined number of attributes and capacities for a single device can not exceed 32. We do this
