@@ -2,7 +2,7 @@ title: EvictionRequest API
 kep-number: 4563
 authors:
   - "@atiratree"
-owning-sig: sig-apps
+owning-sig: sig-node
 participating-sigs:
   - sig-apps
   - sig-autoscaling
