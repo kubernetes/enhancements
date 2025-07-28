@@ -208,6 +208,11 @@ This has some drawbacks. The webhooks are not easily discoverable by cluster adm
 block evictions for other applications if they are misconfigured or misbehave. The eviction API is
 not intended to be extensible in this way. The webhook approach is therefore not recommended.
 
+Some solutions rely on automatic PDB updates (e.g. `.spec.minAvailable`). However, this is not
+atomic during scaling, as there can be a short window after scaling (e.g. HPA) when the PDB has
+not yet been updated, which can allow unwanted extra evictions. Some solutions set the required
+availability too high, which can unnecessarily block eviction (e.g. during node drain).
+
 Some drainers solve the node drain by depending on the kubectl logic, or by extending/rewriting it
 with additional rules and logic.
 
@@ -373,9 +378,12 @@ them if something goes wrong. This means to:
 #### Story 2
 
 As an application owner, I want to run single replica applications without disruptions and have the
-ability to easily migrate the workload pods from one node to another. This also applies to
-applications with larger number of replicas that prefer to surge (upscale) pods first instead of
-downscaling.
+ability to easily migrate the workload pods from one node to another. This is particularly useful
+for applications that prefer a simpler deployment model, lack application support for HA
+(e.g., virtual machines, databases), or for those looking to minimize compute costs.
+
+The same applies to applications with larger number of replicas that prefer to surge (upscale) pods
+first instead of downscaling.
 
 #### Story 3
 
@@ -383,6 +391,11 @@ As an application owner, I want to have a custom logic tailored to my applicatio
 down-scaling, or removal of pods. I want to be able to easily override the default eviction request
 process, including the eviction and PDBs, available to workloads. To achieve this, I also need to
 be able to identify other actors (interceptors) and an order in which they will run.
+
+I want to be able to set the execution priority for my interceptor. If it is also the main
+controller, then I also want to reserve a number of priorities for my organization to orchestrate
+multiple components requiring close interactions (e.g. Deployment and ReplicaSet controllers in the
+k8s case).
 
 #### Story 4
 
@@ -552,7 +565,8 @@ annotation. This annotation is parsed into the `Interceptor` type in the [Evicti
 - `INTERCEPTOR_CLASS`: should be unique interceptor's DNS subdomain, the maximum length is 54
   characters (`63 - len("priority_")`)
 - `PRIORITY` and `ROLE`
-  - `controller` should always set a `PRIORITY=10000` and `ROLE=controller`.
+  - `controller` should always set a `PRIORITY=10000` and `ROLE=controller`. There should only be
+    one of this priority.
   - Other interceptors should set `PRIORITY` according to their own needs (minimum value (lowest
     priority) is 0, maximum value (highest priority) is 100000). Higher priorities are selected
     first by the eviction request controller. They can use the `controller` interceptor as a
@@ -606,7 +620,7 @@ it may update the status every 3 minutes. The status updates should look as foll
   in the annotation and that `.status.activeInterceptorCompleted` is still false. If one of these is
   not correct and the eviction process is still not complete, it should abort the eviction process
   or output an error (e.g. via an event).
-- Set `.status.progressTimestamp` to the present time to signal that the eviction request is not
+- Set `.status.progressTime` to the present time to signal that the eviction request is not
   stuck.
 - Update the `.status.evictionRequestCancellationPolicy` field if needed. This field might have been
   set by the previous interceptor. This field should be set to `Forbid` if the current eviction
@@ -635,7 +649,7 @@ better insight into the application availability than the PDB. In these cases, i
 skip the eviction call and use the delete call directly.
 
 Also, the interceptor should not block the eviction request by updating
-the`.status.progressTimestamp` when no work is being done on the eviction. This should be decided
+the`.status.progressTime` when no work is being done on the eviction. This should be decided
 solely by the user deploying the application and resolved by creating a PDB.
 
 ### Eviction Request Controller
@@ -651,12 +665,12 @@ The interceptor classes and their priorities are parsed from the pod annotations
 The eviction request controller reconciles EvictionRequests and picks the highest priority
 interceptor from `.spec.interceptors` and sets its `interceptorClass` to the
 `.status.activeInterceptorClass`. If `.status.activeInterceptorCompleted` is true and the pod exists
-or `.spec.progressDeadlineSeconds` has elapsed since `.status.progressTimestamp`, then the eviction
+or `.spec.progressDeadlineSeconds` has elapsed since `.status.progressTime`, then the eviction
 request controller sets `status.activeInterceptorClass` to the next highest priority interceptor
 from `.spec.interceptors`. During the switch to the new interceptor, the eviction request controller
 will also
 - Set `.status.activeInterceptorCompleted` field to false.
-- Update`.status.progressTimestamp` to the present time.
+- Update`.status.progressTime` to the present time.
 - Set `.status.expectedInterceptorFinishTime` to nil.
 - Set `.status.message` to indicate that the interceptors have been switched.
 
@@ -670,8 +684,8 @@ Pods that are unable to be terminated:
 - EvictionRequest's `.status.activeInterceptorCompleted` field is true and there is no other
   interceptor to select.
 - EvictionRequest's `.spec.progressDeadlineSeconds` has elapsed since
-  `.status.progressTimestamp` or from `.metadata.creationTimestamp` if
-  `.status.progressTimestamp` is nil.
+  `.status.progressTime` or from `.metadata.creationTimestamp` if
+  `.status.progressTime` is nil.
 
 API-initiated eviction of DaemonSet pods and mirror pods is not supported. However, the
 EvictionRequest can still be used to terminate them by other means.
@@ -681,7 +695,7 @@ No attempt will be made to evict pods that are currently terminating.
 If the pod eviction fails, e.g. due to a blocking PodDisruptionBudget, the
 `.status.failedAPIEvictionCounter` is incremented and the pod is added back to the queue with
 exponential backoff (maximum approx. 15 minutes). If there is a positive progress update in the
-`.status.progressTimestamp` of the EvictionRequest, it will cancel the API-initated eviction.
+`.status.progressTime` of the EvictionRequest, it will cancel the API-initated eviction.
 
 #### Garbage Collection
 
@@ -722,8 +736,8 @@ type EvictionRequest struct {
 
 	// Spec defines the eviction request specification.
 	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
-	// +optional
-	Spec EvictionRequestSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	// +required
+	Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
 	// Status represents the most recently observed status of the eviction request.
 	// Populated by the current interceptor and eviction request controller.
@@ -736,8 +750,8 @@ type EvictionRequest struct {
 type EvictionRequestSpec struct {
 	// PodRef references a pod that is subject to eviction/termination.
 	// This field is required and immutable.
-	// +optional
-	PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
+	// +required
+	PodRef LocalPodReference `json:"podRef" protobuf:"bytes,1,opt,name=podRef"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// This field does not need to be set and is resolved when the EvictionRequest object is created
@@ -753,14 +767,15 @@ type EvictionRequestSpec struct {
 	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"interceptorClass" protobuf:"bytes,2,rep,name=interceptors"`
 
 	// ProgressDeadlineSeconds is a maximum amount of time an interceptor should take to report on
-	// an eviction progress by updating the .status.progressTimestamp.
-	// If the .status.progressTimestamp is not updated within the duration of
+	// an eviction progress by updating the .status.progressTime.
+	// If the .status.progressTime is not updated within the duration of
 	// ProgressDeadlineSeconds, the eviction request is passed over to the next interceptor with the
 	// highest priority. If there is none, the pod is evicted using the Eviction API.
 	//
 	// The minimum value is 600 (10m) and the maximum value is 21600 (6h).
 	// The default value is 1800 (30m).
 	// This field is required and immutable.
+	// +required
 	ProgressDeadlineSeconds *int32 `json:"progressDeadlineSeconds" protobuf:"varint,3,opt,name=progressDeadlineSeconds"`
 }
 
@@ -768,9 +783,11 @@ type EvictionRequestSpec struct {
 type LocalPodReference struct {
 	// Name of the pod.
 	// This field is required.
+	// +required
 	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 	// UID of the pod.
 	// This field is required.
+	// +required
 	UID string `json:"uid" protobuf:"bytes,2,opt,name=uid"`
 }
 
@@ -809,8 +826,24 @@ type Interceptor struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
+    // Conditions can be used by interceptors to share additional information about the eviction
+    // request.
+    // +optional
+    // +patchMergeKey=type
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=type
+    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,8,rep,name=conditions"`
+
+	// Message is a human readable message indicating details about the eviction request.
+	// This may be an empty string.
+	// +required
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=32768
+	Message string `json:"message" protobuf:"bytes,7,opt,name=message"`
+
 	// Interceptors of the ActiveInterceptorClass can adopt this eviction request by updating the
-	// ProgressTimestamp or orphan/complete it by setting ActiveInterceptorCompleted to true.
+	// ProgressTime or orphan/complete it by setting ActiveInterceptorCompleted to true.
 	// +optional
 	ActiveInterceptorClass *string `json:"activeInterceptorClass,omitempty" protobuf:"bytes,1,opt,name=activeInterceptorClass"`
 
@@ -828,11 +861,11 @@ type EvictionRequestStatus struct {
 	// +optional
 	ExpectedInterceptorFinishTime *metav1.Time `json:"expectedInterceptorFinishTime,omitempty" protobuf:"bytes,3,opt,name=expectedInterceptorFinishTime"`
 
-	// ProgressTimestamp is the time at which the eviction process was reported to be in progress by
+	// ProgressTime is the time at which the eviction process was reported to be in progress by
 	// the interceptor.
-	// Cannot be set to the future time (after taking time skew into account).
+	// Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
 	// +optional
-	ProgressTimestamp *metav1.Time `json:"progressTimestamp,omitempty" protobuf:"bytes,4,opt,name=progressTimestamp"`
+	ProgressTime *metav1.Time `json:"progressTime,omitempty" protobuf:"bytes,4,opt,name=progressTime"`
 
 	// EvictionRequestCancellationPolicy should be set to Forbid by the interceptor if it is not possible
 	// to cancel (delete) the eviction request.
@@ -851,28 +884,14 @@ type EvictionRequestStatus struct {
 	// The EvictionRequest can't be deleted until the Pod is fully terminated.
 	//
 	// This field is required.
+    // +required
 	EvictionRequestCancellationPolicy EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy" protobuf:"varint,5,opt,name=evictionRequestCancellationPolicy"`
 
 	// The number of unsuccessful attempts to evict the referenced pod via the API-initiated eviction,
 	// e.g. due to a PodDisruptionBudget.
 	// This field is required.
+    // +required
 	FailedAPIEvictionCounter int32 `json:"failedAPIEvictionCounter" protobuf:"varint,6,opt,name=failedAPIEvictionCounter"`
-
-	// Message is a human readable message indicating details about the eviction request.
-	// This may be an empty string.
-	// +required
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MaxLength=32768
-	Message string `json:"message" protobuf:"bytes,7,opt,name=message"`
-
-	// Conditions can be used by interceptors to share additional information about the eviction
-	// request.
-	// +optional
-	// +patchMergeKey=type
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=type
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,8,rep,name=conditions"`
 }
 
 // +enum
@@ -919,7 +938,7 @@ for custom label selectors when observing the eviction requests.
 eviction request controller. To strengthen the validation, we should check that it is possible to
 set only the highest priority interceptor in the beginning. After that it is possible to set only
 the next interceptor and so on. We can also condition this transition according to the other fields.
-`.status.ActiveInterceptorCompleted` should be true or `.status.ProgressTimestamp` has exceeded the
+`.status.ActiveInterceptorCompleted` should be true or `.status.ProgressTime` has exceeded the
 deadline.
 
 `.status.evictionRequestCancellationPolicy` should be `Allow` on creation, as its resolution should be
@@ -962,7 +981,7 @@ annotations should be checked on pod admission:
   the number of interceptors ensures that the EvictionRequest cannot be blocked indefinitely by
   setting an abnormally large number of these annotations on a pod.
 - To prevent misuse, we will maintain a list of allowed `*.k8s.io` interceptor classes. And reject
-  any classes outside the main Kubernetes project on admission.
+  any classes with `k8s.io` suffix outside the main Kubernetes project on admission.
 - Annotations with duplicate priorities are not allowed in the `9900-10100` interval, but are
   allowed outside of this interval.
 
