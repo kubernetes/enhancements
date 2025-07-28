@@ -91,10 +91,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [New GRPC](#new-grpc)
-  - [User Specified Topology Requirement](#user-specified-topology-requirement)
-  - [Support for SPs that don't Know Attached Nodes](#support-for-sps-that-dont-know-attached-nodes)
-  - [Try to Eliminate Race Condition](#try-to-eliminate-race-condition)
+  - [Integrate with the CSI spec and VolumeAttributeClass](#integrate-with-the-csi-spec-and-volumeattributeclass)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -180,10 +177,10 @@ improving the reliability of stateful pod scheduling.
 ### Goals
 
 - Make `PersistentVolume.spec.nodeAffinity` field mutable.
-- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume.
 
 ### Non-Goals
 
+- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume.
 - Modifying the core scheduling logic of Kubernetes.
 - Implementing cloud provider-specific solutions within Kubernetes core.
 - Re-scheduling running pods with volumes being modified,
@@ -201,10 +198,7 @@ nitty-gritty.
 -->
 
 1. Change APIServer validation to allow `PersistentVolume.spec.nodeAffinity` to be mutable.
-
-2. Change CSI Specification to allow `ControllerModifyVolume` to return a new accessibility requirement.
-
-3. Change external-resizer to set `PersistentVolume.spec.nodeAffinity` to the new accessibility requirement if returned by CSI driver.
+2. Ensure scheduler will re-schedule pending pods that using a PV that has been updated.
 
 ### User Stories (Optional)
 
@@ -226,40 +220,17 @@ required:
       values:
       - cn-beijing-g
 ```
-Or in the view of CSI accessibility requirement:
-```json
-[{"topology.kubernetes.io/zone": "cn-beijing-g"}]
+We would like to change it to:
+```yaml
+required:
+nodeSelectorTerms:
+- matchExpressions:
+  - key: topology.kubernetes.io/region
+    operator: In
+    values:
+    - cn-beijing
 ```
-
-The workflow:
-1. User create a `VolumeAttributeClass`:
-   ```yaml
-   apiVersion: storage.k8s.io/v1beta1
-   kind: VolumeAttributesClass
-   metadata:
-     name: regional
-   driverName: csi.provider.com
-   parameters:
-     type: regional
-   ```
-2. User modify the `volumeAttributesClassName` in the PVC to `regional`
-3. external-resizer initiate ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "regional"}`
-4. CSI driver blocks until the modification finished, then return with `accessible_topology` set to
-   ```json
-   [{"topology.kubernetes.io/region": "cn-beijing"}]
-   ```
-5. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
-   ```yaml
-   required:
-   nodeSelectorTerms:
-   - matchExpressions:
-     - key: topology.kubernetes.io/region
-       operator: In
-       values:
-       - cn-beijing
-   ```
-   then update the PV status to indicate the modification is successful.
-
+manually, hopefully integrated into CSI in the future.
 
 #### Story 2
 
@@ -278,50 +249,21 @@ required:
       values:
       - available
 ```
-Or in the view of CSI accessibility requirement:
-```json
-[{"provider.com/disktype.cloud_ssd": "available"}]
-```
 
 Type A node only supports cloud_ssd, while Type B node supports both cloud_ssd and cloud_essd.
 We will only allow the modification if the volume is attached to type B nodes.
 And I want to make sure the Pods using new cloud_essd volume not to be scheduled to type A nodes.
 
-In this case, it takes long to modify the volume, the new topology is not strictly less restrictive,
-and SP wants to minimize the time window of the race condition:
-
-The workflow:
-1. User create a `VolumeAttributeClass`:
-   ```yaml
-   apiVersion: storage.k8s.io/v1beta1
-   kind: VolumeAttributesClass
-   metadata:
-     name: essd
-   driverName: csi.provider.com
-   parameters:
-     type: cloud_essd
-   ```
-2. User modify the `volumeAttributesClassName` in the PVC to `essd`
-3. external-resizer initiate ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "cloud_essd"}`
-4. CSI driver returns with `in_progress` set to true, and `accessible_topology` set to
-   ```json
-   [{"provider.com/disktype.cloud_essd": "available"}]
-   ```
-5. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
-   ```yaml
-   required:
-     nodeSelectorTerms:
-     - matchExpressions:
-       - key: provider.com/disktype.cloud_essd
-         operator: In
-         values:
-         - available
-   ```
-   but the PV status is not updated yet.
-   From now on, the new Pod will be scheduled to nodes with `provider.com/disktype.cloud_essd: available`,
-   maybe they will stuck in `ContainerCreating` state until the modification finishes.
-6. external-resizer go back to step 3, retries until `in_progress` is set to false.
-7. external-resizer update the PV status to indicate the modification is successful.
+We would like to change the affinity to:
+```yaml
+required:
+  nodeSelectorTerms:
+  - matchExpressions:
+    - key: provider.com/disktype.cloud_essd
+      operator: In
+      values:
+      - available
+```
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -341,22 +283,14 @@ It is storage provider's responsibility to ensure that the running workload is n
 **Possible race condition**
 
 There is a race condition between volume modification and pod scheduling:
-1. User updates PVC VolumeAttributeClassName.
-2. external-resizer initiate ControllerModifyVolume.
-3. User creates a new Pod and scheduler schedules it with the old affinity.
-4. external-resizer sets a new affinity to the PV.
+1. User modifies the volume from storage provider.
+3. A new Pod is created and scheduler schedules it with the old affinity.
+4. User sets the new affinity to the PV.
 5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
 
 If this happens, the pod will be stuck in a `ContainerCreating` state.
 User will have to manually delete the pod, or using Kubernetes [descheduler](https://github.com/kubernetes-sigs/descheduler) or similar.
 
-We propose to added an `in_progress` field in `ControllerModifyVolumeResponse` to allow more timely affinity update,
-in order to reduce the time window of the race condition.
-If the volume is not attachable during the modification, SPs can also return `in_progress`
-with an impossible topology requirement, so that new pods will stay pending.
-```json
-[{"provider.com/volume-status": "modifying"}]
-```
 
 ### Risks and Mitigations
 
@@ -380,89 +314,6 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-
-We will extend CSI specification to add:
-```protobuf
-// Specifies a capability of the controller service.
-message ControllerServiceCapability {
-  message RPC {
-    enum Type {
-      ...
-      // TODO
-      MODIFY_VOLUME_TOPOLOGY = 16 [(alpha_enum_value) = true];
-    }
-
-    Type type = 1;
-  }
-
-  oneof type {
-    // RPC that the controller supports.
-    RPC rpc = 1;
-  }
-}
-
-message ControllerModifyVolumeRequest {
-  option (alpha_message) = true;
-  ...
-
-  // Indicates whether the CO allows the SP to update the topology
-  // as a part of the modification.
-  bool allow_topology_updates = 4;
-}
-
-message ControllerModifyVolumeResponse {
-  option (alpha_message) = true;
-
-  // Specifies where (regions, zones, racks, etc.) the modified
-  // volume is accessible from.
-  // A plugin that returns this field MUST also set the
-  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability.
-  // An SP MAY specify multiple topologies to indicate the volume is
-  // accessible from multiple locations.
-  // COs MAY use this information along with the topology information
-  // returned by NodeGetInfo to ensure that a given volume is accessible
-  // from a given node when scheduling workloads.
-  // This field is OPTIONAL. It is effective and replaces the
-  // accessible_topology returned by CreateVolume if the plugin has
-  // MODIFY_VOLUME_TOPOLOGY controller capability.
-  // If it is not specified, the CO MAY assume
-  // the volume is equally accessible from all nodes in the cluster and
-  // MAY schedule workloads referencing the volume on any available
-  // node.
-  //
-  // SP MUST only set this field if allow_topology_updates is set
-  // in the request. SP SHOULD fail the request if it needs to update
-  // topology but is not allowed by CO.
-  //
-  // SP SHOULD only return topology that is a super-set of the
-  // original topology to avoid race conditions when scheduling.
-  repeated Topology accessible_topology = 1;
-
-  // Indicates whether the modification is still in progress.
-  // SPs MAY set in_progress to update the accessible_topology
-  // before the modification finishes to reduce possible race conditions.
-  // COs SHOULD retry the request if in_progress is set to true,
-  // until in_progress is set to false.
-  bool in_progress = 2;
-}
-```
-
-When this new field is set, external-resizer will set `PersistentVolume.spec.nodeAffinity` accordingly, before it updates the PV status.
-
-When anything unexpected happens (race between multiple resizer instances, crashes) and we lost track of the latest topology.
-external-resizer will invoke `ControllerGetVolume` again with the desired `mutable_parameters` to fetch the latest topology.
-
-A new error condition of `ControllerModifyVolume` is added to CSI spec:
-
-| Condition | gRPC Code | Description | Recovery Behavior |
-|-----------|-----------|-------------|-------------------|
-| Topology conflict | 9 FAILED_PRECONDITION | Indicates that the CO has requested a modification that would make the volume inaccessible to some already attached nodes. | Caller MAY detach the volume from the nodes that are in conflict and retry. |
-
-But this KEP does not cover the automatic correction. Kubernetes should only retry with exponential backoff.
-
-
-Scheduler Enhancements: make sure the Pod is re-queued when the PV is updated.
-
 
 
 ### Test Plan
@@ -1027,145 +878,13 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### New GRPC
+### Integrate with the CSI spec and VolumeAttributeClass
 
-Instead of adding new fields to CSI GRPC `ControllerModifyVolume`, we could add a new GRPC `ControllerModifyVolumeTopology` (Other candidate names: `ControllerMigrateVolume`):
+We have proposed the plan to integrate in the previous version of this KEP.
+But we did not reach consensus due to lack of SP want to implement this feature.
+The main concerns were about race condition between scheduler and update PV.
 
-```protobuf
-rpc ControllerModifyVolumeTopology (ControllerModifyVolumeTopologyRequest)
-  returns (ControllerModifyVolumeTopologyResponse) {
-    option (alpha_method) = true;
-  }
-
-message ControllerModifyVolumeTopologyRequest {
-  option (alpha_message) = true;
-  string volume_id = 1;
-  map<string, string> secret = 2 [(csi_secret) = true];
-  map<string, string> mutable_parameters = 3;
-}
-
-message ControllerModifyVolumeTopologyResponse {
-  option (alpha_message) = true;
-  repeated Topology accessible_topology = 1;
-  bool in_progress = 2;
-}
-```
-
-The workflow of this new GRPC is essentially the same as the current `ControllerModifyVolume` GRPC, but it allows SPs to mutate the accessible
-topologies of volumes by default.
-
-SPs with the `MODIFY_VOLUME_TOPOLOGY` controller capability should implement both this new GRPC and `ControllerModifyVolume`.
-New COs that support modify volume topology (i.e. external-resizer) should only call the new GRPC when modifying volumes.
-Old COs can continue to call `ControllerModifyVolume`. SPs should reject such requests if topology will be changed.
-
-Comparison between these two approaches:
-| Criteria | [PR 592](https://github.com/container-storage-interface/spec/pull/592) (Extended GRPC) | [PR 593](https://github.com/container-storage-interface/spec/pull/593) (New GRPC) |
-| -------- | ---------------------- | ----------------- |
-| Maintenance Difficulty | ✅ Low | ⚠️ High, need to also modify ControllerModifyVolumeTopology when making changes to ControllerModifyVolume |
-| Implementation Complexity | ✅ Low | ⚠️ High, SPs will have to implement a new GRPC if they want to support topology modification even if they have implemented ControllerModifyVolume |
-| Side Effects | ⚠️ Will impede the GA process of K8s VAC  | ✅ No influence on other features |
-
-### User Specified Topology Requirement
-
-Currently we don't support user specified topology requirement.
-We've considered a design:
-* Add `accessibility_requirements` in `ModifyVolumeRequest`, like that in `CreateVolumeRequest`
-* Add `allowedTopologies` in `VolumeAttributeClass`, like that in `StorageClass`
-
-We determine this lacks vaild use cases.
-
-In most cases, SP can determine the desired topology of a volume from the `mutable_parameters`, or from the currently attached nodes.
-An exception could be: modifying a volume from regional to zonal, and it is not attached to any node.
-In this case, SP may need more information from the CO to determine the desired zone.
-But we don't want user to create a separate VAC for each zone.
-Instead, it maybe easier for user to just attach it to a node, so that SP can determine the desired zone.
-
-For the other case (User Story 2), the topology (provider.com/disktype.cloud_essd) is actually not intended for user as an API.
-User just want to modify the disk type, and we implement the underlying limitations as topology.
-So we don't want to let user to specify this topology key directly.
-
-Besides, this facing a lot of unresolved questions:
-* How to merge `allowedTopologies` from `VolumeAttributeClass`, `StorageClass`?
-* Should we use `allowedTopologies` from `StorageClass` if it is not specified in `VolumeAttributeClass`?
-* Should we consider the topology of the currently attached nodes?
-* Should we consider the topology of all the nodes in the cluster?
-
-We may consider this again with vaild use cases.
-
-### Support for SPs that don't Know Attached Nodes
-
-Maybe there are some SPs that don't know the currently attached nodes,
-so they cannot determine whether the topology change will break any workload.
-
-Some kind of storage does not have persistent connection between client and server, such as object storage like S3.
-They may fall into this category of SP.
-But as network attached storage, they can be accessed wherever the network can reach.
-So these SPs typically do not use the topology feature at all.
-
-So, we decide that for an SP to support this feature,
-they are required to properly detect potential breaking for existing workloads.
-
-That said, the candidate design looks:
-Add a new `dry_run` parameter to the `ControllerModifyVolumeRequest`.
-CO first call `ControllerModifyVolume` with `dry_run=true` to fetch the new topology,
-determine if the new topology is compatible with the existing workloads,
-then decide whether to proceed the modification with `dry_run=false`.
-
-Another way to get the new topology is further extending the "User Specified Topology Requirement" section,
-Making it required for user to explicitly specify the new topology in the VAC and
-remove `accessible_topology` from `ControllerModifyVolumeResponse`.
-That is to say, SP must accept the new topology specified by user or it should reject the request.
-The workflow will become:
-1. User create a `VolumeAttributeClass`:
-   ```yaml
-   apiVersion: storage.k8s.io/v1beta1
-   kind: VolumeAttributesClass
-   metadata:
-     name: regional
-   driverName: csi.provider.com
-   parameters:
-     type: regional
-   allowedTopologies:
-   - matchLabelExpressions:
-     - key: topology.kubernetes.io/region
-       values:
-       - cn-beijing
-   ```
-2. User modify the `volumeAttributesClassName` in the PVC to `regional`
-3. external-resizer verifies all the nodes that all the nodes with this volume attached satisfy the `allowedTopologies`
-4. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
-   ```yaml
-   required:
-   nodeSelectorTerms:
-   - matchExpressions:
-     - key: topology.kubernetes.io/region
-       operator: In
-       values:
-       - cn-beijing
-   ```
-5. external-resizer initiate ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "regional"}`
-6. CSI driver blocks until the modification finished
-7. external-resizer then update the PV status to indicate the modification is successful.
-
-Besides the reasons mentioned above, we also facing a critical drawback for this design:
-Topology can have many orthogonal aspects, such as above mentioned zone/region and disk type.
-If SP cannot return the topology, user will need to be aware of all aspects of topology used by SP.
-And SP will not able to extend the topology in the future, since VAC is immutable.
-
-Note that the above designs are also racy.
-We may still break some workloads that just started after the check but before the modification.
-
-### Try to Eliminate Race Condition
-
-Haven't figured out a reasonable way to do this.
-Basically, we need to
-1. pause scheduling of the pods that are using the volume;
-2. get ack from scheduler that pause is effective;
-3. conduct ModifyVolume;
-4. retrive the new topology then resume scheduling.
-
-I think it is too complex and not worth it.
-Similar failure is already possible with KEP-4876 when CSINode allocatable is out-of-date.
+We will try this again in the future.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
