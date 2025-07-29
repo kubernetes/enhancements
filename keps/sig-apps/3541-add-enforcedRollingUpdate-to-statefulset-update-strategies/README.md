@@ -80,15 +80,28 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Current Behavior and Problems](#current-behavior-and-problems)
+  - [Real-World Impact](#real-world-impact)
+  - [Why Existing Solutions Are Insufficient](#why-existing-solutions-are-insufficient)
+  - [Proposed Solution Benefits](#proposed-solution-benefits)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+  - [User Stories](#user-stories)
+    - [Story 1: CI/CD Platform Team](#story-1-cicd-platform-team)
+    - [Story 2: Stateless Web Application](#story-2-stateless-web-application)
+    - [Story 3: Development/Experiment Environment](#story-3-developmentexperiment-environment)
+    - [Story 4: External Data Storage](#story-4-external-data-storage)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Risk: Unintended Data Loss](#risk-unintended-data-loss)
 - [Design Details](#design-details)
+  - [Detailed Algorithm Specification](#detailed-algorithm-specification)
+    - [Current RollingUpdate Algorithm](#current-rollingupdate-algorithm)
+    - [Proposed EnforcedRollingUpdate Algorithm](#proposed-enforcedrollingupdate-algorithm)
+  - [API Changes](#api-changes)
+  - [Implementation Changes](#implementation-changes)
+  - [Comparison with Existing Solutions](#comparison-with-existing-solutions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -111,7 +124,14 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+  - [Increased Complexity](#increased-complexity)
+  - [Potential for Misuse](#potential-for-misuse)
+  - [Maintenance Burden](#maintenance-burden)
+  - [Breaking Traditional StatefulSet Guarantees](#breaking-traditional-statefulset-guarantees)
 - [Alternatives](#alternatives)
+  - [Alternative 1: Enhance Parallel Policy](#alternative-1-enhance-parallel-policy)
+  - [Alternative 2: Add Force Flag to RollingUpdate](#alternative-2-add-force-flag-to-rollingupdate)
+  - [Alternative 3: Custom Resource/Operator Approach](#alternative-3-custom-resourceoperator-approach)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -152,67 +172,110 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
 -->
 
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
-
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+StatefulSets currently offer two update strategies: `OnDelete` (manual) and `RollingUpdate` (automatic, default). When using `RollingUpdate`, StatefulSets follow sequential ordering where each individual pod must be Running and Ready before the controller proceeds to update the next pod. Even with the `maxUnavailable` option (which allows multiple pods to be updated simultaneously), the controller still requires each pod to reach Ready state before moving forward - stuck pods halt the entire update process. This design ensures data safety for stateful workloads but creates a critical operational problem.
 
-A good summary is probably at least a paragraph in length.
+**The Problem**: When a StatefulSet update results in pods that fail to reach Ready state (due to configuration errors, resource constraints, or other issues), the rolling update process becomes permanently stuck. Even after applying a corrected configuration, the controller will not automatically replace the broken pods, requiring manual intervention to delete stuck pods.
 
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
+**Community Impact**: This behavior has generated significant user frustration across multiple GitHub issues ([#67250](https://github.com/kubernetes/kubernetes/issues/67250), [#60164](https://github.com/kubernetes/kubernetes/issues/60164), [#109597](https://github.com/kubernetes/kubernetes/issues/109597)) with users reporting:
 
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+- Broken CI/CD pipelines requiring manual intervention
+- Inability to automatically recover from configuration mistakes
+- Operational burden in managing stateful applications
 
-Currently we support two rolling update strategies in statefulSet, one is `OnDelete`, another one is `RollingUpdate`,
-which is the default one. And as designed, when we got a broken state with a statefulSet applying the default `RollingUpdate`
-strategy, we have to repair this manually.
-
-Like we applied a broken statefulSet, and the corresponding pods will stuck in pending with failures. then we apply with
-a fixed yaml file, the stuck pods will not turn to health for security design, see [Forced rollback](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#forced-rollback).
-
-But this is heavily complained by the community, see [issue-67250](https://github.com/kubernetes/kubernetes/issues/67250),
-[issue-60164](https://github.com/kubernetes/kubernetes/issues/60164), [issue-109597](https://github.com/kubernetes/kubernetes/issues/109597) and so on,
-we should provide a escape patch for end-users.
+**Proposed Solution**: This KEP introduces `EnforcedRollingUpdate`, a new update strategy that automatically replaces broken pods during rolling updates while maintaining sequential ordering for safety. This provides an escape hatch for operators who need automated recovery while preserving the option for manual control in sensitive environments.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+### Current Behavior and Problems
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+StatefulSets with `RollingUpdate` strategy follow this algorithm:
 
-As described above, pods in a broken state won't turn to health even we apply with a fixed statefulSet yaml file, instead,
-statefulSet controller will wait until we delete the pod manually. I think this was designed because of some security reasons for
-statefulSet generally is used to manage stateful workloads, delete them directly may lead to some unexpected results like
-data loss, this is intolerable.
+1. Update pods in reverse ordinal order (N-1, N-2, ..., 0)
+2. For each pod, wait until it becomes Running and Ready before proceeding
+3. If any pod fails to become Ready, the entire update process halts
+4. Even when a corrected configuration is applied, stuck pods are never automatically replaced
 
-But not always that case, for example we may deploy a statefulset just for the uniqueness of Pods, automatically delete them will not
-cause any serious problems, so we should treat the rolling-update strategies case by case, and better to hand the choices over to end-users.
+The current approach was designed for stateful workloads where:
 
-From the solutions of community users, we have two choices to avoid this, one is set the `podManagementPolicy` to `Parallel`, see [issue](https://github.com/jenkinsci/helm-charts/issues/688),
-but we will update the pods in parallel. Another one is use a controller and find the broken pods to delete, see [PR](https://github.com/argoproj-labs/argocd-operator/pull/604).
+- Data persistence is critical
+- Pod identity and storage are tightly coupled
+- Automatic pod deletion could cause data loss
+- Manual intervention ensures careful data recovery
 
-Instead of getting around this problem, we should provide a new rolling-update strategy named like `enforcedRollingUpdate` to update the pods anyway,
-but taking security into consideration, when updating the latest ordinal pod failed, we'll wait until the pod turn to healthy.
+**The pros for the current approach**: Many StatefulSet use cases don't require this level of manual intervention:
+
+- **Stateless workloads using StatefulSet for pod identity** (web servers, workers)
+- **Applications with external data storage** (databases with network-attached storage)
+- **CI/CD environments** where automated recovery is essential
+
+### Real-World Impact
+
+**CI/CD Pipeline Failures**: Teams report broken deployments that require manual intervention, breaking automation:
+
+```yaml
+# Example: A typo in image name breaks the entire update
+apiVersion: apps/v1
+kind: StatefulSet
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:v2.0.0-typo  # ImagePullBackOff
+        # Update gets stuck, requires manual pod deletion
+```
+
+**Operational Burden**: Platform teams must build custom controllers or fix it manually to handle stuck updates.
+
+### Why Existing Solutions Are Insufficient
+
+**1. maxUnavailable Doesn't Address the Core Issue**
+The `maxUnavailable` option in `RollingUpdate` strategy allows multiple pods to be updated simultaneously, but it does **not** solve the stuck pod problem:
+
+```yaml
+spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2  # Can update 2 pods at once
+```
+
+However, even with `maxUnavailable: 2`, if any pod fails to reach Ready state, the rolling update process still halts completely. The controller waits indefinitely for stuck pods to become Ready, even after applying a fix.
+
+**Example Scenario**:
+
+- StatefulSet with 5 replicas, `maxUnavailable: 2`
+- Update pods `app-4` and `app-3` simultaneously
+- `app-4` gets stuck in `ImagePullBackOff`
+- Even after fixing the image name, `app-4` remains stuck
+- Update process cannot proceed to `app-2`, `app-1`, or `app-0`
+- Manual intervention still required: `kubectl delete pod app-4`
+
+**2. Parallel Policy Workaround**
+Setting `podManagementPolicy: Parallel` with `maxUnavailable` doesn't solve the core issue:
+
+- Pods still must be Running and Ready before rolling update proceeds to the next batch
+- A single stuck pod still halts the entire update process  
+- Sequential ordering guarantees are lost (undesirable for many use cases)
+- Parallel policy affects scaling behavior, not just updates
+
+**2. Custom Controllers**
+Some teams have built custom controllers to delete stuck pods, but this:
+
+- Duplicates StatefulSet controller logic
+- Creates maintenance burden
+- May conflict with StatefulSet controller behavior
+- Lacks integration with StatefulSet status and events
+
+### Proposed Solution Benefits
+
+`EnforcedRollingUpdate` addresses these issues by:
+
+1. **Automated Recovery**: Stuck pods are automatically replaced without manual intervention
+2. **Safety Preservation**: Sequential ordering is maintained; only Ready pods allow progression
+3. **Opt-in Design**: Existing workloads are unaffected; teams choose the appropriate strategy
 
 ### Goals
 
@@ -243,26 +306,41 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+#### Story 1: CI/CD Platform Team
 
-#### Story 1
+**Context**: A platform team manages hundreds of StatefulSet deployments across development and staging environments. The team is running a CI/CD system and the end-to-end automation is essential, but with statefulset, only the happy path is satisfied with the system. Or we have to implement the "GC" logic in the controller. But actually it should be the statefulSet controller's responsibility to handle this since it's a common problem.
 
-We're running a CI/CD system and the end-to-end automation is essential, but with statefulset,
-only the happy path is satisfied with the system. Or we have to implement the "GC" logic in the
-controller. But actually it should be the statefulSet controller's responsibility to handle this
-since it's a common problem.
+**Current Problem**:
 
-#### Story 2
+```bash
+# Deploy with configuration error
+kubectl apply -f statefulset-v2.yaml
+# Pod app-2 gets stuck in ImagePullBackOff
+# Apply fixed configuration
+kubectl apply -f statefulset-v2-fixed.yaml
+# Pod app-2 remains stuck - manual intervention required
+kubectl delete pod app-2  # Manual step breaks automation
+```
 
-I'm using statefulSet for experiments, but each time I got a broken statefulSet in rolling update,
-I have to delete the pod manually after applying a fixed yaml file, it's quite annoying.
+#### Story 2: Stateless Web Application
+
+**Context**: A web application uses StatefulSet for predictable pod naming and ordered startup, but doesn't store critical data locally.
+
+**Current Problem**: A resource limit typo causes pods to get stuck in Pending state. Even after fixing the limits, manual pod deletion is required.
+
+#### Story 3: Development/Experiment Environment
+
+**Context**: I'm using statefulSet for experiments, but each time I got a broken statefulSet in rolling update, I have to delete the pod manually after applying a fixed yaml file, it's quite annoying.
+
+**Current Problem**: Configuration mistakes require cluster operator intervention to delete stuck pods.
+
+#### Story 4: External Data Storage
+
+**Context**: A database application stores all persistent data on network-attached storage (not local pod storage).
+
+**Current Problem**: Pod replacement is safe since no local data is lost, but StatefulSet controller doesn't know this.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -275,39 +353,70 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### Risk: Unintended Data Loss
 
-How will security be reviewed, and by whom?
+**Risk Description**: If `EnforcedRollingUpdate` is misconfigured on StatefulSets with local persistent data, automatic pod replacement could cause data loss. We should document this.
 
-How will UX be reviewed, and by whom?
+**Mitigation Strategies**:
 
-Consider including folks who also work outside the SIG or subproject.
--->
-
-If we wrongly configure the statefulset with so called `enforcedRollingUpdate` strategy, it may lead to
-some unexpected results since the controller will update the pod anyway. We should document this.
+1. **Documentation**: Clear guidance on when to use each strategy
+2. **Naming Convention**: The "Enforced" prefix clearly indicates forcing behavior
+3. **Opt-in Design**: Existing workloads continue using safe `RollingUpdate` by default
+4. **Events**: Clear events when pods are forcibly replaced
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### Detailed Algorithm Specification
 
-We'll add a new `statefulSetUpdateStrategyType` named `enforcedRollingUpdate`, see:
+#### Current RollingUpdate Algorithm
 
-  ```golang
-  type StatefulSetUpdateStrategyType string
+```
+FOR i = replicas-1 To i >= 0 DO i-- 
+    If pod[i] needs update Then
+        wait_for_predecessors_ready(i+1 to replicas-1)
+        If !pod[i].Running Or !pod[i].Ready Then
+            return // STUCK - wait for manual intervention
+        ENDIF
+        update_pod(i)
+        wait_until_ready(pod[i])
+    ENDIF
+ENDFOR
+```
 
-  const (
+**Problem**: The algorithm halts when `pod[i]` is not Running or Ready, even if a fix is applied.
+
+#### Proposed EnforcedRollingUpdate Algorithm
+
+```
+FOR i = replicas-1 To i >= 0 DO i-- 
+    If pod[i] needs update THEN
+        wait_for_predecessors_ready(i+1 to replicas-1)
+        
+        // Key difference: proceed with update regardless of current pod state
+        If pod[i] exists THEN
+            delete_pod(i)  // Force replacement of stuck pods
+            emit_event("ForcedReplacement", pod[i])
+        ENDIF
+        create_pod(i)
+        wait_until_ready(pod[i])  // Still wait for new pod to be ready
+        
+        // Safety check: if highest ordinal pod fails, halt progression
+        if i == replicas-1 AND !pod[i].Ready THEN
+            return // Don't proceed to lower ordinals if latest fails
+        ENDIF
+    ENDIF
+ENDFOR
+```
+
+### API Changes
+
+```go
+type StatefulSetUpdateStrategyType string
+
+const (
     RollingUpdateStatefulSetStrategyType StatefulSetUpdateStrategyType = "RollingUpdate"
     OnDeleteStatefulSetStrategyType StatefulSetUpdateStrategyType = "OnDelete"
-
+    
     // EnforcedRollingUpdateStatefulSetStrategyType indicates that update will be
     // applied to all Pods in the StatefulSet with respect to the StatefulSet
     // ordering constraints. When a scale operation is performed with this
@@ -315,23 +424,45 @@ We'll add a new `statefulSetUpdateStrategyType` named `enforcedRollingUpdate`, s
     // by the StatefulSet's updateRevision. And whatever the pod status is healthy
     // or broken, the rolling update process will not stuck.
     EnforcedRollingUpdateStatefulSetStrategyType StatefulSetUpdateStrategyType = "EnforcedRollingUpdate"
-  )
-  ```
+)
 
-When update statefulSet, we should change two places:
-Place1:
+// StatefulSetUpdateStrategy indicates the strategy that the StatefulSet
+// controller will use to perform updates.
+type StatefulSetUpdateStrategy struct {
+    // Type indicates the type of the StatefulSetUpdateStrategy.
+    // Default is RollingUpdate.
+    // +optional
+    Type StatefulSetUpdateStrategyType `json:"type,omitempty"`
+    // RollingUpdate is used to communicate parameters when Type is RollingUpdateStatefulSetStrategyType.
+    // +optional
+    RollingUpdate *RollingUpdateStatefulSetStrategy `json:"rollingUpdate,omitempty"`
+    // EnforcedRollingUpdate is used to communicate parameters when Type is EnforcedRollingUpdateStatefulSetStrategyType.
+    // +optional
+    EnforcedRollingUpdate *RollingUpdateStatefulSetStrategy `json:"enforcedRollingUpdate,omitempty"`
+}
+```
 
-- Before, when updating statefulSet, we should make sure that current replicas should be Running, Ready and Available.
-- Now when `StatefulSetUpdateStrategyType` is `EnforcedRollingUpdate`, we'll continue the process.
+### Implementation Changes
 
-Place2:
+1. Before, when updating statefulSet, we should make sure that current replicas should be Running, Ready and Available.
+Now when StatefulSetUpdateStrategyType is EnforcedRollingUpdate, we'll continue the process.
 
-- Before, when deleting so called condemned pods who are pods beyond the updated statefulSet replicas, we'll wait for
-all predecessors to be Running and Ready prior to attempting a deletion.
-- Now when StatefulSetUpdateStrategyType is `EnforcedRollingUpdate`, we'll continue the process.
+2. Before, when deleting so called condemned pods who are pods beyond the updated statefulSet replicas, we'll wait for all predecessors to be Running and Ready prior to attempting a deletion.
+Now when StatefulSetUpdateStrategyType is EnforcedRollingUpdate, we'll continue the process.
 
-When updating pods that doesn't match the update revision, we'll keep the logic and if the largest ordinal pod failed to
-turn to health, we'll not update the smaller ordinal pods.
+When updating pods that doesn't match the update revision, we'll keep the logic and if the largest ordinal pod failed to turn to health, we'll not update the smaller ordinal pods.
+
+### Comparison with Existing Solutions
+
+| Solution                           | Sequential Ordering | Automatic Recovery | Behavior When Pod Stuck           | Use Case                               |
+| ---------------------------------- | ------------------- | ------------------ | --------------------------------- | -------------------------------------- |
+| `RollingUpdate`                    | Yes                 | No                 | Halts completely, waits forever   | Traditional stateful apps              |
+| `RollingUpdate` + `maxUnavailable` | Yes                 | No                 | **Still halts completely**        | Faster updates, but same stuck problem |
+| `OnDelete`                         | Yes                 | No                 | Fully manual control              | Maximum safety/control                 |
+| `Parallel` + `maxUnavailable`      | No                  | No                 | Halts, loses ordering             | Not suitable for ordered apps          |
+| `EnforcedRollingUpdate`            | Yes                 | Yes                | Automatically replaces stuck pods | Automated recovery needed              |
+
+`maxUnavailable` allows updating multiple pods simultaneously but does not change the fundamental behavior if any pod gets stuck, the entire update halts. The controller still waits for all pods to become Ready before proceeding.
 
 ### Test Plan
 
@@ -678,67 +809,47 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
-
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Events
+  - Event Reason: `ForcedReplacement` - emitted when a pod is forcibly replaced
+  - Event Reason: `EnforcedRollingUpdateStarted` - emitted when enforced rolling update begins
+- [x] API .status
+  - Condition name: `StatefulSetUpdateStrategy` - indicates active strategy
+  - Other field: `.status.updateRevision` - shows progression through update
+- [x] Metrics
+  - `statefulset_forced_pod_replacements_total` - tracks forced replacements per StatefulSet
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+**Update Progression SLO**: 99% of StatefulSet updates using EnforcedRollingUpdate should complete without permanent stuck states (measured over 24h periods)
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+**Forced Replacement Latency**: 95% of forced pod replacements should complete within 5 minutes of configuration fix being applied
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+**Safety SLO**: 0% of forced replacements should occur on StatefulSets where the latest ordinal pod fails to reach Ready state (safety mechanism functioning)
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `statefulset_enforced_rolling_updates_total`
+  - Aggregation method: Rate of successful vs failed enforced rolling updates
+  - Components exposing the metric: kube-controller-manager
+- [x] Metrics
+  - Metric name: `statefulset_forced_pod_replacements_total`
+  - Aggregation method: Counter with success/failure labels
+  - Components exposing the metric: kube-controller-manager
+- [x] Metrics
+  - Metric name: `statefulset_update_duration_seconds`
+  - Aggregation method: Histogram of update completion times by strategy type
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+**Proposed Additional Metrics**:
+
+1. `statefulset_stuck_pod_duration_seconds`: Histogram tracking how long pods remain in non-Ready state before forced replacement
+2. `statefulset_strategy_distribution`: Gauge showing distribution of update strategies in use across cluster
+3. `statefulset_safety_halt_total`: Counter of times EnforcedRollingUpdate halted due to highest ordinal pod failure (safety mechanism)
 
 ### Dependencies
 
@@ -868,22 +979,71 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The feature behaves identically to existing StatefulSet update strategies:
+
+- **API Server Unavailable**: StatefulSet controller cannot read/write StatefulSet or Pod objects, so all updates halt regardless of strategy
+- **etcd Unavailable**: Similar to API server unavailability - no state changes can be persisted
+- **Recovery**: When connectivity is restored, the controller resumes from the last consistent state and continues with the configured strategy
+
+No special handling is required as this feature only changes the update progression logic, not the fundamental dependency on API server/etcd availability.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+**1. Highest Ordinal Pod Consistently Failing**
+
+- **Detection**: Metrics show `statefulset_safety_halt_total` increasing; StatefulSet status shows update stalled
+- **Mitigations**:
+  - Investigate pod logs and events for highest ordinal pod
+  - Consider reverting to previous working configuration
+  - Switch temporarily to `OnDelete` strategy for manual control
+- **Diagnostics**:
+  - `kubectl describe statefulset <name>` shows events about safety halt
+  - `kubectl describe pod <name>-<highest-ordinal>` shows pod-specific issues
+- **Testing**: Integration tests cover this scenario
+
+**2. Resource Quota Exhaustion During Forced Replacement**
+
+- **Detection**: Pods stuck in Pending state with resource quota errors
+- **Mitigations**:
+  - Increase resource quotas
+  - Reduce resource requests in StatefulSet spec
+  - Temporarily scale down other workloads
+- **Diagnostics**: Events on StatefulSet and Pods show quota-related errors
+- **Testing**: Unit tests simulate quota exhaustion scenarios
+
+**3. PVC Deletion Race Conditions**
+
+- **Detection**: New pods fail to start due to PVC conflicts
+- **Mitigations**:
+  - StatefulSet controller waits for PVC cleanup before creating new pods
+  - Implement proper PVC lifecycle management
+- **Diagnostics**: Pod events show PVC mounting errors
+- **Testing**: Integration tests cover PVC lifecycle scenarios
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+**If Update Progression SLO is failing (updates getting stuck)**:
+
+1. Check `statefulset_safety_halt_total` metric - high values indicate safety mechanism activating
+2. Examine highest ordinal pod: `kubectl describe pod <statefulset>-<N-1>`
+3. Review StatefulSet events: `kubectl describe statefulset <name>`
+4. Check resource availability and quotas
+5. Consider temporary strategy change to `OnDelete` for manual control
+
+**If Forced Replacement Latency SLO is failing**:
+
+1. Check cluster resource availability (CPU, memory, storage)
+2. Examine pod scheduling issues: `kubectl get events --field-selector involvedObject.kind=Pod`
+3. Review image pull times and registry connectivity
+4. Check for admission controller delays
+5. Monitor `statefulset_update_duration_seconds` histogram for patterns
+
+**If Safety SLO is violated (forced replacements when highest pod fails)**:
+
+1. Immediately investigate controller logs for bugs
+2. Check for controller version skew or configuration issues
+3. Review recent controller updates or configuration changes
+4. Consider disabling feature gate until issue is resolved
 
 ## Implementation History
 
@@ -902,17 +1062,82 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+### Increased Complexity
+
+Adding a third update strategy increases the API surface and requires users to understand the behavioral differences between:
+
+- `OnDelete`: Fully manual
+- `RollingUpdate`: Conservative, halt on failures
+- `EnforcedRollingUpdate`: Aggressive, continue despite failures
+
+### Potential for Misuse
+
+Users might choose `EnforcedRollingUpdate` without understanding the data safety implications, potentially leading to:
+
+- Unintended data loss in stateful applications
+- Loss of debugging opportunities when pods are automatically replaced
+- Masking underlying infrastructure or configuration issues
+
+### Maintenance Burden
+
+The StatefulSet controller becomes more complex with additional code paths, testing requirements, and edge cases to handle.
+
+### Breaking Traditional StatefulSet Guarantees
+
+StatefulSets traditionally prioritize safety over availability. This feature introduces an availability-first option that may conflict with user expectations about StatefulSet behavior.
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Alternative 1: Enhance Parallel Policy
+
+Extend `podManagementPolicy: Parallel` to support automatic pod replacement when pods are stuck.
+
+**Pros**:
+
+- Reuses existing API surface
+- Doesn't require new strategy type
+
+**Cons**:
+
+- Loses sequential ordering guarantees that many users need
+- Confuses the semantics of `podManagementPolicy` vs `updateStrategy`
+- `Parallel` policy has different scaling behavior that users might not want
+
+Reason for not being considered: Sequential ordering is a key requirement for many StatefulSet use cases. Users want automated recovery without losing ordering guarantees.
+
+### Alternative 2: Add Force Flag to RollingUpdate
+
+Add a boolean field like `spec.updateStrategy.rollingUpdate.force: true` to existing RollingUpdate strategy.
+
+**Pros**:
+
+- Few API change
+- Clear relationship to existing strategy
+
+**Cons**:
+
+- Less discoverable than a distinct strategy type
+- Overloads the meaning of `RollingUpdate`
+
+Reason for not being considered: Strategy types provide clearer semantics and better discoverability.
+
+### Alternative 3: Custom Resource/Operator Approach
+
+Encourage users to build custom controllers or operators to handle stuck pod cleanup.
+
+**Pros**:
+
+- No changes to core Kubernetes
+- Maximum flexibility for specific use cases
+
+**Cons**:
+
+- Duplicates StatefulSet controller logic
+- Creates operational burden for every team needing this functionality
+- Potential conflicts with StatefulSet controller
+- No standardization across community
+
+Reason for not being considered: This is a common enough problem that it warrants a standardized solution in the core controller.
 
 ## Infrastructure Needed (Optional)
 
