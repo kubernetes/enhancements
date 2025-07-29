@@ -35,6 +35,9 @@
     - [Delete PVC](#delete-pvc)
     - [Modify PVC](#modify-pvc)
   - [Implementation &amp; Handling Failure](#implementation--handling-failure)
+    - [Handling of non-final errors](#handling-of-non-final-errors)
+    - [Handling of final errors](#handling-of-final-errors)
+    - [Handling of infeasible errors](#handling-of-infeasible-errors)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -690,6 +693,36 @@ ModifyVolume is only allowed on bound PVCs. Under the ModifyVolume call, it will
 ### Implementation & Handling Failure
 
 VolumeAttributesClass parameters can be considered as best-effort parameters, the CSI driver should report the status of bad parameters as INVALID_ARGUMENT and the volume would fall back to a workable default configuration.
+It is expected that CSI driver will not apply partial application of parameters if one or more parameters are invalid. We are proposing CSI spec change to tighten the wording for this - https://github.com/container-storage-interface/spec/pull/597
+
+In general Kubernetes sidecars classify all CSI errors in three different classes. Namely:
+
+- Non-final errors (such as `DeadlineExceeded`), which indicate a transient error, which may be because of timeout or some other temporary failure. The CSI driver may have already volume modification in-progress.
+- Final errors (such as `Internal`), which indicate a definitive error from CSI driver and this typically means CSI driver is no longer processing this request after error is returned.
+- Infeasible Errors (e.g., `InvalidArgument`): This is a subset of final errors indicating the request itself is invalid and will never succeed.
+
+#### Handling of non-final errors
+
+In general `external-resizer` will not attempt modification to new VAC, if modification to previous applied VAC is failing with some kind of non-final error. 
+
+This policy safeguards against potential quota abuse that can occur if users time their requests strategically.
+`external-resizer` will only permit transition to new VAC, only if transition to previous VAC has succeeded or failed with a final error. This is one of the main reasons - `targetVolumeAttributesClassName` field is required in pvc's status.
+
+In other words, `external-resizer` will keep working towards `targetVolumeAttributesClassName` for non-final errors regardless of user specified change in `.spec.volumeAttributeClassName`.
+
+#### Handling of final errors
+
+If volume modification to a VAC is failing with a final error, then users can try rolling forward to a new VAC. This will reset `targetVolumeAttributesClassName` once external-resizer starts processing the request. If user sets VAC to `nil` or `empty` while previous modification to a VAC failed with a final error, then external-resizer
+should keep working towards reconciling to previously specified VAC, now recorded in `targetVolumeAttributesClassName`.
+
+#### Handling of infeasible errors
+
+If volume modification to a VAC is failing with infeasible error, then users can either set VAC to previously specified value in `status.currentVolumeAttributesClass` or set to `nil` if no VAC was specified. In both the cases, external-resizer will stop trying to reconcile the volume modification. 
+
+Please note if PVC already had a `currentVolumeAttributesClass` in its status, then setting VAC to `nil` is not allowed.
+
+It is possible that if there were one or more partial volume modifications that happened before on the volume, they will not be undone when this happens because for infeasible errors no `ControllerModifyVolume` will be called when user resets the VAC. This mechanism exists only to prevent perpetual call to `ControllerModifyVolume` for volume modifications which are never going to succeed. Storage providers and users are recommended to roll forward to different VAC, if desired behaviour is resetting the VAC to some pre-specified value for all `mutable_parameters`.
+
 
 ### Test Plan
 
