@@ -538,6 +538,11 @@ cluster, non-cluster-admin users should not be allowed to create or modify
 `ServiceImport` resources. The mcs-controller should be solely responsible for
 the lifecycle of a `ServiceImport`.
 
+Some errors may occur during the `ServiceImport`'s lifecycle, such as IP protocol
+incompatibilities (i.e.: importing an IPv6 only service in an IPv4 cluster). These
+errors and general status reporting of a `ServiceImport` should be reported
+via its status conditions field.
+
 For each exported service, one `ServiceExport` will exist in each cluster that
 exports the service. The mcs-controller will create and maintain a derived
 `ServiceImport` in each cluster within the clusterset so long as the service's
@@ -620,6 +625,12 @@ type ServiceImportStatus struct {
   // +listType=map
   // +listMapKey=cluster
   Clusters []ClusterStatus `json:"clusters"`
+  // +optional
+  // +patchStrategy=merge
+  // +patchMergeKey=type
+  // +listType=map
+  // +listMapKey=type
+  Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // ClusterStatus contains service configuration mapped to a specific source cluster
@@ -644,6 +655,11 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  conditions:
+  - type: Ready
+    reason: Ready
+    status: "True"
+    lastTransitionTime: "2020-03-30T01:33:51Z"
   clusters:
   - cluster: us-west2-a-my-cluster
 ```
