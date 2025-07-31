@@ -9,7 +9,7 @@ participating-sigs:
   - sig-architecture
   - sig-api-machinery
   - sig-scalability
-status: implementable
+status: implemented
 creation-date: 2018-12-04
 reviewers:
   - "@logicalhan"
