@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2: Stateless Web Application](#story-2-stateless-web-application)
     - [Story 3: Development/Experiment Environment](#story-3-developmentexperiment-environment)
     - [Story 4: External Data Storage](#story-4-external-data-storage)
+    - [Story 5: LeaderWorkerSet (LWS) Use Case](#story-5-leaderworkerset-lws-use-case)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Risk: Unintended Data Loss](#risk-unintended-data-loss)
@@ -310,37 +311,33 @@ nitty-gritty.
 
 #### Story 1: CI/CD Platform Team
 
-**Context**: A platform team manages hundreds of StatefulSet deployments across development and staging environments. The team is running a CI/CD system and the end-to-end automation is essential, but with statefulset, only the happy path is satisfied with the system. Or we have to implement the "GC" logic in the controller. But actually it should be the statefulSet controller's responsibility to handle this since it's a common problem.
+**Context**: A platform team manages hundreds of StatefulSet deployments across development and staging environments. Their CI/CD system requires end-to-end automation, but StatefulSet rolling updates break automation when pods get stuck. The team either has to implement custom "garbage collection" logic or accept that automated deployments will fail and require manual intervention.
 
-**Current Problem**:
-
-```bash
-# Deploy with configuration error
-kubectl apply -f statefulset-v2.yaml
-# Pod app-2 gets stuck in ImagePullBackOff
-# Apply fixed configuration
-kubectl apply -f statefulset-v2-fixed.yaml
-# Pod app-2 remains stuck - manual intervention required
-kubectl delete pod app-2  # Manual step breaks automation
-```
+**Solution**: With `EnforcedRollingUpdate`, the StatefulSet controller would automatically replace the stuck pod when the fixed configuration is applied, allowing the CI/CD pipeline to complete without manual intervention.
 
 #### Story 2: Stateless Web Application
 
-**Context**: A web application uses StatefulSet for predictable pod naming and ordered startup, but doesn't store critical data locally.
+**Context**: A web application uses StatefulSet for predictable pod naming and ordered startup, but doesn't store critical data locally. When resource limit typos cause pods to get stuck in Pending state, the entire update halts even though pod replacement is safe.
 
-**Current Problem**: A resource limit typo causes pods to get stuck in Pending state. Even after fixing the limits, manual pod deletion is required.
+**Solution**: With `EnforcedRollingUpdate`, the controller would automatically replace stuck pods after configuration fixes are applied, eliminating the need for manual pod deletion in environments where data loss is not a concern.
 
 #### Story 3: Development/Experiment Environment
 
-**Context**: I'm using statefulSet for experiments, but each time I got a broken statefulSet in rolling update, I have to delete the pod manually after applying a fixed yaml file, it's quite annoying.
+**Context**: Developers using StatefulSet for experiments face constant frustration - every time a rolling update breaks due to configuration errors, they must manually delete stuck pods after applying fixes. This manual intervention disrupts the development workflow.
 
-**Current Problem**: Configuration mistakes require cluster operator intervention to delete stuck pods.
+**Solution**: With `EnforcedRollingUpdate`, developers can apply configuration fixes and the StatefulSet controller will automatically replace broken pods, enabling a smoother development experience without requiring cluster operator intervention.
 
 #### Story 4: External Data Storage
 
-**Context**: A database application stores all persistent data on network-attached storage (not local pod storage).
+**Context**: A database application stores all persistent data on network-attached storage (not local pod storage). Pod replacement is completely safe since no local data would be lost, but the StatefulSet controller treats it as a traditional stateful workload and requires manual intervention.
 
-**Current Problem**: Pod replacement is safe since no local data is lost, but StatefulSet controller doesn't know this.
+**Solution**: With `EnforcedRollingUpdate`, the controller would automatically replace pods during updates, which is safe for this architecture since all data persists externally.
+
+#### Story 5: LeaderWorkerSet (LWS) Use Case
+
+**Context**: Developers use StatefulSet as the high-level controller workload for [LWS](https://github.com/kubernetes-sigs/lws). However, it behaves more like a Deployment - there's no ordering dependency between different replicas. They only need the ordinal index for pod identification. When a replica fails during updates, the entire StatefulSet update gets stuck, even though there's no actual ordering requirement between replicas.
+
+**Solution**: With `EnforcedRollingUpdate`, the LWS can continue updating other replicas even when individual replicas fail, since replica ordering is not critical for this use case. This enables automated recovery for deployment-like workloads that use StatefulSet for pod identity rather than traditional stateful ordering.
 
 ### Notes/Constraints/Caveats (Optional)
 
