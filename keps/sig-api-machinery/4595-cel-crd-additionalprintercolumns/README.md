@@ -728,58 +728,53 @@ With all of this we can pass the CEL program to the TableConvertor's `ConvertToT
 
 ### CEL vs JSONPath Performance Analysis
 
-A big part of the discussions for our proposal was the CEL cost limits since this is the first time CEL is added to the read path. As part of this we've done some benchmarking of the time it takes to parse and compile equivalent JSONPath and CEL expressions.
+A big part of the discussions for our proposal was the CEL cost limits since this is the first time CEL is added to the read path. As part of this we've done benchmarking of the time it takes to parse and compile equivalent JSONPath and CEL expressions.
 
-For the performance analysis, we introduced two new benchmark tests to the `tableconvertor_test.go` file – `Benchmark_CEL` and `Benchmark_JSONPath`.
+> **Note**: The following benchmark analysis statistics are only indicative of the performance. The actual numbers may vary across different runs of the same test.
 
-Please find the raw output of the benchmark tests, as well as the code for executing them in the following gist:
-[https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403](https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403)
+Refer:
+- [Source code for the POC](https://github.com/sreeram-venkitesh/kubernetes/commits/kep-4595-poc/?since=2025-07-20&until=2025-07-22&author=sreeram-venkitesh)
+- Scenario 1: Benchmarking overall performance (compilation + evaluation + cost estimation bits et.al)
+	<details>
+	<summary>Details</summary>
+	<br/>
+	<p>Run on Apple M3 Pro with 12 cores, 18 GB RAM, arm64</p>
+	<p>Find the raw output of the benchmark tests, as well as the source code: https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403</p>	
+	<p>The following table provides an average performance analysis across CEL and JSONPath based additionalPrinterColumns:</p>
+	
+	|                                      | CEL ([BenchmarkNew_CEL](https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403#file-tableconvertor_test-go-L36-L75))                                                                                                   | JSONPath ([BenchmarkNew_JSONPath](https://gist.github.com/sreeram-venkitesh/f4aff1ae7957a5a3b9c6c53e869b7403#file-tableconvertor_test-go-L77-L116))                                                                                   |
+	|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+	| **Column Definition**                | `self.spec.servers.map(s, s.hosts.filter(h, h == "prod.example.com"))`                                                  | `.spec.servers[*].hosts[?(@ == "prod.example.com")]`                                                               |
+	| **Overall Performance**<br>(Compilation + Evaluation) | • Average iterations: 3,111  <br> •  Average time per operation: **382,914 ns/op** (~383 µs per op)  <br> • Standard deviation: ±42,087 ns (±11%)                              | • Average iterations: 70,542 iterations  <br> •  Average time per operation: **17,654 ns/op** (~17.7 µs per op)  <br> • Standard deviation: ±2,846 ns (±16%)                        |
+	| **Compilation Performance**            | • Cold Start: 2.340 ms<br><br>• Warmed: 300–400 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• Env & Cost Estimator: 160–220 µs avg<br>&emsp;&emsp;• CEL Compilation: 60–120 µs avg<br>&emsp;&emsp;• Program Generation: 50–80 µs avg<br><br>• 83% improvement (2.34 ms → ~400 µs)| • Cold Start: ~85 µs<br><br>• Warmed: 5–8 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• JSONPath Parsing: 4–85 µs (occasional spikes)<br><br>• 90% improvement (85 µs → ~8 µs)|
+	| **Evaluation Performance**           | **FindResults**  <br>   • Cold: 103.5 µs  <br>   • Warmed: 13.5 µs  <br>   • 81% improvement (103.5 → 13.5 µs)  <br><br> **PrintResults**  <br>   • Cold: 3.9 µs  <br>   • Warmed: 1.5 µs  <br>   • 70% improvement (3.9 → 1.5 µs) | **FindResults**  <br>   • Cold: 1.4 µs  <br>   • Warmed: 0.85 µs  <br>   • 29% improvement (1.4 → 0.85 µs)  <br><br> **PrintResults**  <br>   • Cold: 0.29 µs  <br>   • Warmed: 0.18 µs  <br>   • 58% improvement (0.29 → 0.18 µs) |
+	
+	</details>
+- Scenario 2: Benchmarking evaluation (`findResults()`) performance.
 
+	Based on the review comment [here](https://github.com/kubernetes/enhancements/pull/4602#discussion_r2121919813) - `Benchmark an expensive JSON Path additionalPrinterColumns operation (just the part that finds a value using the JSON Path library)`.
+	<details>
+	<summary>Details</summary>
+	<br/>
+	<p>Run on a resource constraint VM - 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 4 CPU, 4GB RAM, X86_64</p>
+	<p>Find the raw output of the benchmark tests, as well as the source code: https://gist.github.com/Priyankasaggu11929/43cc9ece4d6215ee4cfe0d1523a919d6</p>
+	<p>The following table provides an average performance analysis across CEL and JSONPath based additionalPrinterColumns (only for the `findResults()` execution durations across the benchmark test iterations, along with the min, max, avg indexes):</p>
+	
+	|                                      | CEL ([BenchmarkNew_CEL_DeepComplex](https://gist.github.com/Priyankasaggu11929/43cc9ece4d6215ee4cfe0d1523a919d6#file-tableconvertor_testgo))                                                                                                   | JSONPath ([BenchmarkNew_JSONPath_DeepComplex](https://gist.github.com/Priyankasaggu11929/43cc9ece4d6215ee4cfe0d1523a919d6#file-tableconvertor_testgo))                                                                                   |
+	|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+	| **Column Definition**                | `self.spec.environments.map(e, e.clusters.map(c, c.nodes.filter(n, n.metrics.memory > 8000).map(n, n.id)))`                                                  | `.spec.environments[*].clusters[*].nodes[?(@.metrics.memory > 8000)].id`                                                               |
+	| **Evaluation Performance**           | **FindResults**  <br>   • Min: 30.91 µs  <br>   • Max: 1870.87 µs  <br>   • Average: 58.38 µs  | **FindResults**  <br>   • Min: 2.19 µs  <br>   • Max: 1147.24 µs  <br>   • Average: 8.40 µs |
+	
+	</details>
 
-Considering the following 10 iterations of the `Benchmark_CEL` and `Benchmark_JSONPath` tests:
+_**Conclusion**_ —
 
-```
-  CEL Benchmark Results (10 runs):
-  - Run 1: 2,772 iterations, 461,257 ns/op
-  - Run 2: 3,070 iterations, 355,537 ns/op
-  - Run 3: 3,247 iterations, 353,626 ns/op
-  - Run 4: 3,090 iterations, 360,392 ns/op
-  - Run 5: 3,249 iterations, 351,305 ns/op
-  - Run 6: 2,942 iterations, 454,657 ns/op
-  - Run 7: 3,379 iterations, 354,431 ns/op
-  - Run 8: 2,858 iterations, 365,886 ns/op
-  - Run 9: 3,374 iterations, 353,106 ns/op
-  - Run 10: 3,130 iterations, 368,940 ns/op
+Overall performance (compilation + evaluation + cost calculation et.al) of CEL across our two scenarios above, is that CEL is about 20x slower than JSONPath.
 
-  JSONPath Benchmark Results (10 runs):
-  - Run 1: 76,616 iterations, 19,376 ns/op
-  - Run 2: 73,274 iterations, 15,761 ns/op
-  - Run 3: 72,625 iterations, 18,572 ns/op
-  - Run 4: 70,324 iterations, 15,896 ns/op
-  - Run 5: 69,409 iterations, 15,892 ns/op
-  - Run 6: 70,672 iterations, 17,888 ns/op
-  - Run 7: 72,145 iterations, 16,176 ns/op
-  - Run 8: 69,602 iterations, 16,203 ns/op
-  - Run 9: 68,079 iterations, 24,558 ns/op
-  - Run 10: 62,689 iterations, 16,214 ns/op
-```
+But since our focus for the performance analysis was to analyze the **evaluation cost** (refer scenario 2):
 
-The following table provides an average performance analysis across CEL and JSONPath based additionalPrinterColumns:
-
-
-|                                      | CEL (Benchmark_CEL)                                                                                                   | JSONPath (Benchmark_JSONPath)                                                                                   |
-|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| **Column Definition**                | `self.spec.servers.map(s, s.hosts.filter(h, h == "prod.example.com"))`                                                  | `.spec.servers[*].hosts[?(@ == "prod.example.com")]`                                                               |
-| **Overall Performance**<br>(Compilation + Evaluation) | • Average iterations: 3,111  <br> •  Average time per operation: **382,914 ns/op** (~383 µs per op)  <br> • Standard deviation: ±42,087 ns (±11%)                              | • Average iterations: 70,542 iterations  <br> •  Average time per operation: **17,654 ns/op** (~17.7 µs per op)  <br> • Standard deviation: ±2,846 ns (±16%)                        |
-| **Compilation Performance**            | • Cold Start: 2.340 ms<br><br>• Warmed: 300–400 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• Env & Cost Estimator: 160–220 µs avg<br>&emsp;&emsp;• CEL Compilation: 60–120 µs avg<br>&emsp;&emsp;• Program Generation: 50–80 µs avg<br><br>• 83% improvement (2.34 ms → ~400 µs)| • Cold Start: ~85 µs<br><br>• Warmed: 5–8 µs<br>&emsp;◦ Most Expensive / Consistent Phases:<br>&emsp;&emsp;• JSONPath Parsing: 4–85 µs (occasional spikes)<br><br>• 90% improvement (85 µs → ~8 µs)|
-| **Evaluation Performance**           | **FindResults**  <br>   • Cold: 103.5 µs  <br>   • Warmed: 13.5 µs  <br>   • 81% improvement (103.5 → 13.5 µs)  <br><br> **PrintResults**  <br>   • Cold: 3.9 µs  <br>   • Warmed: 1.5 µs  <br>   • 70% improvement (3.9 → 1.5 µs) | **FindResults**  <br>   • Cold: 1.4 µs  <br>   • Warmed: 0.85 µs  <br>   • 29% improvement (1.4 → 0.85 µs)  <br><br> **PrintResults**  <br>   • Cold: 0.29 µs  <br>   • Warmed: 0.18 µs  <br>   • 58% improvement (0.29 → 0.18 µs) |
-
-
-_**Conclusion**_ — Across the 10 runs of the benchmark tests, on average, CEL is 20x slower than JSONPath (383µs vs 18µs).
-
-When running the benchmark tests individually, we observed that CEL was consistently ~20-50x slower than JSONPath. 
-
-Based on these current findings, the end users should not find a noticeable difference in the performance when working with CEL for additionalPrinterColumns.
+- On average, CEL is about 7x slower than JSONPath (58.38 µs vs 8.40 µs)
+- In the worst cases scenario (most expensive run) CEL is 1.5x slower than JSONPath (1870.87 µs vs 1147.24 µs)
 
 <!--
 
@@ -893,72 +888,10 @@ We will test all cases in integration test and unit test. If needed, we can add 
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
 - Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial benchmarks to compare performance of JSONPath with CEL columns and set an appropriate CEL cost
+- Initial benchmarks to compare performance of JSONPath with CEL columns and set an appropriate CEL cost (equivalent or at most 2x to the JSONPath cost - as discussed in the [June 11, 2025 SIG API Machinery meeting](https://docs.google.com/document/d/1x9RNaaysyO0gXHIr1y50QFbiL1x8OWnk2v3XnrdkT5Y/edit?tab=t.0#bookmark=id.epfys7yzizcn))
 - Unit tests and integration tests completed and enabled
 
 #### Beta
