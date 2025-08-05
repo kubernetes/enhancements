@@ -30,4 +30,4 @@ feature-gates:
   - kube-apiserver
 disable-supported: true
 metrics:
-- kubelet_credential_provider_config_hash
+- kubelet_credential_provider_config_info
