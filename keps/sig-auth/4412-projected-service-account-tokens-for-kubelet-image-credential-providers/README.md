@@ -377,11 +377,34 @@ The configuration will not support a plugin to function in 2 modes simultaneousl
 +       TokenAttributes *ServiceAccountTokenAttributes
 +}
 +
-+// ServiceAccountTokenAttributes is the configuration for the service account token that will be passed to the plugin.
-+type ServiceAccountTokenAttributes struct {
++    const (
++        // TokenServiceAccountTokenCacheType means the kubelet will cache returned credentials
++        // on a per-token basis. This should be set if the returned credential's lifetime is limited
++        // to the input service account token's lifetime.
++        // For example, this must be used when returning the input service account token directly as a pull credential.
++        TokenServiceAccountTokenCacheType ServiceAccountTokenCacheType = "Token"
++        // ServiceAccountServiceAccountTokenCacheType means the kubelet will cache returned credentials
++        // on a per-serviceaccount basis. This should be set if the plugin's credential retrieval logic
++        // depends only on the service account and not on pod-specific claims.
++        // Use this when the returned credential is valid for all pods using the same service account.
++        ServiceAccountServiceAccountTokenCacheType ServiceAccountTokenCacheType = "ServiceAccount"
++    )
++
++    // ServiceAccountTokenAttributes is the configuration for the service account token that will be passed to the plugin.
++    type ServiceAccountTokenAttributes struct {
 +       // serviceAccountTokenAudience is the intended audience for the projected service account token.
 +       // +required
 +       ServiceAccountTokenAudience string
++       // cacheType indicates the type of cache key use for caching the credentials returned by the plugin
++       // when the service account token is used.
++       // The most conservative option is to set this to "Token", which means the kubelet will cache returned credentials
++       // on a per-token basis. This should be set if the returned credential's lifetime is limited to the service account
++       // token's lifetime.
++       // If the plugin's credential retrieval logic depends only on the service account and not on pod-specific claims,
++       // then the plugin can set this to "ServiceAccount". In this case, the kubelet will cache returned credentials
++       // on a per-serviceaccount basis. Use this when the returned credential is valid for all pods using the same service account.
++       // +required
++       CacheType ServiceAccountTokenCacheType
 +
 +       // requireServiceAccount indicates whether the plugin requires the pod to have a service account.
 +       // If set to true, kubelet will only invoke the plugin if the pod has a service account.
@@ -429,6 +452,7 @@ providers:
     apiVersion: credentialprovider.kubelet.k8s.io/v1
     tokenAttributes:
       serviceAccountTokenAudience: my-audience
+      cacheType: Token
       # requireServiceAccount is set to true, so the plugin will only be invoked if the pod has a service account
       requireServiceAccount: true
       # requiredServiceAccountAnnotationKeys is the list of annotations that the plugin is interested in
@@ -588,28 +612,28 @@ If the `serviceAccountTokenAudience` field is not set in the provider configurat
 
 ##### New behavior when the `serviceAccountTokenAudience` field is set
 
-Based on the `PluginCacheKeyType` definitions (Image, Registry, Global), here’s a breakdown of how cache keys would be generated:
+Based on the `PluginCacheKeyType` definitions (Image, Registry, Global) and `cacheType` field in the credential provider configuration, the cache key will be generated as follows:
 
-1. `GlobalPluginCacheKeyType` (Global)
-   - The cache key will be generated based on the global cache key, service account metadata (namespace, name, UID), and hash of the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
-2. `RegistryPluginCacheKeyType` (Registry)
-   - The cache key will be generated based on the image registry URL, service account metadata (namespace, name, UID), and hash of the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
-3. `ImagePluginCacheKeyType` (Image)
-    - The cache key will be generated based on the image URL, service account metadata (namespace, name, UID), and hash of the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
+1. `TokenServiceAccountTokenCacheType` (Token)
+   - The cache key will be generated based on (Image, Registry, Global) plugin cache key type and the hash of the service account token.
+2. `ServiceAccountServiceAccountTokenCacheType` (ServiceAccount)
+   - The cache key will be generated based on (Image, Registry, Global) plugin cache key type, service account metadata (namespace, name, UID), and the service account annotations that are passed to the plugin in the `CredentialProviderRequest.ServiceAccountAnnotations` field.
 
 #### How will this work with the Ensure secret pull images KEP?
 
-[2535-ensure-secret-pull-images](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2535-ensure-secret-pulled-images) is a KEP that aims to give admin the ability to ensure pods that use a image are authorized to access the image. The KEP doesn't factor in the use of service account tokens for image pull. As part of the alpha implementation the 2 features together will not provide a desired outcome. Post alpha, we'll need to update the Ensure secret pull images KEP to factor in the use of service account tokens for image pull.
+[2535-ensure-secret-pull-images](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2535-ensure-secret-pulled-images) is a KEP that aims to give admin the ability to ensure pods that use an image are authorized to access the image. As of the beta implementation in [kubernetes/kubernetes#132771](https://github.com/kubernetes/kubernetes/pull/132771), this feature now works correctly with service account token-based credential providers.
 
-Notes from reviewing the current KEP and discussion with @stlaz:
+The implementation tracks service account coordinates (namespace, name, and UID) when a credential provider that uses service account tokens provides registry credentials for an image. This enables the following behavior:
 
-1. Different KSA for same image should result in image pull from registry.
-2. Same KSA for the image will result in allowing pod to use the image.
-   1. How would expiry work in this scenario?
-      1. I think it'll just be tied to the KSA and not so much to the expiry of the token because we're doing the same thing with image pull secrets (considered valid until deleted and recreated). Deletion and recreation of KSA will result in change in UID and that'll result in KSA not found in cache for the image (assuming the key used to store in cache is consistent with the cache key used in the credential provider cache that takes UID into consideration). Need to share the cache key generation logic to be consistent.
-3. Need an update to `ImagePullCredentials` struct to also store coordinates of the KSA.
+1. **Different KSA for same image**: Pods using different service accounts will trigger a fresh image pull from the registry since they have different service account coordinates.
+1. **Same KSA for same image**: Pods using the exact same service account (matching namespace, name, and UID) will be allowed to reuse the previously pulled image without triggering a new registry pull.
+1. **Service account lifecycle management**: If administrators want to revoke access to previously pulled images for a service account, they can delete and recreate the service account. This changes the UID, which invalidates any cached image credentials associated with the old service account coordinates.
 
-Until the two implementations are updated to work together, the alpha implementation of this KEP will use the KSA token based flow only when the pod is using image pull policy set to `Always`. This keeps the feature from misbehaving until we fix the implementations.
+The implementation only tracks namespace, name, and UID (not annotations or audience) for the ensure secret pull images cache key, as discussed in [this PR comment](https://github.com/kubernetes/kubernetes/pull/132771#discussion_r2214298843). This design choice aligns with the intent of the ensure secret pull images feature: if an image was pulled to a node via a service-account-based credential, all future pods that use that exact service account should be able to access the already-pulled image, even if the current state of the service account or credential provider config had since changed in a way that meant a pull re-attempt would fail.
+
+This approach is consistent with how pull secrets are handled - the system remembers which secrets worked to pull the image in the past, and any pod allowed to use one of those secrets gets access to the already pulled image, even if the content of the secret had since changed.
+
+This integration ensures that image access authorization is properly tied to service account identity while maintaining the security boundaries that the Ensure secret pull images KEP intended to enforce.
 
 ### Test Plan
 
@@ -1027,7 +1051,7 @@ previous answers based on experience in the field.
 
 New metrics:
 
-- `kubelet_credential_provider_config_hash` indicates the hash of the kubelet credential provider configuration file. This metric can be used by operators to determine if the kubelet credential provider configuration has changed.
+- `kubelet_credential_provider_config_info` indicates the hash of the kubelet credential provider configuration file. This metric can be used by operators to determine if the kubelet credential provider configuration has changed.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -1037,7 +1061,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Operators can use `kubelet_credential_provider_config_hash` metric to determine if the kubelet credential provider configuration has changed. If the hash of the configuration file changes, it indicates that the kubelet credential provider configuration has been updated.
+Operators can use `kubelet_credential_provider_config_info` metric to determine if the kubelet credential provider configuration has changed. If the hash of the configuration file changes, it indicates that the kubelet credential provider configuration has been updated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
