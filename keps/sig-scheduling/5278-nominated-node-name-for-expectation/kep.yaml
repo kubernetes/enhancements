@@ -15,18 +15,21 @@ approvers:
   - "@macsko"
   - "@dom4ha"
 
-stage: beta
+stage: alpha
 
 latest-milestone: "v1.34"
 
 milestone:
-  beta: "v1.34"
-  stable: "v1.36"
+  alpha: "v1.34"
+  beta: "v1.35"
+  stable: "v1.37"
 
 feature-gates:
   - name: NominatedNodeNameForExpectation
     components:
       - kube-scheduler
+  - name: ClearingNominatedNodeNameAfterBinding
+    components:
       - kube-apiserver
 disable-supported: true
 

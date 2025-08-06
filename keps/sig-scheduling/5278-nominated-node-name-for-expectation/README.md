@@ -578,11 +578,12 @@ and an e2e test wouldn't add any additional value.
 
 **Upgrade**
 
-During the beta period, the feature gate `NominatedNodeNameForExpectation` is enabled by default, so users don't need to opt in.
+During the alpha period, the feature gates `NominatedNodeNameForExpectation` and `ClearingNominatedNodeNameAfterBinding` are disabled by default,
+so users have to enable the gates to opt in.
 
 **Downgrade**
 
-Users need to disable the feature gate, and restart kube-scheduler and kube-apiserver.
+Users need to disable the feature gates, and restart kube-scheduler and kube-apiserver.
 
 On downgrade to the version that doesn't have this feature, there aren't any action that users need to take. For pods that have NominatedNodeName set, scheduler will try to honor it, but:
 - if the pod is still not schedulable, it will clear the field
@@ -616,7 +617,11 @@ which is fine by the today's scheduler implementation as well.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: NominatedNodeNameForExpectation
-  - Components depending on the feature gate: kube-scheduler, kube-apiserver
+  - Components depending on the feature gate: kube-scheduler
+- [x] Feature gate
+  - Feature gate name: ClearingNominatedNodeNameAfterBinding
+  - Components depending on the feature gate: kube-apiserver
+
 
 ###### Does enabling the feature change any default behavior?
 
@@ -625,7 +630,7 @@ Pods that are processed by Permit or PreBind plugins get NominatedNodeName durin
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes.
-The feature can be disabled in Beta version by restarting the kube-scheduler and kube-apiserver with the feature-gate off.
+The feature can be disabled in Alpha version by restarting the kube-scheduler and kube-apiserver with the feature-gate off.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -769,6 +774,7 @@ Unknown.
 ## Implementation History
 
 - 7th May 2025: The initial KEP is submitted.
+- 31st Jul 2025: The enhancement was demoted to alpha, because it haven't met all beta requirements for v1.34.
 
 ## Drawbacks
 
