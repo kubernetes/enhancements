@@ -1,0 +1,22 @@
+id: ""
+prnumber: "5208"
+name: Graduate metrics.k8s.io API to GA
+title: Graduate metrics.k8s.io API to GA
+kep-number: "4829"
+authors: ["@ameukam"]
+owning-sig: sig-instrumentation
+participating-sigs: [sig-instrumentation]
+reviewers: []
+approvers: ["@dgrisonnet,@richabanker"]
+creation-date: "2025-03-17"
+last-updated: v1.19
+status: implementable
+stage: beta
+latest-milestone: ""
+milestone:
+  alpha: "1.7"
+  beta: "1.8"
+  stable: "1.34"
+feature-gates: []
+disable-supported: false
+metrics: []
