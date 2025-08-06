@@ -1,0 +1,32 @@
+title: Placement Decision API
+kep-number: 5313
+authors:
+  - "@corentone"
+  - "@elgnay"
+  - "@haoqing0110"
+  - "@jnpacker"
+  - "@mikeshng"
+  - "@qiujian16"
+  - "@ryanzhang-oss"
+owning-sig: sig-multicluster
+status: provisional
+creation-date: 2025-05-17
+reviewers:
+  - "@deads2k"
+  - "@RainbowMango"
+  - "@zhiying-lin"
+approvers:
+  - "@jeremyot"
+  - "@skitt"
+
+see-also:
+  - "/keps/sig-multicluster/4322-cluster-inventory"
+
+stage: alpha
+
+latest-milestone: "v1.33"
+
+milestone:
+  alpha: "v1.33"
+
+disable-supported: true
