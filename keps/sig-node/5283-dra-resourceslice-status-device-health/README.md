@@ -3,19 +3,19 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
 - [ ] **Fill out this file as best you can.**
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5283: DRA: ResourceSlice Status for Device Health Tracking
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -83,9 +83,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+  - [User Stories](#user-stories)
+    - [Visibility](#visibility)
+    - [Enabling Automated Remediation](#enabling-automated-remediation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -107,6 +107,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Device Conditions](#device-conditions)
+  - [Standardized Attributes](#standardized-attributes)
+  - [Standardized Events](#standardized-events)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -173,6 +176,14 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+With Dynamic Resource Allocation (DRA), devices that can be allocated to Pods
+are advertised in ResourceSlices. Device entries in a ResourceSlice describe
+properties like identifiers, capacity, and firmware or kernel driver versions.
+
+Sometimes devices fail and an automated agent or cluster administrator must take
+some action to restore the device to a healthy state. This KEP defines a
+standard way to determine whether or not a device is considered healthy.
+
 ## Motivation
 
 <!--
@@ -184,6 +195,18 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+Since the DRA APIs currently do not expose a standard way to classify device
+health, cluster administrators are tasked with finding other means of doing that
+for each kind of device that is defined in a ResourceSlice in order to identify
+and restore unhealthy devices back to their full functionality.
+
+When unhealthy devices are no longer able to support new or existing workloads,
+DRA drivers and cluster administrators already have the option to
+[taint](https://kep.k8s.io/5055) the devices. A standard representation of
+device health in the ResourceSlice API is needed to express the state of the
+devices in cases where the side effects (`NoSchedule`/`NoExecute`) of taints are
+not desired.
+
 ### Goals
 
 <!--
@@ -191,12 +214,20 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+- Expose well-formed data in the ResourceSlice API representing the real-time
+  health of the devices a ResourceSlice describes.
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- Define what constitutes a "healthy" or "unhealthy" device. That distinction is
+  made by each DRA driver.
+- Automatically take action based on the health status of a device. This KEP
+  only defines how that status is represented in the API.
 
 ## Proposal
 
@@ -209,7 +240,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -218,9 +249,15 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Visibility
 
-#### Story 2
+As a cluster administrator, I want to determine the overall health of the
+DRA-exposed devices available throughout my cluster.
+
+#### Enabling Automated Remediation
+
+As a cluster administrator, I want to determine how to remediate unhealthy
+devices when different failure modes require different methods of remediation.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -253,6 +290,64 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+A new `status` field will be added to the ResourceSlice API, along with fields
+for health information for each device listed in the ResourceSlice:
+
+```go
+type ResourceSlice struct {
+	...
+
+	// Contains the status observed by the driver.
+	// +optional
+	Status ResourceSliceStatus `json:"status,omitempty"`
+}
+
+// ResourceSliceStatus contains the observed status of a ResourceSlice.
+type ResourceSliceStatus struct {
+	// Devices contains the status of each device.
+	// +optional
+	Devices []DeviceStatus `json:"devices"`
+}
+
+// DeviceStatus represents the status of a [Device].
+type DeviceStatus struct {
+	// Name maps this status to the device listed in .spec.devices.
+	//
+	// +required
+	Name string `json:"name"`
+
+	// Health contains the health of a device as observed by the driver.
+	//
+	// +optional
+	Health *DeviceHealthStatus `json:"health,omitempty"`
+}
+
+// DeviceHealthState represents the overall health status of a device.
+type DeviceHealthState string
+
+// These are valid conditions of a device.
+const (
+	// DeviceHealthy is the state for a healthy device.
+	DeviceHealthy DeviceHealthState = "Healthy"
+	// DeviceUnhealthy is the state for a unhealthy device.
+	DeviceUnhealthy DeviceHealthState = "Unhealthy"
+	// DeviceUnknown is the state for a device whose health is unknown.
+	DeviceUnknown DeviceHealthState = "Unknown"
+)
+
+// DeviceHealthStatus represents the health of a device as observed by the driver.
+type DeviceHealthStatus struct {
+	// State is the overall health status of a device.
+	//
+	// +required
+	State DeviceHealthState `json:"state"`
+}
+```
+
+A dedicated place for health information for devices is flexible enough to
+accommodate new fields related to health, like describing particular failure
+modes or remediation methods.
 
 ### Test Plan
 
@@ -821,6 +916,110 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+### Device Conditions
+
+Instead of inventing new API structures, [`metav1.Condition`]s could represent
+the health status of each device. The `DeviceStatus` type could then look like
+the following:
+
+```go
+// DeviceStatus represents the status of a [Device].
+type DeviceStatus struct {
+	// Name maps this status to the device listed in .spec.devices.
+	//
+	// +required
+	Name string `json:"name"`
+
+	// Represents the observations of a device's current state.
+	// Known .status.devices[].conditions.type are: "Available"
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+}
+
+// These are valid conditions of a device.
+const (
+	// Available means the device is available, as determined by the driver.
+	DeviceAvailable = "Available"
+)
+```
+
+The `Available` condition would be the recommended way to declare the overall
+health of a device. Other condition types like `Degraded` could also be added.
+
+While users are likely already familiar with the concept of these conditions,
+having multiple lists of conditions in one ResourceSlice is not a pattern that
+exists elsewhere in Kubernetes. Existing tools and libraries used to looking at
+`status.conditions` may not work when there are separate instances in each of
+`status.devices[].conditions`.
+
+The fields of each individual condition may also not satisfy the use cases
+targeted by this KEP. The single `reason` and `message` fields may not be able
+to capture all of the extra context behind a particular health state of a
+device. The `observedGeneration` field may also not be useful since factors
+outside the ResourceSlice may play into the health of a device more than
+parameters in the ResourceSlice's own `spec`, so a condition's
+`observedGeneration` matching the ResourceSlice's `metadata.generation` may not
+reliably indicate that the device is healthy at that exact moment.
+
+### Standardized Attributes
+
+A set of standard attributes could be defined to represent device health.
+
+e.g.
+```yaml
+kind: ResourceSlice
+apiVersion: resource.k8s.io/v1
+...
+spec:
+  driver: cards.dra.example.com
+  devices:
+  - name: card-1
+  attributes:
+    manufacturer: # a vendor-specific attribute, automatically qualified as cards.dra.example.com/manufacturer
+      string: Cards-are-us Inc.
+    resource.kubernetes.io/health: # a standard attribute expressing overall health status
+      string: Unhealthy
+```
+
+This approach requires no new API structure and DRA drivers already assume
+ownership over device attributes. Users can also utilize attributes in
+ResourceClaims to decide whether or not unhealthy devices are acceptable for a
+request if a driver doesn't express its own opinion by also tainting the device.
+
+However, the lack of a dedicated place in the API for this information makes it
+less discoverable. Users will be less likely to look for health status in a set
+of arbitrary `attributes` than a list of [`metav1.Condition`]s or a field
+labeled `health`. Other related information like the particular failure mode or
+remediation strategy of an unhealthy device also becomes mixed in with all of
+the other attributes of a device, making their relationship less clear even if
+the attributes have similar names.
+
+### Standardized Events
+
+DRA drivers could be expected to generate Events to indicate health status for
+devices. One such Event might look like the following:
+
+```
+LAST SEEN   TYPE      REASON            OBJECT                 MESSAGE
+2m4s        Warning   DeviceUnhealthy   resourceslice/node-1   Device 'card-1' is Unhealthy.
+```
+
+Like standard attributes, this approach requires no new API structure, but is
+similarly less discoverable and doesn't enable bundling related information in a
+structured way. Health information from Events cannot be used to make scheduling
+decisions in ResourceClaims. One benefit of using Events over other approaches
+is that existing alerting systems may already be configured to surface when
+devices become unhealthy based on the Event's `type`.
+
+Events are also ephemeral, so it isn't possible to determine if a device is
+healthy at the present moment since a `DeviceUnhealthy` Event may have occurred
+a while ago and since expired. The Event API is described as "informative,
+best-effort, supplemental data" which is likely insufficient by itself for most
+use cases for tracking device health.
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -828,3 +1027,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+[`metav1.Condition`]: https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#Condition
