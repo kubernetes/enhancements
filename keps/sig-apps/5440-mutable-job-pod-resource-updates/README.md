@@ -86,9 +86,12 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [DRA Support](#dra-support)
+  - [Resuming on running workloads](#resuming-on-running-workloads)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
@@ -235,6 +238,14 @@ determine optimal CPU, memory, and GPU allocations. For example, it might adjust
 availability. By updating the job's resource requirements before unsuspending it, the
 controller ensures efficient resource utilization and better cluster throughput.
 
+#### Story 2
+
+As an user, I want to be able to submit a job to a queueing solution. If my job cannot be admitted due to quota limitations, it should be possible to change my request so that the workload will be admitted.
+
+#### Story 3
+
+As a cluster administrator, I want to monitor existing workloads and see how many resources they are actually using. If a workload is oversubscribed and their actual utilization is lower, I want to suspend that workload and checkpoint the workload via external APIs. I would then lower the request requirements to match the actual utilization and resubmit my job.
+
 ### Risks and Mitigations
 
 - New API calls from queue controllers to update resource specifications. The mitigation
@@ -273,6 +284,14 @@ desired resources.
 
 One does not have to modify claims in the PodTemplate so one can still assume claims are immutable also.
 
+### Resuming on running workloads
+
+When mutable pod scheduling requirements KEP was implemented, Jobs can only have their scheduling contraints changed on Job that is created in a suspended state.
+
+If a workload is resumed, then the workload is assumed to be immutable from then on. So users are not able to change scheduling constraints or update resources after a Job starts.
+
+In this work, we want to relax this solution to enable #story-3. Users would be able to suspend a running workload, and change the resources on the suspended job.
+
 ### Test Plan
 
 - Unit and integration tests verifying that:
@@ -280,6 +299,7 @@ One does not have to modify claims in the PodTemplate so one can still assume cl
   - Container resource specifications (CPU, memory, GPU, extended resources) are mutable only for suspended jobs.
   - Job controller observes the resource updates and creates pods with the new resource specifications.
   - Resource validation still applies (e.g., limits >= requests) for all resource types including extended resources.
+  - A job that is suspended once it went running is still able to change resources while it is suspended.
 
 #### Unit tests
 
