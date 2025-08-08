@@ -73,6 +73,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Handling race condition](#handling-race-condition)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -280,17 +281,6 @@ This might be a good place to talk about core concepts and how they relate.
 It is never re-evaluated when the pod is already running.
 It is storage provider's responsibility to ensure that the running workload is not interrupted.
 
-**Possible race condition**
-
-There is a race condition between volume modification and pod scheduling:
-1. User modifies the volume from storage provider.
-3. A new Pod is created and scheduler schedules it with the old affinity.
-4. User sets the new affinity to the PV.
-5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
-
-If this happens, the pod will be stuck in a `ContainerCreating` state.
-User will have to manually delete the pod, or using Kubernetes [descheduler](https://github.com/kubernetes-sigs/descheduler) or similar.
-
 
 ### Risks and Mitigations
 
@@ -315,6 +305,21 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### Handling race condition
+
+There is a race condition between volume modification and pod scheduling:
+1. User modifies the volume from storage provider.
+3. A new Pod is created and scheduler schedules it with the old affinity.
+4. User sets the new affinity to the PV.
+5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
+
+If this happens, the pod will be stuck in a `ContainerCreating` state.
+Kubelet should detect this contidion and reject the pod.
+Hopefully some other controllers (StatefulSet controller) will re-create the pod and it will be scheduled to the correct node.
+
+Specifically, kubelet investigates the cause of the failure by checking the status of the underlying VolumeAttachment object.
+If `FailedPrecondition` error is found, and PV's nodeAffinity does not match current node,
+kubelet will setting pod phase to 'Failed'
 
 ### Test Plan
 
