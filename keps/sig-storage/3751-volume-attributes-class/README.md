@@ -37,6 +37,8 @@
   - [Implementation &amp; Handling Failure](#implementation--handling-failure)
     - [Handling of non-final errors](#handling-of-non-final-errors)
     - [Handling of final errors](#handling-of-final-errors)
+      - [Transition from VAC(A) to VAC(B)](#transition-from-vaca-to-vacb)
+      - [Transition from nil-VAC to VAC(A)](#transition-from-nil-vac-to-vaca)
     - [Handling of infeasible errors](#handling-of-infeasible-errors)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -712,8 +714,13 @@ In other words, `external-resizer` will keep working towards `targetVolumeAttrib
 
 #### Handling of final errors
 
-If volume modification to a VAC is failing with a final error, then users can try rolling forward to a new VAC. This will reset `targetVolumeAttributesClassName` once external-resizer starts processing the request. If user sets VAC to `nil` or `empty` while previous modification to a VAC failed with a final error, then external-resizer
-should keep working towards reconciling to previously specified VAC, now recorded in `targetVolumeAttributesClassName`.
+##### Transition from VAC(A) to VAC(B)
+
+If volume modification to a VAC is failing with a final error and users wishes to either cancel and move to a different VAC, then they MUST first set VAC of PVC to A. Only after transition to original VAC(A) is successful, is the user allowed to move to a different VAC.
+
+##### Transition from nil-VAC to VAC(A)
+
+If volume modification to a VAC is failing with final but not-infeasible error, then external-resizer will keep trying to reconcile to VAC(A), regardless of any user initiated changes in `.spec.volumeAttributeClassName`. Only after transition to VAC(A) is successful, the user is allowed to move the PVC to a different VAC.
 
 #### Handling of infeasible errors
 
@@ -721,7 +728,9 @@ If volume modification to a VAC is failing with infeasible error, then users can
 
 Please note if PVC already had a `currentVolumeAttributesClass` in its status, then setting VAC to `nil` is not allowed.
 
-It is possible that if there were one or more partial volume modifications that happened before on the volume, they will not be undone when this happens because for infeasible errors no `ControllerModifyVolume` will be called when user resets the VAC. This mechanism exists only to prevent perpetual call to `ControllerModifyVolume` for volume modifications which are never going to succeed. Storage providers and users are recommended to roll forward to different VAC, if desired behaviour is resetting the VAC to some pre-specified value for all `mutable_parameters`.
+User can also set VAC to a different VAC if transition to a VAC fails with a infeasible error. This is allowed with the assumption that, volume was not modified when previous VAC application failed with a infeasible error.
+
+![Error recovery flow](./modify-volume.png)
 
 
 ### Test Plan
