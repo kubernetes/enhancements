@@ -737,6 +737,7 @@ type EvictionRequest struct {
 
 	// Spec defines the eviction request specification.
 	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+	// This field is required.
 	// +required
 	Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
@@ -801,6 +802,7 @@ type LocalPodReference struct {
 type Interceptor struct {
 	// InterceptorClass must be RFC-1123 DNS subdomain identifying the interceptor (e.g.
 	// foo.example.com).
+	// This field is required.
 	// +required
 	InterceptorClass string `json:"interceptorClass" protobuf:"bytes,1,opt,name=interceptorClass"`
 
@@ -815,6 +817,7 @@ type Interceptor struct {
 	// The number of interceptor annotations is limited to 30 in the 9900-10100 interval and to 70
 	// outside of this interval.
 	// The minimum value is 0 and the maximum value is 100000.
+	// This field is required.
 	// +required
 	Priority int32 `json:"priority" protobuf:"varint,2,opt,name=priority"`
 
@@ -890,9 +893,10 @@ type EvictionRequestStatus struct {
 
 	// The number of unsuccessful attempts to evict the referenced pod via the API-initiated eviction,
 	// e.g. due to a PodDisruptionBudget.
-	// This field is required.
-    // +required
-	FailedAPIEvictionCounter int32 `json:"failedAPIEvictionCounter" protobuf:"varint,6,opt,name=failedAPIEvictionCounter"`
+	// This is set by the eviction controller after all the interceptors have completed.
+	// The minimum value is 1, and subsequent updates can only increase it.
+    // +optional
+	FailedAPIEvictionCounter *int32 `json:"failedAPIEvictionCounter,omitempty" protobuf:"varint,6,opt,name=failedAPIEvictionCounter"`
 }
 
 // +enum
