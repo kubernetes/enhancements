@@ -1,0 +1,43 @@
+title: Extended Toleration Operators for Threshold-Based Placement
+kep-number: 5471
+authors:
+  - "@jane.doe"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2025-08-11
+reviewers:
+  - TBD
+approvers:
+  - TBD
+  - "@oscar.doe"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TaintTolerationComparisonOperators
+    components:
+      - kube-apiserver
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - kube_pod_numeric_tolerations_total{operator="Ge|Le|Gt|Lt"}
+  - scheduler_failed_scheduling_attempts_total{reason="numeric_taint_mismatch"}
+  - scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}
