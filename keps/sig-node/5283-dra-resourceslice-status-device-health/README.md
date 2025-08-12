@@ -323,25 +323,11 @@ type DeviceStatus struct {
 	Health *DeviceHealthStatus `json:"health,omitempty"`
 }
 
-// DeviceHealthState represents the overall health status of a device.
-type DeviceHealthState string
-
-// These are valid conditions of a device.
-const (
-	// DeviceHealthy is the state for a healthy device.
-	DeviceHealthy DeviceHealthState = "Healthy"
-	// DeviceUnhealthy is the state for a unhealthy device.
-	DeviceUnhealthy DeviceHealthState = "Unhealthy"
-	// DeviceUnknown is the state for a device whose health is unknown.
-	DeviceUnknown DeviceHealthState = "Unknown"
-)
-
 // DeviceHealthStatus represents the health of a device as observed by the driver.
 type DeviceHealthStatus struct {
-	// State is the overall health status of a device.
-	//
-	// +required
-	State DeviceHealthState `json:"state"`
+	// TODO
+	// This could contain fields representing the overall "Healthy" or "Unhealthy"
+	// status and other context around the reason for that status.
 }
 ```
 
