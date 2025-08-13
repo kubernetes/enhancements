@@ -110,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Device Conditions](#device-conditions)
   - [Standardized Attributes](#standardized-attributes)
   - [Standardized Events](#standardized-events)
+  - [Vendor-Provided Metrics](#vendor-provided-metrics)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1005,6 +1006,29 @@ healthy at the present moment since a `DeviceUnhealthy` Event may have occurred
 a while ago and since expired. The Event API is described as "informative,
 best-effort, supplemental data" which is likely insufficient by itself for most
 use cases for tracking device health.
+
+### Vendor-Provided Metrics
+
+Device vendors could be expected to track and publish metrics related to the
+devices they manage and document specific queries that indicate the various
+possible health states of the devices. Cluster administrators could then wire
+those metrics into existing alerting mechanisms.
+
+This option provides much more flexibility to vendors in how they express the
+health of a device than the more rigid APIs defined by the other options.
+Vendor-defined metrics can represent a wider variety of dimensions and degrees
+of health at a higher resolution than would be possible with Kubernetes APIs.
+Cluster administrators are also afforded more flexibility by the freedom to
+interpret metrics in a way that works for their own environments instead of
+having to inherit a more binary "Healthy" or "Unhealthy" status from a driver
+which may or may not be customizable.
+
+The main cost of that flexibility is the lack of standardization, where cluster
+administrators have to track down from each vendor how to determine if a given
+device is in a healthy state as opposed to inspecting a well-defined area of a
+vendor-agnostic API like ResourceSlice. This lack of standardization also makes
+integrations like generic controllers that automatically taint unhealthy devices
+less straightforward to implement.
 
 ## Infrastructure Needed (Optional)
 
