@@ -352,7 +352,15 @@ resulting absolute paths must match. That is to say, each element in the
 allowlist is a set of criteria; if the binary in question meets all of the
 criteria in at least one **set** of criteria, the plugin will be allowed to
 execute.  If no criteria set succeeds after comparing the binary to all sets of
-criteria, the operation will be immediately aborted and an error returned.
+criteria, the operation will be immediately aborted and an error returned. If
+`credentialPluginAllowlist` is not provided, or is explictly made `nil`, all
+binaries will be allowed. If `credentialPluginAllowlist`'s value is set to the
+empty list `[]`, *all binaries will be prohibited*.
+
+In future updates, other allowlist entry fields MAY be added. Specifically,
+fields allowing for verification by digest or public key have been discussed.
+The initial design MUST acommodate such future additions.
+
 ```
 apiVersion: kubectl.config.k8s.io/v1beta1
 kind: Preference
