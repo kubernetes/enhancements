@@ -156,7 +156,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This proposal allows users to set arbitrary Fully Qualified Domain Name (FQDN) as the hostname of a pod, introduces a new field `hostnameOverride` for the podSpec, which, if set, once the API is GA will always be respected by the Kubelet (otherwise it will fall back to legacy behavior), and no longer cares about the `hostname` as well as the `subdomain` values. Unless the user sets the `hostNetwork` field of `podSpec` to true, if the `hostNetwork` field is true, it will always use the hostname of the host where the pod is located as the pod's name.
+This proposal allows users to set arbitrary Fully Qualified Domain Name (FQDN) as the hostname of a pod, introduces a new field `hostnameOverride` for the podSpec, which, if set, once the API is GA will always be respected by the Kubelet (otherwise it will fall back to legacy behavior), and no longer cares about the `hostname` as well as the `subdomain` values.
 
 ## Motivation
 
@@ -203,7 +203,7 @@ Additionally, in the `generatePodSandboxConfig` method of kubelet, the pod's hos
 
 For Windows containers, we only set the container's hostname and do not create an `/etc/hosts` file for it (as we have previously made it clear that we do not create an `/etc/hosts` file for Windows containers).
 
-If both `setHostnameAsFQDN` and hostnameOverride fields are set simultaneously, we will reject the resource creation with an error stating these fields are mutually exclusive.
+If both `setHostnameAsFQDN` and `hostnameOverride` fields are set, or if both `hostNetwork` and `hostnameOverride` fields are set, we will reject the creation of the resource and return an error indicating that these fields are mutually exclusive with the `hostnameOverride` field.
 
 Based on the above design, after the KEP is implemented, we can achieve the following results.
 
@@ -572,6 +572,7 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - 2024-07-18: Initial draft KEP
+- 2025-08-13: Align KEPs with implemented PRs and documentation.
 
 ## Drawbacks
 
