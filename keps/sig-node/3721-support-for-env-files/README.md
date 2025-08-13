@@ -250,30 +250,38 @@ the file and `Path` is the relative path in this volume mount filesystem.
 ```
 type EnvVarSource struct {
     ...
-    // Selects a key of the env file.
-    // +optional
-    FileKeyRef *FileKeySelector `json:"fileKeyRef,omitempty" protobuf:"bytes,5,opt,name=fileKeyRef"`
+	// FileKeyRef selects a key of the env file.
+	// Requires the EnvFiles feature gate to be enabled.
+	//
+	// +featureGate=EnvFiles
+	// +optional
+	FileKeyRef *FileKeySelector `json:"fileKeyRef,omitempty" protobuf:"bytes,5,opt,name=fileKeyRef"`
     ...
 }
 
 type FileKeySelector struct {
-    // The name of the volume mount containing the env file.
-    VolumeName string `json:",inline" protobuf:"bytes,1,opt,name=volumeName"`
-    // The path within the volume from which to select the file.
-    // May be specified as either an absolute path or relative to the volume.
-    Path string `json:",inline" protobuf:"bytes,2,opt,name=path"`
-    // The key within the env file. An invalid key will prevent the pod from starting.
-    Key string `json:"key" protobuf:"bytes,3,opt,name=key"`
-    // Specify whether the file or its key must be defined. If the file or key
-    // does not exist, then the env var is not published.
-    // If optional is set to true and the specified key does not exist,
-    // the environment variable will not be set in the Pod's containers.
-    //
-    // If optional is set to false and the specified key does not exist,
-    // an error will be returned during Pod creation.
-    // +optional
-    // +default=false
-    Optional *bool `json:"optional,omitempty" protobuf:"varint,4,opt,name=optional"`
+	// The name of the volume mount containing the env file.
+	// +required
+	VolumeName string `json:"volumeName" protobuf:"bytes,1,opt,name=volumeName"`
+	// The path within the volume from which to select the file.
+	// Must be relative and may not contain the '..' path or start with '..'.
+	// +required
+	Path string `json:"path" protobuf:"bytes,2,opt,name=path"`
+	// The key within the env file. An invalid key will prevent the pod from starting.
+	// The keys defined within a source may consist of any printable ASCII characters except '='.
+	// During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+	// +required
+	Key string `json:"key" protobuf:"bytes,3,opt,name=key"`
+	// Specify whether the file or its key must be defined. If the file or key
+	// does not exist, then the env var is not published.
+	// If optional is set to true and the specified key does not exist,
+	// the environment variable will not be set in the Pod's containers.
+	//
+	// If optional is set to false and the specified key does not exist,
+	// an error will be returned during Pod creation.
+	// +optional
+	// +default=false
+	Optional *bool `json:"optional,omitempty" protobuf:"varint,4,opt,name=optional"`
 }
 ```
 
@@ -281,13 +289,26 @@ type FileKeySelector struct {
 
 The full specification of an env file:
 
-1. **File Format**: The environment variable (env) file must adhere to valid [.env syntax](https://smartmob-rfc.readthedocs.io/en/latest/2-dotenv.html) to ensure correct parsing. An example:
+1. **File Format**: The environment variable (env) file must adhere to valid env file syntax to ensure proper parsing. The syntax for env files is as follows:
+   * Blank Lines: Blank lines are ignored.
+   * Leading Spaces: Leading spaces on all lines are ignored.
+   * Variable Declaration: Variables must be declared as `VAR=VAL`. Spaces surrounding `=` and trailing spaces are ignored.
+       ```
+       VAR=VAL → VAL
+       ```
+   * Comments: Lines beginning with # are treated as comments and ignored.
+       ```
+       # comment
+       VAR=VAL → VAL
+       VAR=VAL # not a comment → VAL # not a comment
+       ```
+   * Line Continuation: A backslash (`\`) at the end of a variable declaration line indicates the value continues on the next line. The lines are joined with a single space.
+       ```
+       VAR=VAL \
+       VAL2
+       → VAL VAL2
+       ```
 
-```
-KEY1=VALUE1
-KEY2=VALUE2
-...
-```
 
 2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars.
 
@@ -319,7 +340,6 @@ Below are the ones we mapped and their outcome once this KEP is implemented.
 |4. Either the filepath or key specified in `FileKeySelector` field does not exist but `optional` field is set to true | Pod created | Container starts and env vars are not populated. |
 |5. The specified file is not a parsable env file. | Pod created | Container fails to start and error message is reported in the events.|
 |6. The specified file contains invalid env var names. | Pod created | Container fails to start and erorr message is reported in the events.|
-|7. The container's UID does not have permission to read the env file. | Pod created | Container fails to start and erorr message is reported in the events.|
 
 
 ### Security Considerations
@@ -552,7 +572,8 @@ N/A
 ## Implementation History
 
 * 2023/02/15: Initial proposal
-* 2024/06/06: Open the new PR and continue implementing the KEP.
+* 2025/06/06: Open the new PR and continue implementing the KEP.
+* 2025/08/13: Align KEPs with implemented PRs and documentation.
 
 ## Drawbacks
 
