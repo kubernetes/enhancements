@@ -1021,19 +1021,16 @@ use cases for tracking device health.
 
 ### Vendor-Provided Metrics
 
-Device vendors could be expected to track and publish metrics related to the
-devices they manage and document specific queries that indicate the various
-possible health states of the devices. Cluster administrators could then wire
-those metrics into existing alerting mechanisms.
+Device vendors could be expected to provide device telemetry support and
+documentation. Cluster administrators could then wire those metrics into
+existing alerting mechanisms.
 
-This option provides much more flexibility to vendors in how they express the
-health of a device than the more rigid APIs defined by the other options.
-Vendor-defined metrics can represent a wider variety of dimensions and degrees
-of health at a higher resolution than would be possible with Kubernetes APIs.
-Cluster administrators are also afforded more flexibility by the freedom to
-interpret metrics in a way that works for their own environments instead of
-having to inherit a more binary "Healthy" or "Unhealthy" status from a driver
-which may or may not be customizable.
+This is more flexible option to determine health of a device than the more rigid
+APIs defined by the other options. Vendor-specific device metrics can represent
+a wider variety of dimensions and degrees of health than would be possible with
+Kubernetes APIs. Cluster administrators have more freedom to interpret metrics
+in a way that works best for their own environments, instead of needing to infer
+actual device condition from the driver "Healthy" or "Unhealthy" status.
 
 The main cost of that flexibility is the lack of standardization, where cluster
 administrators have to track down from each vendor how to determine if a given
