@@ -85,6 +85,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Visibility](#visibility)
+    - [No Side-Effects By Default](#no-side-effects-by-default)
     - [Enabling Automated Remediation](#enabling-automated-remediation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -254,6 +255,17 @@ bogged down.
 
 As a cluster administrator, I want to determine the overall health of the
 DRA-exposed devices available throughout my cluster.
+
+#### No Side-Effects By Default
+
+As a cluster administrator, I want health status to be purely informational. I
+do not want health status by itself to trigger any actions such as to prevent
+new workloads from being allocated unhealthy devices or to evict running
+workloads when their allocated devices become unhealthy.
+
+Automated application of device taints, for example, should either be configured
+by cluster administrators themselves or be driven by other factors observed on
+the devices more directly that a DRA driver is capable of seeing.
 
 #### Enabling Automated Remediation
 
