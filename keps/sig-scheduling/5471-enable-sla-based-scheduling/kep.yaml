@@ -6,12 +6,13 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
 status: provisional
-creation-date: 2025-08-11
+creation-date: 2025-08-08
 reviewers:
-  - TBD
+  - "@SergeyKanzhelev"
 approvers:
-  - TBD
-  - "@oscar.doe"
+  - "@macsko"
+  - "@dom4ha"
+  - "@sanposhiho"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -38,6 +39,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - kube_pod_numeric_tolerations_total{operator="Ge|Le|Gt|Lt"}
-  - scheduler_failed_scheduling_attempts_total{reason="numeric_taint_mismatch"}
-  - scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}
+  - scheduler_numeric_tolerations_total{operator="Gt|Lt"}
+  - scheduler_numeric_taint_mismatches_total

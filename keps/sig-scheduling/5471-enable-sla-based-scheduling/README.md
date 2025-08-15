@@ -14,10 +14,10 @@
     - [Story 2 — AI inference service with strict SLOs](#story-2--ai-inference-service-with-strict-slos)
     - [Story 3 — AI training workload balancing cost and reliability](#story-3--ai-training-workload-balancing-cost-and-reliability)
     - [Story 4 — DRA GPU claim management](#story-4--dra-gpu-claim-management)
+    - [Story 5 — DRA device-level error budget management](#story-5--dra-device-level-error-budget-management)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
-    - [User Confusion Between String and Numeric Semantics](#user-confusion-between-string-and-numeric-semantics)
     - [API Compatibility and Version Skew](#api-compatibility-and-version-skew)
     - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
     - [Cross-SIG Impact](#cross-sig-impact)
@@ -73,7 +73,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Extend **core/v1 Toleration** to support **numeric comparison operators** when matching **Node Taints**:
 
-- New operators: `Lt`, `Le`, `Ge`, `Gt` (in addition to existing `Equal`/`Exists`).
+- New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`).
 - Primary motivation: allow pods to opt‑in to nodes by `SLA/failure‑probability` values published as taints (e.g., `node.kubernetes.io/sla=950`).
 - Scheduler impact is limited to the existing TaintToleration Filter; no new stages or algorithms.
 
@@ -96,7 +96,7 @@ From a scheduling perspective, adding numeric operators to tolerations only adju
 
 ### Goals
 
-- Add comparison operators to Tolerations so pods can match taints like `node.kubernetes.io/sla=<int>` using thresholds.
+- Add comparison operators to tolerations so pods can match taints like `node.kubernetes.io/sla=<int>` using thresholds.
 - Keep behavior consistent with existing effects (`NoSchedule`, `PreferNoSchedule`, `NoExecute`).
 - Backward compatible and opt‑in via a feature gate.
 
@@ -108,20 +108,20 @@ From a scheduling perspective, adding numeric operators to tolerations only adju
 
 ### Benefits for implementing this feature for DRA and AI Workloads
 
-In addition to general scheduling improvements, SLA‑aware opt‑in via Tolerations has specific advantages for `Dynamic Resource Allocation` (DRA) and `AI/ML`:
+In addition to general scheduling improvements, SLA‑aware opt‑in via tolerations has specific advantages for `Dynamic Resource Allocation (DRA)` and `AI/ML`:
 
-For DRA, resource claims (e.g., GPUs/accelerators) can be steered by node reliability: critical claims stay on high‑SLA capacity; batch/cheap claims can land on lower‑SLA pools. Taints provide a default drive away from risky pools and `NoExecute` eviction if a pool degrades.
+- DRA steers GPUs/accelerators resource claims by node reliability: critical workloads get high‑SLA capacity while batch workloads use cheaper pools. Taints block risky pools and evict when capacity degrades.
 
-For AI/ML, multi‑stage pipelines can place latency‑sensitive inference on high‑SLA nodes while directing batch preprocessing, fine‑tuning, or embedding generation to spot nodes. When spot nodes are reclaimed, `NoExecute` or `NoSchedule` effects plus tolerations allow graceful drain and controlled failover. In multi‑tenant GPU clusters, taints bound access to the reliable pools (fairness), and during autoscaling bursts, extra replicas can safely land on low‑SLA pools with explicit opt‑in.
+- AI/ML pipelines can place latency‑sensitive inference on high‑SLA nodes while directing batch to run on spot nodes. When spot nodes are reclaimed, taints trigger graceful drain and controlled failover.
 
-| Benefit                           | Impact on DRA                                                                     | Impact on AI/ML workloads                                                     |
-| --------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Cost–reliability optimization** | Bind/keep claims on reliability tiers via taints (+ tolerations to opt-in).       | Keep latency-critical inference on high-SLA; shift batch to spot.             |
-| **Stage-aware placement**         | Steer per-stage claims to tiers consistently with node policy.                    | Different stages tolerate different risk; make that explicit via tolerations. |
-| **Resilience after preemption**   | Use `NoExecute`/`tolerationSeconds` for graceful drain; re-admit on stable tiers. | Training/services recover faster with predictable eviction semantics.         |
-| **Multi-tenant fairness**         | Avoid monopolization of high-SLA tiers by requiring explicit tolerations.         | Fair access to reliable accelerators across teams.                            |
-| **Smooth burst handling**         | Bursts land on low-SLA pools via opt-in; baseline remains on high-SLA.            | HPA can scale to spot with clear safety boundaries.                           |
-| **Operational clarity**           | Node-side policy is auditable and centralized.                                    | Platform teams can document and enforce reliability classes cleanly.          |
+| Benefit                        | Impact on DRA                                             | Impact on AI/ML workloads                               |
+| ------------------------------ | --------------------------------------------------------- | ------------------------------------------------------- |
+| **Cost–reliability trade-off** | Critical workloads stay on premium nodes; batch uses spot | Inference on reliable nodes; training on cheaper pools  |
+| **Workload-aware placement**   | Different claim types target appropriate node tiers       | Pipeline stages match their reliability requirements    |
+| **Graceful preemption**        | `NoExecute` provides controlled eviction timing           | Predictable failover for training and serving workloads |
+| **Resource fairness**          | Prevents monopolization of premium capacity               | Teams share reliable accelerators fairly                |
+| **Elastic scaling**            | Bursts overflow to lower-SLA pools safely                 | HPA scales to spot with clear boundaries                |
+| **Policy transparency**        | Node reliability classes are explicit and auditable       | Platform teams enforce clear reliability tiers          |
 
 ## Proposal
 
@@ -131,7 +131,7 @@ For AI/ML, multi‑stage pipelines can place latency‑sensitive inference on hi
 
 As a cluster operator, I want a default repel from spot (low-SLA) nodes so that only workloads that explicitly tolerate them can land there.
 
-I also want to set numeric SLA thresholds in tolerations (e.g., `Ge 950`) so pods can opt-in to reliable nodes or specific SLA bands without having to hardcode every SLA class in NodeAffinity rules.
+I also want to set numeric SLA thresholds in tolerations (e.g., `Gt 950`) so pods can opt-in to reliable nodes or specific SLA bands without having to hardcode every SLA class in NodeAffinity rules.
 
 **Example Configuration:**
 
@@ -153,7 +153,7 @@ kind: Pod
 spec:
   tolerations:
   - key: node.kubernetes.io/sla
-    operator: Ge
+    operator: Gt
     value: "750"
     effect: NoSchedule
 ```
@@ -188,7 +188,7 @@ spec:
     spec:
       tolerations:
       - key: node.kubernetes.io/sla
-        operator: Ge
+        operator: Gt
         value: "950"
         effect: NoExecute
         tolerationSeconds: 30
@@ -211,7 +211,7 @@ metadata:
 spec:
   tolerations:
   - key: node.kubernetes.io/sla
-    operator: Ge
+    operator: Gt
     value: "999"  # 99.9% SLA
     effect: NoSchedule
   containers:
@@ -228,7 +228,7 @@ metadata:
 spec:
   tolerations:
   - key: node.kubernetes.io/sla
-    operator: Ge
+    operator: Gt
     value: "800"  # 80% SLA acceptable
     effect: NoSchedule
   containers:
@@ -269,7 +269,7 @@ spec:
     resourceClaimName: gpu-claim-high-sla
   tolerations:
   - key: node.kubernetes.io/sla
-    operator: Ge
+    operator: Gt
     value: "950"  # Ensure GPU nodes meet SLA requirements
     effect: NoSchedule
   containers:
@@ -279,11 +279,68 @@ spec:
       - name: gpu-claim
 ```
 
+#### Story 5 — DRA device-level error budget management
+
+As a platform engineer managing GPU clusters with varying reliability states, I want to allocate devices based on their remaining error budget using numeric tolerations. So that critical workloads only get devices with sufficient reliability headroom while allowing degraded devices to serve less sensitive workloads.
+
+This will get the critical inference fresh devices (>24h error budget), batch training can use aging devices (1-24h), and severely degraded devices (<1h) are excluded from allocation entirely, enabling graceful device lifecycle management.
+
+**Example Configuration:**
+
+```yaml
+# Driver taints devices with low error budget
+kind: ResourceSlice
+spec:
+  driver: device.example.com
+  devices:
+  - name: gpu-node-01-device-0
+    attributes:
+      memory: "32Gi"
+      compute-capability: "8.6"
+    # Driver applies taint when error budget drops below 10 hours
+    taints:
+    - key: device.example.com/error-budget-in-hours
+      value: "8"  # 8 hours remaining
+      effect: NoSchedule
+---
+# Critical inference workload requires high-reliability devices
+kind: ResourceClaim
+metadata:
+  name: inference-gpu-claim
+spec:
+  requests:
+  - name: high-reliability-gpu
+    deviceClassName: device.example.com
+    tolerations:
+    # Only accept devices with >24 hours error budget
+    - key: device.example.com/error-budget-in-hours
+      operator: Gt
+      value: "24"
+      effect: NoSchedule
+---
+# Batch training workload tolerates degraded devices
+kind: ResourceClaim
+metadata:
+  name: training-gpu-claim
+spec:
+  requests:
+  - name: batch-gpu
+    deviceClassName: device.example.com
+    tolerations:
+    # Accept devices with >1 hour error budget
+    - key: device.example.com/error-budget-in-hours
+      operator: Gt
+      value: "1"
+      effect: NoSchedule
+```
+
 ### Notes/Constraints/Caveats (Optional)
 
-- **Integer-Only Support**: The implementation supports signed 64-bit integers only. Decimal values (e.g., `"95.5"`) will be rejected by API validation when using numeric operators.
+- **Integer-Only Support**: The implementation supports signed 64-bit integers only. Pod specs containing toleration values with decimal numbers (e.g., `"95.5"`) will be rejected by the API server during validation when using numeric comparison operators.
 
-- **Parsing Requirements**: Both taint value and toleration value must be parseable as integers for numeric operators (`Lt`, `Le`, `Ge`, `Gt`). If either fails parsing, the toleration does not match.
+- **Parsing Requirements**: The toleration value must be parseable as integers for numeric operators (`Lt`, `Gt`). If fails parsing, the toleration does not match.
+
+  > Note: A taint like `foo=95.5:NoSchedule` is valid since taint values follow label values syntax, which allows. The numeric parsing/validation is enforced on toleration **only**.
 
 - **Alpha Restrictions**: When `TaintTolerationComparisonOperators=false`, the API server rejects pods using the new operators.
 
@@ -302,20 +359,8 @@ spec:
 **Mitigation**:
 
 - Parse integers only when new operators are used (no impact on existing workloads)
-- Implement microbenchmarks during development to measure parsing overhead
 - Consider caching parsed values in scheduler data structures if performance issues arise
 - Feature gate allows disabling if performance problems occur
-
-#### User Confusion Between String and Numeric Semantics
-
-**Risk**: Users might expect numeric comparison with `Equal` operator or string comparison with `Ge` operator, leading to mismatched tolerations.
-
-**Mitigation**:
-
-- Clear documentation distinguishing string vs. numeric operators
-- API validation provides specific error messages for malformed numeric values
-- Examples in documentation show proper usage patterns
-- Consider adding warnings/events when numeric values are used with string operators
 
 #### API Compatibility and Version Skew
 
@@ -356,8 +401,6 @@ spec:
 Extend `core/v1.Toleration.Operator` to accept, in addition to `Equal` and `Exists`:
 
 - `Lt`: match if toleration.value < taint.value
-- `Le`: match if toleration.value <= taint.value
-- `Ge`: match if toleration.value >= taint.value
 - `Gt`: match if toleration.value > taint.value
 - `Equal`/`Exists`: Remain unchanged
 
@@ -371,8 +414,6 @@ const (
     
     // New numeric comparison operators (feature-gated)
     TolerationOpLt TolerationOperator = "Lt"    // Less than
-    TolerationOpLe TolerationOperator = "Le"    // Less than or equal  
-    TolerationOpGe TolerationOperator = "Ge"    // Greater than or equal
     TolerationOpGt TolerationOperator = "Gt"    // Greater than
 )
 ```
@@ -389,7 +430,7 @@ To honor Kubernetes APIs that avoids floating-point numbers where possible due t
 
 ```go
 const (
-    // TaintTolerationComparisonOperators enables numeric comparison operators (Lt, Le, Ge, Gt) for tolerations
+    // TaintTolerationComparisonOperators enables numeric comparison operators (Lt, Gt) for tolerations
     TaintTolerationComparisonOperators featuregate.Feature = "TaintTolerationComparisonOperators"
 )
 
@@ -411,7 +452,7 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
         
         // New: Validate numeric operators (feature-gated)
         switch toleration.Operator {
-        case core.TolerationOpLt, core.TolerationOpLe, core.TolerationOpGe, core.TolerationOpGt:
+        case core.TolerationOpLt, core.TolerationOpGt:
             if !utilfeature.DefaultFeatureGate.Enabled(features.TaintTolerationComparisonOperators) {
                 allErrors = append(allErrors, field.Invalid(idxPath.Child("operator"), 
                     toleration.Operator, "numeric operators require TaintTolerationComparisonOperators feature gate"))
@@ -438,7 +479,7 @@ func (t *Toleration) ToleratesTaint(taint *Taint) bool {
     
     switch t.Operator {
     // ...
-    case TolerationOpLt, TolerationOpLe, TolerationOpGe, TolerationOpGt:
+    case TolerationOpLt, TolerationOpGt:
         // Feature gate check is not needed here as validation already handles it
         return compareNumericValues(t.Value, taint.Value, t.Operator)
     default:
@@ -460,10 +501,6 @@ func compareNumericValues(tolerationVal, taintVal string, op TolerationOperator)
     switch op {
     case TolerationOpLt:
         return tVal < nVal
-    case TolerationOpLe:
-        return tVal <= nVal
-    case TolerationOpGe:
-        return tVal >= nVal
     case TolerationOpGt:
         return tVal > nVal
     default:
@@ -646,13 +683,14 @@ in back-to-back releases.
 
 - Feature implemented behind `TaintTolerationComparisonOperators` feature gate (disabled by default)
 - API validation for numeric operators in place
-- Taint/toleration matching logic supports `Lt`, `Le`, `Ge`, `Gt` operators  
+- Taint/toleration matching logic supports `Lt`, `Gt` operators  
 
 #### Beta
 
 - Feature enabled by default
 - Feedback collected from early adopters in SIG-Scheduling
 - Performance testing shows that there is no significant scheduler latency increase nor memory usage increase.
+- Implement feature for DRA APIs
 - Stress testing with:
   - 1000+ nodes with numeric taints
   - 10,000+ pods with numeric tolerations  
@@ -853,7 +891,7 @@ logs or events for this purpose.
 
    ```bash
    # Check for pods with numeric toleration operators
-   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="Ge")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="Gt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
    
    # Count nodes with numeric taints (SLA example)
    kubectl get nodes -o jsonpath='{range .items[*]}{.spec.taints[?(@.key=="node.kubernetes.io/sla")]}{"\n"}{end}' | wc -l
@@ -1089,18 +1127,15 @@ Why should this KEP _not_ be implemented?
 
 There are many different alternatives were considered:
 
-1. **Extend NodeAffinity with Numeric Operators:** Add Lt, Le, Ge, Gt to `NodeSelectorOperator` instead.
-   - **Pros:** `NodeAffinity` already supports `Gt`/`Lt` operators
-   - **Cons:** No eviction semantics, per-pod configuration (no cluster defaults), doesn't solve the operational model problem.
-2. **New Dedicated SLA API Resource:**  Create `SLAPolicy` CRD
+1. **New Dedicated SLA API Resource:**  Create `SLAPolicy` CRD
    - **Pros:** Clean separation, rich policy definitions.
    - **Cons:** New API surface, additional complexity, breaks unified taint/toleration model.
-3. **Custom Scheduler Plugin:** Use scheduling plugin with SLA-aware logic, [placement-policy-scheduler-plugins](https://github.com/Azure/placement-policy-scheduler-plugins)
+2. **Custom Scheduler Plugin:** Use scheduling plugin with SLA-aware logic, [placement-policy-scheduler-plugins](https://github.com/Azure/placement-policy-scheduler-plugins)
    - **Pros:** Full scheduling control, rich logic possible
    - **Cons:**
      - Out-of-tree scheduler plugin to maintain and manage
      - Doesn't leverage existing taint/toleration infrastructure.
-4. **Node Labels + Enhanced NodeAffinity:** Use labels instead of taints, extend NodeAffinity matching.
+3. **Node Labels + Enhanced NodeAffinity:** Use labels instead of taints, extend NodeAffinity matching.
    - **Pros:** Leverages existing label system.
    - **Cons:**
      - No default push-back behavior
